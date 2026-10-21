@@ -35,7 +35,7 @@
 #                                entries: day, step, kind, category, read, title,
 #                                body (from game memory; days from the load on)
 #   wine-game.sh speed LEVEL [SIDE]  Set game speed: pause, vslow, medium, fast
-#                                (Alliance); pause, fast (Empire).  Pause opens
+#                                (Alliance); pause, vslow, fast (Empire).  Pause opens
 #                                "Resume Game Play?"; speed resume closes it
 #   wine-game.sh alert-ref NAME  Save the open Battle Alert as reference NAME
 #   wine-game.sh alert [FILE]    Print alert or none (exit 1) for the current screen
@@ -745,7 +745,7 @@ do_speed() {
     # Right-click the day readout to open the speed menu.
     # Coordinates from vm-game.sh README (800x600, calibrated 2026-10-16).
     # Alliance: readout 165,30; menu Pause 208,45 / VSlow 230,70 / Medium 220,120 / Fast 208,145.
-    # Empire:   readout 645,30; menu Pause 668,45 / Fast 695,137.
+    # Empire:   readout 645,30; menu Pause 668,45 / VSlow 710,70 / Fast 695,137.
     local level="$1"
     local side="${2:-alliance}"
 
@@ -761,13 +761,14 @@ do_speed() {
 
     if [[ "$side" == "empire" ]]; then
         case "$level" in
-            pause|fast) ;;
-            *) echo "Empire speed menu: only pause and fast have known coordinates." >&2; return 2 ;;
+            pause|vslow|fast) ;;
+            *) echo "Empire speed menu: only pause, vslow and fast have known coordinates." >&2; return 2 ;;
         esac
         drive rclick 645 30
         sleep 0.3
         case "$level" in
             pause)  drive click 668 45 ;;
+            vslow)  drive click 710 70 ;;
             fast)   drive click 695 137 ;;
         esac
     else

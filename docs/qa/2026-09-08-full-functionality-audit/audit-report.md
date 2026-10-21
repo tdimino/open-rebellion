@@ -3,7 +3,7 @@ title: "Open Rebellion Full Functionality Audit"
 description: "Repository status, verified evidence, release blockers, and feature-by-feature acceptance plan"
 category: qa
 created: 2026-09-08
-updated: 2026-10-17
+updated: 2026-10-20
 commit: fc25634be905839dfa6fb477d5fff0faa49d8ae9
 tags: [qa, audit, functionality, parity, bitmap, wasm, astra, fable]
 ---
@@ -62,6 +62,18 @@ makes Death Star loss nonterminal, removes the uncited grace period, and covers
 every current bombardment entry path. M1 continues with capture/evasion,
 faction liveness, the wider campaign loop, target acquisition, and five-seed
 cross-runtime proof.
+
+The [orbital strike plan](../../plans/2026-10-16-feat-orbital-strike-and-bombardment.md)
+replaces the invented bombardment, Death Star and ground-combat rules with
+the original orders. Bombardment (P26) passes natively and in Chrome for
+Testing on both sides, and its Operation Report makes `EVT-03` the second
+complete interface family; no bombardment or landing follows a battle. The
+Death Star (P27) is a shipyard product whose construction, refusals,
+sabotage and Destroy System pass on both sides; the AI's Destroy System and
+the `TAC-05` cells remain (F-017, F-025). Planetary Assault replaces the
+automatic landing and the live ground screen, with the `TAC-08` cells and a
+dual-AI re-measure open (F-033). Escape and the jail abodes follow their
+decompiles (F-034).
 
 The current campaign screenshots also exposed a separate visual truth. The
 original shuttle main menu remains a passing surface, but the strategy screen
@@ -721,7 +733,7 @@ cross-runtime proof remain open
 ### F-017: The Death Star can never fire
 
 - Severity: P1
-- Status: partially remediated; construction and sabotage are ported in code (2026-10-17), and their VM and native checks, a Destroy System against an Alliance player, and the browser pass remain
+- Status: partially remediated; construction, sabotage and Destroy System pass their VM, native and browser checks on both sides, and the AI's `0x223` in a named dual-AI seed and the shield's battle role (F-025) remain
 - Evidence: `DeathStarSystem::fire` (`crates/rebellion-core/src/death_star.rs`)
   refuses while `shield_generator_active` is true, and the only other writer
   (`crates/rebellion-app/src/tactical_flow.rs`) sets it to true;
@@ -809,9 +821,30 @@ cross-runtime proof remain open
   `ds_sabotage_destroys_only_the_fleet_s_death_star_hull`), and a sabotaged
   Death Star plays movie `0x72` to both sides. The AI's sabotage planner
   is the regional machine (`FUN_004bda60`, `ghidra/notes/ai-sabotage-target.md`).
-  Open: the VM and native checks of a build, the second-hull refusal and
-  Death Star Sabotage on both sides (Phase I item 9); no named dual-AI seed
-  yet shows the AI issuing `0x223`.
+  Open: no named dual-AI seed yet shows the AI issuing `0x223`.
+- Checks (plan Phase I item 9, `or-port-destroy-system-cascade-imrv`):
+  native, Empire, seed 42: at the starting capacity a Death Star order is
+  refused `0xf3`; after `Maintenance capacity: empire +1300` it queues at
+  Corellia on day 6 (584 refined, maintenance 600 charged at the order), a
+  second order there is refused `{0x90, 3}`, and the station completes on
+  day 487 into a new fleet at Corellia. Native, Alliance, seed 42, a
+  completed station in Fleet 2 at Coruscant: Han Solo's Death Star Sabotage
+  destroys it (movie `0x72`), a team arriving after it files "Death Star
+  Sabotage Mission Failed", and a detected team goes home. VM, Empire, one
+  Orbital Shipyard at Coruscant: the order gains one unit every 4 days
+  (MANFACSD `processing_rate` 4), so 584 units take about 2336 days. VM,
+  Alliance, `alliance-day830-after-coruscant-battle.sav`: Create Mission
+  against the completed station offers Death Star Sabotage alone, and Han
+  alone is detected and returns to Yavin with the station intact.
+  Destroy System with an Alliance player, seed 42: an Imperial Death Star
+  fleet's order at Yavin kills Yavin's regiments, squadrons and
+  facilities, both sides' fleets in orbit keep everything aboard, six
+  characters go adrift (the roll kills two), and the Alliance view reads
+  Yavin destroyed, holder Neutral. Browser, both sides
+  (`tools/interface-parity/orbital-strike.mjs`, `death-star-strike`): with
+  the Death Star aboard all four Planetary Bombardment rows are enabled,
+  Destroy System plays movie `0x6f`, and the destroyed system greys the
+  parent row.
 
 ### F-018: Research never limits which ships can be built
 
@@ -1584,7 +1617,7 @@ cross-runtime proof remain open
 ### F-033: Strategic combat formulas are port-authored
 
 - Severity: P1
-- Status: partially remediated; the ground caller is ported (2026-10-17), its VM, native and TAC-08 checks remain
+- Status: partially remediated; the ground caller is ported (2026-10-17) and passes its VM and native checks on both sides; the TAC-08 cells and the dual-AI batch re-measure after the Drop fix remain
 - Evidence:
   - combat.rs reads GNPRTB 5120 (0x1400) as a combat difficulty modifier in
     space and ground combat; 5120 is the transit distance divisor
@@ -1613,10 +1646,22 @@ cross-runtime proof remain open
   screen (`ground_combat.rs`) and the automatic landing are gone, and the
   invented Death Star construction timer and warning radius with them
   (F-017). The menu row and the AI order run through the one resolver
-  (`assault_orders.rs`, `resolve_ai_assault`). Open: the VM run with a
-  battery, an enemy fleet present and a captured officer (Phase K item 4),
-  native runs on both sides, the TAC-08 cells, and a dual-AI batch
-  re-measure since the automatic landing left (Phase K item 7).
+  (`assault_orders.rs`, `resolve_ai_assault`).
+- Checks (plan Phase K items 4 and 9): VM, the Alliance takes Ord Pardon,
+  the Empire takes Drall after an intercept and is repulsed at Selonia; an
+  Alliance fleet at Orto (three shields) sees Planetary Assault greyed; a
+  KDY-150 kills an attacking regiment at Tralus (taken) and at Corellia
+  (the sole attacker dies, "Alliance Troops have defended Corellia"); an
+  enemy fleet present blocks the order; Imperial Fleet 1 takes
+  Alliance-held Talus on day 272 with no survivor, capture or kill listed,
+  and the three Alliance officers there on day 220 are at Corfai on day 277
+  (`ghidra/notes/ground-assault.md`, "In the original"). Native, seed 42,
+  regiments boarded through the regiment Move order and the assault given
+  from the fleet menu: the Empire at Vagran is repulsed (picture 11161),
+  then takes the system after three bombardments; the Alliance at Corellia
+  is repulsed (picture 11160); both reports open at once with their
+  regiment lists. Open: the TAC-08 cells and the dual-AI batch re-measure
+  after the Drop fix (Phase K item 7).
 
 ### F-034: Mission resolution departs from the recovered phases
 
@@ -1650,9 +1695,17 @@ cross-runtime proof remain open
   abode (`FUN_00549580`, `death_star::strand`), a mission end returns its
   members (`FUN_00548120`, `death_star::return_members`), and the Personnel
   Finder lists a jail occupant by name and abode (`ghidra/notes/jail.md`).
-  Sabotage destroys its target object with no delay (F-017). Open: the VM
-  jail run (Phase H item 8) and the native finder row and Standard win with a
-  jailed leader on both sides (Phase H item 10).
+  Sabotage destroys its target object with no delay (F-017).
+- Checks (plan Phase H items 8 and 10): VM (`save_tree.py jail`), the
+  finder rows read "Emperor Palpatine - Alliance Jail" and "Leia Organa -
+  Empire Jail", no system window lists a jailed captive, and Leia escapes
+  within about 50 days ("Leia Organa escaped from the Empire at Empire
+  Jail.") and arrives at Yavin. Native, release build: the Characters
+  finder lists "Luke Skywalker - Empire Jail" (Empire, seed 42) and
+  "Emperor Palpatine - Alliance Jail" (Alliance); the Empire wins Standard
+  with Luke jailed and Hoth destroyed (seed 42, ending slot 84, movie
+  `0x6d`), and the Alliance with Vader and Palpatine jailed and Coruscant
+  taken by Planetary Assault (seed 3, ending slot 86).
 
 ### F-035: Manufacturing and repair use invented structure and rates
 
@@ -1902,8 +1955,8 @@ and underlying state mutation are both demonstrated.
 | P23 | Core space combat | Seven phases, weapon classes, shields, ion effects, recharge, carriers, fighters, officers, Emperor, retreat, destruction, and result application. |
 | P24 | Tactical space combat | Placement, selection, formations, movement, focus fire, pause/speed, retreat, visual state, accepted formulas, and galaxy result application. [Per-hull/fighter result identity and shared entry](evidence/2026-09-12-tactical-result-identity.md) are verified partial tranches. P54 through P57B2C2B stage and decode the original 3D corpus and recover its camera, placement, transform, palette, light, and retained-mode state. [P58A](../2026-09-10-interface-parity-audit/evidence/2026-09-14-tactical-resource-join.md) joins every ship and fighter DAT identity to its original resources and transports all 87 meshes and 397 textures. P58B through P58F13 render live capital/fighter families and restore their interaction and command paths. The [P58-B06 checkpoint](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-completion-bundle.md) adds capital and fighter combat, collision, automatic groups, retained formations, the separate Death Star, original result/options panels, superlaser journey, both trench-run routes, and exact strategic roster, capture, and Death Star-state application. P58-B15 through P58-B21 restore Battle Alert, weapon and command voice banks, mixed-task-force rejection, recovery/withdrawal feedback, and shared post-battle orchestration. [P58-B22](../2026-09-10-interface-parity-audit/evidence/2026-09-28-tactical-source-completion.md) completes the bounded practical launcher with source-compatible tactical randomness, persisted power allocation, completion/destruction callbacks, and the timed source-derived trench-run producer. [P58-B07](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-106-matrix-contract.md) generates and validates the exact 106-cell denominator, and [P58-B08](../2026-09-10-interface-parity-audit/evidence/2026-09-22-tactical-a0-ingestion.md) adds fail-closed original-capture provenance and ingestion. Deterministic A1 mapping is runnable at 106/106, but owned lossless A0 coverage and acceptance remain 0/106. Exact native beam pixels, audible native playback and mixing, whole-process random-state continuity, strategic commander binding, exact planet framing, rare warning/ejection callers, and strict battle acceptance remain open. |
 | P25 | Ground combat | Troop attack/defense, facilities, officers/difficulty, selection, casualties, conquest, visuals, and parity between automatic and interactive paths. |
-| P26 | Bombardment | Eligibility, shields, losses, popularity, ownership, messages, persistence, and visual feedback. Partial (2026-10-16): the order's gate, defence and effect phases, finalize, persistence (the bombardment flag survives a save), the Planetary Bombardment menu and the Operation Report pass native checks on both sides (seed 42, F-032). The Operation Report window is ported in code (2026-10-17, `rebellion-render/src/operation_report.rs`, `ghidra/notes/operation-report-window.md`): its lists filled from the strike and assault reports, opened at once for the bombarder (`MessageLog::take_alerts`) and again from the Message Index. Its native checks (EVT-03, Empire at Vagran and, seed 3, Tralus; Alliance at Corfai) pass on both sides for C001-C003, C005-C008, C010, C011, C013, C014 and C015, and for the Empire only on this build for C004 and C009. Open: the browser OBJ-14 probe; the report window's browser checks, which every EVT-03 cell still needs; the Alliance's C004 and C009; C012's Destroyed column, whose damage art fails natively. Native on both sides (build ac90a418, seed 42, release): C012 Operational lists the damaged survivor with burn marks (Imperial Star Destroyer 1, 2250/2750, at Vagran; Alliance Escort Carrier 1, 300/900, at Corellia), and C015 Go To fleet opens the system's Fleet window with nothing selected (`FUN_0045aac0`). Each EVT-03 cell stays pending until its browser check. |
-| P27 | Death Star | Construction, sabotage, escort, retreat, shielding, targeting, firing, cooldown, destruction, cleanup, contribution to the Imperial HQ objective, and nonterminal Alliance destruction behavior. Partial (2026-10-16): targeting, firing, cleanup and the HQ objective follow the original order and cascade, checked natively as the Empire (F-017). Ported in code (2026-10-17): a destroyed system's galaxy marker takes the white cross except in the fleet and personnel modes (`gid_marker_for_system`, `FUN_0042b330`); the adrift flag has no display, as in the original (`death-star-strategic.md`, "Display"), and the System window has no destroyed branch (VM, Yaga Minor, days 240-315); Destroy System plays movie `0x6f` and a sabotaged Death Star `0x72` (`strike_orders::strike_movies`, `sabotage_movies`); construction, the one-per-system refusal and sabotage (F-017); the battle station, its shield, the trench run and retreat (F-025). Open: a Destroy System against an Alliance player; the construction and sabotage checks in the VM and natively on both sides; the TAC-05 acceptance; escort. |
+| P26 | Bombardment | Eligibility, shields, losses, popularity, ownership, messages, persistence, and visual feedback. Pass (2026-10-19): the order's gate, defence and effect phases, finalize, persistence (the bombardment flag survives a save), the Planetary Bombardment menu and the Operation Report pass native checks on both sides (seed 42, F-032). The Operation Report window (`rebellion-render/src/operation_report.rs`, `ghidra/notes/operation-report-window.md`) fills its lists from the strike and assault reports and opens at once for the bombarder (`MessageLog::take_alerts`) and again from the Message Index. EVT-03's 15 cells pass natively on both sides (Empire at Vagran, Tralus and Ghorman; Alliance at Corfai and Corellia): C004 for the Alliance at Corellia on day 53 under a GenCore Level I the Empire built, Target Military Facilities landing no hit with LNR Series I and GenCore Level I operational and "No Casualties"; C009 for the Alliance at Corellia on day 35, one Alliance Army Regiment against three Imperial regiments, "Imperial Troops have defended Corellia from an Alliance assault" with the regiment destroyed; C012 with the damage art on a damaged survivor under Operational (Imperial Star Destroyer 1, 2250/2750, at Vagran; Alliance Escort Carrier 1, 300/900, at Corellia) and on a ship the batteries destroyed under Destroyed (Corellian Corvette 1 at Corellia on day 2; Imperial Star Destroyer 1 at Ghorman on day 294, from 171/2750). They pass in the browser on both sides (`tools/interface-parity/orbital-strike.mjs`, 22 of 22 cases, Chrome for Testing 151 at 640 by 480): Target Military, Target Civilian and General Bombardment each open their report at once (C001-C003); shield generators whose shields reach the fleet's strength leave 0 hits, picture `0x2b9a` and the generators operational (C004); pictures `0x2b9b` and `0x2b9a` (C005, C006); the assault's Summary, picture `0x2b98` or `0x2b99`, reads the capture of an empty garrison and the defence by six regiments (C007-C009); both Forces views show their six tabs and lists (C010, C011, C013); the damage art matches the GOKRES stack pixel for pixel under Operational and Destroyed (C012); Goto System and Goto Fleet close the report on the system's sector and Fleet windows (C014, C015). The OBJ-14 menu rows, enabled and grey, pass in the same run. Firefox and Safari parity is not claimed: by explicit user decision on 2026-10-19 the Chrome runs suffice for this delivery. |
+| P27 | Death Star | Construction, sabotage, escort, retreat, shielding, targeting, firing, cooldown, destruction, cleanup, contribution to the Imperial HQ objective, and nonterminal Alliance destruction behavior. Partial: targeting, firing, cleanup and the HQ objective follow the original order and cascade, checked natively with an Empire player at Vagran and Hoth and with an Alliance player at Yavin (seed 42), and in the browser on both sides (`orbital-strike.mjs`, `death-star-strike`: all four rows enabled with the Death Star aboard, movie `0x6f`, the parent row grey on the destroyed system) (F-017). Construction, the one-per-system refusal and sabotage pass natively and in the VM: an Empire order refused `0xf3` at the starting capacity, queued at Corellia once capacity allows, a second order refused `{0x90, 3}`, and the station complete on day 487 in a new fleet; an Alliance Death Star Sabotage destroying the station at Coruscant with movie `0x72`; one shipyard adding one unit every 4 days in the VM (F-017). Ported in code (2026-10-17): a destroyed system's galaxy marker takes the white cross except in the fleet and personnel modes (`gid_marker_for_system`, `FUN_0042b330`); the adrift flag has no display, as in the original (`death-star-strategic.md`, "Display"), and the System window has no destroyed branch (VM, Yaga Minor, days 240-315); the battle station, its shield, the trench run and retreat (F-025). Open: the AI's Destroy System in a named dual-AI seed; the TAC-05 acceptance; escort. |
 | P28 | Generic events | Every condition/action branch, one-shot behavior, simultaneous events, notification art, state changes, and save/load. |
 | P29 | Story and cutscenes | Every story chain, all eight cutscene mappings, heritage branches, queueing, audio/video sync, skip/end/error behavior, and replay prevention. |
 | P30 | Victory and defeat | Every win/loss condition for both player factions, simulation freeze, result screen, cutscene policy, Continue, and clean restart. |
@@ -1973,8 +2026,9 @@ or fallback appears.
 
 ## Independent browser acceptance loop
 
-Use the browser-acceptance workflow selected in
-[`agent-tooling.md`](../../../agent_docs/agent-tooling.md). Reviewer and
+Run browser acceptance as
+[`agent-tooling.md`](../../../agent_docs/agent-tooling.md), "Browser
+Acceptance", describes. Reviewer and
 debugger runs remain read-only until a fix is explicitly authorized.
 
 After an authorized fix:

@@ -18,7 +18,7 @@ const sourcePath = process.env.REBELLION_ENCYCLOPEDIA_TEST_SOURCE
   || path.join(root, "data/base/encyclopedia/source.json");
 const edata = process.env.REBELLION_EDATA_DIR;
 const executable = process.env.OPEN_REBELLION_CHROME_FOR_TESTING || chromium.executablePath();
-const launchArguments = ["--mute-audio", "--disable-background-networking", "--no-first-run"];
+const launchArguments = ["--mute-audio", "--disable-audio-output", "--disable-background-networking", "--no-first-run"];
 const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion-test.wasm"];
 const expectedFingerprint = "20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea";
 const talonKarrdeObjectId = 0x3800034d;

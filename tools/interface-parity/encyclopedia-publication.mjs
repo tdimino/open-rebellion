@@ -465,7 +465,7 @@ async function main() {
     browser = await launchBrowser(chromium, {
       executablePath: executable,
       headless: true,
-      args: ["--mute-audio", "--disable-background-networking", "--no-first-run"],
+      args: ["--mute-audio", "--disable-audio-output", "--disable-background-networking", "--no-first-run"],
     }, launchAttempts);
     cleanup = "open";
     const origin = `http://127.0.0.1:${server.address().port}`;

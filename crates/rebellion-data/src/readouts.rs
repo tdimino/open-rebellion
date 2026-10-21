@@ -397,16 +397,15 @@ fn destination_label(world: &GameWorld, destination: Destination) -> String {
     }
 }
 
-fn queue_row(
-    world: &GameWorld,
-    index: usize,
-    item: &QueueItem,
-    eta: Option<u64>,
-    area_destination: Option<Destination>,
-) -> String {
+/// One queued product: its own destination, the one its completion reads
+/// (`ManufacturingSystem::advance_tracked`). An item takes its area's
+/// Destination when queued or when the order changes it
+/// (`ManufacturingState::enqueue`, `set_destination`), and an autoscrap
+/// request that sends it back to its yard clears it, so none means it
+/// stays at the yard whatever the area's Destination reads.
+fn queue_row(world: &GameWorld, index: usize, item: &QueueItem, eta: Option<u64>) -> String {
     let destination = item
         .destination
-        .or(area_destination)
         .map_or_else(|| "stays".to_owned(), |d| destination_label(world, d));
     let eta = eta.map_or_else(|| "no yard".to_owned(), |day| format!("day {day}"));
     format!(
@@ -464,7 +463,6 @@ pub fn list_production(
                     index,
                     item,
                     etas.get(index).copied().flatten(),
-                    manufacturing.destination(system, area),
                 ));
             }
         }
@@ -686,6 +684,49 @@ mod tests {
             show_system(&world, "Nowhere"),
             Err("no system named \"Nowhere\"".into())
         );
+    }
+
+    // A product sent back to its yard by a holder change's autoscrap
+    // request (FUN_00515480, the hint) completes there, though its area's
+    // Destination still names the lost system: the row reads the item's
+    // own destination, as its completion does.
+    #[test]
+    fn list_production_reads_each_items_own_destination_for_either_side() {
+        use rebellion_core::manufacturing::{
+            BuildableKind, FacilityBuild, ManufacturingState, ProductionArea, QueueItem,
+        };
+        for (holder, is_alliance) in [(Faction::Alliance, true), (Faction::Empire, false)] {
+            let mut world = GameWorld::default();
+            let [yard, lost] = ["Yard", "Lost"].map(|name| {
+                world.systems.insert(System {
+                    name: name.into(),
+                    control: ControlKind::Controlled(holder),
+                    ..System::default()
+                })
+            });
+            let facility = BuildableKind::ManufacturingFacility(FacilityBuild {
+                class: rebellion_core::ids::DatId::new(0x2800_0001),
+                is_alliance,
+            });
+            let mut manufacturing = ManufacturingState::new();
+            manufacturing.set_destination(
+                yard,
+                ProductionArea::ConstructionYard,
+                Destination::System(lost),
+            );
+            manufacturing.enqueue(yard, QueueItem::new(facility, 10));
+            let mut home = QueueItem::new(facility, 10);
+            home.destination = None;
+            manufacturing
+                .queue_mut(yard, ProductionArea::ConstructionYard)
+                .enqueue(home);
+
+            let text = list_production(&world, &manufacturing, 1, None);
+            let rows: Vec<&str> = text.lines().collect();
+
+            assert!(rows[1].ends_with("-> Lost"), "{holder:?}: {text}");
+            assert!(rows[2].ends_with("-> stays"), "{holder:?}: {text}");
+        }
     }
 
     #[test]

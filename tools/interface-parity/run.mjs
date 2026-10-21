@@ -970,34 +970,33 @@ function verifyTacticalBackdrop(viewport, screenshotBytes, paletteResourceId) {
   };
 }
 
-function verifyTacticalGreenBeam(viewport, beforeBytes, beamBytes) {
+// A0 TAC-05-C019 (empire-death-star-pre-alert) shows no green superlaser
+// pixel in the aperture in any of its 60 burst frames 200 ms apart; the shot
+// shows as an orange impact on its target (frames 27-28, (389, 157) to
+// (400, 161)).
+// The impact here is a changed pixel within 24 canvas pixels of the target's
+// projection that is orange: red above 150, green below 200, blue below 80.
+function verifyTacticalStrikeImpact(viewport, beforeBytes, strikeBytes, target) {
   const before = PNG.sync.read(beforeBytes);
-  const beam = PNG.sync.read(beamBytes);
-  assert.deepEqual([beam.width, beam.height], [before.width, before.height]);
+  const strike = PNG.sync.read(strikeBytes);
+  assert.deepEqual([strike.width, strike.height], [before.width, before.height]);
   const scale = Math.min(viewport.width / 640, viewport.height / 480);
-  const offsetX = (viewport.width - 640 * scale) / 2;
-  const offsetY = (viewport.height - 480 * scale) / 2;
-  const minX = Math.floor(offsetX + 16 * scale);
-  const maxX = Math.ceil(offsetX + 460 * scale);
-  const minY = Math.floor(offsetY + 28 * scale);
-  const maxY = Math.ceil(offsetY + 467 * scale);
-  let changedGreenPixels = 0;
-  for (let y = minY; y < maxY; y++) {
-    for (let x = minX; x < maxX; x++) {
-      const offset = (y * beam.width + x) * 4;
-      const red = beam.data[offset];
-      const green = beam.data[offset + 1];
-      const blue = beam.data[offset + 2];
+  const radius = 24 * scale;
+  let impactPixels = 0;
+  for (let y = Math.max(0, Math.floor(target.y - radius));
+    y <= Math.min(strike.height - 1, Math.ceil(target.y + radius)); y++) {
+    for (let x = Math.max(0, Math.floor(target.x - radius));
+      x <= Math.min(strike.width - 1, Math.ceil(target.x + radius)); x++) {
+      const offset = (y * strike.width + x) * 4;
+      const [red, green, blue] = strike.data.subarray(offset, offset + 3);
       const changed = red !== before.data[offset]
         || green !== before.data[offset + 1]
         || blue !== before.data[offset + 2];
-      if (changed && green > 96 && green > red * 1.5 && green > blue * 1.25) {
-        changedGreenPixels++;
-      }
+      if (changed && red > 150 && green < 200 && blue < 80) impactPixels++;
     }
   }
-  assert.ok(changedGreenPixels > 0, "Death Star beam produced no visible green aperture pixels");
-  return { status: "visible", changed_green_pixels: changedGreenPixels };
+  assert.ok(impactPixels > 0, "Death Star shot produced no orange impact on its target");
+  return { status: "visible", impact_pixels: impactPixels };
 }
 
 // A strategy bitmap at (x0, y0), pixel-exact outside its blue matte and
@@ -1326,6 +1325,17 @@ function verifyTacticalProductionParticipants(results, factions, viewports) {
         viewport, productionImage, controlImage,
       );
       const scale = Math.min(viewport.width / 640, viewport.height / 480);
+      // A capital ship covers at least as many pixels as the smallest hull
+      // A0 TAC-05-C019 (empire-death-star-pre-alert, 640x480) draws: 6, the
+      // far Alliance hulls at (396, 120) and (425, 127), about 450 units
+      // from the camera; the fixture's hulls stand nearer. The letterboxed
+      // canvas has no original frame, so the area scales by scale squared.
+      const minimumModelPixels = Math.ceil(6 * scale * scale);
+      // A fighter group's decal is 0.3 units square (FUN_005d43c0,
+      // 0x5d44e4): at the fixture's indicator span of about 20 it is about
+      // 1.6 pixels wide at 640x480 and 2.7 letterboxed, so it covers at
+      // least one whole pixel per scale squared.
+      const minimumFighterPixels = Math.ceil(scale * scale);
       const sceneLog = production.console.find(({ text }) =>
         text.includes("[tactical_3d] participant_scene"));
       const positionMatch = sceneLog?.text.match(/screen_positions=([^ ]+)/);
@@ -1340,7 +1350,7 @@ function verifyTacticalProductionParticipants(results, factions, viewports) {
           changed_pixels: tacticalModelRegionChangedPixels(
             viewport, productionImage, controlImage, center,
           ),
-          minimum_changed_pixels: Math.ceil(2 * scale * scale),
+          minimum_changed_pixels: minimumModelPixels,
         };
       });
       assert.deepEqual(modelRegions.map(({ object_id }) => object_id), [1, 2]);
@@ -1358,7 +1368,7 @@ function verifyTacticalProductionParticipants(results, factions, viewports) {
           changed_pixels: tacticalModelRegionChangedPixels(
             viewport, productionImage, controlImage, center, 4,
           ),
-          minimum_changed_pixels: Math.ceil(scale * scale),
+          minimum_changed_pixels: minimumFighterPixels,
         };
       });
       assert.deepEqual(fighterRegions.map(({ object_id }) => object_id), [1001, 1002]);
@@ -1800,6 +1810,15 @@ async function probeTacticalProductionParticipants(
     transition_log_count: transitionLogCount,
   });
 
+  // FUN_005ab0e0 sizes both hulls' collision envelopes from their meshes
+  // before the paused formation is laid out and drawn.
+  const envelopeLine = consoleLines.find(({ text }) =>
+    text.includes("[tactical_3d] collision_envelopes"));
+  assert.match(envelopeLine?.text || "", /installed=2 relaid_out=true source=FUN_005ab0e0/,
+    "the hulls' collision envelopes were not installed before the first frame");
+  assert.ok(consoleLines.indexOf(envelopeLine) < consoleLines.findIndex(({ text }) =>
+    text.includes("[tactical_3d] participant_scene")),
+  "the participant scene was drawn before the collision envelopes");
   const participantLine = consoleLines.find(({ text }) =>
     text.includes("[tactical_3d] participant_scene"));
   const positions = parseTacticalScenePositions(participantLine, "capital participant scene");
@@ -1813,17 +1832,32 @@ async function probeTacticalProductionParticipants(
   // FUN_0059c4d0 builds both switches in their first state), so the
   // selection journey turns them on first, as a player would to see the
   // faction wireframes, and takes its baseline from that lit frame.
-  {
-    const scale = Math.min(viewport.width / 640, viewport.height / 480);
-    const offsetX = (viewport.width - 640 * scale) / 2;
-    const offsetY = (viewport.height - 480 * scale) / 2;
-    for (const [x, y] of [[532, 317], [497, 317]]) {
-      await page.mouse.click(offsetX + x * scale, offsetY + y * scale);
-      await page.waitForTimeout(80);
-    }
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  for (const [x, y] of [[532, 317], [497, 317]]) {
+    await page.mouse.click(offsetX + x * scale, offsetY + y * scale);
+    await page.waitForTimeout(80);
   }
   const lit = await stableInteractionFrame(page, folder, "production-highlights-on");
-  await page.mouse.click(player.x - 80, player.y, { button: "left" });
+  assert.notEqual(sha256(lit), sha256(stable.bytes),
+    "highlight switches did not light the faction wireframes");
+  // The traced camera (FUN_005d9640) stands behind the player's own line, so
+  // the player's ship projects near the aperture's lower-left corner (A0
+  // TAC-05-C017: the Imperial line at (28, 428)). Deselect on empty space
+  // inside the aperture: the first point 80 canvas pixels from the ship,
+  // towards the aperture, that is clear of every projected participant.
+  const occupied = [...positions.values()];
+  const fighterLine = consoleLines.find(({ text }) => text.includes("[tactical_3d] fighter_scene"));
+  if (fighterLine) occupied.push(...parseTacticalScenePositions(fighterLine, "fighter scene").values());
+  const apertureLeft = offsetX + 16 * scale, apertureTop = offsetY + 28 * scale;
+  const apertureRight = apertureLeft + 444 * scale, apertureBottom = apertureTop + 439 * scale;
+  const empty = [[-80, 0], [80, 0], [80, -80], [0, -80], [-80, -80]]
+    .map(([dx, dy]) => ({ x: player.x + dx * scale, y: player.y + dy * scale }))
+    .find(({ x, y }) => x > apertureLeft && x < apertureRight && y > apertureTop
+      && y < apertureBottom && occupied.every((other) => Math.hypot(other.x - x, other.y - y) > 24 * scale));
+  assert.ok(empty, "no empty aperture point beside the player's ship");
+  await page.mouse.click(empty.x, empty.y, { button: "left" });
   await page.waitForTimeout(80);
   const deselected = await stableInteractionFrame(page, folder, "production-deselection");
   await page.mouse.click(player.x, player.y, { button: "left" });
@@ -1852,6 +1886,8 @@ async function probeTacticalProductionParticipants(
     type: "source-projected-tactical-interaction",
     player_object_id: playerObjectId,
     target_object_id: targetObjectId,
+    highlights_on_sha256: sha256(lit),
+    deselect_point: empty,
     deselected_sha256: sha256(deselected),
     selected_sha256: sha256(selected),
     targeted_sha256: sha256(targeted),
@@ -1897,7 +1933,11 @@ async function probeTacticalFighterDetailJourney(
   const close = await capture("fighter-detail-close");
   await clickRepeatedly(zoomOut, 7);
   const returnFar = await capture("fighter-detail-return-far");
-  await clickRepeatedly(zoomOut, 11);
+  // 0x5d4af0's span is the depth along the view times tan(field / 2)
+  // (FUN_005d98f0), and each zoom-out step multiplies the field by 1.1: the
+  // nearer group, 7.9 at field 0.1006, reaches the indicator's 10 only past
+  // field 0.127, the twelfth step of this leg (0.0426 * 1.1^12 = 0.134).
+  await clickRepeatedly(zoomOut, 12);
   const returnIndicator = await capture("fighter-detail-return-indicator");
 
   const sceneLines = consoleLines.filter(({ text }) =>
@@ -1906,7 +1946,12 @@ async function probeTacticalFighterDetailJourney(
     "fighter detail journey emitted the wrong number of state transitions");
   const states = sceneLines.map(parseFighterSceneResources);
   const details = states.map((state) => state.map(({ detail }) => detail));
-  assert.deepEqual(details, [
+  // Pairs list the player's group, then the enemy's: the traced camera
+  // (FUN_005d9640) stands behind the player's own line, so the player's
+  // group is the nearer one and changes detail first. The fixture's first
+  // group is the Alliance's.
+  const playerFirst = (pair) => (ready.faction === "alliance" ? pair : [...pair].reverse());
+  assert.deepEqual(details.map(playerFirst), [
     ["indicator", "indicator"],
     ["far", "indicator"],
     ["far", "far"],
@@ -2052,7 +2097,18 @@ async function probeTacticalDetailEscortPresentation(
       && participant.faction === ready.faction && participant.active)
     .map(({ objectId }) => objectId);
   assert.ok(friendlyObjectIds.length >= 2, "escort fixture omitted its friendly target hull");
-  const escortTargetId = friendlyObjectIds[1];
+  // The traced camera (FUN_005d9640) stands behind the player's own line, so
+  // its hulls crowd the aperture's lower-left corner and some project past
+  // its edge. The target is the first friendly after the selected command
+  // hull whose projection lies inside the aperture.
+  const viewScale = Math.min(viewport.width / 640, viewport.height / 480);
+  const viewLeft = (viewport.width - 640 * viewScale) / 2 + 16 * viewScale;
+  const viewTop = (viewport.height - 480 * viewScale) / 2 + 28 * viewScale;
+  const insideAperture = (position) => position
+    && position.x > viewLeft && position.x < viewLeft + 444 * viewScale
+    && position.y > viewTop && position.y < viewTop + 439 * viewScale;
+  const escortTargetId = friendlyObjectIds.slice(1)
+    .find((objectId) => insideAperture(positions.get(objectId)));
   const escortTarget = positions.get(escortTargetId);
   assert.ok(escortTarget, "escort target omitted its source-projected screen position");
   await page.mouse.click(escortTarget.x, escortTarget.y, { button: "right" });
@@ -3353,7 +3409,7 @@ async function probeTacticalDeathStarLaserJourney(
   await page.mouse.click(pause.x, pause.y);
   await page.waitForTimeout(1100);
   const beam = await dynamicInteractionFrame(page, folder, "death-star-superlaser-beam");
-  const beamVisibility = verifyTacticalGreenBeam(viewport, committed, beam);
+  const impact = verifyTacticalStrikeImpact(viewport, committed, beam, target);
   // FUN_005ba520 fires the superlaser as FUN_005c12d0(.., 0, 1.0, 1): a
   // variant-1 projectile at longitudinal scale 1.
   assert.ok(consoleLines.some(({ text }) =>
@@ -3370,7 +3426,7 @@ async function probeTacticalDeathStarLaserJourney(
     type: "death-star-superlaser-resolution",
     target_object_id: targetObjectId,
     beam_frame_sha256: sha256(beam),
-    beam_visibility: beamVisibility,
+    impact,
     resolved_frame_sha256: sha256(resolved),
     control: verifyTacticalButton(viewport, resolved, 1023, 611, 2),
     executable_functions: ["FUN_005ba5e0", "FUN_005ba7f0", "FUN_005c4ed0", "FUN_005d4d10"],
@@ -4527,9 +4583,11 @@ async function probeTacticalGroupPresentation(
   const addressablePlayerCapitals = playerCapitals
     .filter(({ objectId }) => {
       const position = participantPositions.get(objectId);
+      // Inside the aperture (16, 28, 444 by 439): the traced camera
+      // (FUN_005d9640) puts the player's own line in its lower-left corner.
       return position
-        && position.x >= offsetX + 40 * scale && position.x < offsetX + 430 * scale
-        && position.y >= offsetY + 40 * scale && position.y < offsetY + 420 * scale;
+        && position.x > offsetX + 16 * scale && position.x < offsetX + 460 * scale
+        && position.y > offsetY + 28 * scale && position.y < offsetY + 467 * scale;
     })
     .sort((left, right) => {
       const leftPosition = participantPositions.get(left.objectId);
@@ -5369,11 +5427,10 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         const expectedFighters = scenario.command_assignment_presentation ? 2 : 1;
         assert.equal(allianceFighters.length, expectedFighters);
         assert.equal(empireFighters.length, expectedFighters);
-        const allianceShipZ = scenario.death_star_laser_journey && faction === "empire"
-          ? ready.source_layout.outer_positive_z
-          : ready.source_layout.outer_negative_z;
+        // The laser journey's target stays on its own side's line
+        // (FUN_005ab650), as every other Alliance hull does.
         assert.ok(allianceShips.every(({ source_position: position }) =>
-          position[2] === allianceShipZ));
+          position[2] === ready.source_layout.outer_negative_z));
         assert.ok(empireShips.every(({ source_position: position }) =>
           position[2] === ready.source_layout.outer_positive_z));
         if (scenario.trench_run_outcome) {
@@ -5718,7 +5775,9 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
             assert.equal(cameraLogs.length, 3,
               "group journey did not preserve its initial and two hotkey camera states");
           } else {
-            assert.equal(cameraLogs.length, scenario.fighter_detail_journey ? 40 : 1,
+            // The fighter detail journey poses the camera once at entry and
+            // once per zoom step: 14 + 7 in, 7 + 12 out.
+            assert.equal(cameraLogs.length, scenario.fighter_detail_journey ? 41 : 1,
               "production participants did not use the source tactical camera");
           }
           assert.equal(layoutLogs.length, 1,

@@ -7,7 +7,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rebellion_core::ids::{SectorKey, SystemKey};
-use rebellion_windowing::{RoutingSnapshot, WindowId};
+use rebellion_windowing::{RoutingSnapshot, WindowCommand, WindowId};
 
 use crate::cockpit::GidUiState;
 use crate::defenses_window::DefensesWindowState;
@@ -201,8 +201,9 @@ impl GalaxyFocusState {
     /// the view's 0x467 shows the top window. A detail window closes
     /// (`FUN_004ac3a0`, `FUN_00458980` for the System window); a hidden one
     /// never has the focus (`gid_opened`). A sector window passes
-    /// the key to the view (`FUN_004593e0`), which has no Escape. The Fleet
-    /// window takes its own Escape through the frame router (`FUN_004a7390`).
+    /// the key to the view (`FUN_004593e0`), which has no Escape. A Fleet
+    /// window closes as its close button does (slot `+0x30`, `FUN_004a7390`
+    /// -> `FUN_004ac3a0`), through the window manager.
     pub fn escape(&mut self) -> Option<FocusStep> {
         match self.focus {
             GalaxyFocus::Menu => {
@@ -212,10 +213,10 @@ impl GalaxyFocusState {
             GalaxyFocus::Child(
                 child @ (GalaxyChild::System(_)
                 | GalaxyChild::Defenses(_)
-                | GalaxyChild::Missions(_)),
+                | GalaxyChild::Missions(_)
+                | GalaxyChild::Fleet(_)),
             ) => Some(FocusStep::Close(child)),
-            GalaxyFocus::Child(GalaxyChild::Sector(_) | GalaxyChild::Fleet(_))
-            | GalaxyFocus::View => None,
+            GalaxyFocus::Child(GalaxyChild::Sector(_)) | GalaxyFocus::View => None,
         }
     }
 }
@@ -240,7 +241,8 @@ pub fn galaxy_children(
 }
 
 /// Carry out a focus step on the window it names. A Fleet window is the
-/// window manager's, so its activation goes through `activate_fleet`.
+/// window manager's, so its activation and its close go to it through
+/// `fleet` as manager commands.
 pub fn apply_focus_step(
     step: FocusStep,
     gid: &mut GidUiState,
@@ -248,7 +250,7 @@ pub fn apply_focus_step(
     systems: &mut SystemWindowState,
     defenses: &mut DefensesWindowState,
     missions: &mut MissionsWindowState,
-    activate_fleet: &mut dyn FnMut(WindowId),
+    fleet: &mut dyn FnMut(WindowCommand),
 ) {
     match step {
         FocusStep::Show(child) => gid.show_child(child),
@@ -267,7 +269,7 @@ pub fn apply_focus_step(
                 GalaxyChild::Missions(system) => {
                     missions.raise(system);
                 }
-                GalaxyChild::Fleet(window) => activate_fleet(window),
+                GalaxyChild::Fleet(window) => fleet(WindowCommand::Activate(window)),
             }
         }
         FocusStep::Close(child) => match child {
@@ -280,7 +282,8 @@ pub fn apply_focus_step(
             GalaxyChild::Missions(system) => {
                 missions.close_window(system);
             }
-            GalaxyChild::Sector(_) | GalaxyChild::Fleet(_) => {}
+            GalaxyChild::Fleet(window) => fleet(WindowCommand::Close(window)),
+            GalaxyChild::Sector(_) => {}
         },
     }
 }
@@ -352,6 +355,46 @@ mod tests {
             vec![FocusStep::Raise(sesswenna)]
         );
         assert_eq!(focus.escape(), None);
+    }
+
+    #[test]
+    fn a_focused_fleet_windows_escape_closes_it_through_the_manager() {
+        // fleet-window.md, the window procedure's controls: the close button
+        // 0x65 and Escape both run slot +0x30 (FUN_004a7390 -> FUN_004ac3a0),
+        // the close a System window's Escape runs too.
+        use rebellion_windowing::{
+            SubjectId, WindowKind, WindowManager, WindowOwner, WindowTransition,
+        };
+        let mut manager = WindowManager::new();
+        let commit = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::contextual_spec(
+                    WindowKind::Fleet,
+                    SubjectId::new(2, 1),
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id } = commit.transition else {
+            panic!("expected Fleet open");
+        };
+        let fleet = GalaxyChild::Fleet(id);
+        let (sesswenna, _, _) = children();
+        let mut focus = GalaxyFocusState::after_load(vec![(0, sesswenna), (5, fleet)]);
+        let step = focus.escape();
+        assert_eq!(step, Some(FocusStep::Close(fleet)));
+
+        let mut commands = Vec::new();
+        apply_focus_step(
+            step.unwrap(),
+            &mut GidUiState::default(),
+            &mut SectorWindowState::default(),
+            &mut SystemWindowState::default(),
+            &mut DefensesWindowState::default(),
+            &mut MissionsWindowState::default(),
+            &mut |command| commands.push(command),
+        );
+        assert_eq!(commands, [WindowCommand::Close(id)]);
     }
 
     #[test]

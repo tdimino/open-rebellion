@@ -432,6 +432,18 @@ pub fn carried_by_living_ship(fleet: &Fleet, tag: u32) -> bool {
             .any(|ship| ship.alive && ship.tag == tag)
 }
 
+/// Whether `tag` names a usable ship of `fleet` (alive, completed and not on
+/// its own leg): the ships a mode-1 walk of its squadrons passes
+/// (`FUN_005039d0(ship, 1)`).
+#[must_use]
+pub fn carried_by_usable_ship(fleet: &Fleet, tag: u32) -> bool {
+    tag != 0
+        && fleet
+            .capital_ships
+            .iter()
+            .any(|ship| ship.usable() && ship.tag == tag)
+}
+
 /// Whether something tagged `tag` was lost with a ship: it names a ship the
 /// fleet no longer has alive. An untagged object (`tag` 0) is not aboard any
 /// ship, so it is the fleet's or the system's own and no ship's loss takes it

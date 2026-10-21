@@ -9,7 +9,7 @@ tags: [victory, hq-capture, flag-word, simulation]
 
 # Victory System
 
-`victory.rs` — Game-ending condition detection.
+`victory.rs`: Game-ending condition detection.
 
 ## Types
 
@@ -102,10 +102,10 @@ Alliance HQ as AD and finds Coruscant by id (`FUN_005180e0`).
 
 ## Source
 
-- `entity-system.md §4.2` — `SideVictoryConditionsNotif`, `FinalBattle`
-- Event IDs `0x12c`/`0x180`
+- `entity-system.md §4.2`: `SideVictoryConditionsNotif`, `FinalBattle`
+- Notification `0x128` and the win word (`FUN_005180e0`; `ghidra/notes/victory-flag-word.md`)
 - `System::is_headquarters` flag
-- [`main-menu-parity.md`](../main-menu-parity.md) — original game-type selector and setup contract
+- [`main-menu-parity.md`](../main-menu-parity.md): original game-type selector and setup contract
 - [F-016B evidence](../../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-09-game-setup-propagation.md)
 - [Campaign-history source ledger](../../docs/reference/campaign-history/sources.json)
 - [Victory-contract verification](../../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-09-10-victory-contract.md)

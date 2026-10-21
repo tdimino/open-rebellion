@@ -247,13 +247,14 @@ fn fleet_strength_with(world: &GameWorld, fleet: FleetKey, overflow: &dyn Fn(usi
         .enumerate()
         .map(|(index, ship)| ship_strength(world, ship, overflow(index)))
         .sum();
-    // FUN_004fd6b0 walks only the fleet's active ships (FUN_00502db0) and
-    // each one's squadrons (FUN_005039d0): a carrier the batteries destroyed
-    // adds nothing for its squadrons.
+    // FUN_004fd6b0 walks only the fleet's usable ships (`FUN_00502db0`, mode
+    // 1) and each one's squadrons (`FUN_005039d0`, mode 1): a carrier the
+    // batteries destroyed, or one unfinished or on its own leg, adds nothing
+    // for its squadrons.
     let squadrons: i32 = value
         .fighters
         .iter()
-        .filter(|entry| crate::carriage::carried_by_living_ship(value, entry.carrier))
+        .filter(|entry| crate::carriage::carried_by_usable_ship(value, entry.carrier))
         .map(|entry| {
             world.fighter_classes.get(entry.class).map_or(0, |class| {
                 class.bombardment_defense.cast_signed() * entry.count.cast_signed()
@@ -436,7 +437,7 @@ pub enum Opening {
 /// `FUN_0058d800` and the ship phase's Death Star test (`FUN_0058d440`,
 /// `FUN_0058ca70`): the bombarder is the side shared by every usable fleet
 /// at the system flagged to bombard (`FUN_0058d800.c:55`, mode 1), and a
-/// Kill needs a usable Death Star among them (`FUN_0058ca70.c:25-33` walks
+/// Kill needs a usable Death Star among them (`FUN_0058ca70.c:26-34` walks
 /// the usable fleets' usable ships), as the gate does (`FUN_00582440.c:70`,
 /// `FUN_005003d0(.., 1)`).
 #[must_use]
@@ -820,7 +821,7 @@ pub fn bombard(
     };
 
     // Ship phase: the bombarding ships (+0x1c) and the targets (+0x20), the
-    // usable ships of the usable flagged fleets (FUN_0058ca70.c:25-33, mode
+    // usable ships of the usable flagged fleets (FUN_0058ca70.c:26-34, mode
     // 1 for both walks).
     let ships: Vec<(FleetKey, usize)> = fleets
         .iter()
@@ -941,11 +942,15 @@ pub fn bombard(
         );
     }
     // Ships the batteries destroyed leave their fleets after the run, so the
-    // run's ship indices hold throughout. The squadrons aboard die with
-    // their ship's reason: its hook +0x11c (FUN_004fb520) calls each
-    // child's slot +0xb4, FUN_004f8710 for a squadron, which destroys a
-    // completed child with the container's reason byte (FUN_004f7ed0), 0xf
-    // here, so FUN_00508c60 counts each in B as well.
+    // run's ship indices hold throughout. What a lost ship carries dies with
+    // its reason: its hook +0x11c (FUN_00502840 -> FUN_00557b90 ->
+    // FUN_005582b0 -> FUN_004f2b50 -> FUN_004fb520) calls each child's slot
+    // +0xb4, FUN_004f8710 for a squadron (vtable 0x0065def0) and a regiment
+    // (0x0065e438), which destroys a completed child with the container's
+    // reason byte (FUN_004f7ed0), 0xf here, so FUN_00508c60 counts each in
+    // B. The squadrons are counted here; the regiments, which the troop
+    // transport holds, where the strike clears its cargo
+    // (`integrator::resolve_strike`).
     if report.ships_destroyed > 0 {
         for &fleet in fleets {
             let classes: Vec<crate::ids::FighterKey> = world
@@ -1173,8 +1178,8 @@ const SDPRTB_CORE_AMOUNT: u16 = 0x140a;
 /// its core gate limit.
 const SDPRTB_CORE_LIMIT: u16 = 0x140b;
 /// The core system families a shift record names (`FUN_0055d900`,
-/// `FUN_0055da90`: `0x90`..`0x92`).
-const CORE_FAMILIES: std::ops::Range<u8> = 0x90..0x92;
+/// `FUN_0055da90`: `0x90`..`0x92`), the core class's (`FUN_00566d40`).
+pub(crate) const CORE_FAMILIES: std::ops::Range<u8> = 0x90..0x92;
 /// The rim system families (`FUN_0055d900`, `FUN_0055da90`: `0x92`..`0x94`).
 const RIM_FAMILIES: std::ops::Range<u8> = 0x92..0x94;
 
@@ -1319,6 +1324,13 @@ mod tests {
         });
         world.sectors[sector].systems.push(system);
         (world, system)
+    }
+
+    const fn opponent_of(side: Faction) -> Faction {
+        match side {
+            Faction::Alliance => Faction::Empire,
+            _ => Faction::Alliance,
+        }
     }
 
     fn ship_class(
@@ -1503,10 +1515,7 @@ mod tests {
     fn each_order_targets_its_own_kinds() {
         // FUN_0058d800's +0x34 military, +0x38 civilian and +0x3c resource
         // flags select FUN_0058cba0's lists.
-        for (holder, _) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for holder in [Faction::Alliance, Faction::Empire] {
             let (mut world, system) = world(Some(holder));
             world.systems[system].is_headquarters = true;
             world.systems[system].total_energy = 3;
@@ -1814,6 +1823,41 @@ mod tests {
                     "{holder:?} counter {counter} hull {hull}"
                 );
             }
+        }
+    }
+
+    /// `FUN_004fd6b0.c:23,32`: ships in mode 1 and each one's squadrons in
+    /// mode 1, so a ship unfinished or on its own leg adds nothing, nor do
+    /// the squadrons aboard it.
+    #[test]
+    fn a_fleets_strength_counts_only_usable_ships_and_their_squadrons_for_either_side() {
+        for side in [Faction::Empire, Faction::Alliance] {
+            let (mut world, system) = world(Some(opponent_of(side)));
+            let class = ship_class(&mut world, 3, 1000, 100, 0x14);
+            let key = fleet(&mut world, system, side, &[class, class, class]);
+            let fighters = world.fighter_classes.insert(crate::world::FighterClass {
+                bombardment_defense: 2,
+                ..crate::world::FighterClass::default()
+            });
+            let tags: Vec<u32> = (0..3)
+                .map(|index| crate::carriage::tag_ship(&mut world, key, index).unwrap())
+                .collect();
+            world.fleets[key].capital_ships[1].completed = false;
+            world.fleets[key].capital_ships[2].transit = Some(crate::world::ShipTransit {
+                from: system,
+                to: system,
+                arrival_tick: 9,
+            });
+            for tag in tags {
+                world.fleets[key].fighters.push(crate::world::FighterEntry {
+                    class: fighters,
+                    count: 1,
+                    carrier: tag,
+                });
+            }
+
+            // One usable ship (3) and its one squadron (2).
+            assert_eq!(fleet_strength(&world, key), 3 + 2, "{side:?}");
         }
     }
 
@@ -2932,7 +2976,7 @@ mod tests {
         }
     }
 
-    // FUN_0058ca70.c:25-33 walks the usable flagged fleets' usable ships
+    // FUN_0058ca70.c:26-34 walks the usable flagged fleets' usable ships
     // (mode 1) for the bombarding list (+0x1c) that the batteries fire at,
     // and FUN_004fd6b0.c:23 sums slot +0x1dc over the same (mode 1): an
     // unfinished ship or one on its own leg neither bombards nor draws fire.

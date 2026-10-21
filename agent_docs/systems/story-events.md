@@ -3,13 +3,13 @@ title: "Story Events System"
 description: "Scripted story chains, telemetry twins, and event chaining mechanics"
 category: "agent-docs"
 created: 2026-04-12
-updated: 2026-10-16
+updated: 2026-10-20
 tags: [story-events, event-chains, jabba, final-battle, bounty-hunters, dagobah]
 ---
 
 # Story Events System
 
-`story_events.rs` — Scripted story chains defined via `define_story_events()`.
+`story_events.rs`: Scripted story chains defined via `define_story_events()`.
 
 ## Architecture
 
@@ -33,17 +33,17 @@ Heritage gate (#R4): `0x396` action includes `SetHeritageKnown { character: luke
 `0x397` (gate) → `EVT_BOUNTY_ATTACK` (0x212, **SpawnSpecialForce + CharacterAssignedToFleet**) → `0x398` (carbonite)
 
 5-case palace outcome switch:
-1. `0x384` — Han self-escape (Random 0.10, tick ≥ 135)
-2. `0x383` → `0x39A` → `EVT_HAN_RESCUE` (0x200) — rescue chain
-3. `0x399` — Luke captured (Random 0.20, tick ≥ 115, **before 0x383 in source order**)
-4. `0x385` — Leia captured (Random 0.15, tick ≥ 108)
-5. `EVT_JABBA_CAPTURES_CHEWIE` (0x387) — Chewie captured (Random 0.12, tick ≥ 110)
+1. `0x384`: Han self-escape (Random 0.10, tick ≥ 135)
+2. `0x383` → `0x39A` → `EVT_HAN_RESCUE` (0x200): rescue chain
+3. `0x399`: Luke captured (Random 0.20, tick ≥ 115, **before 0x383 in source order**)
+4. `0x385`: Leia captured (Random 0.15, tick ≥ 108)
+5. `EVT_JABBA_CAPTURES_CHEWIE` (0x387): Chewie captured (Random 0.12, tick ≥ 110)
 
 **Source-order preemption**: 0x399 is defined BEFORE 0x383, so Luke capture can preempt rescue. 0x385 and 0x387 are AFTER 0x383 and cannot preempt rescue.
 
 ### Telemetry Twins
-- `EVT_HAN_RESCUE` (0x200) — fires same-tick as 0x383 via `EventFired` chaining. Silent (no actions).
-- `EVT_JABBA_PRISONERS` (0x231) — consolidator for any palace capture. Three OR-branch variants (one per capture ID) with `EventNotFired` self-guard ensuring exactly one fires.
+- `EVT_HAN_RESCUE` (0x200): fires same-tick as 0x383 via `EventFired` chaining. Silent (no actions).
+- `EVT_JABBA_PRISONERS` (0x231): consolidator for any palace capture. Three OR-branch variants (one per capture ID) with `EventNotFired` self-guard ensuring exactly one fires.
 
 ### Carbonite Countdown → Permanent Freeze
 `EVT_HAN_CARBONITE_FAIL_1` (0x39C, tick 145) → `FAIL_2` (0x39D, 160) → `FAIL_3` (0x39E, 175) → `FAIL_4` (0x39F, 190) → `FAIL_5` (0x3A0, 205) → `EVT_HAN_PERMANENT_FREEZE` (0x39B)
@@ -59,7 +59,7 @@ Since `EventCondition` uses AND logic, OR semantics require multiple event defin
 `EventSystem::advance()` panics if more `EventCondition::Random` conditions are evaluated than rolls provided. Conditions short-circuit on AND failure, so a failed `TickAtLeast` before `Random` means no roll consumed. Tests must provide enough rolls for all Random conditions actually reached.
 
 ### Scope nesting
-The entire palace chain (lines ~394–860) is inside `if let Some(luke) = luke`. Removing Luke from the world removes ALL palace events. Test design must account for this.
+The palace cases sit inside `define_story_events`'s `if let Some(luke) = luke` block, and the rescue `0x383` inside `if let Some(han) = han` behind `luke.is_some()`. Removing Luke from the world removes ALL palace events. Test design must account for this.
 
 ## Constants (events.rs)
 

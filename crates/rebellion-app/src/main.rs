@@ -1406,7 +1406,11 @@ impl StrategicRootKeyBatch {
                 InputRecipient::Window(window) => fleet
                     .filter(|(fleet_window, _)| *fleet_window == window)
                     .map(|(_, renaming)| {
-                        if renaming && rename_edit_owns_key(*event) {
+                        // Escape closes the window when no rename holds it
+                        // (slot +0x30, FUN_004a7390).
+                        if (renaming && rename_edit_owns_key(*event))
+                            || (!renaming && event.key == KeyCode::Escape)
+                        {
                             InputDisposition::Handled
                         } else {
                             InputDisposition::Unhandled
@@ -1887,6 +1891,24 @@ mod panel_toggle_tests {
         batch.report_legacy_children(&mut router, false, Some((fleet, false)));
 
         assert!(router.claim_root(batch.events[0].id));
+        assert!(router.claim_root(batch.events[1].id));
+    }
+
+    #[test]
+    fn a_focused_fleet_keeps_its_escape_which_closes_it() {
+        // fleet-window.md: Escape runs the window's slot +0x30 close
+        // (FUN_004a7390 -> FUN_004ac3a0), so it never reaches the view.
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let fleet = opened_fleet(&mut coordinator);
+        let frame = coordinator.begin_frame();
+        let events = [key(KeyCode::Escape, false), key(KeyCode::R, false)];
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(6, &frame);
+        let batch = StrategicRootKeyBatch::collect_from_raw(6, &mut router, &events);
+
+        batch.report_legacy_children(&mut router, false, Some((fleet, false)));
+
+        assert!(!router.claim_root(batch.events[0].id));
         assert!(router.claim_root(batch.events[1].id));
     }
 
@@ -2908,6 +2930,8 @@ async fn main() {
                     &mut world,
                     &mut mfg_state,
                     &mut troop_transport_state,
+                    &movement_state,
+                    &mut delivery_state,
                     &blockade_state,
                     &text_templates,
                     &mut msg_log,
@@ -3270,6 +3294,9 @@ async fn main() {
             fire_support_events(
                 &mut world,
                 &mut mfg_state,
+                &mut troop_transport_state,
+                &movement_state,
+                &mut delivery_state,
                 &text_templates,
                 &mut msg_log,
                 economy_tick,
@@ -3379,6 +3406,9 @@ async fn main() {
             fire_support_events(
                 &mut world,
                 &mut mfg_state,
+                &mut troop_transport_state,
+                &movement_state,
+                &mut delivery_state,
                 &text_templates,
                 &mut msg_log,
                 economy_tick,
@@ -3484,6 +3514,9 @@ async fn main() {
             fire_support_events(
                 &mut world,
                 &mut mfg_state,
+                &mut troop_transport_state,
+                &movement_state,
+                &mut delivery_state,
                 &text_templates,
                 &mut msg_log,
                 now,
@@ -3853,6 +3886,9 @@ async fn main() {
             fire_support_events(
                 &mut world,
                 &mut mfg_state,
+                &mut troop_transport_state,
+                &movement_state,
+                &mut delivery_state,
                 &text_templates,
                 &mut msg_log,
                 tick_events.last().map_or(0, |e| e.tick),
@@ -4019,6 +4055,8 @@ async fn main() {
                 &mut world,
                 &mut mfg_state,
                 &mut troop_transport_state,
+                &movement_state,
+                &mut delivery_state,
                 &blockade_state,
                 &text_templates,
                 &mut msg_log,
@@ -4097,6 +4135,9 @@ async fn main() {
             fire_support_events(
                 &mut world,
                 &mut mfg_state,
+                &mut troop_transport_state,
+                &movement_state,
+                &mut delivery_state,
                 &text_templates,
                 &mut msg_log,
                 tick_events.last().map_or(0, |e| e.tick),
@@ -5003,6 +5044,39 @@ async fn main() {
                     fire_support_events(
                         &mut world,
                         &mut mfg_state,
+                        &mut troop_transport_state,
+                        &movement_state,
+                        &mut delivery_state,
+                        &text_templates,
+                        &mut msg_log,
+                        clock.tick,
+                        0,
+                    );
+                    match result {
+                        Ok(detail) => dev_channel.note(&detail),
+                        Err(why) => dev_channel.refuse(&why),
+                    }
+                }
+                DevCommand::Embark { ref fleet, count } => {
+                    let result = dev_actions::embark(
+                        &mut world,
+                        &mut troop_transport_state,
+                        &movement_state,
+                        blockade_state.blockaded_systems(),
+                        &ProductRoom::new(&mfg_state, &delivery_state),
+                        player_faction == MissionFaction::Alliance,
+                        fleet,
+                        count,
+                        clock.tick,
+                    );
+                    // Each boarding's holder rerun (FUN_00508660), served
+                    // before a save can follow.
+                    fire_support_events(
+                        &mut world,
+                        &mut mfg_state,
+                        &mut troop_transport_state,
+                        &movement_state,
+                        &mut delivery_state,
                         &text_templates,
                         &mut msg_log,
                         clock.tick,
@@ -5411,10 +5485,7 @@ async fn main() {
                     &mut system_window_state,
                     &mut defenses_window_state,
                     &mut missions_window_state,
-                    &mut |window| {
-                        strategic_windowing
-                            .enqueue(rebellion_windowing::WindowCommand::Activate(window));
-                    },
+                    &mut |command| strategic_windowing.enqueue(command),
                 );
             }
         }
@@ -8155,6 +8226,22 @@ async fn main() {
                         ) => report_destination(action),
                         None => None,
                     };
+                    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                    if let Some(request) = interface_fixture_request {
+                        operation_report_watch.observe_live(
+                            request,
+                            &operation_report_state,
+                            &world,
+                            &movement_state,
+                            &interface_test_fixture::ReportDestinations {
+                                sectors: &sector_window_state,
+                                fleets: &fleet_window_state,
+                                chosen: report_choice.map(|(system, target)| {
+                                    (system, target == FinderTarget::FleetWindow)
+                                }),
+                            },
+                        );
+                    }
                     if let Some((system, target)) = troop_choice
                         .or(personnel_choice)
                         .or(message_choice)
@@ -8370,6 +8457,9 @@ async fn main() {
                         fire_support_events(
                             &mut world,
                             &mut mfg_state,
+                            &mut troop_transport_state,
+                            &movement_state,
+                            &mut delivery_state,
                             &text_templates,
                             &mut msg_log,
                             clock.tick,
@@ -8648,11 +8738,7 @@ async fn main() {
                                 &mut system_window_state,
                                 &mut defenses_window_state,
                                 &mut missions_window_state,
-                                &mut |window| {
-                                    strategic_windowing.enqueue(
-                                        rebellion_windowing::WindowCommand::Activate(window),
-                                    );
-                                },
+                                &mut |command| strategic_windowing.enqueue(command),
                             );
                             legacy_keyboard_handled = true;
                         }
@@ -9407,7 +9493,6 @@ async fn main() {
                         &fleet_window_state,
                         &defenses_window_state,
                         &missions_window_state,
-                        &strategic_windowing.begin_frame(),
                     );
                     let active_mods = mod_runtime.enabled_mod_list();
                     // A `Save:` names its file; it opens no slot and logs nothing.
@@ -9673,7 +9758,15 @@ async fn main() {
                             Ok(runs) if runs.iter().all(|strike| strike.report.is_none()) => {
                                 format!("idle runs={}", runs.len())
                             }
-                            Ok(runs) => format!("issued runs={}", runs.len()),
+                            Ok(runs) => format!(
+                                "issued runs={} hits={}",
+                                runs.len(),
+                                runs.iter()
+                                    .filter_map(|strike| strike.report.as_ref())
+                                    .map(|report| report.hits.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(",")
+                            ),
                             Err(refusal) => format!("refused reason={refusal:?}"),
                         }
                     );
@@ -9755,6 +9848,9 @@ async fn main() {
                     fire_support_events(
                         &mut world,
                         &mut mfg_state,
+                        &mut troop_transport_state,
+                        &movement_state,
+                        &mut delivery_state,
                         &text_templates,
                         &mut msg_log,
                         clock.tick,
@@ -10205,6 +10301,7 @@ async fn main() {
                 &mut missions_window_state,
                 &mut fleet_window_state,
                 &mut strategic_windowing,
+                &mut fleet_legacy_bridge_serial,
             );
             let children = galaxy_children(
                 &sector_window_state,
@@ -10217,7 +10314,7 @@ async fn main() {
             .into_iter()
             .filter(|(_, child)| !hidden.contains(child))
             .collect();
-            galaxy_focus = GalaxyFocusState::after_load(children);
+            galaxy_focus = focus_after_load(children, &mut strategic_windowing);
         }
         next_frame().await;
     }
@@ -11002,7 +11099,7 @@ fn saved_child(
 /// start, played on to day 8).
 #[expect(
     clippy::too_many_arguments,
-    reason = "The interface reads every galaxy window family and the frame's routing."
+    reason = "The interface reads every galaxy window family."
 )]
 fn saved_interface(
     world: &GameWorld,
@@ -11012,7 +11109,6 @@ fn saved_interface(
     fleets: &FleetWindowState,
     defenses: &DefensesWindowState,
     missions: &MissionsWindowState,
-    snapshot: &rebellion_windowing::RoutingSnapshot,
 ) -> rebellion_data::save::SavedInterface {
     let mut shown = sectors.saved_windows(world);
     for (serial, window) in systems
@@ -11020,7 +11116,7 @@ fn saved_interface(
         .into_iter()
         .chain(defenses.saved_windows(world))
         .chain(missions.saved_windows(world))
-        .chain(fleets.saved_windows(world, snapshot))
+        .chain(fleets.saved_windows(world, |id| systems.rail_holds_fleet(id)))
     {
         let hidden =
             saved_child(world, fleets, &window).is_some_and(|child| cockpit.gid_ui.hides(child));
@@ -11114,8 +11210,10 @@ fn restore_interface(
 /// (slot `+0x08`, `FUN_00428b40`), and the shown windows take the saved
 /// z-order again, each above the last, hidden and shown alike, since the
 /// Fleet windows committed last. Sector windows stay at the bottom
-/// (`FUN_00440f80.c:31-35`). Returns the Fleet windows going to the rail,
-/// which take no focus.
+/// (`FUN_00440f80.c:31-35`). A shown Fleet window brings the Fleet windows'
+/// layer forward (`fleet_front`, the serial `galaxy_front` reads) at its
+/// place in that order. Returns the Fleet windows going to the rail, which
+/// take no focus.
 fn finish_interface_restore(
     order: &[rebellion_data::save::SavedWindow],
     world: &GameWorld,
@@ -11124,6 +11222,7 @@ fn finish_interface_restore(
     missions: &mut MissionsWindowState,
     fleets: &mut FleetWindowState,
     strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    fleet_front: &mut u64,
 ) -> Vec<GalaxyChild> {
     let mut hidden = Vec::new();
     let mut slot = 0;
@@ -11140,7 +11239,10 @@ fn finish_interface_restore(
                 fleets.note_activation(id);
                 hidden.push(GalaxyChild::Fleet(id));
             }
-            Some(GalaxyChild::Fleet(id)) => fleets.note_activation(id),
+            Some(GalaxyChild::Fleet(id)) => {
+                *fleet_front = FleetWindowState::next_legacy_bridge_serial();
+                fleets.note_activation(id);
+            }
             Some(child) if !window.shown => {
                 systems.lift_hidden(child);
             }
@@ -11155,11 +11257,36 @@ fn finish_interface_restore(
             }
             Some(GalaxyChild::Sector(_)) | None => {}
         }
-        if !window.shown && !matches!(window.kind, rebellion_data::save::SavedWindowKind::Sector { .. }) {
+        if !window.shown
+            && !matches!(
+                window.kind,
+                rebellion_data::save::SavedWindowKind::Sector { .. }
+            )
+        {
             slot += 1;
         }
     }
     hidden
+}
+
+/// The focus a load leaves: the top restored window that is shown
+/// (`GalaxyFocusState::after_load`). A Fleet window there is the window
+/// manager's, so the manager activates it too, which gives it the keyboard;
+/// any other focus leaves the keyboard with the galaxy view's root, which
+/// passes it to its own windows, a Fleet window opened by the load holding
+/// it no longer.
+fn focus_after_load(
+    children: Vec<(u64, GalaxyChild)>,
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+) -> GalaxyFocusState {
+    let focus = GalaxyFocusState::after_load(children);
+    strategic_windowing.enqueue(match focus.focus {
+        rebellion_render::GalaxyFocus::Child(GalaxyChild::Fleet(id)) => {
+            rebellion_windowing::WindowCommand::Activate(id)
+        }
+        _ => rebellion_windowing::WindowCommand::FocusRoot,
+    });
+    focus
 }
 
 /// The GID mode a loaded game shows: the save's (view `+0xc8`), which
@@ -12721,12 +12848,18 @@ fn evacuation_losses_messages(
 /// Write the blockade events and show their messages: a blockade started
 /// or lifted, and the regiments a run destroyed aboard a departing fleet;
 /// then fire the support shifts posted on `tick`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The events, the world, the states a holder change moves, the blockade and the message templates and log."
+)]
 fn show_blockade_events(
     tick: u64,
     events: &[rebellion_core::blockade::BlockadeEvent],
     world: &mut GameWorld,
     manufacturing: &mut ManufacturingState,
     transport: &mut TroopTransportState,
+    movement: &MovementState,
+    deliveries: &mut DeliveryState,
     blockade: &BlockadeState,
     templates: &rebellion_data::text_templates::TextTemplates,
     log: &mut MessageLog,
@@ -12784,7 +12917,17 @@ fn show_blockade_events(
             log.push(message);
         }
     }
-    fire_support_events(world, manufacturing, templates, log, tick, 0);
+    fire_support_events(
+        world,
+        manufacturing,
+        transport,
+        movement,
+        deliveries,
+        templates,
+        log,
+        tick,
+        0,
+    );
 }
 
 /// A message movie in the 640 by 480 movie window, with its caption field
@@ -13270,9 +13413,19 @@ fn control_change_messages(
 /// Messages of each holder change without regiments
 /// ([`control_change_messages`]). The day's own work runs
 /// in its first step (0); a player's order in the scheduler's next step.
+/// Each holder change's autoscrap requests for what is bound for the
+/// system follow (event `0x307`,
+/// `rebellion_core::death_star::serve_holder_requests`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Phase 5 reads the world, the states a holder change moves, the message templates and log, and the step."
+)]
 fn fire_support_events(
     world: &mut GameWorld,
     manufacturing: &mut ManufacturingState,
+    transport: &mut TroopTransportState,
+    movement: &MovementState,
+    deliveries: &mut DeliveryState,
     templates: &rebellion_data::text_templates::TextTemplates,
     log: &mut MessageLog,
     tick: u64,
@@ -13282,6 +13435,13 @@ fn fire_support_events(
         world,
         manufacturing,
         rebellion_core::support_shift::step(tick, step),
+    );
+    rebellion_core::death_star::serve_holder_requests(
+        world,
+        movement,
+        transport,
+        manufacturing,
+        deliveries,
     );
     rebellion_data::telemetry::native_support_shifts(tick, world, &fired);
     for change in &fired.controls {
@@ -16267,7 +16427,6 @@ mod interface_restore_tests {
                 &self.fleets,
                 &self.defenses,
                 &self.missions,
-                &strategic_windowing::StrategicWindowing::new().begin_frame(),
             )
         }
     }
@@ -16440,6 +16599,7 @@ mod interface_restore_tests {
                 &mut restored.missions,
                 &mut restored.fleets,
                 &mut strategic,
+                &mut 0,
             );
             assert!(hidden.is_empty());
 
@@ -16479,6 +16639,185 @@ mod interface_restore_tests {
             assert_eq!(fleets.commit_open(prepared, &commit.transition), Some(id));
             assert!(strategic.acknowledge_fleet_publication(id));
             fleets.note_activation(id);
+        }
+    }
+
+    #[test]
+    fn a_fleet_window_saved_on_top_comes_back_in_front_with_the_keyboard() {
+        // FUN_00441190 makes the saved windows bottom first, each above the
+        // last, and the top shown one takes the focus (Wine runs r, t1, t3,
+        // u and w1, empire-fleet-to-yaga-minor at day 38). A Fleet window
+        // saved over a System window paints over it again, and holds the
+        // keyboard; saved under it, the System window stays in front.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            for fleet_on_top in [true, false] {
+                let (world, systems) = world();
+                let fleet = SavedWindow {
+                    kind: SavedWindowKind::Fleet {
+                        system: DatId::new(0x9000_0001),
+                        tab: 0x66,
+                    },
+                    position: (130, 60),
+                    shown: true,
+                };
+                let system = SavedWindow {
+                    kind: SavedWindowKind::System {
+                        system: DatId::new(0x9000_0002),
+                    },
+                    position: (120, 80),
+                    shown: true,
+                };
+                let order = if fleet_on_top {
+                    [system, fleet]
+                } else {
+                    [fleet, system]
+                };
+                let cockpit = rebellion_render::CockpitState::new(faction);
+                let mut restored = Windows::new();
+                let mut strategic = strategic_windowing::StrategicWindowing::new();
+                restore_interface(
+                    &order,
+                    &world,
+                    &fog(faction),
+                    &MissionState::new(),
+                    faction,
+                    cockpit.layout_for(1280.0, 960.0),
+                    RestoredWindows {
+                        sectors: &mut restored.sectors,
+                        systems: &mut restored.systems,
+                        fleets: &restored.fleets,
+                        defenses: &mut restored.defenses,
+                        missions: &mut restored.missions,
+                    },
+                    &mut strategic,
+                );
+                commit_fleets(&mut strategic, &mut restored.fleets);
+                // The commit brings the Fleet window forward, as the frame's
+                // end does.
+                let mut fleet_front = FleetWindowState::next_legacy_bridge_serial();
+                let hidden = finish_interface_restore(
+                    &order,
+                    &world,
+                    &mut restored.systems,
+                    &mut restored.defenses,
+                    &mut restored.missions,
+                    &mut restored.fleets,
+                    &mut strategic,
+                    &mut fleet_front,
+                );
+                assert!(hidden.is_empty());
+                let front = galaxy_front(
+                    &restored.systems,
+                    fleet_front,
+                    &restored.defenses,
+                    &restored.missions,
+                );
+                let id = restored.fleets.window_id(systems[0]).unwrap();
+                let focus = focus_after_load(
+                    restored.children_in(&strategic.begin_frame()),
+                    &mut strategic,
+                );
+                let commands: Vec<_> = strategic
+                    .apply_pending()
+                    .into_iter()
+                    .map(|applied| applied.command)
+                    .collect();
+                // The keyboard goes where the focus is: the Fleet window, or
+                // the galaxy view's own windows through the root.
+                let keyboard = strategic.begin_frame().keyboard_route().target;
+                if fleet_on_top {
+                    assert_eq!(front, GalaxyFront::Fleet, "{faction:?}");
+                    assert_eq!(focus.focus, GalaxyFocus::Child(GalaxyChild::Fleet(id)));
+                    assert_eq!(commands, [rebellion_windowing::WindowCommand::Activate(id)]);
+                    assert!(
+                        matches!(keyboard, rebellion_windowing::RouteTarget::Window(target) if target.window == id),
+                        "{faction:?}"
+                    );
+                } else {
+                    assert_eq!(front, GalaxyFront::System, "{faction:?}");
+                    assert_eq!(
+                        focus.focus,
+                        GalaxyFocus::Child(GalaxyChild::System(systems[1]))
+                    );
+                    assert_eq!(commands, [rebellion_windowing::WindowCommand::FocusRoot]);
+                    assert_eq!(
+                        keyboard,
+                        rebellion_windowing::RouteTarget::StrategicRoot,
+                        "{faction:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_save_from_game_options_keeps_a_shown_fleet_window_shown_and_a_minimized_one_hidden() {
+        // FUN_00440ea0 walks the galaxy view's child windows from the
+        // bottom up and writes each one's shown flag (+0x110): the Game
+        // Options window hides none of them, so a Fleet window open under it
+        // saves shown and one on the rail saves hidden. Game Options
+        // suspends the strategic scene, so its frame paints no Fleet window.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (world, systems) = world();
+            let fleet = |system, shown| SavedWindow {
+                kind: SavedWindowKind::Fleet {
+                    system: DatId::new(system),
+                    tab: 0x67,
+                },
+                position: (130, 60),
+                shown,
+            };
+            let order = [fleet(0x9000_0001, true), fleet(0x9000_0002, false)];
+            let cockpit = rebellion_render::CockpitState::new(faction);
+            let mut windows = Windows::new();
+            let mut strategic = strategic_windowing::StrategicWindowing::new();
+            restore_interface(
+                &order,
+                &world,
+                &fog(faction),
+                &MissionState::new(),
+                faction,
+                cockpit.layout_for(1280.0, 960.0),
+                RestoredWindows {
+                    sectors: &mut windows.sectors,
+                    systems: &mut windows.systems,
+                    fleets: &windows.fleets,
+                    defenses: &mut windows.defenses,
+                    missions: &mut windows.missions,
+                },
+                &mut strategic,
+            );
+            commit_fleets(&mut strategic, &mut windows.fleets);
+            finish_interface_restore(
+                &order,
+                &world,
+                &mut windows.systems,
+                &mut windows.defenses,
+                &mut windows.missions,
+                &mut windows.fleets,
+                &mut strategic,
+                &mut 0,
+            );
+            for applied in strategic.apply_pending() {
+                if let Some((window, system, position)) = applied.minimized_fleet {
+                    windows
+                        .systems
+                        .minimize_fleet_window(window, system, position);
+                }
+            }
+            assert!(windows.fleets.window_id(systems[0]).is_some(), "{faction:?}");
+
+            strategic.enter_scene(strategic_windowing::WindowScene::Suspended);
+            let saved = saved_interface(
+                &world,
+                &cockpit,
+                &windows.sectors,
+                &windows.systems,
+                &windows.fleets,
+                &windows.defenses,
+                &windows.missions,
+            );
+            assert_eq!(kinds(&saved), order.map(|window| (window.kind, window.shown)), "{faction:?}");
         }
     }
 
@@ -16571,6 +16910,7 @@ mod interface_restore_tests {
                 &mut restored.missions,
                 &mut restored.fleets,
                 &mut strategic,
+                &mut 0,
             );
             let id = |system| restored.fleets.window_id(system).unwrap();
             let (first, third, hidden_fleet) = (id(systems[0]), id(systems[2]), id(systems[3]));
@@ -16644,7 +16984,6 @@ mod interface_restore_tests {
                 &restored.fleets,
                 &restored.defenses,
                 &restored.missions,
-                &strategic.begin_frame(),
             );
             assert_eq!(again.windows, order, "{faction:?}");
         }
@@ -16996,6 +17335,8 @@ mod evacuation_losses_tests {
                 &mut world,
                 &mut ManufacturingState::new(),
                 &mut transport,
+                &MovementState::new(),
+                &mut DeliveryState::new(),
                 &BlockadeState::new(),
                 &templates(),
                 &mut log,

@@ -649,6 +649,184 @@ fn a_side_withdrawal_counts_down_its_transit_to_the_retreat_system() {
     }
 }
 
+// FUN_00516730.c:93-114 runs the retreat search for one object: the first of
+// the side's usable fleets (`FUN_004ffef0(system, 1, side)`) that holds a
+// usable ship able to travel (`FUN_00502e30(fleet, 1, side)`, slot `+0x34(0)`).
+// Its Death Stars are the room the search asks of each candidate
+// (`FUN_005513a0.c:68,77`), not the side's sum. A fleet listed first that
+// holds only a ship on its own leg is skipped, and so is one whose usable
+// ship cannot travel even though a travelling ship of it could.
+#[test]
+fn the_retreat_search_asks_room_for_the_first_mobile_fleets_death_stars_only() {
+    use crate::world::{CapitalShipClass, ControlKind, Fleet, ShipInstance, ShipTransit, System};
+
+    for is_alliance in [true, false] {
+        let own = crate::dat::Faction::of_alliance(is_alliance);
+        let theirs = crate::dat::Faction::of_alliance(!is_alliance);
+        let mut world = GameWorld::default();
+        let battle = world.systems.insert(System::default());
+        let held = |x, side| System {
+            x,
+            control: ControlKind::Controlled(side),
+            ..System::default()
+        };
+        // The nearer own system already holds a Death Star, so a retreat
+        // carrying one is refused there (FUN_00507ab0). The other side's
+        // nearest system is farther still, so each side's countdown shows
+        // which side it was seated for.
+        let full = world.systems.insert(held(30, own));
+        let roomy = world.systems.insert(held(500, own));
+        let theirs_far = world.systems.insert(held(900, theirs));
+        let class = |family, alliance: bool, hyperdrive| CapitalShipClass {
+            family,
+            is_alliance: alliance,
+            is_empire: !alliance,
+            hull: 100,
+            hyperdrive,
+            ..CapitalShipClass::default()
+        };
+        let plain = world.capital_ship_classes.insert(class(0x14, is_alliance, 0));
+        let station = world.capital_ship_classes.insert(class(0x18, is_alliance, 0));
+        // A ship whose only drive is knocked out cannot travel.
+        let stuck_class = class(0x14, is_alliance, 1);
+        let stuck = world.capital_ship_classes.insert(stuck_class.clone());
+        let enemy_class = world.capital_ship_classes.insert(class(0x14, !is_alliance, 0));
+        let mut grounded = ShipInstance::new(stuck, 100, is_alliance);
+        grounded.set_hyperdrive_damage_hits(&stuck_class, 1);
+        let on_a_leg = |class| {
+            let mut ship = ShipInstance::new(class, 100, is_alliance);
+            ship.transit = Some(ShipTransit {
+                from: battle,
+                to: full,
+                arrival_tick: 9,
+            });
+            ship
+        };
+        let mut fleet = |at, ships: Vec<ShipInstance>, alliance: bool| {
+            let key = world.fleets.insert(Fleet {
+                location: at,
+                capital_ships: ships,
+                is_alliance: alliance,
+                ..Fleet::default()
+            });
+            world.systems[at].fleets.push(key);
+            key
+        };
+        // Listed first: a Death Star on its own leg (the fleet is not
+        // usable), then a fleet whose usable ship cannot travel beside a
+        // Death Star on its own leg, then the plain fleet the search takes,
+        // then a Death Star fleet it never asks.
+        fleet(battle, vec![on_a_leg(station)], is_alliance);
+        fleet(battle, vec![grounded, on_a_leg(station)], is_alliance);
+        let plain_fleet = fleet(battle, vec![ShipInstance::new(plain, 100, is_alliance)], is_alliance);
+        fleet(battle, vec![ShipInstance::new(station, 100, is_alliance)], is_alliance);
+        let enemy = fleet(battle, vec![ShipInstance::new(enemy_class, 100, !is_alliance)], !is_alliance);
+        let holder = ShipInstance::new(station, 100, is_alliance);
+        fleet(full, vec![holder], is_alliance);
+        let (attacker, defender) = if is_alliance {
+            (plain_fleet, enemy)
+        } else {
+            (enemy, plain_fleet)
+        };
+
+        let mut session = BattleSession::new(&world, battle, attacker, defender, true, 1, 0x5eed);
+        apply::seat_morale(
+            &mut session,
+            &world,
+            &crate::troop_transport::TroopTransportState::default(),
+            &crate::movement::MovementState::new(),
+            Some(true),
+        );
+
+        let countdown = |to| {
+            crate::movement::transit_ticks_between(
+                &world,
+                (world.systems[battle].x, world.systems[battle].y),
+                (world.systems[to].x, world.systems[to].y),
+                crate::movement::default_speed(&world),
+            ) as f32
+                * 0.4
+                * 1000.0
+        };
+        let index = usize::from(!is_alliance);
+        assert_eq!(
+            session.morale.withdrawal[index].countdown_milliseconds,
+            countdown(full),
+            "{own:?}: the plain fleet carries no Death Star, so the full system takes it"
+        );
+        assert_eq!(
+            session.morale.withdrawal[1 - index].countdown_milliseconds,
+            countdown(theirs_far),
+            "{theirs:?}: the other side's own system"
+        );
+        assert_ne!(countdown(full), countdown(roomy));
+    }
+}
+
+// FUN_00599c90.c:150-162 seats each side's withdrawal threshold: the side a
+// person commands keeps 0.0 and a computer side takes the battle evaluator's
+// (`FUN_004e6110`). Which side is the person's follows `human_is_attacker`.
+#[test]
+fn the_human_side_keeps_a_zero_threshold_and_a_computer_side_the_evaluators() {
+    use crate::world::{CapitalShipClass, ControlKind, Fleet, ShipInstance, System};
+
+    for is_alliance in [true, false] {
+        let mut world = GameWorld::default();
+        let battle = world.systems.insert(System {
+            control: ControlKind::Controlled(crate::dat::Faction::of_alliance(!is_alliance)),
+            ..System::default()
+        });
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            family: 0x14,
+            hull: 100,
+            ..CapitalShipClass::default()
+        });
+        let mut fleet = |alliance: bool| {
+            let key = world.fleets.insert(Fleet {
+                location: battle,
+                capital_ships: vec![ShipInstance::new(class, 100, alliance)],
+                is_alliance: alliance,
+                ..Fleet::default()
+            });
+            world.systems[battle].fleets.push(key);
+            key
+        };
+        let alliance = fleet(true);
+        let empire = fleet(false);
+        let transport = crate::troop_transport::TroopTransportState::default();
+        let movement = crate::movement::MovementState::new();
+        let evaluator = |faction| {
+            crate::ai_records::battle_withdraw_threshold(&world, &movement, &transport, battle, faction)
+        };
+        assert!(evaluator(crate::dat::Faction::Alliance) > 0.0);
+        let seat = |human| {
+            let mut session = BattleSession::new(&world, battle, alliance, empire, true, 1, 0x5eed);
+            apply::seat_morale(&mut session, &world, &transport, &movement, human);
+            session.morale.threshold
+        };
+
+        // The Alliance attacks (side 0), the Empire defends (side 1).
+        assert_eq!(
+            seat(Some(true)),
+            [0.0, evaluator(crate::dat::Faction::Empire)],
+            "{is_alliance}"
+        );
+        assert_eq!(
+            seat(Some(false)),
+            [evaluator(crate::dat::Faction::Alliance), 0.0],
+            "{is_alliance}"
+        );
+        assert_eq!(
+            seat(None),
+            [
+                evaluator(crate::dat::Faction::Alliance),
+                evaluator(crate::dat::Faction::Empire)
+            ],
+            "{is_alliance}"
+        );
+    }
+}
+
 // FUN_005a6b40 on a unit's first update in state 7 (its jump time +0x50
 // still 0.0, _DAT_0066c250) plays effect 0x1d for a squadron (vtable +0x20,
 // FUN_0040f340, is 1) or 0x1f for a capital ship (FUN_006158b0, 0) through
@@ -1318,5 +1496,119 @@ fn an_even_stalemate_takes_both_sides_away() {
         assert!(session.advance_stalemate_watch(1.0));
         assert_eq!(session.winner, Some(CombatWinner::Draw));
         assert!(session.fighters.iter().all(|fighter| fighter.squad_count == 0));
+    }
+}
+
+// FUN_005ad530.c:32-60: a fighter group whose first squadron has no
+// hyperdrive rating is ordered to Recover (2), and with no carrier of its
+// side it has nowhere to land (FUN_005cf980). FUN_005c8780.c:72-129: with
+// no unit of the side holding a working hyperdrive, state 3 gives way to
+// state 4 at once and 0x2f (FUN_005b2720) clears the squadrons' orders, so
+// they fight on. No unit of the side reached state 9, so it has not
+// withdrawn (FUN_005a9ec0.c:245-273) and the battle goes on.
+#[test]
+fn a_fighters_only_side_without_a_hyperdrive_withdraws_nowhere_and_fights_on() {
+    for is_alliance in [true, false] {
+        let side = usize::from(!is_alliance);
+        let mut session = battle(
+            vec![ship(!is_alliance, 0, false, line(!is_alliance))],
+            vec![test_fighter(0x1c00_0001, is_alliance)],
+        );
+        session.begin_side_withdrawal(is_alliance);
+        assert_eq!(
+            session.fighters[0].order,
+            TacticalOrder::Recover,
+            "{is_alliance}"
+        );
+        assert_eq!(session.fighters[0].recovery_target, None, "no carrier");
+        steps(&mut session, 30_000.0);
+        assert_eq!(
+            session.morale.withdrawal[side].state,
+            TacticalWithdrawalState::Holding
+        );
+        steps(&mut session, 250.0);
+        assert_eq!(
+            session.morale.withdrawal[side].state,
+            TacticalWithdrawalState::Over,
+            "{is_alliance}"
+        );
+        assert_eq!(session.fighters[0].order, TacticalOrder::None, "0x2f");
+        assert!(session.fighters[0].alive);
+        assert!(!session.morale.jumped[side]);
+        assert!(!session.side_withdrew(is_alliance), "{is_alliance}");
+        assert!(!session.finish_if_decided());
+    }
+}
+
+// FUN_005c7e80.c:10-39, through FUN_005a8a90 for the Withdraw button: the
+// side's own retreat system (+0x80) and state 0, no gravity well across
+// (FUN_005c7e40 on the other side's capital ships), and a squadron (+0x64)
+// or capital ship (+0x58) of the side whose hyperdrive works (FUN_005b1b70),
+// or its Empire station.
+#[test]
+fn a_side_may_withdraw_only_by_its_own_way_out_and_permission() {
+    for is_attacker in [true, false] {
+        let side = usize::from(!is_attacker);
+        let permitted = |mut session: BattleSession| {
+            session.morale.retreat_permitted[side] = true;
+            session
+        };
+        // A squadron with a hyperdrive carries the side out.
+        let squadrons = |of_side: bool| {
+            let mut session =
+                permitted(battle(Vec::new(), vec![test_fighter(0x1c00_0001, of_side)]));
+            session.morale.hyperdrive_squadrons = vec![0];
+            session
+        };
+        assert!(
+            squadrons(is_attacker).may_withdraw(is_attacker),
+            "{is_attacker}"
+        );
+        assert!(
+            !squadrons(!is_attacker).may_withdraw(is_attacker),
+            "the other side's"
+        );
+        let mut dead = squadrons(is_attacker);
+        dead.fighters[0].alive = false;
+        assert!(!dead.may_withdraw(is_attacker));
+        let mut emptied = squadrons(is_attacker);
+        emptied.fighters[0].squad_count = 0;
+        assert!(!emptied.may_withdraw(is_attacker));
+        let mut grounded = squadrons(is_attacker);
+        grounded.morale.hyperdrive_squadrons.clear();
+        assert!(!grounded.may_withdraw(is_attacker));
+
+        // A capital ship whose hyperdrive works, of its own side.
+        let ships = |hyperdrive: bool, of_side: bool| {
+            permitted(battle(vec![ship(of_side, 0, hyperdrive, 0.0)], Vec::new()))
+        };
+        assert!(ships(true, is_attacker).may_withdraw(is_attacker));
+        assert!(!ships(false, is_attacker).may_withdraw(is_attacker));
+        assert!(!ships(true, !is_attacker).may_withdraw(is_attacker));
+        let mut wrecked = ships(true, is_attacker);
+        wrecked.ships[0].subsystem_condition.hyperdrive = 0;
+        assert!(!wrecked.may_withdraw(is_attacker));
+        let mut lost = ships(true, is_attacker);
+        lost.ships[0].alive = false;
+        assert!(!lost.may_withdraw(is_attacker));
+
+        // Its own permission, and only while its controller is in state 0.
+        let mut other_permitted = squadrons(is_attacker);
+        other_permitted.morale.retreat_permitted = [false; 2];
+        other_permitted.morale.retreat_permitted[1 - side] = true;
+        assert!(!other_permitted.may_withdraw(is_attacker), "{is_attacker}");
+        let mut withdrawing = squadrons(is_attacker);
+        withdrawing.begin_side_withdrawal(is_attacker);
+        assert!(!withdrawing.may_withdraw(is_attacker));
+
+        // A gravity well across holds it; its own side's does not.
+        for (projector_side, holds) in [(!is_attacker, true), (is_attacker, false)] {
+            let mut session = squadrons(is_attacker);
+            session.ships.push(ship(projector_side, 0, false, 0.0));
+            session.morale.gravity_wells = vec![0];
+            assert_eq!(!session.may_withdraw(is_attacker), holds, "{is_attacker}");
+            session.ships[0].alive = false;
+            assert!(session.may_withdraw(is_attacker));
+        }
     }
 }

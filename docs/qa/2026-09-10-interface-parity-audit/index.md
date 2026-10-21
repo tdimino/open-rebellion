@@ -10,7 +10,7 @@ tags: [qa, interface, parity, bitmap, screenshots, rebellion, supremacy]
 # Original Interface Parity Audit
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 1. Partial: 15. Failing: 27. Blocked: 0. Strictly accepted cells: 13/627.
+Required interface families: 43. Complete: 2. Partial: 15. Failing: 26. Blocked: 0. Strictly accepted cells: 28/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
@@ -23,8 +23,8 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 | Bounded practical space-battle launcher implementation | complete at P58-B22 |
 | Strict tactical acceptance | 0 of 106 cells |
 | Required surface families | 43 |
-| Family status | 0 complete, 15 partial, 28 fail |
-| Strictly accepted required cells | 0 of 627 |
+| Family status | 2 complete, 15 partial, 26 fail |
+| Strictly accepted required cells | 28 of 627 |
 
 The practical percentage is an implementation-planning estimate. The strict
 cell count remains the release authority because each cell still needs its

@@ -6,10 +6,11 @@
   "version": "151.0.7922.34",
   "platform": "mac-arm64",
   "executable_candidates": [
-    "/Users/tomdimino/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+    "/path/to/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
   ],
   "launch_arguments": [
     "--mute-audio",
+    "--disable-audio-output",
     "--disable-background-networking",
     "--disable-component-update",
     "--disable-default-apps",

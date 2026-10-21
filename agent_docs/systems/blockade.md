@@ -9,13 +9,13 @@ tags: [blockade, manufacturing, fleet, simulation]
 
 # Blockade System
 
-`blockade.rs` — Fleet-presence blockade halts manufacturing, shifts the blockader's support every 30 days, and makes regiments carried into a blockaded system roll to survive leaving it.
+`blockade.rs`: Fleet-presence blockade halts manufacturing, shifts the blockader's support every 30 days, and makes regiments carried into a blockaded system roll to survive leaving it.
 
 ## Types
 
 | Type | Purpose |
 |------|---------|
-| `BlockadeState` | Blockaded systems, the loss counters (`FUN_00508c60`) and the battle bits (`+0x88` `0x1000`, `FUN_0050a900`), saved; plus each embarked regiment's orbit and withdraw percent (not saved) |
+| `BlockadeState` | Blockaded systems, the loss counters (`FUN_00508c60`) and the battle bits (`+0x88` `0x1000`, `FUN_0050a900`), and each embarked regiment's orbit and withdraw percent, all saved |
 | `RunningRegiment` | A regiment whose fleet just left a system with withdraw percent below 100 |
 | `SupportShiftTimer` | Timer `0x386` of one blockaded system: its minimum delay and due tick (saved) |
 | `BlockadeEvent` | BlockadeStarted / BlockadeEnded / TroopDestroyed / SupportShift |
@@ -39,7 +39,7 @@ Each change of a battle bit sweeps the system's adrift characters
 ## Blockade Condition
 
 A system is blockaded when:
-- At least one **hostile** fleet is present (faction opposite to `controlling_faction`)
+- At least one **hostile** fleet is present (the side opposite the system's holder, `System::control`)
 - **Zero** defending fleets present
 
 A fleet is present only while it is usable (`Fleet::usable`, `FUN_004fe540`):
@@ -68,6 +68,6 @@ Garrisons are never destroyed by a blockade. A regiment added to a blockaded sys
 ## Source
 
 - Ghidra RE: `economy-systems.md §4`
-- `FUN_0050e820` step 8 — fleet active check gates manufacturing
+- `FUN_0050e820` step 8: fleet active check gates manufacturing
 - Event `0x14e` (SystemBlockadeNotif), Event `0x340` (TroopRegDestroyedRunningBlockade)
-- `ghidra/notes/blockade-troop-withdrawal.md` — withdraw percent and the running-blockade roll
+- `ghidra/notes/blockade-troop-withdrawal.md`: withdraw percent and the running-blockade roll

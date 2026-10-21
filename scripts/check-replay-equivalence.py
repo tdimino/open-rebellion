@@ -8,15 +8,15 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-WEB = ROOT / "web"
 ARTIFACT = ROOT / "crates/rebellion-data/tests/fixtures/replay_seed42_v1.json"
-DEFAULT_PORT = 18082
 EXPECTED_REQUEST_SUFFIXES = ("/", "/gl.js", "/open-rebellion.wasm", "/data/runtime.orpk")
+# Ordinary startup also plays the intro movies 0x65 and 0x66 before the menu.
+INTRO_MOVIES = ("/data/movies/000.webm", "/data/movies/001.webm")
+EXPECTED_NORMAL_REQUESTS = (*EXPECTED_REQUEST_SUFFIXES, *INTRO_MOVIES)
 EQUIVALENCE_FIELDS = (
     "schema_version",
     "fixture_id",
@@ -83,107 +83,41 @@ def native_report() -> dict:
 
 
 def browser_report(
-    port: int,
     *,
-    scenario: str,
     query: str,
     expect_report: bool,
     abort_runtime_pack: bool = False,
+    dismiss_intro: bool = False,
 ) -> dict:
-    page_name = f"open-rebellion-replay-{scenario}-{os.getpid()}"
-    base = ["agent-browser", "--session", page_name, "--json"]
-
-    def agent(*command: str, timeout: int = 35) -> dict:
-        result = subprocess.run(
-            [*base, *command],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
+    """One page load of web/ in the interface-parity gates' pinned, muted Chrome."""
+    command = [
+        "node",
+        str(ROOT / "tools/interface-parity/replay-browser.mjs"),
+        query,
+    ]
+    if expect_report:
+        command.append("--expect-report")
+    if abort_runtime_pack:
+        command.append("--abort-runtime-pack")
+    if dismiss_intro:
+        command.append("--dismiss-intro")
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"browser leg failed:\n{result.stderr}\n{result.stdout}")
+    browser = parse_json_line(result.stdout)
+    if expect_report and browser.get("report") is None:
+        raise RuntimeError(
+            "browser replay gate did not report within 20 seconds: "
+            f"{json.dumps(browser.get('page_state'), sort_keys=True)}"
         )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"browser command failed ({' '.join(command)}):\n"
-                f"{result.stderr}\n{result.stdout}"
-            )
-        payload = parse_json_line(result.stdout)
-        if not payload.get("success"):
-            raise RuntimeError(f"browser command reported failure: {payload}")
-        return payload.get("data", {})
-
-    try:
-        if abort_runtime_pack:
-            agent("network", "route", "**/data/runtime.orpk", "--abort")
-        agent(
-            "open",
-            f"http://127.0.0.1:{port}/{query}",
-        )
-        attempts = 200 if expect_report else 30
-        for _ in range(attempts):
-            # Some agent-browser Chrome builds instantiate WASM but suppress
-            # requestAnimationFrame in headless sessions. Drive the exported
-            # macroquad frame only until replay output or the menu is ready.
-            evaluated = agent(
-                "eval",
-                "(() => {"
-                "const report = window.__openRebellionReplay || null;"
-                "const menuActive = document.getElementById('main-menu-semantics')?.dataset.active || null;"
-                "let framePumped = false;"
-                "if (report === null && menuActive !== 'true' "
-                "&& typeof wasm_exports !== 'undefined' "
-                "&& typeof wasm_exports.frame === 'function') {"
-                "wasm_exports.frame();"
-                "framePumped = true;"
-                "}"
-                "return JSON.stringify({"
-                "report: window.__openRebellionReplay || null,"
-                "menuActive: document.getElementById('main-menu-semantics')?.dataset.active || null,"
-                "canvasWidth: document.getElementById('glcanvas')?.width || 0,"
-                "canvasHeight: document.getElementById('glcanvas')?.height || 0,"
-                "framePumped"
-                "});"
-                "})()",
-            )
-            page_state = json.loads(evaluated.get("result", "{}"))
-            if expect_report and page_state.get("report") is not None:
-                break
-            time.sleep(0.1)
-        if expect_report and page_state.get("report") is None:
-            raise RuntimeError(
-                "browser replay gate did not report within 20 seconds: "
-                f"{json.dumps(page_state, sort_keys=True)}"
-            )
-
-        errors = agent("errors").get("errors", [])
-        request_records = agent("network", "requests").get("requests", [])
-        return {
-            "report": page_state.get("report"),
-            "page_state": page_state,
-            "errors": errors,
-            "requests": [record.get("url", "") for record in request_records],
-            "responses": [
-                {"url": record.get("url", ""), "status": record.get("status", 0)}
-                for record in request_records
-            ],
-        }
-    finally:
-        subprocess.run(
-            [*base, "close"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-
-
-def request_paths(browser: dict, port: int) -> list[str]:
-    paths = []
-    for url in browser.get("requests", []):
-        path = url.split("?", 1)[0]
-        paths.append(path.removeprefix(f"http://127.0.0.1:{port}"))
-    return paths
+    return browser
 
 
 def verify(
@@ -192,7 +126,6 @@ def verify(
     invalid_query: dict,
     missing_pack: dict,
     normal_startup: dict,
-    port: int,
 ) -> dict:
     failures: list[str] = []
     browser_gate = browser.get("report")
@@ -214,7 +147,15 @@ def verify(
         failures.append(f"browser emitted errors: {errors}")
 
     requests = browser.get("requests", [])
-    replay_paths = request_paths(browser, port)
+    replay_paths = browser.get("requests", [])
+    for name, page in (
+        ("replay", browser),
+        ("invalid query", invalid_query),
+        ("missing pack", missing_pack),
+        ("normal startup", normal_startup),
+    ):
+        if page.get("foreign_requests"):
+            failures.append(f"{name} requested other origins: {page['foreign_requests']}")
     if tuple(replay_paths) != EXPECTED_REQUEST_SUFFIXES:
         failures.append(f"expected four replay-gate requests, saw {replay_paths}")
     failed_responses = [
@@ -226,7 +167,7 @@ def verify(
     invalid_report = invalid_query.get("report") or {}
     if invalid_report.get("status") != "failed" or invalid_report.get("failure_phase") != "query":
         failures.append("invalid replay query did not fail closed in the query phase")
-    if request_paths(invalid_query, port) != ["/", "/gl.js", "/open-rebellion.wasm"]:
+    if invalid_query.get("requests", []) != ["/", "/gl.js", "/open-rebellion.wasm"]:
         failures.append("invalid replay query fell through to runtime-pack or production loading")
     if (
         invalid_report.get("initial_fingerprint") is not None
@@ -259,9 +200,11 @@ def verify(
         failures.append("normal startup did not reach the semantic main menu")
     if normal_state.get("canvasWidth", 0) <= 0 or normal_state.get("canvasHeight", 0) <= 0:
         failures.append("normal startup canvas is blank-sized")
-    normal_paths = request_paths(normal_startup, port)
-    if tuple(normal_paths) != EXPECTED_REQUEST_SUFFIXES:
-        failures.append(f"expected four normal-startup requests, saw {normal_paths}")
+    normal_paths = normal_startup.get("requests", [])
+    if tuple(normal_paths) != EXPECTED_NORMAL_REQUESTS:
+        failures.append(f"expected six normal-startup requests, saw {normal_paths}")
+    if tuple(normal_state.get("introDismissed") or ()) != INTRO_MOVIES:
+        failures.append("normal startup did not play both intro movies")
     if normal_startup.get("errors"):
         failures.append(f"normal startup emitted browser errors: {normal_startup['errors']}")
 
@@ -287,7 +230,6 @@ def verify(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-build", action="store_true")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -297,56 +239,19 @@ def main() -> int:
             print(built.stderr, file=sys.stderr)
             return 1
 
-    server = subprocess.Popen(
-        [sys.executable, "-m", "http.server", str(args.port), "--bind", "127.0.0.1"],
-        cwd=WEB,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
+    native = native_report()
+    browser = browser_report(
+        query=f"?replay-check=seed42-v1&gate-run={os.getpid()}",
+        expect_report=True,
     )
-    try:
-        time.sleep(1)
-        if server.poll() is not None:
-            detail = server.stderr.read() if server.stderr is not None else ""
-            raise RuntimeError(f"local replay-gate server failed to start: {detail}")
-        native = native_report()
-        browser = browser_report(
-            args.port,
-            scenario="success",
-            query=f"?replay-check=seed42-v1&gate-run={os.getpid()}",
-            expect_report=True,
-        )
-        invalid_query = browser_report(
-            args.port,
-            scenario="invalid-query",
-            query="?replay-check=unknown",
-            expect_report=True,
-        )
-        missing_pack = browser_report(
-            args.port,
-            scenario="missing-pack",
-            query="?replay-check=seed42-v1",
-            expect_report=True,
-            abort_runtime_pack=True,
-        )
-        normal_startup = browser_report(
-            args.port,
-            scenario="normal",
-            query="",
-            expect_report=False,
-        )
-        result = verify(
-            native,
-            browser,
-            invalid_query,
-            missing_pack,
-            normal_startup,
-            args.port,
-        )
-    finally:
-        if server.poll() is None:
-            server.terminate()
-            server.wait(timeout=5)
+    invalid_query = browser_report(query="?replay-check=unknown", expect_report=True)
+    missing_pack = browser_report(
+        query="?replay-check=seed42-v1",
+        expect_report=True,
+        abort_runtime_pack=True,
+    )
+    normal_startup = browser_report(query="", expect_report=False, dismiss_intro=True)
+    result = verify(native, browser, invalid_query, missing_pack, normal_startup)
 
     if args.json:
         print(json.dumps(result, indent=2))

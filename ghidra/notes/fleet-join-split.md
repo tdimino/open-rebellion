@@ -167,6 +167,11 @@ Bit 0 means "has held ships", so an emptied fleet is disbanded. hyp: state
   spare: a lone ship never sits in a system, whose room refuses capital
   ships (`FUN_00507750`).
 - A Create Fleet of every ship in a fleet empties it, so it disbands.
+- **Refusal.** `FUN_004f9860` refuses an object whose `+0x50` bit 2
+  (completed) is clear for every order kind but `0x203`, `0x204`, `0x215`
+  and `0x241` (`FUN_004f9860.c:45-50`), so Create Fleet (`0x270`) refuses
+  an unfinished ship, which may still join another fleet by Move. Port:
+  `fleet_join::refuse_unfinished`, `FleetOrderError::Unfinished`.
 
 ## Names
 

@@ -638,6 +638,7 @@ fn owner_changed(
     }
     move_enemies(world, system, new);
     world.manager_side_changes.push(system);
+    world.autoscrap_systems.push(system);
     Some(ControlRerun {
         system,
         previous: old,

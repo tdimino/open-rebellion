@@ -35,6 +35,9 @@ const HEIGHT = 480;
 const DEFAULT_SEARCH_RADIUS = 2;
 // Sobel magnitude on 0-255 luma above which a pixel is an edge.
 const EDGE_MAGNITUDE = 64;
+// The rows a split pair defers: both read exact pixel structure, which needs
+// the original's 8-bit rasterizer rather than the frame's positions.
+const SPLIT_DEFERRED_ROWS = ["ssim", "edge_iou"];
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -86,6 +89,14 @@ export function validateSpec(spec, cells) {
       }
       for (const region of pair.regions) {
         assert.ok(spec.regions[region], `${id} names unknown region ${region}`);
+      }
+      if (pair.split) {
+        assert.ok(pair.split.regions?.length > 0
+          && pair.split.regions.every((region) => pair.regions.includes(region)),
+        `${id} split names a region the pair does not compare`);
+        assert.match(pair.split.node ?? "", /^or-[a-z0-9-]+$/, `${id} split names no br node`);
+        assert.ok(typeof pair.split.reason === "string" && pair.split.reason.length > 20,
+          `${id} split needs a written reason`);
       }
     }
   }
@@ -324,6 +335,15 @@ export function compareCell({ id, spec, capture, a1Run, thresholds, frames = {},
       const masks = names.map((mask) => spec.masks[mask].rect);
       const result = compareRegion(a0, a1, region.rect, masks, thresholds,
         region.search_radius ?? DEFAULT_SEARCH_RADIUS);
+      // A split region is judged on position alone (displacement, MAE and
+      // changed pixels); its SSIM and edge rows wait on the named node and
+      // are reported, never dropped.
+      if (pair.split?.regions.includes(name)) {
+        const deferred = result.failed_rows.filter((row) => SPLIT_DEFERRED_ROWS.includes(row));
+        result.failed_rows = result.failed_rows.filter((row) => !SPLIT_DEFERRED_ROWS.includes(row));
+        result.status = result.failed_rows.length === 0 ? "pass" : "fail";
+        result.split = { node: pair.split.node, deferred_rows: deferred };
+      }
       if (outDir && result.status === "fail") {
         const [x, y, w, h] = region.rect;
         const crop = (image) => {
@@ -435,10 +455,13 @@ function markdown(report) {
     let detail = cell.reason ?? "";
     if (!detail) {
       detail = cell.pairs.flatMap((pair) => (pair.reason ? [`${pair.a0}: ${pair.reason}`] : pair.regions
-        .filter(({ status }) => status !== "pass")
-        .map((r) => (r.status === "fail"
-          ? `${r.region}: ${r.failed_rows.join(", ")}`
-          : `${r.region}: not-run (${r.class})`)))).join("; ");
+        .filter(({ status, split }) => status !== "pass" || split?.deferred_rows.length)
+        .map((r) => {
+          if (r.status === "pass") return `${r.region}: split, ${r.split.deferred_rows.join(", ")} deferred to ${r.split.node}`;
+          return r.status === "fail"
+            ? `${r.region}: ${r.failed_rows.join(", ")}`
+            : `${r.region}: not-run (${r.class})`;
+        }))).join("; ");
     }
     lines.push(`| ${cell.cell_id} | ${cell.status} | ${detail} |`);
   }

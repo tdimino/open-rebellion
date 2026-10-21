@@ -3,7 +3,7 @@ title: "Combat System"
 description: "Space battles through the tactical engine (played, simulated or headless), the Planetary Assault in assault.rs, and bombardment.rs"
 category: "agent-docs"
 created: 2026-03-14
-updated: 2026-10-17
+updated: 2026-10-20
 tags: [combat, space-combat, ground-combat, simulation]
 ---
 
@@ -194,9 +194,13 @@ of each side's fleets, taken on the battle's first frame (`BattleRecord`):
   (`FUN_004f8710`).
 - A lost ship's hook (`FUN_00502840`) sets its characters adrift and
   wounds each with chance `max(G2568, 100 - combat)`; a wounded minor dies
-  on G2577 (25%), a major never (`battle_summary::crew_fates`, applied first
-  in `apply_results`). The battle takes no one captive: an emptied fleet's
-  characters stay adrift at the system for the adrift sweep. The window
+  on G2577 (25%), a major never (`battle_summary::crew_fates`). The pass is
+  drawn once as the battle ends (`BattleSession::settle_crew`), and the
+  Battle Summary and the write-back (`apply_results`, which applies it
+  first) read that one draw; the original imports the battle before the
+  result event (`FUN_0040a050` states `0x16`/`0x17`, then 9). The battle
+  takes no one captive: an emptied fleet's characters stay adrift at the
+  system for the adrift sweep. The window
   files the dead as Killed, a captive aboard a living ship as Captured, the
   rest aboard as Survivors, and the adrift in no column (`FUN_00472010`
   walks existing ships). port: the rolls draw the battle's stream; the
@@ -210,9 +214,11 @@ batteries fire at the bombarding ships, each hit is rolled against a target's
 value, and facilities, regiments and the HQ are destroyed. The finalize
 `FUN_0058e320` then shifts support. Either side orders it from the object
 menu (`integrator::order_strike`), and the AI through
-`integrator::resolve_ai_strike` (`bombardment.rs`). Destroy System
-(`0x223`) needs a Death Star ship and runs the destroy cascade
-(`ghidra/notes/death-star-strategic.md`).
+`integrator::resolve_ai_strike` (`bombardment.rs`). Only usable ships
+(complete, not on their own leg) of usable flagged fleets bombard and draw
+battery fire (mode 1, `FUN_0058ca70.c:26-34`, `FUN_004fd6b0.c:23`).
+Destroy System (`0x223`) needs a usable Death Star ship and runs the
+destroy cascade (`ghidra/notes/death-star-strategic.md`).
 
 ## Ground combat: the Planetary Assault
 
@@ -254,8 +260,9 @@ kill's and landing's event reaches `FUN_00508660`), with the facilities'
 hand-over and the change's support shift. A holder change frees the old
 holder's prisoners of the new side, sends its other characters there to the
 nearest system of their side (`FUN_004ef260`, event `0x307`;
-`death_star::sweep_requests`) and turns or removes its special forces by
-class (`FUN_00503d90`). The player issues it from the fleet's menu
+`death_star::sweep_requests`), turns or removes its special forces by
+class (`FUN_00503d90`) and destroys or reroutes the system's products
+(`simulation.md`, "Integration Order"). The player issues it from the fleet's menu
 (`assault_orders::issue`), the AI through `integrator::resolve_ai_assault`;
 the Operation Report (`0x7090`-`0x7094`) goes to both sides.
 
@@ -267,10 +274,10 @@ the Operation Report (`0x7090`-`0x7094`) goes to both sides.
 
 ## Source
 
-- `ghidra/notes/simulate-runs-tactical-engine.md` — Simulate and the stalemate
-- `ghidra/notes/tactical-engagement-ai.md` — targets, steering, the band
-- `ghidra/notes/tactical-results.md` — the Battle Summary's tabs, lists and rules
-- `ghidra/notes/ground-assault.md` — the assault order, run, rolls and control change
-- `ghidra/notes/ground-unit-assets.md` — what `FUN_00560d50` is, regiment family gates
-- `ghidra/notes/bombardment.md` — orders, defence fire, hit rolls, support shifts
-- `ghidra/notes/combat-formulas.md` — GNPRTB parameter mapping
+- `ghidra/notes/simulate-runs-tactical-engine.md`: Simulate and the stalemate
+- `ghidra/notes/tactical-engagement-ai.md`: targets, steering, the band
+- `ghidra/notes/tactical-results.md`: the Battle Summary's tabs, lists and rules
+- `ghidra/notes/ground-assault.md`: the assault order, run, rolls and control change
+- `ghidra/notes/ground-unit-assets.md`: what `FUN_00560d50` is, regiment family gates
+- `ghidra/notes/bombardment.md`: orders, defence fire, hit rolls, support shifts
+- `ghidra/notes/combat-formulas.md`: GNPRTB parameter mapping

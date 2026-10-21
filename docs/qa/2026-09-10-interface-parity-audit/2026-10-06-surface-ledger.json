@@ -4141,7 +4141,7 @@
         132,
         133
       ],
-      "current_implementation": "Source-recovered item menus now open from sector quadrant icons and Fleet-window objects, with enabled routing for a bounded subset of Move, Confirmed Move, Create Fleet, Mission, Encyclopedia, Status, Scrap, Destination, Rename, and system-wide fleet movement paths. Commit 8fc9d983 adds in-place Rename for fleets and capital ships; the 38-case two-faction Fleet-window browser gate covers Rename and Destination. A fleet's and a sector fleet icon's Planetary Bombardment parent (0x120) lists its four orders (0x220-0x223), each enabled by the original enable slot (FUN_00581e80), and every parent is enabled when one of its rows is (FUN_00442c90); native checks on both sides (2026-10-16, seed 42) opened the submenu with Destroy System disabled and then enabled with a Death Star, issued General Bombardment and Target Military from it, and showed the parent disabled for a fleet of strength 0. No browser probe covers the bombardment rows yet. The complete per-object command trees, nested and disabled states, exact focus-loss behavior, and A0 comparison remain open.",
+      "current_implementation": "Source-recovered item menus now open from sector quadrant icons and Fleet-window objects, with enabled routing for a bounded subset of Move, Confirmed Move, Create Fleet, Mission, Encyclopedia, Status, Scrap, Destination, Rename, and system-wide fleet movement paths. Commit 8fc9d983 adds in-place Rename for fleets and capital ships; the 38-case two-faction Fleet-window browser gate covers Rename and Destination. A fleet's and a sector fleet icon's Planetary Bombardment parent (0x120) lists its four orders (0x220-0x223), each enabled by the original enable slot (FUN_00581e80), and every parent is enabled when one of its rows is (FUN_00442c90); native checks on both sides (2026-10-16, seed 42) opened the submenu with Destroy System disabled and then enabled with a Death Star, issued General Bombardment and Target Military from it, and showed the parent disabled for a fleet of strength 0. In the browser on both sides (tools/interface-parity/orbital-strike.mjs, Chrome for Testing 151 at 640x480), live-strike lists the parent enabled with three rows enabled and Destroy System grey, a click on the grey row leaves the menu open, and General Bombardment opens its report; death-star-strike enables all four rows with the Death Star aboard and greys the parent on the destroyed system. Those probes read row ink, not the original's A0 frames, so the bombardment cells stay pending. The complete per-object command trees, nested and disabled states, exact focus-loss behavior, and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-003",
         "UIP-F-007"
@@ -4581,7 +4581,7 @@
       "phase": "conflict",
       "title": "Bombardment, assault, and strategic battle reports",
       "required": true,
-      "status": "fail",
+      "status": "complete",
       "required_states": [
         "bombard military",
         "bombard civilian",
@@ -4612,7 +4612,7 @@
         149,
         150
       ],
-      "current_implementation": "rebellion-render/src/operation_report.rs ports the original report window (FUN_00496770, ghidra/notes/operation-report-window.md), which serves the bombardment (0x182) and assault (0x183) reports: its lists fill from the strike and assault reports, and it opens at once for the bombarder and again from the Message Index. Native checks (Empire at Vagran and, seed 3, Tralus; Alliance at Corfai) pass on both sides for C001-C003, C005-C008, C010, C011, C013, C014 and C015, and for the Empire only on this build for C004 shield blocked (Tralus, GenCore Level I; no shielded Imperial system in Alliance reach) and C009 assault failure. C012 damaged is open: a damaged Imperial Star Destroyer (1250/2750) was listed Operational with a plain portrait; the report's cells take the damaged-bit marks (FUN_0042c3b0, FUN_00501c00) in code, awaiting a recheck. In the original, Go To fleet opens the system's Fleet window with no selection; C015 is rechecked after that port. No browser check covers the window, so every cell stays pending.",
+      "current_implementation": "rebellion-render/src/operation_report.rs ports the original report window (FUN_00496770, ghidra/notes/operation-report-window.md), which serves the bombardment (0x182) and assault (0x183) reports: its lists fill from the strike and assault reports, and it opens at once for the bombarder and again from the Message Index. All 15 cells pass natively on both sides (Empire at Vagran, Tralus and Ghorman; Alliance at Corfai and Corellia): C004 for the Alliance at Corellia on day 53 under a GenCore Level I, no hit landing and the LNR Series I and the generator operational; C009 for the Alliance at Corellia on day 35, one Army Regiment repelled by three Imperial regiments; C012 with the damage art under Operational (Imperial Star Destroyer 1, 2250/2750, at Vagran; Alliance Escort Carrier 1, 300/900, at Corellia) and under Destroyed (Corellian Corvette 1 at Corellia on day 2; Imperial Star Destroyer 1 at Ghorman on day 294, from 171/2750). All 15 pass in Chrome for Testing 151 at 640x480 on both sides through tools/interface-parity/orbital-strike.mjs (22 of 22 cases): C001-C003 each order opens its report at once; C004 0 hits, picture 0x2b9a, the generators operational; C005/C006 pictures 0x2b9b and 0x2b9a; C007-C009 the assault Summary (0x2b98 or 0x2b99) with the capture and the defence texts; C010 six tabs per Forces view; C011/C013 the Destroyed and Operational lists; C012 the damage art (GOKRES portrait + 0x2000 under the portrait) pixel for pixel in both columns; C014/C015 Goto System and Goto Fleet close the report on the system's sector and Fleet windows. By explicit user decision on 2026-10-19, the Chrome for Testing executions are sufficient for this delivery; Firefox and Safari parity is not claimed. All fifteen cells are accepted.",
       "finding_ids": [
         "UIP-F-008"
       ],
@@ -4626,91 +4626,91 @@
         {
           "id": "EVT-03-C001",
           "requirement": "bombard military",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C002",
           "requirement": "bombard civilian",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C003",
           "requirement": "general bombardment",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C004",
           "requirement": "shield blocked",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C005",
           "requirement": "success",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C006",
           "requirement": "failure",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C007",
           "requirement": "assault summary",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C008",
           "requirement": "assault success",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C009",
           "requirement": "assault failure",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C010",
           "requirement": "force tabs",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C011",
           "requirement": "destroyed",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C012",
           "requirement": "damaged",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C013",
           "requirement": "operational",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C014",
           "requirement": "go to system",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         },
         {
           "id": "EVT-03-C015",
           "requirement": "go to fleet",
-          "status": "pending",
+          "status": "passed",
           "counts_toward_parity": true
         }
       ]
@@ -5592,7 +5592,7 @@
         149,
         150
       ],
-      "current_implementation": "P58-B06 restores the original Battle Results surface, both force tabs, overview categories, survivor and loss rows, Go to Fleet and Go to System controls, and shared strategic result transport for exact hull and fighter roster slots, officer capture, Death Star state, cargo, and empty fleets. P58-B11 browser-proves exact 3-to-2 capital and fighter loss persistence for both strategic fleets before system or fleet destination routing. The fleet destination still lacks unmistakable roster confirmation. Bombardment, landing, report presentation, final navigation orchestration, the full native outcome matrix, and A0 comparison remain open.",
+      "current_implementation": "P58-B06 restores the original Battle Results surface, both force tabs, overview categories, survivor and loss rows, Go to Fleet and Go to System controls, and shared strategic result transport for exact hull and fighter roster slots, officer capture, Death Star state, cargo, and empty fleets. P58-B11 browser-proves exact 3-to-2 capital and fighter loss persistence for both strategic fleets before system or fleet destination routing. The fleet destination still lacks unmistakable roster confirmation. The Battle Summary (window kind 8, FUN_0046f140, ghidra/notes/tactical-results.md; tactical_view.rs) gives each side's view Filters and the four icon tabs, Operational and Destroyed (Personnel: Survivors, Captured, Killed), the empty texts None, No Survivors and No Casualties, and the burn marks of damage, filled from the Battle Alert's record (rebellion_core::battle_summary); native runs on both sides (seed 42, release) read pictures 0x2a05-0x2a08, and the browser fixtures production-battle-results-presentation and yaga-day30-options pass 4 of 4 each on both sides at both viewports. A bombardment or a landing follows only its own order, never a battle. Final navigation orchestration, the full native outcome matrix, Results fixtures for 0x2a06, a trench run, No Survivors and the Left/Right filter keys (or-acc-results-dlw), and A0 comparison remain open.",
       "finding_ids": [
         "UIP-F-008"
       ],
@@ -5715,7 +5715,7 @@
         120,
         121
       ],
-      "current_implementation": "Invented live ground-combat minigame replaces original assault summaries and result reports.",
+      "current_implementation": "The invented live ground-combat screen is gone. The fleet's Planetary Assault row (0x234, assault::order_enabled, greyed against two planetary shields) resolves the assault at once (assault::resolve, ghidra/notes/ground-assault.md) for the player and the AI, and its summary and force details are the Operation Report window's assault report (0x183, operation_report.rs), whose assault cells pass as EVT-03 C007-C009 natively and in Chrome for Testing on both sides. The eight cells wait on their comparison against the original's A0 captures (saves empire-day53-yaga-orbit and empire-day128-assault-fails-selonia).",
       "finding_ids": [
         "UIP-F-010"
       ],

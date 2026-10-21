@@ -3,13 +3,13 @@ title: "DAT Binary Formats"
 description: "Binary format specifications for all .DAT files in Star Wars Rebellion"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-03-16
+updated: 2026-10-19
 tags: [dat-format, binary-parsing, round-trip-validation]
 ---
 
 # DAT Binary Formats
 
-All .DAT files are raw little-endian binary. No magic bytes, no alignment padding. Strings live in TEXTSTRA.DLL (Win32 PE string resources), not in DAT files. All fields are u32 or u16.
+All .DAT files are raw little-endian binary. No magic bytes, no alignment padding. Strings live in TEXTSTRA.DLL (Win32 PE string resources), not in DAT files. All fields are u32, i32 or u16.
 
 ## Three Structural Patterns
 
@@ -46,9 +46,10 @@ entries:       entries_count x fixed-size records
 ```
 
 Sub-variants by info string:
-- `"GeneralParamTableEntry"` (44B each): GNPRTB, SDPRTB — 3 u32 + 8/16 i32
-- `"IntTableEntry"` (16B each): all *MSTB and gameplay tables — u32 id, u32 field2, i32 threshold, u32 value
-- `"SeedTableEntry"` (16B each): SYFCCRTB, SYFCRMTB — u32 id, u32 field2, u32 system_id, u32 packed_facility
+- `"GeneralParamTableEntry"` (44B each): GNPRTB, 3 u32 + 8 i32
+- `"SideParamTableEntry"` (76B each): SDPRTB, 3 u32 + 16 i32
+- `"IntTableEntry"` (16B each): all *MSTB and gameplay tables—u32 id, u32 field2, i32 threshold, u32 value
+- `"SeedTableEntry"` (16B each): SYFCCRTB, SYFCRMTB—u32 id, u32 field2, u32 system_id, u32 packed_facility
 
 ### Pattern 3: Seed Tables (9 files)
 
@@ -88,7 +89,7 @@ Implemented by file-level structs (e.g. `CapitalShipsFile`). Entry-level structs
 
 ## Complete File Inventory (51/51)
 
-### Pattern 1 — Entity Tables
+### Pattern 1: Entity Tables
 
 | File | Parser | Count | Record Size | Notes |
 |------|--------|-------|-------------|-------|
@@ -111,36 +112,36 @@ Implemented by file-level structs (e.g. `CapitalShipsFile`). Entry-level structs
 | BASICSD.DAT | `entity_table` | 16 | 24B | Basic entity catalog |
 | MANMGRSD.DAT | `entity_table` | 3 | 24B | Manager entity types |
 
-### Pattern 2 — Parameter and Lookup Tables
+### Pattern 2: Parameter and Lookup Tables
 
 | File | Parser | Count | Entry Size | Info String |
 |------|--------|-------|------------|-------------|
 | GNPRTB.DAT | `general_params` | 213 | 44B | GeneralParamTableEntry |
 | SDPRTB.DAT | `side_params` | 35 | 76B | SideParamTableEntry |
-| DIPLMSTB.DAT | `int_table` | 10 | 16B | IntTableEntry — diplomacy mission success |
-| ESPIMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry — espionage mission success |
-| ASSNMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry — assassination success |
-| INCTMSTB.DAT | `int_table` | 13 | 16B | IntTableEntry — incite uprising success |
-| DSSBMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry — death star sabotage success |
-| ABDCMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry — abduction success |
-| RCRTMSTB.DAT | `int_table` | 11 | 16B | IntTableEntry — recruitment success |
-| RESCMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry — rescue success |
-| SBTGMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry — sabotage success |
-| SUBDMSTB.DAT | `int_table` | 13 | 16B | IntTableEntry — subdue uprising success |
-| ESCAPETB.DAT | `int_table` | 9 | 16B | IntTableEntry — escape probability |
-| FDECOYTB.DAT | `int_table` | 14 | 16B | IntTableEntry — fleet decoy success |
-| FOILTB.DAT | `int_table` | 14 | 16B | IntTableEntry — mission foil probability |
-| INFORMTB.DAT | `int_table` | 8 | 16B | IntTableEntry — informant probability |
-| CSCRHTTB.DAT | `int_table` | 5 | 16B | IntTableEntry — covert search probability |
-| UPRIS1TB.DAT | `int_table` | 3 | 16B | IntTableEntry — uprising incident first outcome code (step lookup, `FUN_00559ce0`) |
-| UPRIS2TB.DAT | `int_table` | 4 | 16B | IntTableEntry — uprising incident second outcome code (step lookup, `FUN_00559ce0`) |
-| RLEVADTB.DAT | `int_table` | 14 | 16B | IntTableEntry — rebel evasion probability |
-| RESRCTB.DAT | `int_table` | 4 | 16B | IntTableEntry — resource threshold |
-| TDECOYTB.DAT | `int_table` | 14 | 16B | IntTableEntry — troop decoy success |
-| SYFCCRTB.DAT | `syfc_table` | 8 | 16B | SeedTableEntry — Empire Coruscant facilities |
-| SYFCRMTB.DAT | `syfc_table` | 7 | 16B | SeedTableEntry — Empire Coruscant Rim facilities |
+| DIPLMSTB.DAT | `int_table` | 10 | 16B | IntTableEntry: diplomacy mission success |
+| ESPIMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry: espionage mission success |
+| ASSNMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry: assassination success |
+| INCTMSTB.DAT | `int_table` | 13 | 16B | IntTableEntry: incite uprising success |
+| DSSBMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry: death star sabotage success |
+| ABDCMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry: abduction success |
+| RCRTMSTB.DAT | `int_table` | 11 | 16B | IntTableEntry: recruitment success |
+| RESCMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry: rescue success |
+| SBTGMSTB.DAT | `int_table` | 12 | 16B | IntTableEntry: sabotage success |
+| SUBDMSTB.DAT | `int_table` | 13 | 16B | IntTableEntry: subdue uprising success |
+| ESCAPETB.DAT | `int_table` | 9 | 16B | IntTableEntry: escape probability |
+| FDECOYTB.DAT | `int_table` | 14 | 16B | IntTableEntry: fleet decoy success |
+| FOILTB.DAT | `int_table` | 14 | 16B | IntTableEntry: mission foil probability |
+| INFORMTB.DAT | `int_table` | 8 | 16B | IntTableEntry: informant probability |
+| CSCRHTTB.DAT | `int_table` | 5 | 16B | IntTableEntry: covert search probability |
+| UPRIS1TB.DAT | `int_table` | 3 | 16B | IntTableEntry: uprising incident first outcome code (step lookup, `FUN_00559ce0`) |
+| UPRIS2TB.DAT | `int_table` | 4 | 16B | IntTableEntry: uprising incident second outcome code (step lookup, `FUN_00559ce0`) |
+| RLEVADTB.DAT | `int_table` | 14 | 16B | IntTableEntry: rebel evasion probability |
+| RESRCTB.DAT | `int_table` | 4 | 16B | IntTableEntry: resource threshold |
+| TDECOYTB.DAT | `int_table` | 14 | 16B | IntTableEntry: troop decoy success |
+| SYFCCRTB.DAT | `syfc_table` | 8 | 16B | SeedTableEntry: Empire Coruscant facilities |
+| SYFCRMTB.DAT | `syfc_table` | 7 | 16B | SeedTableEntry: Empire Coruscant Rim facilities |
 
-### Pattern 3 — Seed Tables (SeedFamilyTableEntry)
+### Pattern 3: Seed Tables (SeedFamilyTableEntry)
 
 | File | Parser | Notes |
 |------|--------|-------|
@@ -168,7 +169,7 @@ Implemented by file-level structs (e.g. `CapitalShipsFile`). Entry-level structs
 - `target_flags`: 0x10000 when mission can target enemy-controlled systems, 0 otherwise
 - `max_officers`: maximum officers assignable to mission
 - `base_duration`: base duration in game turns (modified by officer skills at runtime)
-- `flag_col6..flag_col21`: 16 boolean flags — semantics require Ghidra RE of STRATEGY.DLL
+- `flag_col6..flag_col21`: 16 boolean flags—semantics require Ghidra RE of STRATEGY.DLL
 
 ## IntTableEntry Semantics
 
@@ -181,5 +182,5 @@ The `threshold` field (i32) is a signed skill delta: negative = below average, 0
 3. Implement `DatRecord` on the file struct
 4. Add module to `tools/dat-dumper/src/types/mod.rs`
 5. Register in `tools/dat-dumper/src/registry.rs` with `parse_and_dump::<NewFileType>`
-6. Run: `PATH="/usr/bin:$PATH" cargo run -p dat-dumper -- --gdata data/base --file NEWFILE.DAT`
+6. Run: `scripts/mini-cargo.sh -- run -p dat-dumper -- --gdata data/base --file NEWFILE.DAT` (copy NEWFILE.DAT into the Mini's `data/base` first; mini-cargo syncs no ignored files)
 7. Round-trip validation runs automatically -- fix parser until bytes match exactly

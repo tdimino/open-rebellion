@@ -3,7 +3,9 @@
 #
 #   scripts/gates.sh [--keep-going] [--only NAME[,NAME]]
 #
-# Gates: test, replay, coverage, provenance, wasm, leak-worker, leak-private.
+# Gates: test, fixtures, replay, coverage, provenance, wasm, leak-worker,
+# leak-private. fixtures reruns the workspace tests with the
+# interface-test-fixtures feature, which changes rendering code paths.
 # Cargo runs on the Mini through scripts/mini-cargo.sh; every call but the
 # last one run passes --keep, so the build cache survives between gates and
 # the final call prunes it to that call's units. The golden is only run
@@ -19,7 +21,7 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo"
 export CARGO_TERM_COLOR=never
 
-all=(test replay coverage provenance wasm leak-worker leak-private)
+all=(test fixtures replay coverage provenance wasm leak-worker leak-private)
 keep_going=0
 only=""
 while [ $# -gt 0 ]; do
@@ -40,6 +42,7 @@ done
 mini=scripts/mini-cargo.sh
 
 gate_test()       { "$mini" --keep -- test --workspace --color never; }
+gate_fixtures()   { "$mini" --keep -- test --workspace --features interface-test-fixtures --exclude provenance-scan --color never; }
 gate_replay()     { "$mini" --keep -- test -p rebellion-data --test replay_manifest --color never -- --ignored; }
 gate_coverage()   { "$mini" --keep -- test -p rebellion-data --test telemetry_coverage --color never -- --ignored; }
 gate_provenance() { "$mini" --keep -- run -q -p provenance-scan --color never -- check; }
@@ -56,12 +59,12 @@ for index in "${!selected[@]}"; do
   # The last selected cargo gate is the one that prunes the cache.
   last=1
   for later in "${selected[@]:$((index + 1))}"; do
-    case "$later" in test|replay|coverage|provenance|wasm) last=0 ;; esac
+    case "$later" in test|fixtures|replay|coverage|provenance|wasm) last=0 ;; esac
   done
   fn="gate_${name}"
   if [ "$last" = 1 ]; then
     case "$name" in
-      test|replay|coverage|provenance|wasm)
+      test|fixtures|replay|coverage|provenance|wasm)
         body="$(declare -f "$fn" | sed 's/ --keep//')"
         eval "$body" ;;
     esac

@@ -261,6 +261,13 @@ pub fn ai_step(
                 ctx.manufacturing,
                 rebellion_core::support_shift::step(day, step),
             );
+            rebellion_core::death_star::serve_holder_requests(
+                ctx.world,
+                ctx.movement,
+                ctx.transport,
+                ctx.manufacturing,
+                ctx.deliveries,
+            );
             swept = crate::integrator::sweep_requests(
                 ctx.world,
                 ctx.missions,
@@ -366,7 +373,9 @@ fn ai_step_emitting(
     let AiCtx {
         world,
         manufacturing,
+        movement,
         transport,
+        deliveries,
         blockade,
         ..
     } = ctx;
@@ -384,7 +393,28 @@ fn ai_step_emitting(
             integrator.emit_swept(world, &record.swept);
         }
         integrator.apply_blockade_events(world, manufacturing, transport, blockade, &runs);
+        rebellion_core::death_star::serve_holder_requests(
+            world,
+            movement,
+            transport,
+            manufacturing,
+            deliveries,
+        );
     });
+}
+
+/// Event `0x307` for each holder change the day's step just served: what
+/// is bound for the system takes its autoscrap request
+/// ([`rebellion_core::death_star::serve_holder_requests`]), right after
+/// the phase 5 that changed the holder.
+fn serve_holder_requests(world: &mut GameWorld, states: &mut SimulationStates) {
+    rebellion_core::death_star::serve_holder_requests(
+        world,
+        &states.movement,
+        &mut states.troop_transport,
+        &mut states.manufacturing,
+        &mut states.deliveries,
+    );
 }
 
 /// The characters the operation's holder changes flagged leave (event
@@ -577,6 +607,7 @@ pub fn run_simulation_tick(
     integrator.emit_scrapped_aboard(world, &overdraft.losses);
     // A scrapped regiment's holder rerun (FUN_00508660).
     integrator.fire_support_shifts(world, &mut states.manufacturing);
+    serve_holder_requests(world, states);
 
     // ── 1. Manufacturing ─────────────────────────────────────────────────
     // Use advance_tracked so the K6 EVT_MANUFACTURING_IDLE telemetry is
@@ -597,6 +628,7 @@ pub fn run_simulation_tick(
         &mut states.manufacturing,
         &mfg_advance.completions,
     );
+    serve_holder_requests(world, states);
     integrator.apply_manufacturing_idle(world, &mfg_advance.newly_idle);
     // Remote products travel, then complete at their destination (F-030);
     // a capital ship travels on its own leg inside its destination fleet.
@@ -608,12 +640,14 @@ pub fn run_simulation_tick(
         &mut states.manufacturing,
         &delivered.arrivals,
     );
+    serve_holder_requests(world, states);
     integrator.apply_boarded(
         world,
         &mut states.manufacturing,
         &mut states.troop_transport,
         &delivered.boarded,
     );
+    serve_holder_requests(world, states);
     integrator.apply_deliveries_lost(world, &delivered.lost);
     let ships = rebellion_core::delivery::advance_ship_legs(world, &states.movement, tick_events);
     integrator.apply_ship_arrivals(world, &ships);
@@ -645,6 +679,7 @@ pub fn run_simulation_tick(
     let regiments = states.troop_transport.advance_transit(world, current_tick);
     integrator.apply_regiment_arrivals(world, &regiments);
     integrator.fire_support_shifts(world, &mut states.manufacturing);
+    serve_holder_requests(world, states);
     sweep_requests_emitting(world, states, &mut integrator, current_tick);
 
     // ── 3. Combat ────────────────────────────────────────────────────────
@@ -765,6 +800,7 @@ pub fn run_simulation_tick(
             &mut states.uprising,
             &mut states.research,
         );
+        serve_holder_requests(world, states);
         // Knesset Shamash-Bet #R11: emit `EVT_CHARACTER_KILLED` telemetry for
         // mission-side assassinations. The integrator's `MissionEffect::CharacterKilled`
         // arm marks `is_killed = true` via `mark_killed()` instead of deleting
@@ -926,6 +962,7 @@ pub fn run_simulation_tick(
         &states.blockade,
         &blockade_events,
     );
+    serve_holder_requests(world, states);
     sweep_requests_emitting(world, states, &mut integrator, current_tick);
 
     // ── 9. Uprising ──────────────────────────────────────────────────────
@@ -944,6 +981,7 @@ pub fn run_simulation_tick(
         &uprising_rolls,
     );
     integrator.apply_uprising_events(world, &mut states.manufacturing, &uprising_events);
+    serve_holder_requests(world, states);
     sweep_requests_emitting(world, states, &mut integrator, current_tick);
 
     // ── 10. Betrayal ─────────────────────────────────────────────────────
@@ -1878,6 +1916,76 @@ mod tests {
         );
         assert!(states.victory.resolved);
         assert!(events.iter().any(|event| event.event_type == EVT_VICTORY));
+    }
+
+    // A garrison's departure raises the holder rerun (FUN_00508660 ->
+    // FUN_0050b610), which the day's first phase 5 serves: with no regiment
+    // left the support side takes the system, and event 0x307 then serves
+    // what is bound for it at once (FUN_00515480): the old holder's product
+    // queued at its other yard goes back to that yard (FUN_00515480.c:
+    // 82-124), so a product finished that day completes at the yard
+    // instead of setting out for the lost system.
+    #[test]
+    fn a_holder_change_in_the_days_step_keeps_the_old_holders_finished_product_at_its_yard() {
+        for is_alliance in [true, false] {
+            let (own, other) = if is_alliance {
+                (Faction::Alliance, Faction::Empire)
+            } else {
+                (Faction::Empire, Faction::Alliance)
+            };
+            let (mut world, mut states) = make_test_states();
+            world.gnprtb = support_control_threshold();
+            let systems: Vec<rebellion_core::ids::SystemKey> = world.systems.keys().collect();
+            let (yard, target) = (systems[0], systems[1]);
+            for (key, favoured) in [(yard, other), (target, own)] {
+                let held = &mut world.systems[key];
+                held.control = ControlKind::Controlled(other);
+                held.popularity_alliance = if favoured == Faction::Alliance { 0.9 } else { 0.1 };
+                held.popularity_empire = 1.0 - held.popularity_alliance;
+            }
+            let garrison = world.troops.insert(TroopUnit {
+                class_dat_id: DatId::new(20),
+                is_alliance: !is_alliance,
+            });
+            world.systems[target].ground_units.push(garrison);
+            let facility = rebellion_core::manufacturing::BuildableKind::ManufacturingFacility(
+                rebellion_core::manufacturing::FacilityBuild {
+                    class: DatId::new(0x2900_0001),
+                    is_alliance: !is_alliance,
+                },
+            );
+            let mut finished = rebellion_core::manufacturing::QueueItem::new(facility, 10)
+                .delivered_to(rebellion_core::manufacturing::Destination::System(target));
+            finished.work_done = finished.total_cost;
+            states.manufacturing.enqueue(yard, finished);
+            states
+                .troop_transport
+                .move_regiment(
+                    &mut world,
+                    &MovementState::new(),
+                    &std::collections::HashSet::new(),
+                    &ProductRoom::default(),
+                    garrison,
+                    rebellion_core::troop_transport::RegimentTarget::System(yard),
+                    1,
+                )
+                .unwrap();
+
+            run_one_tick(&mut world, &mut states);
+
+            assert_eq!(
+                world.systems[target].control,
+                ControlKind::Controlled(own),
+                "{is_alliance}"
+            );
+            assert!(states.deliveries.en_route().is_empty(), "{is_alliance}");
+            assert_eq!(
+                world.systems[yard].manufacturing_facilities.len(),
+                1,
+                "{is_alliance}"
+            );
+            assert!(world.autoscrap_systems.is_empty(), "{is_alliance}");
+        }
     }
 
     #[test]

@@ -9,7 +9,7 @@ tags: [jedi, force, training, simulation]
 
 # Jedi Training System
 
-`jedi.rs` — 4-tier Force progression with accumulated XP and detection checks.
+`jedi.rs`: 4-tier Force progression with accumulated XP and detection checks.
 
 ## Types
 
@@ -25,9 +25,6 @@ tags: [jedi, force, training, simulation]
 ```rust
 // Each tick: advance all trainees
 let events = JediSystem::advance(&mut jedi_state, &world, &tick_events, &rng_rolls);
-
-// Game start: roll for Force awakening
-let awakened = JediSystem::apply_initial_awakening(&world, &rng_rolls);
 
 // Enroll/unenroll:
 state.start_training(character, faction_is_alliance, current_tick);
@@ -60,9 +57,9 @@ Already-discovered Jedi (`is_discovered_jedi = true`) are never re-detected.
 
 ## Initial Awakening
 
-At game start, characters with `jedi_probability > 0` roll against that probability. Those that pass get `force_tier = Aware`. Characters already awakened (e.g. Luke) are skipped.
+Seeding rolls it (`roll_character_stats`, `crates/rebellion-data/src/seeds.rs`): each character that is not a known Jedi (`is_known_jedi`) and has `jedi_probability > 0` rolls 0-99 against that probability, and a pass sets `force_tier = Aware`.
 
 ## Source
 
-- `entity-system.md §1.3` — `entity[9] >> 6 & 3` tier encoding
-- REBEXE.EXE RE — Force tier bit layout
+- `entity-system.md §1.3`: `entity[9] >> 6 & 3` tier encoding
+- REBEXE.EXE RE: Force tier bit layout

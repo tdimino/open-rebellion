@@ -125,3 +125,29 @@ test("an edge read across a mask's border is not compared", () => {
   assert.equal(result.pairs[0].regions[0].metrics.edge_iou, 1);
   assert.equal(result.status, "pass");
 });
+
+test("a split region passes on position alone and still reports its deferred rows", () => {
+  const bytes = frame();
+  const shifted = PNG.sync.read(bytes);
+  // One pixel's value changes: positions hold, the structure rows do not.
+  for (let x = 508; x < 603; x += 2) shifted.data.fill(0, (11 * 640 + x) * 4, (11 * 640 + x) * 4 + 3);
+  const split = spec({
+    a1: "laser/committed",
+    regions: ["gauge"],
+    state_match: "both frames hold the charge at 0 just after the shot",
+    split: { regions: ["gauge"], node: "or-p-test-node", reason: "the structure rows need the original rasterizer" },
+  });
+  const run = (pairSpec) => compareCell({
+    id: "TAC-05-C018",
+    spec: pairSpec,
+    capture,
+    a1Run: "",
+    thresholds: { ...THRESHOLDS, changed_ratio_max: 1, mae_max: 1 },
+    frames: { a0: bytes, a1: PNG.sync.write(shifted) },
+  });
+  const region = run(split).pairs[0].regions[0];
+  assert.equal(region.status, "pass");
+  assert.ok(region.split.deferred_rows.length > 0);
+  delete split.cells["TAC-05-C018"].pairs[0].split;
+  assert.equal(run(split).status, "fail");
+});

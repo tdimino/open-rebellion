@@ -3,7 +3,7 @@ title: "Original Shuttle Cockpit Main Menu"
 description: "Binary-confirmed 640x480 geometry, bitmap resources, settings, actions, and acceptance criteria for the Star Wars Rebellion main menu"
 category: agent-docs
 created: 2026-09-09
-updated: 2026-09-11
+updated: 2026-10-20
 tags: [main-menu, ui, common-dll, ghidra, parity, bitmap]
 ---
 
@@ -20,9 +20,8 @@ documented Open Rebellion music-only extension in the upper-right corner.*
 
 ![Small, medium, and large galaxy selections retaining their matching native bitmap scale](../docs/qa/2026-09-08-full-functionality-audit/evidence/main-menu-r3/galaxy-sizes-corrected-2026-09-11.png)
 
-*The three corrected selected states. Each screen now uses the matching
-small, medium, or large galaxy bitmap while the lever moves to its original
-detent.*
+*The three selected states. Each screen uses the matching small, medium, or
+large galaxy bitmap while the lever moves to its original detent.*
 
 ## Ground truth
 
@@ -95,6 +94,15 @@ COMMON resources `10019`, `10018`, and `10017` contain the selected small,
 medium, and large screen art respectively. The descending resource order is
 intentional and covered by a focused mapping regression test.
 
+Below the Cloud City control the original writes the game type in green
+proportional text, centred near (325,393) in the dark grid field: "Standard
+Game" in the at-rest capture
+(`reference-captures/pravus-part1-video-frames/0002-main-menu-rest.png` in
+the interface-parity audit). No capture yet shows the Headquarters Only
+text. The port draws both strings at (271,374,110,14) in a monospace face;
+the string source, face and size are not yet traced
+(`or-port-main-menu-game-type-text-h67b`).
+
 ## Documented Open Rebellion extension
 
 The original constructor creates exactly the 14 controls above. It does not
@@ -111,10 +119,9 @@ runs assert that default once, then switch it off and leave it muted.
 
 The compact housing follows the cockpit's hard physical bevels. Its cyan
 projection, restrained scanlines, and inset red/green lamp draw specifically
-from the Jiff Gorda/SWG Project Thorn reference. A verified Fable 5.1 design
-pass moved the control clear of the canopy strut, confined the holographic
-treatment to the speaker projection, and required identical painted and hit
-bounds. This extension is vector-drawn because no original bitmap exists for
+from the Jiff Gorda/SWG Project Thorn reference. The control sits clear of
+the canopy strut, the holographic treatment stays within the speaker
+projection, and its painted and hit bounds are identical. This extension is vector-drawn because no original bitmap exists for
 it; it must never be represented as original-game parity.
 
 A second extension follows it. `Fleet registry` occupies logical rect
@@ -159,16 +166,16 @@ component; Death Star loss is not an independent Alliance win. See the
 4. Animate the matching sequence on hover and show a pressed state on pointer down.
 5. Transform the exact logical rectangles above for pointer hit testing.
 6. Preserve mouse behavior and expose the 14 original controls plus the
-   documented music extension through clipped semantic DOM buttons without
+   two documented extensions (music, Fleet registry) through clipped semantic DOM buttons without
    adding visible replacement text.
 7. Keep difficulty, galaxy size, and game type selection visible.
 8. Start the selected faction directly; do not show the custom setup page.
 
 ## Feature boundaries
 
-- **P03 — Main menu:** cockpit assembly, animation, save/options, credits,
+- **P03—Main menu:** cockpit assembly, animation, save/options, credits,
   multiplayer, quit, keyboard operation, and responsive hit testing.
-- **P04 — Game setup:** difficulty, galaxy size, game type, faction start,
+- **P04—Game setup:** difficulty, galaxy size, game type, faction start,
   state propagation, and clean subsequent-campaign reset.
 
 F-016B verifies that all four setup values reach active configuration, save v13,
@@ -205,7 +212,8 @@ they remain ignored by Git.
 
 ## Browser acceptance matrix
 
-Run through the configured independent browser-acceptance workflow. Retain
+Run through the browser-acceptance workflow
+([agent-tooling.md](agent-tooling.md), "Browser Acceptance"). Retain
 screenshots and a JSON result for every run.
 
 | Gate | Required proof |
@@ -218,7 +226,7 @@ screenshots and a JSON result for every run.
 | Navigation | Load/options, credits, multiplayer, and quit reach the correct destination or remain explicit failures |
 | Pointer geometry | Center and edge clicks pass at 640x480, 1280x960, 1280x800, 1440x900, and a narrow supported viewport |
 | Keyboard access | Every control is keyboard reachable, single-activation, and visibly focused without covering art |
-| Browser semantics | One named navigation landmark exposes the 14 original controls and one documented extension, selection state, cyclic traversal, and the same actions; it is absent outside the menu |
+| Browser semantics | One named navigation landmark exposes the 14 original controls and the two documented extensions, selection state, cyclic traversal, and the same actions; it is absent outside the menu |
 | Visual quality | No blank aperture, blue matte, stretch, clip, wrong sprite family, or text-button overlay |
 | Runtime quality | Zero page, console, request, WebGL, missing-asset, or panic errors |
 | Audio | MDATA.300 loads once, begins after the browser gesture, loops without overlap, obeys gain/mute, resumes on return, and the mapped WAVE effects play without overlap |

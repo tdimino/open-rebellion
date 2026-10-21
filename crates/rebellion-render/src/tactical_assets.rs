@@ -208,14 +208,19 @@ impl OriginalTacticalCamera {
         let (sin_pitch, cos_pitch) = pitch.sin_cos();
         let (sin_yaw, cos_yaw) = yaw.sin_cos();
 
-        // Direct3D retained mode is left-handed and the original meshes use
-        // Y-up. Reflecting source Z produces Macroquad's right-handed space.
+        // `FUN_005d9640` sets the camera frame to a yaw about Y (replace),
+        // then a pitch about X and a translation of (0, 0, -distance) both
+        // combined before it: in Direct3D retained mode's row vectors the
+        // camera sits at (0, 0, -distance) * Rx(pitch) * Ry(yaw), looking
+        // along +Z * Rx * Ry, with +Y * Rx * Ry up. The mode is left-handed
+        // and the original meshes use Y-up; reflecting source Z produces
+        // Macroquad's right-handed space.
         let position = vec3(
-            -self.distance * sin_pitch * sin_yaw,
-            self.distance * sin_pitch * cos_yaw,
-            self.distance * cos_pitch,
+            -self.distance * cos_pitch * sin_yaw,
+            self.distance * sin_pitch,
+            self.distance * cos_pitch * cos_yaw,
         );
-        let up = vec3(-cos_pitch * sin_yaw, cos_pitch * cos_yaw, -sin_pitch);
+        let up = vec3(sin_pitch * sin_yaw, cos_pitch, -sin_pitch * cos_yaw);
         OriginalCameraPose {
             position,
             up,
@@ -978,7 +983,6 @@ pub(crate) struct TacticalDrawReport {
     pub rendered_object_ids: Vec<u32>,
     pub screen_positions: Vec<(u32, Vec2)>,
     pub projections: Vec<TacticalScreenProjection>,
-    pub collision_envelopes: Vec<(u32, TacticalCollisionEnvelope)>,
 }
 
 /// The two radii installed by `FUN_005ab0e0` from a capital ship's authored
@@ -1259,6 +1263,31 @@ impl TacticalAssetRenderer {
     /// which the surround clears), so nothing reports its projection.
     /// hyp: the effect decode's key, the first texel's index, is the decal's
     /// default black.
+    /// Draw the holocube, the battle's wireframe box. `FUN_005d4d10` builds
+    /// two Direct3D RM mesh builders over the unit cube's eight corners
+    /// (`ORIGINAL_HOLOCUBE_CORNERS`), the second with its faces wound the
+    /// other way, so every edge shows from either side (`AddFaces`,
+    /// `0x5d51be` and `0x5d5248`). It scales both by the battle extent
+    /// (`Scale`, `0x5d51da`), colours them blue (`SetColorRGB(0, 0, 1.0)`,
+    /// `0x5d51f3`) and renders them as unlit wireframes
+    /// (`SetQuality(0x40)`, `0x5d5207`); `FUN_005d58c0` adds both to the
+    /// scene under Display Holocube (option bit `0x02000000`).
+    pub(crate) fn draw_holocube(&self, aperture: (f32, f32, f32, f32), battle_extent: f32) {
+        let Some(source_camera) = self.source_camera else {
+            return;
+        };
+        let pose = source_camera.pose();
+        set_camera(&scene_camera(pose, aperture, true));
+        for (from, to) in holocube_edges() {
+            draw_line_3d(
+                authored_position(from * battle_extent),
+                authored_position(to * battle_extent),
+                ORIGINAL_HOLOCUBE_COLOR,
+            );
+        }
+        set_default_camera();
+    }
+
     pub(crate) fn draw_station_decal(
         &mut self,
         aperture: (f32, f32, f32, f32),
@@ -1415,17 +1444,7 @@ impl TacticalAssetRenderer {
     ) -> Option<Vec2> {
         let source_camera = self.source_camera?;
         let pose = source_camera.pose();
-        let (_, _, width, height) = aperture;
-        let camera = Camera3D {
-            position: pose.position,
-            target: pose.target,
-            up: pose.up,
-            fovy: pose.fovy_radians,
-            aspect: Some(width / height),
-            z_near: pose.near,
-            z_far: pose.far,
-            ..Default::default()
-        };
+        let camera = scene_camera(pose, aperture, false);
         project_world_position(camera.matrix(), position, aperture)
     }
 
@@ -1515,17 +1534,7 @@ impl TacticalAssetRenderer {
                 );
                 self.logged_camera = Some(camera_key);
             }
-            set_camera(&Camera3D {
-                position: pose.position,
-                target: pose.target,
-                up: pose.up,
-                fovy: pose.fovy_radians,
-                aspect: Some(width / height),
-                viewport: Some(viewport),
-                z_near: pose.near,
-                z_far: pose.far,
-                ..Default::default()
-            });
+            set_camera(&scene_camera(pose, aperture, true));
         } else {
             let camera_direction = vec3(2.8, -4.2, 2.2).normalize();
             let camera_distance = self.view.view_depth.mul_add(0.24, 2.0);
@@ -1558,6 +1567,36 @@ impl TacticalAssetRenderer {
     }
 
     /// Draw every mapped live capital ship through its joined three-LOD family.
+    fn ensure_participant_family(&mut self, resource_base: u32) {
+        if self.participant_families.contains_key(&resource_base)
+            || self.unavailable_families.contains(&resource_base)
+        {
+            return;
+        }
+        if let Err(error) = self.load_participant_family(resource_base) {
+            self.unavailable_families.insert(resource_base);
+            macroquad::logging::warn!(
+                "[tactical_3d] participant family base={} unavailable: {}",
+                resource_base,
+                error
+            );
+        }
+    }
+
+    /// The collision envelope `FUN_005ab0e0` sizes from a hull's mesh box,
+    /// read from the close/base member of its loaded family, which keeps it
+    /// across detail changes. `None` while the family is unavailable.
+    pub(crate) fn participant_collision_envelope(
+        &mut self,
+        resource_base: u32,
+    ) -> Option<TacticalCollisionEnvelope> {
+        self.ensure_participant_family(resource_base);
+        self.participant_families
+            .get(&resource_base)
+            .and_then(|family| family.first())
+            .map(|asset| asset.collision_envelope)
+    }
+
     pub(crate) fn draw_participants(
         &mut self,
         aperture: (f32, f32, f32, f32),
@@ -1576,19 +1615,7 @@ impl TacticalAssetRenderer {
             .collect::<Vec<_>>();
         resource_bases.sort_unstable();
         for resource_base in resource_bases {
-            if self.participant_families.contains_key(&resource_base)
-                || self.unavailable_families.contains(&resource_base)
-            {
-                continue;
-            }
-            if let Err(error) = self.load_participant_family(resource_base) {
-                self.unavailable_families.insert(resource_base);
-                macroquad::logging::warn!(
-                    "[tactical_3d] participant family base={} unavailable: {}",
-                    resource_base,
-                    error
-                );
-            }
+            self.ensure_participant_family(resource_base);
         }
         if self.material.is_none() {
             return report;
@@ -1610,13 +1637,6 @@ impl TacticalAssetRenderer {
             }
         }
 
-        let (x, y, width, height) = aperture;
-        let viewport = (
-            x.round() as i32,
-            (screen_height() - y - height).round() as i32,
-            width.round() as i32,
-            height.round() as i32,
-        );
         let source_camera = self.source_camera.unwrap();
         let pose = source_camera.pose();
         let camera_key = [
@@ -1652,17 +1672,7 @@ impl TacticalAssetRenderer {
             );
             self.logged_camera = Some(camera_key);
         }
-        let camera = Camera3D {
-            position: pose.position,
-            target: pose.target,
-            up: pose.up,
-            fovy: pose.fovy_radians,
-            aspect: Some(width / height),
-            viewport: Some(viewport),
-            z_near: pose.near,
-            z_far: pose.far,
-            ..Default::default()
-        };
+        let camera = scene_camera(pose, aperture, true);
         let camera_matrix = camera.matrix();
         set_camera(&camera);
 
@@ -1675,14 +1685,6 @@ impl TacticalAssetRenderer {
             let Some(family) = self.participant_families.get(&object.resource_base) else {
                 continue;
             };
-            // FUN_005ab0e0 derives the collision envelope when the source
-            // tactical object is initialized. Keep it stable across visual
-            // LOD transitions by using the close/base resource family member.
-            if let Some(base_asset) = family.first() {
-                report
-                    .collision_envelopes
-                    .push((object.object_id, base_asset.collision_envelope));
-            }
             let prior_lod = self
                 .participant_lods
                 .get(&object.object_id)
@@ -1690,11 +1692,7 @@ impl TacticalAssetRenderer {
                 .unwrap_or(OriginalTacticalLod::Medium);
             let lod = select_original_tactical_lod(
                 prior_lod,
-                TacticalLodView {
-                    view_depth: pose.position.distance(object.position),
-                    projection_scale: 1.0,
-                    high_detail: self.high_detail_models,
-                },
+                original_capital_lod_view(pose, object.position, self.high_detail_models),
             );
             let asset = &family[lod as usize];
             if !asset.has_drawable_geometry() {
@@ -1818,20 +1816,10 @@ impl TacticalAssetRenderer {
         }
 
         let pose = source_camera.pose();
-        let camera = Camera3D {
-            position: pose.position,
-            target: pose.target,
-            up: pose.up,
-            fovy: pose.fovy_radians,
-            aspect: Some(aperture.2 / aperture.3),
-            viewport: None,
-            z_near: pose.near,
-            z_far: pose.far,
-            ..Default::default()
-        };
+        let camera = scene_camera(pose, aperture, false);
         let camera_matrix = camera.matrix();
         let camera_forward = (pose.target - pose.position).normalize();
-        let source_scale = aperture.2 / 444.0;
+        let half_view = (scene_fovy(pose, aperture) * 0.5).tan();
         let mut selected_resources = Vec::new();
         let mut screen_positions = Vec::new();
         let mut screen_bounds = Vec::new();
@@ -1841,7 +1829,7 @@ impl TacticalAssetRenderer {
                 continue;
             };
             let axial_depth = (object.position - pose.position).dot(camera_forward).abs();
-            let view_span = axial_depth * pose.field;
+            let view_span = original_fighter_view_span(pose, axial_depth);
             let prior = self
                 .fighter_details
                 .get(&object.object_id)
@@ -1852,7 +1840,8 @@ impl TacticalAssetRenderer {
                 continue;
             };
             let (resource_id, texture) = family.selected(detail);
-            let size = vec2(texture.width(), texture.height()) * source_scale;
+            let side = original_fighter_decal_pixels(axial_depth, aperture.3, half_view);
+            let size = vec2(side, side);
             let min = center - size * 0.5;
             let max = min + size;
             draw_texture_ex(
@@ -1953,19 +1942,9 @@ impl TacticalAssetRenderer {
         }
 
         let pose = source_camera.pose();
-        let camera = Camera3D {
-            position: pose.position,
-            target: pose.target,
-            up: pose.up,
-            fovy: pose.fovy_radians,
-            aspect: Some(aperture.2 / aperture.3),
-            viewport: None,
-            z_near: pose.near,
-            z_far: pose.far,
-            ..Default::default()
-        };
+        let camera = scene_camera(pose, aperture, false);
         let camera_matrix = camera.matrix();
-        let source_scale = aperture.2 / 444.0;
+        let source_scale = aperture.2 / ORIGINAL_SCENE_WIDTH;
         let mut rendered = Vec::new();
         for object in objects {
             let Some(center) = project_world_position(camera_matrix, object.position, aperture)
@@ -2064,19 +2043,9 @@ impl TacticalAssetRenderer {
         }
 
         let pose = source_camera.pose();
-        let camera = Camera3D {
-            position: pose.position,
-            target: pose.target,
-            up: pose.up,
-            fovy: pose.fovy_radians,
-            aspect: Some(aperture.2 / aperture.3),
-            viewport: None,
-            z_near: pose.near,
-            z_far: pose.far,
-            ..Default::default()
-        };
+        let camera = scene_camera(pose, aperture, false);
         let camera_matrix = camera.matrix();
-        let source_scale = aperture.2 / 444.0;
+        let source_scale = aperture.2 / ORIGINAL_SCENE_WIDTH;
         let mut rendered = Vec::new();
         for object in objects {
             let Some(center) = project_world_position(camera_matrix, object.position, aperture)
@@ -2151,22 +2120,7 @@ impl TacticalAssetRenderer {
         }
         let (x, y, width, height) = aperture;
         let pose = source_camera.pose();
-        let camera = Camera3D {
-            position: pose.position,
-            target: pose.target,
-            up: pose.up,
-            fovy: pose.fovy_radians,
-            aspect: Some(width / height),
-            viewport: Some((
-                x.round() as i32,
-                (screen_height() - y - height).round() as i32,
-                width.round() as i32,
-                height.round() as i32,
-            )),
-            z_near: pose.near,
-            z_far: pose.far,
-            ..Default::default()
-        };
+        let camera = scene_camera(pose, aperture, true);
         let camera_matrix = camera.matrix();
         set_camera(&camera);
         let mut rendered = Vec::new();
@@ -2218,7 +2172,7 @@ impl TacticalAssetRenderer {
         // faces as visible device lines. Modern WebGL drops those sub-pixel
         // triangles. Preserve the exact submitted mesh above, then restore its
         // native one-device-pixel coverage along the same projected axis.
-        let device_pixel = (aperture.2 / 444.0).max(1.0);
+        let device_pixel = (aperture.2 / ORIGINAL_SCENE_WIDTH).max(1.0);
         for (center, tip, color) in raster_compatibility_segments {
             draw_line(center.x, center.y, tip.x, tip.y, device_pixel, color);
         }
@@ -2288,6 +2242,7 @@ impl TacticalAssetRenderer {
         for (index, mesh_bytes) in mesh_payloads.iter().enumerate() {
             let resource_id = 2560 + index as u32;
             let mut decoded = decode_mesh_object(mesh_bytes)?;
+            scale_capital_mesh(&mut decoded);
             for chunk in &mut decoded.chunks {
                 let texture = chunk
                     .texture_name
@@ -2377,7 +2332,8 @@ impl TacticalAssetRenderer {
         let mut decoded_meshes = Vec::with_capacity(3);
         let mut texture_names = HashSet::new();
         for (resource_id, bytes) in mesh_payloads {
-            let decoded = decode_mesh_object(&bytes)?;
+            let mut decoded = decode_mesh_object(&bytes)?;
+            scale_capital_mesh(&mut decoded);
             for chunk in &decoded.chunks {
                 if let Some(name) = &chunk.texture_name {
                     texture_names.insert(name.to_ascii_uppercase());
@@ -2704,15 +2660,11 @@ fn decal_screen_rect(
     if !(pose.near..=pose.far).contains(&depth) {
         return None;
     }
-    // `Camera3D::matrix` for the pose the participant passes draw with.
-    let camera_matrix = Mat4::perspective_rh_gl(
-        pose.fovy_radians,
-        aperture.2 / aperture.3,
-        pose.near,
-        pose.far,
-    ) * Mat4::look_at_rh(pose.position, pose.target, pose.up);
+    // The camera the participant passes draw with.
+    let camera_matrix = scene_camera(pose, aperture, false).matrix;
     let centre = project_world_position(camera_matrix, decal.position, aperture)?;
-    let pixels = decal.size * aperture.3 / (2.0 * depth * (pose.fovy_radians * 0.5).tan());
+    let pixels =
+        decal.size * aperture.3 / (2.0 * depth * (scene_fovy(pose, aperture) * 0.5).tan());
     let size = vec2(pixels, pixels);
     Some((centre - decal.origin / texture_size * size, size))
 }
@@ -2927,6 +2879,191 @@ fn tactical_collision_envelope(bounds: [f32; 6]) -> TacticalCollisionEnvelope {
         planar_diameter: (bounds[3] - bounds[0])
             .hypot(bounds[5] - bounds[2])
             .max(0.5),
+    }
+}
+
+/// The native size of the "3D WINDOW" (`FUN_005c14d0`, 439 by 437).
+const ORIGINAL_SCENE_WIDTH: f32 = 439.0;
+const ORIGINAL_SCENE_HEIGHT: f32 = 437.0;
+
+/// The camera the scene draws and projects through: the source pose on the
+/// retained-mode viewport of the "3D WINDOW". The device's surfaces take the
+/// window's client rect (`FUN_005d6c10`, `GetClientRect`), and the viewport
+/// covers the whole device: `FUN_005c1d30` passes `FUN_005d9490` a rect of
+/// zeros, which `FUN_005d9eb0` widens to the device's width and height before
+/// `IDirect3DRM::CreateViewport` (slot `0x50`). Field 0.2 (`FUN_005d9620`)
+/// and front plane 1.0 (`FUN_005d9640`, viewport slot `0x38`). Direct3D's
+/// pixel centres lie on integer coordinates, half a pixel right of and below
+/// OpenGL's. hyp: the viewport scales field units isotropically by the mean
+/// of its half width and half height, (439 + 437) / 4 = 219 pixels per 0.2
+/// of field at unit depth; this is fitted to the holocube's edges in A0
+/// TAC-05-C017 (Empire) and the paused frame of TAC-05-C023 (Alliance),
+/// 0.28 px RMS over 1,335 edge pixels, as the retained-mode library's
+/// projection is not in the executable.
+struct SceneCamera {
+    matrix: Mat4,
+    viewport: Option<(i32, i32, i32, i32)>,
+}
+
+impl Camera for SceneCamera {
+    fn matrix(&self) -> Mat4 {
+        self.matrix
+    }
+
+    fn depth_enabled(&self) -> bool {
+        true
+    }
+
+    fn render_pass(&self) -> Option<RenderPass> {
+        None
+    }
+
+    fn viewport(&self) -> Option<(i32, i32, i32, i32)> {
+        self.viewport
+    }
+}
+
+/// The vertical field of view that gives `pose`'s field the viewport's
+/// isotropic scale on `aperture` (see [`SceneCamera`]).
+fn scene_fovy(pose: OriginalCameraPose, aperture: (f32, f32, f32, f32)) -> f32 {
+    let (_, _, width, height) = aperture;
+    let half = (width + height) * 0.25;
+    2.0 * (pose.field * height * 0.5 / half).atan()
+}
+
+/// The 3D window as OpenGL's viewport: its rows count up from the bottom of
+/// a screen `screen_height` pixels tall.
+fn scene_gl_viewport(
+    (x, y, width, height): (f32, f32, f32, f32),
+    screen_height: f32,
+) -> (i32, i32, i32, i32) {
+    (
+        x.round() as i32,
+        (screen_height - y - height).round() as i32,
+        width.round() as i32,
+        height.round() as i32,
+    )
+}
+
+fn scene_camera(
+    pose: OriginalCameraPose,
+    aperture: (f32, f32, f32, f32),
+    with_viewport: bool,
+) -> SceneCamera {
+    let (_, _, width, height) = aperture;
+    let half_pixel = Mat4::from_translation(vec3(
+        1.0 / ORIGINAL_SCENE_WIDTH,
+        -1.0 / ORIGINAL_SCENE_HEIGHT,
+        0.0,
+    ));
+    SceneCamera {
+        matrix: half_pixel
+            * Mat4::perspective_rh_gl(
+                scene_fovy(pose, aperture),
+                width / height,
+                pose.near,
+                pose.far,
+            )
+            * Mat4::look_at_rh(pose.position, pose.target, pose.up),
+        viewport: with_viewport.then(|| scene_gl_viewport(aperture, screen_height())),
+    }
+}
+
+/// `FUN_005d3770`'s view of a capital ship: its depth along the camera's
+/// view, against thresholds divided by the camera's field (camera slot
+/// `+0x14`, `FUN_005d98f0`, which returns `+0x48`).
+fn original_capital_lod_view(
+    pose: OriginalCameraPose,
+    position: Vec3,
+    high_detail: bool,
+) -> TacticalLodView {
+    TacticalLodView {
+        view_depth: (position - pose.position)
+            .dot((pose.target - pose.position).normalize())
+            .abs(),
+        projection_scale: pose.field,
+        high_detail,
+    }
+}
+
+/// `0x5d4af0`'s span for a fighter group at `axial_depth` along the view:
+/// that depth times the tangent of half the camera's field
+/// (`FUN_005d98f0`, then `FMUL 0.5` and `FPTAN`).
+fn original_fighter_view_span(pose: OriginalCameraPose, axial_depth: f32) -> f32 {
+    axial_depth * (pose.field * 0.5).tan()
+}
+
+/// `FUN_005d43c0` gives each of a fighter group's three decals (close
+/// `base`, far `base + 5`, indicator `4200 + base % 10`) `SetDecalSize(0.3,
+/// 0.3)` world units (`0x5d44e4`, and alike for the other two) and leaves
+/// decal scaling on, so Direct3D RM draws each at its depth's scale.
+const ORIGINAL_FIGHTER_DECAL_SIZE: f32 = 0.3;
+
+/// A fighter decal's side in pixels at `axial_depth`, on a viewport
+/// `height` pixels tall whose half view at unit depth is `half_view`.
+fn original_fighter_decal_pixels(axial_depth: f32, height: f32, half_view: f32) -> f32 {
+    ORIGINAL_FIGHTER_DECAL_SIZE * height * 0.5 / (axial_depth.max(f32::EPSILON) * half_view)
+}
+
+/// The holocube's corners as `FUN_005d4d10` stores them before `AddFaces`
+/// (`0x5d4d77`-`0x5d4e35`).
+const ORIGINAL_HOLOCUBE_CORNERS: [Vec3; 8] = [
+    vec3(-0.5, -0.5, -0.5),
+    vec3(-0.5, -0.5, 0.5),
+    vec3(-0.5, 0.5, 0.5),
+    vec3(-0.5, 0.5, -0.5),
+    vec3(0.5, -0.5, -0.5),
+    vec3(0.5, -0.5, 0.5),
+    vec3(0.5, 0.5, 0.5),
+    vec3(0.5, 0.5, -0.5),
+];
+
+/// The holocube's six quads by corner index (`0x5d4e40`-`0x5d4f24`).
+const ORIGINAL_HOLOCUBE_FACES: [[usize; 4]; 6] = [
+    [0, 3, 2, 1],
+    [0, 4, 7, 3],
+    [0, 1, 5, 4],
+    [6, 7, 4, 5],
+    [6, 5, 1, 2],
+    [6, 2, 3, 7],
+];
+
+/// `SetColorRGB(0, 0, 1.0)` with lighting off: pure blue.
+const ORIGINAL_HOLOCUBE_COLOR: Color = Color::new(0.0, 0.0, 1.0, 1.0);
+
+/// Each edge of the holocube's quads once.
+fn holocube_edges() -> Vec<(Vec3, Vec3)> {
+    let mut edges: Vec<(usize, usize)> = Vec::new();
+    for face in ORIGINAL_HOLOCUBE_FACES {
+        for side in 0..4 {
+            let (a, b) = (face[side], face[(side + 1) % 4]);
+            let edge = (a.min(b), a.max(b));
+            if !edges.contains(&edge) {
+                edges.push(edge);
+            }
+        }
+    }
+    edges
+        .into_iter()
+        .map(|(a, b)| (ORIGINAL_HOLOCUBE_CORNERS[a], ORIGINAL_HOLOCUBE_CORNERS[b]))
+        .collect()
+}
+
+/// The capital-ship mesh cache (`DAT_006bcbd4+0x198`, vtable `0x66c990`)
+/// loads each mesh builder and scales it by `DAT_0066d2b0` = 3.0 on all three
+/// axes (`FUN_005d5b10`, slot `0x34`) before any ship uses it, so a ship's
+/// visual (`FUN_005d26c0`) and the box `FUN_005ab0e0` sizes its collision
+/// envelope from (through `FUN_005c1100`) are both three times the file's.
+const ORIGINAL_CAPITAL_MESH_SCALE: f32 = 3.0;
+
+fn scale_capital_mesh(decoded: &mut DecodedMeshObject) {
+    for chunk in &mut decoded.chunks {
+        for vertex in &mut chunk.mesh.vertices {
+            vertex.position *= ORIGINAL_CAPITAL_MESH_SCALE;
+        }
+    }
+    for bound in &mut decoded.source_bounds {
+        *bound *= ORIGINAL_CAPITAL_MESH_SCALE;
     }
 }
 
@@ -3342,6 +3479,59 @@ mod tests {
         assert!(truncated.u32().is_err());
     }
 
+    // Our own layout: the 3D window's rectangle in OpenGL's bottom-up rows.
+    #[test]
+    fn the_scene_viewport_counts_its_rows_from_the_screens_bottom() {
+        assert_eq!(scene_gl_viewport((17.0, 30.0, 439.0, 437.0), 480.0), (17, 13, 439, 437));
+        assert_eq!(
+            scene_gl_viewport((114.3, 90.0, 731.7, 728.3), 800.0),
+            (114, -18, 732, 728)
+        );
+    }
+
+    // Source: FUN_005d9640 (lines 9-13) brings the yaw back into -180..180
+    // before it builds the frame: above 180 it subtracts 360, below -180 it
+    // adds 360.
+    #[test]
+    fn a_yaw_past_either_half_turn_wraps_before_the_camera_is_posed() {
+        for (yaw, wrapped) in [(185, -175), (-185, 175), (180, 180), (-180, -180)] {
+            let mut camera = OriginalTacticalCamera::new(false, 226.0);
+            camera.yaw_degrees = yaw;
+            let mut reference = camera;
+            reference.yaw_degrees = wrapped;
+            let pose = camera.pose();
+            assert_eq!(pose.yaw_degrees, wrapped);
+            assert!(pose.position.distance(reference.pose().position) < 1.0e-3);
+        }
+    }
+
+    // Source: FUN_005d5b10 scales each cached capital mesh builder by
+    // DAT_0066d2b0 = 3.0 (slot 0x34) right after loading it.
+    #[test]
+    fn a_capital_mesh_and_its_collision_box_are_three_times_the_files() {
+        let mut decoded = DecodedMeshObject {
+            chunks: vec![DecodedMeshChunk {
+                mesh: Mesh {
+                    vertices: vec![Vertex::new(1.0, -2.0, 0.5, 0.0, 0.0, WHITE)],
+                    indices: vec![0, 0, 0],
+                    texture: None,
+                },
+                texture_name: None,
+                emissive: [0.0; 3],
+            }],
+            #[cfg(not(target_arch = "wasm32"))]
+            materials: 1,
+            source_vertices: 1,
+            source_faces: 1,
+            source_bounds: [-1.0, -2.0, -0.5, 1.0, 2.0, 0.5],
+        };
+        scale_capital_mesh(&mut decoded);
+        assert_eq!(decoded.chunks[0].mesh.vertices[0].position, vec3(3.0, -6.0, 1.5));
+        let envelope = tactical_collision_envelope(decoded.source_bounds);
+        assert_near(envelope.vertical_radius, 6.0);
+        assert_near(envelope.planar_diameter, 6.0_f32.hypot(3.0));
+    }
+
     // Our own conversion from the authored left-handed frame; no source claim.
     #[test]
     fn authored_mesh_positions_keep_source_scale_and_reflect_only_z() {
@@ -3589,14 +3779,125 @@ mod tests {
         assert_eq!(alliance.pitch_degrees, 30);
         assert_eq!(alliance.yaw_degrees, -30);
         assert_eq!(empire.yaw_degrees, 150);
+        // Each side's camera rises 30 degrees behind its own line, half a
+        // turn round from the other's (A0 TAC-05-C009 and TAC-05-C017 both
+        // show the player's own ships nearest).
         assert_near(alliance.position.x, -empire.position.x);
-        assert_near(alliance.position.y, -empire.position.y);
-        assert_near(alliance.position.z, empire.position.z);
+        assert_near(alliance.position.y, empire.position.y);
+        assert_near(alliance.position.z, -empire.position.z);
+        assert_near(alliance.position.y, 170.0 * 0.5);
+        assert_near(alliance.position.length(), 170.0);
+        assert!(empire.position.z < 0.0, "authored +z is the Imperial line");
         assert_near(alliance.near, 1.0);
         assert_near(alliance.far, 425.0);
         assert_near(alliance.field, 0.2);
         assert_near(alliance.fovy_radians, 2.0 * 0.2_f32.atan());
         assert_near(alliance.up.length(), 1.0);
+    }
+
+    // Source: FUN_005d4d10 (holocube corners 0x5d4d77-0x5d4e35, faces
+    // 0x5d4e40-0x5d4f24); FUN_005d9640 camera; FUN_005c14d0's 3D window.
+    // A0 TAC-05-C017 (Empire, empire-death-star-pre-alert) and the paused
+    // frame of TAC-05-C023 (Alliance, alliance-day1169-deathstar-trench-run)
+    // draw the box's edges through these same pure-blue pixels.
+    #[test]
+    fn the_holocube_runs_through_the_original_frames_edge_pixels_on_both_sides() {
+        const A0_EDGE_PIXELS: [(f32, f32); 19] = [
+            (131.0, 60.0),
+            (132.0, 60.0),
+            (133.0, 60.0),
+            (134.0, 60.0),
+            (148.0, 60.0),
+            (152.0, 150.0),
+            (156.0, 250.0),
+            (83.0, 350.0),
+            (352.0, 350.0),
+            (353.0, 350.0),
+            (354.0, 350.0),
+            (445.0, 350.0),
+            (436.0, 420.0),
+            (60.0, 45.0),
+            (60.0, 369.0),
+            (250.0, 85.0),
+            (250.0, 317.0),
+            (400.0, 117.0),
+            (400.0, 365.0),
+        ];
+        let aperture = (17.0, 30.0, 439.0, 437.0);
+        assert_eq!(holocube_edges().len(), 12);
+        for player_is_empire in [false, true] {
+            let extent = 226.0;
+            let pose = OriginalTacticalCamera::new(player_is_empire, extent).pose();
+            let matrix = scene_camera(pose, aperture, false).matrix;
+            let screen = |corner: Vec3| {
+                project_world_position(matrix, authored_position(corner * extent), aperture)
+                    .expect("the holocube is in front of the camera")
+            };
+            let edges: Vec<(Vec2, Vec2)> = holocube_edges()
+                .into_iter()
+                .map(|(a, b)| (screen(a), screen(b)))
+                .collect();
+            for (x, y) in A0_EDGE_PIXELS {
+                // The pixel's centre.
+                let point = vec2(x + 0.5, y + 0.5);
+                let nearest = edges
+                    .iter()
+                    .map(|&(a, b)| {
+                        let along = b - a;
+                        let t = ((point - a).dot(along) / along.length_squared()).clamp(0.0, 1.0);
+                        (a + along * t).distance(point)
+                    })
+                    .fold(f32::INFINITY, f32::min);
+                assert!(
+                    nearest <= 0.75,
+                    "empire={player_is_empire}: A0 pixel ({x}, {y}) is {nearest} px from every edge"
+                );
+            }
+        }
+    }
+
+    // Source: FUN_005d3770 (0x5d37fb camera slot +0x14 = FUN_005d98f0, the
+    // field at +0x48; thresholds 0x66d160 and 0x66d158 divided by it) and
+    // 0x5d4af0 (field * 0.5, FPTAN, times the depth along the view).
+    #[test]
+    fn capital_and_fighter_detail_scale_with_the_cameras_field() {
+        for (player_is_empire, focus) in [
+            (false, None),
+            (true, None),
+            (false, Some(vec3(30.0, 0.0, -20.0))),
+            (true, Some(vec3(-30.0, 10.0, 20.0))),
+        ] {
+            let mut camera = OriginalTacticalCamera::new(player_is_empire, 226.0);
+            if let Some(target) = focus {
+                camera.focus_target(1, target);
+            }
+            let pose = camera.pose();
+            let forward = (pose.target - pose.position).normalize();
+            let ahead = pose.position + forward * 150.0;
+            let view = original_capital_lod_view(pose, ahead, true);
+            assert!((view.view_depth - 150.0).abs() < 1.0e-3);
+            assert_near(view.projection_scale, 0.2);
+            // 150 units lies between 15 / 0.2 and 40 / 0.2: the medium mesh.
+            assert_eq!(
+                select_original_tactical_lod(OriginalTacticalLod::Far, view),
+                OriginalTacticalLod::Medium
+            );
+            assert_near(original_fighter_view_span(pose, 150.0), 150.0 * 0.1_f32.tan());
+        }
+    }
+
+    // Source: FUN_005d43c0 sets all three of a fighter group's decals to
+    // 0.3 by 0.3 world units (0x5d44e4) with decal scaling on. A0 TAC-05-C017
+    // (empire-death-star-pre-alert) shows no pixel of the Alliance's 28
+    // squadrons on their lane about 450 units from the camera.
+    #[test]
+    fn a_fighter_decal_spans_three_tenths_of_a_unit_at_its_depth() {
+        assert_pixel(original_fighter_decal_pixels(100.0, 437.0, 0.2), 0.3 * 218.5 / 20.0);
+        assert_pixel(
+            original_fighter_decal_pixels(50.0, 437.0, 0.2),
+            2.0 * original_fighter_decal_pixels(100.0, 437.0, 0.2)
+        );
+        assert!(original_fighter_decal_pixels(450.0, 437.0, 0.2) < 1.0);
     }
 
     // Source: FUN_005d4d10 sets the decals' size (SetDecalSize) and origin
@@ -3618,10 +3919,16 @@ mod tests {
             let (min, size) = decal_screen_rect(pose, aperture, decal, vec2(128.0, 128.0))
                 .expect("the battle centre is in view");
             let depth = (pose.target - pose.position).length();
-            let pixels = 50.0 * 439.0 / (2.0 * depth * (pose.fovy_radians * 0.5).tan());
+            // The scene viewport scales field units isotropically by its
+            // mean half size, and puts points half a native pixel right of
+            // and below OpenGL's (`SceneCamera`).
+            let pixels = 50.0 * ((444.0 + 439.0) * 0.25) / (depth * 0.2);
             assert_pixel(size.x, pixels);
             assert_pixel(size.y, pixels);
-            let centre = vec2(18.0 + 222.0, 29.0 + 219.5);
+            let centre = vec2(
+                18.0 + 222.0 + 222.0 / ORIGINAL_SCENE_WIDTH,
+                29.0 + 219.5 + 219.5 / ORIGINAL_SCENE_HEIGHT,
+            );
             assert_pixel(min.x, centre.x - pixels * 0.5);
             assert_pixel(min.y, centre.y - pixels * 0.5);
 

@@ -684,13 +684,16 @@ fn fold(f: &mut FleetRecord, s: &ShipRecord) {
 /// `FUN_0050fbf0`), into a view while that view is live: the side holds the
 /// system or observes it, which an active fleet of the side there makes it
 /// (`FUN_0050ac80`; `ghidra/notes/observation-levels.md`); a view that
-/// stops being live keeps the bit. hyp: a side's view holds the bit for a
-/// core system (SYSTEMSD family `0x90`, known from the start, manual
-/// p. 69), one it holds, and one where it has a usable fleet; a view kept
-/// from an earlier observation, or refreshed by an observation level
-/// (`FUN_0050d5a0`: informants, espionage, mission ends), is not followed,
-/// since the port keeps no per-side intelligence. port: counts at a non-own system are its owner's objects,
-/// which `FUN_00433e40` counts as everything there.
+/// stops being live keeps the bit. The held and fleet tests are
+/// `FUN_0050ac80`'s: the side owns the system, or a fleet of the side there
+/// passes the mode-1 walk (`FUN_004ffef0(system, 1, side)`, a usable
+/// fleet). hyp: a side's view also holds the bit for a core system
+/// (SYSTEMSD families `0x90`-`0x91`, the core class's `FUN_00566d40`,
+/// known from the start, manual p. 69); a view kept from an earlier
+/// observation, or refreshed by an observation level (`FUN_0050d5a0`:
+/// informants, espionage, mission ends), is not followed, since the port
+/// keeps no per-side intelligence. port: counts at a non-own system are
+/// its owner's objects, which `FUN_00433e40` counts as everything there.
 pub fn fill_system(
     r: &mut crate::ai_production::SystemRecord,
     inputs: &RecordWorld<'_>,
@@ -719,7 +722,8 @@ pub fn fill_system(
             value.is_alliance == (inputs.side == crate::dat::Faction::Alliance) && value.usable()
         })
     });
-    if world.system_family(r.key) != 0x90 && !r.own && !observed {
+    let core = crate::bombardment::CORE_FAMILIES.contains(&world.system_family(r.key));
+    if !core && !r.own && !observed {
         r.q |= 0x80;
         r.s = s;
         return;
@@ -1182,11 +1186,12 @@ mod tests {
     fn the_other_sides_intelligence_on_a_rim_system_gives_this_side_no_full_record() {
         // The record's view test (FUN_00433e40.c:120-125) is per side; the
         // world's exploration flag, which an intelligence mission of either
-        // side sets, is not. A core system (family 0x90, manual p. 69)
-        // keeps its full record; a rim one the side neither holds nor
-        // observes stops at Q 0x80 whatever the flag says.
+        // side sets, is not. A core system (families 0x90-0x91,
+        // FUN_00566d40; manual p. 69) keeps its full record; a rim one the
+        // side neither holds nor observes stops at Q 0x80 whatever the flag
+        // says.
         for side in [Faction::Alliance, Faction::Empire] {
-            for (family, full) in [(0x90, true), (0x92, false)] {
+            for (family, full) in [(0x90, true), (0x91, true), (0x92, false)] {
                 let mut world = GameWorld::default();
                 let key = world.systems.insert(System {
                     dat_id: DatId::new(0x64),

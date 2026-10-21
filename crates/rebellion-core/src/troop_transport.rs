@@ -962,8 +962,8 @@ impl TroopTransportState {
             );
         if value.is_destroyed {
             Err(TroopTransportError::DestinationDestroyed)
-        } else if !value.control.is_controlled_by(side(is_alliance))
-            && !(regiment && neutral_unpopulated)
+        } else if !(value.control.is_controlled_by(side(is_alliance))
+            || (regiment && neutral_unpopulated))
         {
             Err(TroopTransportError::OtherSideDestination)
         } else if blockaded.contains(&system) {
@@ -1046,6 +1046,10 @@ impl TroopTransportState {
 
     /// `FUN_00556390`: take the regiment out of its container, then place it
     /// at once within its system or start its transit.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Where the regiment is and goes, the ship that takes it and the day are one order's fields."
+    )]
     fn execute(
         &mut self,
         world: &mut GameWorld,

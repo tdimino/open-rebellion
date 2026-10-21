@@ -1,19 +1,19 @@
 ---
 title: "Asset Pipeline"
-description: "HD upscaling, 3D model generation, and encyclopedia content pipelines"
+description: "Faithful-HD upscaling, original tactical meshes, experimental model generation, and encyclopedia content pipelines"
 category: "agent-docs"
 created: 2026-03-13
-updated: 2026-10-07
+updated: 2026-10-19
 tags: [asset-pipeline, upscaling, 3d-models, audio, references]
 ---
 
 # Asset Pipeline
 
-Three pipelines handle HD upscaling, 3D model generation, and encyclopedia content. Read when adding visual assets, generating models, or working on the encyclopedia viewer.
+Three pipelines handle faithful-HD upscaling, the original tactical meshes (with experimental model generation), and encyclopedia content. Read when adding visual assets, generating models, or working on the encyclopedia viewer.
 
 ## Differentiation from swrebellion.net
 
-The swrebellion.net community's 25th Anniversary pack (2023) substitutes original art with new interpretations. Our approach: **upscale the original 1998 assets with 2026 AI technology** and **generate 3D models for tactical combat**. Authentic aesthetic, freed from Win32.
+The swrebellion.net community's 25th Anniversary pack (2023) substitutes original art with new interpretations. Our approach: the original 1998 assets are the parity baseline; faithful-HD upscales are optional and manifest-approved; the tactical view renders the original type-301 meshes. Generated models belong only to the experimental-remaster profile.
 
 ## Pipeline 1: HD Upscaling
 
@@ -37,8 +37,8 @@ Original BMPs from game's installed directories:
 
 ### Faithful-HD contract
 
-The [September 2026 plan](../docs/plans/2026-09-10-faithful-hd-pipeline/)
-supersedes universal model routing. `original-parity` is the default and only
+The [faithful-HD plan](../docs/plans/2026-09-10-faithful-hd-pipeline/)
+governs upscaling. `original-parity` is the default and only
 profile that counts toward interface parity. `faithful-hd` is optional and loads
 only manifest-approved assets. Generative restoration is experimental.
 
@@ -87,7 +87,7 @@ Test samples: `scripts/shootout-samples.json` (20 BMPs, 4 per category)
 **Important**: Do not flatten indexed source assets to RGB for deterministic
 routes. Preserve palette indices, transparency, and protected masks throughout.
 
-### Gemini Generative Upscale (Method A — TESTED)
+### Gemini Generative Upscale (Method A, tested)
 
 Gemini 3 Pro Image via `edit_image.py`. Generates a higher-resolution reimagining.
 400x200 → ~1376x768. Cost: ~$0.13/image at 2K, ~$0.24 at 4K.
@@ -99,10 +99,10 @@ python3 ~/.claude/skills/nano-banana-pro/scripts/edit_image.py \
 ```
 
 **Results by category:**
-- **Capital ships**: HIGH fidelity — hull shape, colors, angle preserved. Excellent coherent detail.
-- **Planets**: MEDIUM — adds plausible but non-canonical surface detail (Aztec patterns on Coruscant).
-- **Portraits**: LOW — modernizes face to photorealistic, loses 1998 painted aesthetic.
-- **Fighters**: LOW — hallucinates extra ships (1 X-Wing → squadron of 7).
+- **Capital ships**: HIGH fidelity—hull shape, colors, angle preserved. Excellent coherent detail.
+- **Planets**: MEDIUM—adds plausible but non-canonical surface detail (Aztec patterns on Coruscant).
+- **Portraits**: LOW—modernizes face to photorealistic, loses 1998 painted aesthetic.
+- **Fighters**: LOW—hallucinates extra ships (1 X-Wing → squadron of 7).
 
 **Prompt refinement to reduce hallucination:**
 - Add "Do not add any new objects or elements" for fighters/portraits
@@ -113,7 +113,7 @@ python3 ~/.claude/skills/nano-banana-pro/scripts/edit_image.py \
 
 **Best for:** Capital ships, large structures, facilities. Use traditional upscaling for fighters, sprites, portraits.
 
-### Vertex AI Imagen 4.0 Upscale (Non-Generative — TESTED, WORKING)
+### Vertex AI Imagen 4.0 Upscale (non-generative, tested, working)
 
 Pure super-resolution via `imagen-4.0-upscale-preview`. No text guidance, no hallucination.
 GCP project: `dream-daimon`. Vertex AI API enabled.
@@ -127,13 +127,13 @@ GOOGLE_CLOUD_PROJECT=dream-daimon uv run scripts/vertex-upscale.py --input-dir o
 ```
 
 **Tested results (400x200 → 1600x800):**
-- Luke Skywalker portrait: PERFECT — preserves 1998 painted CGI style, no modernization
-- Mon Cal Cruiser: PERFECT — faithful enlargement, no invented detail
-- Nebulon-B Frigate: PERFECT — thin spar preserved cleanly
-- Coruscant: PERFECT — cityscape detail preserved
+- Luke Skywalker portrait: PERFECT—preserves 1998 painted CGI style, no modernization
+- Mon Cal Cruiser: PERFECT—faithful enlargement, no invented detail
+- Nebulon-B Frigate: PERFECT—thin spar preserved cleanly
+- Coruscant: PERFECT—cityscape detail preserved
 - X-Wing: quota limit hit (5 req/min default), retry after cooldown
 
-**Best for:** Portraits, fighters, sprites — anything where fidelity > detail invention.
+**Best for:** Portraits, fighters, sprites—anything where fidelity > detail invention.
 **Quota:** 5 requests/minute default. Request increase for batch processing.
 
 ### Upscaling Strategy
@@ -165,13 +165,12 @@ the experimental remaster profile.
 | 128x128 | 4x | 512x512 | Character portraits, ship profiles |
 | 256x256 | 4x | 1024x1024 | Encyclopedia full images |
 
-### BMP Preprocessing (Critical)
+### BMP Preprocessing
 
-Rebellion BMPs are 256-color indexed palette. All upscalers require RGB:
-```python
-from PIL import Image
-img = Image.open("EDATA.042").convert('RGB')  # palette → RGB before upscaling
-```
+Rebellion BMPs are 256-colour indexed. Deterministic routes keep the palette
+indices (see "Faithful-HD contract"). Only the learned-model comparison routes
+convert to RGB, and their outputs are comparison candidates, never approved
+runtime assets.
 
 ### Batch Script
 
@@ -195,9 +194,9 @@ uv run scripts/upscale-assets.py --dry-run            # Preview without processi
 | **GB Concept Art** | 25 | Galactic Battlegrounds concept art (MixnMojo). Same era LucasArts. |
 | **Game EData** | 91 | Characters (7), ships (5), facilities (9), fighters (4), troops (8), specials (6), damage (14), missions (8), planets (9), battles (7), squadrons (14) |
 
-Full index: `assets/references/INDEX.md` — 1,320 images across 21 collections.
+Full index: `assets/references/INDEX.md`—1,320 images across 21 collections.
 
-### Automated Reference Selection (portraits only — under iteration)
+### Automated Reference Selection (portraits only, under iteration)
 
 `scripts/select-references.py` uses Gemini Flash Lite ($0.001/BMP) to select the best 3-5 references per BMP:
 1. Routes BMP to pack via `scripts/reference-packs.json` (12 packs, 24 routing rules)
@@ -205,11 +204,11 @@ Full index: `assets/references/INDEX.md` — 1,320 images across 21 collections.
 3. Vision LLM picks best references (rejects text pages, non-OT content)
 4. Output: `data/reference-selections.json` (consumed by `scripts/gemini-upscale.py`)
 
-Entity mapping: `data/resource-entity-map.json` — 162 GOKRES resource IDs → character/ship names via DAT offset formulas.
+Entity mapping: `data/resource-entity-map.json`—162 GOKRES resource IDs → character/ship names via DAT offset formulas.
 
 **Status**: References contaminate non-portrait packs. Only use for portrait-major, portrait-mini, character-panel. All other packs use Vertex AI Imagen (no references needed).
 
-### DLL Upscale Pipeline (2,303 BMPs)
+### DLL Upscale Pipeline (2,231 BMPs)
 
 **HD override contract**: `data/hd/{dll-dir-name}/{resource_id}.png` plus
 `data/hd/manifest.json`. `BmpCache` checks reviewed entries only when
@@ -296,7 +295,7 @@ go run ./tools/stage-ui-assets --tactical-3d-convert --verify
 The ignored `data/base/ui/tactical-dll/TACTICAL3D/` store retains exact PE
 identifiers and hashes without using named resources as paths. P55 decodes all
 87 meshes, 370 indexed images, and 27 palettes into the ignored `runtime/`
-subtree. These assets are not yet included in `runtime.orpk`; follow the
+subtree, which `scripts/build-runtime-pack.py` packs into `runtime.orpk` when it is staged; plan: the
 [tactical 3D asset plan](../docs/plans/archive/2026-09-12-feat-tactical-3d-asset-pipeline.md).
 
 **Batch upscale command** (Vertex, all non-portrait packs):
@@ -313,11 +312,11 @@ uv run scripts/vertex-upscale-batch.py --dry-run     # cost/time estimate
 ```
 data/
 ├── base/              # Original game data (user-extracted, gitignored)
-│   ├─�� *.DAT
-��   ├─�� EData/         # Original BMPs (EDATA.NNN, 3-digit zero-padded)
+│   ├── *.DAT
+│   ├── EData/         # Original BMPs (EDATA.NNN, 3-digit zero-padded)
 │   ├── ui/            # Staged BMP/{id}.bmp and TYPE302/{id}.bin resources
 │   └── TEXTSTRA.DLL
-���── hd/                # AI-upscaled PNGs (generated, checked in)
+├── hd/                # HD override PNGs (generated, ignored; only README.md is tracked)
 │   ├── EData/         # EDATA_NNN.png (underscore, PNG extension)
 │   ├── common-dll/    # HD overrides for COMMON.DLL
 │   ├── gokres-dll/    # HD overrides for GOKRES.DLL
@@ -326,7 +325,7 @@ data/
 │   └── README.md
 └── models/            # 3D tactical models (final outputs only)
     ├── optimized/     # DRACO-compressed GLBs (from prepare-rebellion-models.sh)
-    └─�� sprites/       # Pre-rendered sprite sheets (from Blender)
+    └── sprites/       # Original-mesh direction sheets (sprites.md)
 
 scripts/
 ├── models-staging/    # Raw GLBs from Hunyuan/Meshy (gitignored, not in data/)
@@ -378,11 +377,11 @@ Adapted from World War Watcher's proven pipeline (14 Hunyuan3D Pro models).
 - Cost: ~$0.375/model (Geometry $0.225 + 80K faces $0.15)
 - 63 models = **~$23.63 total**
 - Use synchronous `fal.run` (not queue API)
-- `generate_type: "Geometry"` — untextured mesh for custom rendering
+- `generate_type: "Geometry"`: untextured mesh for custom rendering
 
 **Budget: WaveSpeedAI Hunyuan3D v3.1 Rapid**
 - Endpoint: WaveSpeedAI API (Feb 2026)
-- Cost: **$0.0225/model** — 16x cheaper than fal.ai Pro
+- Cost: **$0.0225/model**—16x cheaper than fal.ai Pro
 - Single required parameter: `image` (reference image URL)
 - Ideal for bulk iteration on non-hero units
 
@@ -426,8 +425,8 @@ Hunyuan3D/Meshy → raw GLBs (scripts/models-staging/)
   → strip-textures.mjs (geometry only) [not yet ported from WWW]
   → gltf-transform simplify (ratio 0.10) + optimize (weld, prune)
   → gltf-transform draco (14-bit position quantization)
-  → (retired) Blender render of generated GLBs; direction sheets now come from the
-    original meshes via scripts/sprites/render_original_meshes.py (agent_docs/sprites.md)
+  Direction sheets come from the original meshes via
+    scripts/sprites/render_original_meshes.py (agent_docs/sprites.md)
 ```
 
 ### Scripts
@@ -450,8 +449,8 @@ uv run scripts/sprites/render_original_meshes.py --all                  # 87 mes
 
 ### Blender Addons
 
-- **Spritehandler 2** (July 2025) — purpose-built for directional/animated sprite sheet generation, eliminates most custom scripting
-- **Omnidirectional Isometric Render** (itch.io, free, April 2025) — specifically for isometric directional renders
+- **Spritehandler 2** (July 2025): purpose-built for directional/animated sprite sheet generation, eliminates most custom scripting
+- **Omnidirectional Isometric Render** (itch.io, free, April 2025): specifically for isometric directional renders
 
 ### Sprite Sheet Format
 
@@ -459,11 +458,11 @@ uv run scripts/sprites/render_original_meshes.py --all                  # 87 mes
 - Standard: 128x128 per frame → 1024x128 strip (`--cell 128`); hero units `--cell 256` → 2048x256
 - Output: `data/models/sprites/{resource-id}.png` + `{resource-id}.json` (sprite-forge `atlas-v2`: cell, directions, states, anchor, provenance) and `data/models/sprites/provenance.json`
 - Classification: experimental-remaster review artifact, `runtime_eligible: false`; `data/models/` is gitignored
-- The former GLB renderer `scripts/render-sprite-sheets.py` was retired on 2026-09-14; generated GLBs have no place in the original-parity pipeline. Full guide: `agent_docs/sprites.md`
+- Generated GLBs have no place in the original-parity pipeline. Full guide: `agent_docs/sprites.md`
 
 ### Model Comparison Viewer
 
-Adapted from WWW's `scripts/model-compare.html` — Three.js side-by-side viewer for A/B testing Hunyuan vs Meshy outputs. Auto-detects staging variants.
+Adapted from WWW's `scripts/model-compare.html`—Three.js side-by-side viewer for A/B testing Hunyuan vs Meshy outputs. Auto-detects staging variants.
 
 ---
 
@@ -518,12 +517,12 @@ is explicitly not claimed; see the
 Generate new assets using curated reference collections from the original game.
 Up to 14 reference images per generation via Gemini 3 Pro Image (or Flash via `--fast`).
 
-### Reference Collections (11 categories, 91 images)
+### Reference Collections (12 categories, 168 images)
 
 Each collection in `assets/references/ref-{category}/` contains:
-- `{name}.png` — 4x upscaled via waifu2x (for Gemini detail visibility)
-- `{name}-orig.png` — original resolution (ground truth for style matching)
-- `prompt-template.txt` — category-specific prompt with `{description}` placeholder
+- `{name}.png`: 4x upscaled via waifu2x (for Gemini detail visibility)
+- `{name}-orig.png`: original resolution (ground truth for style matching)
+- `prompt-template.txt`: category-specific prompt with `{description}` placeholder
 
 | Collection | Refs | Use Case |
 |------------|------|----------|
@@ -566,12 +565,12 @@ uv run scripts/generate-rebellion-assets.py \
 ### Safety Filter Note
 
 Gemini blocks "Star Wars" + weapon terms (e.g., "Star Destroyer"). Prompt templates use
-"sci-fi space" phrasing instead. The reference images anchor the style — Gemini matches
+"sci-fi space" phrasing instead. The reference images anchor the style—Gemini matches
 the 1998 CGI aesthetic from the references, not from the text prompt.
 
 ### ASSET ARCHAEOLOGY STATION (Reference Viewer)
 
-`scripts/reference-viewer.html` — PHOSPHOR VIGIL CRT-styled comparison viewer for all
+`scripts/reference-viewer.html`: PHOSPHOR VIGIL CRT-styled comparison viewer for all
 11 reference collections. Shows original vs 4x-upscaled side-by-side with draggable slider.
 
 ```bash
@@ -640,7 +639,7 @@ See `agent_docs/dll-resource-catalog.md` for complete resource ID ranges, dimens
 
 ### Upscaling Strategy
 
-**Superseded in September 2026.** Use the manifest-governed, family-specific
+Use the manifest-governed, family-specific
 [faithful-HD pipeline](../docs/plans/2026-09-10-faithful-hd-pipeline/).
 `scripts/local-upscale-batch.py` is retained only for UltraSharp comparison
 candidates; its raw outputs are not runtime-approved.
@@ -663,7 +662,7 @@ World War Watcher's 3D pipeline is the direct ancestor. Key files to reference:
 | `agent_docs/asset-pipeline.md` | Full asset flow diagram | Reference patterns |
 
 ### WWW Lessons Learned
-- Hunyuan3D Pro via fal.ai outperformed Meshy — all 14 production models are Hunyuan
+- Hunyuan3D Pro via fal.ai outperformed Meshy: all 14 production models are Hunyuan
 - 3/4 front view reference images produce far better geometry than side views
 - `generate_type: "Geometry"` (untextured) is cheaper and better for custom materials
 - DRACO position quantization: 14-bit minimum (11-bit destroys silhouettes)

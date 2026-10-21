@@ -3,7 +3,7 @@ title: "Full Functionality Audit Index"
 description: "Entry point for the September 2026 Open Rebellion functionality, parity, and bitmap audit"
 category: qa
 created: 2026-09-08
-updated: 2026-10-06
+updated: 2026-10-20
 tags: [qa, audit, functionality, parity, bitmap, astra, fable]
 ---
 
@@ -113,49 +113,10 @@ functional and does not yet have original in-campaign interface parity. The
 [interface sister audit](../2026-09-10-interface-parity-audit/) records hard
 failures for incomplete GID modes and overlays, cockpit destinations, partial
 system-window contents, approximate rail thumbnails, and other replacement
-surfaces. The original galaxy resources and default Popular Support view now
-work alongside first-pass sector and system shells for both factions. The four
-authentic advisor idle runs
-now render in native and WASM;
-their complete actions, voice, chrome, and shell integration remain open.
-Original encyclopedia artwork reaches native and browser renderers through
-P62. Source cross-checking corrects P63 as Message Index evidence. P64 proves
-both authentic Encyclopedia index shells and their bounded control states.
-P68 corrects P65 to the complete source-derived 346-entry visible English index catalog, category
-filtering, stable selection, and scrolling. P66A extracts 348 topic texts and
-191 image mappings, joins 346 complete topics per faction, and exposes ten
-gameplay-only/hidden mission records excluded from the visible catalog. W2 provides an inactive,
-immutable content session and atomic last-known-good publication point. W3
-provides pure topic composition, bounded logical navigation and exact typed
-return origins. W4 drives the authentic index/topic shell and selected-only
-texture lifecycle through a synthetic, fixture-gated two-faction browser A1
-matrix. W5A now supplies canonical native, packed-browser, and development-loose
-transport with exact-byte and logical-fingerprint parity, deterministic atomic
-publication, and four-request production startup. Packaged visual journeys and
-route activation remain assigned to E30 and E32 respectively, while A0
-comparison remains absent and command `0x131` continues to fail closed.
-Fleet-miniature acceptance, deterministic four-request browser
-startup, F-001 browser Save/Load/Delete, the F-011A fingerprint primitive,
-F-011B1 save continuation, the F-011B2 replay/data contract, F-011B3 native
-replay execution, F-011B4 native/WASM fixture equivalence, F-007A fleet-order
-protection, F-007B fleet-position consolidation,
-F-007D system-combat backlog closure, the F-007E logistics/data/repair,
-transport/occupation/player-dispatch, and victory-contract checkpoints, and F-016A/B/C/D/E
-cockpit/setup functionality now pass; P03 and P04 are complete. The source
-review still leaves capture/evasion open. F-007C player fleet dispatch,
-reopened when its context-menu entry lost its caller in 23d15da, is restored
-through the original orders (Move, Confirmed Move, the system window drag, and
-regiment loading on the Fleet window), and the sector window's quadrant
-icons open the System, System Defenses, Fleet and Missions windows. Regiments
-unload by hand from the Fleet window and travel on their own, and fleets join
-and split there (a ship's or fleet's Move onto a fleet, Create Fleet); the
-arrival merge F-007B added is retired as unsourced. The Fleet Finder opens a
-chosen fleet's or ship's Sector and Fleet windows. Its stacking fix and
-covered-window input contract pass focused native and deterministic browser
-checks; the transport-limited native journeys remain open. Faction liveness,
-the wider campaign loop, five-seed cross-runtime replay, interactive/tactical
-convergence, browser memory/media work, cross-browser performance, formatting,
-lint, and release-level visual acceptance remain incomplete.
+surfaces. Each checkpoint since, and what stays open, is in
+[the audit report](audit-report.md), "Where work left off", and checkpoint by
+checkpoint with its evidence in the
+[roadmap](../../../agent_docs/roadmap.md).
 
 The JSON document is the canonical source for stable finding and feature IDs.
 The Markdown document explains the evidence and how to execute each pass. Its

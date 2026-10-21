@@ -226,6 +226,9 @@ pub enum DevCommand {
     MaintenanceCapacity { alliance: bool, amount: u32 },
     /// Destroy every defender of the system's holder there (staging).
     StripDefenders(String),
+    /// Load `count` of the player's regiments at the named fleet's system
+    /// onto it, each by the regiment's Move onto the fleet (staging).
+    Embark { fleet: String, count: usize },
     /// Queue one unit of a class at a system's yard for a side, through
     /// Build Selection's checks and enqueue (staging).
     QueueBuild {
@@ -446,6 +449,22 @@ impl DevCommand {
             _ => Readiness::Galaxy,
         }
     }
+}
+
+/// `Embark: <fleet> <n>`: the fleet's name, then a positive count as the
+/// last word.
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_embark(tail: &str) -> Result<DevCommand, String> {
+    let usage = "embark takes a fleet name and a count of regiments";
+    let (fleet, count) = tail.rsplit_once(char::is_whitespace).ok_or(usage)?;
+    let count: usize = count.parse().map_err(|_| usage)?;
+    if fleet.trim().is_empty() || count == 0 {
+        return Err(usage.into());
+    }
+    Ok(DevCommand::Embark {
+        fleet: fleet.trim().to_owned(),
+        count,
+    })
 }
 
 /// The `DevCommand` a line names, `Ok(None)` when it names none (try the
@@ -728,6 +747,9 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
             class: class.to_owned(),
             system: system.to_owned(),
         }));
+    }
+    if lower.starts_with("embark:") {
+        return parse_embark(rest("embark:")).map(Some);
     }
     if lower.starts_with("strip defenders at ") {
         let system = rest("strip defenders at ");
@@ -1372,6 +1394,28 @@ mod tests {
             Ok(Some(DevCommand::StripDefenders("Coruscant".into())))
         );
         assert_eq!(command.unwrap().unwrap().readiness(), Readiness::Galaxy);
+    }
+
+    #[test]
+    fn embark_takes_a_fleet_and_a_positive_count_and_waits_for_the_galaxy() {
+        let command = parse_line("Embark: Fleet 1 3");
+        assert_eq!(
+            command,
+            Ok(Some(DevCommand::Embark {
+                fleet: "Fleet 1".into(),
+                count: 3
+            }))
+        );
+        assert_eq!(command.unwrap().unwrap().readiness(), Readiness::Galaxy);
+        for bad in [
+            "Embark:",
+            "Embark: Fleet",
+            "Embark: Fleet 1 0",
+            "Embark: 3",
+            "Embark: Fleet 1 x",
+        ] {
+            assert!(parse_line(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

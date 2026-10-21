@@ -4,7 +4,7 @@
 
 Questions about the original, answered from the executable. Back to the [index](INDEX.md).
 
-83 open.
+84 open.
 
 <a id="or-q-results-window-yln"></a>
 ### Q: Where is the Battle Results window drawn, with which art, and how do its tabs switch?
@@ -137,21 +137,6 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > One group per fighter type slot (colour index = slot); for an empty colour slot, the type with the most squadrons (at least 8) is halved into it (0x005abe5f-0x005abf2c), read but unchecked. Start from FUN_005ab650, FUN_005adfa0, FUN_005ae330, FUN_005c7140. Done when the page gives the exact split rule and ordering for both sides, so the port's grouping can match it.
-
-<a id="or-q-ground-resolution-nms"></a>
-### Q: How does the original resolve a planetary assault?
-
-`or-q-ground-resolution-nms` · **open** · P2 · ghidra, question · updated 2026-10-17  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
-Unblocks: [or-r-gnd-5hu](reviews.md#or-r-gnd-5hu)
-
-> Observed in the VM: at Selonia the Empire's assault was repulsed with one Alliance regiment lost and no Imperial loss; at Ord Pardon and Drall, with no defender, the assaulting side took the system with no casualties. The trace kills attackers in defence fire (a KDY-150 or LNR always fires) and in an engagement roll of 4 or less (FUN_0055eb00); with no regiment of either side left, the holder is the support-derived side. Deliver as for every question node.
-
-**Notes**
-
-> map-15: Planetary Assault resolution FUN_0058c120, FUN_0058bec0, FUN_0055eb00 (thresholds DAT_006bb778..78c), order class owning FUN_00563390.
-> 2026-10-17 (plan Phase K items 1-3, 5-8): the assault is traced and ported. ghidra/notes/ground-assault.md answers the run (FUN_00563390 -> FUN_0058c120: defence fire, FUN_0055eb00 engagements, collateral, landing), the 0x234 enable test, and that a capture leaves enemy characters in place; assault::resolve runs it for both sides from the fleet menu (assault_orders.rs) and the AI (resolve_ai_assault), kills feed loss counter A, automatic landing and the occupation capture are gone, and the Assault Summary is filled from the run (fill_assaulted_system). The three VM runs (Selonia repulsed with one defender lost, Ord Pardon and Drall taken unopposed) are recorded in the note; a battery kill, the two-shield greying and a captured officer are still to stage (item 4).
-> 2026-10-17: remaining for this node: the VM run of plan Phase K item 4 (a battery killing a regiment, an enemy fleet present, a captured officer), the native assault on both sides, and the dual-AI batch re-measure since the automatic landing left (Phase K item 7).
 
 <a id="or-q-message-classes-uhu"></a>
 ### Q: What do game message classes 0x21-0x2d do, and what Message Index state survives a battle report?
@@ -562,6 +547,13 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 
 > ghidra/notes/record-registry.md: (1) what capability bit 0x800000 means and what FUN_004d0480's request word 0x1000000 << k is matched against (FUN_004d01a0, FUN_004d15f0, FUN_00402720), so the AI's special-force training can be ported; (2) whether a header count larger than the data reads zeros or fails (FUN_0058e6b0 has no end-of-file test; FUN_005f4d90); (3) whether a second record at one research tier appears on the research screen (FUN_00567c90, FUN_00567ba0, FUN_0051cb90 callers); (4) whether a saved class id above 0xff survives (FUN_0051cec0, FUN_005688d0, FUN_00568560); (5) where appended special forces and minor characters are placed in play (FUN_0051a280, FUN_0051bc70).
 
+<a id="or-q-restored-window-clamp-wqt5"></a>
+### Question: does a restored strategic window keep a position outside the galaxy view?
+
+`or-q-restored-window-clamp-wqt5` · **open** · P3 · interface, question · updated 2026-10-21
+
+> The port clamps a restored window into the galaxy view (prepare_open -> clamp_window_to_galaxy), while a drag has no clamp: an Alliance Fleet window dragged to y 90 comes back at y 86. The original loader FUN_00441190 passes the saved x, y (+0x8..+0x14) to each window constructor (FUN_004591d0, FUN_004a2630, FUN_00452fc0, FUN_004a7790, FUN_0049f130) without clamping. Settle whether those constructors or the original drag clamp, then match the port (drag clamp, restore clamp, or neither), both sides.
+
 <a id="or-q-row-overlays-7p9o"></a>
 ### Q: What do the FUN_0042c3b0 row overlays show, and is +0x50 bit 0x200 on-mission?
 
@@ -695,6 +687,13 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ground-unit-assets.md: FUN_0046d8d0 has ten literal troop ids; whether the column icons live in the STRATEGY finder backgrounds 10335/10336/10584/10588 is untraced. Done when a note names each column's art.
+
+<a id="or-q-unfinished-ship-finder-two-yards-i8u7"></a>
+### Verify in the original: the unfinished ship in the Finder on its order day, and two yards ordering for one system on one day
+
+`or-q-unfinished-ship-finder-two-yards-i8u7` · **open** · P3 · question, vm · updated 2026-10-21
+
+> death-star-product.md, 'Needs a VM run', items 1 and 5. (1) On the order day, do the Ship Finder and the Fleet Finder list the unfinished ship and its fleet, and does the galaxy view draw the fleet's icon? The port lists the ship by the existing bit 6 (FUN_004f7d50(.., 1, 0); the_ship_finder_lists_an_unfinished_ship_for_either_side). (2) Two capital ships ordered for one system from two yards on one day: one fleet or two? The port seats both in the side's bit-1 spare, which keeps bit 1 while it holds ships (FUN_0050bc60.c:41-51). Staging needs a save with two shipyards of one side; in ds-b Coruscant is the only Imperial yard. Done when both answers are in the note, on both sides where a save allows, and the port matches them or a port node is filed.
 
 <a id="or-q-unfinished-ship-owner-on-capture-y2nz"></a>
 ### Q: Who owns an unfinished ship after its system changes hands?

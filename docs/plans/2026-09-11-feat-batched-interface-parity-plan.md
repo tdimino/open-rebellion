@@ -5,8 +5,8 @@ category: plan
 created: 2026-09-11
 tags: [interface, parity, bitmap, browser, qa]
 status: active
-progress: "2% — 1 of 43 families strictly complete (OBJ-01); 15 partial, 27 failing; 13 of 627 cells accepted; no UIP-B01 to B07 exit gate met"
-updated: 2026-10-15
+progress: "5%—2 of 43 families strictly complete (OBJ-01, EVT-03); 15 partial, 26 failing; 28 of 627 cells accepted; no UIP-B01 to B07 exit gate met"
+updated: 2026-10-20
 ---
 
 # Batched Interface Parity Execution Plan
@@ -26,7 +26,7 @@ now archived; its remaining CMD-02 pilot is a UIP-B02 residual item below.
 ## Progress snapshot
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 1. Partial: 15. Failing: 27. Blocked: 0. Strictly accepted cells: 13/627.
+Required interface families: 43. Complete: 2. Partial: 15. Failing: 26. Blocked: 0. Strictly accepted cells: 28/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
@@ -36,8 +36,8 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 | Practical interface scope remaining | approximately 75% |
 | Bounded practical space-battle launcher implementation | complete at P58-B22 |
 | Required surface families | 43 |
-| Family status | 1 complete (OBJ-01), 15 partial, 27 fail |
-| Strictly accepted required cells | 13 of 627 |
+| Family status | 2 complete (OBJ-01, EVT-03), 15 partial, 26 fail |
+| Strictly accepted required cells | 28 of 627 |
 
 The practical percentage is a planning estimate based on scoped implementation
 checkpoints. It is not a release-parity score. A required cell passes only

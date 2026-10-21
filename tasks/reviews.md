@@ -51,7 +51,7 @@ Unblocks: [or-p-withdraw-destination-qhz](ports.md#or-p-withdraw-destination-qhz
 
 `or-r-gnd-5hu` · **open** · P2 · ghidra, review · updated 2026-10-14  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
-Waits on: [or-q-assault-summary-6gi](questions.md#or-q-assault-summary-6gi), [or-q-ground-resolution-nms](questions.md#or-q-ground-resolution-nms)  
+Waits on: [or-q-assault-summary-6gi](questions.md#or-q-assault-summary-6gi), [or-q-ground-resolution-nms](closed.md#or-q-ground-resolution-nms)  
 Unblocks: [or-d-gnd-plan-glw](other.md#or-d-gnd-plan-glw)
 
 > As for every review node.

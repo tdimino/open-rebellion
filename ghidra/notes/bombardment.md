@@ -27,14 +27,14 @@ slot `FUN_00581e80` (order vtables `0x00669f1c` 0x221, `0x00669f74` 0x223,
   fleet of the side. A team entry that is not a fleet (family `0x08`-`0x0f`)
   is skipped.
 - One passing fleet is enough: the loop over the team ends at the first fleet
-  that passes. An inactive fleet (`+0x50` bit 0 clear, `FUN_00506480`) is
-  skipped. A fleet passes when the sum of slot `+0x1dc` over its active ships
-  and each ship's active squadrons is nonzero (`FUN_004fd6b0`), and for
-  Destroy System also when it holds an active ship of family `0x18`-`0x1b`
-  (`FUN_005003d0`, `FUN_005131b0`). A fleet with strength but no Death Star
-  does not stop the loop; a later fleet may pass.
+  that passes. A fleet that is not usable (`+0x50` bit 0 clear,
+  `FUN_00506480`) is skipped. A fleet passes when the sum of slot `+0x1dc`
+  over its usable ships and each ship's usable squadrons is nonzero
+  (`FUN_004fd6b0`), and for Destroy System also when it holds a usable ship
+  of family `0x18`-`0x1b` (`FUN_005003d0`, `FUN_005131b0`). A fleet with
+  strength but no Death Star does not stop the loop; a later fleet may pass.
 - No fleet passing gives status `8`/`6` (the last examined fleet had zero
-  strength, or none was active); Destroy System additionally overwrites it
+  strength, or none was usable); Destroy System additionally overwrites it
   with `8`/`8` when the last examined fleet had no Death Star ship, including
   when no fleet was examined.
 - No side, shield, ion or charge test is made. Before the gate the enable
@@ -111,10 +111,11 @@ counter was found in the order, command or run.
 | `0x222` | 1 | 1 | 1 | | |
 | `0x223` | 1 | 1 | 1 | | 1 |
 
-The bombarding side is the owner shared by every active fleet at the system
-(`FUN_004ffe70`) with `+0x58` bit 6 set, whichever order flagged it. If two
-sides have such fleets, `FUN_0058d800` returns 0 and nothing else runs. The state keeps the system at `+0x10`, the bombarder at
-`+0x14` and the holder (system `+0x24` bits 6-7) at `+0x18`, then runs
+The bombarding side is the owner shared by every usable fleet at the system
+(`FUN_004ffe70` mode 1, `FUN_0058d800.c:55`) with `+0x58` bit 6 set,
+whichever order flagged it. If two sides have such fleets, `FUN_0058d800`
+returns 0 and nothing else runs. The state keeps the system at `+0x10`, the
+bombarder at `+0x14` and the holder (system `+0x24` bits 6-7) at `+0x18`, then runs
 `FUN_0058d770`: ship phase, defence phase, effect phase, finalize. A
 stalemate leaves bits 6-7 at the earlier holder (`FUN_0050b610`), so a
 stalemated system is bombarded as that side's.
@@ -134,8 +135,11 @@ Each iterator takes only the holder's objects.
 
 - Sets the system's bombard bit (`FUN_0050a660(1)`).
 - With `+0x44` set, `FUN_0058d440` looks for a ship of family `0x18`-`0x1b`
-  in the bombarding fleets (`FUN_0058ca70`), the Death Star (CAPSHPSD family
-  `0x18`, TEXTSTRA 10120). No operational, shield or holder test is made.
+  among the usable ships of the usable flagged fleets (`FUN_0058ca70.c:26-34`,
+  mode 1 for both walks), the Death Star (CAPSHPSD family `0x18`, TEXTSTRA
+  10120), as the gate does (`FUN_00582440.c:70`, `FUN_005003d0(.., 1)`): an
+  unfinished Death Star, or one on its own leg, is not found. No shield or
+  holder test is made.
 - When found, `FUN_0058ce70` destroys the system through slot `+0xac`, cause
   `0x10` when the system is the bombarder's own and `0xf` otherwise; the state
   sets `+0x28`, `+0x2c` and `+0x30`.
@@ -151,8 +155,9 @@ Each iterator takes only the holder's objects.
   injury +1, cause 10), then slot `+0xac(10)` when `+0x50` bit 6 is set. Bit 6
   already holds for every walked object, so a hit always destroys the
   character; a character in transit is skipped.
-- Otherwise it counts the bombarding ships (`+0x1c`) and the targets
-  (`+0x20`).
+- Otherwise it counts the bombarding ships (`+0x1c`), from the same mode-1
+  walk, and the targets (`+0x20`): an unfinished ship, or one on its own
+  leg, neither bombards nor draws battery fire.
 
 ## Defence phase (`FUN_0058dc10`)
 
@@ -205,15 +210,17 @@ Each iterator takes only the holder's objects.
 
 ## Effect phase (`FUN_0058df60`)
 
-1. Hits: for each bombarding fleet, the slot-`+0x1dc` sum × (leadership
-   (slot `+0x1f4`) of its role-2 character (`FUN_004fd790(fleet, 2)`) /
+1. Hits: for each bombarding fleet, the slot-`+0x1dc` sum over its usable
+   ships and each one's usable squadrons (`FUN_004fd6b0.c:23,32`, mode 1
+   for both walks) × (leadership (slot `+0x1f4`) of its role-2 character
+   (`FUN_004fd790(fleet, 2)`) /
    GNPRTB `0x601` (40) + 1) (`FUN_0055e950`), summed. Subtract the holder's
    shield generators: family `0x24` only, DEFFACSD `+0x60` (`FUN_00527940`,
    `FUN_00520b80`). The Death Star shield `0x25` is not counted. Traced:
-   `FUN_004fd790(fleet, 2)` walks the fleet's active ships of the fleet's
-   side and takes the first child character with `+0x96 == 2`
-   (`FUN_005006f0`), the Admiral (Commander 1, Admiral 2, General 3,
-   `character-roster.md`); none gives leadership 0.
+   `FUN_004fd790(fleet, 2)` walks the fleet's existing ships of the fleet's
+   side (mode 3) and takes the first existing child character of the ship's
+   side with `+0x96 == 2` (`FUN_005006f0`, mode 3), the Admiral (Commander
+   1, Admiral 2, General 3, `character-roster.md`); none gives leadership 0.
 2. Collateral (`+0x40`, order `0x220` only, with hits left): when
    `FUN_0053e290(+0x20 − 1 + +0x24) < +0x24` (`+0x24` = 1, so always when
    the holder has no military target), one civilian facility gets a single
@@ -417,8 +424,13 @@ Read depth: the gate, the enable slot, setup, phases and finalize
   squadron losses). A ship's remaining shields are derived from its shield
   counter and hull damage on each run (`bombardment::remaining_shields`,
   Defence phase, "Remaining shields W").
-- `StrikeReport.losses` holds each killed regiment and each bombarding ship
-  the batteries destroyed, with reason `0xf`, or `0x10` at the bombarder's
+- `StrikeReport.losses` holds each killed regiment, each bombarding ship
+  the batteries destroyed, and the squadrons and regiments aboard it (its
+  hook `+0x11c`, `FUN_00502840` → `FUN_004fb520`, calls each child's slot
+  `+0xb4`, `FUN_004f8710` for a squadron and a regiment, and
+  `FUN_004f7ed0` passes the ship's reason; `bombardment::bombard` records
+  the squadrons, `integrator::resolve_strike` the regiments as it clears
+  the lost transports' cargo), with reason `0xf`, or `0x10` at the bombarder's
   own system, for the blockade loss counters (`record_loss`,
   `support-shifts.md`). A hit on the HQ runs
   `support_shift::remove_headquarters`.

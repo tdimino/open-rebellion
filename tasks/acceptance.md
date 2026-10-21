@@ -20,7 +20,7 @@ Waits on: [or-d-control-y8p](#or-d-control-y8p), [or-p-highlight-4or](ports.md#o
 <a id="or-acc-results-dlw"></a>
 ### Results window matches A0
 
-`or-acc-results-dlw` · **open** · P0 · acceptance, tactical · updated 2026-10-14  
+`or-acc-results-dlw` · **open** · P0 · acceptance, tactical · updated 2026-10-20  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Waits on: [or-p-results-window-5sn](ports.md#or-p-results-window-5sn), [or-p-withdraw-destination-qhz](ports.md#or-p-withdraw-destination-qhz)
 
@@ -29,6 +29,10 @@ Waits on: [or-p-results-window-5sn](ports.md#or-p-results-window-5sn), [or-p-wit
 > Cells (11, C6 run 2026-10-14T15-02-34-940Z-41029): TAC-01-C006 TAC-06-C004 TAC-07-C001 TAC-07-C002 TAC-07-C003 TAC-07-C004 TAC-07-C005 TAC-07-C006 TAC-07-C007 TAC-07-C008 TAC-07-C011
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
+**Notes**
+
+> Browser fixtures (production-battle-results-presentation, yaga-day30-options) pass 4/4 on both sides but do not reach: summary picture 0x2a06 (Empire withdrew), Results after a trench run, the "No Survivors" text, the Left/Right filter keys. Those need a fixture that opens Results from those outcomes.
 
 <a id="or-d-control-y8p"></a>
 ### Diagnose: why the control cluster differs in 19 cells

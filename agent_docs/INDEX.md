@@ -3,7 +3,7 @@ title: "Agent Docs Index"
 description: "Master index of AI agent reference documentation for Open Rebellion"
 category: agent-docs
 created: 2026-03-22
-updated: 2026-10-16
+updated: 2026-10-20
 tags: [index, agent-docs]
 ---
 
@@ -16,19 +16,31 @@ Reference documentation for AI agents working on the Open Rebellion codebase. Re
 | Document | Description |
 |----------|-------------|
 | [architecture.md](architecture.md) | Crate graph, type system, entity identity, data flow, render architecture |
-| [roadmap.md](roadmap.md) | Phase breakdown with status, addon plans, AI parity gaps |
-| [simulation.md](simulation.md) | 15 simulation systems, advance() contract, integration order |
+| [roadmap.md](roadmap.md) | Active milestones, the v1.0 release sequence, and addon plans |
+| [simulation.md](simulation.md) | 17 simulation systems, advance() contract, integration order |
 | [deterministic-replay.md](deterministic-replay.md) | Replay format, exact native/WASM artifact gate, DAT/config identity, checkpoints, and open engine-convergence work |
-| [agent-tooling.md](agent-tooling.md) | Claude Code Minoan and Codex skill routing, including browser acceptance, Fable, and Ghidra |
+| [agent-tooling.md](agent-tooling.md) | Skill routing (Codex, Fable, Ghidra), browser and native (cua-driver) acceptance, silent runs, mutants and provenance gates, Mini builds, the build cache, disk report and Mini cleanup (`disk-report.sh`, `mini-clean.sh`) |
 | [task-graph.md](task-graph.md) | br/bv task graph in `.beads/`: node kinds, the question-review-port-acceptance chain, commands |
 | [dev-commands.md](dev-commands.md) | Developer commands for a native build: the grammar, the live channel, named controls, batch runs, saves and the run report |
-| [test-tooling.md](test-tooling.md) | Telemetry query, seed calibration and native-versus-headless divergence scripts |
+| [test-tooling.md](test-tooling.md) | Telemetry query, seed calibration, native-versus-headless divergence, the pre-commit gates, trace determinism, invariants and the native scheduler checks |
+
+## Tools and QA
+
+| Document | Description |
+|----------|-------------|
+| [../docs/qa/2026-09-08-full-functionality-audit/README.md](../docs/qa/2026-09-08-full-functionality-audit/README.md) | The audit: feature ledger and evidence files; `audit-report.md` holds the evidence contract and the definition of 100% functional |
+| [../tools/interface-parity/README.md](../tools/interface-parity/README.md) | Browser gates: fixture site, journey runners, A0 ingestion and comparison |
+| [../tools/original-capture/README.md](../tools/original-capture/README.md) | The original game on the Mini: the capture VM, A0 captures, Wine, the save library |
+| [../tools/original-capture/saves/INDEX.md](../tools/original-capture/saves/INDEX.md) | The original-game save library: each save's side, day, settings and state, and how to load one |
+| [../tools/stage-ui-assets/README.md](../tools/stage-ui-assets/README.md) | Extracting the original's bitmaps, audio, movies, strings and Encyclopedia sources into the runtime layout |
+| [../scripts/manual-ocr/README.md](../scripts/manual-ocr/README.md) | OCR of the game manual PDF |
+| [../ghidra/notes/INDEX.md](../ghidra/notes/INDEX.md) | The Ghidra notes: function decompiles and the recovered subsystem notes (method in `ghidra-re.md`) |
 
 ## Game Knowledge
 
 | Document | Description |
 |----------|-------------|
-| [game-domain.md](game-domain.md) | Galaxy, factions, units, missions, combat — game mechanics overview |
+| [game-domain.md](game-domain.md) | Galaxy, factions, units, missions, combat—game mechanics overview |
 | [dat-formats.md](dat-formats.md) | DAT binary format reference, 3 structural patterns, 51 files |
 | [ghidra-re.md](ghidra-re.md) | Ghidra RE status and method for REBEXE.EXE (22,741 functions), combat formulas, GNPRTB params |
 | [seeding.md](seeding.md) | Initial galaxy state: character placement, fleet distribution, support (the neutral rule, `FUN_00559700`) |
@@ -68,4 +80,5 @@ Reference documentation for AI agents working on the Open Rebellion codebase. Re
 | [systems/jedi.md](systems/jedi.md) | Force tier progression, detection |
 | [systems/victory.md](systems/victory.md) | HQ capture, Death Star, terminal conditions |
 | [systems/betrayal.md](systems/betrayal.md) | Loyalty-driven faction defection |
+| [systems/captivity.md](systems/captivity.md) | Capture, the captor's side bits, escape timer `0x38a`, jail abodes and release |
 | [systems/story-events.md](systems/story-events.md) | Scripted story chains, telemetry twins, event chaining |

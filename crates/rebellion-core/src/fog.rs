@@ -207,7 +207,7 @@ impl FogSystem {
     /// Returns one `RevealEvent` per newly-revealed system.
     ///
     /// port: the sensor-radius reveal and the half-way destination reveal are
-    /// port-owned (Mod Workshop tranche, `agent_docs/roadmap.md`); the original
+    /// port-owned (Mod Workshop tranche, `archive/roadmap-history-2026-03-to-04.md`); the original
     /// reveals through observation levels (`observation-levels.md`).
     pub fn advance(
         fog: &mut FogState,

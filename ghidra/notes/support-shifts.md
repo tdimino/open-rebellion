@@ -497,16 +497,19 @@ an unpopulated system and halves a positive Alliance delta under bit 11.
   B and stores the blockader as the bit sets, and `record_loss`
   (`FUN_00508c60`) adds a destroyed unit's value by reason. Counter B is fed
   by a bombardment's regiment kills, the bombarding ships its batteries
-  destroy and the squadrons aboard them (the ship's reason byte passes to
-  its children, `FUN_004fb520` → `FUN_004f8710` → `FUN_004f7ed0`), and
+  destroy and the squadrons and regiments aboard them (the ship's hook
+  `+0x11c`, `FUN_00502840` → `FUN_004fb520`, passes its reason byte to
+  each child through slot `+0xb4`, `FUN_004f8710` → `FUN_004f7ed0`), and
   Destroy System's regiments and squadrons; counter A by a planetary
   assault's regiment kills, attackers and defenders alike
-  (`assault::resolve`, reason `0xe`). The strength sums take completed
-  objects only (`+0x50` bit `0x4`), so an ordered capital ship counts from
-  its completion; one on its own leg counts. `port:` a regiment or
-  squadron exists only once complete, and squadrons in transit count. The `blockade_ended` telemetry record carries the blockader,
-  both loss totals, both strength sums and the record's direction and
-  amount (`blockade_end_record`); the blockader and the record are null
+  (`assault::resolve`, reason `0xe`). The strength sums take existing,
+  completed objects (`+0x50` bits `0x40` and `0x4`, `FUN_00517ee0.c:31`)
+  whatever their transit bits, so an ordered capital ship counts from its
+  completion, and one on its own leg (bit `0x20`) counts. `port:` a
+  regiment or squadron exists only once complete, and squadrons in transit
+  count. The `blockade_ended` telemetry record carries the blockader, both
+  loss totals, both strength sums and the record's direction and amount
+  (`blockade_end_record`); the blockader and the record are null
   when none was made.
   `port:` the sums and counters are read at the day's blockade step, after
   its missions and events; the original reads them as the bit clears
@@ -528,9 +531,12 @@ an unpopulated system and halves a positive Alliance delta under bit 11.
   `0x373` carries none.
 
 `+0x88` bit 11 is `GameWorld::death_star_sectors`, refreshed by
-`death_star::refresh_sectors` at the start of each tick, after arrivals,
-after the battles, and after a load or a new game: the sectors where a fleet
-carrying the Death Star sits at a system, not in transit (`FUN_005178b0`).
+`death_star::refresh_sectors` wherever a Death Star's usable bit changes
+(event `0x301`, `FUN_00514510.c:149-158`): its completion, a fleet's
+departure and arrival, Send Ships (`fleet_join`), and its loss in battle, to
+batteries, to scrap or to sabotage; and after a load or a new game. It holds
+the sectors where a fleet carrying the Death Star sits at a system, not in
+transit (`FUN_005178b0`).
 It gates the halving in `uprising.rs` (`support_change`), the Empire's
 doubled regiments in the drift (`economy.rs`) and the uprising score, and
 the Empire's halved garrison.

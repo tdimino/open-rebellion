@@ -808,8 +808,10 @@ impl AISystem {
         // ── Priority 3: Espionage ─────────────────────────────────────────
         // FUN_004b1bf0 asks FUN_0041a3a0(.., 0x200, 4): sys+0x2c bit 0x200
         // in an enemy system, else FUN_0041a460(.., 0x200, 0): in any
-        // (:31-52). Bit 0x200 marks an explored system the side or its
-        // enemy holds (FUN_00433e40). port: the original asks within the
+        // (:31-52). Bit 0x200 marks a held system (the side's or its
+        // enemy's) whose record went past the view test: a core system, one
+        // the side holds, or one where it has a usable fleet (FUN_00433e40,
+        // `ai_records::fill_system`). port: the original asks within the
         // sector of the regional record whose posture asked for Espionage
         // (module 4 states 2 and 3, not ported); the port asks galaxy-wide,
         // in the world's order.
@@ -901,8 +903,9 @@ impl AISystem {
 
     /// Dispatch reconnaissance missions to gather intelligence on enemy systems.
     ///
-    /// This targets explored enemy-controlled systems to update our
-    /// intelligence picture. The original game uses
+    /// This targets enemy-controlled systems whose record the side's view
+    /// fills (a core system, or one where the side has a usable fleet) to
+    /// update our intelligence picture. The original game uses
     /// mission type 0x54 for this — we reuse `MissionKind::Espionage` since
     /// the mechanic is the same (reveal system state).
     ///
@@ -935,8 +938,17 @@ impl AISystem {
                 if system.is_destroyed {
                     return None;
                 }
-                // Only target explored systems. Score by total enemy assets.
-                if system.exploration_status != crate::dat::ExplorationStatus::Explored {
+                // Only target a system whose record went past the side's
+                // view test (Q 0x800_0000, FUN_00433e40.c:120-125,
+                // `ai_records::fill_system`); score by total enemy assets.
+                // hyp: the original's Recon planner query is untraced; it
+                // reads the side's record, not the world's exploration
+                // flag, which either side's intelligence mission sets.
+                if round
+                    .records
+                    .get(&sys_key)
+                    .is_none_or(|record| record.q & 0x800_0000 == 0)
+                {
                     return None;
                 }
                 let value = Self::system_strength(world, system, !is_alliance);
@@ -978,9 +990,10 @@ impl AISystem {
     /// 100 per regiment, and ten per facility. Higher is more heavily
     /// defended.
     ///
-    /// port: ranks the reconnaissance targets above; the original's
-    /// per-system recommendation (`FUN_004b7150`) is traced
-    /// (`ai-mission-planning.md`) but not ported.
+    /// port: ranks the reconnaissance targets above, standing in for the
+    /// original's posture-recommended Recon planner (module 4 state 3,
+    /// `FUN_004d2690`; br `or-3m5f`). The per-system recommendation itself
+    /// (`FUN_004b7150`) is ported in `ai_regions.rs` `missions_and_tasks`.
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -2235,8 +2248,9 @@ mod tests {
 
     #[test]
     fn ai_dispatches_espionage_on_an_enemy_system() {
-        // FUN_004b1bf0.c:31-52: an explored enemy system (sys+0x2c bit
-        // 0x200, FUN_00433e40) is an Espionage target.
+        // FUN_004b1bf0.c:31-52: an enemy system whose record went past the
+        // view test (sys+0x2c bit 0x200, FUN_00433e40; a core system here)
+        // is an Espionage target.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
 
@@ -2264,6 +2278,9 @@ mod tests {
             is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Empire),
         });
+        // A core system (SYSTEMSD family 0x90), whose record either side's
+        // AI fills (`ai_records::fill_system`).
+        world.system_families.insert(enemy, 0x90);
 
         // FUN_004808c0 takes special forces only.
         let spy = add_commando(&mut world, true, 75, 40);
@@ -2376,7 +2393,8 @@ mod tests {
         let mut world = empty_world();
         let sector = add_sector(&mut world);
 
-        // Explored enemy system — a recon target.
+        // An enemy core system (family 0x90), whose record the side's view
+        // fills: a recon target.
         let enemy_sys = world.systems.insert(System {
             dat_id: DatId(0),
             name: "Enemy Base".into(),
@@ -2401,6 +2419,7 @@ mod tests {
             is_destroyed: false,
             control: ControlKind::Controlled(crate::dat::Faction::Alliance),
         });
+        world.system_families.insert(enemy_sys, 0x90);
 
         // Empire special force for recon.
         let spy = add_commando(&mut world, false, 70, 40);
@@ -2433,6 +2452,51 @@ mod tests {
             recon.is_some(),
             "expected reconnaissance mission on explored enemy system"
         );
+    }
+
+    #[test]
+    fn reconnaissance_reads_the_sides_record_not_the_shared_exploration_flag_for_either_side() {
+        // FUN_00433e40.c:120-125: the side's record of an enemy rim system it
+        // does not observe stops at the view test, whatever the world's
+        // exploration flag (which either side's intelligence mission sets)
+        // says; a core system's record is full (families 0x90-0x91,
+        // FUN_00566d40; manual p. 69).
+        for side in [AiFaction::Empire, AiFaction::Alliance] {
+            let enemy = crate::dat::Faction::of_alliance(side == AiFaction::Empire);
+            for (family, scouted) in [(0x90, true), (0x92, false)] {
+                let mut world = empty_world();
+                let sector = add_sector(&mut world);
+                let target = add_system(&mut world, sector, 0.5, 0.5);
+                world.systems[target].control = ControlKind::Controlled(enemy);
+                world.systems[target].exploration_status = ExplorationStatus::Explored;
+                world.sectors[sector].systems.push(target);
+                world.system_families.insert(target, family);
+                let spy = add_commando(&mut world, side == AiFaction::Alliance, 70, 40);
+                let mut planner = planner_for(&world, side);
+                let mut actions = Vec::new();
+
+                with_round(&world, side, |round| {
+                    AISystem::evaluate_reconnaissance(
+                        &mut planner,
+                        round,
+                        side,
+                        usize::MAX,
+                        &mut actions,
+                    );
+                });
+
+                let targets: Vec<_> = orders(&actions, MissionKind::Espionage)
+                    .into_iter()
+                    .map(|(team, system, _)| (team, system))
+                    .collect();
+                let expected = if scouted {
+                    vec![(vec![spy], target)]
+                } else {
+                    Vec::new()
+                };
+                assert_eq!(targets, expected, "{side:?} {family:#x}");
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -2697,9 +2761,11 @@ mod tests {
     #[test]
     fn espionage_goes_to_enemy_systems_then_our_own() {
         // FUN_004b1bf0.c:31-52: an enemy system with sys+0x2c bit 0x200
-        // first, then any system with it; FUN_00433e40 sets the bit on an
-        // explored system the side or its enemy holds, so neither a neutral
-        // nor an unexplored system is a target.
+        // first, then any system with it; FUN_00433e40 sets the bit on a
+        // held system whose record went past the view test (a core system,
+        // one the side holds, or one where it has a usable fleet;
+        // `ai_records::fill_system`), so neither a neutral system nor an
+        // enemy rim system the side does not observe is a target.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
         let held = |world: &mut GameWorld, control| {
@@ -2716,14 +2782,16 @@ mod tests {
             ControlKind::Controlled(crate::dat::Faction::Empire),
         );
         let _neutral = held(&mut world, ControlKind::Uncontrolled);
-        let unexplored = held(
+        let unobserved_rim = held(
             &mut world,
             ControlKind::Controlled(crate::dat::Faction::Empire),
         );
-        world.systems[unexplored].exploration_status = ExplorationStatus::Unexplored;
         // A rim system (family 0x92) the side neither holds nor observes:
-        // its view lacks +0x88 bit 1 (`ai_records::fill_system`).
-        world.system_families.insert(unexplored, 0x92);
+        // its view lacks +0x88 bit 1 (`ai_records::fill_system`). The
+        // world's exploration flag, which the other side's intelligence
+        // sets, does not change that.
+        world.system_families.insert(unobserved_rim, 0x92);
+        world.systems[unobserved_rim].exploration_status = ExplorationStatus::Explored;
         let second_enemy = held(
             &mut world,
             ControlKind::Controlled(crate::dat::Faction::Empire),

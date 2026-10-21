@@ -114,6 +114,18 @@ was not run; ground combat was not traced for aboard characters; the
 callers of `+0x2ec`, `+0x2f0`, `+0x2e4` and `+0x2e8` are listed in
 `tactical-results.md` 3).
 
+In the original (Wine, Empire, the `undefended` save of
+`original-save-editing.md`): Daala (combat 220) runs an Assassination of
+Han Solo (`0x33000243`, combat 100) at Caprionril, where no regiment,
+squadron or fleet defends him, so the ASSNMSTB row is 55 percent. On day
+466 the Empire files "Assassination Mission Report" ("The assassination
+mission to Caprionril is complete.  Han Solo has not been eliminated.
+Personnel are returning to Berchest."). On a hit it also files "Han Solo
+Injured" ("Han Solo has been injured."): Han's injury `+0x94` reads 36,
+his `+0xac` word gains bit 6 (`0x2` → `0x42`), and he stays at Caprionril
+on the map. Of three generator states, one hit and two missed; a miss
+files the report alone and leaves injury 0.
+
 ## 4. When the two messages file
 
 Both are message classes bound to notification `0x128`
@@ -244,12 +256,6 @@ the game type.
 - Whether the message manager suppresses a repeated Rebel HQ Destroyed or
   Coruscant Captured on later word changes.
 - A VM check of ESC or click during the ending movie.
-- The wound itself in the VM. Two Assassinations of Han Solo
-  (`0x33000243`, combat 100) by Daala at combat 220 (`save_tree.py
-  assassin`, `original-save-editing.md`) each ended within about ten days
-  with Han's record unchanged (injury 0), no Imperial mission message, and
-  Daala on the hidden Return `0x42000002`: two failed rolls (about one
-  chance in five at the 55 percent row) or a gate before `+0x2ec`.
 
 ## Decompiles
 

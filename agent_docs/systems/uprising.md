@@ -17,7 +17,6 @@ the natural disaster (F-026). Ghidra evidence: `ghidra/notes/uprising-incident.m
 | Type | Purpose |
 |------|---------|
 | `UprisingState` | Active revolts (`ActiveUprising`: start tick, next incident tick, next timer `0x384` tick) and the galaxy disaster timer |
-| `UprisingStateV14` | The v14 save shape, kept for migration |
 | `UprisingEvent` | `UprisingBegan`, `UprisingEnded`, `UprisingIncident` (codes, losses, support change), `RevoltSupportLoss` (timer `0x384`), `Disaster` |
 | `IncidentLoss` | A destroyed facility or regiment, an injured character, a freed prisoner |
 
@@ -31,7 +30,7 @@ let events = UprisingSystem::advance(
 apply_uprising_event(&mut world, &event); // integrator and app
 
 // A Subdue Uprising success:
-let gain = subdue_support_gain(&world, system, side, roll);
+let gain = mission_support_gain(&world, sys, side, SupportGain::Subdue, stream);
 apply_support_change(&mut world, system, side, gain);
 let ended = end_if_garrisoned(&mut state, &world, system, tick);
 ```

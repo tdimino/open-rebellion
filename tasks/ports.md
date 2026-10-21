@@ -4,7 +4,7 @@
 
 Changing the port to match the original. Back to the [index](INDEX.md).
 
-4 in progress, 50 open.
+4 in progress, 49 open.
 
 <a id="or-p-task-force-strip-07t"></a>
 ### Port the task-force strip slots, headers and group selection
@@ -105,25 +105,6 @@ Unblocks: [or-acc-orders-4m8](acceptance.md#or-acc-orders-4m8)
 >
 > Cite the recovered functions in the code. Verify e2e in the running game (native dev commands and the battle runner), both factions; no new unit tests during parity QA.
 
-<a id="or-p-tactical-camera-viewport-aw39"></a>
-### Port the traced tactical camera, 3D viewport and holocube with updated fixtures
-
-`or-p-tactical-camera-viewport-aw39` · **open** · P1 · port, tactical · updated 2026-10-19  
-Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)
-
-> Re-land the traced tactical camera and 3D viewport, with the fixtures that depend on them updated in the same change.
->
-> Traced (ghidra/notes/tactical-camera-holocube.md): FUN_005d9640's pose (yaw about Y, then pitch about X and the translation (0, 0, -distance) combined before it, so each side's camera stands behind its own line); the 3D window at (17, 30), 439 by 437 (FUN_005c14d0 -> FUN_005d6700, device from the client rect, viewport from FUN_005d9eb0); the holocube (FUN_005d4d10, FUN_005d58c0, Display Holocube); both highlight switches starting off (FUN_0059eb70, FUN_0059c4d0). Fitted to the holocube's edge pixels in A0 TAC-05-C017 and TAC-05-C023's paused frame to 0.28 px RMS (scale (w + h) / 4 per field unit, half-pixel centre).
->
-> Landing them failed 15 battle cases written against the old camera and highlight default: Empire production-fighter-detail-journey, production-group-presentation, production-detail-escort-presentation and production-death-star-laser-journey; production-participants deselection on both sides; and, unattributed, production-battle-alert-entry's glBindTexture console error and production-battle-results-presentation's 10759 pixel. Update those expectations from the traced camera, both factions.
->
-> Tests to add with it: OriginalTacticalCamera::pose's +-180 yaw wrap, and TacticalGroupHud::from_session's task-force and selected-ship lines (mutants survived there).
-
-**Notes**
-
-> The highlight start state (both off, FUN_0059eb70, FUN_0059c4d0) stays ported; the production-participants probe now turns both highlights on in its setup before its deselection check, so that case is not part of this node.
-> Alliance production-participants and production-participants-3d-off fail at 1280x800-letterboxed: model object 2 covers 5 changed pixels against a minimum of 6 since the canvas stopped antialiasing (antialias:false in web/gl.js); with antialiasing on it covers 9, and the fighter regions drop from 8 to 6 likewise. The minimum, ceil(2*scale^2) per model and ceil(scale^2) per fighter in tools/interface-parity/run.mjs verifyTacticalProductionParticipants, is an uncited port heuristic from d367e463, set while the canvas multisampled. Re-derive it against A0 when the camera and participant presentation re-land.
-
 <a id="or-p-withdraw-destination-qhz"></a>
 ### Port the Withdraw destination and its battle result
 
@@ -151,22 +132,6 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 > 2026-10-15: ai.rs now also emits Create Fleet, Join Fleet, Move of regiments, squadrons and characters, Planetary Assault (port: releases the fleet's cargo to the automatic landing), General Bombardment / Target Military Facilities and Destroy System, from module 8's postures (ai_regions.rs); the invented fleet, troop and Death Star heuristics are gone. Bombard and Destroy System run through the player's own paths (simulation.rs after the AI step; PanelAction in the game). Still to port: module 9 fleet tasks, class I tasks (Command orders), module 13 (or-alliance-hq-move-o9ms).
 > 2026-10-15: ai.rs emits the original's orders through the ported modules: Create Fleet, Join Fleet, Move (fleet, character to fleet, regiments), Planetary Assault, the bombardments, Destroy System, Build, Destination, Scrap and the planner missions (ghidra/notes/ai-order-emission.md, Port). Module 8's posture engine (ai_regions.rs), module 9 (fleet_tasks.rs), module 13 (ai_strategy.rs) and class I tasks (character_tasks.rs) are ported. Unported orders: Move of the HQ (or-alliance-hq-move-o9ms), Rename 0x203, Abort 0x250. Native e2e on both sides pending; the headless playtest issues no fleet Move while or-pfrm starves both economies (or-glv7).
 
-<a id="or-port-destroy-system-cascade-imrv"></a>
-### Port: destroy a system with the original cascade (fleets survive, minor-character roll, adrift, autoscrap)
-
-`or-port-destroy-system-cascade-imrv` · **open** · P1 · port, question · updated 2026-10-19  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> crates/rebellion-core/src/death_star.rs:315 cleanup_destroyed_system removes every fleet at the system (including the Death Star's own) and kills every character aboard. The original (ghidra/notes/death-star-strategic.md, What destroying a system does): fleets of any side survive with their ships, fighters, regiments and characters (fleet slot +0xb4 = FUN_00524fb0, returns 1); completed regiments, ships, fighters, the HQ and facilities not in transit are destroyed and uncompleted ones get the autoscrap request (FUN_004f8710); special forces likewise (FUN_00503e20); characters directly at the system and not on a mission turn adrift (FUN_004ef2e0); only minor characters (families 0x38..0x3b) not in transit are rolled against GNPRTB 0x606 and die on a hit (FUN_0058d990); the owner stays. Verify both factions end to end.
-
-**Notes**
-
-> 2026-10-16 (Phase A): cascade edges read into death-star-strategic.md (adrift via the hidden Adrift mission sweep; autoscrap = event 0x307 relocation or reason-2 destruction; mission validator at once; no move cancellation; blockade untouched; HQ en route relocates). VM (empire-huge-deathstar-built played to day 240): Destroy System of Yaga Minor left both Imperial fleets and contents in orbit, the system's holder neutral.
-> 2026-10-17: the cascade is ported (cleanup_destroyed_system -> CascadeReport: fleets survive, the system's own units die, special forces die, characters adrift with the 0x606 roll, autoscrap, the populated-bit clear turning the system neutral, counter B), checked natively for the Empire at Vagran and at Hoth (the Alliance HQ). Remaining: the destroyed system's galaxy dot and System window header, the adrift display, the jail abodes.
-> 2026-10-17 (plan Phase G items 2-3): the galaxy dot, adrift display and jail abodes are settled. Display: the original's sector window draws the destroyed planet as a dust field with no status bars, its System window is unchanged, and the galaxy marker takes FUN_0042b330's destroyed exit (the white cross, STRATEGY 10158, by mode; gid_marker_for_system). Adrift and jail: a Destroy System sweeps its adrift characters the day of the kill (event 0x30e, death_star::sweep_adrift from integrator::resolve_strike); a member with no place of its side goes through FUN_00549580 (death_star::strand, hold_in_jail), and each battle-bit change sweeps as event 0x304 does (FUN_00548e90). The System window, unchanged in the original, needs no destroyed branch. Remaining: the gid unit-mode colour (or-port-gid-unit-mode-colour-xgrr) and the plan's Phase G checks (browser probes, native, gates).
-> 2026-10-17: the cascade, the adrift sweep, the jail abodes and the galaxy marker are in code with tests (death_star.rs, integrator.rs, gid_marker_for_system), and a Destroy System plays movie 0x6f (MDATA.101) to each side told (strike_orders::strike_movies). Remaining: a Destroy System against an Alliance player, natively; the browser probes; the gid unit-mode colour (or-port-gid-unit-mode-colour-xgrr).
-> Native, Alliance player (2026-10-18, seed 42, merged build): an Imperial Death Star fleet's Destroy System at Yavin (dev 'Destroy system: empire Fleet 1', through integrator::resolve_ai_strike) plays 0x6f with its caption and returns to the galaxy; Yavin's own regiments, squadrons and facilities die; both sides' fleets in orbit keep everything aboard; six characters go adrift (the roll killed two) and leave once the battle bit clears; the Alliance view shows Yavin destroyed, holder Neutral. Remaining: the browser probes (OBJ-14, the C6 tactical Death Star frames). Special forces at a destroyed system are covered by cleanup_destroyed_system's tests only; seed 42 holds none and building one needs a construction yard and a training facility.
-
 <a id="or-port-force-fields-2u0m"></a>
 ### Port: replace ForceTier and force_experience with the original Force fields
 
@@ -178,20 +143,6 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 **Notes**
 
 > The port's Jedi panel (panels/jedi.rs) is retired: Force shows only in the Force Ranking row and Jedi Training in the mission dialog, as in the original.
-
-<a id="or-q-port-victory-rules-ce9"></a>
-### Q: Port victory rules and endings to the original's flag word?
-
-`or-q-port-victory-rules-ce9` · **open** · P1 · port, question · updated 2026-10-18  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> victory-conditions.md lists the gaps in crates/rebellion-core/src/victory.rs and main.rs: (1) Empire objective is the HQ object gone (destroyed, or removed when its system leaves the Alliance); the port needs bombardment to clear is_headquarters plus Empire control, so capturing the HQ system never wins; (2) Alliance objective also accepts Coruscant destroyed; (3) simultaneous wins keep the earlier winner, else Alliance (port: Empire first); (4) ending is one of four movies by winner and player side (MDATA 105 Alliance wins/Alliance player, 106 Empire wins/Alliance player, 107 Alliance wins/Empire player, 108 Empire wins/Empire player); main.rs story_event_to_cutscene maps 105-108 to story events; (5) victory.rs cites event 0x12c (RecruitmentDone), the notification is 0x128. Game-rule code: explain before changing. Done when the port follows the note for both factions and both game types, verified e2e.
-
-**Notes**
-
-> 2026-10-14 (game-end-path.md): the HQ is removed by Destroy System's container cascade, a bombardment hit, or capture (control change, FUN_004f8680 +0xac(3)); the port's apply_headquarters_bombardment flag + Empire control is not the rule. After the ending movie the original returns to the main menu (FUN_004138a0 -> FUN_00414330(3)); the advisor plays ALSPRITE 10093/10094 or EMSPRITE 11093/11094 on the agent droid and sets ending codes 0x10-0x13. Destroying Coruscant sets CD (counts for the Alliance).
-> 2026-10-17 (plan Phase L items 1-5, 7): in code with tests. The win word follows FUN_005180e0: the tie keeps a win bit already held, else AW; the leaders and Coruscant by DatId (0x32000242, 0x30000240, 0x35000281, 0x34000280), the word unchanged while one is missing (victory.rs). Rebel HQ Destroyed files on any AD change (FUN_0048e5a0) and Coruscant Captured on CA (FUN_0048f790, 0x7170/0x7171, movie 0x74; strike_orders::word_movies). The ending code 0x10-0x13 by winner and viewer (FUN_00425c90) plays MDATA 105-108 after the advisor's ending slot, then the main menu (movies.rs ending_code, ending_movie); VictoryModal and the no-HQ fallback are gone. Remaining: Phase L item 6, native and browser on both sides and both game types and one ending in the VM, and the VM check of a principal leader's death (FUN_00505190, victory-flag-word.md).
-> Remaining scope (2026-10-18): the browser check on both sides and both game types (plan Phase L item 6), and an original-game check of a principal leader's wound or death (victory-flag-word.md, Open: the wound itself). The flag word never loses a principal leader (FUN_00505190 returns destroyed characters), so the wound check settles the mission outcome, not the victory rule.
 
 <a id="or-3m5f"></a>
 ### Port module 4 states 2-3: posture-recommended mission planners
@@ -223,6 +174,33 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 **Notes**
 
 > HQ in transit (from 4rh7, game-end-path.md 'An HQ in transit'): FUN_004f8710 (Destroy System) and FUN_004f8680 (control change) skip an HQ with +0x50 bit 0x20 (en route, setter FUN_004f7640); it gets the autoscrap request FUN_004f78e0(1) (event 0x307) and FUN_00515480 runs the retreat chain FUN_005545e0 to the first accepting Alliance system, else it dies with reason 2; a stationary HQ in a captured system dies with reason 3. With the Move order: add an in-transit field, skip remove_headquarters in support_shift.rs owner_changed and death_star.rs cleanup while it is set, queue the relocation; tests an_hq_en_route_survives_its_destination_being_captured, an_hq_en_route_survives_destroy_system_and_relocates_to_its_origin, an_hq_with_no_accepting_system_is_removed_with_reason_two.
+
+<a id="or-d3drm-raster-match-vog4"></a>
+### Match Direct3D RM's 8-bit palette, line stepping and rasterizer for the tactical aperture
+
+`or-d3drm-raster-match-vog4` · **open** · P2 · port, tactical · updated 2026-10-20  
+Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)
+
+> Match Direct3D Retained Mode's 8-bit output so the tactical aperture's SSIM and edge IoU can pass, starting with TAC-05-C019.
+>
+> The original draws the tactical scene through d3drm.dll, a system library outside the executable's trace, into an 8-bit paletted surface. A0 TAC-05-C019 (empire-death-star-pre-alert, day 676) holds 69 colours in the whole frame and 21 to 24 in the aperture (TAC-05-C017 21, TAC-05-C019 24).
+>
+> What the port must match:
+> - Colour matching: every 3D pixel maps into the display palette. The scene background's greys (resource 5030, palette 5553) read 24, 40 and 58 in the port; A0 shows 0, 48 and 48.
+> - The scene background stretch: SetSceneBackgroundImage (frame slot 0xcc) draws the 440 by 438 image into the 439 by 437 viewport at (17, 30). Stars land one to two pixels from an unscaled copy, some as 2 by 2 blocks.
+> - The wireframe line stepping for the holocube (quality 0x40).
+> - Flat-shaded mesh rasterization and the scene's lights for the capital meshes.
+>
+> Measured on C019 with the traced camera, 3D window and holocube (or-p-tactical-camera-viewport-aw39): 7,466 aperture edge pixels in A0 or A1, of which 5,350 coincide (edge IoU 0.717). The misses split as holocube 361, ships, fighters and strike 1,016, stars 739. Passing edge IoU 0.98 allows about 150.
+>
+> C019 passes the C6 position measures (displacement, MAE, changed pixels) under a split recorded in tactical-a0-compare.json; its SSIM and edge IoU rows wait on this node.
+>
+> Source: ghidra/notes/tactical-camera-holocube.md, "Open: the 8-bit frame".
+
+**Notes**
+
+> With the capital meshes at their traced 3.0 scale (FUN_005d5b10) and the 0.3-unit fighter decals ported, C019 (empire-death-star-pre-alert, day 676) measures SSIM 0.952 and edge IoU 0.7185: 7,549 edge pixels in A0 or A1, 5,424 coinciding; misses holocube 412, ships, fighters and strike 977, stars 736. Its position measures pass: displacement 0, MAE 0.0023, changed pixels 0.0046 (903 of 194,916: holocube 221, ships 395, stars 287).
+> The tactical projection scale, (w+h)/4 per field unit with the half-pixel centre, is fitted to the A0 frames with a hyp: tag; the viewport projection lives in d3drm.dll, so tracing it belongs here.
 
 <a id="or-invented-log-text-82ba"></a>
 ### Replace the invented message-log text outside the strike plan
@@ -328,6 +306,13 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 **Notes**
 
 > ai.rs system_strength() (~1337) has no source either: FUN_00502020 checks what one capital ship carries (ai-behavior-analysis.md, entity-system.md). Replace it with the original's strength reading when this node ports the evaluation.
+
+<a id="or-port-main-menu-game-type-text-h67b"></a>
+### Port the main menu's game-type text from the original
+
+`or-port-main-menu-game-type-text-h67b` · **open** · P2 · interface, port · updated 2026-10-21
+
+> The original main menu writes the game type in green proportional text in the dark grid field under the Cloud City control (about 325,393): "Standard Game" at rest (interface-parity reference capture pravus-part1-video-frames/0002-main-menu-rest.png). The port draws "Standard Game"/"Headquarters Only" at (271,374,110,14) in a monospace face with no source (crates/rebellion-render/src/main_menu.rs). Done when: the string resources, face, size and position are traced in Ghidra (the menu's paint for control 0x71) and ported with a citation; an original capture shows the Headquarters Only state; the main-menu browser scenarios pass on both sides.
 
 <a id="or-port-music-selector-v9nd"></a>
 ### Port: choose music from the original 16-track selector instead of MusicContext
@@ -463,6 +448,14 @@ Waits on: [or-q-bounty-timer-zq5r](questions.md#or-q-bounty-timer-zq5r), [or-q-d
 > Original: FUN_00543040 picks the Jabba's Palace destination for the Bounty family; the bounty chain runs on story timers 0x392 and 0x393 (story-encounters.md).
 >
 > To port: the Bounty mission family with its validator and outcome, and port readers for the three abodes (container, listing, escape sweep). The traces or-q-bounty-timer-zq5r (timer 0x393 re-arm and roll) and or-q-dagobah-slot-atny (Dagobah slot +0x1d8) come first. Both factions.
+
+<a id="or-port-c019-alliance-hull-layout-fqrk"></a>
+### Match the Alliance hulls' layout in the day-676 Coruscant battle (C019) to A0
+
+`or-port-c019-alliance-hull-layout-fqrk` · **open** · P3 · port, tactical · updated 2026-10-21  
+Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)
+
+> In TAC-05-C019 (save empire-death-star-pre-alert, day 676, superlaser strike) the port's Alliance hulls sit at x 295-403, y 73-168 while A0 shows x 342-427, y 97-176 (up to about 45 px off), and the fixture has 14 Alliance hulls where A0 shows 13; only 25 of 1,002 ship edge pixels coincide. This is layout, not rasterization: settle the fixture against the save and the multi-fleet formation, then rerun C6 for C019, both sides.
 
 <a id="or-port-capital-ship-transit-in-fleet-6t1p"></a>
 ### Port: a finished capital ship travels as a member of its destination fleet on its own leg
@@ -655,32 +648,6 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 > - tactical.rs:7250 and :7251 (B+C, size S) "the launch message takes effect at once, from the carrier's position (hyp: the lockstep queue's delay and the launch point are untraced)". To port: trace message 0x19's queue delay and the FUN_005b8c70 launch point.
 >
 > Both factions.
-
-<a id="or-port-unfinished-capital-ship-products-czev"></a>
-### Port: every capital ship product is an unfinished object in its destination's spare fleet from the order day
-
-`or-port-unfinished-capital-ship-products-czev` · **open** · P3 · port · updated 2026-10-19
-
-> Port (size M-L). Every capital ship product is an unfinished object in its destination's spare fleet from the order day.
->
-> Source: ghidra/notes/death-star-product.md section 1, the "Rule for every capital ship" paragraph (FUN_004f7d50, FUN_00512d00, FUN_0052bee0).
->
-> The plan that ports the Death Star cascade ports this rule for the Death Star family only (the `unfinished` ShipInstance). This node extends it to every capital ship product.
->
-> Why: with each product an object from the order day, the AI census can read fleet +0x88 directly (FUN_00433780). That removes the queue reads in ai_production `Census::take` and in the product reservation of root R4 (carrier 0 cargo).
->
-> To port: create the product object at order time, flagged uncompleted, in the destination's spare fleet; teach every reader to skip or count it as the original does; retire the queue reads named above. Both factions. Save format changes need a SAVE_VERSION bump.
-
-**Notes**
-
-> Decision (Tom, 2026-10-18): full parity, inside the orbital-strike plan. This port absorbs 6t1p phase C's reader audit. Sabotage targets name the ship, as the original's mission +0x38 does; SAVE_VERSION is bumped with no migration. A capital ship ordered to a fleet Destination, and the fog sensor reveal, follow the original's traced code. Size: about 7.5 units across P1 (object at the order), P2 (reader audit), P3 (room, maintenance, AI census), P4 (the 0x40/0x34 mission refusal) and P5 (the under-construction mark, STRATEGY 11570/11572).
-> Original checks (Wine, Empire route-1 save ordering a Death Star at Coruscant on day 115, played on from day 123):
-> - V5a: a fleet holding only the unfinished Death Star moves to a neighbour system at once, not en route (FUN_00555920, FUN_00556390).
-> - V5c/V5d: a ship Move into another fleet, and a fleet-onto-fleet Join, both carry the unfinished ship; the emptied fleet disbands (state 0x14).
-> - V5b menus: the unfinished ship greys Create Fleet and Scrap; a fleet of only that ship greys Planetary Bombardment, Planetary Assault and Scrap.
-> - V7: Destination to Averam moves the unfinished ship into one fleet at Averam, disbands the old fleet, and keeps progress.
-> - V8a: Stop asks 'Are you sure you want to stop construction of the following? 1 Death Star' (TEXTSTRA 28755) over advisor art, then destroys the ship (0x16) and disbands its fleet (0x14). The port's StopProduction stops with no confirmation.
-> - V2 (partial): the Fleet window lists the unfinished ship over the green grid backdrop; the ships band reads 'Destination: Fleet 6'.
 
 <a id="or-port-message-rail-hyp-settle-gqbq"></a>
 ### Trace and settle the message rails and movie frame hypotheses

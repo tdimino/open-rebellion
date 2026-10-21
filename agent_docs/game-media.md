@@ -3,7 +3,7 @@ title: "Game Media Reference"
 description: "Working inventory of visual and audio media in Star Wars Rebellion (1998)"
 category: "agent-docs"
 created: 2026-03-16
-updated: 2026-09-10
+updated: 2026-10-19
 tags: [dll, smacker, wav, audio, video]
 ---
 
@@ -20,7 +20,7 @@ All media lives in the game installation at `~/Desktop/Programming/star-wars-reb
 
 | DLL | Size | BMP Resources | BIN/Data | Content |
 |-----|------|--------------|----------|---------|
-| COMMON.DLL | 2.8MB | 321 | 1 | Main menu backgrounds, core UI toolkit (scrollbars, checkboxes, sliders), 215 button sprites |
+| COMMON.DLL | 2.8MB | 321 | 1 | Main menu backgrounds, core UI toolkit, 215 animated cockpit/control frames |
 | STRATEGY.DLL | 29MB | 1,042 | 96 | Galaxy map chrome, facility indicators, event screens, character diplomacy panels, UI chrome |
 | TACTICAL.DLL | 7.5MB | 288 | 1 + 87 meshes + 397 textures + 66 WAV | Combat HUD, controls, meshes, textures, and audio |
 | GOKRES.DLL | 2.9MB | 580 | — | Entity status sprites (troops, ships, fighters, characters, facilities, damage diagrams) |
@@ -41,19 +41,7 @@ All media lives in the game installation at `~/Desktop/Programming/star-wars-reb
 
 ### Resource ID Numbering Scheme
 
-| Range | DLL | Content |
-|-------|-----|---------|
-| 900-999 | STRATEGY.DLL | Galaxy chrome, display toggles |
-| 1000-2200 | TACTICAL.DLL | HUD panels, buttons, squadron controls, weapon gauges, Death Star |
-| 2000-9000 | ALSPRITE/EMSPRITE.DLL | Droid advisor animated sprite frames |
-| 2000-17000 | ALBRIEF/EMBRIEF.DLL | Briefing advisor sprites + animation data |
-| 9000-9999 | STRATEGY.DLL | Facility/system status indicators |
-| 10000-11700 | STRATEGY.DLL | Event screens, battle results, bombardment |
-| 10600-11067 | REBDLOG.DLL | Dialog box UI chrome |
-| 17000-17800 | GOKRES.DLL | Troop + special force entity sprites |
-| 17900-18600 | GOKRES.DLL | Fighter + capital ship + major character sprites |
-| 19000-19100 | GOKRES.DLL | Minor character portraits |
-| 20000+ | COMMON.DLL | Main menu screens + restart buttons |
+Resource ID ranges per DLL: `dll-resource-catalog.md`.
 
 Locale `1033` = English (US). All extractions are English-locale.
 
@@ -66,19 +54,22 @@ Locale `1033` = English (US). All extractions are English-locale.
 |------|------|---------|
 | MDATA.000 | 2.8MB | Intro logo/splash screen |
 | MDATA.001 | 39MB | Main intro cinematic (Star Wars crawl + setup) |
-| MDATA.003 | 16MB | Campaign setup sequence 1 (cockpit/shuttle briefing) |
-| MDATA.004 | 20MB | Campaign setup sequence 2 |
-| MDATA.005 | 20MB | Campaign setup sequence 3 |
-| MDATA.101 | 6MB | Story event cutscene 1 |
-| MDATA.102 | 19MB | Story event cutscene 2 |
-| MDATA.103 | 25MB | Story event cutscene 3 |
-| MDATA.104 | 16MB | Story event cutscene 4 |
-| MDATA.105 | 40MB | Story event cutscene 5 |
-| MDATA.106 | 40MB | Story event cutscene 6 |
-| MDATA.107 | 47MB | Story event cutscene 7 (largest) |
-| MDATA.108 | 34MB | Story event cutscene 8 |
+| MDATA.003 | 16MB | Alliance new-game movie (0x68) |
+| MDATA.004 | 20MB | Empire new-game movie (0x69) |
+| MDATA.005 | 20MB | Credits (0x6e) |
+| MDATA.101 | 6MB | System Destroyed (0x6f) |
+| MDATA.102 | 19MB | Rebel HQ Destroyed (0x73) |
+| MDATA.103 | 25MB | Coruscant Captured (0x74) |
+| MDATA.104 | 16MB | Death Star Sabotaged (0x72) |
+| MDATA.105 | 40MB | Ending: Alliance wins, Alliance viewer (code 0x10) |
+| MDATA.106 | 40MB | Ending: Empire wins, Alliance viewer (code 0x11) |
+| MDATA.107 | 47MB | Ending: Alliance wins, Empire viewer (code 0x13) |
+| MDATA.108 | 34MB | Ending: Empire wins, Empire viewer (code 0x12) |
 | MDATA.201 | 12MB | Successful X-wing trench run; Death Star destroyed |
 | MDATA.202 | 8MB | Failed trench run; X-wing destroyed |
+
+MDATA.002 is named by movie 0x67 but absent from the install. Movie ids map to
+files in `crates/rebellion-app/src/movies.rs` (`file_number`, `FUN_00421ba0`).
 
 **Codec**: SMACKW32.DLL (Smacker 2 format, RAD Game Tools).
 **Resolution**: 640x324 (most), 640x480 (splash). Higher than expected for 1998.
@@ -127,7 +118,7 @@ Locale `1033` = English (US). All extractions are English-locale.
 Standard bitmap and RCDATA subsets are extracted to
 `assets/references/ref-ui-full/`. The extractor does not yet handle custom PE
 types 301, 302, or 303, so the visual extraction is not complete. See
-`agent_docs/dll-resource-catalog.md` for the corrected inventory.
+`agent_docs/dll-resource-catalog.md` for the full inventory.
 
 Voice lines: 285 WAV files (153 Alliance + 132 Empire) in
 `ref-ui-full/voice-alliance/` and `ref-ui-full/voice-empire/`.

@@ -4,7 +4,7 @@
 
 Decisions, chores and unlabelled nodes. Back to the [index](INDEX.md).
 
-16 open.
+15 open.
 
 <a id="or-dec-c6-text-masks-rue"></a>
 ### Decide: may C6 mask label text boxes, citing the accepted anti-aliased font?
@@ -40,12 +40,16 @@ Unblocks: [or-acc-status-2ls](acceptance.md#or-acc-status-2ls)
 <a id="or-d-gnd-plan-glw"></a>
 ### Plan the TAC-08 port in phases and explain it to Tom
 
-`or-d-gnd-plan-glw` · **open** · P2 · decision, ground-assault, owner · updated 2026-10-14  
+`or-d-gnd-plan-glw` · **open** · P2 · decision, ground-assault, owner · updated 2026-10-20  
 Epic: [Ground assault (TAC-08): port the original's report-only flow](INDEX.md#or-ep-gnd-mmf)  
 Waits on: [or-c-gnd-alliance-qqg](closed.md#or-c-gnd-alliance-qqg), [or-r-gnd-5hu](reviews.md#or-r-gnd-5hu)  
 Unblocks: [or-p-gnd-ykv](ports.md#or-p-gnd-ykv)
 
 > Well over three files: phases, each explained before implementing.
+
+**Notes**
+
+> 2026-10-20: the TAC-08 cells are carried out of the orbital-strike plan (Phase K item 9) by Tom's decision; they need A1 fixtures, compare regions and the Alliance's A0 frames from the VM.
 
 <a id="or-k1b8"></a>
 ### Native Alliance opening: the day clock stalls during the droids' cockpit briefing with briefing=false
@@ -68,17 +72,6 @@ Unblocks: [or-p-gnd-ykv](ports.md#or-p-gnd-ykv)
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > movement.rs transit_ticks_between divides by GNPRTB 1 where FUN_0055d8c0 divides by DAT_00661a88 (100), and the port has no FUN_00555b30 rule (same container 0 ticks; different containers that are not both systems 1 tick). Source: ghidra/notes/build-delivery.md Travel and Port. Both factions identical (no side branch).
-
-<a id="or-port-window-restore-on-load-iclp"></a>
-### Port: a load reopens the saved strategic windows
-
-`or-port-window-restore-on-load-iclp` · **open** · P2 · updated 2026-10-19
-
-> The original saves the strategic view's child windows as the save's third section (writer FUN_00440ea0, reader FUN_00440f80 → FUN_00441190), bottom of the z-order to top: a six-word descriptor (type, x, y, w, h, shown) plus a per-type payload for Sector (1), Fleet (4, with tab), Battle in Progress (7), System (9), Defenses (10) and Missions (11). The GID mode is replayed through WM_COMMAND 0x140. Shown windows come back shown, hidden ones on the minimized rail, and sector windows drop to the bottom; restored windows open silently. System, Defenses and Missions pages are not saved; System reopens on Overview. The port saves no interface state and closes every window on a load; the GID category is neither saved nor reset. Port plan: an InterfaceState save section outside the state fingerprint (fleet windows by FleetKey, which the save keeps stable with the slotmap versions), per-family export/restore, and main.rs wiring after the GID focus model.
-
-**Notes**
-
-> Wine checks (Empire day-2 start, played on to day 6 / day 8): a dragged System window reopens where it was dragged (322,92), so the descriptor's x and y follow a drag; a System window saved on Shipyards reopens on the Manufacturing overview; a window minimized to the rail comes back on the rail; the sector window comes back under the System window. Saved with the GID menu open: the menu does not reopen; a System window the menu had hidden comes back on the rail (GID's slot +0x08 clears +0x110, so it saves as hidden); a sector window the menu had hidden comes back shown, because FUN_00441190's type-1 branch clears its rail flag (0x441248 jumps to 0x4413f1, as type 7 does), so only +0x2c(5) follows; the legend category was unchanged (Popular Support), so the GID-mode replay is not exercised. The Fleet window's subject is its system (fleet-window.md, +0x144), as the port keys it, so fleet windows save by system DatId; no FleetKey is needed. The Battle in Progress overlay (type 7) is left out: the port has no such window. The record types live in rebellion_core::saved_interface; they follow SaveState in the body, outside the fingerprint, under the save version current when this lands.
 
 <a id="or-a631"></a>
 ### Re-source or retire eval_parity's golden-value oracle

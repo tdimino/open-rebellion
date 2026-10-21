@@ -641,21 +641,14 @@ fn nearest_systems(world: &GameWorld, from: SystemKey) -> Vec<SystemKey> {
     systems.into_iter().map(|(_, key)| key).collect()
 }
 
-/// A fleet's speed is its slowest ship's (`FUN_004fd900`): zero when any
-/// living ship cannot travel.
+/// A fleet's speed is its slowest ship's (`FUN_004fd900`): zero when a
+/// completed ship that is not in transit cannot travel, and when it has no
+/// such ship ([`crate::movement::fleet_speed`]).
 fn fleet_speed_is_zero(world: &GameWorld, fleet: FleetKey) -> bool {
-    world.fleets.get(fleet).is_some_and(|value| {
-        value
-            .capital_ships
-            .iter()
-            .filter(|ship| ship.alive)
-            .any(|ship| {
-                world
-                    .capital_ship_classes
-                    .get(ship.class)
-                    .is_none_or(|class| capital_ship_instance_speed(world, ship, class) == 0)
-            })
-    })
+    world
+        .fleets
+        .get(fleet)
+        .is_some_and(|value| crate::movement::fleet_speed(value, world).unwrap_or(0) == 0)
 }
 
 /// `FUN_004ff690`: each completed ship of the fleet that is not en route and
@@ -672,7 +665,8 @@ fn scrap_stranded_ships(
             .capital_ships
             .iter()
             .map(|ship| {
-                ship.alive
+                // FUN_004ff690.c:22-28: completed and not in transit.
+                ship.usable()
                     && world
                         .capital_ship_classes
                         .get(ship.class)
@@ -1401,6 +1395,81 @@ mod tests {
             assert_eq!(refused.len(), 1, "{loser:?} {records:?}");
             let winner = if loser_is_alliance { "empire" } else { "alliance" };
             assert_eq!(refused[0].details["winner"], winner, "{loser:?}");
+        }
+    }
+
+    /// A ship whose only installed drive is knocked out: speed 0
+    /// (`FUN_00500820`).
+    fn stranded_ship(
+        world: &mut GameWorld,
+        is_alliance: bool,
+        completed: bool,
+        travelling: Option<SystemKey>,
+    ) -> crate::world::ShipInstance {
+        let class = world.capital_ship_classes.insert(crate::world::CapitalShipClass {
+            family: 0x14,
+            hull: 100,
+            hyperdrive: 1,
+            ..Default::default()
+        });
+        let mut ship = crate::world::ShipInstance::new(class, 100, is_alliance);
+        ship.set_hyperdrive_damage_hits(&world.capital_ship_classes[class].clone(), 1);
+        ship.completed = completed;
+        if let Some(at) = travelling {
+            ship.transit = Some(crate::world::ShipTransit {
+                from: at,
+                to: at,
+                arrival_tick: 9,
+            });
+        }
+        ship
+    }
+
+    /// `FUN_004fd900.c:21-34` walks the fleet's ships and weighs only those
+    /// completed and not in transit (mode 3 with the usable test), so a
+    /// stranded ship unfinished or on its own leg does not hold the fleet.
+    #[test]
+    fn only_a_usable_stranded_ship_holds_its_fleet_in_port_for_either_side() {
+        for is_alliance in [true, false] {
+            let mut world = GameWorld::default();
+            let here = system_at(&mut world, 0, ControlKind::Controlled(Faction::Alliance));
+            let fine = jumping_fleet(&mut world, here, is_alliance);
+            let unfinished = stranded_ship(&mut world, is_alliance, false, None);
+            let travelling = stranded_ship(&mut world, is_alliance, true, Some(here));
+            world.fleets[fine].capital_ships.extend([unfinished, travelling]);
+            assert!(!fleet_speed_is_zero(&world, fine), "{is_alliance}");
+
+            let stuck = stranded_ship(&mut world, is_alliance, true, None);
+            world.fleets[fine].capital_ships.push(stuck);
+            assert!(fleet_speed_is_zero(&world, fine), "{is_alliance}");
+        }
+    }
+
+    /// `FUN_004ff690.c:22-28` destroys each completed ship not in transit
+    /// that cannot travel, with reason 5; an unfinished or travelling one
+    /// stays.
+    #[test]
+    fn only_a_usable_stranded_ship_is_scrapped_with_its_fleet_for_either_side() {
+        for is_alliance in [true, false] {
+            let mut world = GameWorld::default();
+            let here = system_at(&mut world, 0, ControlKind::Controlled(Faction::Alliance));
+            let fleet = jumping_fleet(&mut world, here, is_alliance);
+            let unfinished = stranded_ship(&mut world, is_alliance, false, None);
+            let travelling = stranded_ship(&mut world, is_alliance, true, Some(here));
+            let stuck = stranded_ship(&mut world, is_alliance, true, None);
+            world.fleets[fleet]
+                .capital_ships
+                .extend([unfinished, stuck, travelling]);
+
+            scrap_stranded_ships(&mut world, &mut TroopTransportState::default(), fleet, 0);
+
+            // The fine ship, the unfinished one and the travelling one stay.
+            let kept: Vec<(bool, bool)> = world.fleets[fleet]
+                .capital_ships
+                .iter()
+                .map(|ship| (ship.completed, ship.transit.is_some()))
+                .collect();
+            assert_eq!(kept, [(true, false), (false, false), (true, true)], "{is_alliance}");
         }
     }
 

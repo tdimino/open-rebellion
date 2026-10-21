@@ -769,13 +769,18 @@ mod tests {
 
     #[test]
     fn rejected_renderer_publication_rolls_back_the_exact_manager_identity() {
-        let (world, system) = fleet_world();
+        let (mut world, system) = fleet_world();
+        // The renderer refuses a second faction's content. A direct window at
+        // the same system would not do: fixture builds replace it.
+        let mut other = world.systems[system].clone();
+        other.dat_id = DatId::new(101);
+        let other = world.systems.insert(other);
         let mut state = FleetWindowState::default();
         assert!(state.open(
             &world,
-            system,
+            other,
             (10, 20),
-            CockpitFaction::Alliance,
+            CockpitFaction::Empire,
             fleet_layout(),
         ));
         let prepared = state

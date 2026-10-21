@@ -7,6 +7,7 @@ between containers.
     save_tree.py assassin SOURCE.sav OUTPUT.sav
     save_tree.py garrison contested|repulsed|contested-visible SOURCE.sav OUTPUT.sav
     save_tree.py maintenance empire DELTA SOURCE.sav OUTPUT.sav
+    save_tree.py undefended SOURCE.sav OUTPUT.sav
 
 `check` parses each save and rebuilds it from the parse (every list count
 from its objects, every marker from its position); it fails unless the
@@ -99,6 +100,15 @@ JAIL_EDITS = {
 # and the enemy major it should assassinate at a system its side sees
 ASSASSIN_EDITS = {
     ("1f8381e59acf166390195bd5cc47e0811f66dd68065c4a2d7dfa29ad072f9baa", 855_040): (0x38000393, 0x900000AB, 84, 220, 0x33000243, 0x900000AD),
+}
+# source SHA-256 and size -> (character key, its system, the destination):
+# a free major moved to a system of its own side that holds no regiment, no
+# squadron and only empty fleets, so a mission against it meets no defender
+# (`ghidra/notes/decoy-roll.md`, the decoy and FOILTB phases walk regiments,
+# and ships and fighters when the mission's side has nothing there)
+UNDEFENDED_EDITS = {
+    # `assassin`'s output: Han Solo from Carida to 0x90000097
+    ("bf5ef29b23fde7c6cce42efa31a389b35eba664489eb4647a82abc8f8926c212", 855_040): (0x33000243, 0x900000AD, 0x90000097),
 }
 # source SHA-256 and size -> edit name -> (regiment key, its system, the
 # destination system, the graph the Alliance's bucket copy is re-keyed to,
@@ -571,6 +581,55 @@ def assassin(source, output):
     )
 
 
+def undefended(source, output):
+    """Move a free character between two systems of its side in every graph
+    that holds it: the destination's list, before the first object of a
+    later family, and the master copy's location word."""
+    data = Path(source).read_bytes()
+    pin = (hashlib.sha256(data).hexdigest(), len(data))
+    require(pin in UNDEFENDED_EDITS, f"{source} is not a pinned source")
+    require(not Path(output).exists(), f"{output} exists")
+    character, origin, destination = UNDEFENDED_EDITS[pin]
+    parse = Parse(data)
+    require(parse.rebuild() == data, "the source does not rebuild")
+    before = tree_listing(parse)
+    copies = parse.find(character >> 24, character & 0xFFFFFF)
+    targets = {n.graph: n for n in parse.find(destination >> 24, destination & 0xFFFFFF)}
+    require(copies, "no copy of the character")
+    expected = collections.Counter()
+    for node in copies:
+        container = node.parent.owner
+        require(container is not None and container.key() == origin, f"copy {node.graph:#x} is not in {origin:#010x}")
+        target = targets.get(node.graph)
+        require(target is not None and target.children is not None, f"no destination list in graph {node.graph:#x}")
+        require((node.graph ^ target.graph) & 0xC0 == 0, f"graph {node.graph:#x}: owner differs from the destination's")
+        for child in target.children.nodes:
+            require(not (0x10 <= child.family <= 0x13 or child.family == 0x1C), f"graph {node.graph:#x}: the destination holds {child.key():#010x}")
+            require(child.family != 0x08 or not (child.children and child.children.nodes), f"graph {node.graph:#x}: fleet {child.key():#010x} is not empty")
+        old = (node.graph, origin, node.header.bytes, node.fields.bytes)
+        if node.graph & 0x30 == 0:
+            require(node.word(LOCATION_WORD) == origin, f"master copy: location {node.word(LOCATION_WORD):#x}")
+            require(node.word(MISSION_WORD) == 2, "master copy: on a mission")
+            require(not node.word(FLAGS_WORD) & 1, "master copy: a captive")
+            node.set_word(LOCATION_WORD, destination)
+        slot = next((i for i, c in enumerate(target.children.nodes) if c.family > node.family), len(target.children.nodes))
+        relocate(node, target, slot)
+        expected[old] -= 1
+        expected[(node.graph, destination, node.header.bytes, node.fields.bytes)] += 1
+    out = parse.rebuild()
+    reread = Parse(out)
+    require(reread.rebuild() == out, "the output does not rebuild")
+    after = tree_listing(reread)
+    require(before - after == collections.Counter({k: -v for k, v in expected.items() if v < 0}), "objects other than the character changed")
+    require(after - before == collections.Counter({k: v for k, v in expected.items() if v > 0}), "the character did not move as intended")
+    require(len(reread.scan.markers - reread.used) == len(parse.scan.markers - parse.used), "the section markers changed in number")
+    Path(output).write_bytes(out)
+    print(
+        f"{output}: {len(copies)} copies of {character:#010x} moved from {origin:#010x} to {destination:#010x}, "
+        f"{len(out) - len(data):+d} bytes, sha256 {hashlib.sha256(out).hexdigest()}"
+    )
+
+
 def regiment_slot(system):
     """Where a regiment goes in a system's list: the lists keep fleets first,
     then regiments, then facilities."""
@@ -741,6 +800,8 @@ def main(argv):
         return assassin(argv[2], argv[3])
     if len(argv) == 5 and argv[1] == "garrison":
         return garrison(argv[2], argv[3], argv[4])
+    if len(argv) == 4 and argv[1] == "undefended":
+        return undefended(argv[2], argv[3])
     if len(argv) == 6 and argv[1] == "maintenance":
         return maintenance(argv[2], int(argv[3]), argv[4], argv[5])
     raise SystemExit(__doc__)

@@ -8,7 +8,7 @@
 
 | Collection | Files | Content |
 |---------|-------|---------|
-| ref-swccg-cards | 76 | Decipher SWCCG card scans — all 60 Rebellion characters, MIT license |
+| ref-swccg-cards | 76 | Decipher SWCCG card scans: all 60 Rebellion characters, MIT license |
 | ref-swg-tcg-art | 67 | SWG Galaxies TCG painted art (fan art purged) |
 | ref-mcquarrie-rotj | 79 | McQuarrie ROTJ portfolio (21) + ESB concept paintings (58) |
 | ref-wookieepedia-portraits-ot | 10 | OT /Legends re-scrape (audited, non-OT removed) |
@@ -25,11 +25,4 @@
 
 ## Usage
 
-Reference selection is automated via `scripts/select-references.py`:
-
-1. Routes each BMP to a pack via `scripts/reference-packs.json` (12 packs, 24 routing rules)
-2. Builds contact sheets of candidates, pre-filtered by entity slug when available
-3. Vision LLM picks best 3-5 references (rejects text pages, non-OT content)
-4. Output: `data/reference-selections.json` (consumed by `scripts/gemini-upscale.py`)
-
-Entity mapping: `data/resource-entity-map.json` — 162 GOKRES resource IDs → character/ship names.
+Selection and routing: `../assets.md`, "Automated Reference Selection".

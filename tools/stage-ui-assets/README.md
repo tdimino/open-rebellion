@@ -1,9 +1,9 @@
 # stage-ui-assets
 
 Extract original Star Wars Rebellion assets into the directory layout
-Open Rebellion loads at runtime. One command stages 2,326 standard BMPs and
-3,988 custom advisor frames from seven game DLLs, plus voices, menu effects,
-and soundtrack WAVs, 15 cutscenes, original text strings, and the Encyclopedia
+Open Rebellion loads at runtime. One command stages 2,364 standard BMPs,
+9,410 custom advisor and briefing frames and 2,342 action scripts from nine
+game DLLs, plus voices, menu effects, and soundtrack WAVs, 15 cutscenes, original text strings, and the Encyclopedia
 source catalog. It then verifies all outputs. The Go code uses only its standard
 library; cutscene conversion requires `ffmpeg` and `ffprobe`. No Python
 environment or Windows runtime is needed.
@@ -40,7 +40,8 @@ resource byte for byte. It does not resize or re-encode the artwork.
 - Go 1.22 or later to build or use `go run`.
 - `ffmpeg` (with VP9/Opus encoding and Smacker decoding) and `ffprobe` on PATH
   for extraction. Verification needs neither tool.
-- Your own copy of the seven UI DLLs listed below plus `VOICEFXA.DLL` and
+- Your own copy of the nine UI DLLs listed below, the advisors' action
+  tables `GData/C3POACT.SPT` and `GData/IMP22ACT.SPT` under `--source`, plus `VOICEFXA.DLL` and
   `VOICEFXE.DLL` and `TEXTSTRA.DLL`, together in one source directory, and the original
   `MDATA.300`–`MDATA.315` soundtrack files and the 15 movies listed below in `source/MDATA` or `--mdata`. Extraction reads these files without modifying them.
 - Normal extraction additionally requires `ENCYTEXT.DLL` and `ENCYBMAP.DLL`
@@ -84,9 +85,9 @@ directory—not from the executable's location. The output directory is created
 as needed. A successful extraction reports:
 
 ```text
-Staged 6291 UI resources from 6 DLLs (6291 written, 0 unchanged)
+Staged 14652 UI resources from 9 DLLs (14652 written, 0 unchanged)
 ...
-Verified 6291 UI resources across 6 DLLs
+Verified 11774 UI resources across 9 DLLs
 Staged 310 audio files (310 written, 0 unchanged)
 Verified 310 audio files
 Staged 1347 TEXTSTRA strings
@@ -127,10 +128,17 @@ collide. Numeric resource IDs become filenames, for example:
 | `TACTICAL.DLL` | 288 | 0 | `tactical-dll/` |
 | `ALSPRITE.DLL` | 38 | 1,640 | `alsprite-dll/` |
 | `EMSPRITE.DLL` | 34 | 2,348 | `emsprite-dll/` |
+| `ALBRIEF.DLL` | 20 | 2,684 | `albrief-dll/` |
+| `EMBRIEF.DLL` | 18 | 2,738 | `embrief-dll/` |
 | `REBDLOG.DLL` | 23 | 0 | `rebdlog-dll/` |
 
-Standard resources are written to `BMP/{id}.bmp`; custom advisor frames are
-written unchanged to `TYPE302/{id}.bin`.
+Standard resources are written to `BMP/{id}.bmp`; custom advisor and
+briefing frames are written unchanged to `TYPE302/{id}.bin`. The advisor and
+briefing DLLs' action scripts (RT_RCDATA: ALSPRITE 752, EMSPRITE 753,
+ALBRIEF 366, EMBRIEF 471) go to `RCDATA/`, their WAVE resources (and
+STRATEGY's 66) to `WAVE/{id}.wav`, and each advisor's action table to
+`SPT/`. The staged total counts all of these; verification counts the BMPs
+and type-302 frames.
 
 The tool also maps seven known string-named resources to the numeric filenames
 used by the runtime catalog:
@@ -148,7 +156,7 @@ used by the runtime catalog:
 Unknown named resources and duplicate IDs within a DLL, including IDs shared by
 multiple languages—cause an error rather than selecting one silently. The one
 exception is `REBDLOG.DLL`'s `DLG_CORNER_GRAB_FRAME`, which `REBEXE.EXE` never
-loads by name; it is skipped rather than given an invented ID. All seven
+loads by name; it is skipped rather than given an invented ID. All nine
 DLLs and their expected counts are fixed; there is no single-DLL selection flag.
 
 ## Verify or refresh existing assets
@@ -196,7 +204,7 @@ make the final count check fail even with `--force`.
 | `--source` | `data/base` | Directory containing UI, voice, and TEXTSTRA DLLs |
 | `--output` | `data/base/ui` | Root of the staged UI directories |
 | `--audio-output` | `data/sounds` | Audio output directory |
-| `--mdata` | `source/MDATA` | Original soundtrack and cutscene directory |
+| `--mdata` | `--source`/`MDATA` | Original soundtrack and cutscene directory |
 | `--strings-output` | `data/base/textstra.json` | Original string JSON output |
 | `--encyclopedia-output` | `data/base/encyclopedia/source.json` | Ignored ENCYTEXT/ENCYBMAP source catalog |
 | `--cutscene-output` | `assets/references` | Parent for `ref-videos` and `cutscene-frames` |
@@ -206,11 +214,15 @@ make the final count check fail even with `--force`.
 | `--force` | `false` | Replace files whose contents differ |
 | `--tactical-3d` | `false` | Add tactical type-301/type-303 staging to the full extraction |
 | `--tactical-3d-only` | `false` | Stage or verify only tactical type-301/type-303 resources |
+| `--tactical-3d-convert` | `false` | Convert or verify the staged tactical resources |
+| `--tactical-3d-assimp-oracle` | | Verify staged tactical meshes against this Assimp executable |
 | `--help` | | Print usage |
 
 Successful runs and help exit with status 0. Errors exit with status 1 and an
 `ERROR:` message on stderr. Positional arguments are not accepted.
-`--verify` and `--no-verify` are mutually exclusive. Direct extraction retains
+`--verify` and `--no-verify` are mutually exclusive, and so are
+`--tactical-3d`, `--tactical-3d-only`, `--tactical-3d-convert`,
+`--tactical-3d-assimp-oracle` and `--encyclopedia-only`. Direct extraction retains
 its stage-then-verify behavior by default; `make stage-assets` uses
 `--no-verify`, and `make verify-assets` performs the combined source-free
 verification pass explicitly.
@@ -227,8 +239,9 @@ verification pass explicitly.
 This tool stages UI resources, audio, cutscenes, original text strings, and
 opt-in raw tactical meshes and textures. Its separate tactical converter
 decodes staged binary-X geometry and type-303 indexed images and palettes into
-a deterministic content-addressed runtime store. It does not extract SPT/BIN/FDT control data,
-briefing animation, DAT tables, or EData images. It does not generate the browser
+a deterministic content-addressed runtime store. Beyond the advisors' SPT
+action tables and the RCDATA action scripts, it does not extract BIN/FDT
+control data, DAT tables, or EData images. It does not generate the browser
 manifest or runtime pack. The repository's
 [WASM build script](../../scripts/build-wasm.sh) consumes `data/base/ui/` for
 browser packaging. See the
@@ -331,13 +344,9 @@ From the repository root:
 make extract-assets GAME_SOURCE="/path/to/Star Wars - Rebellion"
 ```
 
-`GAME_SOURCE` must contain the seven UI DLLs plus `VOICEFXA.DLL`,
-`VOICEFXE.DLL`, and `TEXTSTRA.DLL`. `MDATA_DIR` defaults to `GAME_SOURCE/MDATA`.
-If the DLLs have already been copied into `data/base`, point at the original media directory:
-
-```sh
-make extract-assets MDATA_DIR="/path/to/Star Wars - Rebellion/MDATA"
-```
+`GAME_SOURCE` must contain the nine UI DLLs plus `VOICEFXA.DLL`,
+`VOICEFXE.DLL`, and `TEXTSTRA.DLL`, and the media in `GAME_SOURCE/MDATA`
+(`make` refuses to run without it).
 
 For custom outputs or overwrite/verification options, use the extractor flags:
 
@@ -417,11 +426,13 @@ files without reopening the DLLs.
 Production packaging is strict: it requires that source profile plus the owned
 `EData` directory used to resolve every referenced 400-by-200 indexed BMP.
 
+Both build steps run Cargo, so they run on the Mac Mini (`package-web.sh`
+runs `build-wasm.sh` first):
+
 ```sh
-REBELLION_EDATA_DIR="/path/to/Star Wars - Rebellion/EData" \
-  bash scripts/build-wasm.sh
-REBELLION_EDATA_DIR="/path/to/Star Wars - Rebellion/EData" \
-  bash scripts/package-web.sh dev
+scripts/mini-cargo.sh \
+  --run 'REBELLION_EDATA_DIR="/path/on/the/Mini/to/EData" ./scripts/package-web.sh dev' \
+  --pull dist/open-rebellion-web-dev/
 ```
 
 Before compilation, the Rust source audit joins the staged 348 text records
@@ -439,7 +450,8 @@ filesystem mods.
 
 `scripts/docker-build.sh` performs the same source-profile stage after copying
 the owned DLL/DAT files and passes `$ORIGINAL_GAME_DIR/EData` explicitly to the
-strict build. `FORCE_REBUILD=1` applies `--force` to both stages.
+strict build. `FORCE_REBUILD=1` applies `--force` to the `stage-ui-assets`
+run.
 `PREPARE_MODDING=0` skips reference JSON dumps but does not skip production
 Encyclopedia content.
 

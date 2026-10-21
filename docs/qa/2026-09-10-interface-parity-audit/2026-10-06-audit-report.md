@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit Report"
 description: "Current evidence-backed diagnosis and execution plan for complete bitmap-driven UI parity"
 category: qa
 created: 2026-09-10
-updated: 2026-10-06
+updated: 2026-10-20
 tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 ---
 
@@ -17,8 +17,8 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 | Practical interface scope remaining | approximately 75% |
 | Bounded practical space-battle launcher implementation | complete at P58-B22 |
 | Required surface families | 43 |
-| Family status | 0 complete, 15 partial, 28 fail |
-| Strictly accepted required cells | 0 of 627 |
+| Family status | 2 complete (OBJ-01, EVT-03), 15 partial, 26 fail |
+| Strictly accepted required cells | 28 of 627 |
 
 The practical percentage measures scoped implementation work and guides the
 [current batched plan](../../plans/2026-09-11-feat-batched-interface-parity-plan.md).
@@ -114,7 +114,7 @@ The local source inspection establishes the implementation causes:
 | Manufacturing and Build Selection recovery | [Ghidra note](../../../ghidra/notes/manufacturing-build-selection.md) | `FUN_00452fc0`, `FUN_004568a0`, `FUN_00458480`, `FUN_00437880`, `FUN_00438620`, `FUN_00438800`, `FUN_00439160`, `FUN_00537ff0`, STRATEGY 10800 and associated control resources, and the official manual |
 | Manual-facing window and interaction requirements | [Manual window matrix](2026-10-06-manual-window-checklists.md) and [known-deviations register](known-deviations.md) | Official manual, existing `ghidra/notes/` traces, and commit-pinned Faction Wars research leads |
 | Incomplete browser asset pack | `scripts/build-runtime-pack.py` | Original ALSPRITE, EMSPRITE, EDATA, ALBRIEF, EMBRIEF, REBDLOG, advisor-control, and voice families |
-| Invented live ground-combat screen | `crates/rebellion-render/src/ground_combat.rs:202` | Manual pp. 119–121 assault summaries and reports |
+| Planetary Assault and its report (the invented live ground-combat screen is deleted) | `crates/rebellion-core/src/assault.rs`, `crates/rebellion-render/src/operation_report.rs` | Manual pp. 119–121 assault summaries and reports, `ghidra/notes/ground-assault.md`, `ghidra/notes/operation-report-window.md` |
 | The bounded practical tactical launcher is implementation-complete: original shell and controls, transported 3D corpus, exact resource joins, live forces, commands, combat, grouping, effects, results/options, Death Star paths, shared campaign return, one source-compatible tactical RNG stream, persisted power allocation, completion/destruction callbacks, and the timed trench-run producer use recovered source contracts. Native beam and playback comparison, whole-process RNG continuity, strategic commander binding, rare audio routes, and A0 acceptance remain open | `crates/rebellion-render/src/tactical_view.rs`, `crates/rebellion-render/src/tactical_resources.rs`, `crates/rebellion-render/src/tactical_assets.rs`, `crates/rebellion-core/src/combat.rs`, `tools/interface-parity` | Manual pp. 139–150, original TACTICAL resources, [P52 through P58-B22 evidence](evidence/README.md), and the [P58-B22 source-completion checkpoint](evidence/2026-09-28-tactical-source-completion.md) |
 
 The original identity baseline comes from the locally preserved
@@ -238,7 +238,7 @@ automatic groups, retained formations, the separate Death Star, original
 result/options panels, the superlaser journey, both trench-run routes, and
 exact strategic roster, capture, and Death Star-state application. P58-B21
 closes the shared post-battle orchestration item with one production
-bombardment, landing, ground follow-up, occupation, and destination route.
+destination route; a bombardment or a landing follows only its own order.
 P58-B22 adds the recovered tactical RNG, power nibbles,
 completion/destruction callbacks, and timed trench producer. Whole-process RNG
 continuity, strategic commander binding, native beam and playback comparison,
@@ -276,9 +276,9 @@ acceptance.
 | UIP-F-005 | P0 | Runtime pack v3 includes ALSPRITE and EMSPRITE BMP/type-302 content plus all 187 original EDATA images; ALBRIEF, EMBRIEF, REBDLOG, action controls, and remaining voice resources remain omitted. | partial |
 | UIP-F-006 | P1 | The working native/browser Encyclopedia, corrected 346-entry visible catalog, immutable publication, production cockpit/contextual routes, exact returns, old-pack behavior, and twelve applicable original-executable-under-Wine comparisons pass bounded gates. Gameplay-only/hidden-record exclusion is A0-not-applicable and passes functionally. All thirteen `OBJ-01` cells pass the user-approved current evidence gate; native-Windows parity is not claimed. | complete |
 | UIP-F-007 | P1 | Fleet, Ship, Troop, and Personnel Finders, Message Index rows, fleet destinations, Rename, and en-route marks have bounded source-backed paths; native Manufacturing, Build Selection, complete Status, mission, options, and remaining object layouts are replaced or absent. | partial |
-| UIP-F-008 | P1 | Battle Alert, assault/bombardment reports, and battle-result routing are absent or bypassed. | fail |
+| UIP-F-008 | P1 | The bombardment and assault report flow (`EVT-03`) is complete and the Battle Summary is ported; the Battle Alert and pre-battle choice (`EVT-02`) and the Battle Results cells (`TAC-07`) remain. | partial |
 | UIP-F-009 | P1 | The bounded practical tactical launcher passes its implementation gates through P58-B22, including combat, commands, grouping, Death Star and result paths, shared campaign return, tactical RNG sequencing, power allocation, completion/destruction callbacks, and the timed trench-run producer. Original view acceptance, whole-process RNG continuity, strategic commander binding, exact planet framing, native beam/playback comparison, and rare audio paths stay open. | fail |
-| UIP-F-010 | P1 | The custom live ground-combat screen has no original counterpart. | fail |
+| UIP-F-010 | P1 | The invented live ground-combat screen is removed; Planetary Assault reports through the original Operation Report, and the `TAC-08` cells remain. | partial |
 | UIP-F-011 | P1 | The shared lifecycle kernel now adds immutable frame routing, fail-closed reconciliation, scene membership, and a production coordinator. Feature-family migration, exact rail thumbnails, and the complete multiwindow matrix remain open. | partial |
 | UIP-F-012 | P1 | Authoritative original captures are still missing for rare and transient states. | partial |
 
@@ -427,8 +427,9 @@ ordered trench callers, exact shared-RNG sequencing, mixing, native audible
 comparison, and strict A0 acceptance stay open.
 
 P58-B21 moves played tactical and automatic space-battle outcomes through one
-production post-battle entry. Focused tests prove contested landings enter the
-real ground-combat state and unopposed landings occupy the system. The four-case
+production post-battle entry. No landing or bombardment follows a battle: the
+original lands and bombards only on the order (`ghidra/notes/ground-assault.md`,
+`ghidra/notes/bombardment.md`). The four-case
 muted browser journey proves the shared campaign-path probe, both faction
 result surfaces, both viewports, and strategic destination routing. Exact
 global sequencing, native playback, remaining special-state and audio paths,
@@ -619,8 +620,8 @@ implemented combat, collision, formation, Death Star, result/options, and
 trench-run paths and passes the complete 120-case implementation matrix; see
 the [checkpoint evidence](evidence/2026-09-22-tactical-completion-bundle.md).
 Independent visual review is a qualified A1 pass with no P0 or P1 findings.
-P58-B21 also shares bombardment, landing, ground follow-up, occupation, and
-result destination routing between automatic and interactive outcomes.
+P58-B21 also shares result destination routing between automatic and
+interactive outcomes.
 P58-B22 closes the bounded practical launcher implementation with recovered
 sequencing, power, callback, and trench-run contracts. Native A0 comparison and
 all strict tactical acceptance cells remain open.

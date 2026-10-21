@@ -157,7 +157,7 @@ second; the 1200 s stalemate rule ends every battle. See
 
 The original identifies a Death Star by a ship in `[0x18,0x1c)` (`FUN_005003d0`, `FUN_00582440`, `FUN_0058d440`; `death-star-strategic.md`). Task-graph node `or-port-death-star-family-qtde` moves the port's `is_death_star` and `CombatEntityKind` onto it.
 
-`extract_difficulty` reads `+0x24 >> 4 & 3`, which `FUN_0054a1d0` (a story-flag broadcaster) passes to `FUN_004fd600` to pick the Alliance (1) or Empire (2) view; it is a side selector.
+The bits `+0x24 >> 4 & 3` are a side selector: `FUN_0054a1d0` (a story-flag broadcaster) passes them to `FUN_004fd600` to pick the Alliance (1) or Empire (2) view. The game's difficulty is the GNPRTB column `GameWorld::difficulty_index`.
 
 ---
 

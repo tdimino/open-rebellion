@@ -350,8 +350,8 @@ trench run off through `break_off_trench_run`) and `advance_side_withdrawals`
 (`FUN_005c8780.c:28-125`, the Withdraw executors and the jumps), run from the
 played battle's step; the Battle Options withdrawal and the computer
 controller (`advance_computer_controller`, `computer_withdraws`) call the
-first, and `tactical_withdraw_enabled` greys Withdraw once the side's
-controller has left state 0 (`FUN_005d0f50.c:10`). `apply::seat_morale`
+first, and `tactical_withdraw_enabled` greys Withdraw unless
+`BattleSession::may_withdraw` holds for the player's side. `apply::seat_morale`
 starts each side's countdown at its transit to the retreat system. The
 side's state and countdown are `TacticalMorale::withdrawal`; order 3 is
 `TacticalOrder::Withdraw` ("Withdraw", TEXTTACT `0xdde3`); a ship's jump is
@@ -361,6 +361,27 @@ side's state and countdown are `TacticalMorale::withdrawal`; order 3 is
 `ship_display_position` and `fighter_display_position`, which the renderer
 draws. A withdrawing ship steers through its waypoint, so the ship movement
 (turn and engine power) flies it; a squadron flies at its speed × 0.95.
+
+## The Withdraw button (code read)
+
+The Battle Options panel (`FUN_005dab90`) makes Withdraw a
+`CoolStrobeButton` at (0x12, 0x13), 0x30 by 0x22, TACTICAL 0x47d/0x47e
+(`FUN_005dab90.c:25`), and greys it when `FUN_00596a90` answers 0
+(`:29-33`). `FUN_00596a90` asks `FUN_005a8a90` for the local side (`+0x9ec`):
+0 for a side id above 1 or when an opposing capital ship has unit `+0x150`
+set (`FUN_005ae1d0` -> `FUN_005c7e40`; hyp: a gravity well, as in section
+1), else the side's vtable `+0xc` (`FUN_005a8a90.c:8-14`), for a played
+battle `FUN_005c7e80`. The Withdraw command (`FUN_0059fd40` 0x7a)
+asks the same before `FUN_005ad530`. So the button stands open while the
+side has a retreat system (`+0x80`), its controller is in state 0, and a
+squadron (`+0x64`) or capital ship (`+0x58`) of it has a working hyperdrive
+(`FUN_005b1b70`: the drive rating and slot `+0x90`, whatever the unit's
+state `+0x170`), or the side is the Empire with
+its station operational or not completed (`FUN_005c7e80.c:10-39`). A side
+of fighters alone may withdraw when one squadron has a hyperdrive; its
+squadrons then jump at the line and the side counts as withdrawn
+(`FUN_005a9ec0.c:245-273`). Port: `BattleSession::may_withdraw` answers for
+both the button and the computer controller.
 
 ## Squadrons without a hyperdrive, the winner, and the strategic aftermath (code read)
 
@@ -591,4 +612,6 @@ Port:
 `FUN_005be290.c`, `FUN_005ad4a0.c`, `FUN_0055d8a0.c`, `FUN_005bae60.c`,
 `FUN_005b26d0.c`, `FUN_005a90c0.c`, `FUN_005a9ec0.c`, `FUN_005bef90.c`,
 `FUN_005b84a0.c`, `FUN_005b8e00.c`, `FUN_0040d320.c`, `FUN_00516ef0.c`,
-`FUN_0040c780.c`, `FUN_0059a530.c`, `FUN_005969d0.c`, `FUN_0059a730.c`.
+`FUN_0040c780.c`, `FUN_0059a530.c`, `FUN_005969d0.c`, `FUN_0059a730.c`,
+`FUN_005dab90.c`, `FUN_00596a90.c`, `FUN_005a8a90.c`, `FUN_005ae1d0.c`,
+`FUN_0059fd40.c`, `FUN_005b1b70.c`.

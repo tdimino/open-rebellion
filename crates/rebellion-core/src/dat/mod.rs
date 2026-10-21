@@ -65,9 +65,9 @@ pub enum SectorGroup {
 /// Explored systems are fully visible; unexplored systems reveal name only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ExplorationStatus {
-    /// `family_id` = 0x90 (144)
+    /// The loader's start for a core system (SYSTEMSD `family_id` 0x90).
     Explored,
-    /// `family_id` = 0x92 (146)
+    /// The loader's start for a rim system (SYSTEMSD `family_id` 0x92).
     #[default]
     Unexplored,
 }

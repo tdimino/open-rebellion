@@ -3,7 +3,7 @@ title: "Save/Load System"
 description: "Native and browser save v63, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
 category: "agent-docs"
 created: 2026-03-15
-updated: 2026-10-19
+updated: 2026-10-20
 tags: [save-load, bincode, migration, serialization, wasm, determinism]
 ---
 
@@ -44,7 +44,7 @@ Every mutable campaign subsystem required by the app is serialized:
 |-------|------|
 | `world` | `GameWorld` |
 | `clock` | `GameClock` |
-| `manufacturing` | `ManufacturingState`: one queue and one Destination per system and production area (v30) |
+| `manufacturing` | `ManufacturingState` |
 | `missions` | `MissionState` |
 | `events` | `EventState` |
 | `ai` | `AIState` |
@@ -55,7 +55,7 @@ Every mutable campaign subsystem required by the app is serialized:
 | `uprising` | `UprisingState` |
 | `research` | `ResearchState` |
 | `jedi` | `JediState` |
-| `victory` | `VictoryState`: the HQs and the win flag word (`FUN_005180e0`, v54) |
+| `victory` | `VictoryState` |
 | `betrayal` | `BetrayalState` |
 | `economy` | `EconomyState` |
 | `sim_rng` | `Xoshiro256PlusPlus` |
@@ -66,125 +66,53 @@ Every mutable campaign subsystem required by the app is serialized:
 | `troop_transport` | `TroopTransportState` |
 | `deliveries` | `DeliveryState` |
 | `player_agent` | `PlayerAgent` |
+| `stockpiles` | `StockpileState` |
 
-Loading restores the RNG, dual-AI state and repair episodes instead of
-reseeding or clearing them. v36 drops the per-system combat cooldowns: the
-original re-fights a system every pass while both sides remain
-(`FUN_00517270`). `campaign_config` keeps the selected
-difficulty, galaxy-size label, player faction, and victory mode. The clock
-keeps its original Game Speed and partial day, so a game saved while paused
-reloads paused. The save also holds blockade embarked-regiment tracking,
-regiments travelling on their own (v25) and squadrons travelling on their
-own (v35), the fleet a moving fleet joins on
-arrival (v26), the fleet naming mode (v28), and the player's Manage
-Garrisons and Manage Production automation, the Agent Advice setting, renamed
-fleets and ships, and each production area's destination (v29), each side's
-last number per capital ship class (v38; `ghidra/notes/fleet-names.md`),
-each character's officer rank, the fleet or system it commands and its
-ranked names (v39; `ghidra/notes/character-roster.md`), each system's
-side that last brought a fleet or squadron in (v40;
-`ghidra/notes/system-squadrons-combat.md`),
-`UprisingState`, queue destinations and en-route deliveries, missions with
-their member lists, phase, and timer, each travelling member's arrival day
-(v41; Move missions and their fleet targets, `ghidra/notes/move-order.md`),
-each AI side's character tasks and their counts (v42;
-`ghidra/notes/ai-order-emission.md`, "Character tasks (module 12)"), each side's research points pools, passive
-timer and exhausted trees, with Research missions in `MissionState` (v43;
-`ghidra/notes/research.md`), each AI side's production state (module
-phases and lists, goal token, targets and role bits) and production
-destinations that name a fleet (v44; `ghidra/notes/ai-production.md`,
-`ghidra/notes/production-destination.md`), each character's and special
-force's en route flag, set while it stands at its destination before
-arriving, and a special force's hidden-mission flag (v45,
-`ghidra/notes/move-order.md`, `ghidra/notes/decoy-roll.md`), each AI side's strategic
-state: the marks its records keep, module 13's mode and controller with its
-sector plan, the regional records with their postures and class I task
-counts, the fleet tasks, and the class I character tasks (v46;
-`ghidra/notes/ai-order-emission.md`), each side's Research planners with their
-claimed members (v47; `ghidra/notes/research.md`), and the MISSNSD and SPECFCSD
-records. Each capital ship carries its six damage counters (`ShipInstance::damage_counters`)
-and its repair timer `0x380` (`ShipInstance::repair_timer`: due tick and
-the fast-repair flag), added in v49 (`ghidra/notes/ship-damage-repair.md`).
-`game_config` carries the AI tempo, `AiConfig::day_orders` and
-`AiConfig::rounds_per_day` by speed (v52).
-Each production module keeps the orders of its last phase still to issue,
-one a round, and whether a bundled Destination and Build still owes its
-Build round, and each AI side's scheduler keeps its round-robin cursor, its
-priority scan start, each module's priority, the orders issued today, the
-last round's in-day step, whether the day ended since that round, and the
-order of its last round still to apply; the player's advisor agent keeps
-its round-robin cursor and the order of its last step still to apply; each
-mission keeps how many outcome passes it has run (v52,
-the AI round scheduler; `ghidra/notes/ai-order-emission.md`, "Scheduler and
-executor"). Each system's economy record keeps the side that last held it by
-support alone (`SupportHolder`, `FUN_0055a080`), and the blockade state keeps
-each blockaded system's timer `0x386`, its minimum delay and due tick (v52,
-`ghidra/notes/timer-scheduler.md`). System `+0x88` bit 11, a usable Death
-Star in the sector (`GameWorld::death_star_sectors`), is derived each tick
-and after a load, and saved nowhere; the economy record keeps no copy of it
-(v53). A fleet keeps its bombardment-order flag (`Fleet::bombarding`, fleet
-`+0x58` bit 6, `FUN_004fec00`), a capital ship class its DAT family
-(`CapitalShipClass::family`; families 0x18-0x1b are the Death Star), a
-character its adrift flag (`Character::adrift`, role bit 6,
-`FUN_00534790`), the jail abode holding it (`Character::abode`,
-`FUN_00549580`) and its escape timer's day (`Character::escape_due`, timer
-`0x38a`), the world each system's SYSTEMSD family, setup bit 3 and
-troop bits (`GameWorld::system_families`, `shift_excluded`, `troop_held`,
-`FUN_0050b610`), and the blockade state each system's loss
-counters (`BlockadeState::losses`, `FUN_00508c60`) and battle bit
-(`BlockadeState::battle`, `FUN_0050a900`), and the world the
-control-change cap of the current scheduler step, keyed by its day and
-in-day step (`GameWorld::control_change_cap`, `support_shift::step`,
-`FUN_00518040`); the posted support shifts, regiment events and holder
-changes, served by the operation that raises them, are saved nowhere
-(v54). Each
-revolt saves its next timer `0x384` day (`ActiveUprising::next_support_tick`).
-A regiment
-holds only its class and side, and a fleet's cargo only its regiments and
-their ships (v55). Whether a fleet has
-the Death Star is saved nowhere either: `Fleet::has_death_star` asks its
-capital ships (`FUN_005003d0`, v54). The Death Star has no state of its
-own: it is the capital ship of family 0x18-0x1b (v54). With both sides'
-regiments, a system's control keeps the earlier troop holder
-(`ControlKind`, `FUN_0050b610`), with no stalemate state of its own (v56).
-Each running
-mission keeps the container its members joined from
-(`ActiveMission::set_out_from`, each member's `+0x70`, `FUN_00536490`;
-v57). A delivery, or a regiment or squadron in transit, that a destroy
-cascade moves on its way (`FUN_00515480` -> `FUN_00556390`) keeps its
-arrival day and the destroyed system its leg still names
-(`Delivery::via`, `RegimentTransit::via`, `SquadronTransit::via`; `+0x3c`),
-and on that day starts its next leg from there (`FUN_00556620`;
-`DeliveryState::relocate`, `TroopTransportState::reroute_regiment`; v57).
-The world keeps each system's
-garrison requirement, support drift and collection rate
-(`GameWorld::support_values`, `economy::SupportValues`: `+0x80`, `+0x6c`,
-`+0x70`), as the support hook writes them, and the systems in revolt
-(`GameWorld::revolting`, `+0x88` bit 2; v58).
-A regiment's or squadron's transit keeps the tag of the ship it boards,
-chosen at the order (`RegimentTransit::carrier`, `SquadronTransit::carrier`,
-`FUN_00552300`; v59). A capital ship on its own leg from
-yard to fleet keeps it (`ShipInstance::transit`: the system it left, its
-destination and the arrival day, `+0x38`, `+0x3c`, `+0x44`,
-`FUN_00556430`; v61). A squadron or regiment ordered for a fleet keeps
-the tag of the ship its Build chose, queued and travelling
-(`QueueItem::carrier`, `Delivery::carrier`, `FUN_005385f0` ->
-`FUN_00552300`; v62). Each capital ship keeps whether it is completed
-(`ShipInstance::completed`, `+0x50` bit 2): an ordered ship exists from its
-order, unfinished (`FUN_0052a140` -> `FUN_004f7d50(.., 1, 0)`), and its yard
-completes it in place (`FUN_0052bee0`). Its queue entry keeps its tag
-(`QueueItem::ship`), and the world marks each side's bit-1 spare fleet,
-which takes every ship ordered or moved to its system
-(`GameWorld::spare_fleets`, fleet `+0x58` bit 1, `FUN_005097d0`,
-`FUN_0050bc60`; v63).
+Loading restores the RNG, both AI states and repair episodes instead of
+reseeding or clearing them. No combat cooldown is saved: the original
+re-fights a system every pass while both sides remain (`FUN_00517270`).
+What each holder keeps:
+
+| Holder | Saved |
+|---|---|
+| `GameClock` | Game Speed and the partial day, so a paused save reloads paused |
+| `CampaignConfig` | difficulty, galaxy-size label, player faction, victory mode |
+| `GameConfig` | the AI tempo: `AiConfig::day_orders`, `AiConfig::rounds_per_day` by speed |
+| `GameWorld` | each slotmap's free order (below); the MISSNSD and SPECFCSD records; `system_families` (SYSTEMSD family), `shift_excluded` (setup bit 3), `troop_held` (troop bits, `FUN_0050b610`); `control_change_cap` keyed by day and in-day step (`support_shift::step`, `FUN_00518040`); `support_values` (garrison requirement, support drift, collection rate: `+0x80`, `+0x6c`, `+0x70`); `revolting` (`+0x88` bit 2); `spare_fleets` (fleet `+0x58` bit 1, `FUN_005097d0`); `squadron_transits`; each system's side that last brought a fleet or squadron in (`ghidra/notes/system-squadrons-combat.md`); the fleet naming mode, renamed fleets and ships, each side's last number per capital ship class (`ghidra/notes/fleet-names.md`) |
+| `System` | its control, which with both sides' regiments keeps the earlier troop holder (`ControlKind`, `FUN_0050b610`); no stalemate state |
+| `Fleet` | `bombarding` (`+0x58` bit 6, `FUN_004fec00`); the fleet a moving fleet joins on arrival |
+| `ShipInstance` | `damage_counters` (six); `repair_timer` (`0x380`: due tick, fast flag; `ghidra/notes/ship-damage-repair.md`); `completed` (`+0x50` bit 2: an ordered ship exists from its order, unfinished, and its yard completes it in place, `FUN_0052a140`, `FUN_0052bee0`); `transit` (yard to fleet: the system it left, its destination and arrival day, `+0x38`, `+0x3c`, `+0x44`, `FUN_00556430`) |
+| `CapitalShipClass` | `family` (0x18-0x1b is the Death Star) |
+| `Character` | officer rank, the fleet or system it commands and its ranked names (`ghidra/notes/character-roster.md`); `adrift` (role bit 6, `FUN_00534790`); `abode` (the jail holding it, `FUN_00549580`); `escape_due` (timer `0x38a`); the en route flag |
+| Special force | the en route flag; the hidden-mission flag (`ghidra/notes/decoy-roll.md`) |
+| `TroopUnit` | class and side only; a fleet's cargo holds only its regiments and their ships |
+| `ManufacturingState` | one queue and one Destination per system and production area, including destinations that name a fleet; `QueueItem::carrier` (the ship a squadron or regiment ordered for a fleet boards, `FUN_005385f0`), `QueueItem::ship` (an ordered capital ship's tag) |
+| `DeliveryState` | en-route deliveries with their `carrier`, and with `via` and the arrival day when a destroy cascade moved them (`FUN_00515480` -> `FUN_00556390`; the next leg starts there, `FUN_00556620`) |
+| `TroopTransportState` | fleet cargo and regiments travelling on their own, each with its `carrier` (`FUN_00552300`) and `via` |
+| `MissionState` | members, phase, timer, outcome passes, `set_out_from` (each member's `+0x70`, `FUN_00536490`), each travelling member's arrival day (`ghidra/notes/move-order.md`); Research missions |
+| `AIState` (each side) | character tasks and their counts; production modules (phases, lists, goal token, targets, role bits, the last phase's orders still to issue, a bundled Destination and Build's owed round); module 13's mode, controller and sector plan; regional records with postures and class I task counts; fleet tasks; record marks; Research planners and their members; the scheduler's cursor, priority scan start, module priorities, orders today, last in-day step, day-ended flag and pending order (`ghidra/notes/ai-order-emission.md`) |
+| `PlayerAgent` | Manage Garrisons and Manage Production, the Agent Advice setting, round-robin cursor and pending order |
+| `ResearchState` | points pools, passive timer `0x381`, exhausted trees (`ghidra/notes/research.md`) |
+| `EconomyState` | the side that last held each system by support alone (`SupportHolder`, `FUN_0055a080`) |
+| `BlockadeState` | blockaded systems; embarked regiments; timer `0x386` per system with its minimum delay and due tick (`ghidra/notes/timer-scheduler.md`); loss counters (`FUN_00508c60`); battle bits (`FUN_0050a900`) |
+| `UprisingState` | revolts and each revolt's next `0x384` day (`ActiveUprising::next_support_tick`) |
+| `VictoryState` | the HQs and the win word (`FUN_005180e0`) |
+| `StockpileState` | each side's raw and refined materials and the facility cycles |
+
+Saved nowhere: bit 11 (`GameWorld::death_star_sectors`, rebuilt after a
+load; `systems/death-star.md`), whether a fleet has the Death Star
+(`Fleet::has_death_star` asks its capital ships, `FUN_005003d0`), and the
+posted support shifts, regiment events and holder changes (served by the
+operation that raises them; see "API"). The Death Star has no state of its
+own: it is the capital ship of family 0x18-0x1b.
 
 A native save taken mid-day keeps the clock's part of the day and each
 side's last in-day step, so a load resumes at the next due step and
 applies the pending order first. A headless save leaves the day open with its
 last step run, so the next tick's prologue only closes it.
 
-Each of the world's eleven slotmaps is written as `{slots, free}` (v48,
-`crates/rebellion-core/src/world/slot_order.rs`): `slots` is slotmap's own
+Each of the world's eleven slotmaps is written as `{slots, free}`
+(`crates/rebellion-core/src/world/slot_order.rs`): `slots` is slotmap's own
 serde form, which keeps every vacant slot and its version, and `free` is the
 order in which inserts will take the vacant slots. slotmap rebuilds its free
 list in descending slot order on load, so without `free` a slot freed before
@@ -194,7 +122,7 @@ rebuilds each map with remove/insert cycles until every slot has its saved
 version, then frees the vacant ones in reverse pop order, and rejects a save
 whose `free` is not a permutation of its vacant slots. An arena with no live
 value is probed and rebuilt with `Default::default()` of its value type as the
-inserted placeholder (v51), so an emptied arena keeps its free order too.
+inserted placeholder, so an emptied arena keeps its free order too.
 The free order is part of the canonical fingerprint.
 
 ## Interface section
@@ -209,14 +137,17 @@ rail. It mirrors the original's third save section, which follows the world
 original's ending code and its "Battle in Progress..." overlay window, which
 the port keeps elsewhere or lacks. `compute_state_fingerprint` reads only
 `SaveState`, so two saves of one campaign with different windows open share
-a fingerprint; the decoder refuses any bytes after the interface.
+a fingerprint; the decoder refuses any bytes after the interface. A load
+gives the focus to the top restored window that is shown and not a sector
+window (`GalaxyFocusState::after_load`); a Fleet window there also takes the
+keyboard (`FUN_00440f80.c:31-35`).
 
 ## Deterministic fingerprints
 
 Unordered sets and maps use stable human-readable serialization for the
 fingerprint. Typed-key maps become sorted key/value sequences because JSON
 object keys must be strings. The adapters intentionally leave non-human
-serialization unchanged, preserving the historical bincode layout. Two saves
+serialization unchanged, preserving the bincode layout. Two saves
 of one state therefore differ in bytes (the header timestamp, and map entry
 order in the body, which follows each process's `HashMap` seed) while their
 fingerprints match.
@@ -273,10 +204,12 @@ the two equal; `save_slot` and `load_slot` refuse a slot past the sixth.
 The save layer has no delete; no Game Options control removes a save.
 
 A save refuses a world holding raised events not yet served
-(`GameWorld::support_events`, `GameWorld::manager_side_changes`): neither is
-saved, and every operation that raises them serves them before it returns
-(`integrator::fire_holder_changes`), so a save holding them would drop work
-the running game still does.
+(`GameWorld::support_events`, `GameWorld::manager_side_changes`,
+`GameWorld::autoscrap_systems`): none is saved, and every operation that
+raises them serves them before it returns (`integrator::fire_holder_changes`
+for the first two; `death_star::serve_holder_requests`, run right after it
+at each of the operation's call sites, for the third), so a save holding
+them would drop work the running game still does.
 
 ## Safe change checklist
 

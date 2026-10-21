@@ -11,7 +11,7 @@ await fs.mkdir(output, { recursive: true });
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH,
   headless: true,
-  args: ['--mute-audio', '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+  args: ['--mute-audio', '--disable-audio-output', '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
 });
 const results = [];
 try {

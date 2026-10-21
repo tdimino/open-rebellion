@@ -3,7 +3,7 @@ title: "Deterministic Replay Contract"
 description: "Versioned command streams, simulation-data identity, checkpoints, and remaining cross-runtime gates"
 category: agent-docs
 created: 2026-09-09
-updated: 2026-10-19
+updated: 2026-10-20
 tags: [determinism, replay, wasm, multiplayer, testing]
 ---
 
@@ -66,10 +66,10 @@ limits one advance command to 1,000,000 ticks. The runtime supports speed
 changes, dual-AI toggling, visibility controls, forced victory checks, and
 explicit tick advances through the shared `run_simulation_tick()` path.
 
-F-011B3 also removes process-random iteration from state-affecting
-manufacturing completions, simultaneous fleet arrivals, blockade transitions,
-and the AI's equal-count reinforcement choice. Regression tests require stable
-key order at each boundary.
+State-affecting manufacturing completions, simultaneous fleet arrivals,
+blockade transitions and the AI's equal-count reinforcement choice iterate in
+stable key order, never process-random order (F-011B3). Regression tests
+require stable key order at each boundary.
 
 ## Simulation-data identity
 
@@ -99,8 +99,10 @@ campaign independently, and echo the original text into their reports.
 The browser gate runs only at `?replay-check=seed42-v1`. It strictly loads
 `runtime.orpk`, publishes `window.__openRebellionReplay`, and never falls into
 normal gameplay. Invalid query values and a missing pack fail before any
-partial replay state is reported. Without the query, ordinary startup still
-uses four requests and reaches the authentic bitmap menu.
+partial replay state is reported. Without the query, ordinary startup makes
+those four requests, plays the intro movies 0x65 and 0x66 (`000.webm`,
+`001.webm`; Escape ends each, `FUN_00421790`) and reaches the authentic
+bitmap menu.
 
 ## Validation
 
@@ -108,183 +110,36 @@ uses four requests and reaches the authentic bitmap menu.
 scripts/mini-cargo.sh -- test -p rebellion-data replay --lib
 scripts/mini-cargo.sh -- test -p rebellion-data --test replay_manifest -- --ignored
 scripts/mini-cargo.sh -- check -p rebellion-app --target wasm32-unknown-unknown
-python3 scripts/check-replay-equivalence.py --skip-build --json
+```
+
+`scripts/check-replay-equivalence.py` builds the WASM, runs the native
+`replay-gate` and loads four pages through
+`tools/interface-parity/replay-browser.mjs`, which serves `web/` itself and
+launches the gates' pinned, muted Chrome from `browser.json`. Run it on the
+Mini in a private clone (`cp -c -R`): another agent's `mini-cargo.sh` sync
+puts the tracked `web/open-rebellion.wasm` back over a fresh build in the
+shared copy.
+
+```bash
+python3 scripts/check-replay-equivalence.py --json
 ```
 
 The ignored fixture test requires the locally supplied original `.DAT` files.
 It records a nine-command, 25-tick, 200-system campaign, reloads its initial
 state through the current save format, and checks every command-prefix
-fingerprint against a cross-process golden, which currently runs
-`v1:658cfc9d271b84e3` -> `v1:bdbad073a9bf4152`. Its causes, by save version:
-
-- v39: characters gained the officer rank, its post and ranked names.
-- The AI's mission dispatch does not require `can_be_commander`, a check
-  none of `FUN_00508250`'s validators makes.
-- v40: the world gained each system's last-arrived side, with the
-  post-battle pass that reads it.
-- v41: a character's Move became a Move mission whose travelling members
-  record the fleet they board.
-- Han Solo's mission speed (GNPRTB 3083) matches his loaded MJCHARSD record
-  id `0x243`, not the original's object id `0x33000243`.
-- v42: the AI gained module 12's class G character tasks, saved with each
-  AI side, with characters reserved for research only while the tree is
-  unfinished.
-- v43: research became the original Research missions, with per-side
-  points pools, the passive timer `0x381` and exhausted trees.
-- v44: the AI's production became the original modules 1, 2, 3, 5, 6, 7, 10
-  and 11, with their census, goal token and budgets; a production
-  Destination may name a fleet.
-- v45: a travelling character or special force stands at its destination
-  from the order with an en route flag; a member of a hidden record's
-  mission (Move among them) carries the hidden-mission flag; a member's
-  transit keeps only its arrival day.
-- v46: the AI became the original strategic AI: module 13's modes and
-  controller, module 8's regional records and postures, module 9's fleet
-  tasks and module 12's class I officer tasks, saved with each AI side.
-- A system without regiments goes to the side whose support reaches
-  GNPRTB 7760 (`FUN_0050b610` through `FUN_0055a080`), else to neither.
-- The AI's class census marks only the Death Star's class (CAPSHPSD family
-  `0x18`, `FUN_004739b0`) as no combat class, so the best attack class is
-  the strongest warship.
-- The production modules run in the scheduler's ascending kind order
-  (`FUN_004ec940`, `FUN_004be980`).
-- v47: the AI's research runs through persistent per-tree planners, whose
-  order at a system without a working yard is refused before a mission
-  exists (`FUN_004bced0`, `FUN_0056c510`).
-- v48: a save restores each slotmap's free order, so a loaded game reuses
-  freed slots as the uninterrupted one does.
-- v49: ships carry the original six damage counters; the AI moves damaged
-  ships to its nearest shipyard (`FUN_004c8e90`); repair runs on the 30-day
-  and 2-day timers with the damage-control roll (`FUN_005010a0`,
-  `FUN_00501c50`).
-- A battle's loser withdraws by the original morale retreat
-  (`FUN_005d19a0`).
-- v50: the twelve AI tuning fields nothing read are gone.
-- v51: the slot order survives an emptied arena.
-- Repair's 2-day interval needs a working own yard (`FUN_00528040`).
-- v52: the AI runs the original round scheduler: rate+1 rounds a day (5 at
-  Fast), one order a round, at most 10 orders a side a day (5 at Fast),
-  with every module taking one turn a round (`FUN_00485b40`,
-  `FUN_004361a0`, `FUN_004bede0`), as the day's last stage. The Diplomacy
-  support cap and the per-evaluation covert and recon caps are gone.
-  Module 11 reads module 8's live record bits, production resumes after
-  any step-2 or step-3 order (`FUN_004c8ba0`), and a Research planner sits
-  out while its mission flies (the planner `+0x20` bit 31 test at `0x004bda40`). The player's advisor runs one module a
-  round in its slot (`FUN_00439a10`), and a saved `day_started` flag closes
-  a day whose first round waited for a battle.
-- A mission whose target the original forbids is refused at creation
-  (`FUN_00542b60`), and the AI's pickers take only the targets the
-  original's planner queries return.
-- A bombardment ends with the original's finalize (`FUN_0058e320`).
-- Who holds a system by support alone is `FUN_0055a080`'s three outcomes,
-  which also drive the support-change record.
-- A blockade runs timer `0x386`, shifting the blockader's support every 30
-  days (`FUN_0050cb20`), and the sourceless maintenance cooldowns are gone.
-- System bit 11 is a usable Death Star in the sector (`FUN_005178b0`), not
-  high support.
-- A neutral system's seeded support is the Alliance's, the Empire's 100
-  minus it (`FUN_00559700`).
-- v53: the economy record keeps no copy of system bit 11.
-- v54: a fleet keeps its bombardment-order flag and a capital ship class
-  its DAT family; a character keeps its adrift flag, its jail abode and its
-  escape timer's day; the Death Star state leaves and the victory state
-  keeps the win flag word; the
-  world keeps each system's SYSTEMSD family, setup bit 3 and troop bits
-  (`FUN_0050b610`) and the control-change
-  counters (`FUN_00518040`), and the blockade state its loss counters and
-  battle bits (`FUN_0050a900`); a fleet's Death Star is its live family
-  `0x18` ship (`FUN_005003d0`), with no stored flag. A bombardment runs only on the
-  order, through the original gate, defence and effect phases
-  (`FUN_0058d800`); Destroy System runs the original cascade
-  (`FUN_005080d0`); control changes, blockade ends and the HQ's removal
-  post their support shifts (`FUN_00517aa0`, `FUN_00517ee0`,
-  `FUN_00517cd0`), a control change's record chosen by the troop bits
-  (`FUN_0055de50`). A Death Star destroyed in battle kills its ship;
-  adrift characters are swept on each battle-bit change (`FUN_00548e90`).
-- v55: a regiment (`TroopUnit`) holds only its class and side, and a
-  fleet's transport hold only its regiments and their ships
-  (`agent_docs/save-load.md`). The Planetary Assault (`assault::resolve`,
-  `FUN_00563390` → `FUN_0058c120`) replaces the invented ground battle and
-  the automatic landing: the defence facilities fire, each attacking
-  regiment fights one defender once, and the survivors land.
-- v56: with both sides' regiments, a system keeps its earlier troop holder
-  (`ControlKind`, `FUN_0050b610`), with no stalemate state of its own.
-- v57: a running mission keeps the container its members joined from
-  (`ActiveMission::set_out_from`, `FUN_00536490`); a delivery, regiment or
-  squadron a destroy cascade moves on its way keeps the destroyed system
-  its leg names (`Delivery::via`, `RegimentTransit::via`,
-  `SquadronTransit::via`, `+0x3c`, `FUN_00556390`) and starts its next leg
-  from there on its arrival day (`FUN_00556620`).
-- v58: the world keeps each system's garrison requirement, support drift
-  and collection rate (`GameWorld::support_values`) and the systems in
-  revolt (`GameWorld::revolting`).
-- v59: a regiment's or squadron's transit keeps the tag of the ship it
-  boards, chosen at the order (`RegimentTransit::carrier`,
-  `SquadronTransit::carrier`, `FUN_00552300`).
-- v60: the world listed each ordered Death Star outside any fleet; v63
-  drops the list for the unfinished ship.
-- v61: a capital ship on its own leg from yard to fleet keeps its transit
-  (`ShipInstance::transit`, `FUN_00556430`).
-- v62: a squadron or regiment ordered for a fleet keeps the tag of the
-  ship its Build chose, queued and travelling (`QueueItem::carrier`,
-  `Delivery::carrier`, `FUN_005385f0` -> `FUN_00552300`).
-- The hangars: a squadron docked in its carrier takes no slot and no share
-  of the battle extent, and a hangar arms from step 3 (`FUN_005ab650`,
-  `FUN_005b8570`, `FUN_005a7500.c:551`).
-- The headless battle draws from the battle's own generator, seeded with
-  12345678 (`FUN_005af5f0.c:38`, `FUN_005af420`).
-- The win word: a tie goes to the Alliance unless the Empire's flag was set
-  first, the leaders and Coruscant are read by DatId and the word stays as
-  it was while one is missing (`FUN_005180e0`), and the ending plays
-  its movie by code `0x10`-`0x13` (MDATA 105-108); the browser plays movies
-  through the `or_movie_*` bridge.
-- A holder change reruns the blockade rule for its system at once (event
-  `0x311`, `FUN_0050b8e0`; `BlockadeSystem::refresh_system`).
-- The AI: module 11's hull budget (`FUN_004ca5e0`), the regional Drop need
-  and the Assault order (`FUN_004b1440`), and the sabotage planner's target
-  (`FUN_004bda60`).
-- System Destroyed (`0x6f`), Death Star Sabotaged (`0x72`), Headquarters
-  Destroyed (`0x73`) and Coruscant Captured (`0x74`) are kind-6 movie
-  messages, with no Message Index row and no advice.
-- A loaded system or character id carries no family byte, so the win word,
-  the jail seats, the AI's rim bit and mission detection's majors-before-
-  minors order match by record index (`DatId::is_record`, the loader's
-  SYSTEMSD and MJCHARSD/MNCHARSD files).
-- The control-change cap is keyed per scheduler step, not per day
-  (`FUN_00518040`, `FUN_0051dea0`).
-- v63: an ordered capital ship exists from its order, unfinished
-  (`ShipInstance::completed` clear, `ShipInstance::ordered`; `FUN_0052a140`
-  -> `FUN_004f7d50(.., 1, 0)`), in its side's bit-1 spare fleet at its
-  destination (`GameWorld::spare_fleets`, `FUN_005097d0`) or its
-  destination fleet, under the tag its queue entry keeps
-  (`QueueItem::ship`); ship and fleet are numbered then, and the yard
-  completes the ship in place (`FUN_0052bee0`).
-- v63: the body ends with the interface section (`SavedInterface`,
-  `FUN_00440ea0`), which the fingerprint does not read; it moves the
-  golden only through the version it rides.
-- Each MISSNSD record keeps where its members go at the end
-  (`MissionRecord::return_policy`, record `+0x68`, `FUN_00521220`).
-- Each regiment class keeps its TROOPSD `uprising_defense`
-  (`ClassStats::uprising_defense`, class `+0x58`), which the blockade loss
-  counters read.
-- The Alliance HQ's (`0x20000001`) Bombardment Value is ALLFACSD `extra7`,
-  9 (class `+0x58`, `ghidra/notes/bombardment.md`).
-- The AI's system record stops at Q `0x80` only where the side's view
-  lacks `+0x88` bit 1 (`FUN_00433e40.c:120-125`, `FUN_0050fc80`,
-  `FUN_0050ac80`): a rim system (not SYSTEMSD family `0x90`) the side
-  neither holds nor has a usable fleet at. The world's exploration flag,
-  which either side's intelligence mission sets, does not decide it.
-
-Any save layout or
-simulation change moves every fingerprint; regenerate the golden only for a
-named cause and name it in the commit. The v13 goldens did not reproduce
-even at their own commit `e8d4945`; that cause remains open. The unit tests use
-synthetic data and run in normal repository test passes.
+fingerprint against a cross-process golden that runs from
+`v1:658cfc9d271b84e3` (the initial state,
+`replay_fixture::SEED42_INITIAL_FINGERPRINT`) to the final checkpoint
+`v1:5134d5c81c0f1fc4`. The version is hashed into every fingerprint, so any
+save layout or simulation change moves every fingerprint; regenerate the
+golden only for a named cause and name it in the commit
+(`git log -- crates/rebellion-data/tests/fixtures/` lists them). The unit
+tests use synthetic data and run in normal repository test passes.
 
 The headless battle's generator (`GameWorld::battle_rng`) is
 `#[serde(skip)]`: a game held in memory runs it on from battle to battle,
 and a load restarts it at its seed, 12345678 and sixteen warm-up steps
-(hyp, `crates/rebellion-core/src/tactical.rs:3372-3374`). The fingerprint
+(hyp, `tactical::OriginalBattleRng`). The fingerprint
 reads only what `SaveState` serializes, so a game reloaded after a headless
 battle can draw differently from the uninterrupted one under one
 fingerprint. The golden reloads only the initial state, where the stream

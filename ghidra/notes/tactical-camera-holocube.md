@@ -78,37 +78,73 @@ and palette green `0x0200ff00` otherwise; label `0xddf1` takes the other
 colour, and `0xddf2` `0x02ffff00`. A0 `TAC-05-C009` (Alliance) reads red and
 `TAC-05-C017` (Empire) green.
 
+## Capital meshes
+
+The capital-ship mesh cache (`DAT_006bcbd4+0x198`, vtable `0x66c990`) loads
+each mesh builder (`FUN_005d5b10`, slot `0x2c`) and scales it by
+`DAT_0066d2b0` = 3.0 on all three axes (slot `0x34`) before any ship uses it.
+`FUN_005d26c0` builds a ship's visual from those builders (`base`, `base + 1`,
+`base + 2`) and keeps the medium builder's `GetBox` at `+0xcc`;
+`FUN_005ab0e0` sizes the collision envelope from the box `FUN_005c1100`
+returns, so the envelope is three times the file's bounds too.
+
+`FUN_005d3770` picks a ship's detail from its depth along the camera's view
+(camera frame `+0x14`..`+0x1c` dotted with the ship's position in the camera
+frame) against `0x66d160` and `0x66d158` divided by the field (camera slot
+`+0x14`, `FUN_005d98f0`, which returns `+0x48`); without High Detail Models
+(`+0x688`) against `0x66d15c` alone.
+
+## Fighter decals
+
+`FUN_005d43c0` builds each group's close (`base`, origin 16,16, 256
+colours), far (`base + 5`) and indicator (`4200 + base % 10`, origin 0,0, one
+colour, opaque) decals, all `SetDecalSize(0.3, 0.3)` world units with decal
+scaling on (`0x5d44e4` and alike). At the depth of A0 `TAC-05-C017`'s
+Alliance lane, about 450 units, that is under a pixel, and the frame shows no
+pixel there. `0x5d4af0` -> `FUN_005d4a60` sets the detail from the span, the
+depth along the view times `tan(field * 0.5)` (`FUN_005d98f0`): with High
+Detail Models close below 5, far from 5 to 10 and the indicator from 10
+(`0x66d1d4`, `0x66d1d0`); without it, the indicator from 10 and far below.
+
+A squadron starts in flight when `FUN_005b1b70` returns 1
+(`0x5b1b70`-`0x5b1bb2`): `FUN_005b1bc0` (hyperdrive `+0x3ec` less damage
+`+0x374`) and slot `+0x90` both non-zero; otherwise it docks
+(`FUN_005964c0`, `0x5966cc`).
+
 ## Port
 
-The port does not use the camera pose, the 3D window's projection or the
-holocube yet: the tactical fixtures were written against its own camera, and
-`or-p-tactical-camera-viewport-aw39` re-lands them with those fixtures
-updated. Both highlights' start state and the Battle Paused colour are ported
-(`tactical_view.rs`: `TacticalState`'s defaults, `battle_paused_label_color`).
+`tactical_assets.rs`: `OriginalTacticalCamera::pose` (`FUN_005d9640`, with
+the yaw wrap), `scene_camera` and `scene_fovy` (the 3D window's projection),
+`draw_holocube`, `scale_capital_mesh`, `original_capital_lod_view`,
+`original_fighter_view_span` and `original_fighter_decal_pixels`.
+`tactical_view.rs`: `TACTICAL_SCENE_WINDOW`, both highlights' start state and
+`battle_paused_label_color`. port: the envelopes reach the battle from the
+first frame drawn, and the paused formation is laid out again with them.
 
-## Open: participant presentation
+## Open: the 8-bit frame
 
-Measured against A0 `TAC-05-C017`, where the camera and layout above put every
-capital ship where the frame shows it:
+A0 is an 8-bit paletted frame: 69 colours in the whole of `TAC-05-C019` and
+24 in its aperture. Every 3D pixel goes through Direct3D RM's colour matching
+into the display palette, its wireframe lines through its own line stepping
+and its meshes through its software rasterizer and lights; `d3drm.dll` is a
+system library outside the executable's trace (`or-d3drm-raster-match-vog4`).
+Measured on `TAC-05-C019` against the port's frame of the same battle:
 
-- Squadrons in flight. A squadron starts in flight when `FUN_005b1b70`
-  returns 1 (`0x5b1b70`-`0x5b1bb2`): `FUN_005b1bc0` (hyperdrive `+0x3ec` less
-  damage `+0x374`) and slot `+0x90` both non-zero; otherwise it docks
-  (`FUN_005964c0`, `0x5966cc`).
-- Fighter decals. `FUN_005d43c0` builds each group's close (`base`, origin
-  16,16, 256 colours), far (`base + 5`) and indicator (`4200 + base % 10`,
-  origin 0,0, one colour, opaque) decals, all `SetDecalSize(0.3, 0.3)` world
-  units with decal scaling on (`0x5d44e4` and alike). At the C017 battle's
-  depth (about 450) that is under a pixel; A0 shows no pixel on the Alliance
-  squadrons' lane.
-- Fighter detail (`0x5d4af0` -> `FUN_005d4a60`): the span is the depth along
-  the view times `tan(field * 0.5)` (camera slot `+0x14`, `FUN_005d98f0`, the
-  field at `+0x48`). With High Detail Models (`+0x688`) the state is close
-  below 5, far from 5 to 10 and the indicator from 10 (`0x66d1d4`,
-  `0x66d1d0`); without it, the indicator from 10 and far below.
-- Capital detail (`FUN_005d3770`): the depth along the view against the
-  thresholds `0x66d160` and `0x66d158` divided by the field.
-- The strike effect and per-mesh pixels.
+- Background. Direct3D RM draws the 440 by 438 scene background (resource
+  5030, `SetSceneBackgroundImage`, frame slot `0xcc`) into the 439 by 437
+  viewport at `(17, 30)`; stars land one to two pixels left of and up to one
+  pixel below where an unscaled copy at `(18, 29)` puts them, some as 2 by 2
+  blocks, and the palette maps the port's greys 24 to black and 40 and 58 to
+  48.
+- Holocube. The fitted projection puts the box's edges within a pixel of the
+  frame's; the line pixels themselves differ where the two line steppers
+  round apart.
+- Ships. The meshes' shading and colours, and the hulls' positions in the
+  Alliance formation.
+
+C6 judges `TAC-05-C019`'s aperture on position alone (displacement, MAE and
+changed pixels; the `split` in `tactical-a0-compare.json`); its SSIM and
+edge IoU rows are reported and wait on that node.
 
 ## Decompiles
 
@@ -117,4 +153,5 @@ capital ship where the frame shows it:
 `FUN_0059ef40.c`, `FUN_0059ef20.c`, `FUN_0059fd40.c`, `FUN_0059c4d0.c`,
 `FUN_005c14d0.c`, `FUN_005d6700.c`, `FUN_005d6c10.c`, `FUN_005d9eb0.c`,
 `FUN_005b1b70.c`, `FUN_005b1bc0.c`, `FUN_005d43c0.c`, `FUN_005d4a60.c`,
-`FUN_005d98f0.c`.
+`FUN_005d98f0.c`, `FUN_005d5b10.c`, `FUN_005d26c0.c`, `FUN_005d3770.c`,
+`FUN_005ab0e0.c`.

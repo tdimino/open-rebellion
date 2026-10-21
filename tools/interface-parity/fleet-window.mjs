@@ -25,6 +25,12 @@ const FLEET_LOAD_FULL = 49;
 const REGIMENT_UNLOAD_REFUSED = 51;
 const FLEET_JOIN = 52;
 const PRODUCTION_DESTINATION = 54;
+const UNFINISHED_SHIP = 69;
+// FUN_0042c3b0.c:412-431: an object not completed (+0x50 bit 2 clear) has
+// its side's under-construction mark under its mini, STRATEGY 11570 for
+// side bits 0x40 (the Alliance) or 11572, 61 by 25, whose marked pixels
+// are pure red or pure green; the mini is keyed over it.
+const markColor = { alliance: [255, 0, 0], empire: [0, 255, 0] };
 // FUN_004a2630: the Fleet window, 235 by 304 (background 10770).
 const windowSize = { width: 235, height: 304 };
 // Side art: the Alliance's resources, the Empire's 50 higher
@@ -327,6 +333,22 @@ async function shot(page, directory, label) {
   return { label, sha256: sha256(bytes), bytes };
 }
 
+// The side's under-construction mark pixels within a mini's 61 by 25 cell
+// around the window point `center` of the cropped window `image`.
+function markPixels(image, origin, center, faction) {
+  const [r, g, b] = markColor[faction.name];
+  const cx = Math.round(center[0] - origin.x);
+  const cy = Math.round(center[1] - origin.y);
+  let marked = 0;
+  for (let y = Math.max(0, cy - 13); y < Math.min(image.height, cy + 13); y++) {
+    for (let x = Math.max(0, cx - 31); x < Math.min(image.width, cx + 31); x++) {
+      const offset = (y * image.width + x) * 4;
+      if (image.data[offset] === r && image.data[offset + 1] === g && image.data[offset + 2] === b) marked++;
+    }
+  }
+  return marked;
+}
+
 async function stableWindow(page, origin, directory, label) {
   // The first draw requests each newly shown bitmap from the WASM texture
   // cache; let the upload reach a later paint before hashing two frames.
@@ -468,7 +490,11 @@ const cases = [
       assert.equal(selected.tab, "CapitalShips");
       assert.deepEqual(selected.enabled, [true, false, false, false]);
       assert.equal(selected.items.length, 1, "the fleet's one capital ship is listed");
-      const selectedCheck = compare(await stableWindow(page, origin, directory, "selected"),
+      const selectedImage = await stableWindow(page, origin, directory, "selected");
+      // A completed ship carries no under-construction mark.
+      assert.equal(markPixels(selectedImage, origin, selected.first_item, faction), 0,
+        "a completed ship shows the under-construction mark");
+      const selectedCheck = compare(selectedImage,
         composeExpected(source, faction, { selected: true, enabled: selected.enabled, tab: 0 }),
         [...masks.open, ...masks.selected], "selected", directory);
       // 0x280d minimizes the window to the rail (FUN_004a76e0); the rail
@@ -483,6 +509,23 @@ const cases = [
         assert.equal(check.different_pixels, 0, `${check.label}: ${check.different_pixels} of ${check.pixels_checked} pixels differ`);
       }
       return { opened, selected, compares: [openCheck, selectedCheck], minimized, restored };
+    },
+  },
+  {
+    name: "unfinished",
+    code: UNFINISHED_SHIP,
+    async run(page, faction, setup, directory) {
+      // FUN_00502db0(fleet, 3) lists the unfinished ship in its fleet, and
+      // its mini carries the side's under-construction mark.
+      const opened = await openFleetWindow(page, setup);
+      const origin = { x: opened.origin[0], y: opened.origin[1] };
+      const selected = await selectFleet(page, opened);
+      assert.equal(selected.tab, "CapitalShips");
+      assert.equal(selected.items.length, 1, "the fleet's unfinished ship is listed");
+      const image = await stableWindow(page, origin, directory, "unfinished");
+      const marked = markPixels(image, origin, selected.first_item, faction);
+      assert.ok(marked >= 100, `the unfinished ship's mini shows ${marked} under-construction mark pixels`);
+      return { opened, selected, marked };
     },
   },
   {

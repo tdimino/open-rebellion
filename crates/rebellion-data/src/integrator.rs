@@ -1751,7 +1751,7 @@ pub fn apply_mission_state_effects(
 }
 
 // ---------------------------------------------------------------------------
-// Event action helper (formerly `apply_event_actions_to_world_inner`)
+// Event action helper
 // ---------------------------------------------------------------------------
 
 /// Apply a slice of `EventAction`s to the world, producing any ancillary
@@ -2661,6 +2661,21 @@ pub fn fire_holder_changes(
     fired
 }
 
+/// Event `0x307` for each holder change an order made: what is bound for
+/// the system takes its autoscrap request
+/// ([`rebellion_core::death_star::serve_holder_requests`]). Served right
+/// after the order's phase 5 ([`fire_holder_changes`]), so no save holds
+/// one unserved.
+fn serve_holder_requests(world: &mut GameWorld, states: &mut StrikeStates<'_>) {
+    rebellion_core::death_star::serve_holder_requests(
+        world,
+        states.movement,
+        states.transport,
+        states.manufacturing,
+        states.deliveries,
+    );
+}
+
 /// [`rebellion_core::death_star::sweep_requests`]: the sweep of each system
 /// whose characters a holder change flagged (event `0x307`), with each
 /// trip as its record names it.
@@ -2818,6 +2833,7 @@ pub fn resolve_strike(
                 states.manufacturing,
                 rebellion_core::support_shift::step(states.tick, states.step),
             );
+            serve_holder_requests(world, states);
             effects.shifts = fired.shifts;
             effects.controls = fired.controls;
             let battle_changed = states.blockade.refresh_battle(world, system).is_some();
@@ -2856,13 +2872,27 @@ pub fn resolve_strike(
             // transport with it.
             if report.ships_destroyed > 0 {
                 // Each regiment lost with its transport is a destroyed
-                // object aboard a fleet (FUN_00497380: +0x88).
+                // object aboard a fleet (FUN_00497380: +0x88). It dies with
+                // its ship's reason 0xf: the ship's hook +0x11c reaches
+                // FUN_004fb520, whose walk calls the regiment's slot +0xb4,
+                // FUN_004f8710 (vtable 0x0065e438), and FUN_004f7ed0 passes
+                // the container's reason on; its event 0x300 adds its slot
+                // +0x1c0 (TROOPSD uprising_defense) to B (FUN_00508c60).
                 let cargo: Vec<_> = fleets
                     .iter()
                     .flat_map(|&fleet| states.transport.cargo(fleet).to_vec())
                     .filter_map(|troop| {
-                        rebellion_core::operation_report::regiment(world, troop)
-                            .map(|unit| (troop, unit))
+                        let unit = rebellion_core::operation_report::regiment(world, troop)?;
+                        let regiment = world.troops.get(troop)?;
+                        let loss = rebellion_core::blockade::UnitLoss {
+                            side: rebellion_core::dat::Faction::of_alliance(regiment.is_alliance),
+                            value: rebellion_core::support_shift::regiment_value(
+                                world,
+                                regiment.class_dat_id,
+                            ),
+                            reason: rebellion_core::blockade::REASON_BOMBARDMENT,
+                        };
+                        Some((troop, unit, loss))
                     })
                     .collect();
                 for &fleet in &fleets {
@@ -2880,12 +2910,14 @@ pub fn resolve_strike(
                     }
                 }
                 states.transport.destroy_untransportable_cargo(world);
-                report.fleet_destroyed.extend(
-                    cargo
-                        .into_iter()
-                        .filter(|(troop, _)| !world.troops.contains_key(*troop))
-                        .map(|(_, unit)| unit),
-                );
+                for (troop, unit, loss) in cargo {
+                    if world.troops.contains_key(troop) {
+                        continue;
+                    }
+                    states.blockade.record_loss(system, loss);
+                    report.losses.push(loss);
+                    report.fleet_destroyed.push(unit);
+                }
             }
             let before = points(world, bombarder);
             bombardment::finalize(world, system, bombarder, report.run);
@@ -2921,6 +2953,7 @@ pub fn resolve_strike(
         states.manufacturing,
         rebellion_core::support_shift::step(states.tick, states.step),
     );
+    serve_holder_requests(world, states);
     effects.shifts.extend(fired.shifts);
     effects.controls.extend(fired.controls);
     if let Some(system) = effects.destroyed() {
@@ -3150,6 +3183,7 @@ pub fn resolve_assault(
     // (FUN_0048e670) runs it after every event below it (FUN_0054ee90,
     // FUN_005f61c0).
     let fired = fire_holder_changes(world, states.manufacturing, step);
+    serve_holder_requests(world, states);
     effects.shifts = fired.shifts;
     effects.controls = fired.controls;
     effects.previous_control =
@@ -3174,6 +3208,7 @@ pub fn resolve_assault(
     }
     report.holder_after = Some(rebellion_core::bombardment::holder(world, system));
     let fired = fire_holder_changes(world, states.manufacturing, step);
+    serve_holder_requests(world, states);
     effects.shifts.extend(fired.shifts);
     effects.controls.extend(fired.controls);
     // The characters the holder change flagged leave (event 0x307).
@@ -3721,6 +3756,65 @@ mod tests {
             .embark(world, &ProductRoom::default(), fleet, &troops)
             .unwrap();
         (fleet, troops)
+    }
+
+    // The holder change an assault makes serves its autoscrap requests in the
+    // same order, after its phase 5 (event 0x307, FUN_00515480): the old
+    // holder's product queued at its other yard and bound for the system
+    // goes back to that yard, the hint (FUN_00515480.c:82-124).
+    #[test]
+    fn an_assault_that_takes_a_system_sends_the_old_holders_products_for_it_back_to_their_yard() {
+        for (holder, assaulter) in [
+            (Faction::Empire, Faction::Alliance),
+            (Faction::Alliance, Faction::Empire),
+        ] {
+            let mut world = GameWorld::default();
+            world.gnprtb = rebellion_core::world::GnprtbParams::new(landing_limit());
+            let support = if holder == Faction::Alliance { 1.0 } else { 0.0 };
+            let [system, yard] = ["Kuat", "Fondor"].map(|name| {
+                let key = add_system(&mut world, name);
+                let held = &mut world.systems[key];
+                held.popularity_alliance = support;
+                held.popularity_empire = 1.0 - support;
+                held.control = ControlKind::Controlled(holder);
+                key
+            });
+            let facility = BuildableKind::ManufacturingFacility(
+                rebellion_core::manufacturing::FacilityBuild {
+                    class: DatId(0x2900_0001),
+                    is_alliance: holder == Faction::Alliance,
+                },
+            );
+            let mut fixture = StrikeFixture::new();
+            fixture.manufacturing.enqueue(
+                yard,
+                QueueItem::new(facility, 10).delivered_to(
+                    rebellion_core::manufacturing::Destination::System(system),
+                ),
+            );
+            let (fleet, _) = assault_fleet(
+                &mut world,
+                &mut fixture.transport,
+                system,
+                assaulter,
+                DatId::new(0x1000_0001),
+                1,
+            );
+
+            resolve_assault(&mut world, system, &[fleet], &mut fixture.states(), 0.5);
+
+            assert_eq!(
+                world.systems[system].control,
+                ControlKind::Controlled(assaulter),
+                "{holder:?}"
+            );
+            let destination = fixture
+                .manufacturing
+                .queue(yard, ProductionArea::ConstructionYard)
+                .map(|queue| queue.items()[0].destination);
+            assert_eq!(destination, Some(None), "{holder:?}");
+            assert!(world.autoscrap_systems.is_empty(), "{holder:?}");
+        }
     }
 
     #[test]
@@ -5681,6 +5775,67 @@ mod tests {
             assert!(report.fleet_operational.is_empty());
             assert_eq!(names(&report.fleet_destroyed), ["Cruiser", "Regiment"]);
             assert_eq!(report.picture(), 0x2b9c, "{bombarder:?}");
+        }
+    }
+
+    #[test]
+    fn a_regiment_lost_with_the_ship_the_batteries_destroy_feeds_the_bombarders_counter_b() {
+        // The lost ship's hook +0x11c (FUN_00502840 -> FUN_004fb520) calls
+        // each child's slot +0xb4; a regiment's (vtable 0x0065e438) is
+        // FUN_004f8710, which destroys it with the ship's reason 0xf
+        // (FUN_004f7ed0), and FUN_00508c60 adds its slot +0x1c0 (TROOPSD
+        // uprising_defense) to B beside the ship's (FUN_00501ae0(.., 0xf)).
+        for bombarder in [Faction::Empire, Faction::Alliance] {
+            let (mut world, system, fleet, _) = named_strike_world(bombarder);
+            let holder = world.systems[system].control.faction().unwrap();
+            let class = world.fleets[fleet].capital_ships[0].class;
+            world.capital_ship_classes[class].troop_capacity = 1;
+            world.capital_ship_classes[class].uprising_defense = 4;
+            let regiment = DatId::new(0x1000_0001);
+            world
+                .buildable_classes
+                .get_mut(&regiment)
+                .expect("the named Regiment class")
+                .stats
+                .uprising_defense = 6;
+            let aboard = world.troops.insert(rebellion_core::world::TroopUnit {
+                class_dat_id: regiment,
+                is_alliance: bombarder == Faction::Alliance,
+            });
+            world.systems[system].ground_units.push(aboard);
+            let mut fixture = StrikeFixture::new();
+            fixture
+                .transport
+                .embark(&mut world, &ProductRoom::default(), fleet, &[aboard])
+                .expect("the ship carries one regiment");
+            let battery = DatId::new(0x2300_0001);
+            world.buildable_classes.insert(
+                battery,
+                rebellion_core::world::BuildableClass {
+                    stats: rebellion_core::world::ClassStats {
+                        attack_strength: 500,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+            let lnr = world.defense_facilities.insert(DefenseFacilityInstance {
+                class_dat_id: battery,
+                side: holder,
+            });
+            world.systems[system].defense_facilities.push(lnr);
+            order_strike(
+                &mut world,
+                &[fleet],
+                rebellion_core::bombardment::BombardKind::General,
+                &mut fixture.states(),
+                &mut || 0.5,
+            )
+            .expect("the gate passes");
+            assert!(!world.troops.contains_key(aboard), "{bombarder:?}");
+            let losses = fixture.blockade.losses(system).expect("a loss record");
+            let index = usize::from(bombarder == Faction::Empire);
+            assert_eq!(losses.b[index], 4 + 6, "{bombarder:?}");
         }
     }
 

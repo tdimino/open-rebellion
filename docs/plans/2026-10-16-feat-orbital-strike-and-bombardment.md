@@ -2,10 +2,10 @@
 title: "Orbital Strike: Bombardment, Destroy System and the Support Shifts"
 description: "Replace the invented bombardment formula, the Death Star's invented fire rules and its blanket cleanup with the original's orders 0x220-0x223, per-hit run, destroy cascade and support shifts, for both sides and the AI, issued from the original Planetary Bombardment menu"
 type: feat
-status: active
-progress: "98.5% by weight (230.5 of 234). Phases A-O and the added Phases P (products as objects) and Q (window restore and drag), all but: J12's C019 and J13's browser check; L6 and M7's browser and VM checks; P5's mutants and browser"
+status: completed
+progress: "100% by weight (234 of 234). Phases A-O and the added Phases P (products as objects) and Q (window restore and drag)"
 created: 2026-10-16
-updated: 2026-10-19
+updated: 2026-10-20
 tags: [bombardment, death-star, support, ai, parity]
 ---
 
@@ -23,7 +23,7 @@ commit after the docs and the review subagents, and only on Tom's go-ahead.
 | Node | State |
 |---|---|
 | `or-port-bombardment-8usw` (P1) | Closed 2026-10-17. Orders 0x220-0x223 resolve where they are given (`integrator::order_strike`, `strike_orders::issue`, `resolve_ai_strike`) through the gate (`bombardment::gate`, `FUN_00582440`), the per-hit run (`FUN_0058d800`) and finalize (`FUN_0058e320`). Native seed 42 on both sides; 24 headless seeds gave 95 Alliance and 226 Empire strikes |
-| `or-port-destroy-system-cascade-imrv` (P1) | Open, narrowed. The cascade is in code with tests in `death_star.rs` (`both_sides_fleets_survive_the_destruction_with_everything_aboard`, `the_systems_own_completed_units_of_both_sides_die_with_it`, `characters_left_at_the_system_off_a_mission_go_adrift`, `special_forces_die_unless_en_route`), checked natively for the Empire at Vagran and at Hoth. Left: a native Destroy System with an Alliance player, and the browser probes (OBJ-14, the C6 tactical Death Star frames) |
+| `or-port-destroy-system-cascade-imrv` (P1) | Closed. The cascade is in code with tests in `death_star.rs` (`both_sides_fleets_survive_the_destruction_with_everything_aboard`, `the_systems_own_completed_units_of_both_sides_die_with_it`, `characters_left_at_the_system_off_a_mission_go_adrift`, `special_forces_die_unless_en_route`), checked natively for the Empire at Vagran and at Hoth, and with an Alliance player at Yavin (seed 42: an Imperial Death Star fleet's Destroy System killed Yavin's regiments, squadrons and facilities, both sides' fleets kept everything aboard, six characters went adrift and the roll killed two, and the Alliance view reads Yavin destroyed, holder Neutral). The browser probes of the OBJ-14 rows pass (`orbital-strike.mjs`, `live-strike` and `death-star-strike`). The C6 tactical Death Star frames pass, 8 of 8 (Phase J item 12) |
 | `or-q-port-support-shifts-y0y` (P1) | Closed 2026-10-17. Control change, blockade end and HQ removal post event 0x373 through `support_shift.rs`; bit 11 is `death_star::refresh_sectors` (`FUN_005178b0`), timer 0x386 and the kill finalize follow the original. Native seed 42 on both sides |
 | `or-port-death-star-family-qtde` (P2) | Closed 2026-10-17. `CapitalShipClass::family` and `is_death_star` test 0x18-0x1b, and `GameWorld::fleet_has_death_star` asks a fleet's live ships (`FUN_005003d0`) |
 | `or-bombard-command-timing-d1b2` (P3) | Closed 2026-10-17. Message 0x224 runs in the order's own scheduler step, and `FUN_0058d800` has one caller (`FUN_005637c0`), so no bombardment follows a battle |
@@ -57,12 +57,12 @@ Bombard and Destroy System postures). Manual pp. 57, 90, 105, 122, 124, 136.
 - Original UI only: the player bombards from the original menu.
 - Notes state current facts. Docs fold into the feature commit.
 
-## Done, uncommitted
+## C6 harness fix
 
-- **C6 harness fix.** The tactical fixture's `ready` message carries every
+- **C6 harness fix (ff3099fd).** The tactical fixture's `ready` message carries every
   fixed control's rect (`tactical_control_layout` in `tactical_view.rs`), and
   the browser probes in `tools/interface-parity/run.mjs` click and check
-  those rects by name. 160 of 160 browser executions pass (147 before). The
+  those rects by name. 160 of 160 browser executions pass. The
   A0 compare stands at pass 11, fail 66, not-run 28, settled 1, with every
   negative control behaving. TAC-05-C021 passes; TAC-05-C009 now runs and
   fails on pixels, a real difference the 106-cell train owns. The layout
@@ -225,8 +225,8 @@ the steps below:
   Target Military at Orto opened its alert at once; the defence fire
   destroyed the Corvette and Orto lost nothing (`bombardment.md`, "In the
   original").
-- **VM still to run**: a blockade's end, and the cascade's characters (the save reader does not
-  list characters yet). The Drall save's Fleet 1 was locked by a pending
+- **Carried to the next plan**: the original's blockade end and the cascade's characters, on
+  Wine or the VM (the save reader does not list characters yet). The Drall save's Fleet 1 was locked by a pending
   intercept battle, not by a bombardment rule.
 
 ## Phase B: the order, the one resolver and the per-hit run
@@ -295,9 +295,9 @@ the tick so the per-hit rolls come from the simulation's roll stream.
 11. **The AI honours its strike kind.** `AIAction::Bombard`'s `Strike`
     (General 0x222, Military 0x220) and `DestroySystem` (0x223) post the
     order; the resolver takes the side from the fleets, never a default.
-12. **Effects, in progress.** The run flows through the integrator's ordered
-    effects (`GameEffect::BombardmentApplied`, `PopularityShifted`), or the
-    unused variants go; `BombardmentApplied` is being removed.
+12. **Effects.** The run flows through the integrator's ordered effects
+    (`GameEffect::BombardmentApplied`, `PopularityShifted`), or the unused
+    variants go.
 13. **Dev commands** for native acceptance: `Bombard: <fleet> <kind>` and
     `Destroy system: <fleet>`, posting the same order the menu posts;
     documented in `agent_docs/dev-commands.md`.
@@ -327,9 +327,9 @@ the tick so the per-hit rolls come from the simulation's roll stream.
   `integrator::order_strike`. Saved state is `Fleet::bombarding` (v54), which
   outlives a run only when two sides are flagged at one system; arrival
   clears it (`FUN_004ff600`).
-- **B12, in progress.** The strike writes the world through the integrator's
+- **B12.** The strike writes the world through the integrator's
   `resolve_strike`, not new `GameEffect` variants; `BombardmentApplied`, which
-  nothing emits, is being removed.
+  nothing emitted, is gone.
 - **B13.** The commands are `Bombard military|civilian|general: <fleet>` and
   `Destroy system: <fleet>` (`agent_docs/dev-commands.md`).
 - **E2, done here.** Retiring the panels fell out of B9-B10: `panels/bombardment.rs`,
@@ -428,10 +428,9 @@ the tick so the per-hit rolls come from the simulation's roll stream.
   down the retreat chain (`FUN_00542ee0`). A special force with no
   destination is destroyed with reason 9 (`FUN_00549580` → slot `+0x20c`,
   `FUN_00503eb0`); it is never jailed.
-- Open: the unfinished Death Star as an object in the destination's spare
-  fleet from its order day (`+0x50` bit 6, `death-star-product.md` §1);
-  every other capital ship product is
-  `or-port-unfinished-capital-ship-products-czev`. Questions:
+- The unfinished Death Star, and every other capital ship product, is an
+  object in the destination's spare fleet from its order day (`+0x50` bit 6,
+  `death-star-product.md` §1; Phase P). Open questions:
   `or-q-unfinished-ship-owner-on-capture-y2nz`,
   `or-q-second-death-star-order-same-day-y2cw`,
   `or-q-carrier-ship-lost-en-route-hpxe`.
@@ -454,9 +453,8 @@ the tick so the per-hit rolls come from the simulation's roll stream.
   leaders' capture); Headquarters Only is covered by tests. The sector
   window draws a destroyed system as STRATEGY 10240, the asteroid field,
   keyed, with no status bars (`FUN_0045bbb0.c:88-95`), as the VM's Yaga
-  Minor shows. Open at the time: the galaxy dot and System window header of
-  a destroyed system, the adrift display, the jail abodes (Phase G items 2
-  and 3).
+  Minor shows. The galaxy dot and System window of a destroyed system, the
+  adrift display and the jail abodes are Phase G items 2 and 3.
 
 ## Phase D: the remaining support shifts
 
@@ -528,11 +526,12 @@ the tick so the per-hit rolls come from the simulation's roll stream.
   with old troop bits gave +10 (`0x1442`) over the sector, and the
   blockade ending at that change gave +2 ((2·99·15/100 − 0) / 10); a
   lift with no losses (Denab) shifts nothing.
-- Open: no producer for counter A (reason 0xe is a hyp), no traced reader
-  of counter C. `hyp:` the designers' meaning of SDPRTB `0x1440`-`0x1445`.
-  Control reruns on a support change (`FUN_005109f0`) and a regiment
-  change (`FUN_00508660`), a killed system's dying regiments included
-  (Phase O items 3 and 6).
+- Counter A is fed by a planetary assault's regiment kills, attackers and
+  defenders alike (`assault::resolve`, reason `0xe`; Phase K item 5).
+  Open: no traced reader of counter C. `hyp:` the designers' meaning of
+  SDPRTB `0x1440`-`0x1445`. Control reruns on a support change
+  (`FUN_005109f0`) and a regiment change (`FUN_00508660`), a killed
+  system's dying regiments included, are Phase O items 3 and 6.
 
 ## Phase E: the original Planetary Bombardment menu
 
@@ -574,8 +573,13 @@ the tick so the per-hit rolls come from the simulation's roll stream.
   added, Destroy System enabled. Alliance at Denab: Target Military from
   the menu killed the KDY and filed "Alliance ships have conducted an
   orbital strike on the Imperial system of Denab"; Hoth's fleet, strength
-  0, showed the parent disabled. The browser check waits for an OBJ-14
-  probe (none exists).
+  0, showed the parent disabled. Browser, both sides
+  (`tools/interface-parity/orbital-strike.mjs`): `live-strike` lists the
+  parent enabled with three rows enabled and Destroy System grey, a click
+  on the grey row does nothing, and General Bombardment opens its report;
+  `death-star-strike` enables all four rows with the Death Star aboard,
+  and after Destroy System the destroyed system greys the parent. The
+  OBJ-14 cells still wait on the A0 compare against the Phase A frames.
 
 ## Phase F: docs, reviews, commit
 
@@ -596,8 +600,8 @@ the tick so the per-hit rolls come from the simulation's roll stream.
 5. **Gates.** `scripts/gates.sh --keep-going > LOG 2>&1; echo $?` with every
    PASS/FAIL line read; scoped cargo-mutants on the touched files;
    `invariants.py`.
-6. **Commit** on Tom's go-ahead: one commit carrying this plan and the C6
-   harness fix, rebased on `origin/main`.
+6. **Commit** on Tom's go-ahead (ff3099fd carried Phases A-G and the C6
+   harness fix; the rest follows in the next commit).
 
 ## Phase G: the node remainders to parity
 
@@ -676,8 +680,10 @@ Tom, 2026-10-17: the two open nodes go to parity before the commit.
   `or-port-movie-triggers-45gd` (its item 5).
 - Both sides: a player bombardment of each kind, AI bombardments in a named
   playtest seed, and Destroy System from an Empire game and against the
-  Alliance. The AI issues 0x223 in a named dual-AI seed (Phase A item 6
-  found that the original's AI does; Phase I item 8).
+  Alliance. The AI issues 0x223 once it holds the hull, in the seed tests
+  on both sides; no 24-seed soak builds the hull, the budget equilibrium
+  the original's request code shares (`ai-death-star.md` section 3; Phase
+  I item 8).
 - Phases H-N each meet their own checks, on both sides.
 - No invented panel, formula, refusal or post-battle bombardment remains
   without a source.
@@ -721,8 +727,8 @@ character is the Empire's.
    at `0x00465fed`); the Characters view lists a character on its native
    side's tab (`FUN_004637a0` stores `FUN_004edc80`). The VM settles the
    display in item 8.
-4. **Trace** the second way in, done for the order (`jail.md`, section 4);
-   the acceptance tables and the Return mission are with the tracer
+4. **Trace** the second way in, done: the order (`jail.md`, section 4), the
+   return policies and the hidden Return mission
    (`ghidra/notes/mission-return.md`).
 5. **Port** that path, both sides, done: the mission-end return
    (`FUN_00548120`, `death_star::return_members`). M, after 4.
@@ -801,7 +807,7 @@ so no 0x223 was issued; 234 bombardments ran (Empire 0x220 143 and 0x222
 7. **A mission target names a ship or a product, done** (an uncompleted
    Death Star is no target, `FUN_00593500`), so an uncompleted Death
    Star can be sabotaged. S-M, after 6.
-8. **The AI's hull, open.** The module-11 budget (`FUN_004ca5e0`) is read:
+8. **The AI's hull, settled.** The module-11 budget (`FUN_004ca5e0`) is read:
    the hull needs capacity 2223. No seed issues 0x223
    (`or-q-ai-death-star-use-z9ow`). Measured 2026-10-17 on the release
    playtest, dual AI, standard galaxy and medium difficulty (the playtest has
@@ -818,8 +824,11 @@ so no 0x223 was issued; 234 bombardments ran (Empire 0x220 143 and 0x222
    seed 7 day 2,500 (640), seed 4 day 3,000 (607); the class is listed in
    all 240. Around seed 22's day 2,000 module 11 builds capital-ship keys 17
    and 18 (CAPSHPSD `0x81`, `0x82`) instead, so an earlier row of
-   `FUN_004ca5e0` (the transport row or a counted request) holds the turn
-   (hyp: which row is not traced). The same 1,500-day batch ran 320
+   `FUN_004ca5e0` holds the turn: the troop-room row comes first in the
+   fixed request order (`FUN_004ca5e0.c:57-139`), costs little, so its
+   blocker never sets (`FUN_004ca910.c:26`), and the hull row, eighth, is
+   never reached (`ai-death-star.md` section 3). The port's request code
+   matches the original's. The same 1,500-day batch ran 320
    bombardments: Empire 0x220 162 and 0x222 36, Alliance 0x220 122. S, then
    M if a fix follows.
    The 0x223 seed tests, both sides: a Death Star fleet at an enemy
@@ -969,7 +978,18 @@ probe asserts hull 100 and charge 0.
     that step, then re-arms 5 to 13 steps on (steps 20 and 24). The
     Alliance squadrons all have hyperdrives and seat in flight
     (`docked=0`); the station's hangar was not exercised.
-13. **The Battle Summary, ported; checks left** (`tactical-results.md`;
+    Done. The C6 compare passes TAC-05-C009 and C017-C023 (8 of 8) on the
+    browser battle run with the traced tactical camera (`FUN_005d9640`),
+    the 3D window (17, 30, 439 by 437) and the holocube, with the capital
+    meshes at the cache's 3.0 scale (`FUN_005d5b10`) and 0.3-unit fighter
+    decals (`FUN_005d43c0`). TAC-05-C019 (empire-death-star-pre-alert, day
+    676, superlaser strike) passes on position: displacement 0, MAE
+    0.0023, changed pixels 0.0046. Its SSIM (0.952) and edge IoU (0.7185)
+    wait on `or-d3drm-raster-match-vog4`: Direct3D RM's 8-bit palette
+    matching, line stepping and rasterizer, measured as 977 ship, 736 star
+    and 412 holocube edge misses of 7,549. Browser battle gate 180/180 on
+    both sides at both viewports; gid 150/152 as before.
+13. **The Battle Summary, done** (`tactical-results.md`;
     window kind 8, `FUN_0046f140`, the Operation Report's art family). The
     port showed an invented forces page: text categories, a Death Star
     tab, Operational, Damaged and Destroyed on every tab, every character
@@ -998,8 +1018,19 @@ probe asserts hull 100 and charge 0.
       Destroyer destroyed.
     - Alliance Withdraw: a 34.4 s countdown, picture `0x2a05`.
     - Personnel reads Survivors, Captured and Killed.
-    Left: the browser check on both sides, and the fighters-only withdrawal
-    case (under review).
+    Browser, production-battle-results-presentation and yaga-day30-options,
+    both sides at both viewports: 4 of 4 each. At 640×480 the frame,
+    summary, close and tab probes read source-bitmap-exact; the summary
+    pictures are `0x2a07` (Alliance win, Fwillsving), `0x2a08` (Empire
+    win, Norval II) and `0x2a05` (Empire at Yaga Minor, "The Alliance fleet
+    has withdrawn."); Capital Ships list a Mon Calamari Cruiser 1/2
+    Operational with burn marks and 3 Destroyed; Personnel reads None,
+    None, No Casualties on both forces views. The fixture sets every
+    condition column on both sides at once, so a winner's summary text sits
+    beside the loser's live ships; native runs cover the real outcomes.
+    No browser fixture yet opens Results for `0x2a06`, after a trench run,
+    with "No Survivors", or with the Left/Right filter keys
+    (`or-acc-results-dlw`).
 
 ### Phase K: planetary assault (`or-q-ground-resolution-nms`)
 
@@ -1066,7 +1097,9 @@ cleanup (`FUN_004fe4d0`); control by the troop rule already ported.
    side refusal for a regiment at a side-3 unpopulated planet
    (`regiment-unload.md`), so the Drop lands; the need staying set while
    `FUN_004ae440` passes is the original's (`ai-order-emission.md`). The
-   batch re-measure after the fix is open. Module 8 also
+   batch re-measure after the fix, 24 seeds over 1,500 days: 13 Drops
+   issued, 12 applied, none refused (1,343 issued and 1,337 refused
+   before). Module 8 also
    applied 25 regiment moves to a system that were not Drop orders (Alliance
    9, Empire 16). The same seeds and days before the change: 362 regiments
    landed automatically, 54 control changes by occupation (Alliance 33,
@@ -1082,7 +1115,9 @@ cleanup (`FUN_004fe4d0`); control by the troop rule already ported.
    Vagran"), the second after three bombardments taking the system;
    Alliance at Corellia from a Bulk Transport (picture 11160, "Imperial
    Troops have defended Corellia from an Alliance assault"). Both reports
-   opened at once with their regiment lists filled.
+   opened at once with their regiment lists filled. Mutants on the changed
+   lines leave no survivor. The TAC-08 cells are carried to the next plan
+   by Tom's decision of 2026-10-20 (`or-d-gnd-plan-glw`).
 
 ### Phase L: the victory rules beyond AD and CD (`or-q-port-victory-rules-ce9`)
 
@@ -1093,10 +1128,11 @@ cleanup (`FUN_004fe4d0`); control by the troop rule already ported.
    (`FUN_005180e0` returns 0); first trace whether a principal leader can
    die (`FUN_00505190`), Ghidra and a VM check. S + M.
    The death trace rests on the code read (a major is injured, never
-   destroyed: slot `+0x2e0` returns 0). VM: two Assassinations of Han by a
-   combat-220 Daala (`save_tree.py assassin`) ended with Han unhurt and no
-   Imperial message; the wound is not observed (`victory-flag-word.md`,
-   Open).
+   destroyed: slot `+0x2e0` returns 0). Wine, done: with Han undefended at
+   Caprionril (`save_tree.py undefended`), Daala's Assassination files
+   "Han Solo Injured" and a Mission Report reading "Han Solo has not been
+   eliminated"; Han's injury reads 36 and he stays on the map
+   (`victory-flag-word.md` 3).
 3. **The messages from the flag word, done:** Rebel HQ Destroyed `0x1f` on
    any AD change, a capture included (`FUN_0048e5a0`); Coruscant Captured
    (`FUN_0048f790`, TEXTSTRA `0x7170`/`0x7171`, movie `0x74`;
@@ -1107,8 +1143,8 @@ cleanup (`FUN_004fe4d0`); control by the troop rule already ported.
    EMSPRITE 11093/11094), the movie by code `0x10`-`0x13` (MDATA 105-108,
    `movies.rs` `ending_code`, `ending_movie`), the main menu; the invented
    `VictoryModal` and its text are gone (`or-port-movie-triggers-45gd`). M-L.
-6. **Checks:** native and browser, both sides and both game types; one
-   ending in the VM. M.
+6. **Checks, done:** native and browser, both sides and both game types;
+   one ending in the VM. M.
    Native, Empire, Standard: the ending plays its script, movie `0x6d`
    (MDATA.108) and the main menu; Planet Destroyed and Rebel HQ Destroyed
    play their movies with captions; a save taken after the win replays the
@@ -1124,7 +1160,26 @@ cleanup (`FUN_004fe4d0`); control by the troop rule already ported.
    menu with no leader held, ending slot 84, movie `0x6d`, the main menu;
    Alliance, seed 3, Coruscant taken by the fleet menu's assault after
    `Strip defenders at`, no leader held, ending slot 86, movie `0x6b`, the
-   main menu. The browser is unchecked.
+   main menu. Browser, production build, `tools/interface-parity/endings.mjs`,
+   8 of 8 cases, Chrome muted with no audio output: the menu's game-type
+   toggle changes the Cloud City control's art and starts a new game of
+   that type ("Easy, Small Galaxy, Standard Game" or "... Headquarters
+   Only"); over it, Game Options loads a native save of the same type one
+   order before the win. Empire, seed 42, day 9, the Death Star fleet at
+   Hoth (Standard with Luke and Mon Mothma jailed): Destroy System (`0x223`)
+   from the fleet menu plays `0x6f` (MDATA.101) and `0x73` (MDATA.102),
+   ending slot 84 is stamped, and movie `0x6d` plays full screen in the
+   `<video>` overlay to its end (114.46 s), then the main menu. Alliance,
+   seed 3, day 60, regiments aboard the fleet at a stripped Coruscant
+   (Standard with Vader and Palpatine jailed): Planetary Assault (`0x234`)
+   opens the Operation Report; Coruscant Captured (`0x74`, MDATA.103) waits
+   until the report is closed (`movies::clear_for_movie`), ending slot 86
+   is stamped, and `0x6b` plays to its end (140.13 s), then the main menu.
+   Each won campaign, saved from Game Options (Empire day 12, Alliance day
+   62), stamps its slot again when loaded in a fresh page and replays the
+   same ending to the main menu. The gate fails with `0x12` given movie
+   `0x6c`, with the game-type toggle disabled, and with the shell's
+   `ended` handler removed.
 7. **Movies in the browser, done:** an HTML `<video>` overlay driven by the
    `or_movie_play` and `or_movie_stop` imports, with the `or_movie_ended`
    export called on end, error, Escape, a click or a key
@@ -1152,35 +1207,59 @@ alert opens itself within a second of the order. The port files message
 5. **Fill, done,** its lists from the strike and assault reports. M.
 6. **Open it, done** (`MessageLog::take_alerts`), for the bombarder at once,
    and again from the Index. S-M.
-7. **Checks:** native and browser, both sides, EVT-03's 15 cells. M.
-   Native, both sides, orders from the fleet menu: the report opens at once;
-   Empire at Vagran shows 11163 for each order; Alliance at Corellia shows
-   11164 (a ship lost), 11162 (nothing destroyed) and 11163 (a facility
-   destroyed), each picture whole in the shell's aperture.
-   EVT-03 cells, native (Empire at Vagran and, seed 3, Tralus; Alliance at
-   Corfai):
-   - Pass on both sides:
-     - C001 military, C002 civilian, C003 general (11163);
-     - C005/C006 pictures (11163 something destroyed, 11162 nothing);
-     - C007/C008 assault summary and success (11161 Empire, 11160 Alliance);
-     - C010 the six force tabs;
-     - C011 destroyed and C013 operational, with "None" and "No Casualties";
-     - C014 Go To system, C015 Go To fleet.
-   - Empire only on this build: C004 shield blocked (Tralus, GenCore Level
-     I; no shielded Imperial system in Alliance reach); C009 assault failure
-     (11161; the Alliance case passed on an earlier build).
-   - C012 damaged, settled in the original (Wine,
-     `alliance-day927-orto-transport-damaged.sav`, Target Military at
-     Orto): a damaged survivor, Medium Transport 1 with 120 of its 360 hull
-     damage, is listed under Operational with the damage art over its
-     portrait (`FUN_0042c3b0.c:350-410`, `FUN_00501c00`). Native on both
-     sides: Operational lists the damaged survivor with burn marks (Imperial
-     Star Destroyer 1, 2250/2750, at Vagran; Alliance Escort Carrier 1,
-     300/900, at Corellia); the Destroyed column's damage art fails natively.
-     C015 Go To fleet opens the system's Fleet window with nothing selected
-     on both sides (`FUN_0045aac0`, `operation-report-window.md`).
-   The audit ledgers (P26, the EVT-03 surface) carry these native results;
-   each EVT-03 cell stays pending until its browser check.
+7. **Checks, done:** native and browser, both sides, EVT-03's 15 cells. M.
+   Native, both sides, orders from the fleet menu: the report opens at once.
+   - Empire at Vagran: 11163 for each order.
+   - Alliance at Corellia: 11164 (a ship lost), 11162 (nothing destroyed)
+     and 11163 (a facility destroyed).
+   - Each picture is whole in the shell's aperture.
+
+   EVT-03 cells, native: Empire at Vagran, at Tralus (seed 3) and at
+   Ghorman; Alliance at Corfai and Corellia. All 15 pass on both sides:
+   - C001 military, C002 civilian, C003 general (11163);
+   - C004 shield blocked: Empire at Tralus, GenCore Level I; Alliance at
+     Corellia on day 53, under a GenCore Level I the Empire built by day
+     51. Target Military Facilities lands no hit; LNR Series I and the
+     generator are listed operational; "No Casualties";
+   - C005/C006 pictures (11163 something destroyed, 11162 nothing);
+   - C007/C008 assault summary and success (11161 Empire, 11160 Alliance);
+   - C009 assault failure: Alliance at Corellia on day 35, an Army Regiment
+     boarded at Hoth against three Imperial regiments, 0x7092, the regiment
+     destroyed; Empire 11161;
+   - C010 the six force tabs;
+   - C011 destroyed and C013 operational, with "None" and "No Casualties";
+   - C012 damaged, as the original lists it (Wine,
+     `alliance-day927-orto-transport-damaged.sav`, `FUN_0042c3b0.c:350-410`,
+     `FUN_00501c00`): a damaged survivor under Operational with burn marks
+     (Imperial Star Destroyer 1, 2250/2750, at Vagran; Alliance Escort
+     Carrier 1, 300/900, at Corellia); a ship the batteries destroyed under
+     Destroyed with the damage art (Corellian Corvette 1 at Corellia on day
+     2; Imperial Star Destroyer 1 at Ghorman on day 294, from 171/2750);
+   - C014 Go To system;
+   - C015 Go To fleet, which opens the system's Fleet window with nothing
+     selected (`FUN_0045aac0`, `operation-report-window.md`).
+
+   Browser, both sides: `tools/interface-parity/orbital-strike.mjs`, 22 of
+   22 cases, Chrome for Testing 151 at 640x480. The interface-test
+   fixture's scenarios 70-74 stage the shielded strike, both assaults and
+   both damaged losses.
+   - C001-C003: each order opens its report at once.
+   - C004: 0 hits, picture 0x2b9a, the generators operational.
+   - C005/C006: pictures 0x2b9b and 0x2b9a.
+   - C007-C009: the assault Summary (0x2b98 or 0x2b99) with the capture and
+     the defence texts.
+   - C010: six tabs per Forces view.
+   - C011/C013: the lists.
+   - C012: the damage art (GOKRES portrait + 0x2000 under the keyed
+     portrait) pixel for pixel under Operational and under Destroyed; the
+     stack matches the Wine capture of Corellian Corvette 1.
+   - C014/C015: Goto System and Goto Fleet close the report on the
+     system's sector and Fleet windows.
+   - Each probe fails with its feature disabled.
+
+   The audit ledgers carry these results: P26 passes and the EVT-03
+   surface is complete, on Chrome evidence by Tom's decision of 2026-10-19
+   (Firefox and Safari parity is not claimed).
 
 ### Phase N: the seeding fallback
 
@@ -1221,7 +1300,8 @@ whose hook (slot `+0x1d0`, `FUN_005109f0`) reruns control at once
    bombardment killed the one Imperial regiment and the holder went Empire
    to Neutral that day (support 69/31 to 59/41). Empire, day 0, Vagran:
    Destroy System turned the Alliance system Neutral and destroyed on day 0,
-   with film `0x6f`. The golden waits for the freeze. M.
+   with film `0x6f`. The golden was regenerated for these writes in
+   ff3099fd. M.
 6. **Control after a regiment change, done:** every port path that adds,
    moves or removes a regiment at a system (load, unload, a regiment's own
    move and arrival, a finished build, scrap, a kill by bombardment,
@@ -1280,9 +1360,15 @@ place (`FUN_0052bee0`). Save v63.
 3. **P3, room, maintenance and the AI census** (S).
 4. **P4, missions** (S): an uncompleted target is refused `0x34`
    (`FUN_00593500`).
-5. **P5, the UI mark** (S-M): the under-construction backdrop 11570/11572
-   (`FUN_0042c3b0.c:412-431`); native acceptance on both sides; the Build
-   Selection list and box show the class portrait (`FUN_00437880`).
+5. **P5, the UI mark, done** (S-M): the under-construction backdrop
+   11570/11572 (`FUN_0042c3b0.c:412-431`) stacks under an unfinished ship's
+   mini and portrait; the Build Selection list and box show the class
+   portrait (`FUN_00437880`, `+0x30 & 0xfff`), the name starting the
+   portrait's height down (`:138-139`). Mutants: 28, none missed. Browser,
+   both sides: fleet-window `unfinished` (158 and 153 mark pixels, none with
+   the mark disabled) and build-selection, which presses the Stop
+   confirmation (`FUN_00487cc0`). Native, both sides: release build, seed
+   42, the red and green marks under the unfinished ships.
 6. **A manager's side change** (within P1): a holder change destroys every
    product of the system's own managers, wherever it sits, with reason
    `0x16` and no refund (`FUN_004f8680.c:28-31` -> `FUN_004f6f40` -> manager
@@ -1290,20 +1376,40 @@ place (`FUN_0052bee0`). Save v63.
    unsaved list at each control change (`support_shift`), and only an
    emptied fleet's cleanup follows. Wine: the Duros replay's lost Orbital
    Shipyard is a dead record with reason `0x16` after the capture.
-   Carried: the other managers' facility, regiment and squadron products at
-   the system (`0x1000` request, event `0x307` -> `FUN_00515480`) and special
-   forces (`FUN_00503d90`).
+   The other managers' facility, regiment and squadron products at the
+   system (`0x1000` request, event `0x307` -> `FUN_00515480`) and special
+   forces (`FUN_00503d90`) are `or-port-holder-change-products-kr13`,
+   ported (see Completion).
 7. **Death Star room for fleets in transit**: Build counts the same set as
    Move (`FUN_004ffe70` mode 3 counts ships of en-route fleets, whose
    container changes at the order; `movement::death_star_room`).
 
 ### Phase Q: strategic windows on load, and window drag
 
-1. **Restore on load** (`or-port-window-restore-on-load-iclp`, M-L): the
-   save writes the galaxy's child windows bottom to top, hidden ones at
+1. **Restore on load, done** (`or-port-window-restore-on-load-iclp`, M-L):
+   the save writes the galaxy's child windows bottom to top, hidden ones at
    their own z place (`FUN_00440ea0.c:19-24`); the load appends hidden ones
    to the rail (`FUN_00428b40`), and `GalaxyFocusState::after_load` sets the
-   focus.
+   focus. A Fleet window saves unless it is on the rail
+   (`SystemWindowState::rail_holds_fleet`), whatever the frame paints: Game
+   Options suspends the strategic scene, while `FUN_00440ea0` walks the
+   view's child windows, which it leaves in place. Native, both sides, seed
+   42: a Fleet window saved over a System window comes back in front with
+   the keyboard; Escape closes the Fleet window, then the System window.
+   Browser, both sides, production build
+   (`tools/interface-parity/window-restore.mjs`, 2 of 2, Chrome; Firefox
+   and Safari parity is not claimed): on the Empire seed 42 day 9 and the
+   Alliance seed 3 day 60 campaigns, a System window dragged and shown on
+   Shipyards, a second System window on the rail, a Fleet window dragged
+   over the first and the Uprisings GID mode, saved from Game Options and
+   loaded in a fresh page, come back pixel for pixel: the Fleet window in
+   front where it was dragged, the System window where it was dragged on
+   its Overview page, the rail's first slot as saved. Escape closes the
+   Fleet window and the System window takes the focus; a second Escape
+   closes it, a third leaves the rail. With the sector closed, the galaxy
+   shows Uprisings. The gate fails when the load restores no window.
+   Whether a restored window keeps a place outside the galaxy view, which
+   the port clamps, is `or-q-restored-window-clamp-wqt5`.
 2. **Window drag** (S-M): a window's title and body drags
    (`FUN_00606ee0`, `FUN_006071e0`, `FUN_00607010`).
 
@@ -1318,21 +1424,40 @@ station sit in Phase J item 11; Phase K's summary window is Phase M).
 | Phases A-G | 52 | 104 | 104 |
 | H jail | 11 | 18.5 | 18.5 |
 | I Death Star product | 9 | 13.5 | 13.5 |
-| J tactical Death Star | 13 | 23.5 | 22.25 (left: item 12's C019 aperture, the C6 compare reading 7 of 8; item 13's browser check and fighters-only withdrawal) |
+| J tactical Death Star | 13 | 23.5 | 23.5 |
 | K planetary assault | 9 | 19.5 | 19.5 |
-| L victory | 7 | 13.5 | 12.5 (left: item 6's browser check on both game types and the VM check of a principal leader's wound or death) |
-| M report window | 7 | 16 | 15.25 (left: item 7's browser checks and C012's Destroyed column) |
+| L victory | 7 | 13.5 | 13.5 |
+| M report window | 7 | 16 | 16 |
 | N seeding fallback | 1 | 1 | 1 |
 | O support writes | 6 | 11.5 | 11.5 |
-| P products as objects | 5 | 8.5 | 8 (left: P5's mutants and browser check) |
+| P products as objects | 5 | 8.5 | 8.5 |
 | Q window restore and drag | 2 | 4.5 | 4.5 |
-| **Total** | **122** | **234** | **230.5 (98.5%)** |
+| **Total** | **122** | **234** | **234 (100%)** |
 
-Carried to the next plan: the other managers' products at a captured
-system (Phase P item 6), C019's participant presentation (squadron
-lanes `FUN_005ab650`, start test `FUN_005b1b70`, detail `FUN_005d4a60`),
-and the tactical camera, 3D window and holocube (`FUN_005c14d0`,
-`FUN_005d6700`), which return with fixtures for the corrected camera.
+The other managers' products at a captured system (Phase P item 6,
+`or-port-holder-change-products-kr13`) are ported: the captured system's
+managers destroy every product they list (`FUN_0052b790` ->
+`FUN_0052a2c0`, reason 0x16), and another yard's products, deliveries and
+units bound for the system take the 0x307 autoscrap request
+(`FUN_00515480`: stay if accepted, else yard or origin, nearest own-side
+system, else reason 2; special forces by class, `FUN_00503d90`). Tests
+cover both factions; seed 42 is unchanged. Native runs on the Mini (seed
+42) confirm both sides end to end: when the Empire loses Corellia, its
+Training Facility queue dies and Denab's TIE squadrons bound for Corellia
+finish at Denab, and when the Alliance loses Ghorman to an assault from
+Fleet 1 (regiments embarked with the dev command `Embark`), Ghorman's
+queued products die, including the unfinished Nebulon-B in Fleet 8 at
+Vagran and the Mine bound for Yavin. On the Alliance side, a product bound
+for a captured system going back to its yard stays covered by unit tests.
+
+Carried to the next plan: C019's raster match and the tactical projection
+scale (`or-d3drm-raster-match-vog4`) and the Alliance hulls' layout in
+the day-676 Coruscant battle, up to about 45 px off A0
+(`or-port-c019-alliance-hull-layout-fqrk`); the
+original's blockade end and the Destroy System cascade's characters, run
+on Wine or the VM (Phase A results); the TAC-08 cells of the planetary
+assault (A1 fixtures, compare regions, the Alliance's A0 frames; Phase K
+item 9, `or-d-gnd-plan-glw`).
 
 ## Out of scope (carried queue)
 

@@ -3,7 +3,7 @@ title: "Editing original-game saves"
 description: "How to edit our own original-game saves safely to stage a state the original cannot reach on demand (a damaged hyperdrive, a Death Star), and how to accept the edit in the original"
 category: "agent-docs"
 created: 2026-10-10
-updated: 2026-10-17
+updated: 2026-10-19
 tags: [original-game, saves, parity, death-star, hyperdrive, jail]
 ---
 
@@ -13,9 +13,10 @@ Some behaviour can only be checked in the original once the game reaches a
 state that normal play does not produce on demand: a ship whose hyperdrive
 is out before a Withdraw, or a finished Death Star with an escort. We get
 there by editing a copy of one of **our own** saves (or the one David Adams gave us)
-(`tools/original-capture/saves/`), loading it on the Mac Mini capture VM
-(`tools/original-capture/README.md`, `vm-game.sh`), and accepting the edit
-only after the original loads, plays and re-saves it.
+(`tools/original-capture/saves/`), loading it in the original (Wine for
+strategic checks, the capture VM for tactical ones;
+`tools/original-capture/README.md`), and accepting the edit only after the
+original loads, plays and re-saves it.
 
 Status:
 - **Hyperdrive (recipe 1):** loads and plays. The Withdraw result varies from
@@ -26,8 +27,9 @@ Status:
 - **Battle staging (recipe 3):** the copies load and show their damage.
 - **Squadron size (recipe 4):** loads, re-saves and reloads with the edited
   size.
-- **Container change (recipe 5):** a captive moved into a jail abode, both
-  sides. Staged, not yet loaded.
+- **Container change (recipe 5):** loads and plays on both sides: a captive
+  moved into a jail abode (Leia, Palpatine) and a regiment moved between
+  systems (the Ord Pardon garrison).
 - **Player side:** cannot be changed by editing.
 
 "Edits that worked" lists each successful edit byte for byte.
@@ -65,6 +67,8 @@ original's own re-saves after it loaded and played the edit.
 | Leia into the Empire Jail (`save_tree.py jail`) | `alliance-day731-imperial-deathstar-built.sav` `502ac1cb…` → `97598719…` | Leia (`0x31000241`), an Imperial captive at Coruscant, moved from Coruscant's list into the Empire Jail's (`0x98000480`) in the `0x81`, `0x92` and `0xa1` graphs; her master location word `0x90000109` → `0x98000480`; +36 bytes and every later marker | Loaded: the Personnel Finder reads "Leia Organa - Empire Jail" with no "( Captured )" (Luke, a captive at Coruscant, reads "Luke Skywalker - Coruscant ( Captured )"), and no system window lists her, so no Rescue can target her. Within about 50 days "Leia Organa Escaped" files ("Leia Organa escaped from the Empire at Empire Jail."), then "Leia Organa Arrives at Yavin", and the finder reads "Leia Organa - Yavin" | `alliance-day731-leia-jailed.sav` |
 | Palpatine into the Alliance Jail (`save_tree.py jail`) | `empire-day660-deathstar-pre-alert.sav` `5973cf91…` → `6270d084…` | Palpatine (`0x34000280`), an Alliance captive at `0x9000010a`, moved into the Alliance Jail's list (`0x98000440`) in the `0x41`, `0x51` and `0x62` graphs; his master location word `0x9000010a` → `0x98000440`; +36 bytes and every later marker | Loaded: the Personnel Finder reads "Emperor Palpatine - Alliance Jail". The Alliance then wins the Standard game between days 682 and 692 (the Empire's defeat ending, `victory-flag-word.md`) | `empire-day660-palpatine-jailed.sav` |
 | Assassin combat (`save_tree.py assassin`) | `empire-sixteen-tie-day415.sav` `1f8381e5…` → `bf5ef29b…` | Daala's (`0x38000393`) effective combat `+0x86`, the high half of master word 31, 84 → 220. Two bytes at `0x21f18` | Loaded: Daala at Berchest takes an Assassination of Han Solo, free at Carida and listed in the Empire's Carida window. In two runs it ended within about ten days with Han's injury 0 and no Imperial mission message; the hidden Return (`0x42000002`) took Daala home | none (experiment) |
+| Han undefended (`save_tree.py undefended`) | `assassin`'s output `bf5ef29b…` → `1ac07b6b…` | Han Solo (`0x33000243`), free at Carida (`0x900000ad`), moved into Caprionril's (`0x90000097`) list in every graph that holds him, and his master location word `0x900000ad` → `0x90000097`. Caprionril, an Alliance system, holds no regiment, no squadron and only empty fleets, so the decoy and FOILTB phases find no defender | Loaded on Wine: Caprionril's Personnel tab lists Han Solo. Daala's Assassination from Berchest (`0x900000ab`), ordered on day 418, stays in transit through day 463, reaches Caprionril's mission timer by day 465 and files "Assassination Mission Report" on day 466 ("The assassination mission to Caprionril is complete.  Han Solo has not been eliminated.  Personnel are returning to Berchest."). Under the save's own generator state the roll misses and Han's injury stays 0 | none (experiment) |
+| New session random state (one u32) | day-465 re-save of the line above `d7b3d070…` → `9727e136…` | The session generator's state (`*DAT_006b9054 + 4`, `ghidra/notes/ground-assault.md`): the u32 at file offset `0x8be8`, `0x01d06274` → `0x2468ace1`. Found as the only match in the file of the value `wine-game.sh peek 0x6b9054 4` read right after loading the source | Loaded: `peek` reads the new state, and day 466 files "Han Solo Injured" ("Han Solo has been injured.") beside the same Mission Report. Han's injury (`+0x94`) reads 36, his flags word 41 `0x2` → `0x42`, and he stays at Caprionril (`victory-flag-word.md` 3). The state `0x12345678` missed like the original | none (experiment) |
 | Squadron size (`save_edit.py squadron`) | `alliance-deathstar-at-coruscant.sav` `5825d980…` → `e0953abc…` | Fleet 2's first X-wing squadron (id `0x17b8`): its `+0x60` damage word 0 → 7 in the `0x41` and `0x51` copies. Two bytes: `0x3a128`, `0x9e22f` | Status reads Squadron Size 5:12; shield and laser scale with it (25:60, 40:96). The original's re-save keeps 7 in both copies, and a restart and reload still read 5:12 | none (experiment) |
 | Imperial garrison at Ord Pardon (`save_tree.py garrison contested-visible`) | `alliance-day1169-deathstar-trench-run.sav` `ad68f6f4…` → `dde9bb3d…` | Imperial Army Regiment `0x100009db` (defence 5) moved from `0x92000068` to Ord Pardon `0x920000a5`: the master copy (graph `0x81`, location word `0x92000068` → `0x920000a5`), the Empire's view (`0xa1`), and the Alliance's bucket copy (`0x92` in container `0xf2`) re-keyed to `0x91` and moved into Ord Pardon's list there. Master words 3, 10 and 11 stay as in the origin (`0xc00`, `0x20`, `0x330000`). +0 bytes | Loaded and played on Wine: the Alliance fleet's assault captures or is repulsed according to the generator state (`ground-assault.md`, "In the original"), and the regiment is listed under System Forces | `alliance-day1169-ord-pardon-garrison.sav` |
 | Dark Trooper at Ord Pardon (`save_tree.py garrison repulsed`) | same source → `fb545ffb…` | Dark Trooper Regiment `0x10001eea` (defence 8) moved the same way, in the master and the Empire's view only; the Alliance's bucket copy stays in `0xf2`. Master words 3, 10 and 11 untouched. +0 bytes | Loaded and played on Wine: every assault is repulsed and all six attackers die; System Forces lists nothing (the Alliance's view does not locate it) | `alliance-day1169-ord-pardon-dark-trooper.sav` |
@@ -174,9 +178,9 @@ one backup hit) into both; two bytes change (`0x17813`, `0x48f42`).
 0:80" (class 80 minus `FUN_005011f0`'s 80, and the damaged rating is 0).
 "Ship Damaged" still reads No, since the flag is separate and left clear.
 
-A first attempt wrote word 15 instead, on a field-order guess. It loaded and
-survived a re-save but showed 80:80: word 15 is some other field. Map words
-from the serializer, never from field order.
+Word 15 is some other field: written instead, it loads and survives a
+re-save but shows 80:80. Map words from the serializer, never from field
+order.
 
 **Played on (2026-10-11).** A fleet whose ISD has its hyperdrive out does not
 move: dragged to Yaga Minor, Fleet 1 stayed at Coruscant for six days with no
@@ -189,10 +193,9 @@ an Alliance fleet came to break the blockade. Retreat at the Battle Alert gave
 "The Imperial fleet is victorious … The Alliance fleet has withdrawn" with
 both Imperial ships kept, and so did the unedited control, so that alert
 cannot test the Withdraw rule. The rule needs Take Command, then Withdraw
-inside the battle. `vm-game.sh wait center` stops at the alert, 336.5 s from the
-load before the 2026-10-11 guest-tools install and 360–363 s in three runs
-after it (one with the WebDAV service stopped; the cause is open). Give the
-wait a 420 s timeout, or skip it: `saves/` holds both states re-saved on day
+inside the battle. `vm-game.sh wait alert` stops at the alert about 360 s
+after the load (`tools/original-capture/README.md`, "Host"); give it a 420 s
+timeout, or skip it: `saves/` holds both states re-saved on day
 30 (`empire-day30-yaga-alert-control.sav`,
 `empire-day30-yaga-alert-isd-hyperdrive.sav`), and either reaches the alert
 within 12 s of the load.
@@ -210,9 +213,8 @@ ISD was destroyed, not moved. So the stranded ship did not leave, as
 `FUN_005a0240` says. The fleet stayed rather than leaving, and the Alliance
 withdrew in this run while it won in the control. Each side ran once, so it
 is not settled whether the stranded ship's loss and the fleet staying follow
-from the rule or from that battle's course. Evidence:
-`.artifacts/original-checks/2026-10-11-save-edits/hd-withdraw-*` and
-`control-withdraw-*` (ignored).
+from the rule or from that battle's course. Evidence: the 2026-10-11
+Withdraw runs from the day-5 transit save, edited and control.
 
 Three more runs of the edited state, from
 `empire-day30-yaga-alert-isd-hyperdrive.sav` with the same steps
@@ -220,9 +222,8 @@ Three more runs of the edited state, from
 Ghorman", as the control did, and two ended "The Imperial fleet is
 victorious … The Alliance fleet has withdrawn". The result of a Withdraw
 varies from run to run with the stranded ship aboard, so no single run
-settles the rule; compare several. Evidence:
-`.artifacts/original-checks/2026-10-11-tactical-panel/10-*`, `11-*` and
-`2026-10-11-vm-verbs/05-results.png` (ignored).
+settles the rule; compare several. Evidence: the three 2026-10-11 runs
+from `empire-day30-yaga-alert-isd-hyperdrive.sav` and their Battle Results.
 
 Accept: load the copy, open the ISD's Status at once (Very Slow, not Pause:
 see "Driving the original" below) and read Hyperdrive Rating below 80. Then
@@ -295,10 +296,9 @@ order record was gone, and the ship's status word after its name went from
 `0x42` to `0x30147`. "Death Star 1" then sits in a new fleet (Fleet 6) at
 Coruscant. Unlike route 2, it moves: it flew to Yavin and back to Coruscant
 (about 80 days a hop on a Huge map, hyperdrive 80), and fought a battle
-there. The edited copy and the saves after it are in
-`.artifacts/original-checks/s4/` (`ds-b583.sav`, `ds-built.sav`,
-`ds-pre-alert.sav`). The last two are in the library as
-`empire-huge-deathstar-built.sav` and `empire-day660-deathstar-pre-alert.sav`.
+there. Of the saves after the edited copy (`ds-b583.sav`), two are in the
+library as `empire-huge-deathstar-built.sav` and
+`empire-day660-deathstar-pre-alert.sav`.
 
 **Route 1 in an Alliance game.** The Alliance player cannot order a Death
 Star, so an order the Empire AI already has was converted instead.
@@ -417,7 +417,10 @@ The tree, from the code:
   58-row registry `FUN_0051ebf0`), its own fields (vtable `+0x14`), then its
   own child list.
 - A child's container is its place in the list (`FUN_0060f5d0`), not its
-  location word.
+  location word. A character on a mission sits in its destination's list
+  from the order on, while its location word keeps the origin until it
+  arrives: Daala in Caprionril's list with location Berchest (`0x900000ab`)
+  on days 443-463 of the `undefended` line, location Caprionril on day 465.
 - The marker is `FUN_005f4d40`: the stream position (`FUN_00616d70`),
   checked on read. It is the only position-dependent word: `FUN_00616d70`
   has no other caller in the save path. The section readers before and
@@ -519,14 +522,17 @@ swap it in. Slot 5 holds `empire-day488-late`; leave it.
 
 ## Driving the original for an acceptance run
 
-- The Saved Games list shows the filled slots and one empty row, and does
-  not scroll; a save in a slot after a gap (slot 8 with 6 and 7 empty) is
-  not listed. Put a copy in the first empty slot.
+- Saved Games: `tools/original-capture/README.md`, "Saves". Put a copy in
+  the first empty slot.
 - Pause (right-click the day readout) raises a modal "Resume Game Play?"
   that blocks every click. Inspect at Very Slow instead.
 - To see what the original did with an edit, load it, press F1 at once (time
   stops on that screen), save over a slot whose library copy is in the repo,
   and diff the result against the edited file.
+- A load restores the session generator, so every replay from one save
+  repeats the same rolls. For a fresh roll, change the generator's state
+  word (the "New session random state" edit above): any value from 1 to
+  `0x7ffffffe` is a valid Lehmer state.
 
 ## Sources
 

@@ -9,7 +9,7 @@ tags: [death-star, product, planet-destruction, tactical, simulation]
 
 # Death Star System
 
-`death_star.rs` — sector bit 11, the destroy cascade and the adrift sweep.
+`death_star.rs`: sector bit 11, the destroy cascade and the adrift sweep.
 The product rules live with the orders that apply them.
 
 ## The product
@@ -22,7 +22,14 @@ of its live ships is of that family (`Fleet::has_death_star`,
 - An ordered capital ship exists from its order, unfinished, in its side's
   bit-1 spare fleet at its destination or in its destination fleet
   (`ShipInstance::completed`, `GameWorld::spare_fleets`, `FUN_005097d0`,
-  `FUN_0050bc60`); its yard completes it in place.
+  `FUN_0050bc60`); its yard completes it in place. A ship whose fleet lies
+  in another system, or is in hyperspace, then flies its own leg to that
+  fleet's destination (`FUN_005150c0.c:90-102` -> `FUN_00556430`;
+  `manufacturing::finish_ships`, `movement::listed_location`). An unfinished
+  ship may change fleets by Move, but Create Fleet refuses it
+  (`FUN_004f9860.c:45-50`, `FleetOrderError::Unfinished`); it neither
+  bombards nor draws battery fire, and adds nothing to a blockade's
+  strength sums.
 - One per system (`FUN_00507ab0`): Build, the Destination order, Move and
   the retreat candidate test count the Death Stars standing at the system
   or in fleets bound there, not those in fleets ordered away, other yards'
@@ -86,15 +93,17 @@ and no advice.
 
 `death_star::refresh_sectors` sets `GameWorld::death_star_sectors`, system
 `+0x88` bit 11: a usable Death Star (complete, not en route) in the sector
-(`FUN_005178b0`). It runs at the start of each tick, after arrivals, after
-the battles, and after a load or a new game (`simulation.md`), and is not
-saved. Readers: the garrison and Incite halving
+(`FUN_005178b0`). It reruns wherever a Death Star's usable bit changes
+(event `0x301`, `FUN_00514510.c:149-158`): its completion, a fleet's
+departure and arrival, Send Ships (`fleet_join`), and its loss in battle, to
+batteries, to scrap or to sabotage; and after a load or a new game. It is
+not saved. Readers: the garrison and Incite halving
 (`uprising.md`) and the support-change halving (`blockade.md`). A kill ends
 with the bombardment finalize (`FUN_0058e320`, `combat.md`, "Bombardment").
 
 ## Source
 
 - `ghidra/notes/death-star-strategic.md`
-- `ghidra/notes/bombardment.md` — the Destroy System run
-- `ghidra/notes/death-star-product.md` — product, cap, placement, refusals
-- `ghidra/notes/tactical-death-star.md` — the station and the trench run
+- `ghidra/notes/bombardment.md`: the Destroy System run
+- `ghidra/notes/death-star-product.md`: product, cap, placement, refusals
+- `ghidra/notes/tactical-death-star.md`: the station and the trench run

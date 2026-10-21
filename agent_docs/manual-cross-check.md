@@ -30,7 +30,7 @@ then confirmed menus for all four icons (`ghidra/notes/sector-icon-menus.md`).
 | Status | Meaning |
 |---|---|
 | Confirmed | A trace agrees; cite the `FUN_` and the note. |
-| Contradicted | The trace disagrees. The executable decides the behavior; record both readings in the note. |
+| Contradicted | The trace disagrees. The executable decides; the note states the behavior and cites the manual passage it contradicts (page, figure). |
 | Unresolved | No trace yet. Do not implement it as fact: tag it `hyp:` or leave it open. |
 
 Then rate the port against each claim: **Present** (element and interaction

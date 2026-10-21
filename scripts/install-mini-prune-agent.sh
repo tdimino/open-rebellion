@@ -3,6 +3,8 @@
 # on its repository copy every day at 04:30, as a backstop to the prune
 # after each scripts/mini-cargo.sh build. It skips while a cargo or rustc
 # runs, and logs to ~/or-native/build-cache.log like the per-build prune.
+# Then scripts/mini-clean.sh removes idle private clones, old run output and
+# stale cache entries (its output goes to ~/or-native/mini-clean.log).
 #
 #   scripts/install-mini-prune-agent.sh            install or update
 #   scripts/install-mini-prune-agent.sh --remove   unload and delete
@@ -28,10 +30,9 @@ cat > \$plist <<PLIST
   <key>Label</key><string>$label</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
-    <string>\$home/$dir/scripts/prune-target.py</string>
-    <string>--log</string>
-    <string>\$home/or-native/build-cache.log</string>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>/usr/bin/python3 \$home/$dir/scripts/prune-target.py --log \$home/or-native/build-cache.log; /bin/bash \$home/$dir/scripts/mini-clean.sh --local --apply --caches &gt;&gt; \$home/or-native/mini-clean.log 2&gt;&amp;1</string>
   </array>
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>
   <key>StandardErrorPath</key><string>\$home/or-native/prune-target.err</string>

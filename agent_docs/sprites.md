@@ -1,3 +1,12 @@
+---
+title: "Sprite Tracks"
+description: "Three deterministic sprite tracks: original-mesh direction sheets, the advisor family transform, native fighter textures"
+category: "agent-docs"
+created: 2026-09-14
+updated: 2026-10-19
+tags: [sprites, tactical-meshes, advisor, type-302, type-303]
+---
+
 # Sprite tracks
 
 Three deterministic sprite tracks under `scripts/sprites/`, driven either directly or through the
@@ -87,8 +96,8 @@ needs explicit approval; it is not part of this track.
 `scripts/sprites/type302.py` ports `decode_type302_frame` (17-byte header, per-row offsets,
 alternating skip/literal runs, wrapping deltas over the anchor indices, index 0 transparent) and
 the runtime's cumulative chaining: authored families decode each frame over the previous frame's
-indices, so a family is a chain, not a set. Digests matched the Rust decoder 3,988/3,988 (pure) and
-68/68 (chained) through a throwaway `cargo test` that was reverted; only the Python is committed.
+indices, so a family is a chain, not a set. Digests match the Rust decoder 3,988/3,988 (pure) and
+68/68 (chained).
 
 Authored families (`alsprite-dll` 2001→2002..2024 and 3331→3332..3346; `emsprite-dll`
 2001→2002..2016 and 3001→3002..3016) become `TYPE302` records with `route.family_transform =

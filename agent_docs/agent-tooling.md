@@ -3,8 +3,8 @@ title: "Agent Tooling"
 description: "Project-specific routing for the Claude Code Minoan and Codex skill toolbelt"
 category: "agent-docs"
 created: 2026-09-08
-updated: 2026-10-06
-tags: [agents, skills, codex, fable, ghidra, qa, research, gemini, audio, native, cua-driver, task-graph]
+updated: 2026-10-20
+tags: [agents, skills, codex, fable, ghidra, qa, research, gemini, audio, native, browser, cua-driver, task-graph]
 ---
 
 # Agent Tooling for Open Rebellion
@@ -21,7 +21,7 @@ Claude Code Minoan skills link to their canonical definitions in
 
 | Tool | Use it for | Project rule |
 |------|------------|--------------|
-| [`codex-orchestrator`](https://github.com/tdimino/claude-code-minoan/tree/main/skills/integration-automation/codex-orchestrator) | Risk-based independent review, architecture checks, debugging, and real-browser acceptance | Use Sol high or extra-high when consequential architecture, reverse-engineering ambiguity, persistence/network formats, security, or unusual diff risk warrants it; routine, well-tested slices need no separate Sol review. Use Astra only for live browser/computer-use acceptance: low for routine checks and medium for complex or release-significant journeys. Retain inspected screenshots, console/network logs, and artifact hashes. Run evidence agents from a dedicated `/tmp` workspace so the repository stays read-only. |
+| [`codex-orchestrator`](https://github.com/tdimino/claude-code-minoan/tree/main/skills/integration-automation/codex-orchestrator) | Risk-based independent review, architecture checks, debugging, and real-browser acceptance | Use Sol high or extra-high when consequential architecture, reverse-engineering ambiguity, persistence/network formats, security, or unusual diff risk warrants it; routine, well-tested slices need no separate Sol review. Use Astra only for live browser/computer-use acceptance ("Browser Acceptance", below). |
 | [`fable`](https://github.com/tdimino/claude-code-minoan/tree/main/skills/core-development/fable) | Deep cross-cutting parity audits, browser/multiplayer optimization, and synthesis across prior findings | Fable 5.1 is the default; `--naos` selects 5.0. Verify the reported `MODEL:` line and verdict trailer before trusting results, then weave accepted findings into the audit and roadmaps. Keep `.subdaimon-output/` local and untracked. |
 
 ## Native GUI Acceptance
@@ -30,27 +30,21 @@ Native builds have no fixture bridge, so a native check plays a real
 campaign through the window and the screenshots are the evidence.
 
 Drive it first with the game's own developer commands
-([dev-commands.md](dev-commands.md)). `scripts/launch-native.sh --live`
-opens a command channel, and `scripts/dev-send.sh` sends one command and
-prints its JSON result. `Capture` saves the frame itself (no window id, no
-Screen Recording, works while covered). `Click`, `Drag` and `Press` hand real
-`NSEvent`s to the game's view, so they test the input path without moving
-anyone's pointer or changing the front app. `Battle at`, `Post message` and
-`Open Message Index` reach states the simulation is slow to produce.
+([dev-commands.md](dev-commands.md), "The loop"), which also reach states
+without testing the input that leads to them.
 
 Fall back to [`cua-driver`](https://github.com/trycua/cua/tree/main/libs/cua-driver)
 (trycua, MIT) for what the game cannot do itself, such as an OS dialog or a
 check of the window from outside.
 
-Why cua-driver and not the earlier harnesses:
+What cua-driver does that BackgroundComputerUse and Peekaboo cannot:
 
 - It posts clicks and keys to the game's pid as background CGEvents. The
   hardware pointer never moves and the window never comes to the front, so
   those steps don't disturb the desktop (drags are the exception, below).
 - It sends right clicks into the canvas. BackgroundComputerUse reports
-  secondary clicks as unsupported, which left every pop-up menu journey
-  (Move, Confirmed Move, Create Fleet, the F-019 Mission entry, the speed
-  menu) pending in the 2026-10-05 native run.
+  secondary clicks as unsupported, so it cannot open a pop-up menu (Move,
+  Confirmed Move, Create Fleet, the F-019 Mission entry, the speed menu).
 - It presses function keys. BackgroundComputerUse rejects `f3`, so the
   Finder's F3 path couldn't be checked; cua-driver opens it.
 - Its pixel input needs no Accessibility tree. Macroquad exposes none, and
@@ -86,18 +80,14 @@ checks for a newer release.
 
 ### Run a check
 
-1. Launch with `scripts/launch-native.sh --build --evidence
-   .artifacts/native-checks/<date>-<slug>`. It builds
-   `target/release/open-rebellion` and starts it with `data/base` and
-   `OPEN_REBELLION_MUTE=1`, which silences music, effects and cutscenes from
-   launch, so no options-screen clicks are needed. It then prints, and writes
-   to `binary.txt`, the SHA-256, the source commit, the pid and the window
-   id. Pass game arguments after `--`. The variable accepts 1, true, yes or
-   on, in any case; set it yourself when launching another way. Without it,
-   mute by hand: the main menu speaker mutes music only, so open the options
-   screen from the main menu, click the left end of both the music and the
-   effects sliders, then leave by Restart, which with no game running goes
-   straight back to the shuttle cockpit (the screen takes no Escape).
+1. Build with `scripts/mini-cargo.sh -- build --release -p rebellion-app`
+   and launch on the Mini as [dev-commands.md](dev-commands.md), "The loop",
+   shows (`launch-native.sh --evidence DIR`, never `--build`, which runs
+   Cargo in place). The launcher starts the game with `data/base` and
+   `OPEN_REBELLION_MUTE=1` (1, true, yes or on, in any case), which silences
+   music, effects and cutscenes from launch, and prints, and writes to
+   `binary.txt`, the SHA-256, the source commit, the pid and the window id.
+   Pass game arguments after `--`.
 2. The script prints the window id. Otherwise, find the window with
    `cua-driver call list_windows` (app `open-rebellion`).
 3. Pass the same `"session":"<name>"` on every call, or captures come back
@@ -110,44 +100,74 @@ checks for a newer release.
 6. Capture again and inspect it. The driver reports background input as
    `unverifiable`, so only the screenshot shows the result.
 
+### Keep every run silent
+
+No run may make sound on this Mac or on the Mini; Tom works beside both.
+
+- Native: launch only through `scripts/launch-native.sh`, which sets
+  `OPEN_REBELLION_MUTE=1`.
+- Browser: interface-parity's `browser.json` (ignored, copied from
+  `browser.example.json`; [README](../tools/interface-parity/README.md))
+  starts Chrome with `--mute-audio` and `--disable-audio-output`. `--mute-audio` alone still
+  opens the speaker while a movie plays; `--disable-audio-output` gives
+  Chrome a fake output device, so `pmset` stays clean. agent-browser's user
+  config on both machines (`~/.agent-browser/config.json`, `{"args":
+  "--mute-audio,--disable-audio-output"}`; `args` splits on commas and
+  newlines) passes both. On the Mini, a Web Audio tone left Chrome's audio
+  helper holding `audio-out` with `--mute-audio` alone and nothing with
+  both. Never pass `--config`, `--args` or `AGENT_BROWSER_ARGS` that drop
+  either flag.
+- Wine and the VM: `vm-game.sh up`, `up-a0` and `recover` mute the Mini's
+  output (`osascript -e "set volume with output muted"`). A reboot clears
+  it, and `wine-game.sh` does not set it, so after a Mini reboot mute it
+  before any Wine run.
+- Check: `pmset -g assertions | grep -B1 audio-out` names any process
+  holding a speaker. Run it on this Mac and on the Mini before and during a
+  run; on a hit, stop your own process at once, by its pid. Ask the owner
+  of another agent's process to stop it.
+
 Coordinates are in the returned screenshot's pixels (`screenshot_width`,
 `screenshot_scale`). The scale changes with the display the window sits on.
 Keep evidence under `.artifacts/native-checks/<date>-<slug>/` with the
-binary hash, and record each check as an agent check, never a human one.
-
-### Reach a state with commands
-
-The developer commands skip the clicks that lead to the state under test:
-the palette (backtick), command scripts and the live channel are described in
-[dev-commands.md](dev-commands.md), with the full command list, how to add
-one, and the rule that a state command is not a test of the input leading to
-it.
+binary hash.
 
 ### Compare against the original
 
-The original game runs on the capture VM on the Mac Mini
-([tools/original-capture/README.md](../tools/original-capture/README.md)),
-which also covers driving it over VNC. `tools/original-capture/vm-game.sh`
-drives it from this Mac: `status`, `up` (start the VM and the game),
-`recover`, `cap FILE`, `click X Y [FILE]`, `key KEY [FILE]`. Start from a save in the library
+The original runs on the Mac Mini under Wine
+(`tools/original-capture/wine-game.sh`), where strategic checks start, and
+on the capture VM (`vm-game.sh`), which owns tactical battles, A0 frames and
+sound and settles any disagreement
+([tools/original-capture/README.md](../tools/original-capture/README.md),
+"Wine on the Mini"). Start from a save in the library
 ([saves/INDEX.md](../tools/original-capture/saves/INDEX.md)) rather than
 replaying a campaign to reach a state, and add a save when you reach a new
 one worth keeping. For a state play cannot reach on demand, edit a copy of a
 save ([original-save-editing.md](original-save-editing.md)).
+
+## Browser Acceptance
+
+Astra's effort and who runs the check are set in `CLAUDE.md` ("Current
+Workflow"). Browser runs go through the gates in `tools/interface-parity/`
+(`run.mjs` and the per-journey gate scripts;
+[README](../tools/interface-parity/README.md)), which start Chrome muted and
+reuse a fixture site built on the Mini (`--no-build`). Never drive the game
+with agent-browser; it stays for non-game pages (docs, downloads, research).
+Retain inspected
+screenshots, console and network logs, and artifact hashes under
+`.artifacts/` (ignored; each gate names its own folder there).
 
 ## Reverse Engineering
 
 Open Rebellion's Ghidra workflow is project-native rather than a general skill:
 
 - Read `agent_docs/ghidra-re.md` before reverse-engineering game behavior.
-- Use the existing Open Rebellion Ghidra project, Jython scripts, decompilation
-  corpus, and `ghidra/notes/` sources described there.
+- Run the existing Open Rebellion Ghidra project headless and read-only with
+  the Java scripts in `ghidra/scripts/`, and use the decompilation corpus and
+  `ghidra/notes/` sources described there.
 - Record addresses, call chains, field offsets, and confidence, then connect the
   finding to a Rust test or acceptance fixture.
 - Take reverse-engineering work as `question` nodes of the task graph
-  (`agent_docs/task-graph.md`): one question per agent, its review, then its
-  port. A delegated agent answers questions only; review and porting stay
-  with the lead session.
+  ([task-graph.md](task-graph.md), "Who writes it").
 - Do not use [`bg3se-macos-ghidra`](https://github.com/tdimino/bg3se-macos/tree/main/tools/skills/bg3se-macos-ghidra); that skill encodes Baldur's Gate 3-specific
   binaries, layouts, launch flows, and terminology.
 
@@ -200,9 +220,7 @@ no native test reaches, and for the WASM fixture bridges
 module can own it and test it; moving the existing action handling out is
 roadmap M2 work.
 
-Tests and browser gates that assert original behavior cover both sides. The
-sides often run separate classes with different numbering (the advisors'
-reaction slots) and different cockpit geometry.
+Gates cover both sides (`CLAUDE.md`, "Testing").
 
 ### Provenance Gate
 
@@ -220,8 +238,7 @@ the comment block directly above it or inside it:
   awaits recovery. A hypothesis is counted but never counts as cited.
 
 ```bash
-env PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/tomdimino/.cargo/bin \
-  cargo run -q -p provenance-scan -- check
+scripts/mini-cargo.sh -- run -q -p provenance-scan -- check
 ```
 
 `check` fails on an uncited item missing from `scripts/provenance-baseline.json`
@@ -253,10 +270,14 @@ tracked files plus untracked ones git does not ignore), runs Cargo there and
 streams its output:
 
 ```bash
-scripts/mini-cargo.sh -- test --workspace --features interface-test-fixtures --exclude provenance-scan
+scripts/mini-cargo.sh -- check --workspace
+scripts/mini-cargo.sh -- test --workspace
+scripts/gates.sh                                               # the pre-commit gates (test-tooling.md)
+scripts/mini-cargo.sh -- test --workspace --features interface-test-fixtures --exclude provenance-scan   # the fixture-feature lane (gates.sh runs it as `fixtures`)
 scripts/mini-cargo.sh -- run -q -p provenance-scan -- check
 scripts/mini-cargo.sh -- build --release -p rebellion-app      # the binary stays on the Mini
 scripts/mini-cargo.sh --run ./scripts/build-wasm.sh --pull web/open-rebellion.wasm
+scripts/mini-cargo.sh --run './scripts/package-web.sh dev' --pull dist/open-rebellion-web-dev/
 ```
 
 The Mini holds rustup (the toolchain this Mac uses), the wasm32 target,
@@ -281,7 +302,22 @@ rsync: `ssh mac-mini-ts 'cd ~/or-native && cp -c -R open-rebellion wt-NAME'`.
 The shared copy is about 13.6 GB (`assets/references` 4.1 GB, the Mini's
 `.artifacts` 4.1 GB, `target/` 4.3 GB); a clone shares its blocks, so it
 takes about 8 s and 0.1 GB. Cargo and `mini-cargo.sh` then write only the
-units and files that change. Delete the copy when its run ends.
+units and files that change, but a clone's own `target/` grows to 4–9 GB
+once it builds tests, mutants or WASM. Delete the copy when its run ends. Run at most
+two parallel agent worktrees, each with its own Mini private copy, and remove
+both once the work is merged.
+
+`scripts/disk-report.sh` (`--mac`, `--mini`, or both) shows free space, the
+project's folders (the shared copy, each private clone's `target/` and idle
+days, run output, VMs, caches) and the largest folders in the home
+directory. `scripts/mini-clean.sh` reports, and with `--apply` removes:
+clones nothing has written for three days and no process uses, mutants
+output folders and loose diffs older than two days, and stale cargo-mutants
+copies. It prunes every younger clone's `target/` like the shared copy's,
+and with `--caches` trims Homebrew's and uv's caches. Beyond those caches
+and the cargo-mutants copies in `$TMPDIR`, it never touches anything outside
+the project, nor the shared tree, the game data, the VMs or the agent's logs.
+The daily agent below runs it.
 In a private clone, run cargo-mutants with `--in-place`. Otherwise it
 copies the tree again (as clones, since 26.0) and builds every job's
 `target/` from nothing, about 3 GB each; in place it reuses the clone's
@@ -313,7 +349,8 @@ Access times are not used: APFS does not keep them, and `cargo sweep
 --stamp`/`--file` deleted fresh units, forcing a full rebuild every other
 run. Each prune appends a JSON line to `~/or-native/build-cache.log` on the
 Mini. A launchd agent there (`scripts/install-mini-prune-agent.sh`) runs the
-object and incremental steps daily at 04:30 as a backstop.
+object and incremental steps daily at 04:30 as a backstop, then
+`scripts/mini-clean.sh --local --apply --caches` (`~/or-native/mini-clean.log`).
 
 This Mac keeps no `target/`. A local Claude Code SessionStart hook
 (`.claude/settings.json`, untracked) runs `scripts/check-build-cache.sh
@@ -329,8 +366,9 @@ cargo, rustc or cargo-mutants process is running:
   the two newest of its kind;
 - move evidence untouched for 14 days to the Mac Mini,
   `mac-mini-ts:open-rebellion-archive/.artifacts/<same path>`, deleting the
-  local copy only after rsync succeeds. A cited `.artifacts/…` path that is
-  missing here is in the archive. `interface-parity/a0` and `site` stay.
+  local copy only after rsync succeeds. An `.artifacts/…` path that a
+  script or `progress.json` names and that is missing here is in the
+  archive. `interface-parity/a0` and `site` stay.
 
 Run it without arguments to report, or with `--prune` to prune now. An
 editor's rust-analyzer still checks into a local `target/`; the hook clears
@@ -367,5 +405,5 @@ speech: 270 agreed and 15 need a listen.
   acceptance criteria or turn an inferred result into a pass.
 - Keep passwords, API tokens, session secrets, and proprietary game assets out
   of prompts, reports, screenshots, and commits.
-- Preserve unrelated work. Stage explicit paths, update the evidence ledger,
-  and commit and push each verified feature before advancing.
+- Preserve unrelated work and update the evidence ledger; commits follow
+  `CLAUDE.md`, "Git and Dependencies".

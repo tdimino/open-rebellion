@@ -213,13 +213,14 @@ fn walk(world: &GameWorld, location: SystemKey, flags: Flags, kinds: Kinds) -> V
     }
     if flags.fleets {
         for (fleet_key, fleet) in &world.fleets {
-            if fleet.location != location {
+            // FUN_00587640.c:103,109: fleets and their ships in mode 1.
+            if fleet.location != location || !fleet.usable() {
                 continue;
             }
             let side = faction_of(fleet.is_alliance);
             if kinds.ships {
                 for (index, ship) in fleet.capital_ships.iter().enumerate() {
-                    if !ship.alive {
+                    if !ship.usable() {
                         continue;
                     }
                     let detection = world
@@ -236,6 +237,12 @@ fn walk(world: &GameWorld, location: SystemKey, flags: Flags, kinds: Kinds) -> V
             }
             if kinds.fighters {
                 for (index, entry) in fleet.fighters.iter().enumerate() {
+                    // FUN_00587640.c:136: each usable ship's squadrons.
+                    if entry.carrier != 0
+                        && !crate::carriage::carried_by_usable_ship(fleet, entry.carrier)
+                    {
+                        continue;
+                    }
                     let detection = world
                         .fighter_classes
                         .get(entry.class)
@@ -1475,6 +1482,72 @@ mod tests {
         );
     }
 
+    /// `FUN_00587640.c:103,109,136`: fleets, their ships and each ship's
+    /// squadrons are all walked in mode 1, so nothing unfinished or on its
+    /// own leg defends, nor does a fleet with no usable ship. A squadron with
+    /// no carrier rides the fleet itself (port).
+    #[test]
+    fn only_usable_fleets_ships_and_their_squadrons_defend_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, here) = world_with(imperial());
+            let ship = |tag, completed, travelling| {
+                let mut ship = ShipInstance::new(crate::ids::CapitalShipKey::default(), 1, is_alliance);
+                ship.tag = tag;
+                ship.completed = completed;
+                if travelling {
+                    ship.transit = Some(crate::world::ShipTransit {
+                        from: here,
+                        to: here,
+                        arrival_tick: 9,
+                    });
+                }
+                ship
+            };
+            let entry = |carrier| crate::world::FighterEntry {
+                class: crate::ids::FighterKey::default(),
+                count: 1,
+                carrier,
+            };
+            let standing = world.fleets.insert(Fleet {
+                location: here,
+                capital_ships: vec![ship(1, true, false), ship(2, false, false), ship(3, true, true)],
+                fighters: vec![entry(1), entry(2), entry(0)],
+                characters: vec![],
+                is_alliance,
+                bombarding: false,
+            });
+            world.fleets.insert(Fleet {
+                location: here,
+                capital_ships: vec![ship(4, true, true)],
+                fighters: vec![entry(4)],
+                characters: vec![],
+                is_alliance,
+                bombarding: false,
+            });
+            // The system's own squadron is walked only with the system flag.
+            world.systems[here].add_squadrons(crate::ids::FighterKey::default(), 1, is_alliance);
+            let fleets = Flags {
+                fleets: true,
+                ..Flags::default()
+            };
+
+            let ids: Vec<DefenderId> = walk(&world, here, fleets, ALL)
+                .iter()
+                .map(|defender| defender.id)
+                .collect();
+
+            assert_eq!(
+                ids,
+                [
+                    DefenderId::Ship(standing, 0),
+                    DefenderId::Fighter(standing, 0, 0),
+                    DefenderId::Fighter(standing, 2, 0),
+                ],
+                "{is_alliance}"
+            );
+        }
+    }
+
     #[test]
     fn an_exposed_team_faces_defenders_in_character_family_order_then_special_forces() {
         // FUN_0058a1c0: team characters of families 0x30..0x37, then
@@ -1565,6 +1638,51 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn the_system_general_s_combat_comes_off_a_member_s_evasion_roll_for_either_side() {
+        // FUN_005888f0: RLEVADTB reads the member's combat less that of the
+        // defender side's officer, a General for a regiment (rank slot
+        // +0x1bc, at the system by FUN_00509330). The band passes only at
+        // 60 - 50.
+        for side in [Faction::Empire, Faction::Alliance] {
+            let defends_alliance = side == Faction::Alliance;
+            let pair = |base| SkillPair { base, variance: 0 };
+            let (mut world, here) = world_with(ControlKind::Controlled(side));
+            regiment(&mut world, here, defends_alliance, 0);
+            table(&mut world, FOILTB, 100);
+            band(&mut world, RLEVADTB, 10, 10);
+            world.characters.insert(Character {
+                is_alliance: defends_alliance,
+                is_empire: !defends_alliance,
+                command_kind: CommandKind::General,
+                combat: pair(50),
+                current_system: Some(here),
+                ..Default::default()
+            });
+            let member = MissionMember::Character(world.characters.insert(Character {
+                is_alliance: !defends_alliance,
+                is_empire: defends_alliance,
+                loyalty: pair(100),
+                combat: pair(60),
+                current_system: Some(here),
+                ..Default::default()
+            }));
+            let mut mission = sabotage(vec![member], here, 2);
+            if defends_alliance {
+                mission.faction = MissionFaction::Empire;
+            }
+
+            let out = run_once(&mut mission, &world);
+
+            assert_eq!(mission.resigning, vec![member], "{side:?}");
+            assert!(
+                !out.iter()
+                    .any(|effect| matches!(effect, MissionEffect::CharacterCaptured { .. })),
+                "{side:?}"
+            );
+        }
     }
 
     #[test]

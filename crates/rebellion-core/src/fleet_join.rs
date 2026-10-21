@@ -707,6 +707,10 @@ pub fn mover_of_tags(world: &GameWorld, fleet: FleetKey, tags: &[u32]) -> Option
 /// # Errors
 /// As [`move_ships_to_system`]; a tag no ship of the fleet carries is
 /// left out.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The order's state, its fleet and tags, and its destination, side and day."
+)]
 pub fn create_fleet_of_tags(
     world: &mut GameWorld,
     movement: &mut MovementState,

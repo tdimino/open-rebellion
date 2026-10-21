@@ -3357,7 +3357,6 @@ mod tests {
             "K1: first tick should emit exactly one SupportChanged"
         );
 
-        world.difficulty_index = 2;
         let events2 = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 2 }]);
         let count2 = events2
             .iter()
@@ -3399,7 +3398,6 @@ mod tests {
             });
         world.systems[sys_key].production_facilities.push(mine);
 
-        world.difficulty_index = 2;
         let events2 = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 2 }]);
         let count2 = events2
             .iter()
@@ -3411,7 +3409,6 @@ mod tests {
         );
 
         // Third tick (no change): should not re-fire.
-        world.difficulty_index = 2;
         let events3 = EconomySystem::advance(&mut state, &mut world, &[TickEvent { tick: 3 }]);
         let count3 = events3
             .iter()

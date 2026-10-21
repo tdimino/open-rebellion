@@ -5848,7 +5848,9 @@ impl BattleSession {
     /// whose first squadron has a hyperdrive rating is ordered to Withdraw
     /// (3), a fighter group whose first squadron has none to Recover (2)
     /// (`:32-81`); a group holding order 6 first breaks its run off
-    /// (`:43-46`, `break_off_trench_run`).
+    /// (`:43-46`, `break_off_trench_run`). port: the orders go out under the
+    /// controller's `+0x10` test (`:31`), whose setter is untraced; the field
+    /// is taken as 0 (`ghidra/notes/tactical-results.md`, "Open").
     pub fn begin_side_withdrawal(&mut self, is_attacker: bool) {
         let side = usize::from(!is_attacker);
         let empire = is_attacker != self.attacker_is_alliance;
@@ -7383,7 +7385,7 @@ impl BattleSession {
                 .fighters
                 .iter()
                 .any(|fighter| fighter.is_attacker == computer_is_attacker && fighter.alive);
-            if !squadrons && self.computer_may_withdraw(computer_is_attacker) {
+            if !squadrons && self.may_withdraw(computer_is_attacker) {
                 self.begin_side_withdrawal(computer_is_attacker);
             }
             return;
@@ -7429,15 +7431,19 @@ impl BattleSession {
         }
         let ratio = self.stalemate_strength(computer_is_attacker) / opponent;
         (ratio < self.morale.threshold[side] || ratio == 0.0)
-            && self.computer_may_withdraw(computer_is_attacker)
+            && self.may_withdraw(computer_is_attacker)
     }
 
     /// `FUN_005c7e80` (vtable `+0xc`), the windowed twin of `FUN_005d0f50`:
-    /// permitted and still in state 0, with a way out (`may_retreat`).
-    fn computer_may_withdraw(&self, computer_is_attacker: bool) -> bool {
-        let side = usize::from(!computer_is_attacker);
+    /// permitted and still in state 0, with a way out (`may_retreat`). The
+    /// computer side asks it before withdrawing, and the player's Withdraw
+    /// is greyed without it (`FUN_005dab90` -> `FUN_00596a90` ->
+    /// `FUN_005a8a90`).
+    #[must_use]
+    pub fn may_withdraw(&self, is_attacker: bool) -> bool {
+        let side = usize::from(!is_attacker);
         self.morale.withdrawal[side].state == TacticalWithdrawalState::Fighting
-            && self.may_retreat(computer_is_attacker)
+            && self.may_retreat(is_attacker)
     }
 
     /// `FUN_0040b0e0.c:184-203`: with no station raised from a fleet, the

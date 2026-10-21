@@ -57,16 +57,18 @@ edit to this table.
 ## Nodes
 
 IDs read `or-<slug>-<hash>`, such as `or-q-results-window-yln`. Priority runs
-P0 (now) to P4 (someday). Four epics group the nodes through `parent-child`
+P0 (now) to P4 (someday). Five epics group the nodes through `parent-child`
 dependencies: tactical parity, the ground assault (TAC-08), Ghidra coverage,
-and the mod surface (what the original fixes in code that mods would need as
-data).
+the REBEXE map (every function and undefined code span given a role and a
+cluster), and the mod surface (what the original fixes in code that mods
+would need as data; closed).
 
 The label says what kind of work a node is:
 
 | Label | Work | Done when |
 |---|---|---|
 | `question` | One question about the original, answered from the executable. | A note answers it with function and address citations, both sides where the code branches, and the cited decompiles are attached. |
+| `map` | A `question` that maps one REBEXE address range: every function and undefined code span in it gets a role, a cluster and a proposed name. | The range's map note accounts for every function and gap, with citations, and is merged. |
 | `review` | Rereading a question's decompiles against our own Ghidra project. | Every claim is confirmed or corrected, and the `.c` files and the note are in `ghidra/notes/`. |
 | `port` | Changing the port to match. | The code cites the recovered functions and works end to end in the running game, both factions. |
 | `diagnose` | Naming the causes of a failing comparison region. | Each difference has its own port or question node. |
@@ -138,4 +140,5 @@ Never run bare `bv` from an agent: it opens the interactive viewer. Use its
 - `HANDOFF.md` and `progress.json` say where a session stopped.
 - The strategic audit features keep their own ledger
   (`docs/qa/2026-09-08-full-functionality-audit/`). The graph covers the
-  tactical acceptance, the ground assault and the Ghidra gaps.
+  tactical acceptance, the ground assault, the Ghidra gaps, the REBEXE map
+  and the mod surface.

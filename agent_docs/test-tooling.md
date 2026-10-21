@@ -1,8 +1,9 @@
 # Test Tooling
 
-Scripts that measure the simulation rather than drive the game. All are
-Python 3 standard library and run on this Mac; the work that needs a build
-runs on the Mac Mini over ssh (`scripts/mini-cargo.sh`, never a local cargo).
+Scripts that measure the simulation rather than drive the game: Python 3
+standard library and Bash, started from this Mac unless the table says
+otherwise. Builds and games run on the Mac Mini over ssh
+(`scripts/mini-cargo.sh`, never a local cargo).
 
 | Script | Answers |
 |---|---|
@@ -12,6 +13,7 @@ runs on the Mac Mini over ssh (`scripts/mini-cargo.sh`, never a local cargo).
 | `scripts/dev-send.sh --file`, `scripts/dev-run.sh` | Run a script of developer commands (`dev-commands.md`) |
 | `scripts/dev-expand.sh` | Expand a script's `Include: PATH` lines (the call both scripts above make) |
 | `scripts/gates.sh` | Do the pre-commit gates pass? |
+| `scripts/check-replay-equivalence.py` | Do the native and browser replays of the seed-42 campaign match? Runs on the Mini (`deterministic-replay.md`, "Validation") |
 | `scripts/trace-determinism.sh` | Does recording traces change the simulation? |
 | `scripts/invariants.py` | Does a telemetry file break a rule? |
 | `scripts/native-checks/` | Do the native AI round scheduler's tempo, battle hold and save/reload hold? |
@@ -113,9 +115,9 @@ scripts/invariants.py DIR|FILE [--cap N]
 ```
 
 `gates.sh` runs the pre-commit gates through `mini-cargo.sh` (workspace tests,
-the ignored replay golden, `telemetry_coverage`, `provenance-scan`, the WASM
-`cargo check`, two leak greps on `.beads/issues.jsonl`), one PASS/FAIL line
-each, and stops at the first failure unless `--keep-going`. The second leak
+the same tests with `interface-test-fixtures` as `fixtures`, the ignored replay
+golden, `telemetry_coverage`, `provenance-scan`, the WASM `cargo check`, two
+leak greps on `.beads/issues.jsonl`), one PASS/FAIL line each, and stops at the first failure unless `--keep-going`. The second leak
 grep reads its pattern from `$GATES_PRIVATE_NAME` and skips when unset. It
 never regenerates a golden.
 
@@ -133,8 +135,9 @@ otherwise; the telemetry does not record the speed).
 ## native-checks (the AI round scheduler's native run)
 
 Command scripts under `scripts/native-checks/` plus one reader. Each script
-exists per player side (`-empire`, `-alliance`) and starts with
-`Include: scripts/stages/unattended.txt`; the AI that runs is the other side,
+exists per player side (`-empire`, `-alliance`) and includes
+`scripts/stages/unattended.txt` after `Start game: <side>` and `Skip briefing`;
+the AI that runs is the other side,
 so a run's `ai_day` records name one faction.
 
 | Script | Stages |

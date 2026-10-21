@@ -566,26 +566,26 @@ impl FleetWindowState {
             })
     }
 
-    /// The windows visible in `snapshot` as a save keeps them, each with its
-    /// z serial: the subject system by its DAT id, the tab (`FUN_004a7300`)
-    /// and the window's top-left.
+    /// The shown windows as a save keeps them, each with its z serial: the
+    /// subject system by its DAT id, the tab (`FUN_004a7300`) and the
+    /// window's top-left. A window on the rail (`minimized`) is left to the
+    /// rail's own record (`SystemWindowState::saved_rail`). Every other
+    /// window saves shown whatever this frame paints: `FUN_00440ea0` walks
+    /// the galaxy view's child windows, which the Game Options window
+    /// leaves in place, while the port suspends the strategic scene under
+    /// it.
     #[must_use]
     pub fn saved_windows(
         &self,
         world: &GameWorld,
-        snapshot: &RoutingSnapshot,
+        minimized: impl Fn(WindowId) -> bool,
     ) -> Vec<(u64, SavedWindow)> {
-        let children: Vec<(u64, GalaxyChild)> = self.children(snapshot).collect();
         self.windows
             .iter()
             .filter_map(|window| {
-                let id = window.id?;
-                let serial = children
-                    .iter()
-                    .find(|(_, child)| *child == GalaxyChild::Fleet(id))?
-                    .0;
+                let id = window.id.filter(|id| !minimized(*id))?;
                 Some((
-                    serial,
+                    self.saved_serial(id).unwrap_or(0),
                     SavedWindow {
                         kind: SavedWindowKind::Fleet {
                             system: world.systems.get(window.system)?.dat_id,
@@ -659,6 +659,11 @@ impl FleetWindowState {
         let subject = prepared.spec.key.subject?;
         match *transition {
             WindowTransition::Opened { id } => {
+                // A fixture's direct window has no manager identity; the
+                // manager's own window for its system takes its place.
+                #[cfg(any(test, feature = "interface-test-fixtures"))]
+                self.windows
+                    .retain(|window| window.id.is_some() || window.system != prepared.system);
                 if self.windows.iter().any(|window| {
                     window.id == Some(id)
                         || window.subject == Some(subject)
@@ -2219,6 +2224,7 @@ fn draw_fleet_windows_with_snapshot(
         .map(|window| window.system);
     let ended_drag = state.end_drag(ctx, layout.scale, router.as_deref_mut(), pointer_events);
     let mut actions = ended_drag.actions;
+    let escape = ctx.input(|input| input.key_pressed(egui::Key::Escape));
     for window in &windows {
         let focused = front
             && match window.id {
@@ -2304,7 +2310,16 @@ fn draw_fleet_windows_with_snapshot(
                 });
             }
         }
-        if (result.close && pointer_permitted) || !world.systems.contains_key(system) {
+        // Escape with the keyboard closes the window as its close button does
+        // (slot +0x30, FUN_004a7390 -> FUN_004ac3a0); an open rename takes
+        // it instead (FUN_004aca40).
+        let escaped = escape
+            && window.rename.is_none()
+            && match window.id {
+                Some(_) => keyboard_permitted,
+                None => focused,
+            };
+        if (result.close && pointer_permitted) || escaped || !world.systems.contains_key(system) {
             if let Some(id) = window.id {
                 actions.push(FleetWindowAction::Close(id));
             } else {
@@ -3258,6 +3273,22 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_managed_open_takes_the_place_of_a_fixtures_direct_window() {
+        let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let mut manager = WindowManager::new();
+        let mut state = FleetWindowState::default();
+        assert!(state.open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled()));
+
+        let prepared = state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled(), None)
+            .unwrap();
+        let (id, _) = commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+
+        assert_eq!(state.window_count(), 1);
+        assert_eq!(state.window_id(system), Some(id));
+    }
+
+    #[test]
     fn fleet_window_shared_identity_preserves_content() {
         let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
         let fleet = add_fleet(&mut world, system, true, 0);
@@ -3368,7 +3399,11 @@ pub(crate) mod tests {
             state.note_activation(id);
             state.window_mut(system).unwrap().tab = FleetWindowTab::Troops;
 
-            let saved = state.saved_windows(&world, &manager.begin_frame());
+            let minimized = |manager: &WindowManager| {
+                let held = manager.presentation_history().to_vec();
+                move |id| held.contains(&id)
+            };
+            let saved = state.saved_windows(&world, minimized(&manager));
             assert_eq!(
                 saved.iter().map(|(_, window)| *window).collect::<Vec<_>>(),
                 [SavedWindow {
@@ -3382,9 +3417,7 @@ pub(crate) mod tests {
                 "{faction:?}"
             );
             manager.apply(WindowCommand::Minimize(id)).unwrap();
-            assert!(state
-                .saved_windows(&world, &manager.begin_frame())
-                .is_empty());
+            assert!(state.saved_windows(&world, minimized(&manager)).is_empty());
             assert_eq!(state.saved_tab(id), Some(0x68));
 
             let SavedWindowKind::Fleet { tab, .. } = saved[0].1.kind else {
@@ -5852,6 +5885,27 @@ pub(crate) mod tests {
         );
         assert!(renames(&run_escape.actions).is_empty());
         assert!(!state.renaming());
+        assert!(
+            state.is_open(system),
+            "the edit's Escape leaves the window open"
+        );
+    }
+
+    #[test]
+    fn escape_closes_the_focused_fleet_window() {
+        // fleet-window.md, the window procedure's controls: the close button
+        // 0x65 and Escape both run slot +0x30 (FUN_004a7390 ->
+        // FUN_004ac3a0).
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (world, system) = world(ControlKind::Uncontrolled);
+            let transport = TroopTransportState::default();
+            let mut state = FleetWindowState::default();
+            assert!(state.open(&world, system, ORIGIN, faction, scaled()));
+            let mut frames = hover(at(-50.0, 0.0));
+            frames.push(vec![key(egui::Key::Escape)]);
+            let _ = run(&world, &transport, &mut state, faction, frames);
+            assert!(!state.is_open(system), "{faction:?}");
+        }
     }
 
     #[test]

@@ -65,6 +65,10 @@ const TACTICAL_WIDTH: f32 = 640.0;
 const TACTICAL_HEIGHT: f32 = 480.0;
 /// Measured black aperture inside bitmap 1000. All battle primitives stay here.
 const BATTLE_APERTURE: NativeRect = NativeRect::new(16.0, 28.0, 444.0, 439.0);
+/// The "3D WINDOW" the tactical window builds at (17, 30), 439 by 437
+/// (`0x59abbf`-`0x59abcb` -> `FUN_005c14d0` -> `FUN_005d6700`): the
+/// retained-mode device and viewport, so every 3D object projects into it.
+const TACTICAL_SCENE_WINDOW: NativeRect = NativeRect::new(17.0, 30.0, 439.0, 437.0);
 
 /// Default placement of the modeless 470x331 Battle Alert / Results window
 /// on the original 640x480 command-center canvas. The original window is
@@ -191,6 +195,16 @@ impl TacticalCanvas {
             y,
             BATTLE_APERTURE.width * self.scale,
             BATTLE_APERTURE.height * self.scale,
+        )
+    }
+
+    fn scene_window(self) -> NativeRect {
+        let (x, y) = self.point(TACTICAL_SCENE_WINDOW.x, TACTICAL_SCENE_WINDOW.y);
+        NativeRect::new(
+            x,
+            y,
+            TACTICAL_SCENE_WINDOW.width * self.scale,
+            TACTICAL_SCENE_WINDOW.height * self.scale,
         )
     }
 
@@ -788,17 +802,6 @@ impl TacticalState {
         if let Some(death_star) = session.death_star.as_mut() {
             death_star.laser_charge = ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE;
             death_star.action_committed = false;
-        }
-        if player_death_star(session).is_some() {
-            if let Some(target) = session
-                .ships
-                .iter_mut()
-                .find(|ship| ship.alive && ship.is_attacker != session.player_is_attacker)
-            {
-                target.source_position.x = 0.0;
-                target.source_position.y = 40.0;
-                target.source_position.z = session.source_layout.outer_positive_z;
-            }
         }
         session.death_star_beam = None;
         session.paused = true;
@@ -2812,17 +2815,10 @@ fn tactical_death_star_laser_control_at(cache: &mut BmpCache, x: f32, y: f32) ->
         )
 }
 
+/// `FUN_005dab90` greys Withdraw unless the local side may withdraw
+/// (`FUN_00596a90` -> `FUN_005a8a90` -> vtable `+0xc`, `FUN_005c7e80`).
 fn tactical_withdraw_enabled(session: &BattleSession) -> bool {
-    // FUN_005d0f50.c:10: not once the side's controller has left state 0.
-    let side = usize::from(!session.player_is_attacker);
-    session.morale.withdrawal[side].state == TacticalWithdrawalState::Fighting
-        && session.ships.iter().any(|ship| {
-            ship.alive
-                && !ship.retreating
-                && ship.is_attacker == session.player_is_attacker
-                && ship.subsystem_capacity.hyperdrive > 0
-                && ship.subsystem_condition.hyperdrive > 0
-        })
+    session.may_withdraw(session.player_is_attacker)
 }
 
 /// What `FUN_005e16a0` puts on the fighter-group panel below the three
@@ -5464,9 +5460,6 @@ fn draw_result_text_centered(
     );
 }
 
-/// Lines wrap at `max_width` and advance one cell height (the em over
-/// 2048/2288, Arial's ascent plus descent), as `DrawText` steps a
-/// word-broken paragraph.
 /// The character cell a result line fills: its top and height in canvas
 /// pixels, the font entry's `lfHeight` as GDI lays it out (`tmHeight`,
 /// `FUN_0060eed0`), with the baseline `ARIAL_ASCENT` of an em below the top.
@@ -5506,6 +5499,9 @@ fn draw_result_text_in_cell(
     set_tactical_aperture_clip(None);
 }
 
+/// Lines wrap at `max_width` and advance one cell height (the em over
+/// 2048/2288, Arial's ascent plus descent), as `DrawText` steps a
+/// word-broken paragraph.
 fn draw_result_wrapped_lines(
     canvas: TacticalCanvas,
     lines: &[String],
@@ -7158,10 +7154,13 @@ pub fn draw_tactical_view(
     draw_tactical_bitmap(bmp_cache, resources::tactical::BACKGROUND, canvas, 0.0, 0.0);
     set_tactical_aperture_clip(Some(canvas.aperture()));
     let aperture = canvas.aperture();
-    let aperture_tuple = (aperture.x, aperture.y, aperture.width, aperture.height);
+    let scene = canvas.scene_window();
+    let aperture_tuple = (scene.x, scene.y, scene.width, scene.height);
     update_tactical_camera_follow(state);
     if state.render_original_starfield {
-        state.asset_renderer.draw_backdrop(aperture_tuple);
+        state
+            .asset_renderer
+            .draw_backdrop((aperture.x, aperture.y, aperture.width, aperture.height));
     }
     if let Some(session) = state.session.as_ref() {
         // `FUN_005d4d10` builds the planet decal only under Show Planet
@@ -7186,11 +7185,52 @@ pub fn draw_tactical_view(
                 .asset_renderer
                 .note_station_decal_removed(death_star.resource_id(), removal.label());
         }
+        if state.display_holocube {
+            state.asset_renderer.draw_holocube(aperture_tuple, extent);
+        }
     }
 
     // 2. Submit mapped production participants through their original 3D and
     // type-303 resource families. Unmapped or unavailable objects retain the
     // bounded 2D fallback below.
+    // `FUN_005ab0e0` sizes every hull's collision envelope from its mesh box
+    // before the battle's first frame, and the paused formation is laid out
+    // with them. port: the boxes come from the loaded mesh families, so a
+    // hull without one takes it here, before any position is drawn.
+    if state.render_original_participants {
+        if let Some(session) = state.session.as_mut() {
+            let mut installed = 0;
+            for ship in session.ships.iter_mut().filter(|ship| ship.alive) {
+                let Some(resource) = ship.tactical_resource else {
+                    continue;
+                };
+                if ship.source_collision_envelope.is_some() {
+                    continue;
+                }
+                if let Some(envelope) = state
+                    .asset_renderer
+                    .participant_collision_envelope(resource.mesh_resource_base)
+                {
+                    ship.source_collision_envelope = Some(OriginalTacticalCollisionEnvelope {
+                        vertical_radius: envelope.vertical_radius,
+                        planar_diameter: envelope.planar_diameter,
+                    });
+                    installed += 1;
+                }
+            }
+            if installed > 0 {
+                let relaid_out = session.combat_tick == 0 && session.paused;
+                if relaid_out {
+                    BattleSession::refresh_original_task_force_geometry(&mut session.ships);
+                }
+                macroquad::logging::info!(
+                    "[tactical_3d] collision_envelopes installed={} relaid_out={} source=FUN_005ab0e0",
+                    installed,
+                    relaid_out,
+                );
+            }
+        }
+    }
     let (scale, offset_x, offset_y) =
         canvas.arena_transform(state.zoom, state.camera_x, state.camera_y);
     let render_pyrotechnics = state.render_pyrotechnics;
@@ -7308,30 +7348,6 @@ pub fn draw_tactical_view(
     let effect_report = state
         .asset_renderer
         .draw_effects(aperture_tuple, &production_effects);
-    if let Some(session) = state.session.as_mut() {
-        let mut formation_footprint_changed = false;
-        for (object_id, envelope) in &ship_report.collision_envelopes {
-            let Some(index) = object_id
-                .checked_sub(1)
-                .and_then(|index| usize::try_from(index).ok())
-            else {
-                continue;
-            };
-            if let Some(ship) = session.ships.get_mut(index) {
-                let recovered = OriginalTacticalCollisionEnvelope {
-                    vertical_radius: envelope.vertical_radius,
-                    planar_diameter: envelope.planar_diameter,
-                };
-                if ship.source_collision_envelope != Some(recovered) {
-                    ship.source_collision_envelope = Some(recovered);
-                    formation_footprint_changed = true;
-                }
-            }
-        }
-        if formation_footprint_changed && session.combat_tick == 0 && session.paused {
-            BattleSession::refresh_original_task_force_geometry(&mut session.ships);
-        }
-    }
     let rendered_ship_indexes = ship_report
         .rendered_object_ids
         .into_iter()
@@ -7370,7 +7386,7 @@ pub fn draw_tactical_view(
         .into_iter()
         .filter_map(|object_id| usize::try_from(object_id.saturating_sub(2001)).ok())
         .collect::<HashSet<_>>();
-    let navigation_projections = tactical_navigation_projections(state, aperture);
+    let navigation_projections = tactical_navigation_projections(state, scene);
     if state.logged_navigation_scene != Some(state.navigation_sets_visible) {
         let points = navigation_projections
             .iter()
@@ -8742,6 +8758,8 @@ mod tests {
             ship.subsystem_capacity.hyperdrive = 1;
             ship.subsystem_condition.hyperdrive = 1;
             let mut session = test_session(vec![ship], Vec::new(), player_is_attacker);
+            // FUN_005c7e80.c:10: a retreat system exists (+0x80).
+            session.morale.retreat_permitted = [true, true];
             assert!(tactical_withdraw_enabled(&session));
             session.begin_side_withdrawal(player_is_attacker);
             assert!(!tactical_withdraw_enabled(&session));
@@ -8750,15 +8768,23 @@ mod tests {
 
     #[test]
     fn withdraw_needs_a_ship_of_the_players_side_whose_hyperdrive_works() {
-        // FUN_005d0f50.c:17-31: Withdraw is offered when one of the side's
-        // units has a working hyperdrive (FUN_005b1b70 returns 1).
+        // FUN_005c7e80.c:16-31: Withdraw is offered when one of the side's
+        // units has a working hyperdrive (FUN_005b1b70 returns 1). That test
+        // reads no unit state: a ship in its jump counts, but a ship jumps
+        // only once its side has left state 0, which the state test covers
+        // (withdraw_is_disabled_once_the_players_side_withdraws).
         type Spoil = fn(&mut TacticalShip, bool);
-        let spoils: [(&str, Spoil); 5] = [
+        let spoils: [(&str, Spoil); 4] = [
             ("dead", |ship, _| ship.alive = false),
-            ("retreating", |ship, _| ship.retreating = true),
-            ("the other side's", |ship, attacker| ship.is_attacker = !attacker),
-            ("hyperdrive-less", |ship, _| ship.subsystem_capacity.hyperdrive = 0),
-            ("hyperdrive-wrecked", |ship, _| ship.subsystem_condition.hyperdrive = 0),
+            ("the other side's", |ship, attacker| {
+                ship.is_attacker = !attacker
+            }),
+            ("hyperdrive-less", |ship, _| {
+                ship.subsystem_capacity.hyperdrive = 0
+            }),
+            ("hyperdrive-wrecked", |ship, _| {
+                ship.subsystem_condition.hyperdrive = 0
+            }),
         ];
         for player_is_attacker in [true, false] {
             let able = || {
@@ -8767,17 +8793,83 @@ mod tests {
                 ship.subsystem_condition.hyperdrive = 1;
                 ship
             };
-            let session = test_session(vec![able()], Vec::new(), player_is_attacker);
+            let permitted = |ships: Vec<TacticalShip>| {
+                // FUN_005c7e80.c:10: a retreat system exists (+0x80).
+                let mut session = test_session(ships, Vec::new(), player_is_attacker);
+                session.morale.retreat_permitted = [true, true];
+                session
+            };
+            let session = permitted(vec![able()]);
             assert!(tactical_withdraw_enabled(&session));
             for (name, spoil) in spoils {
                 let mut ship = able();
                 spoil(&mut ship, player_is_attacker);
-                let session = test_session(vec![ship], Vec::new(), player_is_attacker);
+                let session = permitted(vec![ship]);
                 assert!(
                     !tactical_withdraw_enabled(&session),
                     "a {name} ship offered Withdraw (attacker {player_is_attacker})"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn withdraw_is_offered_to_a_fighters_only_side_with_a_hyperdrive_squadron_or_a_station() {
+        // FUN_005dab90 greys Withdraw unless FUN_00596a90 -> FUN_005a8a90
+        // passes for the local side: no gravity well across (FUN_005ae1d0
+        // -> FUN_005c7e40) and the side's vtable +0xc, FUN_005c7e80: a
+        // retreat system (+0x80), state 0, and a squadron (+0x64) or capital
+        // ship (+0x58) whose hyperdrive works (FUN_005b1b70), or, for the
+        // Empire (side 1), its station operational or not completed
+        // (FUN_005c7e80.c:10-39).
+        for player_is_attacker in [true, false] {
+            let fighters_only = |hyperdrive: bool, permitted: bool| {
+                let squadron = test_fighter(0x1c00_0001, player_is_attacker);
+                let mut session = test_session(Vec::new(), vec![squadron], player_is_attacker);
+                if hyperdrive {
+                    session.morale.hyperdrive_squadrons = vec![0];
+                }
+                session.morale.retreat_permitted = [permitted; 2];
+                session
+            };
+            assert!(
+                tactical_withdraw_enabled(&fighters_only(true, true)),
+                "{player_is_attacker}"
+            );
+            assert!(!tactical_withdraw_enabled(&fighters_only(false, true)));
+            assert!(!tactical_withdraw_enabled(&fighters_only(true, false)));
+
+            // An enemy ship projecting a gravity well holds the side.
+            let mut held = fighters_only(true, true);
+            held.ships
+                .push(test_ship(0x1400_0002, 0, !player_is_attacker, true));
+            held.ships[0].is_attacker = !player_is_attacker;
+            held.morale.gravity_wells = vec![0];
+            assert!(!tactical_withdraw_enabled(&held), "{player_is_attacker}");
+            held.ships[0].alive = false;
+            assert!(tactical_withdraw_enabled(&held), "{player_is_attacker}");
+
+            // The station carries the Empire's withdrawal, not the Alliance's
+            // (the Alliance attacks here, so the Empire defends).
+            let player_is_empire = !player_is_attacker;
+            let mut station = fighters_only(false, true);
+            station.death_star = Some(test_death_star(false));
+            assert_eq!(
+                tactical_withdraw_enabled(&station),
+                player_is_empire,
+                "{player_is_attacker}"
+            );
+            station.death_star = Some(TacticalDeathStar {
+                hull: 0.0,
+                not_completed: true,
+                ..test_death_star(false)
+            });
+            assert_eq!(tactical_withdraw_enabled(&station), player_is_empire);
+            station.death_star = Some(TacticalDeathStar {
+                hull: 0.0,
+                ..test_death_star(false)
+            });
+            assert!(!tactical_withdraw_enabled(&station), "a destroyed station");
         }
     }
 
@@ -9932,6 +10024,53 @@ mod tests {
         assert!(TacticalGroupHud::from_session(session).fighter_groups[0]);
     }
 
+    // Source: the tactical window builds its 3D window at (17, 30), 439 by
+    // 437 (0x59abbf-0x59abcb -> FUN_005c14d0 -> FUN_005d6700); the canvas
+    // scales and letterboxes it with everything else.
+    #[test]
+    fn the_scene_window_scales_with_the_canvas() {
+        let canvas = TacticalCanvas::new(1280.0, 1000.0);
+        assert_eq!(
+            canvas.scene_window(),
+            NativeRect::new(34.0, 80.0, 878.0, 874.0)
+        );
+        assert_eq!(
+            TacticalCanvas::new(640.0, 480.0).scene_window(),
+            NativeRect::new(17.0, 30.0, 439.0, 437.0)
+        );
+    }
+
+    // Source: FUN_0059b450 reads which of the local side's eight task forces
+    // exist (FUN_00595ba0 -> FUN_005a0bf0, controller +0x164), and the
+    // selected-ship panel names the local side's selected battle unit
+    // (FUN_005b1610, +0x144; tactical-selected-ship-panel.md).
+    #[test]
+    fn the_strip_and_panel_show_only_live_ships_of_the_players_side() {
+        for player_is_alliance in [true, false] {
+            let mut own = test_ship(1, 2, player_is_alliance, true);
+            own.name = "own".to_string();
+            own.selected = true;
+            own.hull_current = 11;
+            let mut lost = test_ship(2, 3, player_is_alliance, false);
+            lost.name = "lost".to_string();
+            lost.selected = true;
+            lost.hull_current = 22;
+            let mut enemy = test_ship(3, 4, !player_is_alliance, true);
+            enemy.name = "enemy".to_string();
+            enemy.selected = true;
+            enemy.hull_current = 33;
+            let session = test_session(vec![lost, enemy, own], Vec::new(), player_is_alliance);
+
+            let hud = TacticalGroupHud::from_session(&session);
+
+            let mut expected = [false; 8];
+            expected[2] = true;
+            assert_eq!(hud.task_forces, expected);
+            assert_eq!(hud.selected_ship_name, Some("own"));
+            assert_eq!(hud.selected_ship_hull.map(|(current, _)| current), Some(11));
+        }
+    }
+
     // Macroquad 0.4.14 deletes a font's atlas texture the moment a new glyph
     // grows it (text/atlas.rs), so a glyph first cached after the frame drew
     // that face leaves earlier quads on a deleted texture. Each size the
@@ -9973,6 +10112,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic(expected = "missing from the font-atlas prewarm")]
     fn a_result_text_em_the_prewarm_does_not_know_fails_its_check() {
         debug_assert_warmed_em(17.0);

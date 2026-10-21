@@ -3713,3 +3713,82 @@ fn a_ship_on_its_own_leg_does_not_fight_for_either_side() {
         assert_eq!(indices, [0], "{is_alliance}");
     }
 }
+
+// A side of squadrons alone, each with a hyperdrive, withdraws: they fly to
+// the line and jump (FUN_005c6610.c:44-110, state 9), so the side has
+// withdrawn and, its count at 0, lost (FUN_005a9ec0.c:245-286,
+// FUN_0040c780.c:60-69). No capital ship of its side takes them aboard at
+// the end (FUN_005bef90.c:72-96), so the import keeps each squadron, craft
+// and all, as a child of the system (FUN_0040d320.c:54-85); the post-battle
+// pass then flags them as the loser's (FUN_00516ef0.c:142-180) and event
+// 0x307 finds each a place (FUN_00515480 -> FUN_005545e0), here its own
+// system, which still accepts it (stage 1, FUN_00554740).
+#[test]
+fn a_fighters_only_side_that_withdrew_keeps_its_squadrons_at_the_system() {
+    use crate::world::{ControlKind, FighterClass, System};
+
+    for loser_is_alliance in [true, false] {
+        let mut world = GameWorld::default();
+        let held = ControlKind::Controlled(crate::dat::Faction::of_alliance(loser_is_alliance));
+        let system = world.systems.insert(System {
+            control: held,
+            ..System::default()
+        });
+        let squadron = world.fighter_classes.insert(FighterClass {
+            dat_id: DatId::new(0x1c00_0001),
+            squadron_size: 6,
+            is_alliance: loser_is_alliance,
+            hyperdrive: 60,
+            sub_light_engine: 30,
+            ..FighterClass::default()
+        });
+        world.systems[system].add_squadrons(squadron, 2, loser_is_alliance);
+        let (ship, _) = side_classes(&mut world, !loser_is_alliance, 0);
+        let fleet = one_ship_fleet(&mut world, system, ship, !loser_is_alliance, Vec::new());
+        // The fleet attacks the squadrons, which defend alone.
+        let mut session = BattleSession::new_with_forces(
+            &world,
+            system,
+            crate::combat::CombatForce::of_fleet(&world, fleet),
+            crate::combat::CombatForce {
+                fleet: None,
+                is_alliance: loser_is_alliance,
+            },
+            false,
+            0,
+            1,
+        );
+        assert_eq!(session.fighters.len(), 2);
+        assert_eq!(session.morale.hyperdrive_squadrons, vec![0, 1]);
+        session.paused = false;
+        session.begin_side_withdrawal(false);
+        for _ in 0..4_000 {
+            if session.phase != BattlePhase::Combat {
+                break;
+            }
+            session.step();
+        }
+        assert!(session.side_withdrew(false), "{loser_is_alliance}");
+        assert_eq!(
+            session.winner,
+            Some(CombatWinner::Attacker),
+            "{loser_is_alliance}"
+        );
+
+        let (_, log) = apply_battle(&session, &mut world);
+        assert_eq!(
+            world.systems[system]
+                .fighters
+                .iter()
+                .map(|entry| (entry.class, entry.count, entry.is_alliance))
+                .collect::<Vec<_>>(),
+            vec![(squadron, 2, loser_is_alliance)],
+            "{loser_is_alliance}: {log:?}"
+        );
+        assert!(
+            log.iter()
+                .any(|line| line.starts_with("[battle] post-battle squadron")),
+            "{log:?}"
+        );
+    }
+}

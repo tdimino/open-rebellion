@@ -699,6 +699,14 @@ impl OperationReportState {
         self.window.as_ref().map(|window| (window.view, window.tab))
     }
 
+    /// The shown report with its title and body.
+    #[must_use]
+    pub fn shown(&self) -> Option<(&OperationReport, &str, &str)> {
+        self.window
+            .as_ref()
+            .map(|window| (window.report.as_ref(), window.title.as_str(), window.body.as_str()))
+    }
+
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
         self.window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))

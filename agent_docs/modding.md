@@ -52,7 +52,7 @@ description = "Rebalances Imperial capital ships."
 
 ## JSON Overlay (RFC 7396 Merge Patch)
 
-Each `.json` file in the mod directory patches one entity category. `ModRuntime::apply_enabled` serializes the live `GameWorld` to JSON and looks up each overlay by literal top-level key — so the filename stem must exactly match a `GameWorld` field name (`crates/rebellion-core/src/world/mod.rs`), e.g. `capital_ship_classes.json` targets `GameWorld::capital_ship_classes`. There is no aliasing: a mismatched stem (e.g. `capital_ships.json`) is silently skipped with an `unknown arena` warning.
+Each `.json` file in the mod directory patches one entity category. `ModRuntime::apply_enabled` serializes the live `GameWorld` to JSON and looks up each overlay by literal top-level key—so the filename stem must exactly match a `GameWorld` field name (`crates/rebellion-core/src/world/mod.rs`), e.g. `capital_ship_classes.json` targets `GameWorld::capital_ship_classes`. There is no aliasing: a mismatched stem (e.g. `capital_ships.json`) is silently skipped with an `unknown arena` warning.
 
 ```json
 [
@@ -63,7 +63,7 @@ Each `.json` file in the mod directory patches one entity category. `ModRuntime:
 
 Rules (per RFC 7396):
 
-- `"id"` field required — matches entity's `dat_id` numeric value
+- `"id"` field required: matches entity's `dat_id` numeric value
 - Present values **overwrite** the target field
 - `null` values **delete** the target field
 - Absent fields are **preserved unchanged**
@@ -135,8 +135,8 @@ base catalog and do not load filesystem mods.
 
 Mods are sorted topologically via Kahn's algorithm:
 
-1. `ModLoader::discover(mods_dir)` — scan for `mod.toml` in subdirectories
-2. `ModLoader::resolve_load_order(manifests)` — validates and sorts:
+1. `ModLoader::discover(mods_dir)`: scan for `mod.toml` in subdirectories
+2. `ModLoader::resolve_load_order(manifests)`: validates and sorts:
    - All declared dependencies must exist in the discovered set
    - Installed versions must satisfy semver requirements
    - No dependency cycles allowed (detected via in-degree analysis)
@@ -164,30 +164,25 @@ On WASM targets, `ModWatcher` is a no-op stub. Browser mod loading would use a f
 
 | Type | Purpose |
 |------|---------|
-| `ModManifest` | Parsed `mod.toml` — name, version, author, description, dependencies, enabled |
+| `ModManifest` | Parsed `mod.toml`: name, version, author, description, dependencies, enabled |
 | `ModContent` | World patch map plus a separately retained reserved Encyclopedia target |
 | `ModContentTarget` | Missing, bounded bytes, or a retained read error for `encyclopedia.json` |
 | `ModLoader` | Stateless namespace: `discover()`, `resolve_load_order()`, `apply()` |
 | `ModWatcher` | File system watcher (native) / no-op (WASM) |
 | `ModRuntime` | Runtime orchestrator: discover, validate, apply enabled, toggle, refresh |
 | `ModConfig` | Persisted enable/disable state (`mods/config.toml`) |
-| `ModError` | Structured error: MissingDependency, VersionMismatch, ParseError |
+| `ModError` | Structured error: MissingDependency, VersionMismatch, ParseError, LoadOrder |
 | `ModInfo` | Display-only struct for UI panel (rebellion-render, no data dep) |
 
 ## Integration Points
 
-1. **Startup**: the app discovers one `ModRuntime`, resolves one enabled order, and feeds it to world and native Encyclopedia consumers after base loading
-2. **UI**: the Mod Manager toggles the persisted enabled set; native Encyclopedia content is rebuilt from its immutable base
-3. **Save**: `ModRuntime::enabled_mod_list()` provides (name, version) pairs for save metadata
-4. **Hot reload**: `ModRuntime::check_reload(&watcher)` checked each tick (native only)
-
-For full runtime details see `agent_docs/mod-runtime.md`.
+Startup, UI, save metadata and hot reload: `mod-runtime.md`, "Integration Points".
 
 ## Creating a Mod
 
 1. Create a directory under `mods/` with a `mod.toml`
 2. Add JSON overlay files named after entity categories
 3. Each overlay is an array of patch objects with `"id"` matching `dat_id`
-4. Test: run the game — mod loader auto-discovers and applies on startup
+4. Test: run the game—mod loader auto-discovers and applies on startup
 5. Use the Mod Manager reload action after editing files; filesystem-watcher
    recovery for the complete Encyclopedia authoring loop remains W8 work

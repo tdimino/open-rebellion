@@ -246,7 +246,7 @@ condition below Operational exists for it.
 | Death Star | on Capital Ships; destroyed when `trunc(hull) <= 0` | matches (3) |
 | Squadron | destroyed at `squad_count == 0`; the live count is `max(1, trunc(hull / 8))` (`refresh_craft_count`); burned below its class's squadron size | matches `FUN_005b8e00`, `FUN_00503340`; port: a squadron enters at full size |
 | Regiment | dies with the session ship that carried its tag | matches (3) |
-| Character | `battle_summary::crew_fates`, which `apply_results` applies first: a lost ship's character (it rides `carriage::character_ship`) goes adrift and takes the wound roll, a minor dying on G2577 (`mark_killed`); an emptied fleet's characters stay adrift at the system. The window files Killed from the same draws, a captive aboard a living ship Captured, the rest aboard Survivors, the adrift nowhere | matches (3); port: the rolls draw the battle's stream (the write-back holds no strategic one); the wound is not stored (F-026) |
+| Character | `battle_summary::crew_fates`, drawn once as the battle ends (`BattleSession::settle_crew`, `SettledCrew`) and applied first by `apply_results`: a lost ship's character (it rides `carriage::character_ship`) goes adrift and takes the wound roll, a minor dying on G2577 (`mark_killed`); an emptied fleet's characters stay adrift at the system. The window files Killed from the same draws, a captive aboard a living ship Captured, the rest aboard Survivors, the adrift nowhere | matches (3); port: the rolls draw the battle's stream (the write-back holds no strategic one); the wound is not stored (F-026) |
 | Operational | the recorded objects that live on | the system walk lists every live object of the side at the system (`FUN_004ffef0`), not only those that fought |
 
 ## Open
@@ -256,3 +256,11 @@ condition below Operational exists for it.
   is found, so whether such a squadron survives is untraced.
 - The row text for a squadron or ship cell is `FUN_004724a0`; its layout is
   not recorded here.
+- `FUN_005ad530` orders the withdrawing side's groups only while its side
+  controller's `+0x10` is 0 (`FUN_005ad530.c:31`), and `FUN_005a90c0` puts a
+  controller with `+0x10` set in state 5 when a unit of it jumps. The
+  windowed constructor `FUN_005c7cb0` clears `+0x10` (`FUN_005c7cb0.c:16`),
+  and the only writer found reads it from the side's stored record with the
+  computer flag `+0x8` (`FUN_005c77c0.c:84-87`). What sets it is untraced.
+  hyp: a side another player commands. Port: the field is taken as 0, so
+  every withdrawing side's groups take their orders.

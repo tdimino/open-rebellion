@@ -79,10 +79,11 @@ system's facilities are side 3. The trailing `1, 1` set the created bit
      `+0x40` to 3. That is the removal path: reason `0x14` disbands a fleet
      (`fleet-join-split.md`), and the incidents destroy with reasons 8 and
      `0xb` (`uprising-incident.md`). So the facility is removed.
-   - **otherwise** (not completed, or en route `0x20`), unless `0x8` is set,
-     `FUN_004f78e0(1)` sets `+0x50` `0x1000`, the autoscrap request, with no
-     side test (`FUN_004f8680.c:14-17`). It raises event `0x307` through slot
-     `+0x13c` (`FUN_004f2bd0` → `FUN_004fba70`), and `FUN_00515480` looks for
+   - **otherwise** (not completed, or on its own leg `0x20`), unless `0x8`
+     is set, `FUN_004f78e0(1)` sets `+0x50` `0x1000`, the autoscrap request,
+     with no side test (`FUN_004f8680.c:14-17`). It raises event `0x307`
+     through slot `+0x13c` (`FUN_004f2bd0` → `FUN_004fba70`), and
+     `FUN_00515480` looks for
      a place for the object (`system-squadrons-combat.md`, section 3b): the
      system keeps it while it accepts the object's side and is not
      blockaded, else the hint (an unfinished product's producer system),
@@ -255,36 +256,44 @@ refineries on page `0x6b` (`0x2d`). **The mine is `0x2c` and the refinery is
   the removal of a facility whose class cannot serve the new holder. That
   removal has to happen once, when control changes.
 
-### Open port points
+### Port of the holder change
 
-The port serves the managers' side change (`manufacturing::serve_manager_sides`).
-It does not yet serve the rest of the child walk for products of another
-system's managers that sit in the changed system, nor deliveries bound for it:
+At a holder change the port serves what the child walk reaches in the
+system, after the change's phase 5 and before its operation returns:
 
-- **Facility, regiment and squadron products.** `FUN_004f8680.c:14-17`
-  (facilities, regiments) and `FUN_00503510` (squadrons, slot `+0xb0` of
-  vtable `0x0065def0`) set the autoscrap request; event `0x307` runs
+- **The system's own managers' products** die
+  (`manufacturing::serve_manager_sides`).
+- **Facility, regiment and squadron products** of another system's
+  managers bound for the system take the autoscrap request:
+  `FUN_004f8680.c:14-17` (facilities, regiments) and `FUN_00503510`
+  (squadrons, slot `+0xb0` of vtable `0x0065def0`). Event `0x307` runs
   `FUN_00515480`. The system keeps the product while it accepts the
-  product's side and is not blockaded (`FUN_00553410`, `FUN_005073d0.c:126-141`);
-  else the hint, the producer's system (`FUN_00515480.c:82-124`), then the
-  nearest system of its side with room (`FUN_005545e0`,
-  `FUN_005571c0` → `FUN_00551630`); else `+0xac(2)`. The move is a reparent
-  with no transit, and the product keeps its queue slot (`FUN_00528890`).
-  The port's Destroy System cascade already ports this chain
-  (`death_star.rs`, `place_product`, `retain_bound_for`); a holder change
-  serves it beside the characters' sweep, the same event `0x307`.
+  product's side and is not blockaded (`FUN_00553410`,
+  `FUN_005073d0.c:126-141`); else the hint, the producer's system
+  (`FUN_00515480.c:82-124`), then the nearest system of its side with
+  room (`FUN_005545e0`, `FUN_005571c0` → `FUN_00551630`); else `+0xac(2)`.
+  The move is a reparent with no transit, and the product keeps its queue
+  slot (`FUN_00528890`).
 - **Special-force products.** Slot `+0xb0` is `FUN_00503d90`: the product
   takes the new side when its class serves it (slot `+0x50`, `FUN_004f27d0`),
-  else `+0xac(3)`.
-- **Deliveries.** A completed product en route to the system (`+0x50`
-  `0x20`) takes the request too (`FUN_004f8680.c:14-17`), with its transit
-  origin as the hint (`FUN_00515480.c:125-153`).
+  else `+0xac(3)`. `port:` a queued special force whose class serves both
+  sides keeps the side the port reads from its class.
+- **Completed products, regiments and squadrons on their way** to the
+  system (`+0x50` `0x20`) take the request too (`FUN_004f8680.c:14-17`),
+  with their transit origin as the hint (`FUN_00515480.c:125-153`), and
+  keep their arrival day (`FUN_00556390.c:17-21`).
 - **Capital-ship products** of another system's manager sit in a fleet,
-  which the walk leaves alone (`FUN_0051ebb0`); the port already matches.
+  which the walk leaves alone (`FUN_0051ebb0`).
+
+Destroy System's cascade serves the same requests with the system refusing
+everything (`death_star::request_bound_for`); a holder change serves them
+with `death_star::serve_holder_requests`.
 
 ## Uncertainties
 
-- The meanings of `+0x50` bits `0x20` and `0x4000` are untraced.
+- The meaning of `+0x50` bit `0x4000` is untraced. Bit `0x20` is the
+  object's own transit leg (`GameObjEnrouteActiveNotif`,
+  `object-state-flags.md`).
 - `+0x40` state 3 is read as a removal from the other reason codes. Its view
   handler (`+0x100`) is not read here.
 - The full list of control-word writers (battle won, uprising, loyalty) is

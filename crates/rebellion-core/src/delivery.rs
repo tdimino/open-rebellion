@@ -199,12 +199,17 @@ impl DeliveryState {
         }
     }
 
-    /// Take every object travelling into `system`'s own container that a
-    /// destroy cascade relocates; those bound for a fleet there stay, as the
-    /// fleet's children. A capital ship travels as a child of the spare
-    /// fleet, which the cascade skips (`death-star-strategic.md`, "Builds"),
+    /// Take every object travelling into `system`'s own container that an
+    /// autoscrap request relocates, asking `moves` of each in order; those
+    /// bound for a fleet there stay, as the fleet's children, as does one
+    /// `moves` keeps. A capital ship travels as a child of the spare
+    /// fleet, which the walks skip (`death-star-strategic.md`, "Builds"),
     /// and a special force never travels ([`Self::depart`]).
-    pub fn take_bound_for(&mut self, system: SystemKey) -> Vec<Delivery> {
+    pub fn take_bound_for(
+        &mut self,
+        system: SystemKey,
+        mut moves: impl FnMut(&Delivery) -> bool,
+    ) -> Vec<Delivery> {
         let (taken, kept) = std::mem::take(&mut self.en_route)
             .into_iter()
             .partition(|delivery| {
@@ -214,6 +219,7 @@ impl DeliveryState {
                         delivery.kind,
                         BuildableKind::CapitalShip(_) | BuildableKind::SpecialForce(_)
                     )
+                    && moves(delivery)
             });
         self.en_route = kept;
         taken

@@ -18,8 +18,9 @@ recovery completion and capacity feedback, disabled-hyperdrive withdrawal
 warning, production
 trench-run launch, and exact strategic loss
 persistence now work within their recorded bounds. Played and automatic space
-battles also share bombardment, landing, ground follow-up, occupation, and
-Battle Results destination routing. One source-compatible tactical RNG stream,
+battles also share Battle Results destination routing; a bombardment or a
+landing follows only its own order (Planetary Bombardment, Planetary
+Assault), never a battle. One source-compatible tactical RNG stream,
 persisted power allocation, exact completion/destruction callbacks, and the
 timed trench-run producer now close the bounded practical launcher
 implementation. The strict result remains
@@ -283,8 +284,9 @@ and passes the complete comparison contract.
   for preserved focus orders, final-group recovery acknowledgement,
   no-carrier-capacity feedback, and disabled-hyperdrive withdrawal warning.
 - Review the [P58-B21 shared post-battle evidence](evidence/2026-09-27-tactical-post-battle-orchestration.md)
-  for the common bombardment, landing, ground-continuation, occupation, and
-  Battle Results destination path.
+  for the common Battle Results destination path; its post-battle
+  bombardment, landing and ground continuation are retired, since the
+  original bombards and lands only on the order.
 - Review the [P58-B22 source-completion evidence](evidence/2026-09-28-tactical-source-completion.md)
   for tactical RNG sequencing, persisted power nibbles, production completion
   and destruction callbacks, and the timed trench-run producer.
@@ -321,14 +323,14 @@ stage them from a contributor-owned installation.
 ## Progress snapshot
 
 <!-- interface-parity-status:start -->
-Required interface families: 43. Complete: 1. Partial: 15. Failing: 27. Blocked: 0. Strictly accepted cells: 13/627.
+Required interface families: 43. Complete: 2. Partial: 15. Failing: 26. Blocked: 0. Strictly accepted cells: 28/627.
 The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine additional native filter variants) and 152 faction/viewport executions. Its strict original-evidence and cross-browser gate remains open.
 <!-- interface-parity-status:end -->
 
 The practical implementation estimate is approximately 25% tackled and 75%
-remaining. Formally, the ledger has 43 required families: 0 complete,
-15 partial, and 28 failing. All 627 required cells remain pending until their
-complete evidence and execution matrices pass. The practical estimate guides
+remaining. Formally, the ledger has 43 required families: 2 complete (OBJ-01, EVT-03),
+15 partial, and 26 failing; 28 of the 627 required cells are accepted, and the
+rest stay pending until their complete evidence and execution matrices pass. The practical estimate guides
 bundle planning; it does not replace strict acceptance.
 
 The manual cross-check added 63 previously absent or compound requirements

@@ -11,7 +11,7 @@ updated: 2026-10-14
 *Maps decompiled C++ from REBEXE.EXE to `rebellion-core` Rust. Written for the Knesset Tiamat swarm.*
 
 **Source notes**: `simulate-runs-tactical-engine.md`, `bombardment.md`, `death-star-strategic.md`, `story-missions.md`, `build-delivery.md`, `record-registry.md`, `character-roster.md`
-**Target crate**: `crates/rebellion-core/src/` — zero IO, no rendering deps, all advance() pattern
+**Target crate**: `crates/rebellion-core/src/`—zero IO, no rendering deps, all advance() pattern
 
 ---
 
@@ -54,7 +54,7 @@ Every game object in REBEXE.EXE shares one heap-allocated C++ object layout. The
 
 The current `CapitalShipClass` in `world/mod.rs` carries only ~10 of ~50 DAT fields. Combat needs these additions promoted to the world model:
 
-**Add to `CapitalShipClass`** (class template — from CAPSHPSD.DAT):
+**Add to `CapitalShipClass`** (class template—from CAPSHPSD.DAT):
 ```rust
 // Weapons (4 arcs × 3 types = 12 values; DAT fields already parsed by dat-dumper)
 pub weapons_fore_turbolaser: u32,
@@ -76,9 +76,9 @@ pub damage_control: u32,        // hull repair rate
 pub bombardment: u32,           // CAPSHPSD bombardment strength (see §4)
 ```
 
-**Add a new `ShipInstance` world type** (runtime per-hull state — replaces the count-only `ShipEntry`):
+**Add a new `ShipInstance` world type** (runtime per-hull state—replaces the count-only `ShipEntry`):
 ```rust
-/// A single hull of a capital ship class — the runtime instance.
+/// A single hull of a capital ship class—the runtime instance.
 /// Distinct from ShipEntry which is a (class, count) summary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShipInstance {
@@ -87,7 +87,7 @@ pub struct ShipInstance {
     pub hull_current: i32,
     /// Packed nibbles: bits 0-3 = shield_recharge_allocated, bits 4-7 = weapon_recharge_allocated.
     /// Mirrors C++ offset +0x64. Read via helpers shield_nibble() / weapon_nibble().
-    /// Note: C++ writes via XOR-mask pattern `(new ^ old) & 0xf ^ old` — functionally equivalent
+    /// Note: C++ writes via XOR-mask pattern `(new ^ old) & 0xf ^ old`—functionally equivalent
     /// to simple mask-OR for in-range values, but the XOR is what the original binary does.
     pub shield_weapon_packed: u8,
     /// `+0x50` bit 3: destroyed.
@@ -101,7 +101,7 @@ impl ShipInstance {
 }
 ```
 
-**Add to `FighterClass`** (template — from FIGHTSD.DAT):
+**Add to `FighterClass`** (template—from FIGHTSD.DAT):
 ```rust
 pub attack: u32,
 pub defense: u32,
@@ -155,9 +155,9 @@ The DAT headers give these DatId family bytes (`record-registry.md`, Appendix be
 - major characters `0x30`-`0x37` (`0x34` Palpatine), minor characters `0x38`-`0x3b`;
 - fleets `0x08`-`0x0f`; missions `0x40`-`0x7f` (`0x71` Dagobah, `0x73` Pickup).
 
-The original identifies a Death Star by a ship in `[0x18,0x1c)` (`FUN_005003d0`, `FUN_00582440`, `FUN_0058d440`; `death-star-strategic.md`). Task-graph node `or-port-death-star-family-qtde` moves the port's `is_death_star` onto it.
+The original identifies a Death Star by a ship in `[0x18,0x1c)` (`FUN_005003d0`, `FUN_00582440`, `FUN_0058d440`; `death-star-strategic.md`). The port's `CapitalShipClass::is_death_star` takes the same families.
 
-`extract_difficulty` reads `+0x24 >> 4 & 3`, which `FUN_0054a1d0` (a story-flag broadcaster) passes to `FUN_004fd600` to pick the Alliance (1) or Empire (2) view; it is a side selector.
+The bits `+0x24 >> 4 & 3` are a side selector: `FUN_0054a1d0` (a story-flag broadcaster) passes them to `FUN_004fd600` to pick the Alliance (1) or Empire (2) view. The game's difficulty is the GNPRTB column `GameWorld::difficulty_index`.
 
 ---
 
@@ -229,7 +229,7 @@ pub enum MissionKind {
 
 ### 5.2 Extending `coefficients()` for New Mission Types
 
-Each `*MSTB.DAT` file is an `IntTableEntry` table (16B per entry): `id`, `field2`, `threshold` (i32 skill delta), `value` (probability 0-100). The quadratic formula from rebellion2 still applies — the coefficients are fit from these tables.
+Each `*MSTB.DAT` file is an `IntTableEntry` table (16B per entry): `id`, `field2`, `threshold` (i32 skill delta), `value` (probability 0-100). The quadratic formula from rebellion2 still applies—the coefficients are fit from these tables.
 
 Until the *MSTB tables are fit, use placeholders that match the structural pattern:
 
@@ -241,7 +241,7 @@ impl MissionKind {
             MissionKind::Diplomacy    => (0.005558,  0.7656,  20.15),
             MissionKind::Recruitment  => (-0.001748, 0.8657,  11.923),
 
-            // Placeholders — fit from *MSTB.DAT IntTableEntry tables:
+            // Placeholders—fit from *MSTB.DAT IntTableEntry tables:
             MissionKind::Sabotage     => (-0.002,    0.75,    15.0),  // SBTGMSTB.DAT
             MissionKind::Assassination=> (-0.003,    0.80,    10.0),  // ASSNMSTB.DAT
             MissionKind::Espionage    => (-0.002,    0.78,    12.0),  // ESPIMSTB.DAT
@@ -338,7 +338,7 @@ Current `MissionEffect` only covers `PopularityShifted` and `CharacterRecruited`
 ```rust
 // In missions.rs MissionEffect enum:
 
-/// A facility was sabotaged — reduce its remaining production ticks.
+/// A facility was sabotaged—reduce its remaining production ticks.
 FacilitySabotaged {
     system: SystemKey,
     /// Index of the facility in system.manufacturing_facilities (or defense_facilities).
@@ -347,7 +347,7 @@ FacilitySabotaged {
     ticks_lost: u32,
 },
 
-/// A character was assassinated — remove from game.
+/// A character was assassinated—remove from game.
 CharacterKilled {
     character: CharacterKey,
     faction: MissionFaction,
@@ -360,13 +360,13 @@ CharacterCaptured {
     at_system: SystemKey,
 },
 
-/// Intelligence gathered on a system — reveal fog of war.
+/// Intelligence gathered on a system—reveal fog of war.
 SystemIntelligenceGathered {
     system: SystemKey,
     faction: MissionFaction,
 },
 
-/// Uprising started on a system — shift popularity.
+/// Uprising started on a system—shift popularity.
 UprisingStarted {
     system: SystemKey,
     /// Popularity shift applied immediately.

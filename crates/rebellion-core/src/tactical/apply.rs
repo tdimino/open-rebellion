@@ -36,15 +36,24 @@ pub fn seat_morale(
     for is_attacker in [true, false] {
         let side = usize::from(!is_attacker);
         let is_alliance = session.attacker_is_alliance == is_attacker;
-        let death_stars = world.systems.get(session.system).map_or(0, |system| {
-            system
-                .fleets
-                .iter()
-                .filter_map(|&key| world.fleets.get(key))
-                .filter(|fleet| fleet.is_alliance == is_alliance)
-                .map(|fleet| crate::movement::death_stars_in(world, fleet))
-                .sum()
-        });
+        // FUN_00516730.c:93-114: the search runs for the first usable fleet of
+        // the side (`FUN_004ffef0(system, 1, side)`) that holds a usable ship
+        // able to travel (`FUN_00502e30(fleet, 1, side)`, slot `+0x34(0)`);
+        // its Death Stars are the room each candidate is asked for
+        // (`FUN_005513a0.c:68,77`). port: a side with no such fleet asks none
+        // (the original then tries a system squadron).
+        let death_stars = crate::combat::fighting_fleets(world, session.system, is_alliance)
+            .into_iter()
+            .filter_map(|key| world.fleets.get(key))
+            .find(|fleet| {
+                fleet.capital_ships.iter().any(|ship| {
+                    ship.usable()
+                        && world.capital_ship_classes.get(ship.class).is_some_and(|class| {
+                            crate::movement::capital_ship_instance_speed(world, ship, class) != 0
+                        })
+                })
+            })
+            .map_or(0, |fleet| crate::movement::death_stars_in(world, fleet));
         let refuge = crate::post_battle::retreat_destination(
             world,
             troop_transport,

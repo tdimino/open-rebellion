@@ -587,6 +587,14 @@ impl SystemWindowState {
             .collect()
     }
 
+    /// Whether the Fleet window `id` is minimized on the rail.
+    #[must_use]
+    pub fn rail_holds_fleet(&self, id: WindowId) -> bool {
+        self.rail
+            .iter()
+            .any(|entry| matches!(entry, RailEntry::Fleet { id: held, .. } if *held == id))
+    }
+
     /// The rail's windows as a save keeps them, each hidden (`+0x110` is 0
     /// on the rail, `FUN_00607d30`) with its place in the z-order: a hidden
     /// window stays in the view's child list, which the save walks bottom to
@@ -794,11 +802,7 @@ impl SystemWindowState {
         logical_position: (i16, i16),
     ) -> Option<WindowId> {
         // A load's hidden Fleet window already holds its slot.
-        if self
-            .rail
-            .iter()
-            .any(|entry| matches!(entry, RailEntry::Fleet { id: held, .. } if *held == id))
-        {
+        if self.rail_holds_fleet(id) {
             return None;
         }
         Self::evicted_fleet(self.push_rail(RailEntry::Fleet {
@@ -4144,6 +4148,39 @@ mod tests {
         );
         assert_eq!(state.rail_count(), 1);
         assert!(matches!(state.rail[0], RailEntry::Defenses { .. }));
+    }
+
+    #[test]
+    fn the_rail_holds_a_minimized_fleet_window_and_no_other_for_either_side() {
+        // FUN_004a76e0: a minimized Fleet window is the rail's own entry; a
+        // shown Fleet window, an unknown one and a minimized System window
+        // are not Fleet entries.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (world, systems) = fixture_world(2);
+            let mut state = SystemWindowState::default();
+            let fleets = fleet_window_ids(&[201, 202, 203]);
+            let [minimized, shown, unknown] = fleets.as_slice() else {
+                panic!()
+            };
+            // The restore takes the side first: a new side clears the rail
+            // (`prepare_faction`).
+            assert!(state.restore_saved(
+                &world,
+                faction,
+                &SavedWindow {
+                    kind: SavedWindowKind::System {
+                        system: world.systems[systems[1]].dat_id,
+                    },
+                    position: (60, 40),
+                    shown: false,
+                },
+            ));
+            state.minimize_fleet_window(*minimized, systems[0], (100, 80));
+            assert_eq!(state.rail_count(), 2, "{faction:?}");
+            assert!(state.rail_holds_fleet(*minimized), "{faction:?}");
+            assert!(!state.rail_holds_fleet(*shown), "{faction:?}");
+            assert!(!state.rail_holds_fleet(*unknown), "{faction:?}");
+        }
     }
 
     #[test]

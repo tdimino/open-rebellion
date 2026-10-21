@@ -26,10 +26,17 @@ const dimensions = { width: 210, height: 261 };
 // Fixture code 55 is Scenario::BuildSelection (54) plus one.
 const scenarioCode = 55;
 // FUN_00438500: the side's title strip, 10801 for side 1, 10802 otherwise.
+// `galaxy` is the side's galaxy aperture, which centres the Stop
+// confirmation (fleet-window.mjs).
 const factions = [
-  { name: "alliance", byte: 1, title: 10801 },
-  { name: "empire", byte: 2, title: 10802 },
+  { name: "alliance", byte: 1, title: 10801, galaxy: { x: 55, y: 40, width: 485, height: 350 } },
+  { name: "empire", byte: 2, title: 10802, galaxy: { x: 120, y: 40, width: 480, height: 355 } },
 ];
+// FUN_00487cc0 confirms 0x213 in the move confirmation window, 424 by 331,
+// whose checkmark is control 0x14 at (355, 244), 51 by 35 (FUN_0044f5e0;
+// manufacturing-build-selection.md, "Stop asks first").
+const confirmation = { width: 424, height: 331 };
+const checkmark = { x: 355 + 25.5, y: 244 + 17.5 };
 // FUN_00438620 controls: (x, y, width, height, normal bitmap, native size).
 const controls = [
   { x: 79, y: 90, width: 65, height: 18, id: 10606, native: [65, 18] },
@@ -350,8 +357,17 @@ async function inspect(server, source, faction, executable) {
     assert.ok(built.product.length > 0, "the band names its product");
     fs.writeFileSync(path.join(directory, "confirmed-screen.png"), await page.screenshot({ animations: "disabled" }));
 
-    // Stop (0x213) clears the band (manual p. 84).
+    // Stop (0x213) asks first, then clears the band (manual p. 84).
     const stopMenu = await bandOrder(page, built, "stop_row", directory, "stop");
+    await page.waitForFunction(() => window.__openRebellionInterfaceProduction?.bands
+      ?.find(({ area }) => area === "troops")?.queued > 0, null, { timeout: 10_000 });
+    fs.writeFileSync(path.join(directory, "stop-confirmation-screen.png"),
+      await page.screenshot({ animations: "disabled" }));
+    await click(page, {
+      x: Math.round(faction.galaxy.x + faction.galaxy.width / 2 - confirmation.width / 2 + checkmark.x),
+      y: Math.round(faction.galaxy.y + faction.galaxy.height / 2 - confirmation.height / 2 + checkmark.y),
+    });
+    await page.mouse.move(2, 2);
     await page.waitForFunction(() => window.__openRebellionInterfaceProduction?.bands
       ?.find(({ area }) => area === "troops")?.queued === 0, null, { timeout: 10_000 });
     fs.writeFileSync(path.join(directory, "stopped-screen.png"), await page.screenshot({ animations: "disabled" }));

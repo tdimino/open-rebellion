@@ -3,7 +3,7 @@ title: "Ghidra Reverse Engineering"
 description: "RE status and methodology for REBEXE.EXE decompilation (22,741 functions)"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-14
+updated: 2026-10-19
 tags: [ghidra, reverse-engineering, rebexe, gnprtb]
 ---
 
@@ -38,20 +38,14 @@ for the active UI evidence queue.
 
 | Component | Location |
 |-----------|----------|
-| Ghidra install | `~/ghidra/` |
-| Launch | `ghidra` (alias in ~/.zshrc) |
-| Java | Temurin JDK 25.0.2 |
+| Ghidra | 12.1.4, Homebrew; `/opt/homebrew/opt/ghidra/libexec/support/analyzeHeadless` |
 | Project | `open-rebellion/ghidra/Open Rebellion Ghidra.gpr` |
-| GhidraMCP plugin | LaurieWired v11.3.2. REST API on `:8080` (caps at 99 results) |
-| Bridge script | `~/ghidra/GhidraMCP/bridge_mcp_ghidra.py` (bethington v4.3.0 script, old plugin JAR) |
-| pyghidra-mcp | Config fixed: `--project-path`, `--force-analysis`, `--wait-for-analysis` |
+| Scripts | `ghidra/scripts/*.java` (headless, read-only; Workflow, below) |
 
-**Note**: the GhidraMCP rows above are historical. Current work runs Ghidra
-12.1.4 (Homebrew) headless and read-only with the Java scripts in `ghidra/scripts/`
-(Workflow, below). The `.py` scripts need PyGhidra, which this install lacks,
-so headless runs refuse them. The project imports `REBEXE.EXE` as
-`x86:LE:32:default` with compiler spec `windows` (compiler `visualstudio`);
-any other tool pointed at the binary must use the same, not `borlandcpp`.
+The `.py` scripts need PyGhidra, which this install lacks, so headless runs
+refuse them. The project imports `REBEXE.EXE` as `x86:LE:32:default` with
+compiler spec `windows` (compiler `visualstudio`); any other tool pointed at
+the binary must use the same, not `borlandcpp`.
 
 ## Target Files
 
@@ -67,11 +61,18 @@ any other tool pointed at the binary must use the same, not `borlandcpp`.
 
 ### GNPRTB Parameter System
 Two binding tables map GNPRTB parameter IDs to global data addresses:
-- **FUN_0053e450**: 34 general bindings (28 base + 6 per-side, IDs 0x0a00-0x0a21) — travel, skills, economy
+- **FUN_0053e450**: 34 general bindings (28 base + 6 per-side, IDs 0x0a00-0x0a21)—travel, skills, economy
 - **FUN_0055cb60**: 77 parameters from ID 0x1400
 - `DAT_006bb6e8` = parameter 0x1400 = the transit distance divisor (5; `ghidra/notes/build-delivery.md`)
 - `DAT_00661a88` = the percentage base (100)
 - Runtime struct: 68 bytes (vtable + base fields + 8 i32 difficulty values at offset 36)
+
+### AI and Mission Functions
+
+The AI functions' roles (`FUN_0052e970`, `FUN_00506ea0`, `FUN_00508250` and
+others) are in `ghidra/notes/ai-behavior-analysis.md`. Mission rolls are in
+`ghidra/notes/decoy-roll.md` and `mission-lifecycle.md`; community `sub_`
+addresses come from another REBEXE build (`ghidra/notes/community-address-remap.md`).
 
 ### Game Object Layout
 
@@ -144,8 +145,8 @@ function hidden in those gaps). For evidence tables: `CallSiteArgs.java`
 `FindDatIds.java` (every literal record id), `FamilyChecks.java` (every
 `SHR reg,0x18` family test and what it compares) and `FindString.java` (a
 text's address and the functions using it). `ghidra/` is ignored, so add a new
-script with `git add -f`, as a cited `.c` file is. The historical Jython
-scripts below need PyGhidra:
+script with `git add -f`, as a cited `.c` file is. The Python scripts below
+need PyGhidra, so headless runs here refuse them:
 
 | Script | Purpose |
 |--------|---------|
@@ -157,33 +158,6 @@ scripts below need PyGhidra:
 | FindCombatMath.py | Combat math pattern search |
 | DumpAllGameFunctions.py | Exhaustive 4,938-function catalog with string references |
 | DumpGNPRTBXrefs.py | GNPRTB parameter → consuming function tracer |
-
-## 2026-03-23 GhidraMCP Session — 23 AI Functions Decoded
-
-Decompiled via `curl -X POST http://127.0.0.1:8080/decompile -d "FUN_ADDR"` with REBEXE.EXE loaded in CodeBrowser.
-
-### Key Findings
-
-| Function | Lines | Finding |
-|----------|-------|---------|
-| `FUN_0052e970` | 53 | **Not a scoring function** — binary capacity check. Checks if entity (family 0x10-0x3f) fits deployment budget at `this+0x58 - this+0x5c`. Our 4-factor model is strictly superior. |
-| `FUN_00506ea0` | 13 | Faction-specific evaluator pointer: Alliance at `DAT_006b2bb0+0xc4`, Empire at `+0xc8`. Different deployment budgets per faction. |
-| `FUN_004927c0` | 2098 | Master turn processing. The **event 0x1f0** day-tick reading is refuted; see `ghidra/notes/timer-scheduler.md`. |
-| `FUN_00520580` | 9 | 2-field struct setter (`*(this) = cmd; *(this+4) = param`). Not a transit calculator. |
-| `FUN_0053b870` | 7 | Entity capacity reader: returns `*(entity + 0x4c)`. |
-| `FUN_00508250` | 139 | **All 18 validator sub-functions decoded.** 2 are no-ops (FUN_0051ebb0 always returns 1). 4 match our existing checks. 12 are new capacity/composition/status checks. |
-
-### Mission Probability Formulas (from TheArchitect2018 wiki)
-
-Superseded. F-019 deleted `compute_table_input()`; the per-member roll and
-its inputs are in `ghidra/notes/decoy-roll.md` and `mission-lifecycle.md`.
-The wiki's `sub_` addresses come from a different REBEXE build
-(`ghidra/notes/community-address-remap.md`). Historical list:
-- Diplomacy: `(enemy_pop - our_pop) + diplomacy_rating` (sub_55ae50)
-- Recruitment: `leadership - resistance` (sub_55aed0)
-- Subdue: `(enemy_pop - our_pop) + diplomacy` (sub_55af50)
-- DS Sabotage: `(espionage + combat) / 2` (sub_55b0a0)
-- Escape: `((p3 + p2) - p4) - p5` + RNG roll (sub_55cfb0)
 
 ## Workflow
 
@@ -200,18 +174,31 @@ Several `-postScript` pairs may follow one another. Keep scratch output
 outside the repository; copy each `.c` a note cites into `ghidra/notes/` and
 stage it with `git add -f` (`ghidra/` is ignored).
 
+When another agent holds the project lock (`ghidra/Open Rebellion Ghidra.lock`;
+headless runs fail with "Unable to lock project!"), clone the project into a
+scratch directory, run on the clone read-only, then delete the clone. Never
+remove another agent's lock file:
+
+```bash
+cp -c -R "ghidra/Open Rebellion Ghidra.rep" "ghidra/Open Rebellion Ghidra.gpr" SCRATCH/
+/opt/homebrew/opt/ghidra/libexec/support/analyzeHeadless SCRATCH \
+  "Open Rebellion Ghidra" -process REBEXE.EXE -readOnly -noanalysis \
+  -scriptPath "$PWD/ghidra/scripts" -postScript …
+```
+
 ### Porting an original flow
 
 A plan's account of how the original behaves is a hypothesis until a trace
-confirms it. F-019 corrected three such accounts: the planned drag entry was a
-Move, the "refusal strings" were advisor reactions, and the dialog's targets
-were systems only.
+confirms it. In F-019 the planned drag entry was a Move, the "refusal
+strings" were advisor reactions, and the dialog's targets were systems only.
 
-1. Read the manual first
-   (`docs/reference/campaign-history/archive/star-wars-rebellion-manual.pdf`). One sentence
-   on p. 100 settled F-019's entry flow.
+1. Read the manual first ([manual-cross-check.md](manual-cross-check.md): the
+   Markdown transcription for search, the PDF for figures).
 2. Trace the window procedure and the hub it uses, for both sides.
 3. Write the note in `ghidra/notes/` with addresses, field offsets and the
-   cited `.c` files, then plan the port from the note.
+   cited `.c` files, then plan the port from the note. A note states current
+   facts: when one is wrong, rewrite it to say what the code does, with no
+   "corrected", "an earlier version said" or "not X" prose (git holds the
+   history), and put an unsettled claim under the note's open questions.
 4. Mark what the port leaves out with `port:`, and name the finding that owns
    it in the audit ledger.

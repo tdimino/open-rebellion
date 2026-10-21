@@ -304,8 +304,10 @@ fn checked_slot(slot: usize) -> anyhow::Result<usize> {
 /// that raises a support shift, a control rerun or a regiment's holder
 /// rerun serves it before it returns (`support_shift::fire`), and a holder
 /// change serves its managers' products with them
-/// (`manufacturing::serve_manager_sides`); neither queue is saved, so a
-/// save holding either would drop work the running game still does.
+/// (`manufacturing::serve_manager_sides`) and the autoscrap requests for
+/// what is bound for the system (`death_star::serve_holder_requests`); no
+/// such queue is saved, so a save holding one would drop work the running
+/// game still does.
 fn ensure_served(state: &SaveState) -> anyhow::Result<()> {
     anyhow::ensure!(
         state.world.support_events.is_empty(),
@@ -315,6 +317,10 @@ fn ensure_served(state: &SaveState) -> anyhow::Result<()> {
     anyhow::ensure!(
         state.world.manager_side_changes.is_empty(),
         "a holder change's products were not served before the save"
+    );
+    anyhow::ensure!(
+        state.world.autoscrap_systems.is_empty(),
+        "a holder change's autoscrap requests were not served before the save"
     );
     Ok(())
 }
@@ -1292,11 +1298,19 @@ mod tests {
             .embark(&mut state.world, &ProductRoom::default(), fleet, &[troop])
             .unwrap();
         // The embarkation's holder rerun is served before any save, as the
-        // game serves it within the order (support_shift::fire).
+        // game serves it within the order (support_shift::fire), with any
+        // holder change's autoscrap requests.
         crate::integrator::fire_holder_changes(
             &mut state.world,
             &mut state.manufacturing,
             rebellion_core::support_shift::step(state.clock.tick, 0),
+        );
+        rebellion_core::death_star::serve_holder_requests(
+            &mut state.world,
+            &state.movement,
+            &mut state.troop_transport,
+            &mut state.manufacturing,
+            &mut state.deliveries,
         );
 
         save_slot(&saves_dir, 0, "Continuation", &state, &[]).unwrap();
@@ -1459,9 +1473,11 @@ mod tests {
     // Each operation that raises event 0x373, 0x31b or a regiment's holder
     // rerun serves it before it returns (support_shift::fire), and each
     // holder change serves its managers' products with them
-    // (manufacturing::serve_manager_sides, FUN_004f8680 -> FUN_0052b790);
-    // neither queue is saved, so a save holding either would drop work the
-    // running game still does. The save refuses it.
+    // (manufacturing::serve_manager_sides, FUN_004f8680 -> FUN_0052b790)
+    // and the autoscrap requests for what is bound for the system
+    // (death_star::serve_holder_requests, event 0x307); no such queue is
+    // saved, so a save holding one would drop work the running game still
+    // does. The save refuses it.
     #[test]
     fn a_save_holding_an_unserved_event_is_refused() {
         let saves_dir = tmp_dir("unserved_event");
@@ -1474,10 +1490,12 @@ mod tests {
             .push(rebellion_core::support_shift::QueuedEvent::Regiments(
                 system,
             ));
-        let mut managers = state;
+        let mut managers = state.clone();
         managers.world.manager_side_changes.push(system);
+        let mut requests = state;
+        requests.world.autoscrap_systems.push(system);
 
-        for (slot, held) in [(0, &regiments), (1, &managers)] {
+        for (slot, held) in [(0, &regiments), (1, &managers), (2, &requests)] {
             assert!(
                 save_slot(&saves_dir, slot, "Unserved", held, &[]).is_err(),
                 "{slot}"
@@ -1682,11 +1700,19 @@ mod tests {
             .embark(&mut state.world, &ProductRoom::default(), fleet, &[troop])
             .unwrap();
         // The embarkation's holder rerun is served before any save, as the
-        // game serves it within the order (support_shift::fire).
+        // game serves it within the order (support_shift::fire), with any
+        // holder change's autoscrap requests.
         crate::integrator::fire_holder_changes(
             &mut state.world,
             &mut state.manufacturing,
             rebellion_core::support_shift::step(state.clock.tick, 0),
+        );
+        rebellion_core::death_star::serve_holder_requests(
+            &mut state.world,
+            &state.movement,
+            &mut state.troop_transport,
+            &mut state.manufacturing,
+            &mut state.deliveries,
         );
         BlockadeSystem::running_regiments(
             &mut state.blockade,

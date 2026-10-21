@@ -10,25 +10,25 @@ session keeps with [br](https://github.com/Dicklesworthstone/beads_rust);
 [agent_docs/task-graph.md](../agent_docs/task-graph.md) explains the node
 kinds and how work is claimed and closed.
 
-295 nodes: 4 in progress, 187 open, 1 deferred, 103 closed.
+301 nodes: 4 in progress, 186 open, 1 deferred, 110 closed.
 
 ## Pages
 
 | Page | Open | What |
 |---|---|---|
-| [Ports](ports.md) | 54 | Changing the port to match the original. |
+| [Ports](ports.md) | 53 | Changing the port to match the original. |
 | [Reviews](reviews.md) | 7 | Rereading a question's decompiles against our own Ghidra project. |
 | [Acceptance](acceptance.md) | 28 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
-| [Questions](questions.md) | 83 | Questions about the original, answered from the executable. |
-| [Other](other.md) | 16 | Decisions, chores and unlabelled nodes. |
-| [Closed](closed.md) | 103 closed | Finished work and how it closed. |
+| [Questions](questions.md) | 84 | Questions about the original, answered from the executable. |
+| [Other](other.md) | 15 | Decisions, chores and unlabelled nodes. |
+| [Closed](closed.md) | 110 closed | Finished work and how it closed. |
 
 ## Epics
 
 <a id="or-ep-ghidra-7pz"></a>
 ### Ghidra coverage: every cited function has its decompile and a note
 
-`or-ep-ghidra-7pz` · **open** · 55 of 159 closed
+`or-ep-ghidra-7pz` · **open** · 59 of 160 closed
 
 > Per the local gap inventory: 284 cited functions lack a .c in ghidra/notes/, about 15 are bare addresses, nine subsystems have no note, about 40 hyp:/port: markers remain. Questions here are worker-ok; reviews stay with the lead.
 
@@ -49,7 +49,7 @@ kinds and how work is claimed and closed.
 <a id="or-ep-tac-x15"></a>
 ### Tactical parity: every TAC-01..07 A0 cell passes or is settled
 
-`or-ep-tac-x15` · **open** · 3 of 39 closed
+`or-ep-tac-x15` · **open** · 4 of 41 closed
 
 > 106 cells; 113 of 114 A0 references captured, TAC-03-C020 settled. Strict acceptance is the C6 compare (tools/interface-parity/tactical-a0-compare.mjs). Plan: docs/plans/2026-09-22-tooling-tactical-106-cell-acceptance.md. C6 run 2026-10-14T15-02-34-940Z-41029: pass 11, fail 66, not-run 28, settled 1.
 
@@ -83,14 +83,11 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P1 | [or-dec-c6-text-masks-rue](other.md#or-dec-c6-text-masks-rue) | Decide: may C6 mask label text boxes, citing the accepted anti-aliased font? |
 | P1 | [or-f-yaga-variants-4qf](acceptance.md#or-f-yaga-variants-4qf) | A1 fixtures for the edited Yaga day-30 saves |
 | P1 | [or-p-highlight-4or](ports.md#or-p-highlight-4or) | Draw the faction highlight buttons unlit until pressed |
-| P1 | [or-p-tactical-camera-viewport-aw39](ports.md#or-p-tactical-camera-viewport-aw39) | Port the traced tactical camera, 3D viewport and holocube with updated fixtures |
 | P1 | [or-port-ai-orders-4zf](ports.md#or-port-ai-orders-4zf) | Q: Which original AI orders should the port's AI issue, and in what order? |
-| P1 | [or-port-destroy-system-cascade-imrv](ports.md#or-port-destroy-system-cascade-imrv) | Port: destroy a system with the original cascade (fleets survive, minor-character roll, adrift, autoscrap) |
 | P1 | [or-port-force-fields-2u0m](ports.md#or-port-force-fields-2u0m) | Port: replace ForceTier and force_experience with the original Force fields |
 | P1 | [or-q-contents-troops-0l9](questions.md#or-q-contents-troops-0l9) | Q: Which units does the 1302 contents monitor list, in what order and format? |
 | P1 | [or-q-hook-surround-orders-psr](questions.md#or-q-hook-surround-orders-psr) | Q: What order state follows Hammer, Anvil, Left Hook, Right Hook, then the Surround toggle and commit? |
 | P1 | [or-q-port-family-checks-p00](questions.md#or-q-port-family-checks-p00) | Do the port's combat family checks and event names match the DATs? |
-| P1 | [or-q-port-victory-rules-ce9](ports.md#or-q-port-victory-rules-ce9) | Q: Port victory rules and endings to the original's flag word? |
 | P1 | [or-q-withdraw-destination-m8b](questions.md#or-q-withdraw-destination-m8b) | Q: Where does Withdraw send the fleet, and what result does the battle then report? |
 | P2 | [or-3ioq](other.md#or-3ioq) | Port the production modules' ascending kind order (FUN_005f4f10 tree, FUN_004be980) |
 | P2 | [or-3m5f](ports.md#or-3m5f) | Port module 4 states 2-3: posture-recommended mission planners |
@@ -98,6 +95,7 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P2 | [or-ahj2](other.md#or-ahj2) | A loaded save reuses freed slotmap slots in a different order than the uninterrupted game |
 | P2 | [or-alliance-hq-move-o9ms](ports.md#or-alliance-hq-move-o9ms) | Port the Alliance AI's headquarters move (module 13)? |
 | P2 | [or-d-missions-0rx](acceptance.md#or-d-missions-0rx) | Diagnose: mission buttons and laser control differ (9 cells) |
+| P2 | [or-d3drm-raster-match-vog4](ports.md#or-d3drm-raster-match-vog4) | Match Direct3D RM's 8-bit palette, line stepping and rasterizer for the tactical aperture |
 | P2 | [or-f-alliance-transit-xxn](acceptance.md#or-f-alliance-transit-xxn) | A1 fixture reproducing alliance-transit-day149 |
 | P2 | [or-f-death-star-rdq](acceptance.md#or-f-death-star-rdq) | A1 fixtures reproducing the Death Star saves |
 | P2 | [or-f-sixteen-tie-c43](acceptance.md#or-f-sixteen-tie-c43) | A1 fixture reproducing empire-sixteen-tie |
@@ -108,19 +106,18 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P2 | [or-pfv4](ports.md#or-pfv4) | Port: a travelling character or special force is listed at its destination, drawn in hyperspace |
 | P2 | [or-port-character-move-7ba0](ports.md#or-port-character-move-7ba0) | Port: a character's Move order (0x201/0x202) for the player and the AI |
 | P2 | [or-port-galaxy-eval-6ih8](ports.md#or-port-galaxy-eval-6ih8) | Port: re-ground ai.rs evaluate_galaxy_state, which cites new-game stage 0xb |
+| P2 | [or-port-main-menu-game-type-text-h67b](ports.md#or-port-main-menu-game-type-text-h67b) | Port the main menu's game-type text from the original |
 | P2 | [or-port-named-character-start-7c69](ports.md#or-port-named-character-start-7c69) | Port: place the named characters as stage 0x15 does, Vader in a random Imperial system or fleet |
 | P2 | [or-port-played-battle-import-ef9u](ports.md#or-port-played-battle-import-ef9u) | Port: played battles import at battle end (FUN_0040a050 0x16/0x17 -> FUN_0040c780 before state 9) |
 | P2 | [or-port-recruit-major-lead-8grm](ports.md#or-port-recruit-major-lead-8grm) | Port: Recruitment takes majors only, and a mission's lead is a major before leadership |
 | P2 | [or-port-story-research-c80](ports.md#or-port-story-research-c80) | Q: Port the story chains, the six story missions and research to the original's rules? |
 | P2 | [or-port-transit-rules-v4tk](other.md#or-port-transit-rules-v4tk) | Port: transit ticks follow FUN_00555b30's container rule and the constant 100 |
-| P2 | [or-port-window-restore-on-load-iclp](other.md#or-port-window-restore-on-load-iclp) | Port: a load reopens the saved strategic windows |
 | P2 | [or-q-ai-posture-planner-jta](questions.md#or-q-ai-posture-planner-jta) | Q: What do the AI posture kinds 1-6 and the 14-state sector planner do, and what runs them? |
 | P2 | [or-q-assault-summary-6gi](questions.md#or-q-assault-summary-6gi) | Q: What are the Assault Summary window's resources, layout and tabs? |
 | P2 | [or-q-cool-controls-0u0](questions.md#or-q-cool-controls-0u0) | Q: Does crates/rebellion-windowing match the Cool* control library's modal mouse, SC_* filter and drag modes? |
 | P2 | [or-q-enemy-fighter-select-wuq](questions.md#or-q-enemy-fighter-select-wuq) | Q: Can an enemy fighter group be selected, and what does the fighter panel show then? |
 | P2 | [or-q-event-registry-m5r](questions.md#or-q-event-registry-m5r) | Q: What does each event id 0x300-0x31d, 0x121-0x124 and 0x370/0x371 mean, who sends it and which handler runs? |
 | P2 | [or-q-fighter-group-split-f95](questions.md#or-q-fighter-group-split-f95) | Q: How does FUN_005ab650 split squadrons into Red/Blue/Green/Gold groups? |
-| P2 | [or-q-ground-resolution-nms](questions.md#or-q-ground-resolution-nms) | Q: How does the original resolve a planetary assault? |
 | P2 | [or-q-message-classes-uhu](questions.md#or-q-message-classes-uhu) | Q: What do game message classes 0x21-0x2d do, and what Message Index state survives a battle report? |
 | P2 | [or-q-new-game-seeding-2u9](questions.md#or-q-new-game-seeding-2u9) | Q: What do the new-game setup stages seed, where do the named characters start, and what is the seat of power? |
 | P2 | [or-q-opening-view-0aa](questions.md#or-q-opening-view-0aa) | Q: How does the battle open: camera, holocube, ships shown, and the 'Battle Paused' text's font and colour? |
@@ -146,6 +143,7 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P3 | [or-port-ai-region-records-and-planners-vv4g](ports.md#or-port-ai-region-records-and-planners-vv4g) | Port: AI region record writers (+0xa0..+0xac) and the planner decoy gate |
 | P3 | [or-port-ai-targets-and-fallback-hxns](ports.md#or-port-ai-targets-and-fallback-hxns) | Port: the AI's Assassination, Abduction and Espionage targets and the state 3 nearest-sector fallback |
 | P3 | [or-port-blockade-message-flag-pr7k](ports.md#or-port-blockade-message-flag-pr7k) | Port: the blockade message's system flag +0x22 & 0x4000 |
+| P3 | [or-port-c019-alliance-hull-layout-fqrk](ports.md#or-port-c019-alliance-hull-layout-fqrk) | Match the Alliance hulls' layout in the day-676 Coruscant battle (C019) to A0 |
 | P3 | [or-port-capital-ship-transit-in-fleet-6t1p](ports.md#or-port-capital-ship-transit-in-fleet-6t1p) | Port: a finished capital ship travels as a member of its destination fleet on its own leg |
 | P3 | [or-port-character-carrier-ship-3078](ports.md#or-port-character-carrier-ship-3078) | Port: characters ride a ship, not a fleet (root R5) |
 | P3 | [or-port-gid-unit-mode-colour-xgrr](other.md#or-port-gid-unit-mode-colour-xgrr) | Port the GID fleet and personnel modes' marker colour |
@@ -158,7 +156,6 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P3 | [or-port-tactical-death-star-controller-d76h](ports.md#or-port-tactical-death-star-controller-d76h) | Port: the Death Star controller's cadence, target sort and first fighter group |
 | P3 | [or-port-tactical-docked-state-xz1l](ports.md#or-port-tactical-docked-state-xz1l) | Port: a distinct docked state for squadrons in a hangar |
 | P3 | [or-port-tactical-formation-and-launch-kpnz](ports.md#or-port-tactical-formation-and-launch-kpnz) | Port: formation leader steering and the launch queue's delay and point |
-| P3 | [or-port-unfinished-capital-ship-products-czev](ports.md#or-port-unfinished-capital-ship-products-czev) | Port: every capital ship product is an unfinished object in its destination's spare fleet from the order day |
 | P3 | [or-q-advice-music-state-rkf2](questions.md#or-q-advice-music-state-rkf2) | Q: What writes the advice agents' +0x170 situation byte, and which battle-result tracks mean win? |
 | P3 | [or-q-ai-death-star-use-z9ow](questions.md#or-q-ai-death-star-use-z9ow) | Q: Where do the AI's Destroy System inputs come from, and does the AI ever build or fire the Death Star? |
 | P3 | [or-q-ai-jedi-training-jfdh](questions.md#or-q-ai-jedi-training-jfdh) | Q: Does any computer-player path order Jedi Training? |
@@ -195,6 +192,7 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P3 | [or-q-production-managers-k60](questions.md#or-q-production-managers-k60) | Q: How do the production managers, ProcFacil states and the Build validator work? |
 | P3 | [or-q-recruit-pick-edges-9qkq](questions.md#or-q-recruit-pick-edges-9qkq) | Q: Can the recruit pick draw a dead or captured minor, and what do the Recruitment member lists hold? |
 | P3 | [or-q-registry-edges-vuet](questions.md#or-q-registry-edges-vuet) | Q: What do the AI's special-force request bits match, and how does the loader treat a short header, a shared research tier or a wide class id? |
+| P3 | [or-q-restored-window-clamp-wqt5](questions.md#or-q-restored-window-clamp-wqt5) | Question: does a restored strategic window keep a position outside the galaxy view? |
 | P3 | [or-q-row-overlays-7p9o](questions.md#or-q-row-overlays-7p9o) | Q: What do the FUN_0042c3b0 row overlays show, and is +0x50 bit 0x200 on-mission? |
 | P3 | [or-q-second-death-star-order-same-day-y2cw](questions.md#or-q-second-death-star-order-same-day-y2cw) | Q: Is a second Death Star order refused on the same day as the first? |
 | P3 | [or-q-ship-family-testers-psaz](questions.md#or-q-ship-family-testers-psaz) | Q: What do the 47 capital-ship family testers do for a family past 0x1b? |
@@ -211,6 +209,7 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P3 | [or-q-tactical-sound-events-zf4k](questions.md#or-q-tactical-sound-events-zf4k) | Q: Which tactical family does each computed FUN_005ba980 event caller cover? |
 | P3 | [or-q-timers-o8d](questions.md#or-q-timers-o8d) | Q: What do timers 0x380-0x389 and 0x392 arm and fire? |
 | P3 | [or-q-troop-finder-icons-pdy5](questions.md#or-q-troop-finder-icons-pdy5) | Q: Where do the Troop Finder column icons come from? |
+| P3 | [or-q-unfinished-ship-finder-two-yards-i8u7](questions.md#or-q-unfinished-ship-finder-two-yards-i8u7) | Verify in the original: the unfinished ship in the Finder on its order day, and two yards ordering for one system on one day |
 | P3 | [or-q-unfinished-ship-owner-on-capture-y2nz](questions.md#or-q-unfinished-ship-owner-on-capture-y2nz) | Q: Who owns an unfinished ship after its system changes hands? |
 | P3 | [or-q-ungated-story-events-h0sr](questions.md#or-q-ungated-story-events-h0sr) | Q: Which story events bypass the FUN_005438a0 gate? |
 | P3 | [or-q-version-gate-ids-wusm](questions.md#or-q-version-gate-ids-wusm) | Q: What do TEXTSTRA ids 0x1a00, 0x87b0 and 0x4da0 hold under the version gate, and how wide may a label be? |

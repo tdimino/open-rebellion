@@ -280,11 +280,10 @@ fn product_is_alliance(world: &GameWorld, kind: BuildableKind, holder: bool) -> 
     .unwrap_or(holder)
 }
 
-/// Each autoscrap request at once (event `0x307` → `FUN_00515480`): the
-/// retreat chain from the destroyed system, which refuses itself
-/// (`FUN_00553410`, `0x22`), with the object's hint, then the move
-/// (`FUN_00556390`); no place destroys it with reason 2, which refunds
-/// nothing (`FUN_00530270` reads reasons `0x14`..`0x16`).
+/// The destroyed system's own products die with its managers, then each
+/// autoscrap request runs at once ([`request_bound_for`]): the chain from
+/// the destroyed system refuses the system itself (`FUN_00553410`,
+/// `0x22`).
 fn autoscrap(
     world: &mut GameWorld,
     system: SystemKey,
@@ -294,15 +293,6 @@ fn autoscrap(
     deliveries: &mut DeliveryState,
     report: &mut CascadeReport,
 ) {
-    let holder = world
-        .systems
-        .get(system)
-        .is_some_and(|sys| sys.control.is_controlled_by(Faction::Alliance));
-    let relocation = |found: Option<Place>| match found {
-        Some(Place::System(to)) => Relocation::Moved(to),
-        Some(Place::Fleet(fleet)) => Relocation::Boarded(fleet),
-        None => Relocation::Destroyed(2),
-    };
     // The system's three production managers are completed children
     // (FUN_0050e200), destroyed in the child walk (FUN_004f8710); each
     // one's existing-bit clear (hook +0x128, FUN_0052b7d0 -> FUN_0052a2c0)
@@ -314,18 +304,88 @@ fn autoscrap(
             .into_iter()
             .map(|item| item.kind),
     );
+    request_bound_for(
+        world,
+        system,
+        movement,
+        transport,
+        manufacturing,
+        deliveries,
+        Walk::Destroyed,
+        report,
+    );
+}
+
+/// The child walk whose autoscrap requests [`request_bound_for`] serves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Walk {
+    /// Destroy System's cascade, slot `+0xb4`: a special-force product
+    /// dies (`FUN_00503e20(1)`), and the system refuses everything
+    /// (`FUN_00553410`, `0x22`).
+    Destroyed,
+    /// A holder change, slot `+0xb0`: a special-force product takes the
+    /// new side when its class serves it (slot `+0x50`,
+    /// `FUN_004f27d0`), else dies with reason 3 (`FUN_00503d90`); the
+    /// system keeps what still suits it (chain stage 1).
+    HolderChange,
+}
+
+/// The autoscrap requests (`+0x50` bit `0x1000`, event `0x307` →
+/// `FUN_00515480`) of what is bound for `system` without standing in it:
+/// another manager's unfinished products (`FUN_004f8680.c:14-17`, a
+/// squadron's `FUN_00503510`), and completed products, regiments and
+/// squadrons on their way (`+0x50` `0x20`). Each takes the chain from
+/// `system` with its hint (`FUN_00515480.c:82-153`): the producer's system,
+/// or the transit origin. One `system` still accepts stays as it is
+/// (stage 1); one no place accepts dies with reason 2, which refunds
+/// nothing (`FUN_00530270`). A capital ship sits in a fleet, which neither
+/// walk visits (`FUN_00524fb0`, `FUN_0051ebb0`). A product's unfinished
+/// move is a reparent with no transit, and it keeps its queue slot
+/// (`FUN_00528890` reads `+0x38`, which the move leaves): on completion it
+/// ships from the yard to its new place. port: a queued special force
+/// whose class serves both sides keeps the side the port reads from its
+/// class.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The requests read and move the world, the transport, movement, production and delivery states."
+)]
+fn request_bound_for(
+    world: &mut GameWorld,
+    system: SystemKey,
+    movement: &MovementState,
+    transport: &mut TroopTransportState,
+    manufacturing: &mut ManufacturingState,
+    deliveries: &mut DeliveryState,
+    walk: Walk,
+    report: &mut CascadeReport,
+) {
+    let Some(control) = world.systems.get(system).map(|sys| sys.control) else {
+        return;
+    };
+    let holder = control.is_controlled_by(Faction::Alliance);
+    let side = GameWorld::facility_holder(control);
+    let serves = |world: &GameWorld, class: DatId| {
+        walk == Walk::HolderChange
+            && world
+                .buildable_classes
+                .get(&class)
+                .is_none_or(|value| value.serves_side(side))
+    };
+    let relocation = |found: Option<Place>| match found {
+        Some(Place::System(to)) if to == system => Relocation::Stayed,
+        Some(Place::System(to)) => Relocation::Moved(to),
+        Some(Place::Fleet(fleet)) => Relocation::Boarded(fleet),
+        None => Relocation::Destroyed(2),
+    };
     let mut products = crate::carriage::ProductRoom::new(manufacturing, deliveries);
-    // Another manager's product bound for the system is its child. A
-    // capital ship sits in the destination's spare fleet, which the walk
-    // skips (FUN_00524fb0). A special force dies (FUN_00503e20). Any other
-    // takes the request with its producer's system as the hint and keeps
-    // its queue slot (FUN_00528890 matches the manager's key, which the
-    // move leaves): on completion it ships from the yard to its new place.
     manufacturing.retain_bound_for(system, |producer, item| match item.kind {
         BuildableKind::CapitalShip(_) => true,
-        BuildableKind::SpecialForce(_) => {
-            report.products.push(item.kind);
-            false
+        BuildableKind::SpecialForce(class) => {
+            let kept = serves(world, class);
+            if !kept {
+                report.products.push(item.kind);
+            }
+            kept
         }
         kind => {
             let is_alliance = product_is_alliance(world, kind, holder);
@@ -355,7 +415,8 @@ fn autoscrap(
     });
     // Completed products travelling here; their hint is their transit
     // origin.
-    for mut delivery in deliveries.take_bound_for(system) {
+    let mut placed = Vec::new();
+    let taken = deliveries.take_bound_for(system, |delivery| {
         let is_alliance = product_is_alliance(world, delivery.kind, holder);
         let found = place_product(
             world,
@@ -367,7 +428,17 @@ fn autoscrap(
             is_alliance,
             delivery.kind,
         );
-        let kind = delivery.kind;
+        report.autoscrapped.push((
+            Autoscrapped::Delivery(delivery.kind),
+            relocation(found.map(|(place, _)| place)),
+        ));
+        let stays = matches!(found, Some((Place::System(to), _)) if to == system);
+        if !stays {
+            placed.push(found);
+        }
+        !stays
+    });
+    for (mut delivery, found) in taken.into_iter().zip(placed) {
         if let Some((place, carrier)) = found {
             let destination = match place {
                 Place::System(to) => Destination::System(to),
@@ -376,10 +447,6 @@ fn autoscrap(
             delivery.carrier = carrier;
             deliveries.relocate(world, delivery, destination);
         }
-        report.autoscrapped.push((
-            Autoscrapped::Delivery(kind),
-            relocation(found.map(|(place, _)| place)),
-        ));
     }
     // Regiments travelling to its surface.
     let regiments: Vec<(TroopKey, SystemKey)> = transport
@@ -400,6 +467,7 @@ fn autoscrap(
             Mover::Regiment,
         );
         let outcome = match found {
+            Some(Place::System(to)) if to == system => Relocation::Stayed,
             Some(Place::System(to)) => {
                 transport.reroute_regiment(troop, to);
                 Relocation::Moved(to)
@@ -415,11 +483,16 @@ fn autoscrap(
             .autoscrapped
             .push((Autoscrapped::Regiment(troop), outcome));
     }
-    // Squadrons travelling to it.
+    // Squadrons travelling to it, in order; one that stays keeps its leg,
+    // so the walk passes over it.
+    let mut stayed = 0;
     while let Some(index) = world
         .squadron_transits
         .iter()
-        .position(|transit| transit.leg == RegimentLeg::Surface(system))
+        .enumerate()
+        .filter(|(_, transit)| transit.leg == RegimentLeg::Surface(system))
+        .nth(stayed)
+        .map(|(index, _)| index)
     {
         let transit = world.squadron_transits[index].clone();
         let found = request_squadron_place(
@@ -432,6 +505,17 @@ fn autoscrap(
             transit.is_alliance,
         );
         let leg = match found {
+            Some(Place::System(to)) if to == system => {
+                stayed += 1;
+                report.autoscrapped.push((
+                    Autoscrapped::Squadron {
+                        class: transit.class,
+                        is_alliance: transit.is_alliance,
+                    },
+                    Relocation::Stayed,
+                ));
+                continue;
+            }
             Some(Place::System(to)) => Some(RegimentLeg::Surface(to)),
             Some(Place::Fleet(fleet)) => Some(RegimentLeg::Fleet(fleet)),
             None => None,
@@ -451,6 +535,37 @@ fn autoscrap(
             relocation(moved.and(found)),
         ));
     }
+}
+
+/// The autoscrap requests each holder change raised and has not served
+/// (`GameWorld::autoscrap_systems`): the change's child walk
+/// (`FUN_00510820` → `FUN_004fae40`, slot `+0xb0`) flags what is bound for
+/// the system, and event `0x307` serves each request after phase 5
+/// ([`request_bound_for`], [`Walk::HolderChange`]). The system's own
+/// managers' products are gone already
+/// ([`crate::manufacturing::serve_manager_sides`]). Returns what the
+/// requests did: `autoscrapped` and the products that died outright.
+pub fn serve_holder_requests(
+    world: &mut GameWorld,
+    movement: &MovementState,
+    transport: &mut TroopTransportState,
+    manufacturing: &mut ManufacturingState,
+    deliveries: &mut DeliveryState,
+) -> CascadeReport {
+    let mut report = CascadeReport::default();
+    for system in std::mem::take(&mut world.autoscrap_systems) {
+        request_bound_for(
+            world,
+            system,
+            movement,
+            transport,
+            manufacturing,
+            deliveries,
+            Walk::HolderChange,
+            &mut report,
+        );
+    }
+    report
 }
 
 /// Event `0x304` for each change of a system's battle bit (hook `+0x23c`,
@@ -3392,6 +3507,307 @@ mod tests {
             (aboard, true),
         ] {
             assert_eq!(world.characters[key].adrift, adrift, "{key:?}");
+        }
+    }
+
+    // ── A holder change's autoscrap requests (event 0x307) ────────────────
+
+    /// `sys` held by `own` with a yard system of `own` at (400, 100) and one
+    /// of the other side at (100, 300); `sys` then passes to the other side.
+    fn holder_world(own: Faction) -> (GameWorld, SystemKey, SystemKey, SystemKey, Faction) {
+        let enemy = if own == Faction::Alliance {
+            Faction::Empire
+        } else {
+            Faction::Alliance
+        };
+        let (mut world, sys, yard) = cascade_world(400, own);
+        world.systems[sys].control = ControlKind::Controlled(own);
+        let enemy_yard = world.systems.insert(System {
+            dat_id: DatId::new(0x9000_0003),
+            name: "Kuat".into(),
+            y: 300,
+            control: ControlKind::Controlled(enemy),
+            ..world.systems[sys].clone()
+        });
+        let sector = world.systems[sys].sector;
+        world.sectors[sector].systems.push(enemy_yard);
+        (world, sys, yard, enemy_yard, enemy)
+    }
+
+    fn serve(
+        world: &mut GameWorld,
+        transport: &mut TroopTransportState,
+        manufacturing: &mut ManufacturingState,
+        deliveries: &mut DeliveryState,
+    ) -> CascadeReport {
+        serve_holder_requests(
+            world,
+            &MovementState::new(),
+            transport,
+            manufacturing,
+            deliveries,
+        )
+    }
+
+    /// The holder change's walk flags another manager's unfinished product
+    /// in the system (FUN_004f8680.c:14-17), and event 0x307 runs the chain
+    /// (FUN_00515480): the new holder's own product stays (stage 1), the old
+    /// holder's goes to its producer's system, the hint (FUN_00515480.c:
+    /// 82-124), keeping its queue slot; a capital ship sits in a fleet, which
+    /// the walk leaves (FUN_0051ebb0).
+    #[test]
+    fn a_holder_change_sends_the_old_holders_products_to_their_yards_and_keeps_the_new_holders_for_either_side(
+    ) {
+        for own in [Faction::Alliance, Faction::Empire] {
+            let (mut world, sys, yard, enemy_yard, enemy) = holder_world(own);
+            let facility = |side: Faction| {
+                BuildableKind::ManufacturingFacility(FacilityBuild {
+                    class: DatId::new(0x2800_0001),
+                    is_alliance: side == Faction::Alliance,
+                })
+            };
+            let ship = world.capital_ship_classes.insert(CapitalShipClass {
+                is_alliance: own == Faction::Alliance,
+                is_empire: own == Faction::Empire,
+                ..CapitalShipClass::default()
+            });
+            let mut manufacturing = ManufacturingState::new();
+            for (at, kind) in [
+                (yard, facility(own)),
+                (yard, BuildableKind::CapitalShip(ship)),
+                (enemy_yard, facility(enemy)),
+            ] {
+                manufacturing.enqueue(
+                    at,
+                    QueueItem::new(kind, 10).delivered_to(Destination::System(sys)),
+                );
+            }
+
+            capture(&mut world, sys, ControlKind::Controlled(enemy));
+            let report = serve(
+                &mut world,
+                &mut TroopTransportState::default(),
+                &mut manufacturing,
+                &mut DeliveryState::new(),
+            );
+
+            assert_eq!(
+                report.autoscrapped,
+                vec![
+                    (Autoscrapped::Product(facility(own)), Relocation::Moved(yard)),
+                    (Autoscrapped::Product(facility(enemy)), Relocation::Stayed),
+                ],
+                "{own:?}"
+            );
+            let destinations = |at: SystemKey, area: ProductionArea| -> Vec<Option<Destination>> {
+                manufacturing
+                    .queue(at, area)
+                    .map(|queue| queue.items().iter().map(|item| item.destination).collect())
+                    .unwrap_or_default()
+            };
+            let none: Vec<Option<Destination>> = vec![None];
+            let here = vec![Some(Destination::System(sys))];
+            assert_eq!(destinations(yard, ProductionArea::ConstructionYard), none, "{own:?}");
+            assert_eq!(destinations(yard, ProductionArea::Shipyard), here, "{own:?}");
+            assert_eq!(
+                destinations(enemy_yard, ProductionArea::ConstructionYard),
+                here,
+                "{own:?}"
+            );
+            assert!(world.autoscrap_systems.is_empty(), "{own:?}");
+        }
+    }
+
+    /// A special force's slot +0xb0 is FUN_00503d90, not the request: it
+    /// takes the system's new side when its class serves it (FUN_004f27d0),
+    /// else dies with reason 3.
+    #[test]
+    fn a_holder_change_ends_a_special_force_product_its_class_cannot_serve_for_either_side() {
+        for own in [Faction::Alliance, Faction::Empire] {
+            let (mut world, sys, yard, _, enemy) = holder_world(own);
+            let one_side = DatId::new(0x3c00_0001);
+            let both = DatId::new(0x3c00_0002);
+            for (class, is_alliance, is_empire) in [
+                (one_side, own == Faction::Alliance, own == Faction::Empire),
+                (both, true, true),
+            ] {
+                world.buildable_classes.insert(
+                    class,
+                    crate::world::BuildableClass {
+                        is_alliance,
+                        is_empire,
+                        ..Default::default()
+                    },
+                );
+            }
+            let mut manufacturing = ManufacturingState::new();
+            for class in [one_side, both] {
+                manufacturing.enqueue(
+                    yard,
+                    QueueItem::new(BuildableKind::SpecialForce(class), 10)
+                        .delivered_to(Destination::System(sys)),
+                );
+            }
+
+            capture(&mut world, sys, ControlKind::Controlled(enemy));
+            let report = serve(
+                &mut world,
+                &mut TroopTransportState::default(),
+                &mut manufacturing,
+                &mut DeliveryState::new(),
+            );
+
+            assert_eq!(report.products, [BuildableKind::SpecialForce(one_side)], "{own:?}");
+            let kept: Vec<BuildableKind> = manufacturing
+                .queue(yard, ProductionArea::TrainingFacility)
+                .map(|queue| queue.items().iter().map(|item| item.kind).collect())
+                .unwrap_or_default();
+            assert_eq!(kept, [BuildableKind::SpecialForce(both)], "{own:?}");
+        }
+    }
+
+    /// A completed product or regiment on its way to the system is its
+    /// child, en route (+0x50 0x20), and takes the request as well
+    /// (FUN_004f8680.c:14-17); the hint is its transit origin
+    /// (FUN_00515480.c:125-153), and the relocation keeps its arrival day
+    /// (FUN_00556390.c:17-21).
+    #[test]
+    fn a_holder_change_sends_the_old_holders_travellers_back_to_their_origins_for_either_side() {
+        for own in [Faction::Alliance, Faction::Empire] {
+            let (mut world, sys, yard, _, enemy) = holder_world(own);
+            let is_alliance = own == Faction::Alliance;
+            let shield = BuildableKind::DefenseFacility(FacilityBuild {
+                class: DatId::new(0x2400_0001),
+                is_alliance,
+            });
+            let mut deliveries = DeliveryState::new();
+            deliveries.depart(
+                &world,
+                &[Departure {
+                    origin: yard,
+                    destination: Destination::System(sys),
+                    tick: 1,
+                    kind: shield,
+                    carrier: 0,
+                }],
+            );
+            let due = deliveries.en_route()[0].arrival_tick;
+            let mut transport = TroopTransportState::default();
+            let regiment = troop(&mut world, yard, is_alliance);
+            transport
+                .move_regiment(
+                    &mut world,
+                    &MovementState::new(),
+                    &std::collections::HashSet::new(),
+                    &ProductRoom::default(),
+                    regiment,
+                    crate::troop_transport::RegimentTarget::System(sys),
+                    1,
+                )
+                .unwrap();
+
+            capture(&mut world, sys, ControlKind::Controlled(enemy));
+            let report = serve(
+                &mut world,
+                &mut transport,
+                &mut ManufacturingState::new(),
+                &mut deliveries,
+            );
+
+            assert_eq!(
+                report.autoscrapped,
+                vec![
+                    (Autoscrapped::Delivery(shield), Relocation::Moved(yard)),
+                    (Autoscrapped::Regiment(regiment), Relocation::Moved(yard)),
+                ],
+                "{own:?}"
+            );
+            assert_eq!(deliveries.en_route()[0].destination, yard, "{own:?}");
+            assert_eq!(deliveries.en_route()[0].arrival_tick, due, "{own:?}");
+            assert_eq!(
+                transport.transits()[0].leg,
+                RegimentLeg::Surface(yard),
+                "{own:?}"
+            );
+        }
+    }
+
+    /// The new holder's own regiment and squadron on their way stay bound
+    /// for the system: its stage 1 accepts them (FUN_005073d0,
+    /// FUN_00553410), so nothing moves and their legs stand.
+    #[test]
+    fn a_holder_change_keeps_the_new_holders_travellers_bound_for_the_system_for_either_side() {
+        for own in [Faction::Alliance, Faction::Empire] {
+            let (mut world, sys, _, enemy_yard, enemy) = holder_world(own);
+            let is_alliance = enemy == Faction::Alliance;
+            capture(&mut world, sys, ControlKind::Controlled(enemy));
+            let mut transport = TroopTransportState::default();
+            let regiment = troop(&mut world, enemy_yard, is_alliance);
+            transport
+                .move_regiment(
+                    &mut world,
+                    &MovementState::new(),
+                    &std::collections::HashSet::new(),
+                    &ProductRoom::default(),
+                    regiment,
+                    crate::troop_transport::RegimentTarget::System(sys),
+                    1,
+                )
+                .unwrap();
+            let fighter = world.fighter_classes.insert(FighterClass {
+                is_alliance,
+                ..FighterClass::default()
+            });
+            for arrival_tick in [30, 40] {
+                world
+                    .squadron_transits
+                    .push(crate::troop_transport::SquadronTransit {
+                        class: fighter,
+                        is_alliance,
+                        origin: enemy_yard,
+                        leg: RegimentLeg::Surface(sys),
+                        carrier: 0,
+                        arrival_tick,
+                        via: None,
+                    });
+            }
+            let legs = |world: &GameWorld, transport: &TroopTransportState| {
+                (
+                    transport
+                        .transits()
+                        .iter()
+                        .map(|transit| transit.leg)
+                        .collect::<Vec<_>>(),
+                    world
+                        .squadron_transits
+                        .iter()
+                        .map(|transit| (transit.leg, transit.via))
+                        .collect::<Vec<_>>(),
+                )
+            };
+            let before = legs(&world, &transport);
+
+            let report = serve(
+                &mut world,
+                &mut transport,
+                &mut ManufacturingState::new(),
+                &mut DeliveryState::new(),
+            );
+
+            let squadron = Autoscrapped::Squadron {
+                class: fighter,
+                is_alliance,
+            };
+            assert_eq!(
+                report.autoscrapped,
+                vec![
+                    (Autoscrapped::Regiment(regiment), Relocation::Stayed),
+                    (squadron.clone(), Relocation::Stayed),
+                    (squadron, Relocation::Stayed),
+                ],
+                "{own:?}"
+            );
+            assert_eq!(legs(&world, &transport), before, "{own:?}");
         }
     }
 }

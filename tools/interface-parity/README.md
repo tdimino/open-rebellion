@@ -7,30 +7,40 @@ each case with audio muted. The fixture bridge exists only in the separate
 `interface-test-fixtures` WASM build. Production HTML and WASM are checked for
 fixture imports and markers.
 
-From this directory, install the pinned Node packages with `npm ci`, then run:
+From this directory, install the pinned Node packages with `npm ci`. The
+fixture build runs Cargo, which runs only on the Mac Mini, so build the
+fixture site there from the repository root:
 
 ```sh
-node run.mjs --smoke        # build both WASM variants; four quick cases
-node run.mjs --all          # rebuild; all 152 faction/viewport cases
-node run.mjs --all --no-build  # reuse a verified fixture build
+scripts/mini-cargo.sh --run ./scripts/build-interface-test-wasm.sh \
+  --pull web/open-rebellion.wasm --pull .artifacts/interface-parity/site/
+```
+
+Then run the gates with `--no-build`, which reuses that verified build;
+without it a gate builds in place:
+
+```sh
+node run.mjs --smoke --no-build        # four quick cases
+node run.mjs --all --no-build          # all 152 faction/viewport cases
 node run.mjs --all --scenario=pan --no-build  # four focused faction/viewport cases
-node encyclopedia-art.mjs  # build and verify original EDATA browser transport
-node encyclopedia-art.mjs --no-build  # reuse a verified fixture build
-node message-index-shell.mjs  # verify both original Message Index shells
-node message-index-shell.mjs --no-build  # reuse a verified fixture build
-node encyclopedia-index-shell.mjs  # verify both original Encyclopedia index shells
-node encyclopedia-index-shell.mjs --catalog  # verify source-derived index content
-node encyclopedia-index-shell.mjs --no-build  # reuse a verified fixture build
-node mission-dialog.mjs  # verify the original mission dialog's chrome on both pages
-node mission-dialog.mjs --no-build  # reuse a verified fixture build
-node fleet-move.mjs  # verify fleet Move, Confirmed Move and the system window drag
-node fleet-window.mjs  # verify the Fleet window, regiments, joining and splitting, rename and destination
-node sector-quadrants.mjs  # verify the quadrant icons and the Defenses and Missions windows
-node fleet-finder.mjs  # verify the Fleet and Ship Finder
-node fleet-finder.mjs --no-build --only=alliance/chrome  # one faction/case, reusing a build
-node fleet-registry.mjs  # verify the Fleet Registry, a port extension, from the main menu
-node audit-batch.mjs  # verify the Troop/Personnel Finders, Message Index, Alt keys and Agent menu
-node status-window.mjs  # verify a character's Status window from its pop-up menu
+node encyclopedia-art.mjs --no-build  # verify original EDATA browser transport
+node message-index-shell.mjs --no-build  # verify both original Message Index shells
+node encyclopedia-index-shell.mjs --no-build  # verify both original Encyclopedia index shells
+node encyclopedia-index-shell.mjs --catalog --no-build  # verify source-derived index content
+node mission-dialog.mjs --no-build  # verify the original mission dialog's chrome on both pages
+node fleet-move.mjs --no-build  # verify fleet Move, Confirmed Move and the system window drag
+node fleet-window.mjs --no-build  # verify the Fleet window, regiments, joining and splitting, rename and destination
+node sector-quadrants.mjs --no-build  # verify the quadrant icons and the Defenses and Missions windows
+node fleet-finder.mjs --no-build  # verify the Fleet and Ship Finder
+node fleet-finder.mjs --no-build --only=alliance/chrome  # one faction/case
+node fleet-registry.mjs --no-build  # verify the Fleet Registry, a port extension, from the main menu
+node audit-batch.mjs --no-build  # verify the Troop/Personnel Finders, Message Index, Alt keys and Agent menu
+node status-window.mjs --no-build  # verify a character's Status window from its pop-up menu
+node build-selection.mjs --no-build  # verify Build Selection from a Manufacturing band, both sides
+node orbital-strike.mjs --no-build  # verify the Operation Report and strike journeys, both sides
+node endings.mjs --no-build --saves=<dir>  # verify each side's win, ending movie, main menu and saved-win replay, Standard and Headquarters Only (production build; saves in the gate's header)
+node window-restore.mjs --no-build --saves=<dir>  # verify a Game Options save and a fresh-page load reopen the windows, rail, focus and GID mode, both sides (production build; the endings saves)
+node tactical-a0-compare.mjs --negative-controls  # compare A1 runs against registered A0 cells
 node windowing-contract.mjs --no-build --case adapter-smoke  # early shared-adapter smoke only
 ```
 
@@ -57,10 +67,9 @@ original-game acceptance. Explicit named journey selections are likewise
 reported as focused evidence, even when their declared groups happen to span
 A-E; only the validated default inventory reports complete A-E scope.
 
-Build once and reuse that exact fixture artifact with:
+Build once on the Mini (above) and reuse that exact fixture artifact with:
 
 ```sh
-npm run build
 node windowing-contract.mjs --no-build --case adapter-smoke
 ```
 
@@ -69,7 +78,7 @@ site. Every `--no-build` run re-hashes all workspace Rust and Cargo inputs, the
 fixture build/staging tools, runner imports and configuration, the reviewed
 contract manifest and schemas, and the served HTML/JavaScript/WASM/runtime-pack
 artifacts. A missing manifest or any source/artifact mismatch fails closed and
-requires `npm run build`; file presence alone is not reusable-build evidence.
+requires a fresh fixture build; file presence alone is not reusable-build evidence.
 
 Named journey modules use filenames matching `windowing-contract-*.mjs` and
 export `windowingContractCase` or `windowingContractCases`. The runner discovers
@@ -137,7 +146,7 @@ processes compare
 category selection, held rail controls, native clipping, exclusive-edge and
 transparent-pixel rejection, press capture, drag cancellation, and modal
 click-through blocking pixel-for-pixel against the owned STRATEGY resources.
-`--catalog` runs the corrected source-derived 346-entry visible index, seven TEXTSTRA category
+`--catalog` runs the source-derived 346-entry visible index, seven TEXTSTRA category
 labels and filters, scrolling, row selection, and modal-block checks. P65
 compares every static shell pixel while treating rendered text/list rectangles
 as dynamic; those regions must be visibly populated but remain outside exact
@@ -245,7 +254,7 @@ be the last. The frames are stored as `frame-NN.png` and their timing as
 GID actions register a fresh expected command event before input, then wait
 through the following paint; the combined wait has a two-second deadline.
 This prevents a stale log or an early screenshot from satisfying a new action.
-Every case verifies command `0x132` on the corrected bottom GID control and
+Every case verifies command `0x132` on the bottom GID control and
 uses the same control to close and reopen the menu. The Popular Support cases
 also probe both factions' physical `0x133` Game Options and `0x131`
 Encyclopedia controls, their distinct held bitmaps, F1/F7, and the fail-closed
@@ -260,13 +269,19 @@ immediately. No page, application, or assertion failure is retried. Per-case
 launches, timeouts, and recoveries. A recovered startup is visible in evidence
 and does not establish original-game visual parity.
 
-The runner expects the exact Chrome for Testing version in `browser.json`.
-Set `OPEN_REBELLION_CHROME_FOR_TESTING` to its executable if it is installed
-elsewhere. The build needs the local owned game data, the wasm32 Rust target,
-and the tools used by `scripts/build-wasm.sh`. The runner serves only on
+The runner expects the exact Chrome for Testing version in `browser.json`,
+which is ignored because it names this machine's paths: copy
+`browser.example.json` to `browser.json` and list the local executable under
+`executable_candidates`, keeping `--mute-audio` and `--disable-audio-output`. Set
+`OPEN_REBELLION_CHROME_FOR_TESTING` to the executable instead to override it. The fixture build needs the owned game data on the Mini, the
+wasm32 Rust target, and the tools used by `scripts/build-wasm.sh`. The runner serves only on
 127.0.0.1. Screenshots, complete browser console/cache diagnostics, resource hashes, interaction probes,
 four-request ledgers, and results go to the ignored
 `.artifacts/interface-parity/<run-id>/` directory. Failed cases exit nonzero.
+Each case prints `PASS` or `FAIL` as it finishes; a battle run's pair checks
+(proof/control, the LOD family, production participants) run after every
+case and can mark a printed PASS failed, so only the closing summary and
+each case's `result.json` status are authoritative.
 
 The generated test site also contains `battle.html`, a test-only launcher for the
 real tactical scene. Its proof and negative-control links use the versioned codes in
@@ -276,14 +291,17 @@ shell/control checkpoint, and fixed selection from one source-bound three-LOD
 family, one live LOD journey, and the source camera/target/layout/participant
 journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all 128 entry, negative-control,
+`node run.mjs --battle --all --no-build` for all 180 (45 scenarios, both
+factions, both viewports) entry, negative-control,
 fixed-LOD, live-LOD, camera, production-participant, fighter-detail, group,
 impact-effect, projectile/field, selected-damage, subsystem/field-command,
 live-subsystem-damage, subsystem-repair/mobility, maneuver/movement,
 command-assignment, command-execution, command-progression, attack-targeting,
 attack-target-lifecycle, Death Star presentation and superlaser, trench-run
 success and failure routing, Battle Results, Battle Options and withdrawal,
-faction, and viewport cases. The tactical probes cover pause stability,
+navigation, empty-space, detail-escort, Battle Alert entry, audio routing,
+and original-save battle cases (Yaga Minor day 30, Coruscant days 676 and
+1173, each replaying its A0 trace). The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
 art, aperture isolation, typed resource diagnostics, runtime measurements, and
 proof-on/off pixel differences. The camera journey also checks the recovered
@@ -297,8 +315,13 @@ capital-ship families, exact fighter close/far/indicator resource triplets,
 the test-only fighter focus used by the detail journey, and a 3D-off control
 with all mapped fallbacks suppressed. Per-object
 framebuffer probes require changed pixels around every logged capital and
-fighter projection. Production journeys deselect, reselect, and target through
-the projected capital bounds. The fighter journey uses the original zoom
+fighter projection. Production journeys first turn both highlights on, since
+they start off (`FUN_0059eb70`, `FUN_0059c4d0`), then deselect, reselect, and
+target through the projected capital bounds against that lit frame. The
+Battle Results summary masks its status line and body rows (to bitmap row
+297, the third 18-pixel font-6 cell) and requires at least 1,000 drawn
+pixels in the body's rect (`verifyStrategyDrawnOver`). The fighter journey
+uses the original zoom
 buttons and asserts all nine independent detail transitions without another
 family load. The trench-run fixtures assert source result states 6 and 7 route
 to MDATA.201 and MDATA.202 respectively, then return to the paused production
@@ -350,7 +373,7 @@ The Death Star journeys verify the owner-gated 1021 through 1024 control,
 resource 5030 as the sparse 440 by 438 tactical star surface, right-click
 target assignment, a visible delayed beam, destruction, and the hostile-only
 Attack Death Star mission state. The source uses the standard arrow cursor,
-and exact result states 6 and 7 now route to trench-run films 201 and 202.
+and exact result states 6 and 7 route to trench-run films 201 and 202.
 Exact beam dimensions and timing, native playback comparison, and lossless A0
 comparison remain open.
 

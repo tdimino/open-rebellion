@@ -2074,6 +2074,12 @@ pub struct GameWorld {
     /// (`manufacturing::serve_manager_sides`), so never saved.
     #[serde(skip)]
     pub manager_side_changes: Vec<SystemKey>,
+    /// Systems whose holder changed and whose autoscrap requests (event
+    /// `0x307`, `+0x50` bit `0x1000`) for what is bound for them are not yet
+    /// served (`death_star::serve_holder_requests`). The operation that
+    /// changes the holder serves them, so never saved.
+    #[serde(skip)]
+    pub autoscrap_systems: Vec<SystemKey>,
     /// The game root's per-step control-change counters (`FUN_00518040`),
     /// keyed by `support_shift::step`.
     pub control_change_cap: crate::support_shift::ControlChangeCap,

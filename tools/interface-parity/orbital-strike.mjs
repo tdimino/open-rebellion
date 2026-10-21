@@ -23,6 +23,14 @@
 //   <video> overlay over the picture alone, the caption drawn below it on
 //   the canvas; after it, the destroyed system greys the parent row
 //   (0x224 refuses 1/0x22).
+// - The EVT-03 cells, each through the fleet's menu and the live report
+//   (interface_test_fixture.rs, OperationReportWatch::observe_live):
+//   `military-strike` and `civilian-strike` (C001, C002); `display-goto`
+//   (C014, C015), Display's buttons closing the report on the system's
+//   sector and Fleet windows; `shielded-strike` (C004), 0 hits under shield
+//   generators; `assault-captures` and `assault-repelled` (C007-C009);
+//   `damaged-survivor` and `damaged-loss` (C012), the damage art under
+//   Operational and under Destroyed.
 //
 //   node orbital-strike.mjs [--no-build] [--only=<faction>/<case>]
 //
@@ -57,6 +65,11 @@ const runDir = path.join(outRoot, `orbital-strike-${runId}`);
 const FLEET_MOVE_BLOCKADE = 47;
 const OPERATION_REPORT = 67;
 const STRIKE_DEATH_STAR = 68;
+const STRIKE_SHIELDED = 71;
+const ASSAULT_CAPTURES = 72;
+const ASSAULT_REPELLED = 73;
+const DAMAGED_SURVIVOR = 74;
+const DAMAGED_LOSS = 75;
 
 // The galaxy view at 640 by 480 (CockpitState::layout_for). `side` indexes
 // the report's per-side tables; `conflict` is rail light 0x13c (cockpit.rs,
@@ -227,8 +240,8 @@ function blank(width, height) {
 // CoolStrobeButton (FUN_00602d30) blits through FUN_005fd0f0 on that index
 // unless its +0xc4 bit 0x80 is set, and FUN_00602150 leaves the bit clear.
 // A button's control clips its bitmap to `clip` (FUN_005fc140 at native
-// size).
-function blit(destination, image, x, y, button = false, clip = null) {
+// size). An `opaque` bitmap is copied whole, its matte included.
+function blit(destination, image, x, y, button = false, clip = null, opaque = false) {
   const [width, height] = clip ? [Math.min(clip[0], image.width), Math.min(clip[1], image.height)] : [image.width, image.height];
   for (let row = 0; row < height; row += 1) {
     for (let col = 0; col < width; col += 1) {
@@ -237,7 +250,7 @@ function blit(destination, image, x, y, button = false, clip = null) {
       if (dx < 0 || dy < 0 || dx >= destination.width || dy >= destination.height) continue;
       const from = (row * image.width + col) * 4;
       const alpha = image.data[from + 3];
-      if (alpha === 0 || (button && alpha === 254)) continue;
+      if (!opaque && (alpha === 0 || (button && alpha === 254))) continue;
       const to = (dy * destination.width + dx) * 4;
       destination.data[to] = image.data[from];
       destination.data[to + 1] = image.data[from + 1];
@@ -290,13 +303,16 @@ function compare(actual, expected, masks, directory, label) {
 }
 
 // The report window as FUN_0044c630 composes it: black, the layer's picture
-// at (12, 13), the shell and the rail art keyed over it, then Close and the
+// at (12, 13) unkeyed, the shell and the rail art keyed over it, then Close and the
 // rail of four views (the shown view pressed), keyed as buttons (blit).
 // Over a list the six
 // tabs follow (the shown tab pressed); Display adds its two buttons.
 function composeReport(source, side, { picture, view, tab = 0 }) {
   const image = blank(report.size.width, report.size.height);
-  blit(image, resource(source, picture), report.pictureAt.x, report.pictureAt.y);
+  // The layer's picture is copied whole: in the VM A0 capture of the Orto
+  // bombardment's 0x2b9c (sha256 2b9ae014...) none of the bitmap's 386
+  // 0x0000c4 pixels shows black; 204 show that blue.
+  blit(image, resource(source, picture), report.pictureAt.x, report.pictureAt.y, false, null, true);
   blit(image, resource(source, report.shell[side]), 0, 0);
   blit(image, resource(source, report.railArt[side]), report.railX[side], 0);
   const close = report.close[side];
@@ -334,8 +350,12 @@ function reportMasks(view) {
   }
   if (view === "display") {
     masks.display_text = [29, 120, 350, 58];
-    masks.system_caption = [29, 214, 169, 22];
-    masks.fleet_caption = [226, 214, 169, 22];
+    // A caption's line: FUN_006026e0 centres its 16-pixel font-4 line in
+    // the 96-pixel button and FUN_006027e0 moves it down 36
+    // (FUN_0044c630.c:851, :909), so its top is 182 + 40 + 36. The VM A0
+    // capture of the Selonia Display draws "Selonia" on window rows 261-270.
+    masks.system_caption = [29, 258, 169, 16];
+    masks.fleet_caption = [226, 258, 169, 16];
   }
   return masks;
 }
@@ -467,10 +487,14 @@ function changedBox(before, after, exclude) {
 
 const menuRect = (menu) => ({ x: Math.floor(menu.left), y: Math.floor(menu.top), width: Math.ceil(menu.width), height: Math.ceil(menu.height) });
 
-// Rows below a 2-pixel border share one height (object_menu.rs).
+// Rows below a 2-pixel border share one height (object_menu.rs). The frame
+// (cockpit.rs paint_gid_frame_border, STRATEGY 10100-10107: white and
+// 0xc0c0c0 dots) is drawn 2 pixels deep over every edge last, so the last
+// row ends above the bottom edge.
 function rowRect(rect, rows, row) {
   const height = (rect.height - 2) / rows;
-  return { x: rect.x + 2, y: rect.y + 2 + height * row, width: rect.width - 4, height };
+  const y = rect.y + 2 + height * row;
+  return { x: rect.x + 2, y, width: rect.width - 4, height: Math.min(height, rect.y + rect.height - 2 - y) };
 }
 
 const centre = (rect) => ({ x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) });
@@ -504,6 +528,142 @@ async function bombardmentMenu(page, faction, setup, directory, label) {
   const child = changedBox(before.png, hovered.png, root);
   const rows = child ? [0, 1, 2, 3].map((row) => rowInk(hovered.png, rowRect(child, 4, row), faction.highlight)) : [];
   return { menu, root, parent, parent_ink: parentInk, child, rows, screenshots: [before.sha256, hovered.sha256] };
+}
+
+
+// The GOKRES bitmaps a list cell stacks (operation_report.rs cell_layers).
+const gokresDirectory = path.join(root, "data/base/ui/gokres-dll/BMP");
+const gokresCache = new Map();
+function gokres(id) {
+  if (!gokresCache.has(id)) gokresCache.set(id, decodeBmp(fs.readFileSync(path.join(gokresDirectory, `${id}.bmp`))));
+  return gokresCache.get(id);
+}
+
+// The live report the fleet scenarios emit as it changes
+// (OperationReportWatch::observe_live): its view, text, picture, lists with
+// each cell's bitmaps, and the z serials of its system's sector and Fleet
+// windows.
+async function liveReports(page) {
+  return page.evaluate(() => (window.__openRebellionInterfaceOperationReports || []).filter((state) => state.live));
+}
+
+async function untilLive(page, description, test) {
+  try {
+    await page.waitForFunction((source) => {
+      const last = (window.__openRebellionInterfaceOperationReports || []).filter((state) => state.live).at(-1);
+      return Boolean(last) && new Function("state", `return (${source})(state);`)(last);
+    }, test.toString(), { timeout: 10_000 });
+  } catch (error) {
+    throw new Error(`${description}: ${JSON.stringify((await liveReports(page)).slice(-2))}`, { cause: error });
+  }
+  return (await liveReports(page)).at(-1);
+}
+
+async function consoleLine(consoleLines, pattern, description) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const line = consoleLines.find(({ text }) => pattern.test(text));
+    if (line) return line.text;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`${description}: no console line ${pattern}`);
+}
+
+// A Planetary Bombardment row's order from the fleet's menu (0 Target
+// Military Facilities, 1 Target Civilian Facilities, 2 General
+// Bombardment), as the live-strike journey orders General Bombardment.
+async function orderStrike(page, faction, directory, row) {
+  const setup = await fleetSetup(page);
+  const opened = await bombardmentMenu(page, faction, setup, directory, "fleet");
+  assert.ok(opened.child, "no submenu showed under Planetary Bombardment");
+  assert.equal(opened.rows[row].state, "enabled", JSON.stringify(opened.rows));
+  const point = centre(rowRect(opened.child, 4, row));
+  await page.mouse.move(point.x, point.y);
+  await frames(page, 2);
+  await click(page, point);
+  await page.mouse.move(2, 2);
+  return opened;
+}
+
+// The fleet menu's Planetary Assault row (order 0x234, FUN_005814d0).
+async function orderAssault(page) {
+  const setup = await fleetSetup(page);
+  const menu = await openFleetMenu(page, setup);
+  assert.notEqual(menu.assault_row, null, "the fleet's menu lists Planetary Assault");
+  const row = rowRect(menuRect(menu), menu.rows, menu.assault_row);
+  const point = centre(row);
+  await page.mouse.move(point.x, point.y);
+  await frames(page, 2);
+  await click(page, point);
+  await page.mouse.move(2, 2);
+  return menu;
+}
+
+// The report's Summary as the order opened it at once: the live report's
+// own picture through the shell, compared exactly outside its text.
+async function liveSummary(page, faction, source, directory, label) {
+  const state = await untilLive(page, "the order opened its report at once", (live) => live.open && live.view === 0x65);
+  const window = centred(faction, report.size);
+  const shot = await stableShot(page, directory, label);
+  const checked = compare(crop(shot.png, window), composeReport(source, faction.side, { picture: state.picture, view: "summary" }), reportMasks("summary"), directory, label);
+  soft(checked.different_pixels === 0, `${label}: ${JSON.stringify(checked)}`);
+  assert.ok(checked.changed_in_masks.title > 0 && checked.changed_in_masks.body > 0, `${label} shows no title or text`);
+  return { state, window, summary: checked };
+}
+
+// A damaged object's list cell (FUN_0042c3b0.c:350-410): its GOKRES damage
+// art, portrait + 0x2000, under the portrait, which is keyed on its matte,
+// so the burns show where the portrait leaves the art uncovered (the Wine
+// capture of alliance-day927-orto-orbit.sav's Corellian Corvette 1 under
+// Destroyed matches this stack pixel for pixel). The cell is the tab's
+// 165 by 70 cell in `column` of the first row, the picture centred
+// (operation_report.rs, LIST and ReportTab::cell).
+function damagedCell(png, window, column, cell) {
+  assert.equal(cell.layers.length, 2, `the damaged cell's bitmaps: ${JSON.stringify(cell)}`);
+  const [[burnSource, burnId], [portraitSource, portraitId]] = cell.layers;
+  assert.deepEqual([burnSource, portraitSource], ["Gokres", "Gokres"], JSON.stringify(cell));
+  assert.equal(burnId, portraitId + 0x2000, `the damage art of ${cell.name}`);
+  const burn = gokres(burnId);
+  const portrait = gokres(portraitId);
+  const x0 = window.x + 37 + 165 * column + Math.floor((165 - burn.width) / 2);
+  const y0 = window.y + 136 + Math.floor((70 - burn.height) / 2);
+  const counts = { burn_only: 0, matched: 0, mismatched: 0 };
+  for (let y = 0; y < burn.height; y += 1) {
+    for (let x = 0; x < burn.width; x += 1) {
+      const from = (y * burn.width + x) * 4;
+      const covered = x < portrait.width && y < portrait.height && portrait.data[(y * portrait.width + x) * 4 + 3] !== 0;
+      const layer = covered ? portrait : burn;
+      const at = covered ? (y * portrait.width + x) * 4 : from;
+      if (layer.data[at + 3] === 0) continue;
+      if (!covered) counts.burn_only += 1;
+      const to = ((y0 + y) * png.width + x0 + x) * 4;
+      const same = [0, 1, 2].every((index) => Math.abs(png.data[to + index] - layer.data[at + index]) <= 2);
+      counts[same ? "matched" : "mismatched"] += 1;
+    }
+  }
+  return { name: cell.name, burn: burnId, portrait: portraitId, at: [x0, y0], ...counts };
+}
+
+// The strike scenarios' journey to a list: the rail's Forces view of the
+// fleet's side (1) or the system's (2), on its first tab.
+async function forcesList(page, faction, window, view, directory, label) {
+  const side = faction.side;
+  const [railX, railY] = report.railOrigin[side];
+  const [buttonW, buttonH] = report.railButton[side];
+  await click(page, { x: window.x + railX + buttonW / 2, y: window.y + railY + report.viewY[side][view] + buttonH / 2 });
+  await page.mouse.move(2, 2);
+  await untilLive(page, `Forces view ${view}`, (live) => live.open && live.view !== 0x65);
+  return stableShot(page, directory, label);
+}
+
+async function strikeCell(page, faction, source, directory, consoleLines, row, order) {
+  await orderStrike(page, faction, directory, row);
+  const checks = {};
+  checks.log = await consoleLine(consoleLines, new RegExp(`command=${order} destination=bombardment status=issued runs=1 hits=\\d+`), `order ${order}`);
+  Object.assign(checks, await liveSummary(page, faction, source, directory, "report-alert"));
+  assert.match(checks.state.title, /^Orbital bombardment of /, JSON.stringify(checks.state));
+  assert.equal(checks.state.assault, false);
+  return checks;
 }
 
 const cases = [
@@ -587,6 +747,8 @@ const cases = [
       shot = await stableShot(page, directory, "display");
       checks.display = compare(crop(shot.png, rect), composeReport(source, side, { picture: report.displayLayer, view: "display" }), reportMasks("display"), directory, "display");
       soft(checks.display.different_pixels === 0, `Display: ${JSON.stringify(checks.display)}`);
+      assert.ok(checks.display.changed_in_masks.system_caption > 0 && checks.display.changed_in_masks.fleet_caption > 0,
+        `Display draws no button caption: ${JSON.stringify(checks.display.changed_in_masks)}`);
 
       // Close (0x0a) closes it.
       const close = report.close[side].rect;
@@ -736,6 +898,148 @@ const cases = [
       return checks;
     },
   },
+  {
+    // EVT-03 C001: Target Military Facilities (0x220) from the fleet's menu
+    // opens its report at once (FUN_0048a060).
+    name: "military-strike",
+    code: FLEET_MOVE_BLOCKADE,
+    async run(page, faction, source, directory, consoleLines) {
+      return strikeCell(page, faction, source, directory, consoleLines, 0, "0x220");
+    },
+  },
+  {
+    // EVT-03 C002: Target Civilian Facilities (0x221).
+    name: "civilian-strike",
+    code: FLEET_MOVE_BLOCKADE,
+    async run(page, faction, source, directory, consoleLines) {
+      return strikeCell(page, faction, source, directory, consoleLines, 1, "0x221");
+    },
+  },
+  {
+    // EVT-03 C014, C015: Display's buttons close the report and open the
+    // system's sector window (0x0b, FUN_00429ce0) or, through the sector
+    // window's Fleet icon, its Fleet window (0x0c, FUN_0045c8e0 kind 4,
+    // FUN_0045aac0); FUN_0044df90.c:20-35.
+    name: "display-goto",
+    code: FLEET_MOVE_BLOCKADE,
+    async run(page, faction, source, directory, consoleLines) {
+      const side = faction.side;
+      const checks = await strikeCell(page, faction, source, directory, consoleLines, 2, "0x222");
+      const window = checks.window;
+      const system = checks.state.title.replace(/^Orbital bombardment of /, "");
+      const [railX, railY] = report.railOrigin[side];
+      const [buttonW, buttonH] = report.railButton[side];
+      const display = { x: window.x + railX + buttonW / 2, y: window.y + railY + report.viewY[side][3] + buttonH / 2 };
+      const button = (rect) => ({ x: window.x + rect[0] + rect[2] / 2, y: window.y + rect[1] + rect[3] / 2 });
+
+      await click(page, display);
+      await untilLive(page, "Display", (live) => live.open && live.view === 0x68);
+      await click(page, button(report.gotoSystem.rect));
+      await page.mouse.move(2, 2);
+      checks.goto_system = await untilLive(page, "Goto System closes the report on the system's sector window",
+        (live) => !live.open && live.destination !== null && live.destination.startsWith("sector:") && live.sector_open);
+      assert.equal(checks.goto_system.destination, `sector:${system}`);
+      checks.goto_system_shot = (await stableShot(page, directory, "goto-system")).sha256;
+
+      // The Index row reopens the report (FUN_00469de0).
+      await click(page, centre(faction.conflict));
+      await page.mouse.move(2, 2);
+      await stableShot(page, directory, "index-conflict");
+      await doubleClick(page, { x: window.x + 25 + 173, y: window.y + 108 + 10 });
+      await page.mouse.move(2, 2);
+      await untilLive(page, "the Index reopens the report", (live) => live.open);
+      await click(page, display);
+      await untilLive(page, "Display again", (live) => live.open && live.view === 0x68);
+      await click(page, button(report.gotoFleet.rect));
+      await page.mouse.move(2, 2);
+      checks.goto_fleet = await untilLive(page, "Goto Fleet closes the report on the system's Fleet window",
+        (live) => !live.open && live.destination !== null && live.destination.startsWith("fleet:") && live.fleet_window_open);
+      assert.equal(checks.goto_fleet.destination, `fleet:${system}`);
+      checks.goto_fleet_shot = (await stableShot(page, directory, "goto-fleet")).sha256;
+      return checks;
+    },
+  },
+  {
+    // EVT-03 C004: shield generators (family 0x24) whose shields reach the
+    // fleet's strength take every hit (FUN_0058df60): no hit lands, nothing
+    // at the system is destroyed, so the picture is 0x2b9a and System
+    // Forces lists the generators operational.
+    name: "shielded-strike",
+    code: STRIKE_SHIELDED,
+    async run(page, faction, source, directory, consoleLines) {
+      const checks = await strikeCell(page, faction, source, directory, consoleLines, 0, "0x220");
+      assert.match(checks.log, /hits=0$/, checks.log);
+      assert.equal(checks.state.picture, 0x2b9a, JSON.stringify(checks.state));
+      assert.deepEqual(checks.state.system_destroyed, [], JSON.stringify(checks.state));
+      assert.ok(checks.state.system_operational.some((cell) => cell.family === 0x24), JSON.stringify(checks.state.system_operational));
+      return checks;
+    },
+  },
+  {
+    // EVT-03 C007, C008: Planetary Assault (0x234) on an empty garrison opens
+    // the assault's Summary at once, the side's picture (0x2b98 Alliance,
+    // 0x2b99 Empire) and the capture text 0x7091 (FUN_00496770 code 2).
+    name: "assault-captures",
+    code: ASSAULT_CAPTURES,
+    async run(page, faction, source, directory, consoleLines) {
+      await orderAssault(page);
+      const checks = {};
+      checks.log = await consoleLine(consoleLines, /command=0x234 destination=assault status=issued runs=1/, "order 0x234");
+      Object.assign(checks, await liveSummary(page, faction, source, directory, "assault-summary"));
+      assert.equal(checks.state.assault, true);
+      assert.equal(checks.state.picture, faction.name === "alliance" ? 0x2b98 : 0x2b99);
+      assert.match(checks.state.title, /^Assault on /, JSON.stringify(checks.state));
+      assert.match(checks.state.body, /troops have taken control of the /, JSON.stringify(checks.state));
+      return checks;
+    },
+  },
+  {
+    // EVT-03 C009: one regiment against six; the holder keeps the system and
+    // the report reads 0x7092, "... Troops have defended ... assault."
+    name: "assault-repelled",
+    code: ASSAULT_REPELLED,
+    async run(page, faction, source, directory, consoleLines) {
+      await orderAssault(page);
+      const checks = {};
+      checks.log = await consoleLine(consoleLines, /command=0x234 destination=assault status=issued runs=1/, "order 0x234");
+      Object.assign(checks, await liveSummary(page, faction, source, directory, "assault-summary"));
+      assert.equal(checks.state.assault, true);
+      assert.equal(checks.state.picture, faction.name === "alliance" ? 0x2b98 : 0x2b99);
+      assert.match(checks.state.body, / Troops have defended .* from an? .* assault\./, JSON.stringify(checks.state));
+      return checks;
+    },
+  },
+  {
+    // EVT-03 C012, a damaged survivor: listed Operational with its damage
+    // art (+0x50 bit 9, FUN_00501c00; FUN_0042c3b0.c:350-410).
+    name: "damaged-survivor",
+    code: DAMAGED_SURVIVOR,
+    async run(page, faction, source, directory, consoleLines) {
+      const checks = await strikeCell(page, faction, source, directory, consoleLines, 2, "0x222");
+      const ship = checks.state.fleet_operational.find((cell) => cell.family >= 0x14 && cell.family <= 0x1b);
+      assert.ok(ship, JSON.stringify(checks.state.fleet_operational));
+      const shot = await forcesList(page, faction, checks.window, 1, directory, "fleet-ships");
+      checks.cell = damagedCell(shot.png, checks.window, 0, ship);
+      assert.ok(checks.cell.burn_only > 0 && checks.cell.mismatched === 0, JSON.stringify(checks.cell));
+      return checks;
+    },
+  },
+  {
+    // EVT-03 C012, a damaged loss: the batteries' only target dies with its
+    // bit and is listed Destroyed with the damage art.
+    name: "damaged-loss",
+    code: DAMAGED_LOSS,
+    async run(page, faction, source, directory, consoleLines) {
+      const checks = await strikeCell(page, faction, source, directory, consoleLines, 0, "0x220");
+      const ship = checks.state.fleet_destroyed.find((cell) => cell.family >= 0x14 && cell.family <= 0x1b);
+      assert.ok(ship, JSON.stringify(checks.state.fleet_destroyed));
+      assert.ok(!checks.state.fleet_operational.some((cell) => cell.family >= 0x14 && cell.family <= 0x1b), JSON.stringify(checks.state.fleet_operational));
+      const shot = await forcesList(page, faction, checks.window, 1, directory, "fleet-ships");
+      checks.cell = damagedCell(shot.png, checks.window, 1, ship);
+      assert.ok(checks.cell.burn_only > 0 && checks.cell.mismatched === 0, JSON.stringify(checks.cell));
+      return checks;
+    },
+  },
 ];
 
 async function inspect(server, source, faction, testCase, executable) {
@@ -819,7 +1123,7 @@ async function main() {
   const summary = {
     schema_version: 1,
     family: "orbital-strike",
-    scope: "test-only: EVT-03 Operation Report window (Summary picture through the shell, rail of five, six tabs per Forces view, Personnel's three columns, Display, Close); OBJ-14 fleet Planetary Bombardment row and its four-row submenu enabled and grey, a grey row taking no click, General Bombardment opening the report at once, the Conflict light and the Index reopen; Destroy System's movie 0x6f in the <video> overlay with its canvas caption, and the destroyed system greying the row; both sides",
+    scope: "test-only: EVT-03 Operation Report window (Summary picture through the shell, rail of five, six tabs per Forces view, Personnel's three columns, Display, Close); OBJ-14 fleet Planetary Bombardment row and its four-row submenu enabled and grey, a grey row taking no click, General Bombardment opening the report at once, the Conflict light and the Index reopen; Destroy System's movie 0x6f in the <video> overlay with its canvas caption, and the destroyed system greying the row; EVT-03 C001, C002, C004, C007-C009, C012, C014 and C015 through the fleet's menu and the live report; both sides",
     status: passed ? "pass" : "fail",
     browser_version: browserManifest.version,
     viewport: { width: 640, height: 480, device_scale_factor: 1 },

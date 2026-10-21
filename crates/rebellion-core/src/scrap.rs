@@ -101,7 +101,10 @@ pub fn overdraft_candidates(world: &GameWorld, side: Faction) -> Vec<ScrapTarget
                 .iter()
                 .enumerate()
                 .filter(|(_, ship)| {
+                    // FUN_0052e530.c:6-9: existing and completed; en route
+                    // is not tested.
                     ship.alive
+                        && ship.completed
                         && world
                             .capital_ship_classes
                             .get(ship.class)
@@ -1037,6 +1040,53 @@ mod tests {
             );
             assert!(scrap(&mut world, &mut stockpiles, &mut transport, candidates[0]).is_some());
             assert!(world.squadron_transits.is_empty(), "{side:?}");
+        }
+    }
+
+    // FUN_0052e530.c:6-9 takes an object that exists (`+0x50` bit 6), is the
+    // side's and is completed (bit 2): an unfinished ship is no candidate, one
+    // on its own leg from its yard (bit 5, not tested) is.
+    #[test]
+    fn the_overdraft_skips_an_unfinished_ship_but_not_one_on_its_own_leg_for_either_side() {
+        for is_alliance in [true, false] {
+            let (mut world, system) = world();
+            let class = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    maintenance_cost: 5,
+                    ..crate::world::CapitalShipClass::default()
+                });
+            let ship = |completed, travelling| {
+                let mut ship = crate::world::ShipInstance::new(class, 10, is_alliance);
+                ship.completed = completed;
+                if travelling {
+                    ship.transit = Some(crate::world::ShipTransit {
+                        from: system,
+                        to: system,
+                        arrival_tick: 9,
+                    });
+                }
+                ship
+            };
+            let fleet = world.fleets.insert(crate::world::Fleet {
+                location: system,
+                capital_ships: vec![ship(false, false), ship(true, true), ship(true, false)],
+                fighters: vec![],
+                characters: vec![],
+                is_alliance,
+                bombarding: false,
+            });
+
+            let candidates = overdraft_candidates(&world, Faction::of_alliance(is_alliance));
+
+            assert_eq!(
+                candidates,
+                [
+                    ScrapTarget::CapitalShip { fleet, index: 1 },
+                    ScrapTarget::CapitalShip { fleet, index: 2 },
+                ],
+                "{is_alliance}"
+            );
         }
     }
 

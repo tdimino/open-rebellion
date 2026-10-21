@@ -37,8 +37,8 @@
 //! - **Rebel HQ** (random rim system, NOT Yavin): CMUNAFTB group 2 (fleet),
 //!   CMUNHQTB (garrison), FACLHQTB (facilities). Mon Mothma placed here.
 //!
-//! Army tables (CMUNEMTB, CMUNALTB) are distributed across the faction's
-//! special systems.
+//! Army tables (CMUNALTB, CMUNEMTB) are placed last, at random systems the
+//! side holds, within its spare maintenance budget (`FUN_0051b1f0`).
 
 use std::collections::HashMap;
 use std::path::Path;

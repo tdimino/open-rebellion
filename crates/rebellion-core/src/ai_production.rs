@@ -1007,7 +1007,6 @@ impl SectorRecord {
             systems: sector.systems.clone(),
             x: i64::from(sector.x),
             y: i64::from(sector.y),
-            mark,
             ..Self::default()
         };
         rec.slots.insert(slot::WEAKEST_SHIELD, 100_000);
@@ -3614,14 +3613,25 @@ impl ProductionState {
 
     /// `FUN_004cd040` with no regional record: the own fleet with free
     /// hangar slots that has the fewest (`FUN_0041a4c0(c, 0x100005, 0xc02,
-    /// 0x17, 2)`); the Destination names the fleet.
+    /// 0x17, 2)`); the Destination names the fleet. The flags: own `0x1`,
+    /// unadopted `0x4`, free hangar slots `0x100000` (`FUN_00433620.c:70-72`,
+    /// ships neither unfinished nor en route, `FUN_00433780.c:113-119`); none of
+    /// a ship en route `0x800`, a ship unfinished `0x400` or the fleet en
+    /// route `0x2`.
     fn hangar_target(round: &mut Round<'_>) -> Option<crate::ids::FleetKey> {
+        use crate::ai_records::fleet;
         let world = round.inputs.world;
-        let is_alliance = round.inputs.side == Faction::Alliance;
         let fleets: Vec<(crate::ids::FleetKey, i64)> = world
             .fleets
             .iter()
-            .filter(|(_, f)| f.is_alliance == is_alliance)
+            .filter(|(k, _)| {
+                round.fleets.get(k).is_some_and(|record| {
+                    record.has(fleet::OWN | fleet::UNADOPTED)
+                        && record.flags
+                            & (fleet::EN_ROUTE | fleet::SHIP_EN_ROUTE | fleet::INCOMPLETE)
+                            == 0
+                })
+            })
             .filter_map(|(k, f)| {
                 let capacity: i64 = f
                     .capital_ships
@@ -4818,6 +4828,117 @@ mod tests {
         ProductionState::default().scrap_ship(&mut round)
     }
 
+    // FUN_004cd040 with no regional record asks
+    // FUN_0041a4c0(c, 0x100005, 0xc02, 0x17, 2): own fleets with the flags
+    // 0x100005 (own, unadopted, free hangar slots) and none of 0xc02 (a ship
+    // unfinished 0x400, a ship en route 0x800, the fleet en route 2), the
+    // fewest free hangar slots first (key slot 0x17).
+    #[test]
+    fn the_hangar_target_skips_fleets_holding_an_unfinished_or_travelling_ship_or_adopted_for_either_side() {
+        use crate::ai_records::{FleetMark, Marks};
+        for side in [Faction::Empire, Faction::Alliance] {
+            let is_alliance = side == Faction::Alliance;
+            let mut world = GameWorld::default();
+            let system = world.systems.insert(crate::world::System::default());
+            let carrier = world.capital_ship_classes.insert(CapitalShipClass {
+                family: 0x14,
+                fighter_capacity: 4,
+                ..Default::default()
+            });
+            let fighters = world
+                .fighter_classes
+                .insert(crate::world::FighterClass::default());
+            let mut fleet = |tag: u32, aboard: u32, edit: &dyn Fn(&mut ShipInstance)| {
+                let mut ship = ShipInstance::new(carrier, 100, is_alliance);
+                ship.tag = tag;
+                edit(&mut ship);
+                world.fleets.insert(Fleet {
+                    location: system,
+                    is_alliance,
+                    capital_ships: vec![ship],
+                    fighters: vec![crate::world::FighterEntry {
+                        class: fighters,
+                        count: aboard,
+                        carrier: tag,
+                    }],
+                    ..Default::default()
+                })
+            };
+            // The wanted fleet has the fewest free slots among the fleets the
+            // query admits (2 of 4); each excluded fleet has fewer (1), so a
+            // missing filter would take one of them first. A full fleet has
+            // none free and an emptier one has more.
+            let wanted = fleet(1, 2, &|_| {});
+            fleet(5, 0, &|_| {}); // roomy
+            fleet(6, 4, &|_| {}); // full
+            fleet(2, 3, &|ship| ship.completed = false); // a ship unfinished
+            let in_hyperspace = fleet(8, 3, &|_| {});
+            // A ship on its own leg.
+            fleet(3, 3, &|ship| {
+                ship.transit = Some(crate::world::ShipTransit {
+                    from: system,
+                    to: system,
+                    arrival_tick: 9,
+                });
+            });
+            let adopted = fleet(4, 3, &|_| {});
+            // The other side's fleet is no candidate either (own `0x1`).
+            {
+                let mut ship = ShipInstance::new(carrier, 100, !is_alliance);
+                ship.tag = 7;
+                world.fleets.insert(Fleet {
+                    location: system,
+                    is_alliance: !is_alliance,
+                    capital_ships: vec![ship],
+                    fighters: vec![crate::world::FighterEntry {
+                        class: fighters,
+                        count: 3,
+                        carrier: 7,
+                    }],
+                    ..Default::default()
+                })
+            };
+            let mut marks = Marks::default();
+            marks.fleets.insert(
+                adopted,
+                FleetMark {
+                    flags: 0,
+                    ..FleetMark::default()
+                },
+            );
+            let manufacturing = ManufacturingState::new();
+            let transport = TroopTransportState::new();
+            let uprisings = crate::uprising::UprisingState::new();
+            let research = crate::research::ResearchState::new();
+            let movement = crate::movement::MovementState::new();
+            let inputs = RoundInputs {
+                world: &world,
+                manufacturing: &manufacturing,
+                transport: &transport,
+                uprisings: &uprisings,
+                research: &research,
+                movement: &movement,
+                marks: &marks,
+                side,
+                tick: 7,
+                round_in_day: 0,
+            };
+            let mut round = Round::new(&ProductionState::default(), &inputs);
+            // A fleet in hyperspace carries the en-route bit in its record.
+            round
+                .fleets
+                .get_mut(&in_hyperspace)
+                .expect("the travelling fleet's record")
+                .flags |= crate::ai_records::fleet::EN_ROUTE;
+
+            assert_eq!(
+                ProductionState::hangar_target(&mut round),
+                Some(wanted),
+                "{side:?}"
+            );
+        }
+    }
+
     #[test]
     fn the_scrap_step_takes_only_free_ships_of_unadopted_fleets() {
         // FUN_004cab20: FUN_0041a4c0(c, 5, 0x402, 0xe, 2) admits own
@@ -4920,5 +5041,275 @@ mod tests {
             marks.fleets.insert(station, adopt);
             assert_eq!(scrap_order(&world, side, &marks, |_| {}), None, "{side:?}");
         }
+    }
+
+    /// The round over `world` for `side` with `marks`.
+    fn round_records(
+        world: &GameWorld,
+        side: Faction,
+        marks: &crate::ai_records::Marks,
+    ) -> (HashMap<SystemKey, SystemRecord>, Vec<SectorRecord>) {
+        let state = ProductionState::default();
+        let manufacturing = ManufacturingState::new();
+        let transport = TroopTransportState::new();
+        let uprisings = crate::uprising::UprisingState::new();
+        let research = crate::research::ResearchState::new();
+        let movement = crate::movement::MovementState::new();
+        let inputs = RoundInputs {
+            world,
+            manufacturing: &manufacturing,
+            transport: &transport,
+            uprisings: &uprisings,
+            research: &research,
+            movement: &movement,
+            marks,
+            side,
+            tick: 7,
+            round_in_day: 0,
+        };
+        let round = Round::new(&state, &inputs);
+        (round.records.clone(), round.sectors.clone())
+    }
+
+    // FUN_00433e40 records a system's sector (`+0x14`), its energy and
+    // Coruscant (DatId 0x109), which takes the HQ bit with no headquarters
+    // there; FUN_004321e0 records a sector's position and its plan mark.
+    #[test]
+    fn the_round_records_a_system_s_sector_energy_and_coruscant_and_a_sector_s_place_and_mark_for_either_side() {
+        use crate::ids::DatId;
+        use crate::world::{ControlKind, Sector, System};
+        for side in [Faction::Empire, Faction::Alliance] {
+            let mut world = GameWorld::default();
+            let sector = world.sectors.insert(Sector {
+                x: 30,
+                y: 40,
+                ..Sector::default()
+            });
+            let system = |dat_id: u32, energy: u8| System {
+                dat_id: DatId::new(dat_id),
+                sector,
+                total_energy: energy,
+                control: ControlKind::Controlled(side),
+                ..System::default()
+            };
+            let coruscant = world.systems.insert(system(0x9000_0109, 11));
+            let other = world.systems.insert(system(0x9000_0108, 0));
+            world.sectors[sector].systems = vec![coruscant, other];
+            let mut marks = crate::ai_records::Marks::default();
+            let mark = crate::ai_records::SectorMark {
+                kind: 2,
+                plan_id: 5,
+                ..Default::default()
+            };
+            *marks.sector_mut(sector) = mark;
+
+            let (records, sectors) = round_records(&world, side, &marks);
+
+            let r = &records[&coruscant];
+            assert_eq!((r.sector, r.energy, r.coruscant), (sector, 11, true), "{side:?}");
+            assert_ne!(r.a & bit::HQ, 0, "{side:?}");
+            assert_eq!(records[&other].a & bit::HQ, 0, "{side:?}");
+            let rec = sectors.iter().find(|s| s.key == sector).expect("the sector's record");
+            assert_eq!((rec.x, rec.y, rec.mark), (30, 40, mark), "{side:?}");
+        }
+    }
+
+    // FUN_00473930 and its siblings key 1 to the class's maintenance and 4 to
+    // its refined cost for every node. No side is read.
+    #[test]
+    fn a_class_node_keys_its_maintenance_and_refined_cost() {
+        let mut world = GameWorld::default();
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            refined_material_cost: 7,
+            maintenance_cost: 3,
+            ..Default::default()
+        });
+
+        let node = ClassNode::of(&world, crate::manufacturing::BuildableKind::CapitalShip(class))
+            .expect("a node for the class");
+
+        assert_eq!((node.key(1), node.key(4)), (3, 7));
+    }
+
+    /// A round for `side` over one sector holding `ours` (the side's) and
+    /// `theirs` (the other side's), with the side's shield (family 0x24) at
+    /// `ours`; `edit` sets the records the choice reads, then `run` acts.
+    fn two_system_round<T>(
+        side: Faction,
+        edit: impl FnOnce(&mut Round<'_>, SystemKey, SystemKey),
+        run: impl FnOnce(&mut Round<'_>) -> T,
+    ) -> (T, crate::scrap::ScrapTarget, SystemKey) {
+        use crate::ids::DatId;
+        use crate::world::{ControlKind, DefenseFacilityInstance, Sector, System};
+        let other = if side == Faction::Empire {
+            Faction::Alliance
+        } else {
+            Faction::Empire
+        };
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(Sector::default());
+        let mut system = |holder: Faction| {
+            world.systems.insert(System {
+                sector,
+                control: ControlKind::Controlled(holder),
+                ..System::default()
+            })
+        };
+        let ours = system(side);
+        let theirs = system(other);
+        world.sectors[sector].systems = vec![ours, theirs];
+        let shield = world.defense_facilities.insert(DefenseFacilityInstance {
+            class_dat_id: DatId::new(0x2400_0001),
+            side,
+        });
+        world.systems[ours].defense_facilities.push(shield);
+        let marks = crate::ai_records::Marks::default();
+        let state = ProductionState::default();
+        let manufacturing = ManufacturingState::new();
+        let transport = TroopTransportState::new();
+        let uprisings = crate::uprising::UprisingState::new();
+        let research = crate::research::ResearchState::new();
+        let movement = crate::movement::MovementState::new();
+        let inputs = RoundInputs {
+            world: &world,
+            manufacturing: &manufacturing,
+            transport: &transport,
+            uprisings: &uprisings,
+            research: &research,
+            movement: &movement,
+            marks: &marks,
+            side,
+            tick: 7,
+            round_in_day: 0,
+        };
+        let mut round = Round::new(&state, &inputs);
+        edit(&mut round, ours, theirs);
+        (run(&mut round), crate::scrap::ScrapTarget::Defense(shield), ours)
+    }
+
+    /// The sector holds a surplus (`0x1_0000`); `theirs` has the larger
+    /// defence balance (slot 0x25), `ours` a surplus shield.
+    fn surplus(round: &mut Round<'_>, ours: SystemKey, theirs: SystemKey) {
+        for s in &mut round.sectors {
+            s.flags |= 0x1_0000;
+        }
+        let r = round.records.get_mut(&ours).expect("our record");
+        (r.defence_balance, r.shields, r.shield_target) = (1, 1, 0);
+        round.records.get_mut(&theirs).expect("their record").defence_balance = 50;
+    }
+
+    // FUN_004d71e0 picks the side's own system (`sys+0x30 & 1`) with the
+    // largest surplus, and FUN_004d7330 scraps its surplus shield; another
+    // side's larger surplus is never a candidate.
+    #[test]
+    fn the_defence_surplus_pass_scraps_only_at_the_side_s_own_system_for_either_side() {
+        for side in [Faction::Empire, Faction::Alliance] {
+            let (orders, shield, _) =
+                two_system_round(side, surplus, |round| ProductionState::default().defences(round));
+
+            assert_eq!(orders, vec![Order::Scrap(vec![shield])], "{side:?}");
+        }
+    }
+
+    // FUN_004d6e70's overdraft pass picks the side's own system with the
+    // largest surplus in a surplus sector and scraps its first battery or
+    // shield; another side's system is never a candidate.
+    #[test]
+    fn the_defence_overdraft_scraps_only_at_the_side_s_own_system_for_either_side() {
+        for side in [Faction::Empire, Faction::Alliance] {
+            let (order, shield, _) = two_system_round(side, surplus, |round| {
+                ProductionState::default().defence_overdraft(round)
+            });
+
+            assert_eq!(order, Some(Order::Scrap(vec![shield])), "{side:?}");
+        }
+    }
+
+    // FUN_004e2c70 (module 3's refinery site): a system of a refinery sector
+    // that is a refinery site, the side's, unblocked and holding no yard
+    // role (`role::ANY`), even when one with a role ranks higher.
+    #[test]
+    fn a_refinery_site_skips_a_system_that_holds_a_yard_role_for_either_side() {
+        for side in [Faction::Empire, Faction::Alliance] {
+            let (site, _, ours) = two_system_round(
+                side,
+                |round, ours, theirs| {
+                    for s in &mut round.sectors {
+                        s.flags |= 0x200;
+                    }
+                    // The role holder leads on both keys: free energy
+                    // (0xf), then popularity (0).
+                    for (key, role_bits, energy, popularity) in
+                        [(ours, 0, 1, 50), (theirs, role::DEFENCES, 9, 100)]
+                    {
+                        let r = round.records.get_mut(&key).expect("a record");
+                        r.a |= bit::REFINERY_SITE | role_bits;
+                        r.own = true;
+                        (r.free_energy, r.popularity) = (energy, popularity);
+                    }
+                },
+                |round| round.mine_site(false, SystemKey::default()),
+            );
+
+            assert_eq!(site, Some(ours), "{side:?}");
+        }
+    }
+
+    /// A ten-system sector's record built from the side's system records;
+    /// `last` is the tenth system's record.
+    fn ten_system_sector(last: impl Fn(&mut SystemRecord)) -> SectorRecord {
+        use crate::ai_records::sys;
+        use crate::world::{Sector, System};
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(Sector::default());
+        let mut records = HashMap::new();
+        for i in 0..10 {
+            let key = world.systems.insert(System {
+                sector,
+                ..System::default()
+            });
+            world.sectors[sector].systems.push(key);
+            let mut r = SystemRecord {
+                key,
+                sector,
+                s: sys::OWN | sys::POPULATED | sys::HELD,
+                q: 0x800_0000,
+                popularity: if i == 0 { 80 } else { 30 },
+                ..SystemRecord::default()
+            };
+            if i == 9 {
+                last(&mut r);
+            }
+            records.insert(key, r);
+        }
+        SectorRecord::build(&world, sector, &records, &crate::ai_records::Marks::default())
+    }
+
+    // FUN_004321e0 after the folds: the weakest shield stays only with an
+    // undefended enemy system (`+0x2c & 0x100`, FUN_00432350), the
+    // popularity sum (`+0x8c`) becomes the mean over the side's systems
+    // (`+0x7c`), ten visible, populated and held systems set 0x4000_0000 (C)
+    // and 1 and 2 (B), and a headquarters (`+0x19c`) sets B 0x80.
+    #[test]
+    fn a_sector_record_marks_ten_visible_populated_held_systems_and_its_headquarters() {
+        use crate::ai_records::sys;
+        // Nine of the side's systems (popularity 80 + 8 x 30 = 320, mean
+        // 35) and one undefended enemy system.
+        let full = ten_system_sector(|r| {
+            r.s = sys::ENEMY | sys::UNDEFENDED | sys::POPULATED | sys::HELD;
+            (r.shield_strength, r.hq_count) = (7, 1);
+        });
+        assert_eq!(full.slot(slot::WEAKEST_SHIELD), 7);
+        assert_eq!(full.slot(7), 35);
+        assert_ne!(full.c28 & 0x4000_0000, 0);
+        assert_eq!(full.b & 0x83, 0x83);
+
+        let short = ten_system_sector(|r| {
+            r.s = sys::OWN;
+            r.q = 0;
+        });
+        assert_eq!(short.slot(slot::WEAKEST_SHIELD), 0);
+        assert_eq!(short.c28 & 0x4000_0000, 0);
+        assert_eq!(short.b & 0x83, 0);
     }
 }

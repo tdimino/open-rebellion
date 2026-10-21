@@ -187,9 +187,8 @@ pub struct BlockadeState {
     blockaded: HashSet<SystemKey>,
     /// Last observed position and withdraw percent of each embarked regiment.
     ///
-    /// Persisted since save v15. Loading a v14 or older save starts every
-    /// embarked regiment at full withdraw percent, which never destroys one
-    /// wrongly (FUN_00504960 resets to 100 on activation).
+    /// Saved, so a regiment keeps its orbit and withdraw percent across a
+    /// load (FUN_00504960 resets it to 100 on activation).
     #[serde(
         serialize_with = "crate::serde_ordered::serialize_hash_map",
         deserialize_with = "crate::serde_ordered::deserialize_hash_map"

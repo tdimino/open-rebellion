@@ -9,14 +9,14 @@ tags: [modding, hot-reload, toml, rfc7396]
 
 # Mod Runtime
 
-`crates/rebellion-data/src/mods.rs` — Runtime mod management: discovery, validation, enable/disable, hot reload.
+`crates/rebellion-data/src/mods.rs` owns runtime mod management: discovery, validation, enable/disable, hot reload.
 
 ## Architecture
 
 The mod system has three cooperating layers:
 
-1. **Library layer** (existed since v0.2.0): `ModManifest`, `ModContent`, `ModLoader`, `ModWatcher`
-2. **Runtime layer** (v0.6.0): `ModRuntime`, `ModConfig`, `ModError` — orchestrates the library for the running game
+1. **Library layer**: `ModManifest`, `ModContent`, `ModLoader`, `ModWatcher`
+2. **Runtime layer**: `ModRuntime`, `ModConfig`, `ModError`; orchestrates the library for the running game
 3. **Presentation-content layer**: native Encyclopedia overlays are retained
    outside the world patch map and installed through an immutable candidate
    session
@@ -81,12 +81,13 @@ pub enum ModError {
     MissingDependency { mod_name, dep_name },
     VersionMismatch { mod_name, dep_name, required, found },
     ParseError { mod_name, message },
+    LoadOrder { mod_name, message },
 }
 ```
 
 ## DatId Matching
 
-Mod patches match entities by `dat_id` in JSON. `DatId(u32)` is a newtype — serde serializes it as a bare number, not `{"id": N}`. The lookup path tries:
+Mod patches match entities by `dat_id` in JSON. `DatId(u32)` is a newtype—serde serializes it as a bare number, not `{"id": N}`. The lookup path tries:
 1. `entity["dat_id"]` as bare u64 (correct for serde)
 2. `entity["dat_id"]["id"]` as u64 (fallback for hand-crafted patches)
 3. `entity["id"]` as u64 (last resort)
@@ -109,7 +110,7 @@ author-facing schema.
 
 ## Mods Directory Resolution
 
-`mods/` is resolved as `gdata_path.parent().parent().join("mods")` — a sibling of `data/`, not inside it:
+`mods/` is resolved as `gdata_path.parent().parent().join("mods")`, a sibling of `data/`, not inside it:
 
 ```
 open-rebellion/
@@ -117,7 +118,7 @@ open-rebellion/
 ├── mods/          ← mod directory
 │   ├── my-mod/
 │   │   ├── mod.toml
-│   │   └── capital_ships.json
+│   │   └── capital_ship_classes.json
 │   └── config.toml
 ```
 
@@ -138,7 +139,7 @@ native/browser parity claim is made.
 
 ## Known Limitations
 
-- Mod application serializes/deserializes the entire GameWorld to JSON for patching — works but is O(world_size) per mod
+- Mod application serializes/deserializes the entire GameWorld to JSON for patching—works but is O(world_size) per mod
 - World patches cannot add entities; the separate Encyclopedia v1 contract can
   add or remove complete presentation topics under its stricter validation
 - `enabled_sorted()` returns empty on dependency resolution failure; structured

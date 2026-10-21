@@ -3,7 +3,7 @@ title: "Game Domain: Star Wars Rebellion"
 description: "Game mechanics overview covering galaxy structure, factions, units, missions, and combat"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-17
+updated: 2026-10-19
 tags: [reference, game-mechanics, factions, missions]
 ---
 
@@ -23,14 +23,14 @@ Star Wars Rebellion (1998, Coolhand/LucasArts) is a 4X galactic strategy game. A
 Alliance and Empire only. Each has:
 - Headquarters system (Alliance: variable start, Empire: Coruscant)
 - Characters, fleets, manufacturing queues, tech tree
-- Victory: capture enemy HQ (or destroy Death Star / find Rebel base)
+- Victory: the win word (`systems/victory.md`): the Empire on the Alliance HQ gone, the Alliance on Coruscant held or destroyed; Standard also needs the enemy leaders captured
 
 ## Characters
 
 - **Major** (6 in base): Luke, Vader, etc. Fixed stats, unique abilities, plot events.
 - **Minor** (54): Generic officers. Stats use base+variance: `final = base + rng(0..=variance)` at game start.
 - **8 skill pairs**: diplomacy, espionage, ship_design, troop_training, facility_design, combat, leadership, loyalty
-- **Jedi**: `jedi_probability` (0-100), `jedi_level` (base+variance). DAT layer also has `is_known_jedi`, `is_jedi_trainer` (not yet promoted to world model)
+- **Jedi**: `jedi_probability` (0-100), `jedi_level` (base+variance). `is_known_jedi`, `is_jedi_trainer` (from MJCHARSD)
 - **Roles**: `can_be_admiral` (fleet command), `can_be_commander` (missions), `can_be_general` (ground combat)
 - **Loyalty**: `loyalty` skill pair + `is_unable_to_betray` flag (Luke, Vader cannot switch sides)
 
@@ -83,66 +83,13 @@ Starting unit/facility deployments for new games:
 
 ## Implemented Systems
 
-See `agent_docs/simulation.md` for full API reference on all 15 systems.
-
-### Core Loop (v0.2.0)
-- **Tick system** (`tick.rs`): Frame-independent GameClock, GameSpeed (Paused, Very Slow, Slow, Medium, Fast), TickEvent markers
-- **Manufacturing** (`manufacturing.rs`): Per-system production queues with overflow propagation; blockade-aware (`advance_with_blockade`)
-- **Events** (`events.rs`): Conditional triggers (TickReached, CharacterAtSystem, Random, EventFired), event chaining
-- **AI** (`ai.rs`, `ai_scheduler.rs`): the original's modules, one round a side per in-day step, rate+1 steps a day by speed (systems/ai-parity-tracker.md).
-- **Movement** (`movement.rs`): Fleet hyperspace transit with speed from slowest hyperdrive rating
-- **Fog of war** (`fog.rs`): Per-faction monotonic visibility with advance intel at 50% transit
-- **Mod loader** (`rebellion-data/src/mods.rs`): TOML manifests, RFC 7396 merge patch, semver, hot reload
-
-### War Machine (v0.4.0)
-- **Missions** (`missions.rs`): Diplomacy, Recruitment, Sabotage, Assassination, Espionage, Rescue, Abduction, InciteUprising, Autoscrap, SubdueUprising, DeathStarSabotage, Research (three trees) and Move—MSTB probability tables with quadratic fallback
-- **Space combat** (`tactical.rs`): every battle runs the tactical engine, played, simulated or headless (`FUN_0040a050` state 8); re-fought every tick while both sides remain
-- **Ground combat** (`assault.rs`): the Planetary Assault order `0x234`, issued by either side from the fleet's menu and by the AI: defence fire, one engagement per attacking regiment, collateral hits and a landing of up to six regiments (`ghidra/notes/ground-assault.md`)
-- **Orbital bombardment** (`bombardment.rs`): the original's four Planetary Bombardment orders, issued by either side from the object menu, and by the AI through `integrator::resolve_ai_strike`: gate, defence fire, per-hit target rolls, character roll and support finalize (`ghidra/notes/bombardment.md`)
-- **Blockade** (`blockade.rs`): Hostile fleet without defender halts manufacturing, destroys in-transit troops, and runs timer `0x386`, the blockader's support shift (`systems/blockade.md`)
-- **Uprising** (`uprising.rs`): revolts start on a troop shortfall and never change control; an incident every 30-100 ticks maps its score through UPRIS1TB/UPRIS2TB step lookups to losses; natural disasters erode resources and facilities
-- **Death Star** (`death_star.rs`): a shipyard product, one per system (`systems/death-star.md`); Destroy System is bombardment order `0x223` and runs the destroy cascade (`ghidra/notes/death-star-strategic.md`)
-- **Research** (`research.rs`): 3 tech trees (Ship/Troop/Facility) per faction, points pools fed by timer `0x381` and Research missions, spent on `research_order` at `research_difficulty` (`systems/research.md`)
-- **Jedi training** (`jedi.rs`): 4-tier Force progression (None→Aware→Training→Experienced), XP accumulation, detection checks
-- **Victory conditions** (`victory.rs`): the win word. The Empire wins on AD (the Alliance HQ gone), the Alliance on CA or CD (Coruscant held or destroyed); Standard also needs the other side's two leaders prisoners (LC and MC, or DC and EC), Headquarters Only does not. `resolved` stops evaluation once the word holds GO
-- **Save/load** (`rebellion-data/src/save.rs`): Bincode with OPENREB header, mod metadata and FNV-1a hash, 6 slots (the Game Options rows); an older version is rejected, never migrated. See `agent_docs/save-load.md`.
-
-### Full Parity (v0.5.0)
-- **4 scripted story chains** (`story_events.rs`): Luke Dagobah (0x221→0x210), Final Battle (0x220), Bounty Hunters (0x212), Jabba's Palace (0x380-0x383)
-- **Han Solo speed bonus** (`movement.rs`): `hyperdrive_modifier` on Character, consulted by `fleet_ticks_per_hop()`
-- **Betrayal system** (`betrayal.rs`): loyalty threshold via UPRIS1TB, `is_unable_to_betray` immunity, 50-tick cooldown
-- **Decoy system** (`missions.rs`): FDECOYTB consultation during mission resolution
-- **Escape system** (`missions.rs`): timer `0x38a` and its ESCAPETB roll, `escape_step()` (`systems/captivity.md`)
-- **Mission state flags**: `on_mission`, `on_hidden_mission`, `on_mandatory_mission` tracked on Character; `dispatch_guarded()` prevents double-dispatch
-- **6 new EventConditions** + **6 new EventActions** for story event mechanics
-- **15 Ghidra RE event ID constants** (0x12c–0x370)
-
-### Mod Workshop (v0.6.0)
-- **Sensor-radius fog** (`fog.rs`): fleets with detection capability reveal nearby systems within `detection * 15.0` coordinate radius
-- **Captivity state** (`world/mod.rs`): `is_captive`, `captured_by: Option<Faction>`, `capture_tick: Option<u64>` on Character — set on capture, cleared on rescue/escape
-- **Mod runtime** (`mods.rs`): `ModRuntime`, `ModConfig`, enable/disable with `config.toml` persistence, structured `ModError`, hot reload integration. See `agent_docs/mod-runtime.md`.
-- **Mod Manager panel** (`panels/mod_manager.rs`): egui floating window with mod list, enable/disable, reload, Tab shortcut
-
-### Mission Effects (applied in main.rs)
-| Effect | World Mutation |
-|--------|---------------|
-| `PopularityShifted` | Clamp `sys.popularity_alliance` / `_empire` |
-| `CharacterRecruited` | No-op (covered by popularity) |
-| `FacilitySabotaged` | Remove facility from system + arena by index |
-| `CharacterKilled` | Remove from all fleets, remove from character arena |
-| `CharacterCaptured` | Set captivity fields, flip faction, remove from fleets |
-| `CharacterRescued` | Restore faction, clear captivity fields |
-| `CharacterEscaped` | Restore home faction (`is_alliance`), clear captivity |
-| `SystemIntelligenceGathered` | Set exploration_status to Explored |
-| `UprisingStarted` | Shift popularity against controller |
-| `CharacterBusy` | Set `on_mission = true` |
-| `CharacterAvailable` | Clear `on_mission`, `on_hidden_mission` |
-| `DecoyTriggered` | Log message (no world mutation) |
+[simulation.md](simulation.md) lists every simulation system, its file and
+its effects; [systems/](systems/) holds the detail. Saves:
+[save-load.md](save-load.md). Mods: [mod-runtime.md](mod-runtime.md).
 
 ## Unimplemented Mechanics
 
-- **Video playback**: Smacker to WebM, victory cutscenes
 - **Sound effects / music**: engine exists (quad-snd), asset coverage incomplete
 - **Remaining story events**: ~15 additional story beats documented in RE but not implemented (Noghri, special forces chains)
-- **WASM save/load**: no IndexedDB/localStorage fallback
+- **WASM save/load**: localStorage only; IndexedDB is M3 (`save-load.md`, "Browser storage")
 - **WASM mod loading**: no browser file picker integration

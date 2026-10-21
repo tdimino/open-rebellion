@@ -51,7 +51,7 @@ Answers task-graph node `or-q-mod-superweapons-awzg` (epic `or-ep-mod-surface-vd
 - **Gate** `FUN_00582440`: each team fleet needs a bombard-strength sum (slot `+0x1dc`) above 0 and, for `0x223`, a usable ship in `[0x18,0x1c)`; one passing fleet is enough, and an inactive fleet (`+0x50` bit 0 clear) is skipped. No side, shield, ion or charge test.
 - **Menu:** `0x223` is in every fleet's order list, always listed (`FUN_0040f340`) and enabled only when `FUN_00581e80` → `FUN_00553770` and `FUN_00582440` pass (`FUN_004ff8e0`, `FUN_0050f0b0`, `FUN_005827e0`).
 - **Target:** the only refusal is an already destroyed system (1/`0x22`, `FUN_00507f10`, `FUN_00507fc0`). Own, neutral, enemy, the Alliance HQ, Coruscant and the last system are all legal.
-- **Kill phase:** `FUN_0058d990` walks the fleets with order bit `+0x58` bit 6 (`FUN_0058ca70`); its callback `FUN_0058d440` reports a ship in `[0x18,0x1c)`; `FUN_0058ce70` then destroys the system through slot `+0xac` with reason byte `0x10` when the system's holder is the bombarder, else `0xf`. The defence phase `FUN_0058d770` still runs afterwards.
+- **Kill phase:** `FUN_0058d990` walks the usable fleets with order bit `+0x58` bit 6 and their usable ships (mode 1, `FUN_0058ca70.c:26-34`); its callback `FUN_0058d440` reports a ship in `[0x18,0x1c)`; `FUN_0058ce70` then destroys the system through slot `+0xac` with reason byte `0x10` when the system's holder is the bombarder, else `0xf`. The defence phase `FUN_0058d770` still runs afterwards.
 
 ## What destroying a system does
 

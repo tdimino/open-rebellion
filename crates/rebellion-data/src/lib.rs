@@ -190,6 +190,7 @@ pub fn load_game_data_with_options(
         revolting: std::collections::HashSet::new(),
         support_events: Vec::new(),
         manager_side_changes: Vec::new(),
+        autoscrap_systems: Vec::new(),
         control_change_cap: rebellion_core::support_shift::ControlChangeCap::default(),
         battle_rng: rebellion_core::tactical::OriginalBattleRng::default(),
     };
@@ -249,7 +250,8 @@ pub fn load_game_data_with_options(
             )
         })?;
 
-        // family_id 0x90 (144) = Explored, 0x92 (146) = Unexplored (per SYSTEMSD.DAT format).
+        // SYSTEMSD family_id 0x90 (144) is a core system and starts explored;
+        // 0x92 (146) is a rim system and starts unexplored.
         let exploration_status = if dat.family_id == 0x90 {
             ExplorationStatus::Explored
         } else {

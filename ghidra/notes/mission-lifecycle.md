@@ -77,6 +77,19 @@ spread = record `+0x54` (`FUN_00520b50`, `FUN_00540270`). A timer fires after
 
 Every phase change also raises notification `0x30d` (`FUN_0053f950`).
 
+In a save, a mission's master copy (graph `0x81` for the Empire) holds
+`+0xc + 4w` at fields word w: result `+0x60` is word 21, end code `+0x64`
+word 22, phase `+0x68` word 23, origin `+0x6c` word 24, target `+0x70`
+word 25, container `+0x74` and target location `+0x78` words 26-27, and
+the leader `+0x7c` word 28; word 13 matched word 23 in every save read. On
+Wine (the `undefended` save, `agent_docs/original-save-editing.md`),
+Daala's Assassination of Han Solo from Berchest (`0x900000ab`) to
+Caprionril (`0x90000097`), ordered on day 418, read phase 4 in the saves
+of days 443-463, phase 8 on day 465, and filed its Mission Report on day
+466, inside MISSNSD `0x63`'s timer (minimum 1, spread 1). Its target word
+is Han and its container and target location are Caprionril; the Return
+that follows (`0x42`) reverses origin and destination.
+
 Phase 2 also runs `FUN_00548370` (first read): it sets a travel-speed
 percent of GNPRTB 3083 (shipped 50) when the team holds DatId `0x33000243`,
 else 100. `FUN_005484d0` (first read) adds the team's average leadership
@@ -709,9 +722,10 @@ string, not the per-family titles and bodies (`0x7100`-`0x7135`).
 
 ## Still open
 
-- Which object a character mission stores as its target `+0x70` and
-  container `+0x74` (the per-class slot `+0x1bc` init is not a defined
-  function in the database); Sabotage's is its order's object (`+0x4c`).
+- Which object a character mission other than Assassination stores as its
+  target `+0x70` and container `+0x74` (the per-class slot `+0x1bc` init
+  is not a defined function in the database); Sabotage's is its order's
+  object (`+0x4c`), Assassination's the target character and its system.
 - What slot `+0xac(6)` does beyond destroying the object (messages,
   cargo aboard a destroyed hull).
 - What system slot `+0xc` returns, for the location rule above.

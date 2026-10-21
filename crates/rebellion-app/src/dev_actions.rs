@@ -6,9 +6,9 @@
 //! app's own arrival step calls it, the tick's own combat and blockade
 //! checks), so what it shows is the game's
 //! behaviour. A command whose precondition fails is refused with the reason
-//! and is never faked. `Maintenance capacity`, `Strip defenders` and
-//! `Queue build` stand for no event: they are staging alone. `agent_docs/dev-commands.md` lists
-//! them.
+//! and is never faked. `Maintenance capacity`, `Strip defenders`,
+//! `Embark` and `Queue build` stand for no event: they are staging alone.
+//! `agent_docs/dev-commands.md` lists them.
 
 use rebellion_core::ai::AIAction;
 use rebellion_core::ai_regions::Strike;
@@ -592,6 +592,67 @@ pub fn strip_defenders(
         regiments.len(),
         facilities.len(),
         fleets.len()
+    ))
+}
+
+/// Load `count` of the player's regiments standing at the system of the
+/// player's fleet named `name` onto that fleet, in surface order, each by
+/// the order the Defenses window's drag onto a fleet gives: the regiment's
+/// Move onto the fleet (`PanelAction::MoveRegiment` ->
+/// `TroopTransportState::move_regiment`, `FUN_00578f30` -> `FUN_00556390`,
+/// `ghidra/notes/regiment-unload.md`), which boards it on the ship the leg
+/// chooses. port: staging only, with no original counterpart: one line for
+/// the drags. Refused, with nothing moved, when fewer than `count` of the
+/// player's regiments stand there; a regiment the Move refuses stops the
+/// line, naming how many boarded.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The Move reads the world, the transport, movement, the blockades and the products, and the order's fleet, count and day."
+)]
+pub fn embark(
+    world: &mut GameWorld,
+    transport: &mut TroopTransportState,
+    movement: &MovementState,
+    blockaded: &std::collections::HashSet<SystemKey>,
+    products: &rebellion_core::carriage::ProductRoom,
+    alliance: bool,
+    name: &str,
+    count: usize,
+    tick: u64,
+) -> Result<String, String> {
+    let fleet = find_fleet(world, Faction::of_alliance(alliance), name)?;
+    let fleet_name = world.fleet_name(fleet).unwrap_or_default().to_owned();
+    let system = world.fleets[fleet].location;
+    let sys = world.systems.get(system).ok_or("the fleet stands at no system")?;
+    let system_name = sys.name.clone();
+    let regiments: Vec<_> = sys
+        .ground_units
+        .iter()
+        .copied()
+        .filter(|&key| world.troops.get(key).is_some_and(|unit| unit.is_alliance == alliance))
+        .collect();
+    if regiments.len() < count {
+        return Err(format!(
+            "{fleet_name} at {system_name}: {} of your regiments stand there, {count} asked",
+            regiments.len()
+        ));
+    }
+    for (boarded, &troop) in regiments.iter().take(count).enumerate() {
+        transport
+            .move_regiment(
+                world,
+                movement,
+                blockaded,
+                products,
+                troop,
+                rebellion_core::troop_transport::RegimentTarget::Fleet(fleet),
+                tick,
+            )
+            .map_err(|error| format!("{fleet_name}: boarded {boarded} of {count}: {error:?}"))?;
+    }
+    Ok(format!(
+        "{fleet_name} at {system_name}: boarded {count} regiments, {} aboard",
+        transport.cargo(fleet).len()
     ))
 }
 
@@ -1368,6 +1429,67 @@ mod tests {
                 event,
                 rebellion_core::support_shift::QueuedEvent::Regiments(at) if *at == system
             )));
+        }
+    }
+
+    // The Defenses window's drag onto a fleet is the regiment's Move onto
+    // it (FUN_00578f30 -> FUN_00556390): in the fleet's own system it boards
+    // at once, on the ship with room (regiment-unload.md).
+    #[test]
+    fn embark_boards_the_players_regiments_and_refuses_too_many_with_nothing_moved() {
+        use rebellion_core::world::{ControlKind, ShipInstance, TroopUnit};
+        for holder in [Faction::Alliance, Faction::Empire] {
+            let ours = holder == Faction::Alliance;
+            let mut world = GameWorld::default();
+            let system = world.systems.insert(System {
+                name: "Coruscant".into(),
+                control: ControlKind::Controlled(holder),
+                ..System::default()
+            });
+            let troops: Vec<_> = [ours, ours, !ours]
+                .into_iter()
+                .map(|is_alliance| {
+                    let key = world.troops.insert(TroopUnit {
+                        is_alliance,
+                        ..TroopUnit::default()
+                    });
+                    world.systems[system].ground_units.push(key);
+                    key
+                })
+                .collect();
+            let ship = world.capital_ship_classes.insert(CapitalShipClass {
+                troop_capacity: 4,
+                hull: 100,
+                ..CapitalShipClass::default()
+            });
+            let fleet = world.insert_fleet(Fleet {
+                location: system,
+                is_alliance: ours,
+                capital_ships: vec![ShipInstance::new(ship, 100, ours)],
+                ..Fleet::default()
+            });
+            world.systems[system].fleets.push(fleet);
+            let name = world.fleet_name(fleet).unwrap().to_owned();
+            let mut transport = TroopTransportState::default();
+            let mut run = |world: &mut GameWorld, count| {
+                embark(
+                    world,
+                    &mut transport,
+                    &MovementState::new(),
+                    &std::collections::HashSet::new(),
+                    &rebellion_core::carriage::ProductRoom::default(),
+                    ours,
+                    &name,
+                    count,
+                    9,
+                )
+            };
+
+            assert!(run(&mut world, 3).is_err(), "{holder:?}: two of ours stand there");
+            assert_eq!(world.systems[system].ground_units, troops, "{holder:?}");
+            assert!(run(&mut world, 2).is_ok(), "{holder:?}");
+            assert_eq!(world.systems[system].ground_units, [troops[2]], "{holder:?}");
+            assert_eq!(transport.cargo(fleet), &troops[..2], "{holder:?}");
         }
     }
 

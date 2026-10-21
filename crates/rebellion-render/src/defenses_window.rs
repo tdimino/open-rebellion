@@ -2182,6 +2182,53 @@ mod tests {
         }
     }
 
+    // CoolDragList (FUN_006083c0) posts 0x29a only on a release more than
+    // sqrt(24) pixels from the press (squared distance above 0x18) and
+    // outside the list's client rect (move-order.md, "Port notes").
+    #[test]
+    fn a_squadron_drop_needs_a_long_move_that_leaves_the_list_for_either_side() {
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let is_alliance = faction == CockpitFaction::Alliance;
+            let (mut world, system) = world(ControlKind::Controlled(if is_alliance {
+                Faction::Alliance
+            } else {
+                Faction::Empire
+            }));
+            let class = world.fighter_classes.insert(rebellion_core::world::FighterClass {
+                dat_id: DatId::new(if is_alliance { 0x1c00_0001 } else { 0x1c00_0005 }),
+                name: "Fighter".into(),
+                ..Default::default()
+            });
+            world.systems[system].add_squadrons(class, 1, is_alliance);
+            let missions = MissionState::new();
+            let plain = (faction, egui::Modifiers::default());
+            let drops = |from: (f32, f32), to: (f32, f32)| {
+                let mut state = DefensesWindowState::default();
+                assert!(state.open(&world, system, ORIGIN, faction, scaled()));
+                let _ = run_as(&world, &missions, &mut state, click(at(118.0, 36.0)), plain);
+                let (start, end) = (at(from.0, from.1), at(to.0, to.1));
+                let mut frames = hover(start);
+                frames.extend([vec![press(start, true)], vec![egui::Event::PointerMoved(end)]]);
+                let _ = run_as(&world, &missions, &mut state, frames, plain);
+                run_as(
+                    &world,
+                    &missions,
+                    &mut state,
+                    vec![vec![egui::Event::PointerMoved(end), press(end, false)]],
+                    plain,
+                )
+                .actions
+                .iter()
+                .filter(|action| matches!(action, DefensesWindowAction::DragSquadron { .. }))
+                .count()
+            };
+
+            assert_eq!(drops((8.0, 100.0), (4.0, 100.0)), 0, "{faction:?}: 4 pixels, outside the list");
+            assert_eq!(drops((30.0, 100.0), (100.0, 100.0)), 0, "{faction:?}: inside the list");
+            assert_eq!(drops((30.0, 100.0), (300.0, 100.0)), 1, "{faction:?}: far and outside");
+        }
+    }
+
     fn right_click(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
         let button = |pressed| egui::Event::PointerButton {
             pos: point,
