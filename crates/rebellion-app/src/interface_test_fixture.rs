@@ -1925,7 +1925,7 @@ fn fleet_load_observation(
     let fleet = world.fleets.keys().next()?;
     let report = fleets
         .window_id(primary)
-        .map_or(true, |id| snapshot.is_visible(id))
+        .is_none_or(|id| snapshot.is_visible(id))
         .then(|| fleets.report(world, movement, fog, transport, primary))
         .flatten();
     Some(FleetLoadObservation {
