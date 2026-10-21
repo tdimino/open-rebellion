@@ -44,6 +44,8 @@ const fixturePlugin = `    <script>
                             (window.__openRebellionInterfaceFleetLoads ||= []).push(message);
                         } else if (message.status === "speed-menu") {
                             window.__openRebellionInterfaceSpeedMenu = message;
+                        } else if (message.status === "menu-lifecycle") {
+                            window.__openRebellionInterfaceMenuLifecycle = message;
                         } else if (message.status === "quadrant-setup") {
                             window.__openRebellionInterfaceQuadrantSetup = message;
                         } else if (message.status === "quadrant-observation") {

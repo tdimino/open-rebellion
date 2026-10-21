@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
@@ -20,6 +20,9 @@ const noBuild = process.argv.includes("--no-build");
 // `--only=alliance/load` runs the named cases alone.
 const only = process.argv.filter((arg) => arg.startsWith("--only=")).map((arg) => arg.slice(7));
 const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion-test.wasm"];
+const ROUTE_MARKER = "[windowing-route] ";
+const pageRoutes = new WeakMap();
+const pageRouteCursors = new WeakMap();
 // Fixture codes are the Scenario index plus one (interface_test_fixture.rs).
 const FLEET_LOAD = 48;
 const FLEET_LOAD_FULL = 49;
@@ -251,14 +254,267 @@ async function frames(page, count = 1) {
   }
 }
 
-async function click(page, point, button = "left") {
-  // egui resolves a click across frames: hover, press, then release.
-  await page.mouse.move(point.x, point.y);
-  await frames(page);
-  await page.mouse.down({ button });
-  await frames(page);
-  await page.mouse.up({ button });
-  await frames(page);
+function parseRoute(line) {
+  const match = line.match(
+    /^\[windowing-route\] physical=(\d+:\d+) kind=(pointer|key) router=(root|blocked|window:\d+) application=([a-z0-9_:-]+) underlay=(\d+)$/,
+  );
+  assert.ok(match, `malformed route receipt ${line}`);
+  return {
+    physical: match[1],
+    kind: match[2],
+    recipient: match[3],
+    application: match[4],
+    underlay: Number(match[5]),
+    line,
+  };
+}
+
+function comparePhysical(left, right) {
+  const [leftFrame, leftOrdinal] = left.split(":").map(Number);
+  const [rightFrame, rightOrdinal] = right.split(":").map(Number);
+  return leftFrame - rightFrame || leftOrdinal - rightOrdinal;
+}
+
+function latestPhysical(routes, cursor) {
+  return routes.map(parseRoute).reduce(
+    (latest, route) => latest === null || comparePhysical(route.physical, latest) > 0
+      ? route.physical
+      : latest,
+    cursor.physical,
+  );
+}
+
+function matchesRoute(receipt, expected) {
+  return receipt.kind === "pointer"
+    && (expected?.recipient === undefined || receipt.recipient === expected.recipient)
+    && (expected?.application === undefined || receipt.application === expected.application);
+}
+
+async function pointerRouteBoundary({
+  routes,
+  cursor,
+  label,
+  expected,
+  perform,
+  advanceFrame,
+  attempts = 480,
+}) {
+  // Console delivery can lag a completed pointer action. Establish the
+  // physical-event floor before dispatch, then consume only a later matching
+  // receipt. This also ignores older receipts that arrive out of order.
+  const floor = latestPhysical(routes, cursor);
+  await perform();
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const receipt = routes.map(parseRoute)
+      .filter((candidate) => floor === null || comparePhysical(candidate.physical, floor) > 0)
+      .filter((candidate) => matchesRoute(candidate, expected))
+      .sort((left, right) => comparePhysical(left.physical, right.physical))[0];
+    if (receipt) {
+      cursor.physical = receipt.physical;
+      return receipt;
+    }
+    await advanceFrame();
+  }
+  throw new Error(
+    `${label} emitted no later matching pointer route receipt after ${floor ?? "start"}; `
+      + `expected=${JSON.stringify(expected ?? {})}; last=${JSON.stringify(routes.map(parseRoute).at(-1) ?? null)}`,
+  );
+}
+
+async function pointerRouteBatchBoundary({
+  routes,
+  cursor,
+  label,
+  expected,
+  perform,
+  advanceFrame,
+  attempts = 480,
+}) {
+  const floor = latestPhysical(routes, cursor);
+  await perform();
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const receipts = routes.map(parseRoute)
+      .filter((candidate) => candidate.kind === "pointer")
+      .filter((candidate) => floor === null || comparePhysical(candidate.physical, floor) > 0)
+      .sort((left, right) => comparePhysical(left.physical, right.physical));
+    if (receipts.length >= expected.length) {
+      const batch = receipts.slice(0, expected.length);
+      batch.forEach((receipt, index) => assert.ok(
+        matchesRoute(receipt, expected[index]),
+        `${label} receipt ${index + 1} did not match ${JSON.stringify(expected[index] ?? {})}: ${receipt.line}`,
+      ));
+      cursor.physical = batch.at(-1).physical;
+      return batch;
+    }
+    await advanceFrame();
+  }
+  throw new Error(
+    `${label} emitted fewer than ${expected.length} later pointer route receipts after ${floor ?? "start"}; `
+      + `last=${JSON.stringify(routes.map(parseRoute).at(-1) ?? null)}`,
+  );
+}
+
+async function dispatchClickBatch(page, point, button) {
+  await page.evaluate(({ x, y, button: name }) => {
+    const canvas = document.getElementById("glcanvas");
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("missing game canvas");
+    const buttonNumber = name === "right" ? 2 : name === "middle" ? 1 : 0;
+    const buttons = name === "right" ? 2 : name === "middle" ? 4 : 1;
+    const emit = (type, held) => canvas.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: x,
+      clientY: y,
+      screenX: x,
+      screenY: y,
+      button: buttonNumber,
+      buttons: held,
+      detail: 1,
+    }));
+    emit("mousedown", buttons);
+    emit("mouseup", 0);
+  }, { ...point, button });
+}
+
+async function routedPointerAction(page, label, expected, perform) {
+  const routes = pageRoutes.get(page);
+  const cursor = pageRouteCursors.get(page);
+  assert.ok(routes, `${label} has no route receipt stream`);
+  assert.ok(cursor, `${label} has no route receipt cursor`);
+  return pointerRouteBoundary({
+    routes,
+    cursor,
+    label,
+    expected,
+    perform,
+    advanceFrame: () => frames(page, 1),
+  });
+}
+
+export async function clickWithRouteBarrier({
+  page,
+  routes,
+  point,
+  label,
+  button = "left",
+  cursor = { physical: null },
+  expectedMove = { application: "pointer_ready" },
+  expectedDown,
+  expectedRelease,
+  batchActions = false,
+  advanceFrame,
+  settleFrames = 3,
+}) {
+  const nextFrame = advanceFrame ?? (() => frames(page, 1));
+  const move = await pointerRouteBoundary({
+    routes,
+    cursor,
+    label: `${label} move`,
+    expected: expectedMove,
+    perform: () => page.mouse.move(point.x, point.y),
+    advanceFrame: nextFrame,
+  });
+  let down;
+  let release;
+  // Ordinary egui clicks and managed-menu actions must keep down/up in one
+  // collected browser frame; drags use their separate capture barrier below.
+  if (batchActions || button === "left") {
+    [down, release] = await pointerRouteBatchBoundary({
+      routes,
+      cursor,
+      label: `${label} action batch`,
+      expected: [expectedDown, expectedRelease],
+      perform: () => dispatchClickBatch(page, point, button),
+      advanceFrame: nextFrame,
+    });
+  } else {
+    down = await pointerRouteBoundary({
+      routes,
+      cursor,
+      label: `${label} down`,
+      expected: expectedDown,
+      perform: () => page.mouse.down({ button }),
+      advanceFrame: nextFrame,
+    });
+    release = await pointerRouteBoundary({
+      routes,
+      cursor,
+      label: `${label} release`,
+      expected: expectedRelease,
+      perform: () => page.mouse.up({ button }),
+      advanceFrame: nextFrame,
+    });
+  }
+  assert.equal(new Set([move.physical, down.physical, release.physical]).size, 3,
+    `${label} reused a routed pointer receipt`);
+  for (let frame = 0; frame < settleFrames; frame += 1) await nextFrame();
+  return { move, down, release };
+}
+
+export async function dragWithRouteBarrier({
+  page,
+  routes,
+  from,
+  to,
+  label,
+  cursor = { physical: null },
+  expectedMove = { application: "pointer_ready" },
+  expectedDown = { application: "fleet_window" },
+  expectedDrag = { application: "pointer_ready" },
+  expectedRelease = { application: "fleet_window" },
+  advanceFrame,
+  settleFrames = 3,
+}) {
+  const nextFrame = advanceFrame ?? (() => frames(page, 1));
+  const move = await pointerRouteBoundary({
+    routes,
+    cursor,
+    label: `${label} hover`,
+    expected: expectedMove,
+    perform: () => page.mouse.move(from.x, from.y),
+    advanceFrame: nextFrame,
+  });
+  const down = await pointerRouteBoundary({
+    routes,
+    cursor,
+    label: `${label} capture`,
+    expected: expectedDown,
+    perform: () => page.mouse.down(),
+    advanceFrame: nextFrame,
+  });
+  const drag = await pointerRouteBoundary({
+    routes,
+    cursor,
+    label: `${label} drag`,
+    expected: expectedDrag,
+    perform: () => page.mouse.move(to.x, to.y, { steps: 4 }),
+    advanceFrame: nextFrame,
+  });
+  const release = await pointerRouteBoundary({
+    routes,
+    cursor,
+    label: `${label} release`,
+    expected: expectedRelease,
+    perform: () => page.mouse.up(),
+    advanceFrame: nextFrame,
+  });
+  assert.equal(new Set([move.physical, down.physical, drag.physical, release.physical]).size, 4,
+    `${label} reused a routed pointer receipt`);
+  for (let frame = 0; frame < settleFrames; frame += 1) await nextFrame();
+  return { move, down, drag, release };
+}
+
+async function click(page, point, button = "left", options = {}) {
+  return clickWithRouteBarrier({
+    page,
+    routes: pageRoutes.get(page),
+    cursor: pageRouteCursors.get(page),
+    point,
+    label: `Fleet ${button} click`,
+    button,
+    ...options,
+  });
 }
 
 async function press(page, name) {
@@ -301,6 +557,34 @@ async function until(page, description, predicate, argument = null, timeout = 10
     throw new Error(`${description}: ${JSON.stringify((await observations(page)).slice(-3))}`, { cause: error });
   }
   return latest(page);
+}
+
+export async function waitForFixtureInputReady(page, property, description) {
+  try {
+    await page.waitForFunction(
+      (name) => window[name]?.input_ready === true,
+      property,
+      { timeout: 10_000, polling: 100 },
+    );
+  } catch (error) {
+    const report = await page.evaluate((name) => window[name], property).catch(() => null);
+    throw new Error(`${description}: ${JSON.stringify(report)}`, { cause: error });
+  }
+  return page.evaluate((name) => window[name], property);
+}
+
+async function waitForFixtureMenuClosed(page, description) {
+  try {
+    await page.waitForFunction(
+      () => window.__openRebellionInterfaceMenuLifecycle?.open === false,
+      null,
+      { timeout: 10_000, polling: 100 },
+    );
+  } catch (error) {
+    const report = await page.evaluate(() => window.__openRebellionInterfaceMenuLifecycle)
+      .catch(() => null);
+    throw new Error(`${description}: ${JSON.stringify(report)}`, { cause: error });
+  }
 }
 
 // Let a refused or ignored action settle.
@@ -351,12 +635,16 @@ async function selectFleet(page, observed) {
   return until(page, "a click selects the fleet", (o) => o.selected === "fleet");
 }
 
-async function openMenu(page, at, directory, label) {
+async function openMenu(page, at, directory, label, ownerApplication) {
+  assert.ok(ownerApplication, `${label} menu requires an explicit owner application`);
   await page.evaluate(() => { window.__openRebellionInterfaceObjectMenu = undefined; });
-  await click(page, at, "right");
-  await page.waitForFunction(() => window.__openRebellionInterfaceObjectMenu?.status === "object-menu",
-    null, { timeout: 10_000 });
-  const menu = await page.evaluate(() => window.__openRebellionInterfaceObjectMenu);
+  await click(page, at, "right", {
+    batchActions: true,
+    expectedDown: { application: "none" },
+    expectedRelease: { application: ownerApplication },
+  });
+  const menu = await waitForFixtureInputReady(page, "__openRebellionInterfaceObjectMenu",
+    "the object menu becomes input-ready");
   fs.writeFileSync(path.join(directory, `${label}-menu.png`), await page.screenshot({ animations: "disabled" }));
   return menu;
 }
@@ -366,13 +654,23 @@ async function openMenu(page, at, directory, label) {
 async function choose(page, menu, row, name) {
   assert.notEqual(row, null, `the menu lists ${name}`);
   const height = (menu.height - 2) / menu.rows;
-  await click(page, { x: menu.left + menu.width / 2, y: menu.top + 2 + height * (row + 0.5) });
+  await click(
+    page,
+    { x: menu.left + menu.width / 2, y: menu.top + 2 + height * (row + 0.5) },
+    "left",
+    {
+      batchActions: true,
+      expectedDown: { application: "none" },
+      expectedRelease: { application: "none" },
+    },
+  );
+  await waitForFixtureMenuClosed(page, `the ${name} choice closes its managed menu`);
 }
 
 // The regiment's Move (FUN_00504b30) released on the Fleet window's fleet
 // (+0x70, FUN_004a3130).
 async function moveRegimentOntoFleet(page, setup, observed, directory) {
-  const menu = await openMenu(page, point(setup.troop_item), directory, "regiment");
+  const menu = await openMenu(page, point(setup.troop_item), directory, "regiment", "defenses_window");
   // FUN_00504b30 lists Move first and Confirmed Move second.
   assert.deepEqual([menu.move_row, menu.confirmed_move_row], [0, 1], JSON.stringify(menu));
   await choose(page, menu, menu.move_row, "Move");
@@ -384,12 +682,25 @@ async function moveRegimentOntoFleet(page, setup, observed, directory) {
 // menu on the day readout: Fast, its fifth row (FUN_0042d190).
 async function runFast(page, setup) {
   await page.evaluate(() => { window.__openRebellionInterfaceSpeedMenu = undefined; });
-  await click(page, point(setup.day_readout), "right");
-  await page.waitForFunction(() => window.__openRebellionInterfaceSpeedMenu?.status === "speed-menu",
-    null, { timeout: 10_000 });
-  const menu = await page.evaluate(() => window.__openRebellionInterfaceSpeedMenu);
+  await click(page, point(setup.day_readout), "right", {
+    batchActions: true,
+    expectedDown: { application: "none" },
+    expectedRelease: { application: "none" },
+  });
+  const menu = await waitForFixtureInputReady(page, "__openRebellionInterfaceSpeedMenu",
+    "the Game Speed menu becomes input-ready");
   const height = (menu.height - 2) / menu.rows;
-  await click(page, { x: menu.left + menu.width / 2, y: menu.top + 2 + height * 4.5 });
+  await click(
+    page,
+    { x: menu.left + menu.width / 2, y: menu.top + 2 + height * 4.5 },
+    "left",
+    {
+      batchActions: true,
+      expectedDown: { application: "none" },
+      expectedRelease: { application: "none" },
+    },
+  );
+  await waitForFixtureMenuClosed(page, "the Fast choice closes its managed menu");
   return menu;
 }
 
@@ -406,14 +717,14 @@ async function loadRegiment(page, setup, directory) {
 // A left press on a right-list item, held while the mouse moves away, then
 // released at `to` (CoolDragList, FUN_006083c0, posts 0x29a).
 async function dragItem(page, from, to) {
-  await page.mouse.move(from.x, from.y);
-  await frames(page);
-  await page.mouse.down();
-  await frames(page);
-  await page.mouse.move(to.x, to.y, { steps: 4 });
-  await frames(page);
-  await page.mouse.up();
-  await frames(page);
+  return dragWithRouteBarrier({
+    page,
+    routes: pageRoutes.get(page),
+    cursor: pageRouteCursors.get(page),
+    from,
+    to,
+    label: "Fleet list item",
+  });
 }
 
 async function openTroopsTab(page, loaded) {
@@ -510,7 +821,7 @@ const cases = [
       await until(page, "the close button closes the Fleet window", (o) => !o.window_open);
       // The sector window's fleet icon offers the system's fleets' Move
       // (FUN_00507290 kind 0x10, sector-icon-menus.md).
-      const menu = await openMenu(page, point(setup.icon), directory, "fleet");
+      const menu = await openMenu(page, point(setup.icon), directory, "fleet", "sector_window");
       await choose(page, menu, menu.move_row, "Move");
       await click(page, point(setup.target_planet));
       const departed = await until(page, "the fleet departs", (o) => o.in_transit);
@@ -554,20 +865,21 @@ const cases = [
       const troops = await openTroopsTab(page, loaded);
       const gap = { x: faction.sectors[0] + 235 + 2, y: troops.origin[1] + 150 };
       const from = point(troops.first_item);
-      await page.mouse.move(from.x, from.y);
-      await frames(page);
-      await page.mouse.down();
-      await frames(page);
-      await page.mouse.move(gap.x, gap.y, { steps: 4 });
-      await frames(page);
+      await routedPointerAction(page, "drag-wheel hover", { application: "pointer_ready" },
+        () => page.mouse.move(from.x, from.y));
+      await routedPointerAction(page, "drag-wheel capture", { application: "fleet_window" },
+        () => page.mouse.down());
+      await routedPointerAction(page, "drag-wheel move outside", { application: "pointer_ready" },
+        () => page.mouse.move(gap.x, gap.y, { steps: 4 }));
       for (let notch = 0; notch < 3; notch += 1) {
-        await page.mouse.wheel(0, -100);
-        await frames(page);
+        await routedPointerAction(page, `drag-wheel notch ${notch + 1}`, { application: "none" },
+          () => page.mouse.wheel(0, -100));
       }
-      await page.mouse.move(from.x, from.y, { steps: 4 });
-      await frames(page);
-      await page.mouse.up();
-      await frames(page);
+      await routedPointerAction(page, "drag-wheel move home", { application: "pointer_ready" },
+        () => page.mouse.move(from.x, from.y, { steps: 4 }));
+      await routedPointerAction(page, "drag-wheel release", { application: "fleet_window" },
+        () => page.mouse.up());
+      await frames(page, 3);
       const held = await settle(page);
       assert.ok(held.aboard && held.held, JSON.stringify(held));
       return { loaded, gap, held };
@@ -601,7 +913,7 @@ const cases = [
     // A regiment's speed is GNPRTB 1 (FUN_004f63f0), so its Move to another
     // planet of its side travels on its own (FUN_00556430) and arrives.
     async run(page, faction, setup, directory) {
-      const menu = await openMenu(page, point(setup.troop_item), directory, "regiment");
+      const menu = await openMenu(page, point(setup.troop_item), directory, "regiment", "defenses_window");
       await choose(page, menu, menu.move_row, "Move");
       await click(page, point(setup.target_planet));
       const departed = await until(page, "the regiment departs on its own",
@@ -673,7 +985,7 @@ const cases = [
     // its system (FUN_005809c0, FUN_00509b40; manual p. 120).
     async run(page, faction, setup, directory) {
       const selected = await openJoining(page, setup);
-      const menu = await openMenu(page, point(selected.first_item), directory, "ship");
+      const menu = await openMenu(page, point(selected.first_item), directory, "ship", "fleet_window");
       // FUN_00502bd0: Move, Confirmed Move, then Create Fleet (sort 50).
       assert.deepEqual([menu.move_row, menu.confirmed_move_row, menu.create_fleet_row], [0, 1, 2],
         JSON.stringify(menu));
@@ -707,7 +1019,7 @@ const cases = [
     // fleet's entry: the ship joins it (FUN_004feca0).
     async run(page, faction, setup, directory) {
       const selected = await openJoining(page, setup);
-      const menu = await openMenu(page, point(selected.first_item), directory, "ship");
+      const menu = await openMenu(page, point(selected.first_item), directory, "ship", "fleet_window");
       await choose(page, menu, menu.move_row, "Move");
       await click(page, point(selected.fleets[1].entry));
       const joined = await until(page, "the ship's Move joins the second fleet",
@@ -722,7 +1034,7 @@ const cases = [
     // fleet of its own there (FUN_00507750, FUN_005097d0).
     async run(page, faction, setup, directory) {
       const selected = await openJoining(page, setup);
-      const menu = await openMenu(page, point(selected.first_item), directory, "ship");
+      const menu = await openMenu(page, point(selected.first_item), directory, "ship", "fleet_window");
       await choose(page, menu, menu.move_row, "Move");
       await click(page, point(setup.defenses_window));
       const created = await until(page, "the ship's Move forms a fleet of its own",
@@ -738,7 +1050,7 @@ const cases = [
     // (FUN_004fe630).
     async run(page, faction, setup, directory) {
       const opened = await openFleetWindow(page, setup, 2);
-      const menu = await openMenu(page, point(opened.fleets[1].entry), directory, "fleet");
+      const menu = await openMenu(page, point(opened.fleets[1].entry), directory, "fleet", "fleet_window");
       await choose(page, menu, menu.move_row, "Move");
       await click(page, point(opened.fleets[0].entry));
       const joined = await until(page, "the second fleet joins the first",
@@ -756,7 +1068,7 @@ const cases = [
     // onto the fleet itself is refused and opens no window (FUN_00553aa0).
     async run(page, faction, setup, directory) {
       const opened = await openFleetWindow(page, setup, 2);
-      const menu = await openMenu(page, point(opened.fleets[0].entry), directory, "fleet");
+      const menu = await openMenu(page, point(opened.fleets[0].entry), directory, "fleet", "fleet_window");
       await choose(page, menu, menu.confirmed_move_row, "Confirmed Move");
       await click(page, point(opened.fleets[0].entry));
       const refusal = "Fleet move rejected: a fleet cannot move into itself";
@@ -774,7 +1086,7 @@ const cases = [
     // Confirmed Move asks first (FUN_00487cc0); the checkmark joins.
     async run(page, faction, setup, directory) {
       const opened = await openFleetWindow(page, setup, 2);
-      const menu = await openMenu(page, point(opened.fleets[1].entry), directory, "fleet");
+      const menu = await openMenu(page, point(opened.fleets[1].entry), directory, "fleet", "fleet_window");
       await choose(page, menu, menu.confirmed_move_row, "Confirmed Move");
       await click(page, point(opened.fleets[0].entry));
       const open = await until(page, "the confirmation opens", (o) => o.confirmation_open);
@@ -795,7 +1107,7 @@ const cases = [
     // Enter submits.
     async run(page, faction, setup, directory, source, log) {
       const opened = await openFleetWindow(page, setup);
-      const menu = await openMenu(page, point(opened.fleet_entry), directory, "fleet");
+      const menu = await openMenu(page, point(opened.fleet_entry), directory, "fleet", "fleet_window");
       await choose(page, menu, menu.rename_row, "Rename");
       await frames(page, 2);
       await press(page, "Backspace");
@@ -820,7 +1132,7 @@ const cases = [
     // (FUN_00512700 kind 4).
     async run(page, faction, setup, directory, source, log) {
       assert.ok(setup.system_icon, `the facility icon is shown: ${JSON.stringify(setup)}`);
-      const menu = await openMenu(page, point(setup.system_icon), directory, "facility");
+      const menu = await openMenu(page, point(setup.system_icon), directory, "facility", "sector_window");
       await choose(page, menu, menu.destination_row, "Destination");
       await click(page, point(setup.target_planet));
       const set = await log.logged("the release sets the destination", new RegExp(
@@ -837,6 +1149,7 @@ async function inspect(server, source, faction, testCase, executable) {
   const requests = [];
   const errors = [];
   const consoleLines = [];
+  const routes = [];
   const launchAttempts = [];
   let browser;
   let context;
@@ -859,6 +1172,8 @@ async function inspect(server, source, faction, testCase, executable) {
       serviceWorkers: "block",
     });
     page = await context.newPage();
+    pageRoutes.set(page, routes);
+    pageRouteCursors.set(page, { physical: null });
     const serverOrigin = `http://127.0.0.1:${server.address().port}`;
     page.on("response", (response) => {
       if (new URL(response.url()).origin === serverOrigin) {
@@ -870,9 +1185,11 @@ async function inspect(server, source, faction, testCase, executable) {
     });
     page.on("pageerror", (error) => errors.push(`pageerror:${error.stack || error.message}`));
     page.on("console", (message) => {
-      consoleLines.push({ type: message.type(), text: message.text() });
-      if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(message.text())) {
-        errors.push(`console:${message.type()}:${message.text()}`);
+      const line = message.text();
+      consoleLines.push({ type: message.type(), text: line });
+      if (line.startsWith(ROUTE_MARKER)) routes.push(line);
+      if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(line)) {
+        errors.push(`console:${message.type()}:${line}`);
       }
     });
 
@@ -929,6 +1246,7 @@ async function inspect(server, source, faction, testCase, executable) {
       requests,
       errors,
       console: consoleLines,
+      route_receipts: routes,
       launch_attempts: launchAttempts,
       cleanup: "pending",
     };
@@ -942,6 +1260,7 @@ async function inspect(server, source, faction, testCase, executable) {
       requests,
       errors,
       console: consoleLines,
+      route_receipts: routes,
       launch_attempts: launchAttempts,
       cleanup: "pending",
     };
@@ -1019,4 +1338,6 @@ async function main() {
   process.stdout.write(`${JSON.stringify({ run_dir: runDir, status: summary.status, cases: results.map((r) => `${r.faction}/${r.case}`), wasm_sha256: summary.wasm_sha256 }, null, 2)}\n`);
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  await main();
+}

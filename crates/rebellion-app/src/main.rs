@@ -1842,9 +1842,16 @@ fn collect_strategic_pointer_batch(
     message_index: &MessageIndexState,
     status: &StatusWindowState,
     build_selection: &BuildSelectionState,
+    targeting_active: bool,
     retained_hits: impl Fn((f32, f32)) -> BTreeSet<rebellion_windowing::WindowId>,
 ) -> StrategicPointerBatch {
     StrategicPointerBatch::collect_from_raw(frame_number, router, events, |point| {
+        // Targeting is one root-owned gesture. Window geometry still resolves
+        // the release destination later, but no retained child may consume
+        // the press or release before the root completes that order.
+        if targeting_active {
+            return BTreeSet::new();
+        }
         let mut hits = retained_hits(point);
         if let Some(window) = message_index.hit_window(frame, layout, point) {
             hits.insert(window);
@@ -4470,6 +4477,7 @@ mod frame_input_tests {
             &message_index,
             &status,
             &build_selection,
+            false,
             |_| BTreeSet::new(),
         );
         let event = batch.events[0].id;
@@ -5003,6 +5011,73 @@ mod frame_input_tests {
         assert!(!batch
             .blocks_map_pointer_phase(&router, PointerPhase::Release(PointerButtonId::Secondary)));
         assert!(!batch.blocks_map_pointer_phase(&router, PointerPhase::Hover));
+    }
+
+    #[test]
+    fn targeting_release_over_fleet_routes_to_root_without_child_action() {
+        use rebellion_render::windowing_policy::contextual_spec;
+        use rebellion_windowing::{SubjectId, WindowKind, WindowOwner, WindowTransition};
+
+        let mut manager = WindowManager::new();
+        let fleet = match manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::Fleet,
+                SubjectId::new(4, 36),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected Fleet open, got {other:?}"),
+        };
+        let frame = manager.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(44, &frame);
+        let point = (260.0, 180.0);
+        let events = [
+            StrategicRawPointerEvent {
+                ordinal: 0,
+                point,
+                phase: PointerPhase::Press(PointerButtonId::Primary),
+            },
+            StrategicRawPointerEvent {
+                ordinal: 1,
+                point,
+                phase: PointerPhase::Release(PointerButtonId::Primary),
+            },
+        ];
+        let batch = collect_strategic_pointer_batch(
+            44,
+            &mut router,
+            &events,
+            &frame,
+            CockpitLayout {
+                canvas: CockpitViewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 640.0,
+                    height: 480.0,
+                },
+                galaxy: CockpitViewport {
+                    x: 65.0,
+                    y: 60.0,
+                    width: 485.0,
+                    height: 350.0,
+                },
+                scale: 1.0,
+            },
+            &MessageIndexState::default(),
+            &StatusWindowState::default(),
+            &BuildSelectionState::default(),
+            true,
+            |_| BTreeSet::from([fleet]),
+        );
+        let event = batch.events[1].id;
+
+        assert_eq!(router.pointer_recipient(event), InputRecipient::Root);
+        assert!(!router.claim(event, InputRecipient::Window(fleet)));
+        assert!(router.claim_root(event));
     }
 
     #[test]
@@ -5754,6 +5829,7 @@ mod panel_toggle_tests {
             &MessageIndexState::default(),
             &status,
             &BuildSelectionState::default(),
+            false,
             |_| std::collections::BTreeSet::new(),
         );
         assert_eq!(
@@ -6001,6 +6077,7 @@ mod panel_toggle_tests {
             &MessageIndexState::default(),
             &StatusWindowState::default(),
             &BuildSelectionState::default(),
+            false,
             |point| {
                 state
                     .hit_window(&frame, layout, point)
@@ -6321,6 +6398,7 @@ mod panel_toggle_tests {
             &MessageIndexState::default(),
             &StatusWindowState::default(),
             &BuildSelectionState::default(),
+            false,
             |point| {
                 state
                     .hit_window(&frame, layout, point)
@@ -6729,6 +6807,7 @@ mod panel_toggle_tests {
             &MessageIndexState::default(),
             &StatusWindowState::default(),
             &state,
+            false,
             |_| std::collections::BTreeSet::new(),
         );
         assert_eq!(
@@ -11729,6 +11808,7 @@ async fn main() {
                             &message_index,
                             &status_window_state,
                             &build_selection_state,
+                            targeting.is_some(),
                             |point| {
                                 let top_layer =
                                     ctx.layer_id_at(egui_macroquad::egui::pos2(point.0, point.1));
@@ -12127,6 +12207,7 @@ async fn main() {
                             game_speed_ui.menu_anchor.and_then(|_| {
                                 rebellion_render::game_speed::game_speed_menu_rect(ctx)
                             }),
+                            managed_menu_input_enabled,
                         );
                     }
                     if draw_pause_alert(
@@ -13574,6 +13655,15 @@ async fn main() {
                             menu,
                             &world,
                             &sector_window_state,
+                            managed_menu_input_enabled,
+                        );
+                    }
+                    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                    if let Some(request) = interface_fixture_request {
+                        interface_test_fixture::emit_menu_lifecycle(
+                            request,
+                            managed_menu.window_id().is_some(),
+                            managed_menu_input_enabled,
                         );
                     }
 
@@ -16034,6 +16124,7 @@ async fn main() {
                     &movement_state,
                     &troop_transport_state,
                     &fleet_window_state,
+                    strategic_frame_boundary.snapshot(),
                     move_confirmation_state.is_open(),
                     msg_log.messages(),
                 );

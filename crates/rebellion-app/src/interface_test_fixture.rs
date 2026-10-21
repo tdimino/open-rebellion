@@ -246,11 +246,11 @@ impl Scenario {
     }
 
     pub(crate) fn emits_unhandled_windowing_route_receipts(self) -> bool {
-        matches!(self, Self::Quadrants | Self::WindowingContract)
+        matches!(self, Self::Quadrants | Self::WindowingContract) || self.uses_the_fleet_window()
     }
 
     pub(crate) fn emits_windowing_pointer_ready_receipts(self) -> bool {
-        self == Self::Quadrants
+        self == Self::Quadrants || self.uses_the_fleet_window()
     }
 
     fn moves_a_fleet(self) -> bool {
@@ -1138,6 +1138,7 @@ fn screen_point(system: &rebellion_core::world::System, faction: CockpitFaction)
 struct FixtureObjectMenu<'a> {
     status: &'static str,
     code: u32,
+    input_ready: bool,
     left: f32,
     top: f32,
     width: f32,
@@ -1159,12 +1160,37 @@ struct FixtureObjectMenu<'a> {
     target_screen_y: f32,
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+struct FixtureMenuLifecycle {
+    status: &'static str,
+    code: u32,
+    open: bool,
+    input_ready: bool,
+}
+
+fn menu_lifecycle_report(
+    request: FixtureRequest,
+    open: bool,
+    input_ready: bool,
+) -> Option<FixtureMenuLifecycle> {
+    request
+        .scenario
+        .uses_the_fleet_window()
+        .then_some(FixtureMenuLifecycle {
+            status: "menu-lifecycle",
+            code: request.code,
+            open,
+            input_ready,
+        })
+}
+
 fn object_menu_report<'a>(
     request: FixtureRequest,
     rect: egui_macroquad::egui::Rect,
     menu: &ObjectMenuState,
     world: &'a GameWorld,
     sectors: &SectorWindowState,
+    input_ready: bool,
 ) -> Option<FixtureObjectMenu<'a>> {
     let key = if request.scenario.uses_the_fleet_window() {
         loading_target(world, world.systems.keys().next()?)?
@@ -1187,6 +1213,7 @@ fn object_menu_report<'a>(
     Some(FixtureObjectMenu {
         status: "object-menu",
         code: request.code,
+        input_ready,
         left: rect.min.x,
         top: rect.min.y,
         width: rect.width(),
@@ -1215,14 +1242,23 @@ pub fn emit_object_menu(
     menu: &ObjectMenuState,
     world: &GameWorld,
     sectors: &SectorWindowState,
+    input_ready: bool,
 ) {
     if !request.scenario.reports_object_menu() {
         return;
     }
-    let Some(report) = object_menu_report(request, rect, menu, world, sectors) else {
+    let Some(report) = object_menu_report(request, rect, menu, world, sectors, input_ready) else {
         return;
     };
     let bytes = serde_json::to_vec(&report).expect("serialize the object menu report");
+    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+}
+
+pub fn emit_menu_lifecycle(request: FixtureRequest, open: bool, input_ready: bool) {
+    let Some(report) = menu_lifecycle_report(request, open, input_ready) else {
+        return;
+    };
+    let bytes = serde_json::to_vec(&report).expect("serialize the menu lifecycle report");
     unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
 }
 
@@ -1880,13 +1916,18 @@ fn fleet_load_observation(
     movement: &MovementState,
     transport: &TroopTransportState,
     fleets: &FleetWindowState,
+    snapshot: &RoutingSnapshot,
     confirmation_open: bool,
     messages: &[GameMessage],
 ) -> Option<FleetLoadObservation> {
     let layout = CockpitState::new(request.faction).layout_for(640.0, 480.0);
     let primary = world.systems.keys().next()?;
     let fleet = world.fleets.keys().next()?;
-    let report = fleets.report(world, movement, fog, transport, primary);
+    let report = fleets
+        .window_id(primary)
+        .map_or(true, |id| snapshot.is_visible(id))
+        .then(|| fleets.report(world, movement, fog, transport, primary))
+        .flatten();
     Some(FleetLoadObservation {
         status: "fleet-load",
         code: request.code,
@@ -1907,9 +1948,11 @@ fn fleet_load_observation(
             .map(|report| report.items.clone())
             .unwrap_or_default(),
         counts: report.as_ref().and_then(|report| report.counts),
-        fleet_entry: fleets
-            .entry_screen_rect(layout, primary, 0)
-            .map(screen_center),
+        fleet_entry: report.as_ref().and_then(|_| {
+            fleets
+                .entry_screen_rect(layout, primary, 0)
+                .map(screen_center)
+        }),
         fleets: report
             .as_ref()
             .map(|report| {
@@ -1931,12 +1974,16 @@ fn fleet_load_observation(
                     .collect()
             })
             .unwrap_or_default(),
-        troops_tab: fleets
-            .tab_screen_rect(layout, primary, FleetWindowTab::Troops)
-            .map(screen_center),
-        first_item: fleets
-            .item_screen_rect(layout, primary, 0)
-            .map(screen_center),
+        troops_tab: report.as_ref().and_then(|_| {
+            fleets
+                .tab_screen_rect(layout, primary, FleetWindowTab::Troops)
+                .map(screen_center)
+        }),
+        first_item: report.as_ref().and_then(|_| {
+            fleets
+                .item_screen_rect(layout, primary, 0)
+                .map(screen_center)
+        }),
         aboard: transport.cargo(fleet).contains(&regiment),
         held: transport.is_held(fleet),
         cargo: transport.carried_count(fleet),
@@ -1981,6 +2028,7 @@ impl FleetLoadWatch {
         movement: &MovementState,
         transport: &TroopTransportState,
         fleets: &FleetWindowState,
+        snapshot: &RoutingSnapshot,
         confirmation_open: bool,
         messages: &[GameMessage],
     ) -> Option<FleetLoadObservation> {
@@ -2006,6 +2054,7 @@ impl FleetLoadWatch {
             movement,
             transport,
             fleets,
+            snapshot,
             confirmation_open,
             messages,
         );
@@ -2025,6 +2074,7 @@ impl FleetLoadWatch {
         movement: &MovementState,
         transport: &TroopTransportState,
         fleets: &FleetWindowState,
+        snapshot: &RoutingSnapshot,
         confirmation_open: bool,
         messages: &[GameMessage],
     ) {
@@ -2035,6 +2085,7 @@ impl FleetLoadWatch {
             movement,
             transport,
             fleets,
+            snapshot,
             confirmation_open,
             messages,
         ) else {
@@ -2322,6 +2373,7 @@ impl FleetFinderWatch {
 struct FixtureSpeedMenu {
     status: &'static str,
     code: u32,
+    input_ready: bool,
     left: f32,
     top: f32,
     width: f32,
@@ -2332,7 +2384,7 @@ struct FixtureSpeedMenu {
 /// Emits the speed menu's rect each time it opens or moves.
 #[derive(Debug, Default)]
 pub struct SpeedMenuWatch {
-    last: Option<egui_macroquad::egui::Rect>,
+    last: Option<(egui_macroquad::egui::Rect, bool)>,
 }
 
 impl SpeedMenuWatch {
@@ -2341,15 +2393,18 @@ impl SpeedMenuWatch {
         &mut self,
         request: FixtureRequest,
         rect: Option<egui_macroquad::egui::Rect>,
+        input_ready: bool,
     ) -> Option<FixtureSpeedMenu> {
-        if !request.scenario.uses_the_fleet_window() || rect == self.last {
+        let state = rect.map(|rect| (rect, input_ready));
+        if !request.scenario.uses_the_fleet_window() || state == self.last {
             return None;
         }
-        self.last = rect;
-        let rect = rect?;
+        self.last = state;
+        let (rect, input_ready) = state?;
         Some(FixtureSpeedMenu {
             status: "speed-menu",
             code: request.code,
+            input_ready,
             left: rect.min.x,
             top: rect.min.y,
             width: rect.width(),
@@ -2358,8 +2413,13 @@ impl SpeedMenuWatch {
         })
     }
 
-    pub fn observe(&mut self, request: FixtureRequest, rect: Option<egui_macroquad::egui::Rect>) {
-        let Some(report) = self.next(request, rect) else {
+    pub fn observe(
+        &mut self,
+        request: FixtureRequest,
+        rect: Option<egui_macroquad::egui::Rect>,
+        input_ready: bool,
+    ) {
+        let Some(report) = self.next(request, rect, input_ready) else {
             return;
         };
         let bytes = serde_json::to_vec(&report).expect("serialize the speed menu report");
@@ -2503,17 +2563,18 @@ mod tests {
     }
 
     #[test]
-    fn only_contract_and_quadrants_emit_unhandled_windowing_route_receipts() {
+    fn route_receipt_policy_covers_every_browser_synchronized_fixture() {
         for value in 0..SCENARIO_COUNT {
             let scenario = Scenario::decode(value).expect("known fixture scenario");
             assert_eq!(
                 scenario.emits_unhandled_windowing_route_receipts(),
-                matches!(scenario, Scenario::Quadrants | Scenario::WindowingContract),
+                matches!(scenario, Scenario::Quadrants | Scenario::WindowingContract)
+                    || scenario.uses_the_fleet_window(),
                 "unexpected raw receipt policy for {scenario:?}",
             );
             assert_eq!(
                 scenario.emits_windowing_pointer_ready_receipts(),
-                scenario == Scenario::Quadrants,
+                scenario == Scenario::Quadrants || scenario.uses_the_fleet_window(),
                 "unexpected pointer-ready receipt policy for {scenario:?}",
             );
         }
@@ -2773,11 +2834,12 @@ mod tests {
             egui_macroquad::egui::pos2(100.0, 150.0),
             egui_macroquad::egui::vec2(120.0, 142.0),
         );
-        let report = object_menu_report(request, rect, &menu, &world, &sectors).unwrap();
+        let report = object_menu_report(request, rect, &menu, &world, &sectors, true).unwrap();
         assert_eq!(
             (report.left, report.top, report.width, report.height),
             (100.0, 150.0, 120.0, 142.0)
         );
+        assert!(report.input_ready);
         assert_eq!((report.rows, report.mission_row), (7, Some(2)));
         assert_eq!(
             (report.target_dat_id, report.target_name),
@@ -2789,6 +2851,37 @@ mod tests {
         assert_eq!(target, (60.0 + 77.0 + 18.5, 35.0 + 70.0 + 18.5));
         assert!(sectors.contains_screen_point(layout, target));
         assert!(!defenses.contains_screen_point(layout, target));
+    }
+
+    #[test]
+    fn fleet_fixture_reports_the_managed_menu_lifecycle_boundary() {
+        let fleet_request = request(Scenario::FleetLoad, CockpitFaction::Alliance);
+        assert_eq!(
+            menu_lifecycle_report(fleet_request, true, false),
+            Some(FixtureMenuLifecycle {
+                status: "menu-lifecycle",
+                code: fleet_request.code,
+                open: true,
+                input_ready: false,
+            })
+        );
+        assert_eq!(
+            menu_lifecycle_report(fleet_request, false, false),
+            Some(FixtureMenuLifecycle {
+                status: "menu-lifecycle",
+                code: fleet_request.code,
+                open: false,
+                input_ready: false,
+            })
+        );
+        assert_eq!(
+            menu_lifecycle_report(
+                request(Scenario::WindowingContract, CockpitFaction::Alliance),
+                true,
+                true,
+            ),
+            None
+        );
     }
 
     /// Three systems in one sector, the second the target in the targeting
@@ -3096,6 +3189,7 @@ mod tests {
                 &applied.movement,
                 &applied.transport,
                 &fleets,
+                &WindowManager::new().begin_frame(),
                 confirmation_open,
                 &[],
             )
@@ -3121,6 +3215,95 @@ mod tests {
         assert_ne!(row(0), row(1));
         assert!(!observed.confirmation_open);
         assert!(observe(true).confirmation_open);
+    }
+
+    #[test]
+    fn the_fleet_load_watch_hides_minimized_fleet_surface_until_restore() {
+        let request = request(Scenario::FleetLoad, CockpitFaction::Alliance);
+        let applied = apply_to_loading_world(request);
+        let primary = applied.world.systems.keys().next().unwrap();
+        let regiment = loading_regiment(&applied.world, primary).unwrap();
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(primary);
+        let layout = CockpitState::new(request.faction).layout_for(640.0, 480.0);
+        let mut fleets = FleetWindowState::default();
+        let mut manager = WindowManager::new();
+        let prepared = fleets
+            .prepare_open(
+                &applied.world,
+                primary,
+                (300, 80),
+                request.faction,
+                layout,
+                None,
+            )
+            .unwrap();
+        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
+        let id = fleets.commit_open(prepared, &opened.transition).unwrap();
+        let mut watch = FleetLoadWatch {
+            regiment: Some(regiment),
+            ..FleetLoadWatch::default()
+        };
+
+        let visible = watch
+            .next(
+                request,
+                &applied.world,
+                &fog,
+                &applied.movement,
+                &applied.transport,
+                &fleets,
+                &manager.begin_frame(),
+                false,
+                &[],
+            )
+            .unwrap();
+        assert!(visible.window_open);
+        assert_eq!(visible.origin, Some((300, 80)));
+        assert!(visible.fleet_entry.is_some());
+
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        let hidden = watch
+            .next(
+                request,
+                &applied.world,
+                &fog,
+                &applied.movement,
+                &applied.transport,
+                &fleets,
+                &manager.begin_frame(),
+                false,
+                &[],
+            )
+            .unwrap();
+        assert!(!hidden.window_open);
+        assert_eq!(hidden.origin, None);
+        assert_eq!(hidden.entries, 0);
+        assert_eq!((hidden.selected, hidden.tab), (None, None));
+        assert_eq!(hidden.enabled, [false; 4]);
+        assert!(hidden.items.is_empty() && hidden.fleets.is_empty());
+        assert_eq!(hidden.counts, None);
+        assert_eq!(hidden.fleet_entry, None);
+        assert_eq!(hidden.troops_tab, None);
+        assert_eq!(hidden.first_item, None);
+
+        manager.apply(WindowCommand::Restore(id)).unwrap();
+        let restored = watch
+            .next(
+                request,
+                &applied.world,
+                &fog,
+                &applied.movement,
+                &applied.transport,
+                &fleets,
+                &manager.begin_frame(),
+                false,
+                &[],
+            )
+            .unwrap();
+        assert!(restored.window_open);
+        assert_eq!(restored.origin, visible.origin);
+        assert_eq!(restored.fleet_entry, visible.fleet_entry);
     }
 
     #[test]
@@ -3223,6 +3406,7 @@ mod tests {
                     &applied.movement,
                     &applied.transport,
                     &FleetWindowState::default(),
+                    &WindowManager::new().begin_frame(),
                     false,
                     &[],
                 )
@@ -3316,6 +3500,7 @@ mod tests {
                 &applied.movement,
                 &applied.transport,
                 &fleets,
+                &WindowManager::new().begin_frame(),
                 false,
                 &[],
             )
@@ -3366,6 +3551,7 @@ mod tests {
             &applied.movement,
             &applied.transport,
             &fleets,
+            &WindowManager::new().begin_frame(),
             false,
             &messages,
         )
@@ -3397,6 +3583,7 @@ mod tests {
                 &applied.movement,
                 &applied.transport,
                 fleets,
+                &WindowManager::new().begin_frame(),
                 false,
                 &[],
             )
@@ -3450,6 +3637,7 @@ mod tests {
                 &applied.movement,
                 &applied.transport,
                 &fleets,
+                &WindowManager::new().begin_frame(),
                 false,
                 &[],
             ),
@@ -3466,9 +3654,9 @@ mod tests {
         let rect = egui::Rect::from_min_size(egui::pos2(100.0, 30.0), egui::vec2(90.0, 72.0));
         let mut watch = SpeedMenuWatch::default();
 
-        assert_eq!(watch.next(request, None), None);
+        assert_eq!(watch.next(request, None, false), None);
         assert_eq!(
-            watch.next(request, Some(rect)),
+            watch.next(request, Some(rect), false),
             Some(FixtureSpeedMenu {
                 status: "speed-menu",
                 code: request.code,
@@ -3477,16 +3665,22 @@ mod tests {
                 width: 90.0,
                 height: 72.0,
                 rows: 5,
+                input_ready: false,
             })
         );
-        assert_eq!(watch.next(request, Some(rect)), None);
-        assert_eq!(watch.next(request, None), None);
-        assert!(watch.next(request, Some(rect)).is_some());
+        assert_eq!(watch.next(request, Some(rect), false), None);
+        assert!(watch.next(request, Some(rect), true).is_some());
+        assert_eq!(watch.next(request, Some(rect), true), None);
+        assert_eq!(watch.next(request, None, false), None);
+        assert!(watch.next(request, Some(rect), true).is_some());
         let moving = FixtureRequest {
             scenario: Scenario::FleetMove,
             ..request
         };
-        assert_eq!(SpeedMenuWatch::default().next(moving, Some(rect)), None);
+        assert_eq!(
+            SpeedMenuWatch::default().next(moving, Some(rect), true),
+            None
+        );
     }
 
     #[test]
