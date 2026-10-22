@@ -2904,14 +2904,14 @@ mod frame_input_tests {
     use super::{
         approve_tactical_window_action, child_key_disposition, collect_strategic_pointer_batch,
         commit_pending_tactical_window_action, commit_sector_window_publication,
-        enqueue_managed_fixture_sector, enqueue_sector_manager_action, enqueue_sector_window,
-        pump_pending_sector_publication, queue_routed_sector_release_receipt,
-        refresh_pending_sector_publication, reset_pending_tactical_handoff, restore_egui_input,
-        route_tactical_window_input, tactical_result_destination,
-        take_approved_tactical_window_action, take_tactical_destination_for_galaxy,
-        with_strategic_input, CommittedTacticalWindowAction, PendingSectorPublication,
-        PreparedTacticalWindowAction, RoutedEguiInputFilter, SectorDependentIntent,
-        StrategicPointerBatch, StrategicPointerEvent, StrategicRawKeyEvent,
+        enqueue_managed_fixture_sector, enqueue_managed_fixture_system,
+        enqueue_sector_manager_action, enqueue_sector_window, pump_pending_sector_publication,
+        queue_routed_sector_release_receipt, refresh_pending_sector_publication,
+        reset_pending_tactical_handoff, restore_egui_input, route_tactical_window_input,
+        tactical_result_destination, take_approved_tactical_window_action,
+        take_tactical_destination_for_galaxy, with_strategic_input, CommittedTacticalWindowAction,
+        PendingSectorPublication, PreparedTacticalWindowAction, RoutedEguiInputFilter,
+        SectorDependentIntent, StrategicPointerBatch, StrategicPointerEvent, StrategicRawKeyEvent,
         StrategicRawPointerEvent, StrategicRootKeyBatch, TacticalResultDestination,
     };
     use egui_macroquad::egui;
@@ -2924,6 +2924,8 @@ mod frame_input_tests {
     use rebellion_render::message_index::MessageIndexState;
     use rebellion_render::sector_window::SectorWindowState;
     use rebellion_render::status_window::StatusWindowState;
+    #[cfg(feature = "interface-test-fixtures")]
+    use rebellion_render::system_window::SystemWindowState;
     use rebellion_render::tactical_view::TacticalWindowEvent;
     use rebellion_render::windowing_input::{
         FrameInputRouter, InputDisposition, InputEventId, InputRecipient, PointerButtonId,
@@ -3315,6 +3317,67 @@ mod frame_input_tests {
         }
         assert!(sectors.window_id(world.systems[elsewhere].sector).is_some());
         assert!(sectors.window_id(world.systems[primary].sector).is_some());
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
+    #[test]
+    fn build_selection_fixture_republishes_its_system_with_manager_identity() {
+        let (world, system) = sector_fixture_world();
+        let layout = CockpitLayout {
+            canvas: CockpitViewport {
+                x: 0.0,
+                y: 0.0,
+                width: 640.0,
+                height: 480.0,
+            },
+            galaxy: CockpitViewport {
+                x: 55.0,
+                y: 40.0,
+                width: 485.0,
+                height: 350.0,
+            },
+            scale: 1.0,
+        };
+        let mut state = SystemWindowState::default();
+        assert!(state.open(&world, system, (225, 76), CockpitFaction::Alliance, layout));
+        let seeded_position = state.open_windows().next().unwrap().1;
+        assert_eq!(
+            state.window_id(system),
+            None,
+            "fixture starts with legacy direct content"
+        );
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        assert!(enqueue_managed_fixture_system(
+            crate::interface_test_fixture::Scenario::BuildSelection,
+            CockpitFaction::Alliance,
+            &mut coordinator,
+            &mut state,
+            &world,
+            layout,
+        ));
+        assert_eq!(
+            state.window_count(),
+            0,
+            "legacy content is held out until manager receipt"
+        );
+
+        let mut applied = coordinator.apply_pending().remove(0);
+        let id = applied.system_content_id.expect("managed System receipt");
+        assert_eq!(
+            state.commit_open(
+                applied.prepared_system.take().unwrap(),
+                &applied.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_system_publication(id));
+        assert_eq!(state.window_id(system), Some(id));
+        assert_eq!(
+            state.open_windows().collect::<Vec<_>>(),
+            [(system, seeded_position)],
+            "manager adoption preserves the fixture's seeded System position"
+        );
     }
 
     #[test]
@@ -8624,6 +8687,14 @@ async fn main() {
             &mut sector_window_state,
             &world,
             &mut pending_sector_publications,
+        );
+        enqueue_managed_fixture_system(
+            request.scenario,
+            request.faction,
+            &mut strategic_windowing,
+            &mut system_window_state,
+            &world,
+            cockpit_state.layout_for(640.0, 480.0),
         );
         if let Some(open) =
             interface_test_fixture::defenses_window_open(request, &world, &cockpit_state)
@@ -19851,6 +19922,40 @@ fn enqueue_managed_fixture_sector(
             None,
         )
     })
+}
+
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn enqueue_managed_fixture_system(
+    scenario: interface_test_fixture::Scenario,
+    faction: CockpitFaction,
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    state: &mut SystemWindowState,
+    world: &GameWorld,
+    layout: rebellion_render::CockpitLayout,
+) -> bool {
+    if scenario != interface_test_fixture::Scenario::BuildSelection {
+        return false;
+    }
+    let windows: Vec<_> = state.open_windows().collect();
+    if windows.is_empty()
+        || windows
+            .iter()
+            .any(|(system, _)| state.window_id(*system).is_some())
+    {
+        return false;
+    }
+    let prepared: Option<Vec<_>> = windows
+        .iter()
+        .map(|(system, position)| state.prepare_open(world, *system, *position, faction, layout))
+        .collect();
+    let Some(prepared) = prepared else {
+        return false;
+    };
+    state.clear();
+    for window in prepared {
+        strategic_windowing.enqueue_system_open(window);
+    }
+    true
 }
 
 fn enqueue_sector_window(
