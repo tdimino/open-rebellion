@@ -52,8 +52,8 @@ const masks = [
   { x: 138, y: 110, width: 64, height: 23 },
   { x: 10, y: 145, width: 125, height: 15 },
   { x: 10, y: 165, width: 125, height: 15 },
-  { x: 140, y: 145, width: 60, height: 15 },
-  { x: 140, y: 165, width: 60, height: 15 },
+  { x: 140, y: 145, width: 61, height: 15 },
+  { x: 140, y: 165, width: 61, height: 15 },
   { x: 20, y: 196, width: 118, height: 15 },
   { x: 141, y: 196, width: 45, height: 17 },
 ];
