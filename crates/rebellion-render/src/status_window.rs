@@ -282,6 +282,12 @@ fn status_view_if_current(
 }
 
 impl PreparedStatusWindow {
+    /// Object accepted for this logical Status open.
+    #[must_use]
+    pub const fn object(self) -> StatusObject {
+        self.object
+    }
+
     #[must_use]
     pub const fn spec(self) -> WindowSpec {
         crate::windowing_policy::contextual_spec(

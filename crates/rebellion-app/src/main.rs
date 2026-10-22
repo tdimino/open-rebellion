@@ -2547,6 +2547,15 @@ fn commit_build_selection_gameplay(
     Some(action)
 }
 
+fn status_opened_receipt_line(
+    object: &impl std::fmt::Debug,
+    (x, y, width, height): (f32, f32, f32, f32),
+) -> String {
+    format!(
+        "[interface] command=0x103 destination=status_window status=opened object={object:?} rect={x:.0},{y:.0},{width:.0},{height:.0}"
+    )
+}
+
 const fn managed_mission_dialog_escape_requested(
     close_queued: bool,
     has_keyboard_owner: bool,
@@ -6152,6 +6161,18 @@ mod panel_toggle_tests {
             InputRecipient::Window(status_id)
         );
         assert!(!key_router.claim_root(keys.events[0].id));
+    }
+
+    #[test]
+    fn status_open_receipt_names_committed_object_and_bounds() {
+        let line = super::status_opened_receipt_line(
+            &StatusObject::Character(rebellion_core::ids::CharacterKey::default()),
+            (108.0, 79.0, 379.0, 272.0),
+        );
+        assert_eq!(
+            line,
+            "[interface] command=0x103 destination=status_window status=opened object=Character(CharacterKey(null)) rect=108,79,379,272"
+        );
     }
 
     #[test]
@@ -17267,6 +17288,7 @@ async fn main() {
             if let (Some(prepared), Some(id), Ok(commit)) =
                 (prepared_status, status_content_id, &result)
             {
+                let object = prepared.object();
                 let created = matches!(
                     commit.transition,
                     rebellion_windowing::WindowTransition::Opened { .. }
@@ -17278,6 +17300,15 @@ async fn main() {
                     if !committed {
                         status_window_state.remove_content(&[id]);
                         removed_content.extend(strategic_windowing.rollback_status_publication(id));
+                    } else {
+                        let rect = rebellion_render::status_window::window_rect(publication_layout);
+                        macroquad::logging::info!(
+                            "{}",
+                            status_opened_receipt_line(
+                                &object,
+                                (rect.min.x, rect.min.y, rect.width(), rect.height()),
+                            )
+                        );
                     }
                 } else {
                     macroquad::logging::error!(
