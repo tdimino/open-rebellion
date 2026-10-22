@@ -8,10 +8,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
+import {
+  countMaskedRgbDifferences,
+  encyclopediaSurfaceGeometry,
+} from "./encyclopedia-surface-geometry.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
-const site = path.join(root, ".artifacts/interface-parity/site");
+const site = process.env.OPEN_REBELLION_INTERFACE_TEST_SITE
+  || path.join(root, ".artifacts/interface-parity/site");
 const source = path.join(root, "data/base/ui/strategy-dll/BMP");
 const executable = process.env.OPEN_REBELLION_CHROME_FOR_TESTING || chromium.executablePath();
 const launchArguments = ["--mute-audio", "--disable-background-networking", "--no-first-run"];
@@ -122,18 +127,24 @@ function countColor(screenshot, rect, color) {
 }
 
 function compareResource(screenshot, resourceId, x, y, width, height) {
-  const expected = decodeIndexedBmp(fs.readFileSync(path.join(source, `${resourceId}.bmp`))).png;
-  let different = 0;
+  const decoded = decodeIndexedBmp(fs.readFileSync(path.join(source, `${resourceId}.bmp`)));
+  const { png: expected, bytes, dataOffset, stride, signedHeight } = decoded;
+  assert.equal(expected.width, width);
+  assert.equal(expected.height, height);
+  const transparent = bytes[dataOffset];
+  const actual = new Uint8Array(width * height * 4);
+  const opaqueMask = new Uint8Array(width * height);
   for (let row = 0; row < height; row += 1) {
+    const sourceRow = signedHeight > 0 ? expected.height - 1 - row : row;
     for (let column = 0; column < width; column += 1) {
+      const pixel = row * width + column;
+      const sourceIndex = bytes[dataOffset + sourceRow * stride + column];
+      opaqueMask[pixel] = sourceIndex === transparent ? 0 : 1;
       const actualOffset = ((y + row) * screenshot.width + x + column) * 4;
-      const expectedOffset = (row * expected.width + column) * 4;
-      if (screenshot.data[actualOffset] !== expected.data[expectedOffset]
-        || screenshot.data[actualOffset + 1] !== expected.data[expectedOffset + 1]
-        || screenshot.data[actualOffset + 2] !== expected.data[expectedOffset + 2]) different += 1;
+      actual.set(screenshot.data.subarray(actualOffset, actualOffset + 4), pixel * 4);
     }
   }
-  return different;
+  return countMaskedRgbDifferences(actual, expected.data, opaqueMask);
 }
 
 async function stableScreenshot(page, directory, label) {
@@ -174,17 +185,11 @@ async function runCase(server, faction, start, viewport) {
     assert.equal(ready.status, "ready", JSON.stringify(ready));
     assert.equal(ready.code, code);
     const initial = await stableScreenshot(page, directory, "initial");
-    const scale = Math.min(viewport.width / 640, viewport.height / 480);
-    const origin = {
-      x: Math.round((viewport.width - 640 * scale) / 2 + 85 * scale),
-      y: Math.round((viewport.height - 480 * scale) / 2 + 55 * scale),
-    };
-    const artRect = {
-      x: Math.round(origin.x + 12 * scale),
-      y: Math.round(origin.y + 31 * scale),
-      width: Math.round(400 * scale),
-      height: Math.round(200 * scale),
-    };
+    const geometry = encyclopediaSurfaceGeometry(faction.name, viewport, {
+      forward: opaqueProbe(10382),
+      index: opaqueProbe(faction.indexResource),
+    });
+    const { scale, origin, artRect } = geometry;
     const checks = {};
     if (start.name === "middle") {
       checks.art_pixels = countColor(initial.png, artRect, faction.middleColor);
@@ -197,12 +202,7 @@ async function runCase(server, faction, start, viewport) {
       await page.reload({ waitUntil: "load" });
       await page.waitForFunction(() => window.__openRebellionInterfaceReady?.status);
       const reset = await stableScreenshot(page, directory, "reset");
-      const forward = opaqueProbe(10382);
-      const forwardPoint = {
-        x: origin.x + (380 + forward.x) * scale,
-        y: origin.y + (14 + forward.y) * scale,
-      };
-      await page.mouse.move(forwardPoint.x, forwardPoint.y);
+      await page.mouse.move(geometry.forwardPoint.x, geometry.forwardPoint.y);
       const hovered = await stableScreenshot(page, directory, "forward-hover");
       assert.equal(hovered.sha256, reset.sha256, "hover incorrectly changed the bitmap");
       await page.mouse.down();
@@ -214,12 +214,7 @@ async function runCase(server, faction, start, viewport) {
 
       await page.reload({ waitUntil: "load" });
       await page.waitForFunction(() => window.__openRebellionInterfaceReady?.status);
-      const indexProbe = opaqueProbe(faction.indexResource);
-      const indexOrigin = faction.name === "alliance" ? { x: 423, y: 147 } : { x: 426, y: 143 };
-      await page.mouse.click(
-        origin.x + (indexOrigin.x + indexProbe.x) * scale,
-        origin.y + (indexOrigin.y + indexProbe.y) * scale,
-      );
+      await page.mouse.click(geometry.indexPoint.x, geometry.indexPoint.y);
       const indexed = await stableScreenshot(page, directory, "mode-index");
       assert.notEqual(indexed.sha256, reset.sha256, "index mode control did not switch surfaces");
 
@@ -235,10 +230,10 @@ async function runCase(server, faction, start, viewport) {
         checks.disabled_back_differences = compareResource(
           initial.png,
           10387,
-          origin.x + 28,
-          origin.y + 14,
-          21,
-          17,
+          geometry.disabledBackRect.x,
+          geometry.disabledBackRect.y,
+          geometry.disabledBackRect.width,
+          geometry.disabledBackRect.height,
         );
         assert.equal(checks.disabled_back_differences, 0);
       }
@@ -249,9 +244,12 @@ async function runCase(server, faction, start, viewport) {
       await page.keyboard.press("ArrowRight");
       const category = await stableScreenshot(page, directory, "next-category");
       assert.notEqual(category.sha256, initial.sha256, "index Right did not select the next category");
+      await page.keyboard.press("ArrowDown");
+      const selected = await stableScreenshot(page, directory, "first-topic-selected");
+      assert.notEqual(selected.sha256, category.sha256, "index Down did not select the first topic");
       await page.keyboard.press("Enter");
       const topic = await stableScreenshot(page, directory, "enter-topic");
-      assert.notEqual(topic.sha256, category.sha256, "index Enter did not open its selected topic");
+      assert.notEqual(topic.sha256, selected.sha256, "index Enter did not open its selected topic");
       checks.topic_art_pixels = countColor(topic.png, artRect, [26, 48, 82]);
       assert.ok(checks.topic_art_pixels >= artRect.width * artRect.height * 0.99);
     }

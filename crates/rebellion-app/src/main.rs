@@ -2173,10 +2173,10 @@ fn with_strategic_input<T>(
     drawn
 }
 
-/// Run the fixed Message Index visual fixture with the original pointer state
-/// while leaving its application-modal event quarantine intact.
+/// Run a visual fixture with the original pointer state while leaving its
+/// application-modal raw and derived event quarantine intact.
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
-fn with_message_index_fixture_pointer<T>(
+fn with_visual_fixture_pointer<T>(
     ctx: &egui_macroquad::egui::Context,
     original: &egui_macroquad::egui::InputState,
     draw: impl FnOnce() -> T,
@@ -2957,11 +2957,11 @@ mod frame_input_tests {
         queue_routed_sector_release_receipt, refresh_pending_sector_publication,
         reset_pending_tactical_handoff, restore_egui_input, route_tactical_window_input,
         tactical_result_destination, take_approved_tactical_window_action,
-        take_tactical_destination_for_galaxy, with_message_index_fixture_pointer,
-        with_strategic_input, CommittedTacticalWindowAction, PendingSectorPublication,
-        PreparedTacticalWindowAction, RoutedEguiInputFilter, SectorDependentIntent,
-        StrategicPointerBatch, StrategicPointerEvent, StrategicRawKeyEvent,
-        StrategicRawPointerEvent, StrategicRootKeyBatch, TacticalResultDestination,
+        take_tactical_destination_for_galaxy, with_strategic_input, with_visual_fixture_pointer,
+        CommittedTacticalWindowAction, PendingSectorPublication, PreparedTacticalWindowAction,
+        RoutedEguiInputFilter, SectorDependentIntent, StrategicPointerBatch, StrategicPointerEvent,
+        StrategicRawKeyEvent, StrategicRawPointerEvent, StrategicRootKeyBatch,
+        TacticalResultDestination,
     };
     use egui_macroquad::egui;
     use rebellion_render::build_selection::BuildSelectionState;
@@ -4996,7 +4996,7 @@ mod frame_input_tests {
                 .expect("fixture modal installs its application input barrier");
             assert!(!ctx.input(|state| state.pointer.primary_down()));
 
-            with_message_index_fixture_pointer(ctx, &saved, || {
+            with_visual_fixture_pointer(ctx, &saved, || {
                 fixture_saw_held_pointer = ctx.input(|state| {
                     state.pointer.primary_down()
                         && state.pointer.interact_pos() == Some(point)
@@ -5015,6 +5015,85 @@ mod frame_input_tests {
         assert!(
             modal_input_remained_blocked,
             "fixture-only pointer painting must not expose raw events to modal app input"
+        );
+    }
+
+    #[test]
+    fn encyclopedia_surface_fixture_paint_sees_held_pointer_without_unblocking_modal_input() {
+        let ctx = egui::Context::default();
+        let point = egui::pos2(40.0, 60.0);
+        let mut filter = RoutedEguiInputFilter::default();
+        let router = FrameInputRouter::default();
+        let batch = StrategicPointerBatch::default();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(200.0, 200.0),
+            )),
+            events: vec![
+                egui::Event::PointerMoved(point),
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            ..egui::RawInput::default()
+        };
+        let mut fixture_saw_held_pointer = false;
+        let mut quarantined_before_paint = false;
+        let mut filtered_input_restored_after_paint = false;
+        let mut original_input_restored_after_frame = false;
+
+        let _ = ctx.run(input, |ctx| {
+            let saved = filter
+                .install(ctx, &batch, &router, true)
+                .expect("fixture modal installs its application input barrier");
+            quarantined_before_paint = ctx.input(|state| {
+                !state.pointer.primary_down()
+                    && state.events.is_empty()
+                    && state.raw.events.is_empty()
+            });
+
+            with_visual_fixture_pointer(ctx, &saved, || {
+                // This is the EncyclopediaSurfaceFixture::draw observation point.
+                fixture_saw_held_pointer = ctx.input(|state| {
+                    state.pointer.primary_down()
+                        && state.pointer.interact_pos() == Some(point)
+                        && state.events.is_empty()
+                        && state.raw.events.is_empty()
+                });
+            });
+            filtered_input_restored_after_paint = ctx.input(|state| {
+                !state.pointer.primary_down()
+                    && state.events.is_empty()
+                    && state.raw.events.is_empty()
+            });
+            restore_egui_input(ctx, saved);
+            original_input_restored_after_frame = ctx.input(|state| {
+                state.pointer.primary_down()
+                    && state.pointer.interact_pos() == Some(point)
+                    && !state.raw.events.is_empty()
+                    && !state.events.is_empty()
+            });
+        });
+
+        assert!(
+            quarantined_before_paint,
+            "modal raw/derived events must be quarantined"
+        );
+        assert!(
+            fixture_saw_held_pointer,
+            "Encyclopedia visual fixture must receive the original held pointer for pressed artwork"
+        );
+        assert!(
+            filtered_input_restored_after_paint,
+            "the fixture pointer exception must end before other application drawing"
+        );
+        assert!(
+            original_input_restored_after_frame,
+            "the frame must restore the original input after fixture painting"
         );
     }
 
@@ -12789,7 +12868,7 @@ async fn main() {
                         let original = routed_egui_input
                             .as_ref()
                             .expect("the fixture modal captures original egui input");
-                        with_message_index_fixture_pointer(ctx, original, || {
+                        with_visual_fixture_pointer(ctx, original, || {
                             rebellion_render::draw_message_index_fixture(
                                 ctx,
                                 &mut bmp_cache,
@@ -12830,13 +12909,18 @@ async fn main() {
                     }
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                     if let Some(fixture) = encyclopedia_surface_fixture.as_mut() {
-                        fixture.draw(
-                            ctx,
-                            &mut bmp_cache,
-                            interface_fixture_request
-                                .expect("Encyclopedia fixture has an interface request")
-                                .code,
-                        );
+                        let original = routed_egui_input
+                            .as_ref()
+                            .expect("the Encyclopedia fixture captures original egui input");
+                        with_visual_fixture_pointer(ctx, original, || {
+                            fixture.draw(
+                                ctx,
+                                &mut bmp_cache,
+                                interface_fixture_request
+                                    .expect("Encyclopedia fixture has an interface request")
+                                    .code,
+                            );
+                        });
                     }
 
                     // Mod Manager (floating window)
