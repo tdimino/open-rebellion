@@ -53,9 +53,11 @@ functional; historical parity percentages are estimates, not acceptance proof.
   `tools/original-capture/README.md`.
 - Read the manual before and after each interface feature and settle its
   claims against the trace (`agent_docs/manual-cross-check.md`).
-- Take tactical, ground-assault and Ghidra work from the br/bv task graph in
-  `.beads/` (`agent_docs/task-graph.md`); after any `br` change, run
-  `scripts/task-index.py` to regenerate the pages in `tasks/`.
+- Take work from the br/bv task graph in `.beads/`
+  (`agent_docs/task-graph.md`): pick with `bv --robot-triage`, claim, tick
+  each acceptance box as it passes; an approved plan is beaded out into an
+  epic of self-contained beads in the template there. After any `br` change,
+  run `scripts/task-index.py` to regenerate the pages in `tasks/`.
 - `agent_docs/INDEX.md` lists every agent doc and tool README.
 - GitHub Actions workflow definitions are intentionally local and untracked as
   of 2026-09-08. Verification is manual until M5 restores a reviewed CI provider.

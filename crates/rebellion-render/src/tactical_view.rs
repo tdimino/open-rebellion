@@ -294,6 +294,50 @@ enum TacticalCameraFollow {
     FighterGroup(u8),
 }
 
+/// The strip look the selection does not give: what the original's slot
+/// bits hold after inputs that install no mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct TacticalStripOverride {
+    /// The selection under which every slot of both strips was released
+    /// (`FUN_0059b430`, `FUN_0059b600`), by a number key whose command
+    /// changed nothing (`FUN_0059b730.c:58-97`) or by Withdraw
+    /// (`FUN_0059fd40.c:141-167`); no slot is pressed until the selection
+    /// changes.
+    released: Option<(Option<u8>, Option<u8>)>,
+    /// Unassigned task-force slots, a bit each, that took their caption and
+    /// assigned images in mode `0x10` with the player-command flag clear,
+    /// forming no task force (`FUN_0059b450.c:39-44`,
+    /// `FUN_0059fd40.c:33-38`). Only a strip refresh takes them back
+    /// (`FUN_0059b550.c:12-17`), and none follows: the flag clears only on
+    /// Withdraw, after which no task force forms or empties.
+    stale_slots: u8,
+    /// The stale slots still pressed. A number key releases them before
+    /// its own press (`FUN_0059b430`), and so does the mode a pick or a miss
+    /// installs (`FUN_005a1550.c:20-21`, `FUN_005a0c80.c:16-18`).
+    stale_pressed: u8,
+}
+
+impl TacticalStripOverride {
+    /// `FUN_0059b430`: every task-force slot loses its press; captions stay.
+    fn release_task_force_strip(&mut self) {
+        self.stale_pressed = 0;
+    }
+}
+
+/// What a number key or F key does on the tactical window
+/// (`FUN_0059b730`, key-down only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TacticalKeyAction {
+    /// Keys 1-8: release both strips, then press task-force slot i, which
+    /// posts its command like a click (`FUN_0059b730.c:58-97`,
+    /// `FUN_0059ca90` -> `FUN_00603710.c:18-20`).
+    TaskForceSlot(u8),
+    /// F1-F8 and F9-F12: camera mode `0xb` on an existing group
+    /// (`FUN_0059b730.c:98-130`, `FUN_005c2990`); no selection changes
+    /// (`FUN_005d9a70`; ghidra/notes/tactical-selection-modes.md).
+    Follow(TacticalCameraFollow),
+}
+
 /// Persistent state for the tactical combat view across frames.
 pub struct TacticalState {
     /// The current battle session (None when not in combat).
@@ -357,6 +401,15 @@ pub struct TacticalState {
     player_observing: bool,
     /// Captured press on the source Death Star superlaser control.
     death_star_laser_pressed: bool,
+    /// Captured press on a task-force or fighter-group slot. The slot keeps
+    /// its held look wherever the pointer goes and acts only on a release
+    /// over it (`FUN_006028c0`, ghidra/notes/tactical-strip-buttons.md).
+    strip_slot_pressed: Option<TacticalHudControl>,
+    /// The strip look the selection does not give.
+    strip_override: TacticalStripOverride,
+    /// This frame's key-downs in order, autorepeats included, queued by the
+    /// app ([`TacticalState::set_frame_key_downs`]).
+    key_downs: Vec<KeyCode>,
     /// The next valid right-click assigns the superlaser target.
     death_star_targeting: bool,
     command_panel: TacticalCommandPanel,
@@ -416,6 +469,9 @@ impl Default for TacticalState {
             withdraw_confirmation_pressed: None,
             player_observing: false,
             death_star_laser_pressed: false,
+            strip_slot_pressed: None,
+            strip_override: TacticalStripOverride::default(),
+            key_downs: Vec::new(),
             death_star_targeting: false,
             command_panel: TacticalCommandPanel::Display,
             warmed_font_sizes: HashSet::new(),
@@ -538,6 +594,9 @@ impl TacticalState {
         self.withdraw_confirmation_pressed = None;
         self.player_observing = false;
         self.death_star_laser_pressed = false;
+        self.strip_slot_pressed = None;
+        self.strip_override = TacticalStripOverride::default();
+        self.key_downs.clear();
         self.death_star_targeting = false;
         self.command_panel = TacticalCommandPanel::Display;
         self.render_original_participants = true;
@@ -909,6 +968,36 @@ impl TacticalState {
         session.selected_fighter_group = None;
         self.battle_result_tab = BattleResultTab::Summary;
         self.reset_battle_result_filter();
+        self.command_panel = TacticalCommandPanel::Display;
+    }
+
+    /// Withdraw, command `0x7a` (`FUN_0059fd40.c:141-167`): the player's
+    /// side withdraws (`FUN_005ad530`), which empties every slot of both
+    /// strips and returns a group's mode to the base mode
+    /// (`FUN_005ad530.c:37-41`, `:61-81`; `FUN_005a0320.c:16-35`,
+    /// `FUN_005a0410.c:16-38`); the player-command flag clears, both strips
+    /// release (`FUN_005c1020(0)`, `FUN_005c0fa0`) and the command area shows
+    /// nothing selected (`FUN_005c0e80`, panel `0x15`). A ship selection's
+    /// mode (`0xe`, `0x10`) stays installed.
+    /// This frame's key-downs, autorepeats included, from the app's input
+    /// subscriber; macroquad's pressed-key set drops repeats.
+    pub fn set_frame_key_downs(&mut self, keys: impl IntoIterator<Item = KeyCode>) {
+        self.key_downs = keys.into_iter().collect();
+    }
+
+    pub fn withdraw_player_side(&mut self) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+        let player_side = session.player_is_attacker;
+        session.begin_side_withdrawal(player_side);
+        if session.selected_task_force.is_some() || session.selected_fighter_group.is_some() {
+            deselect_all(session);
+        }
+        session.player_command = false;
+        self.strip_override.release_task_force_strip();
+        self.strip_override.released =
+            Some((session.selected_task_force, session.selected_fighter_group));
         self.command_panel = TacticalCommandPanel::Display;
     }
 
@@ -2223,6 +2312,79 @@ const TASK_FORCE_BUTTONS: [NativeRect; 8] = [
     NativeRect::new(263.0, 2.0, 25.0, 17.0),
 ];
 
+/// A task-force slot's caption font: application entry 4, Arial with a
+/// 16-pixel cell (`FUN_005ff910.c:144-147`, `FUN_0060eed0.c:49-51`;
+/// ghidra/notes/tactical-strip-buttons.md). port: the port sets it in
+/// Liberation Sans, smoothed (docs/plans/2026-10-20-feat-task-force-strip.md,
+/// Decisions).
+const TASK_FORCE_LABEL_FONT: u8 = 4;
+/// Entry 4's cell (`lfHeight` 16) and its ascent, GDI's `tmAscent`: the
+/// cell's Arial ascent, 1854 of 2288 units, rounded.
+const TASK_FORCE_LABEL_CELL: i32 = 16;
+const TASK_FORCE_LABEL_ASCENT: i32 = 13;
+
+/// The caption a task-force slot draws: TEXTTACT `0xad81 + i`, the digit
+/// `i + 1` (`FUN_0059be80.c:66-69`), and only while the slot is assigned,
+/// since `FUN_005c54d0` clears the caption bit `0x20` that the paint needs
+/// (`FUN_005c54d0.c:7-15`, `FUN_00602d30.c:80-82`; A0 TAC-02-C006 slot 3).
+/// The task-force and fighter-group headers for the player's faction,
+/// whichever side attacks: 1001 and 1008 for the Alliance, 1004 and 1010
+/// for the Empire (`FUN_0059be80.c:27-32`, `FUN_0059c030.c:23-28`, on
+/// `FUN_00595c40`).
+fn strip_header_art(player_is_alliance: bool) -> (u32, u32) {
+    use resources::tactical as art;
+    if player_is_alliance {
+        (art::TASK_FORCES_ALLIANCE, art::FIGHTER_SQUADRONS_ALLIANCE)
+    } else {
+        (art::TASK_FORCES_EMPIRE, art::FIGHTER_SQUADRONS_EMPIRE)
+    }
+}
+
+fn task_force_label_text(index: u8, assigned: bool) -> Option<String> {
+    assigned.then(|| (index + 1).to_string())
+}
+
+/// Where a caption `text_width` pixels wide starts and its baseline, in
+/// canvas pixels. `FUN_006026e0.c:24-48` measures the caption and centres
+/// its rectangle in the 25 x 17 slot with integer halves, left
+/// (25 - width) / 2 and top (17 - cell) / 2; `DrawTextA` then sets the text
+/// on that top (`FUN_00602d30.c:80-90`).
+fn task_force_label_origin(index: u8, text_width: i32) -> (f32, f32) {
+    let left = (25 - text_width) / 2;
+    let top = (17 - TASK_FORCE_LABEL_CELL) / 2;
+    (
+        TASK_FORCE_BUTTON_X + f32::from(index) * GROUP_BUTTON_PITCH + left as f32,
+        2.0 + (top + TASK_FORCE_LABEL_ASCENT) as f32,
+    )
+}
+
+/// Whether task-force slot `index` draws pressed: an assigned slot whose mode
+/// is installed (`FUN_005a34e0.c:47-48`), or that the pointer holds, the
+/// held look state 1 paints in white while the press hits
+/// (`FUN_00602d30.c:20-23`).
+fn task_force_slot_pressed(
+    groups: &TacticalGroupHud,
+    held: Option<TacticalHudControl>,
+    index: u8,
+) -> bool {
+    groups.task_forces[usize::from(index)]
+        && (groups.pressed_task_force == Some(index)
+            || groups.pressed_stale_task_forces & (1 << index) != 0
+            || held == Some(TacticalHudControl::TaskForce(index)))
+}
+
+/// The caption's colour: black at rest (`FUN_00602150.c:75`), white while
+/// the slot is pressed (`FUN_0059be80.c:64`, painted at
+/// `FUN_00602d30.c:57`) or held (`+0xb8`, `FUN_00602150.c:76`, painted at
+/// `FUN_00602d30.c:20-23`).
+fn task_force_label_color(pressed: bool) -> Color {
+    if pressed {
+        WHITE
+    } else {
+        BLACK
+    }
+}
+
 // REBEXE FUN_0059c030 builds the fighter-group header 0xad0a at (0x128, 1)
 // and the four group buttons 0xad0b-0xad0e at x 0x15b + 0x1d * i, y 2, each
 // 0x19 x 0xf: the 25x17 squadron bitmaps show only their top 15 rows (A0
@@ -2600,38 +2762,65 @@ fn tactical_command_rect_control_at(
     clippy::cast_sign_loss,
     reason = "A containing native bitmap rectangle guarantees finite nonnegative local pixels."
 )]
+/// The strip slots' rectangles: task-force slots `0..8`, then fighter slots.
+fn group_strip_slots() -> impl Iterator<Item = (TacticalHudControl, NativeRect)> {
+    (0u8..)
+        .zip(TASK_FORCE_BUTTONS)
+        .map(|(index, rect)| (TacticalHudControl::TaskForce(index), rect))
+        .chain(
+            (0u8..)
+                .zip(FIGHTER_GROUP_BUTTONS)
+                .map(|(index, rect)| (TacticalHudControl::FighterGroup(index), rect)),
+        )
+}
+
+/// The strip slot a press at `(x, y)` lands on. The slots take a press
+/// anywhere in their rectangle: `FUN_006035f0.c:24-38` tests the bitmap only
+/// under flag `0x10`, which the CoolStrobeButton ctor sets only when its last
+/// argument is 0 (`FUN_00602150.c:115-116`), and both slot builders pass 1
+/// (`FUN_0059be80.c:55-56` through `FUN_005c52e0`, `FUN_0059c030.c:52-53`).
+/// A fighter slot is 15
+/// rows (`FUN_0059c030.c:52`).
+fn group_strip_slot_at(x: f32, y: f32) -> Option<TacticalHudControl> {
+    group_strip_slots().find_map(|(control, rect)| rect.contains(x, y).then_some(control))
+}
+
+/// Whether a release at `(x, y)` counts for the captured strip slot
+/// `control`. The proc tests the release on the captured button's client
+/// point, `x <= width` and `y <= height` (`FUN_006035f0.c:33-34`), so a
+/// release also counts one pixel past the right or bottom edge.
+fn group_strip_release_hits(control: TacticalHudControl, x: f32, y: f32) -> bool {
+    group_strip_slots().any(|(slot, rect)| {
+        slot == control
+            && x >= rect.x
+            && y >= rect.y
+            && x < rect.x + rect.width + 1.0
+            && y < rect.y + rect.height + 1.0
+    })
+}
+
+/// The control drawn held: a captured strip slot keeps its held look until
+/// the release, wherever the pointer is, because the button sets it at the
+/// press and its proc has no `WM_MOUSEMOVE` case (`FUN_006028c0.c:89-133`,
+/// `FUN_00602d30.c:19-25`); a strip slot the pointer merely crosses with the
+/// button down is not held. Other controls follow the pointer.
+fn held_tactical_hud_control(
+    captured_strip_slot: Option<TacticalHudControl>,
+    pointer_control: Option<TacticalHudControl>,
+) -> Option<TacticalHudControl> {
+    captured_strip_slot.or_else(|| {
+        pointer_control.filter(|control| {
+            !matches!(
+                control,
+                TacticalHudControl::TaskForce(_) | TacticalHudControl::FighterGroup(_)
+            )
+        })
+    })
+}
+
 fn tactical_hud_control_at(cache: &mut BmpCache, x: f32, y: f32) -> Option<TacticalHudControl> {
-    for (index, rect) in TASK_FORCE_BUTTONS.iter().enumerate() {
-        if rect.contains(x, y) {
-            let pixel_x = (x - rect.x).floor() as usize;
-            let pixel_y = (y - rect.y).floor() as usize;
-            if cache.is_resource_hit(
-                DllSource::Tactical,
-                resources::tactical::BTN_TASK_FORCE_NORMAL,
-                pixel_x,
-                pixel_y,
-            ) {
-                return Some(TacticalHudControl::TaskForce(
-                    u8::try_from(index).unwrap_or(7),
-                ));
-            }
-        }
-    }
-    for (index, rect) in FIGHTER_GROUP_BUTTONS.iter().enumerate() {
-        if rect.contains(x, y) {
-            let pixel_x = (x - rect.x).floor() as usize;
-            let pixel_y = (y - rect.y).floor() as usize;
-            if cache.is_resource_hit(
-                DllSource::Tactical,
-                FIGHTER_GROUP_NORMAL_ART[index],
-                pixel_x,
-                pixel_y,
-            ) {
-                return Some(TacticalHudControl::FighterGroup(
-                    u8::try_from(index).unwrap_or(3),
-                ));
-            }
-        }
+    if let Some(control) = group_strip_slot_at(x, y) {
+        return Some(control);
     }
     TACTICAL_HUD_CONTROLS.iter().find_map(|spec| {
         if !spec.rect.contains(x, y) {
@@ -2645,8 +2834,11 @@ fn tactical_hud_control_at(cache: &mut BmpCache, x: f32, y: f32) -> Option<Tacti
     })
 }
 
+/// The Battle Options button under `(x, y)`. `FUN_005dab90` builds its five
+/// strobe buttons with a last argument of 1, so `FUN_00602150.c:115-116`
+/// leaves flag `0x10` clear and `FUN_006035f0.c:24-38` takes the whole
+/// rectangle, not the bitmap's opaque pixels.
 fn tactical_battle_options_control_at(
-    cache: &mut BmpCache,
     withdraw_enabled: bool,
     x: f32,
     y: f32,
@@ -2655,40 +2847,20 @@ fn tactical_battle_options_control_at(
         if spec.control == TacticalBattleOptionsControl::Withdraw && !withdraw_enabled {
             return None;
         }
-        if !spec.rect.contains(x, y) {
-            return None;
-        }
-        cache
-            .is_resource_hit(
-                DllSource::Tactical,
-                spec.normal_resource,
-                (x - spec.rect.x).floor() as usize,
-                (y - spec.rect.y).floor() as usize,
-            )
-            .then_some(spec.control)
+        spec.rect.contains(x, y).then_some(spec.control)
     })
 }
 
+/// The withdraw confirmation's button under `(x, y)`: `FUN_005f0f40.c:25,35`
+/// builds Confirm and Cancel with a last argument of 1, so they too take
+/// their whole rectangle (`FUN_006035f0.c:24-38`).
 fn tactical_withdraw_confirmation_control_at(
-    cache: &mut BmpCache,
     x: f32,
     y: f32,
 ) -> Option<TacticalWithdrawConfirmationControl> {
     TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS
         .iter()
-        .find_map(|spec| {
-            if !spec.rect.contains(x, y) {
-                return None;
-            }
-            cache
-                .is_resource_hit(
-                    DllSource::Tactical,
-                    spec.normal_resource,
-                    (x - spec.rect.x).floor() as usize,
-                    (y - spec.rect.y).floor() as usize,
-                )
-                .then_some(spec.control)
-        })
+        .find_map(|spec| spec.rect.contains(x, y).then_some(spec.control))
 }
 
 /// The station decal of the scene surround: `FUN_005ab650` (`0x5ac59b`)
@@ -2887,6 +3059,12 @@ struct TacticalGroupHud<'a> {
     fighter_groups: [bool; 4],
     selected_task_force: Option<u8>,
     selected_fighter_group: Option<u8>,
+    /// The strip slots drawn pressed: the task-force or fighter-group mode.
+    pressed_task_force: Option<u8>,
+    pressed_fighter_group: Option<u8>,
+    /// Stale task-force slots drawn pressed, a bit each
+    /// ([`TacticalStripOverride::stale_pressed`]).
+    pressed_stale_task_forces: u8,
     selected_ship_name: Option<&'a str>,
     selected_ship_hud: Option<u32>,
     selected_ship_hull: Option<(i32, i32)>,
@@ -2899,11 +3077,23 @@ struct TacticalGroupHud<'a> {
 }
 
 impl<'a> TacticalGroupHud<'a> {
+    /// A release of both strips, and the stale unassigned slots.
+    fn apply_strip_override(&mut self, look: TacticalStripOverride) {
+        if look.released.is_some() {
+            self.pressed_task_force = None;
+            self.pressed_fighter_group = None;
+        }
+        for (slot, assigned) in self.task_forces.iter_mut().enumerate() {
+            *assigned |= look.stale_slots & (1 << slot) != 0;
+        }
+        self.pressed_stale_task_forces = look.stale_pressed & look.stale_slots;
+    }
+
     fn from_session(session: &'a BattleSession) -> Self {
         let mut task_forces = [false; 8];
         let mut fighter_groups = [false; 4];
         for ship in &session.ships {
-            if ship.alive && ship.is_attacker == session.player_is_attacker {
+            if in_player_task_force(session, ship) {
                 task_forces[usize::from(ship.task_force.min(7))] = true;
             }
         }
@@ -2934,6 +3124,9 @@ impl<'a> TacticalGroupHud<'a> {
             fighter_groups,
             selected_task_force,
             selected_fighter_group: session.selected_fighter_group,
+            pressed_task_force: session.selected_task_force,
+            pressed_fighter_group: session.selected_fighter_group,
+            pressed_stale_task_forces: 0,
             selected_ship_name,
             selected_ship_hud: selected_ship
                 .and_then(|ship| ship.tactical_resource)
@@ -3090,54 +3283,155 @@ fn assign_selected_capital_focus_target(
 }
 
 fn select_task_force(session: &mut BattleSession, group: u8) -> usize {
-    let first = session.ships.iter().position(|ship| {
-        ship.alive
-            && !ship.retreating
-            && ship.is_attacker == session.player_is_attacker
-            && ship.task_force == group
-    });
-    let Some(first) = first else {
+    let members = task_force_members(session, group);
+    let Some(&first) = members.first() else {
         return 0;
     };
-    for ship in &mut session.ships {
-        ship.selected = ship.alive
-            && !ship.retreating
-            && ship.is_attacker == session.player_is_attacker
-            && ship.task_force == group;
+    for (index, ship) in session.ships.iter_mut().enumerate() {
+        ship.selected = members.contains(&index);
     }
     for fighter in &mut session.fighters {
         fighter.selected = false;
     }
     session.selected_ship = Some(first);
     session.selected_fighter_group = None;
+    session.selected_task_force = Some(group);
     session.ships.iter().filter(|ship| ship.selected).count()
 }
 
-fn assign_selected_to_task_force(session: &mut BattleSession, group: u8) -> usize {
-    let mut assigned_groups = [false; 8];
-    for ship in &session.ships {
-        if ship.alive && ship.is_attacker == session.player_is_attacker {
-            assigned_groups[usize::from(ship.task_force.min(7))] = true;
+/// Whether the player's side has withdrawn: `FUN_005ad530` set its
+/// controller's `+0x84` to 2 (`FUN_005ad530.c:20`; Withdraw,
+/// `FUN_0059fd40.c:141-167`).
+fn player_side_withdrawn(session: &BattleSession) -> bool {
+    session.morale.withdrawal[usize::from(!session.player_is_attacker)].state
+        != TacticalWithdrawalState::Fighting
+}
+
+/// Whether ship `ship` stands in one of the player's task forces
+/// (`FUN_00595ba0`): the player's, alive, not jumping out, and on a side
+/// that has not withdrawn. Withdraw moves each of the side's capital ships
+/// out of its task force into a group of its own and empties the player's
+/// slots (`FUN_005ad530.c:61-81`, `FUN_005aded0.c:21-37`, `FUN_005a0410`).
+fn in_player_task_force(session: &BattleSession, ship: &TacticalShip) -> bool {
+    ship.alive
+        && !ship.retreating
+        && ship.is_attacker == session.player_is_attacker
+        && !player_side_withdrawn(session)
+}
+
+/// The player's ships in task force `group`, in member-list order: by when
+/// each entered, the battle's own members in roster order
+/// ([`TacticalShip::task_force_joined`]).
+fn task_force_members(session: &BattleSession, group: u8) -> Vec<usize> {
+    let mut members = session
+        .ships
+        .iter()
+        .enumerate()
+        .filter(|(_, ship)| in_player_task_force(session, ship) && ship.task_force == group)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    members.sort_by_key(|&index| session.ships[index].task_force_joined);
+    members
+}
+
+/// The stamp for the next ship to enter a task force.
+fn next_task_force_joined(session: &BattleSession) -> u32 {
+    session.ships.iter().map(|ship| ship.task_force_joined).max().unwrap_or(0) + 1
+}
+
+/// Whether the player has task force `group` (`FUN_00595ba0`).
+fn task_force_assigned(session: &BattleSession, group: u8) -> bool {
+    session
+        .ships
+        .iter()
+        .any(|ship| in_player_task_force(session, ship) && ship.task_force == group)
+}
+
+/// What a command from an unassigned task-force slot does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnassignedTaskForceSlot {
+    /// `FUN_0059f6e0` fails and `FUN_0059b450` returns (`:18-19`).
+    Ignored,
+    /// The mode's `+0x14` makes the selected ships task force i
+    /// (`FUN_005a2160` in `0xe`, `FUN_005a28a0` in `0x10`).
+    FormsTaskForce,
+    /// Mode `0x10` with the player-command flag clear: the slot presses and
+    /// posts, but the executor skips `+0x14` (`FUN_0059fd40.c:33-38`).
+    PressesOnly,
+}
+
+/// The original's answer for an unassigned slot under the current
+/// selection (ghidra/notes/tactical-selection-modes.md, "Unassigned
+/// task-force slot"). A ship selection made in the 3D view is mode `0xe`
+/// for one own capital ship (`FUN_005a1550`) and `0x10` for two or more
+/// (`FUN_005a2280`); a strip selection is a task-force or fighter mode,
+/// which ignores the slot (`FUN_0059f6e0.c:7-13`).
+fn unassigned_task_force_slot(session: &BattleSession) -> UnassignedTaskForceSlot {
+    if session.selected_task_force.is_some() || session.selected_fighter_group.is_some() {
+        return UnassignedTaskForceSlot::Ignored;
+    }
+    let ships = session
+        .ships
+        .iter()
+        .filter(|ship| {
+            ship.alive
+                && !ship.retreating
+                && ship.selected
+                && ship.is_attacker == session.player_is_attacker
+        })
+        .count();
+    match (ships, session.player_command) {
+        (0, _) | (1, false) => UnassignedTaskForceSlot::Ignored,
+        (_, true) => UnassignedTaskForceSlot::FormsTaskForce,
+        (_, false) => UnassignedTaskForceSlot::PressesOnly,
+    }
+}
+
+/// Ctrl+click on own ship `ship` while a task force is selected: a ship
+/// outside it moves in and is selected with it (`FUN_005a3aa0.c:109-113`,
+/// `FUN_005ade50`; manual p. 143). Returns false, leaving the pick to the
+/// caller, for a member or with no task force selected.
+fn join_selected_task_force(session: &mut BattleSession, ship: usize) -> bool {
+    let Some(group) = session.selected_task_force else {
+        return false;
+    };
+    let Some(candidate) = session.ships.get(ship) else {
+        return false;
+    };
+    if candidate.task_force == group || !in_player_task_force(session, candidate) {
+        return false;
+    }
+    session.ships[ship].task_force_joined = next_task_force_joined(session);
+    session.ships[ship].task_force = group;
+    BattleSession::refresh_original_task_force_geometry(&mut session.ships);
+    select_task_force(session, group);
+    true
+}
+
+/// `FUN_005a34e0`: the selected ships become task force `group` and its
+/// mode is installed, pressing the slot (`FUN_005a34e0.c:47-48`). port: the
+/// formed ships share one join stamp and keep roster order; the original
+/// heads the group with the mode's first ship (`FUN_005ade70.c:12-23`),
+/// which the port does not record (or-p-tactical-mode-picks-mi0z).
+fn form_task_force(session: &mut BattleSession, group: u8) -> usize {
+    let joined = next_task_force_joined(session);
+    let mut formed = false;
+    for ship in &mut session.ships {
+        if ship.alive
+            && !ship.retreating
+            && ship.selected
+            && ship.is_attacker == session.player_is_attacker
+        {
+            ship.task_force = group;
+            ship.task_force_joined = joined;
+            formed = true;
         }
     }
-    let next_blank = assigned_groups
-        .iter()
-        .position(|assigned| !assigned)
-        .and_then(|index| u8::try_from(index).ok());
-    if !assigned_groups[usize::from(group.min(7))] && next_blank != Some(group.min(7)) {
+    if !formed {
         return 0;
     }
-    let mut assigned = 0;
-    for ship in &mut session.ships {
-        if ship.alive && ship.selected && ship.is_attacker == session.player_is_attacker {
-            ship.task_force = group.min(7);
-            assigned += 1;
-        }
-    }
-    if assigned > 0 {
-        BattleSession::refresh_original_task_force_geometry(&mut session.ships);
-    }
-    assigned
+    BattleSession::refresh_original_task_force_geometry(&mut session.ships);
+    select_task_force(session, group)
 }
 
 /// Whether the player's fighter group `group` holds its strip slot
@@ -3145,12 +3439,14 @@ fn assign_selected_to_task_force(session: &mut BattleSession, group: u8) -> usiz
 /// state 2 and takes no click, `FUN_0059b620`): it has a live squadron and is
 /// not the group whose Attack Death Star order cleared its slot
 /// (`FUN_005ca530` -> `FUN_005a0320`) until the run's success gives it back
-/// (`FUN_005cfec0` state 6 -> `FUN_0059f680`).
+/// (`FUN_005cfec0` state 6 -> `FUN_0059f680`). Withdraw clears every slot
+/// of the player's (`FUN_005ad530.c:37-41` -> `FUN_005a0320`).
 fn fighter_group_slot_held(session: &BattleSession, group: u8) -> bool {
     let cleared = session.trench_run_group == Some(group)
         && player_is_alliance(session)
         && session.trench_run_outcome != Some(TacticalTrenchRunOutcome::Success);
     !cleared
+        && !player_side_withdrawn(session)
         && session.fighters.iter().any(|fighter| {
             fighter.alive
                 && fighter.squad_count > 0
@@ -3174,6 +3470,7 @@ fn select_fighter_group(session: &mut BattleSession, group: u8) -> bool {
     }
     session.selected_ship = None;
     session.selected_fighter_group = Some(group);
+    session.selected_task_force = None;
     true
 }
 
@@ -3211,6 +3508,7 @@ fn deselect_all(session: &mut BattleSession) {
     }
     session.selected_ship = None;
     session.selected_fighter_group = None;
+    session.selected_task_force = None;
 }
 
 fn cycle_selected_capital(session: &mut BattleSession, step: isize) -> Option<(usize, usize, u8)> {
@@ -3220,18 +3518,7 @@ fn cycle_selected_capital(session: &mut BattleSession, step: isize) -> Option<(u
         })
     })?;
     let group = session.ships.get(current)?.task_force;
-    let eligible = session
-        .ships
-        .iter()
-        .enumerate()
-        .filter(|(_, ship)| {
-            ship.alive
-                && !ship.retreating
-                && ship.is_attacker == session.player_is_attacker
-                && ship.task_force == group
-        })
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
+    let eligible = task_force_members(session, group);
     let current_position = eligible.iter().position(|index| *index == current)?;
     let count = isize::try_from(eligible.len()).ok()?;
     let next_position = (isize::try_from(current_position).ok()? + step).rem_euclid(count);
@@ -3391,7 +3678,6 @@ fn pressed_tactical_hud_control(
 }
 
 fn pressed_tactical_battle_options_control(
-    cache: &mut BmpCache,
     canvas: TacticalCanvas,
     withdraw_enabled: bool,
 ) -> Option<TacticalBattleOptionsControl> {
@@ -3400,11 +3686,10 @@ fn pressed_tactical_battle_options_control(
     }
     let (mouse_x, mouse_y) = mouse_position();
     let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
-    tactical_battle_options_control_at(cache, withdraw_enabled, x, y)
+    tactical_battle_options_control_at(withdraw_enabled, x, y)
 }
 
 fn pressed_tactical_withdraw_confirmation_control(
-    cache: &mut BmpCache,
     canvas: TacticalCanvas,
 ) -> Option<TacticalWithdrawConfirmationControl> {
     if !is_mouse_button_down(MouseButton::Left) {
@@ -3412,7 +3697,7 @@ fn pressed_tactical_withdraw_confirmation_control(
     }
     let (mouse_x, mouse_y) = mouse_position();
     let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
-    tactical_withdraw_confirmation_control_at(cache, x, y)
+    tactical_withdraw_confirmation_control_at(x, y)
 }
 
 fn pressed_tactical_command_control(
@@ -4032,22 +4317,22 @@ fn draw_original_tactical_hud(
     }
 
     // The top task-force and fighter-group strips occupy slots in bitmap 1000.
-    draw_tactical_bitmap(
+    // Each header is a CoolStrobeButton too (`FUN_0059be80.c:39`,
+    // `FUN_0059c030.c:35`), blitted with its first stored pixel as the
+    // transparent key (`FUN_00602d30.c:68`, `FUN_005fd0f0.c:13-16`;
+    // ghidra/notes/strip-bitmap-keys.md), which leaves the strip background
+    // showing on the header's top row.
+    let (task_force_header, fighter_group_header) = strip_header_art(player_is_alliance);
+    draw_tactical_button(
         cache,
-        if player_is_alliance {
-            art::TASK_FORCES_ALLIANCE
-        } else {
-            art::TASK_FORCES_EMPIRE
-        },
+        task_force_header,
         canvas,
         TASK_FORCE_HEADER_POINT.0,
         TASK_FORCE_HEADER_POINT.1,
     );
     for index in 0..8_u8 {
         let assigned = groups.task_forces[usize::from(index)];
-        let active = assigned
-            && (groups.selected_task_force == Some(index)
-                || pressed_control == Some(TacticalHudControl::TaskForce(index)));
+        let active = task_force_slot_pressed(&groups, pressed_control, index);
         draw_tactical_button(
             cache,
             if active {
@@ -4061,30 +4346,18 @@ fn draw_original_tactical_hud(
             TASK_FORCE_BUTTON_X + f32::from(index) * GROUP_BUTTON_PITCH,
             2.0,
         );
-        if assigned {
-            let label = (index + 1).to_string();
-            let font_size = 13.0 * canvas.scale;
-            let width = measure_text(&label, None, font_size as u16, 1.0).width;
-            let (button_x, y) = canvas.point(
-                TASK_FORCE_BUTTON_X + f32::from(index) * GROUP_BUTTON_PITCH,
-                16.0,
-            );
-            draw_text(
-                &label,
-                button_x + (25.0 * canvas.scale - width) * 0.5,
-                y,
-                font_size,
-                BLACK,
-            );
+        if let Some(label) = task_force_label_text(index, assigned) {
+            let em = crate::theme::game_font_size(TASK_FORCE_LABEL_FONT);
+            let font = result_font();
+            let font_size = (em * canvas.scale).max(1.0) as u16;
+            let width = result_text_width(&label, font.as_ref(), font_size) / canvas.scale;
+            let (x, baseline_y) = task_force_label_origin(index, width.round() as i32);
+            draw_result_text(canvas, &label, x, baseline_y, em, task_force_label_color(active));
         }
     }
-    draw_tactical_bitmap(
+    draw_tactical_button(
         cache,
-        if player_is_alliance {
-            art::FIGHTER_SQUADRONS_ALLIANCE
-        } else {
-            art::FIGHTER_SQUADRONS_EMPIRE
-        },
+        fighter_group_header,
         canvas,
         FIGHTER_GROUP_HEADER_POINT.0,
         FIGHTER_GROUP_HEADER_POINT.1,
@@ -4092,7 +4365,7 @@ fn draw_original_tactical_hud(
     for index in 0..4_u8 {
         let assigned = groups.fighter_groups[usize::from(index)];
         let active = assigned
-            && (groups.selected_fighter_group == Some(index)
+            && (groups.pressed_fighter_group == Some(index)
                 || pressed_control == Some(TacticalHudControl::FighterGroup(index)));
         draw_tactical_button_clipped(
             cache,
@@ -4822,6 +5095,231 @@ fn update_tactical_camera_follow(state: &mut TacticalState) -> bool {
     true
 }
 
+/// The left button's release: a captured strip slot posts its command when
+/// the release lands on it, one pixel of slack right and below included
+/// (`FUN_006028c0.c:163-194`), and the capture ends either way.
+fn release_group_strip_slot(state: &mut TacticalState, x: f32, y: f32) {
+    if let Some(control) = state.strip_slot_pressed.take() {
+        if group_strip_release_hits(control, x, y) {
+            activate_group_strip_slot(state, control);
+        }
+    }
+}
+
+/// The strip look still in force: one set under another selection has
+/// given way to the strips' refresh for the new mode (`FUN_0059b550.c:17`).
+fn live_strip_override(state: &TacticalState) -> TacticalStripOverride {
+    let mut look = state.strip_override;
+    let selection = state
+        .session
+        .as_ref()
+        .map(|session| (session.selected_task_force, session.selected_fighter_group));
+    if look.released != selection {
+        look.released = None;
+    }
+    look
+}
+
+/// Whether a strip slot takes a press: a fighter slot without its group is
+/// disabled (`FUN_006028a0` sets bit 2) and refuses it
+/// (`FUN_006035f0.c:24-26`); a task-force slot is always enabled.
+fn strip_slot_takes_press(state: &TacticalState, control: TacticalHudControl) -> bool {
+    match control {
+        TacticalHudControl::FighterGroup(group) => state
+            .session
+            .as_ref()
+            .is_some_and(|session| fighter_group_slot_held(session, group)),
+        _ => true,
+    }
+}
+
+/// A release over a captured strip slot: the button posts its command
+/// (`FUN_006028c0.c:163-194`) and the tactical window acts on it
+/// (`FUN_0059b130` -> `FUN_0059b450`, `FUN_0059b620`).
+fn activate_group_strip_slot(state: &mut TacticalState, control: TacticalHudControl) {
+    match control {
+        TacticalHudControl::TaskForce(group) => run_task_force_slot_command(state, group),
+        TacticalHudControl::FighterGroup(group) => run_fighter_group_slot_command(state, group),
+        _ => {}
+    }
+}
+
+/// Task-force slot `group`'s command, from a click or a number key
+/// (`FUN_0059b450`). An assigned slot installs its task-force mode, or,
+/// when that mode is already installed, the base mode, which releases both
+/// strips and drops the selection (`FUN_0059fd40.c:24-59`,
+/// `FUN_005a0c80.c:16-18`); the command area then shows nothing selected.
+/// An unassigned slot acts only in modes `0xe` and `0x10`
+/// ([`unassigned_task_force_slot`]).
+fn run_task_force_slot_command(state: &mut TacticalState, group: u8) {
+    let Some(session) = state.session.as_mut() else {
+        return;
+    };
+    if task_force_assigned(session, group) {
+        if session.selected_task_force == Some(group) {
+            deselect_all(session);
+            state.command_panel = TacticalCommandPanel::Display;
+            macroquad::logging::info!("[tactical_groups] task_force_cleared slot={}", group + 1);
+        } else {
+            let members = select_task_force(session, group);
+            state.command_panel = TacticalCommandPanel::Display;
+            macroquad::logging::info!(
+                "[tactical_groups] task_force_selected slot={} members={}",
+                group + 1,
+                members,
+            );
+        }
+        return;
+    }
+    // Both arms find members: the membership checks share
+    // [`in_player_task_force`], and only the player's Withdraw, which
+    // clears `player_command`, takes the player's side out of `Fighting`.
+    match unassigned_task_force_slot(session) {
+        UnassignedTaskForceSlot::FormsTaskForce => {
+            let members = form_task_force(session, group);
+            state.command_panel = TacticalCommandPanel::Display;
+            macroquad::logging::info!(
+                "[tactical_groups] task_force_assigned slot={} members={}",
+                group + 1,
+                members,
+            );
+        }
+        UnassignedTaskForceSlot::PressesOnly => {
+            state.strip_override.stale_slots |= 1 << group;
+            state.strip_override.stale_pressed |= 1 << group;
+        }
+        UnassignedTaskForceSlot::Ignored => {}
+    }
+}
+
+/// Fighter-group slot `group`'s command (`FUN_0059b620`): its mode, or the
+/// base mode when that mode is already installed (`FUN_0059fd40.c:60-88`).
+/// A slot without its group is disabled and never posts.
+fn run_fighter_group_slot_command(state: &mut TacticalState, group: u8) {
+    let Some(session) = state.session.as_mut() else {
+        return;
+    };
+    if session.selected_fighter_group == Some(group) {
+        deselect_all(session);
+        state.command_panel = TacticalCommandPanel::Display;
+        macroquad::logging::info!("[tactical_groups] fighter_group_cleared slot={}", group + 1);
+    } else if select_fighter_group(session, group) {
+        state.command_panel = TacticalCommandPanel::Display;
+        let members = session
+            .fighters
+            .iter()
+            .filter(|fighter| fighter.selected)
+            .count();
+        macroquad::logging::info!(
+            "[tactical_groups] fighter_group_selected slot={} members={}",
+            group + 1,
+            members,
+        );
+    }
+}
+
+/// The tactical window's strip and camera keys (`FUN_0059b730`): only
+/// 0x31-0x38 reach the strips (`:58-97`); the numpad drives the camera
+/// buttons or nothing (`:34-57`), and 9 and 0 have no case.
+fn tactical_key_action(key: KeyCode) -> Option<TacticalKeyAction> {
+    const DIGITS: [KeyCode; 8] = [
+        KeyCode::Key1,
+        KeyCode::Key2,
+        KeyCode::Key3,
+        KeyCode::Key4,
+        KeyCode::Key5,
+        KeyCode::Key6,
+        KeyCode::Key7,
+        KeyCode::Key8,
+    ];
+    const TASK_FORCE_KEYS: [KeyCode; 8] = [
+        KeyCode::F1,
+        KeyCode::F2,
+        KeyCode::F3,
+        KeyCode::F4,
+        KeyCode::F5,
+        KeyCode::F6,
+        KeyCode::F7,
+        KeyCode::F8,
+    ];
+    const FIGHTER_GROUP_KEYS: [KeyCode; 4] =
+        [KeyCode::F9, KeyCode::F10, KeyCode::F11, KeyCode::F12];
+    let index = |keys: &[KeyCode]| {
+        keys.iter()
+            .position(|candidate| *candidate == key)
+            .and_then(|index| u8::try_from(index).ok())
+    };
+    index(&DIGITS)
+        .map(TacticalKeyAction::TaskForceSlot)
+        .or_else(|| {
+            index(&TASK_FORCE_KEYS)
+                .map(|group| TacticalKeyAction::Follow(TacticalCameraFollow::TaskForce(group)))
+        })
+        .or_else(|| {
+            index(&FIGHTER_GROUP_KEYS)
+                .map(|group| TacticalKeyAction::Follow(TacticalCameraFollow::FighterGroup(group)))
+        })
+}
+
+/// The window's actions for a frame's key-downs, in order. A held key acts
+/// again on each autorepeat: of the window's keys only Tab tests the repeat
+/// bit (`FUN_0059b730.c:8-11`).
+fn tactical_key_actions(key_downs: Vec<KeyCode>) -> Vec<TacticalKeyAction> {
+    key_downs.into_iter().filter_map(tactical_key_action).collect()
+}
+
+/// Whether an F key's group exists for the follow camera: an assigned task
+/// force or a fighter group holding its slot (`FUN_00595ba0`,
+/// `FUN_00595bc0`).
+fn follow_group_exists(session: &BattleSession, follow: TacticalCameraFollow) -> bool {
+    match follow {
+        TacticalCameraFollow::TaskForce(group) => task_force_assigned(session, group),
+        TacticalCameraFollow::FighterGroup(group) => fighter_group_slot_held(session, group),
+    }
+}
+
+/// A key's action on the window: a number key releases both strips and
+/// runs its slot's command, and the strips stay released when that command
+/// changes no selection; an F key follows its group if it exists.
+fn run_tactical_key_action(state: &mut TacticalState, action: TacticalKeyAction) {
+    match action {
+        TacticalKeyAction::TaskForceSlot(group) => {
+            let selection = |state: &TacticalState| {
+                state.session.as_ref().map_or((None, None), |session| {
+                    (session.selected_task_force, session.selected_fighter_group)
+                })
+            };
+            let before = selection(state);
+            state.strip_override.release_task_force_strip();
+            state.strip_override.released = None;
+            macroquad::logging::info!("[tactical_groups] key={} slot={}", group + 1, group + 1);
+            run_task_force_slot_command(state, group);
+            let after = selection(state);
+            if after == before {
+                state.strip_override.released = Some(after);
+            }
+        }
+        TacticalKeyAction::Follow(follow) => {
+            if state
+                .session
+                .as_ref()
+                .is_some_and(|session| follow_group_exists(session, follow))
+            {
+                state.camera_follow = Some(follow);
+                let (kind, group) = match follow {
+                    TacticalCameraFollow::TaskForce(group) => ("task_force", group),
+                    TacticalCameraFollow::FighterGroup(group) => ("fighter_group", group),
+                };
+                macroquad::logging::info!(
+                    "[tactical_camera] command=follow kind={} group={}",
+                    kind,
+                    group + 1,
+                );
+            }
+        }
+    }
+}
+
 fn handle_original_tactical_controls(
     state: &mut TacticalState,
     cache: &mut BmpCache,
@@ -4830,7 +5328,7 @@ fn handle_original_tactical_controls(
     let (mouse_x, mouse_y) = mouse_position();
     let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
     if state.withdraw_confirmation_open {
-        let hovered = tactical_withdraw_confirmation_control_at(cache, x, y);
+        let hovered = tactical_withdraw_confirmation_control_at(x, y);
         if is_mouse_button_pressed(MouseButton::Left) {
             state.withdraw_confirmation_pressed = hovered;
         }
@@ -4874,7 +5372,7 @@ fn handle_original_tactical_controls(
             .session
             .as_ref()
             .is_some_and(tactical_withdraw_enabled);
-        let hovered = tactical_battle_options_control_at(cache, withdraw_enabled, x, y);
+        let hovered = tactical_battle_options_control_at(withdraw_enabled, x, y);
         if is_mouse_button_pressed(MouseButton::Left) {
             state.battle_options_pressed = hovered;
         }
@@ -4941,41 +5439,12 @@ fn handle_original_tactical_controls(
                         );
                     }
                 }
-                Some(TacticalHudControl::TaskForce(group)) => {
-                    if let Some(session) = state.session.as_mut() {
-                        let control =
-                            is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl);
-                        let changed = if control {
-                            assign_selected_to_task_force(session, group)
-                        } else {
-                            select_task_force(session, group)
-                        };
-                        if changed > 0 {
-                            state.command_panel = TacticalCommandPanel::Display;
-                            macroquad::logging::info!(
-                                "[tactical_groups] task_force_{} slot={} members={}",
-                                if control { "assigned" } else { "selected" },
-                                group + 1,
-                                changed,
-                            );
-                        }
-                    }
-                }
-                Some(TacticalHudControl::FighterGroup(group)) => {
-                    if let Some(session) = state.session.as_mut() {
-                        if select_fighter_group(session, group) {
-                            state.command_panel = TacticalCommandPanel::Display;
-                            let members = session
-                                .fighters
-                                .iter()
-                                .filter(|fighter| fighter.selected)
-                                .count();
-                            macroquad::logging::info!(
-                                "[tactical_groups] fighter_group_selected slot={} members={}",
-                                group + 1,
-                                members,
-                            );
-                        }
+                Some(
+                    control @ (TacticalHudControl::TaskForce(_)
+                    | TacticalHudControl::FighterGroup(_)),
+                ) => {
+                    if strip_slot_takes_press(state, control) {
+                        state.strip_slot_pressed = Some(control);
                     }
                 }
                 Some(TacticalHudControl::Pause) => return TacticalAction::TogglePause,
@@ -5076,46 +5545,13 @@ fn handle_original_tactical_controls(
             }
         }
     }
-    let task_force_keys = [
-        KeyCode::F1,
-        KeyCode::F2,
-        KeyCode::F3,
-        KeyCode::F4,
-        KeyCode::F5,
-        KeyCode::F6,
-        KeyCode::F7,
-        KeyCode::F8,
-    ];
-    for (index, key) in task_force_keys.iter().enumerate() {
-        if is_key_pressed(*key) {
-            if let Some(session) = state.session.as_mut() {
-                if select_task_force(session, u8::try_from(index).unwrap_or(7)) > 0 {
-                    state.command_panel = TacticalCommandPanel::Display;
-                    let group = u8::try_from(index).unwrap_or(7);
-                    state.camera_follow = Some(TacticalCameraFollow::TaskForce(group));
-                    macroquad::logging::info!(
-                        "[tactical_camera] command=follow kind=task_force group={}",
-                        group + 1,
-                    );
-                }
-            }
-        }
+    if is_mouse_button_released(MouseButton::Left) {
+        release_group_strip_slot(state, x, y);
+    } else if !is_mouse_button_down(MouseButton::Left) {
+        state.strip_slot_pressed = None;
     }
-    let fighter_group_keys = [KeyCode::F9, KeyCode::F10, KeyCode::F11, KeyCode::F12];
-    for (index, key) in fighter_group_keys.iter().enumerate() {
-        if is_key_pressed(*key) {
-            if let Some(session) = state.session.as_mut() {
-                if select_fighter_group(session, u8::try_from(index).unwrap_or(3)) {
-                    state.command_panel = TacticalCommandPanel::Display;
-                    let group = u8::try_from(index).unwrap_or(3);
-                    state.camera_follow = Some(TacticalCameraFollow::FighterGroup(group));
-                    macroquad::logging::info!(
-                        "[tactical_camera] command=follow kind=fighter_group group={}",
-                        group + 1,
-                    );
-                }
-            }
-        }
+    for action in tactical_key_actions(std::mem::take(&mut state.key_downs)) {
+        run_tactical_key_action(state, action);
     }
     if is_key_pressed(KeyCode::Equal) {
         state.camera_follow = None;
@@ -7901,8 +8337,9 @@ pub fn draw_tactical_view(
             offset_y,
         );
     } else if phase == BattlePhase::Combat {
+        drop_emptied_task_force(state);
         let session = state.session.as_mut().unwrap();
-        handle_combat_input(
+        let strips_released = handle_combat_input(
             session,
             &mut state.death_star_targeting,
             scale,
@@ -7912,16 +8349,21 @@ pub fn draw_tactical_view(
             &ship_projections,
             &navigation_projections,
         );
+        if strips_released {
+            state.strip_override.release_task_force_strip();
+        }
     }
 
     if phase == BattlePhase::Combat {
         action = handle_original_tactical_controls(state, bmp_cache, canvas);
-        let pressed_control = pressed_tactical_hud_control(bmp_cache, canvas);
-        let player_is_alliance = state
-            .session
-            .as_ref()
-            .is_some_and(|session| session.player_is_attacker == session.attacker_is_alliance);
-        let groups = TacticalGroupHud::from_session(state.session.as_ref().unwrap());
+        let pressed_control = held_tactical_hud_control(
+            state.strip_slot_pressed,
+            pressed_tactical_hud_control(bmp_cache, canvas),
+        );
+        let player_is_alliance = state.session.as_ref().is_some_and(player_is_alliance);
+        state.strip_override = live_strip_override(state);
+        let mut groups = TacticalGroupHud::from_session(state.session.as_ref().unwrap());
+        groups.apply_strip_override(state.strip_override);
         let death_star = state.session.as_ref().and_then(player_death_star);
         let has_selection =
             groups.selected_fighter_group.is_some() || groups.selected_ship_name.is_some();
@@ -7936,12 +8378,12 @@ pub fn draw_tactical_view(
             .is_some_and(tactical_withdraw_enabled);
         let pressed_options = state
             .battle_options_open
-            .then(|| pressed_tactical_battle_options_control(bmp_cache, canvas, withdraw_enabled))
+            .then(|| pressed_tactical_battle_options_control(canvas, withdraw_enabled))
             .flatten()
             .filter(|control| state.battle_options_pressed == Some(*control));
         let pressed_withdraw_confirmation = state
             .withdraw_confirmation_open
-            .then(|| pressed_tactical_withdraw_confirmation_control(bmp_cache, canvas));
+            .then(|| pressed_tactical_withdraw_confirmation_control(canvas));
         let pressed_command = (!state.battle_options_open
             && !state.withdraw_confirmation_open
             && !state.player_observing)
@@ -8153,7 +8595,76 @@ fn draw_projected_frame(projection: TacticalScreenProjection, canvas_scale: f32,
     }
 }
 
-/// Handle mouse input during the combat phase.
+/// A left click on own ship `idx` in the 3D view. With a task force
+/// selected, Ctrl moves a ship from outside it in
+/// ([`join_selected_task_force`]); otherwise Ctrl builds a multi-ship
+/// selection (mode `0x10`, `FUN_005a1af0.c:113`) and a plain pick releases
+/// both strips and selects the one ship (mode `0xe`,
+/// `FUN_005c2060.c:130-133`, `FUN_005a0d10.c:30-45`). No pick presses a
+/// strip slot (A0 TAC-03-C018). Returns whether the pick released both
+/// strips, as a plain pick does (`FUN_005c2060.c:130-131`). With the
+/// player-command flag clear every own capital-ship pick installs mode
+/// `0xe`, Ctrl or not (`FUN_005a04f0.c:54-70`). port: Ctrl+click on a member
+/// of the selected task force toggles its selection, where the original
+/// moves it out of the group (`FUN_005a3aa0.c:116-137`;
+/// or-p-tactical-mode-picks-mi0z).
+fn pick_own_ship(session: &mut BattleSession, idx: usize, control: bool) -> bool {
+    let control = control && session.player_command;
+    if control && join_selected_task_force(session, idx) {
+        macroquad::logging::info!(
+            "[tactical_groups] task_force_joined slot={} object_id={}",
+            session.ships[idx].task_force + 1,
+            idx + 1,
+        );
+        return false;
+    }
+    if control {
+        session.ships[idx].selected = !session.ships[idx].selected;
+    } else {
+        for ship in &mut session.ships {
+            ship.selected = false;
+        }
+        session.ships[idx].selected = true;
+    }
+    session.selected_ship = Some(idx);
+    session.selected_fighter_group = None;
+    session.selected_task_force = None;
+    for fighter in &mut session.fighters {
+        fighter.selected = false;
+    }
+    !control
+}
+
+/// A left click in the 3D view that hits no own ship; returns whether it
+/// released both strips. With Ctrl it does nothing; without, it returns to
+/// the base mode, dropping the selection (`FUN_005c2060.c:117-120`).
+fn pick_empty_space(session: &mut BattleSession, control: bool) -> bool {
+    if control {
+        return false;
+    }
+    deselect_all(session);
+    true
+}
+
+/// `FUN_005a0410`: once the selected task force has no live ship of the
+/// player's, its slot empties, the base mode returns (`FUN_005a0c80`) and
+/// the strips refresh (`FUN_0059fc50(-1)`).
+fn drop_emptied_task_force(state: &mut TacticalState) {
+    let Some(session) = state.session.as_mut() else {
+        return;
+    };
+    let Some(group) = session.selected_task_force else {
+        return;
+    };
+    if task_force_assigned(session, group) {
+        return;
+    }
+    deselect_all(session);
+    state.strip_override = TacticalStripOverride::default();
+}
+
+/// Handle mouse input during the combat phase; returns whether a left click
+/// in the 3D view released both strips.
 ///
 /// - Left-click: select a player ship.
 /// - Right-click on friendly: issue the original order-1 Escort command.
@@ -8167,7 +8678,8 @@ fn handle_combat_input(
     aperture: NativeRect,
     projections: &HashMap<usize, TacticalScreenProjection>,
     navigation_projections: &[TacticalNavigationProjection],
-) {
+) -> bool {
+    let mut strips_released = false;
     let (mx, my) = mouse_position();
     let inside_battle = aperture.contains(mx, my);
     let arena_pointer_x = (mx - offset_x) / scale;
@@ -8206,7 +8718,7 @@ fn handle_combat_input(
                 navigation.point + 1,
                 changed,
             );
-            return;
+            return false;
         }
     }
 
@@ -8234,29 +8746,14 @@ fn handle_combat_input(
         }
 
         if let Some(idx) = hit {
-            // The original manual uses Ctrl to build a multi-ship selection
-            // before assigning those ships to a task force.
-            if is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl) {
-                session.ships[idx].selected = !session.ships[idx].selected;
-            } else {
-                for s in &mut session.ships {
-                    s.selected = false;
-                }
-                session.ships[idx].selected = true;
-            }
-            session.selected_ship = Some(idx);
-            session.selected_fighter_group = None;
-            for fighter in &mut session.fighters {
-                fighter.selected = false;
-            }
+            strips_released = pick_own_ship(session, idx, control);
             macroquad::logging::info!(
                 "[tactical_3d] selection object_id={} source_projection={}",
                 idx + 1,
                 projections.contains_key(&idx)
             );
         } else {
-            // Clicked empty space — deselect all.
-            deselect_all(session);
+            strips_released = pick_empty_space(session, control);
         }
     }
 
@@ -8296,7 +8793,7 @@ fn handle_combat_input(
                 assigned,
                 longest_route,
             );
-            return;
+            return strips_released;
         }
         let mut target_hit = None;
         for (i, ship) in session.ships.iter().enumerate() {
@@ -8326,7 +8823,7 @@ fn handle_combat_input(
                     *death_star_targeting = false;
                 }
             }
-            return;
+            return strips_released;
         }
 
         let friendly_hit = session.ships.iter().enumerate().find_map(|(index, ship)| {
@@ -8354,7 +8851,7 @@ fn handle_combat_input(
                     projections.contains_key(&target_idx),
                 );
             }
-            return;
+            return strips_released;
         }
 
         if let Some(target_idx) = target_hit {
@@ -8408,6 +8905,7 @@ fn handle_combat_input(
             }
         }
     }
+    strips_released
 }
 
 // ---------------------------------------------------------------------------
@@ -9310,7 +9808,9 @@ mod tests {
         assert_eq!(tactical_hud_rect_control_at(628.0, 442.0), None);
     }
 
-    // Source: FUN_005f0f40 / FUN_005f1050 bitmap hit masks.
+    // Source: FUN_005f1050 bitmap hit masks for the HUD; the strobe buttons
+    // built with a last argument of 1 (strip slots, Battle Options, the
+    // withdraw confirmation) take their rectangles (FUN_006035f0.c:24-38).
     #[test]
     #[ignore = "requires extracted original bitmaps in data/base/ui"]
     fn original_tactical_controls_use_source_bitmap_hit_masks() {
@@ -9371,63 +9871,167 @@ mod tests {
         );
 
         assert_eq!(
-            tactical_battle_options_control_at(&mut cache, true, 521.0, 64.0),
+            tactical_battle_options_control_at(true, 521.0, 64.0),
             Some(TacticalBattleOptionsControl::Withdraw)
         );
         assert_eq!(
-            tactical_battle_options_control_at(&mut cache, false, 521.0, 64.0),
+            tactical_battle_options_control_at(false, 521.0, 64.0),
             None
         );
         assert_eq!(
-            tactical_battle_options_control_at(&mut cache, true, 519.0, 126.0),
+            tactical_battle_options_control_at(true, 519.0, 126.0),
             Some(TacticalBattleOptionsControl::SimulateRemainder)
         );
         assert_eq!(
-            tactical_battle_options_control_at(&mut cache, true, 583.0, 126.0),
+            tactical_battle_options_control_at(true, 583.0, 126.0),
             Some(TacticalBattleOptionsControl::ObserveToggle)
         );
         assert_eq!(
-            tactical_battle_options_control_at(&mut cache, true, 520.0, 219.0),
+            tactical_battle_options_control_at(true, 520.0, 219.0),
             Some(TacticalBattleOptionsControl::GameOptions)
         );
         assert_eq!(
-            tactical_battle_options_control_at(&mut cache, true, 579.0, 219.0),
+            tactical_battle_options_control_at(true, 579.0, 219.0),
             Some(TacticalBattleOptionsControl::Close)
         );
         assert_eq!(
-            tactical_withdraw_confirmation_control_at(&mut cache, 560.0, 242.0),
+            tactical_withdraw_confirmation_control_at(560.0, 242.0),
             Some(TacticalWithdrawConfirmationControl::Confirm)
         );
         assert_eq!(
-            tactical_withdraw_confirmation_control_at(&mut cache, 600.0, 242.0),
+            tactical_withdraw_confirmation_control_at(600.0, 242.0),
             Some(TacticalWithdrawConfirmationControl::Cancel)
         );
         assert_eq!(
-            tactical_withdraw_confirmation_control_at(&mut cache, 547.0, 229.0),
+            tactical_withdraw_confirmation_control_at(547.0, 229.0),
             None
         );
+        // Cancel's rectangle runs to x 615 (FUN_005f0f40.c:35, 0x6a + 0x1b
+        // in the panel); the button takes it all (FUN_006035f0.c:24-38).
         assert_eq!(
-            tactical_withdraw_confirmation_control_at(&mut cache, 614.0, 242.0),
-            None
+            tactical_withdraw_confirmation_control_at(614.0, 242.0),
+            Some(TacticalWithdrawConfirmationControl::Cancel)
         );
 
+        // The strip slots take their whole rectangle, corners included
+        // (`FUN_006035f0.c:24-38`, `FUN_00602150.c:115-116`), at the traced
+        // slots x 0x3c + 0x1d * i and 0x15b + 0x1d * i (`FUN_0059be80`,
+        // `FUN_0059c030`).
         assert_eq!(
             tactical_hud_control_at(&mut cache, 72.1, 10.1),
             Some(TacticalHudControl::TaskForce(0))
         );
         assert_eq!(
-            tactical_hud_control_at(&mut cache, 254.1, 10.1),
+            tactical_hud_control_at(&mut cache, 275.1, 10.1),
             Some(TacticalHudControl::TaskForce(7))
         );
-        assert_eq!(tactical_hud_control_at(&mut cache, 60.1, 2.1), None);
         assert_eq!(
-            tactical_hud_control_at(&mut cache, 342.1, 10.1),
+            tactical_hud_control_at(&mut cache, 60.1, 2.1),
+            Some(TacticalHudControl::TaskForce(0))
+        );
+        assert_eq!(tactical_hud_control_at(&mut cache, 288.1, 10.1), None);
+        assert_eq!(
+            tactical_hud_control_at(&mut cache, 347.1, 2.1),
             Some(TacticalHudControl::FighterGroup(0))
         );
         assert_eq!(
-            tactical_hud_control_at(&mut cache, 420.1, 10.1),
+            tactical_hud_control_at(&mut cache, 446.1, 10.1),
             Some(TacticalHudControl::FighterGroup(3))
         );
+        assert_eq!(tactical_hud_control_at(&mut cache, 342.1, 10.1), None);
+    }
+
+    // Source: FUN_005dab90 and FUN_005f0f40.c:25,35 build these strobe
+    // buttons with a last argument of 1, leaving flag 0x10 clear
+    // (FUN_00602150.c:115-116), so FUN_006035f0.c:24-38 takes the whole
+    // rectangle, corners included.
+    #[test]
+    fn battle_options_buttons_take_a_click_anywhere_in_their_rectangle() {
+        assert_eq!(
+            tactical_battle_options_control_at(true, 579.0, 212.0),
+            Some(TacticalBattleOptionsControl::Close)
+        );
+        assert_eq!(
+            tactical_battle_options_control_at(true, 607.9, 244.9),
+            Some(TacticalBattleOptionsControl::Close)
+        );
+        assert_eq!(tactical_battle_options_control_at(true, 608.0, 230.0), None);
+        // Withdraw greys out when FUN_00596a90 answers 0 (FUN_005dab90.c:28-32);
+        // the other buttons stay.
+        assert_eq!(
+            tactical_battle_options_control_at(true, 521.0, 64.0),
+            Some(TacticalBattleOptionsControl::Withdraw)
+        );
+        assert_eq!(tactical_battle_options_control_at(false, 521.0, 64.0), None);
+        assert_eq!(
+            tactical_battle_options_control_at(false, 579.0, 212.0),
+            Some(TacticalBattleOptionsControl::Close)
+        );
+        assert_eq!(
+            tactical_withdraw_confirmation_control_at(548.0, 230.0),
+            Some(TacticalWithdrawConfirmationControl::Confirm)
+        );
+        assert_eq!(
+            tactical_withdraw_confirmation_control_at(614.9, 254.9),
+            Some(TacticalWithdrawConfirmationControl::Cancel)
+        );
+        assert_eq!(tactical_withdraw_confirmation_control_at(547.9, 230.0), None);
+    }
+
+    // Source: command 0x7a (FUN_0059fd40.c:141-167) runs FUN_005ad530, which
+    // clears every fighter slot of the player's (:37-41, FUN_005a0320) and
+    // takes each capital ship out of its task force (:61-81, FUN_005aded0,
+    // FUN_005a0410); the cleared group's mode gives way to the base mode
+    // (FUN_005a0320.c:19-35, FUN_005a0410.c:19-35). The command then clears
+    // the player-command flag, releases both strips and shows panel 0x15.
+    #[test]
+    fn withdraw_empties_both_strips_and_returns_a_group_mode_to_the_base_mode() {
+        for side in STRIP_SIDES {
+            for fighter_mode in [false, true] {
+                let mut state = strip_test_state(side);
+                if fighter_mode {
+                    run_fighter_group_slot_command(&mut state, 0);
+                } else {
+                    run_task_force_slot_command(&mut state, 0);
+                }
+                state.command_panel = TacticalCommandPanel::Maneuvers {
+                    pending_order: TacticalOrder::None,
+                    pending_tactic: TacticalTactic::StandOff,
+                };
+                state.withdraw_player_side();
+                let session = state.session.as_ref().unwrap();
+                assert!(!session.player_command, "side={side:?}");
+                let index = usize::from(!session.player_is_attacker);
+                assert_eq!(
+                    session.morale.withdrawal[index].state,
+                    TacticalWithdrawalState::CountingDown
+                );
+                assert_eq!(strip_selection(&state), (None, None));
+                assert_eq!(session.selected_ship, None);
+                let strips = drawn_strips(&state);
+                assert_eq!(strips.task_forces, [false; 8]);
+                assert_eq!(strips.fighter_groups, [false; 4]);
+                assert!(!follow_group_exists(session, TacticalCameraFollow::TaskForce(0)));
+                assert!(!follow_group_exists(session, TacticalCameraFollow::FighterGroup(0)));
+                assert_eq!(state.command_panel, TacticalCommandPanel::Display);
+            }
+        }
+    }
+
+    // Source: FUN_005ad530 clears groups' slots only, so a ship selection's
+    // mode (0xe here) stays installed through command 0x7a
+    // (FUN_0059fd40.c:141-167), its strips released.
+    #[test]
+    fn withdraw_keeps_a_ship_selection() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
+            state.withdraw_player_side();
+            let session = state.session.as_ref().unwrap();
+            assert_eq!(session.selected_ship, Some(0), "side={side:?}");
+            assert!(session.ships[0].selected);
+            assert_eq!(pressed_strip_slots(&state), (None, None));
+        }
     }
 
     // Source: FUN_005f0c20 builds TACTICAL 1310, FUN_005f0f40 places confirm and
@@ -9556,6 +10160,118 @@ mod tests {
         );
     }
 
+    // Source: FUN_006026e0.c:24-48 centres the caption with integer halves;
+    // font entry 4 is a 16-pixel Arial cell (FUN_0060eed0.c:49-51), so a
+    // digit 8 pixels wide starts 8 pixels in and sits on y 15, as A0
+    // TAC-02-C006 shows the "1" (ink x 70-72, baseline 15).
+    #[test]
+    fn a_task_force_label_sits_in_font_four_centred_in_its_slot() {
+        assert_eq!(task_force_label_origin(0, 8), (68.0, 15.0));
+        assert_eq!(task_force_label_origin(7, 8), (271.0, 15.0));
+        assert_eq!(task_force_label_origin(1, 9), (97.0, 15.0));
+        assert_eq!(TASK_FORCE_LABEL_FONT, 4);
+        assert_eq!(
+            crate::theme::game_font_height(TASK_FORCE_LABEL_FONT),
+            TASK_FORCE_LABEL_CELL as f32
+        );
+    }
+
+    // Source: FUN_00602d30.c:41-57 paints state 4 in the colour
+    // FUN_0059be80.c:64 sets white; at rest the ctor's black
+    // (FUN_00602150.c:75).
+    #[test]
+    fn a_pressed_task_force_label_is_white_and_a_released_one_black() {
+        assert_eq!(task_force_label_color(true), WHITE);
+        assert_eq!(task_force_label_color(false), BLACK);
+    }
+
+    // Source: FUN_00602150.c:76 sets the held colour +0xb8 white, painted at
+    // FUN_00602d30.c:20-23; a slot held under the pointer is drawn pressed.
+    #[test]
+    fn a_held_task_force_label_is_white() {
+        for side in STRIP_SIDES {
+            let state = strip_test_state(side);
+            let groups = TacticalGroupHud::from_session(state.session.as_ref().unwrap());
+            let held = held_tactical_hud_control(Some(TacticalHudControl::TaskForce(1)), None);
+            assert!(task_force_slot_pressed(&groups, held, 1), "side={side:?}");
+            assert_eq!(task_force_label_color(task_force_slot_pressed(&groups, held, 1)), WHITE);
+            assert!(!task_force_slot_pressed(&groups, held, 0));
+            assert_eq!(task_force_label_color(task_force_slot_pressed(&groups, held, 0)), BLACK);
+            // An unassigned slot draws its own image, never the pressed one.
+            let held_blank = Some(TacticalHudControl::TaskForce(4));
+            assert!(!task_force_slot_pressed(&groups, held_blank, 4));
+        }
+    }
+
+    // Source: A0 TAC-02-C006 shows no glyph on unassigned slot 3;
+    // FUN_005c54d0.c:7-15 clears the caption bit FUN_00602d30.c:80-82 needs.
+    #[test]
+    fn an_unassigned_task_force_slot_draws_no_label() {
+        assert_eq!(task_force_label_text(2, false), None);
+        assert_eq!(task_force_label_text(0, true).as_deref(), Some("1"));
+        assert_eq!(task_force_label_text(7, true).as_deref(), Some("8"));
+    }
+
+    // Source: FUN_006035f0.c:24-38 tests the bitmap only under flag 0x10,
+    // which FUN_00602150.c:115-116 sets only for a last argument of 0; the
+    // slots pass 1 (FUN_005c52e0.c:17-18). Slots at x 0x3c + 0x1d * i, y 2,
+    // 25 x 17 (FUN_0059be80.c:55).
+    #[test]
+    fn a_task_force_slot_takes_a_click_anywhere_in_its_rectangle() {
+        for (index, x) in (0u8..).zip([60.0, 89.0, 118.0, 147.0, 176.0, 205.0, 234.0, 263.0]) {
+            let slot = Some(TacticalHudControl::TaskForce(index));
+            for (dx, dy) in [(0.0, 0.0), (24.9, 0.0), (0.0, 16.9), (24.9, 16.9), (12.0, 8.0)] {
+                assert_eq!(group_strip_slot_at(x + dx, 2.0 + dy), slot, "({dx}, {dy})");
+            }
+            assert_ne!(group_strip_slot_at(x - 0.1, 10.0), slot);
+            assert_eq!(group_strip_slot_at(x + 12.0, 1.9), None);
+            assert_eq!(group_strip_slot_at(x + 12.0, 19.0), None);
+        }
+        // A captured release counts one pixel past the right and bottom
+        // edges (FUN_006035f0.c:33-34) but not beyond.
+        let first = TacticalHudControl::TaskForce(0);
+        assert!(group_strip_release_hits(first, 85.5, 19.5));
+        assert!(!group_strip_release_hits(first, 86.0, 10.0));
+        assert!(!group_strip_release_hits(first, 70.0, 20.0));
+        assert!(!group_strip_release_hits(first, 59.9, 10.0));
+        assert!(!group_strip_release_hits(TacticalHudControl::TaskForce(1), 85.5, 10.0));
+    }
+
+    // Source: as above; the fighter slots pass 1 too (FUN_0059c030.c:52-53)
+    // and are 15 rows at x 0x15b + 0x1d * i (FUN_0059c030.c:52).
+    #[test]
+    fn a_fighter_group_slot_takes_a_click_anywhere_in_its_fifteen_rows() {
+        for (index, x) in (0u8..).zip([347.0, 376.0, 405.0, 434.0]) {
+            let slot = Some(TacticalHudControl::FighterGroup(index));
+            for (dx, dy) in [(0.0, 0.0), (24.9, 0.0), (0.0, 14.9), (24.9, 14.9)] {
+                assert_eq!(group_strip_slot_at(x + dx, 2.0 + dy), slot, "({dx}, {dy})");
+            }
+            // NativeRect::contains is half-open: row 15 is outside.
+            assert_eq!(group_strip_slot_at(x + 12.0, 17.0), None);
+        }
+        assert!(group_strip_release_hits(TacticalHudControl::FighterGroup(0), 372.5, 17.5));
+        assert!(!group_strip_release_hits(TacticalHudControl::FighterGroup(0), 360.0, 18.0));
+    }
+
+    // Source: FUN_006028c0.c:89-133 has no WM_MOUSEMOVE case, and the held
+    // look needs +0xf8, which only the press's hit test sets
+    // (FUN_00602d30.c:19-25, FUN_006035f0.c:30,35).
+    #[test]
+    fn a_held_strip_slot_stays_held_when_the_pointer_leaves_it() {
+        let red = TacticalHudControl::FighterGroup(0);
+        assert_eq!(held_tactical_hud_control(Some(red), None), Some(red));
+        assert_eq!(
+            held_tactical_hud_control(Some(red), Some(TacticalHudControl::Pause)),
+            Some(red)
+        );
+        // Dragging onto a slot pressed elsewhere does not hold it.
+        assert_eq!(held_tactical_hud_control(None, Some(red)), None);
+        assert_eq!(
+            held_tactical_hud_control(None, Some(TacticalHudControl::Pause)),
+            Some(TacticalHudControl::Pause)
+        );
+    }
+
     // Source: manual pages 143 and 148, task-force and fighter-group selection (P58E).
     #[test]
     fn task_force_and_fighter_group_selection_are_mutually_exclusive() {
@@ -9598,24 +10314,618 @@ mod tests {
         assert!(session.fighters.iter().all(|fighter| !fighter.selected));
     }
 
-    // Source: manual pages 143 and 148, the Ctrl task-force assignment rule (P58E).
-    #[test]
-    fn task_force_assignment_accepts_only_an_existing_or_next_blank_slot() {
-        let mut ships = vec![
-            test_ship(64, 0, true, true),
-            test_ship(65, 1, true, true),
-            test_ship(128, 0, false, true),
-        ];
-        ships[0].selected = true;
-        ships[1].selected = true;
-        let mut session = test_session(ships, Vec::new(), true);
+    /// The player's faction and role for the strip tests: each faction as
+    /// attacker and as defender, since the strips read only the role and
+    /// the headers only the faction.
+    const STRIP_SIDES: [(bool, bool); 4] = [(true, true), (true, false), (false, true), (false, false)];
 
-        assert_eq!(assign_selected_to_task_force(&mut session, 4), 0);
-        assert_eq!(session.ships[0].task_force, 0);
-        assert_eq!(session.ships[1].task_force, 1);
-        assert_eq!(assign_selected_to_task_force(&mut session, 2), 2);
-        assert_eq!(session.ships[0].task_force, 2);
-        assert_eq!(session.ships[1].task_force, 2);
+    /// A battle for the strip tests, the player's faction and whether they
+    /// attack: the player's ships 0 and 1 are task force 1, ship 2 is task
+    /// force 2, ship 3 is the enemy's; the player's fighters are the Red
+    /// group. port: fixture values, not rules.
+    fn strip_test_state((player_is_alliance, player_is_attacker): (bool, bool)) -> TacticalState {
+        let mut ships = vec![
+            test_ship(64, 0, player_is_alliance, true),
+            test_ship(65, 0, player_is_alliance, true),
+            test_ship(66, 1, player_is_alliance, true),
+            test_ship(128, 0, !player_is_alliance, true),
+        ];
+        ships[1].task_force = 0;
+        let mut fighters = vec![test_fighter(200, player_is_alliance)];
+        for ship in &mut ships {
+            ship.is_attacker = ship.identity.is_alliance == (player_is_alliance == player_is_attacker);
+        }
+        fighters[0].is_attacker = player_is_attacker;
+        let mut session = test_session(ships, fighters, player_is_attacker);
+        session.attacker_is_alliance = player_is_alliance == player_is_attacker;
+        TacticalState {
+            session: Some(session),
+            ..TacticalState::default()
+        }
+    }
+
+    fn strip_selection(state: &TacticalState) -> (Option<u8>, Option<u8>) {
+        let session = state.session.as_ref().unwrap();
+        (session.selected_task_force, session.selected_fighter_group)
+    }
+
+    /// The strips as drawn, with no slot held by the mouse.
+    fn drawn_strips(state: &TacticalState) -> TacticalGroupHud<'_> {
+        let mut groups = TacticalGroupHud::from_session(state.session.as_ref().unwrap());
+        groups.apply_strip_override(live_strip_override(state));
+        groups
+    }
+
+    /// The task-force slots drawn pressed.
+    fn pressed_task_force_slots(state: &TacticalState) -> Vec<u8> {
+        let groups = drawn_strips(state);
+        (0..8).filter(|&index| task_force_slot_pressed(&groups, None, index)).collect()
+    }
+
+    /// The one task-force slot and the fighter slot drawn pressed.
+    fn pressed_strip_slots(state: &TacticalState) -> (Option<u8>, Option<u8>) {
+        let pressed = pressed_task_force_slots(state);
+        assert!(pressed.len() <= 1, "two task-force slots pressed: {pressed:?}");
+        let groups = drawn_strips(state);
+        let fighter = groups.pressed_fighter_group.filter(|&group| {
+            groups.fighter_groups[usize::from(group)]
+        });
+        (pressed.first().copied(), fighter)
+    }
+
+    // Source: FUN_0059fd40.c:40-59 installs the base mode FUN_005a0c80 when
+    // the selected task force's slot posts again; base entry releases both
+    // strips and deletes the mode's selection (FUN_005a0c80.c:16-18,
+    // FUN_0059f350.c:5-9, FUN_0059e880.c:36-43), leaving panel 0x15.
+    #[test]
+    fn clicking_the_selected_task_force_slot_again_clears_the_selection() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            state.command_panel = TacticalCommandPanel::Maneuvers {
+                pending_order: TacticalOrder::None,
+                pending_tactic: TacticalTactic::StandOff,
+            };
+            run_task_force_slot_command(&mut state, 0);
+            assert_eq!(strip_selection(&state), (Some(0), None));
+            assert_eq!(pressed_strip_slots(&state), (Some(0), None));
+            run_task_force_slot_command(&mut state, 0);
+            let session = state.session.as_ref().unwrap();
+            assert_eq!(strip_selection(&state), (None, None), "side={side:?}");
+            assert!(session.ships.iter().all(|ship| !ship.selected));
+            assert_eq!(session.selected_ship, None);
+            assert_eq!(state.command_panel, TacticalCommandPanel::Display);
+            assert_eq!(pressed_strip_slots(&state), (None, None));
+        }
+    }
+
+    // Source: FUN_0059fd40.c:69-88, the fighter case of the same rule.
+    #[test]
+    fn clicking_the_selected_fighter_group_slot_again_clears_the_selection() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_fighter_group_slot_command(&mut state, 0);
+            assert_eq!(strip_selection(&state), (None, Some(0)));
+            run_fighter_group_slot_command(&mut state, 0);
+            let session = state.session.as_ref().unwrap();
+            assert_eq!(strip_selection(&state), (None, None), "side={side:?}");
+            assert!(session.fighters.iter().all(|fighter| !fighter.selected));
+            assert_eq!(pressed_strip_slots(&state), (None, None));
+        }
+    }
+
+    // Source: FUN_0059b450.c:27-37 posts 2 + i and releases every other
+    // assigned slot; the task-force mode presses only its own slot
+    // (FUN_005a34e0.c:47, FUN_0059b550.c:27-33).
+    #[test]
+    fn clicking_an_assigned_slot_releases_the_other_pressed_slot() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_fighter_group_slot_command(&mut state, 0);
+            run_task_force_slot_command(&mut state, 0);
+            state.command_panel = TacticalCommandPanel::Maneuvers {
+                pending_order: TacticalOrder::None,
+                pending_tactic: TacticalTactic::StandOff,
+            };
+            run_task_force_slot_command(&mut state, 1);
+            assert_eq!(state.command_panel, TacticalCommandPanel::Display);
+            assert_eq!(strip_selection(&state), (Some(1), None), "side={side:?}");
+            assert_eq!(pressed_strip_slots(&state), (Some(1), None));
+            let session = state.session.as_ref().unwrap();
+            assert!(session.ships[2].selected);
+            assert!(!session.ships[0].selected && !session.ships[1].selected);
+        }
+    }
+
+    // Source: FUN_0059b620.c:18-25 acts only for a group that exists; a slot
+    // without one is disabled (FUN_006028a0) and posts nothing.
+    #[test]
+    fn a_missing_fighter_group_click_changes_no_selection() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            assert!(!strip_slot_takes_press(&state, TacticalHudControl::FighterGroup(2)));
+            assert!(strip_slot_takes_press(&state, TacticalHudControl::FighterGroup(0)));
+            assert!(strip_slot_takes_press(&state, TacticalHudControl::TaskForce(5)));
+            run_task_force_slot_command(&mut state, 0);
+            run_fighter_group_slot_command(&mut state, 2);
+            assert_eq!(strip_selection(&state), (Some(0), None), "side={side:?}");
+            assert_eq!(pressed_strip_slots(&state), (Some(0), None));
+        }
+    }
+
+    // Source: a plain pick releases both strips (FUN_005c2060.c:130-131) and
+    // installs mode 0xe (FUN_005a0d10.c:30-45), pressing no slot even for a
+    // ship in a task force (FUN_0059e760.c:11-22; A0 TAC-03-C018).
+    #[test]
+    fn selecting_one_ship_does_not_press_its_task_force_slot() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_task_force_slot_command(&mut state, 0);
+            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
+            let session = state.session.as_ref().unwrap();
+            assert_eq!(selected_player_task_force(session), Some(0));
+            assert_eq!(strip_selection(&state), (None, None), "side={side:?}");
+            assert_eq!(pressed_strip_slots(&state), (None, None));
+        }
+    }
+
+    // Source: FUN_005a3aa0.c:109-113 moves an own non-member into the
+    // selected task force on Ctrl+click (FUN_005ade50); manual p. 143.
+    #[test]
+    fn ctrl_clicking_an_own_ship_outside_the_selected_task_force_moves_it_in() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_task_force_slot_command(&mut state, 0);
+            pick_own_ship(state.session.as_mut().unwrap(), 2, true);
+            let session = state.session.as_ref().unwrap();
+            assert_eq!(session.ships[2].task_force, 0, "side={side:?}");
+            assert_eq!(strip_selection(&state), (Some(0), None));
+            assert!(session.ships[..3].iter().all(|ship| ship.selected));
+        }
+    }
+
+    // Source: FUN_005a34e0 focuses the head of the member list
+    // (FUN_005c6070(piVar2 + 0x11)); A0 TAC-03-C014 and C015 (Yaga, day 30):
+    // after the ISD joins task force 2 and the force is reselected, the panel
+    // shows the Carrack, next the ISD and previous the Carrack again.
+    #[test]
+    fn a_ship_that_joins_a_task_force_follows_its_original_members() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_task_force_slot_command(&mut state, 1);
+            let session = state.session.as_mut().unwrap();
+            pick_own_ship(session, 1, true);
+            pick_own_ship(session, 0, true);
+            assert_eq!(session.ships[0].task_force, 1, "side={side:?}");
+            deselect_all(session);
+            select_task_force(session, 1);
+            assert_eq!(session.selected_ship, Some(2));
+            assert_eq!(cycle_selected_capital(session, 1), Some((2, 1, 1)));
+            assert_eq!(cycle_selected_capital(session, 1), Some((1, 0, 1)));
+            assert_eq!(cycle_selected_capital(session, -1), Some((0, 1, 1)));
+        }
+    }
+
+    // port: with no focused ship, next and previous start from the first own
+    // ship still selected.
+    #[test]
+    fn cycling_without_a_focused_ship_starts_from_the_first_selected_own_ship() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            let session = state.session.as_mut().unwrap();
+            select_task_force(session, 0);
+            session.selected_ship = None;
+            session.ships[0].selected = false;
+            assert_eq!(cycle_selected_capital(session, 1), Some((1, 0, 0)), "side={side:?}");
+        }
+    }
+
+    // Source: FUN_005a3aa0.c:109-113 moves only an own ship outside the
+    // selected task force. port: a retreating ship takes no orders, as in
+    // select_task_force; a member's Ctrl+click moves nothing here, where the
+    // original takes it out of the group (FUN_005a3aa0.c:116-137;
+    // or-p-tactical-mode-picks-mi0z).
+    #[test]
+    fn ctrl_clicking_a_member_a_retreating_ship_or_an_enemy_moves_nothing() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_task_force_slot_command(&mut state, 0);
+            let session = state.session.as_mut().unwrap();
+            session.ships[2].retreating = true;
+            session.ships[3].task_force = 1;
+            for ship in [1, 2, 3] {
+                assert!(!join_selected_task_force(session, ship), "side={side:?} ship={ship}");
+            }
+            assert_eq!(session.ships[1].task_force, 0);
+            assert_eq!(session.ships[2].task_force, 1);
+            assert_eq!(session.ships[3].task_force, 1);
+        }
+    }
+
+    // Source: with the player-command flag clear an own capital-ship pick
+    // installs mode 0xe whatever Ctrl is (FUN_005a04f0.c:54-70), so it neither
+    // joins the selected task force nor adds to a selection; a plain pick
+    // releases both strips (FUN_005c2060.c:130-131).
+    #[test]
+    fn after_withdraw_a_ctrl_pick_selects_only_that_ship() {
+        for side in STRIP_SIDES {
+            assert!(ctrl_pick_joins(side), "side={side:?}");
+            let mut state = strip_test_state(side);
+            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
+            state.withdraw_player_side();
+            let session = state.session.as_mut().unwrap();
+            assert!(pick_own_ship(session, 2, true), "side={side:?}");
+            assert_eq!(session.ships.iter().filter(|ship| ship.selected).count(), 1);
+            assert_eq!(session.selected_ship, Some(2));
+        }
+    }
+
+    /// Whether a Ctrl pick of ship 2 under task force 1 moves it in.
+    fn ctrl_pick_joins(side: (bool, bool)) -> bool {
+        let mut state = strip_test_state(side);
+        run_task_force_slot_command(&mut state, 0);
+        let session = state.session.as_mut().unwrap();
+        pick_own_ship(session, 2, true);
+        session.ships[2].task_force == 0
+    }
+
+    // Source: a miss in the 3D view with Ctrl does nothing
+    // (FUN_005c2060.c:117-118); without Ctrl it returns to the base mode
+    // (FUN_00595b70(0, 0), :120).
+    #[test]
+    fn a_ctrl_click_on_empty_space_keeps_the_selection() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_task_force_slot_command(&mut state, 0);
+            let session = state.session.as_mut().unwrap();
+            assert!(!pick_empty_space(session, true));
+            assert_eq!(strip_selection(&state), (Some(0), None), "side={side:?}");
+            assert!(pick_empty_space(state.session.as_mut().unwrap(), false));
+            assert_eq!(strip_selection(&state), (None, None));
+        }
+    }
+
+    // Source: FUN_005a0410.c:16-38 empties the slot of a group that lost its
+    // last ship, returns to the base mode (FUN_005a0c80) when that group's
+    // mode is current, and refreshes the strips (FUN_0059fc50(-1)).
+    #[test]
+    fn a_selected_task_force_that_loses_its_last_ship_returns_to_the_base_mode() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_task_force_slot_command(&mut state, 1);
+            drop_emptied_task_force(&mut state);
+            assert_eq!(strip_selection(&state), (Some(1), None), "side={side:?}");
+            state.session.as_mut().unwrap().ships[2].alive = false;
+            drop_emptied_task_force(&mut state);
+            assert_eq!(strip_selection(&state), (None, None));
+            assert_eq!(state.session.as_ref().unwrap().selected_ship, None);
+        }
+    }
+
+    // Source: a plain pick installs mode 0xe, which releases both strips
+    // (FUN_005c2060.c:130-131, FUN_005a1550.c:20-21; FUN_0059b430 clears
+    // bits 1 and 4 on all eight slots), so a stale unassigned slot from mode
+    // 0x10 after Withdraw (FUN_0059b450.c:39-44) loses its press; only a
+    // strip refresh would take its caption (FUN_0059b550.c:12-17).
+    #[test]
+    fn a_plain_pick_releases_a_stale_slot_but_keeps_its_caption() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
+            pick_own_ship(state.session.as_mut().unwrap(), 2, true);
+            state.withdraw_player_side();
+            run_task_force_slot_command(&mut state, 5);
+            assert_eq!(pressed_strip_slots(&state), (Some(5), None), "side={side:?}");
+            assert!(pick_own_ship(state.session.as_mut().unwrap(), 0, false));
+            state.strip_override.release_task_force_strip();
+            assert_eq!(pressed_strip_slots(&state), (None, None));
+            assert_eq!(task_force_label_text(5, drawn_strips(&state).task_forces[5]).as_deref(), Some("6"));
+        }
+    }
+
+    // Source: a number key releases every slot (FUN_0059b430) and then
+    // clicks its own (FUN_0059b730.c:58-97, FUN_00603710), which in mode
+    // 0x10 with the flag clear captions and presses it without forming a
+    // task force (FUN_0059b450.c:39-44, FUN_0059fd40.c:33-38); the earlier
+    // stale slot keeps its caption, released.
+    #[test]
+    fn a_number_key_releases_a_stale_slot_and_captions_its_own() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
+            pick_own_ship(state.session.as_mut().unwrap(), 2, true);
+            state.withdraw_player_side();
+            run_task_force_slot_command(&mut state, 5);
+            run_tactical_key_action(&mut state, TacticalKeyAction::TaskForceSlot(6));
+            assert_eq!(pressed_task_force_slots(&state), vec![6], "side={side:?}");
+            let strips = drawn_strips(&state);
+            let captioned: Vec<usize> = (0..8).filter(|&slot| strips.task_forces[slot]).collect();
+            assert_eq!(captioned, vec![5, 6]);
+            assert!(state.session.as_ref().unwrap().ships.iter().all(|ship| ship.task_force < 5));
+        }
+    }
+
+    // Source: FUN_0059b730.c:8-11 tests the autorepeat bit for Tab alone, so
+    // each repeat of a held number key runs its slot again (:58-97); the
+    // second command on the selected slot installs the base mode
+    // (FUN_0059fd40.c:39-41, :51-55).
+    #[test]
+    fn a_held_number_key_runs_its_slot_on_every_repeat() {
+        assert_eq!(
+            tactical_key_actions(vec![KeyCode::Key1, KeyCode::Key1, KeyCode::Key9, KeyCode::F1]),
+            vec![
+                TacticalKeyAction::TaskForceSlot(0),
+                TacticalKeyAction::TaskForceSlot(0),
+                TacticalKeyAction::Follow(TacticalCameraFollow::TaskForce(0)),
+            ]
+        );
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            state.set_frame_key_downs([KeyCode::Key1, KeyCode::Key1]);
+            for action in tactical_key_actions(std::mem::take(&mut state.key_downs)) {
+                run_tactical_key_action(&mut state, action);
+            }
+            assert_eq!(strip_selection(&state), (None, None), "side={side:?}");
+        }
+    }
+
+    // Source: FUN_0059be80.c:27-32 and FUN_0059c030.c:23-28 pick the headers
+    // by FUN_00595c40, the player's faction, not by who attacks.
+    #[test]
+    fn the_strip_headers_follow_the_players_faction_in_either_role() {
+        for side in STRIP_SIDES {
+            let state = strip_test_state(side);
+            let session = state.session.as_ref().unwrap();
+            assert_eq!(player_is_alliance(session), side.0, "side={side:?}");
+            let expected = if side.0 { (1001, 1008) } else { (1004, 1010) };
+            assert_eq!(strip_header_art(player_is_alliance(session)), expected);
+        }
+    }
+
+    // Source: a ship jumps out (state 7) only after Withdraw has taken it out
+    // of its task force (FUN_005ad530.c:61-81, FUN_005aded0.c:21-37), so no
+    // strip check counts it (FUN_00595ba0).
+    #[test]
+    fn a_task_force_of_jumping_ships_is_gone_from_every_strip_check() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            state.session.as_mut().unwrap().ships[2].retreating = true;
+            let session = state.session.as_ref().unwrap();
+            assert!(!task_force_assigned(session, 1), "side={side:?}");
+            assert!(task_force_members(session, 1).is_empty());
+            assert!(!follow_group_exists(session, TacticalCameraFollow::TaskForce(1)));
+            assert!(!drawn_strips(&state).task_forces[1]);
+            assert!(drawn_strips(&state).task_forces[0]);
+            run_task_force_slot_command(&mut state, 0);
+            let session = state.session.as_mut().unwrap();
+            assert!(!join_selected_task_force(session, 2));
+            assert!(!session.ships[2].selected);
+        }
+    }
+
+    // Source: FUN_006028c0.c:163-194 posts the captured slot's command on a
+    // release over it and nothing on a release elsewhere; either release
+    // ends the capture.
+    #[test]
+    fn a_release_runs_the_captured_slot_only_when_it_lands_on_that_slot() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            state.strip_slot_pressed = Some(TacticalHudControl::TaskForce(0));
+            release_group_strip_slot(&mut state, 72.0, 9.0);
+            assert_eq!(strip_selection(&state), (Some(0), None), "side={side:?}");
+            assert_eq!(state.strip_slot_pressed, None);
+            state.strip_slot_pressed = Some(TacticalHudControl::FighterGroup(0));
+            release_group_strip_slot(&mut state, 72.0, 9.0);
+            assert_eq!(strip_selection(&state), (Some(0), None));
+            assert_eq!(state.strip_slot_pressed, None);
+            state.strip_slot_pressed = Some(TacticalHudControl::FighterGroup(0));
+            release_group_strip_slot(&mut state, 359.0, 9.0);
+            assert_eq!(strip_selection(&state), (None, Some(0)));
+        }
+    }
+
+    // port: select_task_force finds no ship of a task force whose ships all
+    // retreat, so its slot command changes nothing.
+    #[test]
+    fn a_task_force_of_retreating_ships_selects_nothing() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            state.session.as_mut().unwrap().ships[2].retreating = true;
+            state.command_panel = TacticalCommandPanel::Maneuvers {
+                pending_order: TacticalOrder::None,
+                pending_tactic: TacticalTactic::StandOff,
+            };
+            run_task_force_slot_command(&mut state, 1);
+            assert_eq!(strip_selection(&state), (None, None), "side={side:?}");
+            assert!(matches!(state.command_panel, TacticalCommandPanel::Maneuvers { .. }));
+        }
+    }
+
+    // Source: FUN_0059b730.c:58-97 releases both strips (FUN_0059b430,
+    // FUN_0059b600) and presses slot i, whose command reaches FUN_0059b450
+    // (FUN_00603710.c:18-20); outside modes 0xe and 0x10 an unassigned
+    // slot's command does nothing, so both strips stay released.
+    #[test]
+    fn a_digit_key_releases_both_strips_before_pressing_its_slot() {
+        assert_eq!(tactical_key_action(KeyCode::Key1), Some(TacticalKeyAction::TaskForceSlot(0)));
+        assert_eq!(tactical_key_action(KeyCode::Key8), Some(TacticalKeyAction::TaskForceSlot(7)));
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_fighter_group_slot_command(&mut state, 0);
+            run_tactical_key_action(&mut state, TacticalKeyAction::TaskForceSlot(5));
+            assert_eq!(strip_selection(&state), (None, Some(0)), "side={side:?}");
+            assert_eq!(pressed_strip_slots(&state), (None, None));
+            run_tactical_key_action(&mut state, TacticalKeyAction::TaskForceSlot(0));
+            assert_eq!(strip_selection(&state), (Some(0), None));
+            assert_eq!(pressed_strip_slots(&state), (Some(0), None));
+            run_tactical_key_action(&mut state, TacticalKeyAction::TaskForceSlot(0));
+            assert_eq!(strip_selection(&state), (None, None));
+        }
+    }
+
+    // Source: FUN_0059b730.c:98-130 posts camera mode 0xb for an existing
+    // group (FUN_00595ba0, FUN_00595bc0) and no selection; FUN_005d9a70
+    // writes no selection (ghidra/notes/tactical-selection-modes.md).
+    #[test]
+    fn f_keys_follow_existing_groups_without_changing_selection() {
+        assert_eq!(
+            tactical_key_action(KeyCode::F1),
+            Some(TacticalKeyAction::Follow(TacticalCameraFollow::TaskForce(0)))
+        );
+        assert_eq!(
+            tactical_key_action(KeyCode::F8),
+            Some(TacticalKeyAction::Follow(TacticalCameraFollow::TaskForce(7)))
+        );
+        assert_eq!(
+            tactical_key_action(KeyCode::F9),
+            Some(TacticalKeyAction::Follow(TacticalCameraFollow::FighterGroup(0)))
+        );
+        assert_eq!(
+            tactical_key_action(KeyCode::F12),
+            Some(TacticalKeyAction::Follow(TacticalCameraFollow::FighterGroup(3)))
+        );
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_task_force_slot_command(&mut state, 1);
+            state.command_panel = TacticalCommandPanel::Maneuvers {
+                pending_order: TacticalOrder::None,
+                pending_tactic: TacticalTactic::StandOff,
+            };
+            run_tactical_key_action(
+                &mut state,
+                TacticalKeyAction::Follow(TacticalCameraFollow::TaskForce(0)),
+            );
+            assert_eq!(state.camera_follow, Some(TacticalCameraFollow::TaskForce(0)));
+            assert_eq!(strip_selection(&state), (Some(1), None), "side={side:?}");
+            assert_eq!(
+                state.command_panel,
+                TacticalCommandPanel::Maneuvers {
+                pending_order: TacticalOrder::None,
+                pending_tactic: TacticalTactic::StandOff,
+            }
+            );
+            run_tactical_key_action(
+                &mut state,
+                TacticalKeyAction::Follow(TacticalCameraFollow::FighterGroup(0)),
+            );
+            assert_eq!(state.camera_follow, Some(TacticalCameraFollow::FighterGroup(0)));
+            assert_eq!(strip_selection(&state), (Some(1), None));
+            run_tactical_key_action(
+                &mut state,
+                TacticalKeyAction::Follow(TacticalCameraFollow::TaskForce(6)),
+            );
+            state.session.as_mut().unwrap().ships[3].task_force = 4;
+            run_tactical_key_action(
+                &mut state,
+                TacticalKeyAction::Follow(TacticalCameraFollow::TaskForce(4)),
+            );
+            run_tactical_key_action(
+                &mut state,
+                TacticalKeyAction::Follow(TacticalCameraFollow::FighterGroup(3)),
+            );
+            assert_eq!(state.camera_follow, Some(TacticalCameraFollow::FighterGroup(0)));
+        }
+    }
+
+    // Source: FUN_0059b730.c:17-97: only 0x31-0x38 reach the strips; the
+    // numpad drives the camera buttons (:34-57) and 9 and 0 have no case.
+    #[test]
+    fn nine_zero_and_the_numpad_press_no_strip_slot() {
+        for key in [KeyCode::Key9, KeyCode::Key0, KeyCode::Kp1, KeyCode::Kp8, KeyCode::Kp0] {
+            assert_eq!(tactical_key_action(key), None, "{key:?}");
+        }
+    }
+
+    // Source: FUN_0059b450.c:18-19 returns for an unassigned slot unless
+    // FUN_0059f6e0 holds: mode 0xe with the flag, or 0x10 (:7-13).
+    #[test]
+    fn an_unassigned_task_force_click_is_ignored_outside_the_assignment_modes() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            run_task_force_slot_command(&mut state, 4);
+            assert_eq!(strip_selection(&state), (None, None), "side={side:?}");
+            run_task_force_slot_command(&mut state, 0);
+            run_task_force_slot_command(&mut state, 4);
+            assert_eq!(strip_selection(&state), (Some(0), None));
+            run_fighter_group_slot_command(&mut state, 0);
+            run_task_force_slot_command(&mut state, 4);
+            assert_eq!(strip_selection(&state), (None, Some(0)));
+            let session = state.session.as_ref().unwrap();
+            assert!(session.ships.iter().all(|ship| ship.task_force != 4));
+            assert_eq!(state.strip_override, TacticalStripOverride::default());
+        }
+    }
+
+    // Source: mode 0xe's +0x14 FUN_005a2160 builds a task force of its ship
+    // in the clicked slot (FUN_005a2160.c:16-20, FUN_005a34e0); any
+    // unassigned slot, not only the next blank (FUN_0059b450 tests only the
+    // clicked slot).
+    #[test]
+    fn one_own_ship_forms_a_task_force_in_any_unassigned_slot() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
+            state.command_panel = TacticalCommandPanel::Maneuvers {
+                pending_order: TacticalOrder::None,
+                pending_tactic: TacticalTactic::StandOff,
+            };
+            run_task_force_slot_command(&mut state, 6);
+            assert_eq!(state.command_panel, TacticalCommandPanel::Display);
+            let session = state.session.as_ref().unwrap();
+            assert_eq!(session.ships[0].task_force, 6, "side={side:?}");
+            assert_eq!(session.ships[1].task_force, 0);
+            assert_eq!(strip_selection(&state), (Some(6), None));
+        }
+    }
+
+    // Source: FUN_0059f6e0.c:7-9 admits mode 0xe only while the
+    // player-command flag is set; Withdraw clears it (FUN_0059fd40.c:141-167).
+    #[test]
+    fn one_own_ship_takes_no_unassigned_slot_once_the_player_withdraws() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            state.session.as_mut().unwrap().player_command = false;
+            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
+            run_task_force_slot_command(&mut state, 6);
+            let session = state.session.as_ref().unwrap();
+            assert_eq!(session.ships[0].task_force, 0, "side={side:?}");
+            assert_eq!(state.strip_override, TacticalStripOverride::default());
+        }
+    }
+
+    // Source: mode 0x10's +0x14 FUN_005a28a0 builds a task force of the
+    // selected ships in the clicked slot (FUN_005a28a0.c:16-20).
+    #[test]
+    fn two_own_ships_form_a_task_force_in_any_unassigned_slot() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
+            pick_own_ship(state.session.as_mut().unwrap(), 2, true);
+            run_task_force_slot_command(&mut state, 5);
+            let session = state.session.as_ref().unwrap();
+            assert_eq!(session.ships[0].task_force, 5, "side={side:?}");
+            assert_eq!(session.ships[2].task_force, 5);
+            assert_eq!(session.ships[1].task_force, 0);
+            assert_eq!(strip_selection(&state), (Some(5), None));
+        }
+    }
+
+    // Source: in mode 0x10 FUN_0059f6e0.c:10-12 ignores the flag, so the
+    // slot captions, presses and posts (FUN_0059b450.c:39-44), but the
+    // executor runs +0x14 only with the flag set (FUN_0059fd40.c:33-38):
+    // no task force forms and the slot stays pressed.
+    #[test]
+    fn two_own_ships_press_an_unassigned_slot_but_form_no_task_force_once_the_player_withdraws() {
+        for side in STRIP_SIDES {
+            let mut state = strip_test_state(side);
+            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
+            pick_own_ship(state.session.as_mut().unwrap(), 2, true);
+            state.withdraw_player_side();
+            run_task_force_slot_command(&mut state, 5);
+            let session = state.session.as_ref().unwrap();
+            assert!(session.ships.iter().all(|ship| ship.task_force != 5), "side={side:?}");
+            assert_eq!(strip_selection(&state), (None, None));
+            assert_eq!(pressed_strip_slots(&state), (Some(5), None));
+        }
     }
 
     #[test]

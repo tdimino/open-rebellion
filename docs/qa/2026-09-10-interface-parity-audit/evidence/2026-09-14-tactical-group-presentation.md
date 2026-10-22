@@ -1,5 +1,15 @@
 # P58E tactical task-force and fighter-group presentation
 
+The strips' current contract is the traced one in
+`ghidra/notes/tactical-strip-buttons.md`, `ghidra/notes/tactical-selection-modes.md`
+and `ghidra/notes/tactical-group-strips.md`
+(plan `docs/plans/2026-10-20-feat-task-force-strip.md`): slots at
+`x = 60 + 29n` and `347 + 29n`, each taking its whole rectangle; a second
+click on the selected slot clears the selection; keys 1-8 run a slot's
+command; F1-F12 only follow an existing group; an unassigned slot forms a task
+force only in the original's modes 0xe and 0x10. This record keeps the
+2026-09-14 run as it was.
+
 P58E restores the original top task-force and fighter-group strips for both
 factions. It also connects source-backed group selection, keyboard routing,
 and selected fighter detail presentation to the production tactical view.

@@ -1188,6 +1188,9 @@ struct StrategicRawPointerEvent {
 struct StrategicRawInputBatch {
     keys: Vec<StrategicIndexedKeyEvent>,
     pointers: Vec<StrategicRawPointerEvent>,
+    /// Every key-down in order, autorepeats included, for the tactical
+    /// window ([`TacticalState::set_frame_key_downs`]).
+    key_downs: Vec<KeyCode>,
 }
 
 #[derive(Debug, Default)]
@@ -1195,6 +1198,7 @@ struct StrategicRawInputCollector {
     next_ordinal: u32,
     keys: Vec<StrategicIndexedKeyEvent>,
     pointers: Vec<StrategicRawPointerEvent>,
+    key_downs: Vec<KeyCode>,
     pressed: BTreeSet<PointerButtonId>,
     pointer: (f32, f32),
 }
@@ -1205,6 +1209,7 @@ impl StrategicRawInputCollector {
         StrategicRawInputBatch {
             keys: std::mem::take(&mut self.keys),
             pointers: std::mem::take(&mut self.pointers),
+            key_downs: std::mem::take(&mut self.key_downs),
         }
     }
 
@@ -1245,6 +1250,7 @@ impl macroquad::miniquad::EventHandler for StrategicRawInputCollector {
         modifiers: macroquad::miniquad::KeyMods,
         repeat: bool,
     ) {
+        self.key_downs.push(key);
         if strategic_root_key(key) {
             let event = StrategicRawKeyEvent {
                 key,
@@ -2062,6 +2068,21 @@ mod panel_toggle_tests {
             router.keyboard_recipient(keys.events[0].id),
             rebellion_render::windowing_input::InputRecipient::Root,
         );
+    }
+
+    // Source: the tactical window acts on every WM_KEYDOWN of a held number
+    // key; only Tab tests the autorepeat bit (FUN_0059b730.c:8-11).
+    #[test]
+    fn raw_backend_capture_keeps_every_key_down_for_the_tactical_window() {
+        let mut collector = StrategicRawInputCollector::default();
+        collector.key_down_event(KeyCode::Key1, KeyMods::default(), false);
+        collector.key_down_event(KeyCode::Key1, KeyMods::default(), true);
+        collector.key_down_event(KeyCode::F9, KeyMods::default(), false);
+        assert_eq!(
+            collector.take().key_downs,
+            [KeyCode::Key1, KeyCode::Key1, KeyCode::F9]
+        );
+        assert!(collector.take().key_downs.is_empty());
     }
 
     #[test]
@@ -9192,6 +9213,7 @@ async fn main() {
         if tactical_frame {
             // Under the Battle Alert or the results, the command center pass
             // above has drawn the droids; the window is all that is left.
+            tactical_state.set_frame_key_downs(strategic_raw_input_events.key_downs.iter().copied());
             let tac_action = draw_tactical_view(
                 &mut tactical_state,
                 &mut bmp_cache,
@@ -9398,12 +9420,7 @@ async fn main() {
                 }
                 // FUN_0059fd40 -> FUN_005ad530: the player's side withdraws
                 // through its controller's countdown and the Withdraw order.
-                TacticalAction::WithdrawFromBattle => {
-                    if let Some(ref mut session) = tactical_state.session {
-                        let player_side = session.player_is_attacker;
-                        session.begin_side_withdrawal(player_side);
-                    }
-                }
+                TacticalAction::WithdrawFromBattle => tactical_state.withdraw_player_side(),
                 TacticalAction::RetreatBeforeBattle => {
                     if let Some(ref mut session) = tactical_state.session {
                         let player_side = session.player_is_attacker;
@@ -9419,6 +9436,7 @@ async fn main() {
                         }
                         session.selected_ship = None;
                         session.selected_fighter_group = None;
+                        session.selected_task_force = None;
                         session.paused = false;
                     }
                 }
@@ -14458,6 +14476,8 @@ mod tactical_ground_tests {
             source_layout: rebellion_render::tactical_view::OriginalTacticalLayout::default(),
             selected_ship: None,
             selected_fighter_group: None,
+            selected_task_force: None,
+            player_command: true,
             placement_confirmed: true,
             start_tick: 1,
             combat_tick: 1,
@@ -14598,6 +14618,7 @@ mod tactical_ground_tests {
             order: rebellion_render::tactical_view::TacticalOrder::None,
             tactic: rebellion_render::tactical_view::TacticalTactic::StandOff,
             task_force: u8::try_from(fleet_ship_index.min(7)).unwrap_or(7),
+            task_force_joined: 0,
             fleet: Some(fleet),
             fleet_ship_index,
             sprite_id: None,

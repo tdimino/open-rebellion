@@ -8,7 +8,8 @@ Every plan opens with YAML frontmatter carrying at least these keys:
 |-----|---------|
 | `title` | Plan name |
 | `status` | `draft`, `planned`, `active`, `partial`, `superseded`, `completed`, or `archived` |
-| `progress` | `"<N>% — <one-line state>"`, N being the share of the plan's committed phases that have landed; a completed plan reads `"100% — <what landed, commit hashes>"` |
+| `progress` | `"<N>% — <one-line state>"`, N being the share of the plan's committed phases that have landed; a completed plan reads `"100% — <what landed, commit hashes>"`. A beaded-out plan reads `"<closed> of <total> beads — <state>"`, from its epic on `tasks/INDEX.md` |
+| `epic` | Once the plan is beaded out: its epic's ID (`agent_docs/task-graph.md`, "Plans and epics"). The epic's closed beads are its progress |
 | `superseded_by` | Only for `superseded` plans: the plan or audit that replaces it |
 | `created`, `updated` | ISO dates |
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -23,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GRAPH = ROOT / ".beads/issues.jsonl"
 OUT = ROOT / "tasks"
 LOCAL_DENY = ROOT / ".git/info/task-index-deny"
+PLANS = ROOT / "docs/plans"
 DENY = ("worker_",)
 
 # Each open node lands on the page of its first matching label.
@@ -115,6 +117,10 @@ class Graph:
                     self.epic[node["id"]] = first
                     self.children[first].append(node["id"])
 
+    def progress(self, epic_id: str) -> tuple[int, int]:
+        kids = Counter(self.by_id[c]["status"] for c in self.children[epic_id])
+        return kids.get("closed", 0), sum(kids.values())
+
     def open_blockers(self, node_id: str) -> list[str]:
         return [b for b in self.waits_on[node_id] if self.by_id[b]["status"] != "closed"]
 
@@ -124,6 +130,26 @@ class Graph:
             for n in self.nodes
             if n["status"] == "open" and n.get("issue_type") != "epic" and not self.open_blockers(n["id"])
         ]
+
+
+def plan_epics() -> list[tuple[Path, str]]:
+    """Tracked plans whose YAML frontmatter names their epic (`epic: <id>`),
+    oldest first. An untracked plan stays off the public pages."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--", "docs/plans/*.md"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout
+    found = []
+    for name in sorted(filter(None, listed.split("\0"))):
+        plan = ROOT / name
+        text = plan.read_text()
+        if not text.startswith("---\n"):
+            continue
+        head = text[4:].split("\n---", 1)[0]
+        for line in head.splitlines():
+            if line.startswith("epic:"):
+                found.append((plan, line.split(":", 1)[1].strip().strip("\"'")))
+    return found
 
 
 def order(nodes: list[dict]) -> list[dict]:
@@ -153,6 +179,9 @@ def node_block(graph: Graph, node: dict, here: str) -> str:
     body = [f'<a id="{node_id}"></a>', f"### {node['title']}", "", "  \n".join(meta)]
     if node.get("description", "").strip():
         body += ["", quote(node["description"])]
+    # Unquoted, so the checklist renders as task boxes.
+    if (node.get("acceptance_criteria") or "").strip():
+        body += ["", "**Acceptance criteria**", "", node["acceptance_criteria"].strip()]
     if (node.get("notes") or "").strip():
         body += ["", "**Notes**", "", quote(node["notes"])]
     if node["status"] == "closed" and (node.get("close_reason") or "").strip():
@@ -203,11 +232,20 @@ def index_page(graph: Graph, page_nodes: dict[str, list[dict]]) -> str:
         parts.append(f"| [{title}]({name}) | {len(page_nodes.get(name, []))} | {blurb} |\n")
     parts.append(f"| [Closed]({CLOSED_PAGE}) | {len(page_nodes.get(CLOSED_PAGE, []))} closed | Finished work and how it closed. |\n\n")
 
+    plans = plan_epics()
+    if plans:
+        parts.append("## Plans\n\nEach plan is beaded out into one epic; its progress is the epic's closed beads.\n\n")
+        parts.append("| Plan | Epic | Closed |\n|---|---|---|\n")
+        for plan, epic_id in plans:
+            if epic_id not in graph.pages:
+                sys.exit(f"task-index: {plan.name} names epic {epic_id}, which the graph does not hold")
+            done, total = graph.progress(epic_id)
+            parts.append(f"| [{plan.stem}](../docs/plans/{plan.name}) | {link(epic_id, graph.pages, 'INDEX.md')} | {done} of {total} |\n")
+        parts.append("\n")
+
     parts.append("## Epics\n\n")
     for epic in [n for n in nodes if n.get("issue_type") == "epic"]:
-        kids = Counter(graph.by_id[c]["status"] for c in graph.children[epic["id"]])
-        done = kids.get("closed", 0)
-        total = sum(kids.values())
+        done, total = graph.progress(epic["id"])
         parts.append(f'<a id="{epic["id"]}"></a>\n### {epic["title"]}\n\n')
         parts.append(f"`{epic['id']}` · **{epic['status'].replace('_', ' ')}** · {done} of {total} closed\n\n")
         if epic.get("description", "").strip():

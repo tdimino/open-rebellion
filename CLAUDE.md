@@ -129,9 +129,9 @@ green until their dedicated findings close.
   shrink (`agent_docs/agent-tooling.md`, "Provenance Gate").
 - `scripts/gates.sh` runs the automated pre-commit gates (workspace tests with
   and without the fixture feature, the ignored replay golden, telemetry
-  coverage, provenance, WASM, the task-graph leak greps) in one Mini session;
-  `cargo mutants` and `scripts/task-index.py --check` run separately
-  (`agent_docs/test-tooling.md`).
+  coverage, provenance, WASM, the task graph's `br lint`, cycle and page
+  checks, and its leak greps) in one Mini session; `cargo mutants` runs
+  separately (`agent_docs/test-tooling.md`).
 
 ## Git and Dependencies
 
@@ -156,10 +156,11 @@ green until their dedicated findings close.
   interface feature and settle its claims against the trace. Read for UI work.
 - `agent_docs/roadmap.md`—active milestones and v1.0 release sequence. Read when
   choosing or checking off work.
-- `agent_docs/task-graph.md`—the br/bv task graph in `.beads/`: question,
-  review, port and acceptance nodes. Read before choosing, delegating or
-  closing tactical, ground-assault or Ghidra work. After any br change, run
-  `scripts/task-index.py` to regenerate the public pages in `tasks/`.
+- `agent_docs/task-graph.md`—the br/bv task graph in `.beads/`: node kinds,
+  the bead template, and how an approved plan is beaded out into an epic of
+  dotted beads. Read before choosing, delegating, creating or closing work.
+  After any br change, run `scripts/task-index.py` to regenerate the public
+  pages in `tasks/`.
 - `agent_docs/mod-surface.md`—what the original fixes in code rather than
   data, and the rules for turning a fixed rule into mod data. Read before
   mod or era-overhaul work.

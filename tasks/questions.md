@@ -4,29 +4,12 @@
 
 Questions about the original, answered from the executable. Back to the [index](INDEX.md).
 
-84 open.
-
-<a id="or-q-results-window-yln"></a>
-### Q: Where is the Battle Results window drawn, with which art, and how do its tabs switch?
-
-`or-q-results-window-yln` · **open** · P0 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
-Unblocks: [or-r-results-window-3tn](reviews.md#or-r-results-window-3tn)
-
-> Question: Where is the Battle Results window drawn, with which art, and how do its tabs switch?
->
-> Known (cite, don't redo): A1's Results window sits lower than A0's with other art, and its Imperial Forces tab does not switch (Yaga journey). The results-window region is the only failing region in 10 cells.
->
-> Deliver: a feature-wiki page executable/<packet>.md and the cited decompiles under assets/decompiles/ on the Worker's branch. Done when the page answers the question with function and address citations, for both sides where the code branches.
-
-**Notes**
-
-> map-03: Battle Results filter buttons 0x97-0x9c (FUN_0044c410-FUN_0044edb0); Battle Alert type-7 window FUN_00451050 and FUN_0041ce60 button semantics; Battle Summary identity via the caller of FUN_0042a640 (FUN_0046f360).
+71 open.
 
 <a id="or-q-contents-troops-0l9"></a>
 ### Q: Which units does the 1302 contents monitor list, in what order and format?
 
-`or-q-contents-troops-0l9` · **open** · P1 · ghidra, question · updated 2026-10-14  
+`or-q-contents-troops-0l9` · **open** · P1 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
 Unblocks: [or-r-contents-troops-zom](reviews.md#or-r-contents-troops-zom)
 
@@ -36,10 +19,14 @@ Unblocks: [or-r-contents-troops-zom](reviews.md#or-r-contents-troops-zom)
 >
 > Deliver: a feature-wiki page executable/<packet>.md and the cited decompiles under assets/decompiles/ on the Worker's branch. Done when the page answers the question with function and address citations, for both sides where the code branches.
 
+**Acceptance criteria**
+
+- [ ] The page answers the question with function and address citations, for both sides where the code branches.
+
 <a id="or-q-hook-surround-orders-psr"></a>
 ### Q: What order state follows Hammer, Anvil, Left Hook, Right Hook, then the Surround toggle and commit?
 
-`or-q-hook-surround-orders-psr` · **open** · P1 · ghidra, question · updated 2026-10-14  
+`or-q-hook-surround-orders-psr` · **open** · P1 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
 Unblocks: [or-r-hook-surround-orders-ukr](reviews.md#or-r-hook-surround-orders-ukr)
 
@@ -49,6 +36,10 @@ Unblocks: [or-r-hook-surround-orders-ukr](reviews.md#or-r-hook-surround-orders-u
 >
 > Deliver: a feature-wiki page executable/<packet>.md and the cited decompiles under assets/decompiles/ on the Worker's branch. Done when the page answers the question with function and address citations, for both sides where the code branches.
 
+**Acceptance criteria**
+
+- [ ] The page answers the question with function and address citations, for both sides where the code branches.
+
 **Notes**
 
 > map-18: Hammer/Left Hook/Right Hook/Anvil waypoint math FUN_005cef00, FUN_005cf1a0, FUN_005cf410, FUN_005cf680 with the side test, to compare with tactical_view.rs.
@@ -56,124 +47,128 @@ Unblocks: [or-r-hook-surround-orders-ukr](reviews.md#or-r-hook-surround-orders-u
 <a id="or-q-port-family-checks-p00"></a>
 ### Do the port's combat family checks and event names match the DATs?
 
-`or-q-port-family-checks-p00` · **open** · P1 · ghidra, question · updated 2026-10-16  
+`or-q-port-family-checks-p00` · **open** · P1 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > crates/rebellion-core/src/combat.rs reads DatId families from the older notes: family 0x71 as a fighter alt-shield path (lines ~393, 847, 1531), 0x73/0x74 as a special combat result path (409, 1533), and ground combat over troops at 0x14-0x1b (1259, 1296), which the DATs give as capital ships. 0x71 is the Dagobah mission and 0x73 Pickup (MISSNSD). FUN_00560d50 is a move handler, not ground combat (annotated-functions.md). Separately, events.rs names 0x304-0x306 MaintenanceShortfall, SaboteurDetected, CharacterKilled; FUN_004fc080 sends them with GameObjDestroyedAutoscrapNotif, GameObjDestroyedSabotageNotif and GameObjDestroyedAssassinationNotif (entity-system.md). Decide from the decompiles what each port path should key on, then port.
+
+**Acceptance criteria**
+
+- [ ] events.rs names 0x305 and 0x306 as FUN_004fc080 sends them, and their consumers follow the decompiles
+- [ ] Tests cover both sides
 
 **Notes**
 
 > The comments now mark CombatEntityKind, the ground-combat path and CapitalShipClass::is_death_star's 0x34 clause as port: with no source and give the DAT families; the behaviour is unchanged. CombatEntityKind is used only by combat.rs's own tests.
 > 2026-10-16: CombatEntityKind and from_family_byte deleted (combat.rs). Only its own test called it, and the test asserted a mapping that contradicts annotated-functions.md:13-22 (0x30 characters, 0x34 Palpatine, 0x14 capital ships, 0x08 fleets). The remaining family reads (0x71, 0x73/0x74, ground combat over 0x14-0x1b) stay open here.
 > 2026-10-16: event 0x304 is EVT_DESTROYED_AUTOSCRAP; the overdraft scrap (timer 0x382) files the Maintenance Shortfall notice (FUN_00498970). 0x305 keeps the name EVT_SABOTEUR_DETECTED though FUN_004fc080 sends GameObjDestroyedSabotageNotif on it; still open with the family reads.
-
-<a id="or-q-withdraw-destination-m8b"></a>
-### Q: Where does Withdraw send the fleet, and what result does the battle then report?
-
-`or-q-withdraw-destination-m8b` · **open** · P1 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
-Unblocks: [or-r-withdraw-destination-skj](reviews.md#or-r-withdraw-destination-skj)
-
-> Question: Where does Withdraw send the fleet, and what result does the battle then report?
->
-> Known (cite, don't redo): At Yaga Minor the original withdraws to Ghorman; A1 ends in an Imperial victory. Withdraw with a stranded ship varied between runs in the VM (1 defeat, 2 victories; HANDOFF).
->
-> Deliver: a feature-wiki page executable/<packet>.md and the cited decompiles under assets/decompiles/ on the Worker's branch. Done when the page answers the question with function and address citations, for both sides where the code branches.
-
-**Notes**
-
-> map-20: withdraw confirm panel FUN_005f0d10, FUN_005f0f40, FUN_00596a70; meaning of DAT_0065d428=3 in the id tables. map-11: retreat option query FUN_00516730 (four outputs, caller FUN_0051dce0); map-18: CanRetreat/ComputeStrength Death Star bonus asymmetry.
+> 2026-10-20 reconcile: Narrowed: the combat.rs family reads (0x71, 0x73/0x74, ground combat over 0x14-0x1b) are gone with the resolver and resolve_ground, and 0x304 is renamed. Remaining: events.rs still names 0x305 EVT_SABOTEUR_DETECTED, though FUN_004fc080 sends GameObjDestroyedSabotageNotif; check 0x306 too.
 
 <a id="or-q-ai-posture-planner-jta"></a>
 ### Q: What do the AI posture kinds 1-6 and the 14-state sector planner do, and what runs them?
 
-`or-q-ai-posture-planner-jta` · **open** · P2 · ghidra, question · updated 2026-10-15  
+`or-q-ai-posture-planner-jta` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > AI posture base class vt 0x65c0b0 with 6 derived kinds, the sector planner step machine FUN_004adb70 and target chooser FUN_004adde0; the outer loop calling FUN_004adb70/FUN_00478000 and its *out flag; need-record counters +0x58..+0x9c and context floors ctx+0x164..+0x174; planner on_event codes 0/2/3. Start from FUN_004773f0, FUN_00477190, FUN_00477630, FUN_004774c0, FUN_004adb70, FUN_004adde0, FUN_004ae150-FUN_004ae440, FUN_004b3300, FUN_0047b250, FUN_004bd0a0. Done when a note gives each state's transition and the posture each kind selects, for both sides. Sources: map-04, -05, -06.
+
+**Acceptance criteria**
+
+- [ ] A note gives each state's transition and the posture each kind selects, for both sides.
+- [ ] Sources: map-04, -05, -06.
 
 **Notes**
 
 > ai-order-emission.md now covers what runs the posture (module 8 FUN_004cf600 -> FUN_004774c0 state 5 -> FUN_004adb70), the posture kind vtables (slot 14 per kind), the emitter FUN_004b1070 need bits and FUN_004ae320's bombardment choice, and that posture side +4 is 1/2 (map-06's 0/1 reading is wrong). Still open: what each kind 1-6 is for, the state meanings of FUN_004774c0, need-record counters.
 > 2026-10-15: ported in crates/rebellion-core/src/ai_regions.rs (module 8 driver FUN_004cf630, record step FUN_004774c0, posture states 1-14 FUN_004adb70, slots 13-18 and 21, FUN_004b1070). Dual-AI playtest seed 42: every record cycles its posture daily; fleets with no target rally at their loading system; no engage/assault/drop/bombard target passes in 1000 days because no fleet carries regiments (loading-system surplus 0 on both sides; see or-pfrm) and no enemy fleet stands in a record's sector. Close when the kind and state meanings are folded into ai-order-emission.md.
 
-<a id="or-q-assault-summary-6gi"></a>
-### Q: What are the Assault Summary window's resources, layout and tabs?
-
-`or-q-assault-summary-6gi` · **open** · P2 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
-Unblocks: [or-r-gnd-5hu](reviews.md#or-r-gnd-5hu)
-
-> Buttons at x=720 in the 800x600 VM frame: Close y=115, Summary y=200, Imperial Forces y=265, System Forces y=345, Go to System y~425. Damage tabs: Trooper Regiments (Operational, Destroyed), capital ships, fighters, facilities, personnel. Also a Message Index entry.
-
 <a id="or-q-cool-controls-0u0"></a>
 ### Q: Does crates/rebellion-windowing match the Cool* control library's modal mouse, SC_* filter and drag modes?
 
-`or-q-cool-controls-0u0` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-cool-controls-0u0` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Modal mouse swallowing FUN_00600ef0, SC_* policy filter FUN_00600310, +0xf4 drag modes FUN_00606ee0-FUN_006071e0, scroll-bar subclass vtables 0x66e2e8/0x66e340, the 11 WndProc switch tables (CoolStringField 0x605ece, CoolDragList 0x609238, selection box 0x60c7ea), the GID legend darkening remap LAB_004ac550, and sprite draw mode 5's 512-byte table. Start from FUN_00600ef0, FUN_00600310, FUN_00606ee0, FUN_00605160, FUN_006083c0, FUN_0060c210, FUN_0060b500, FUN_005fddd0, FUN_0041cb30. Done when a note gives each behaviour and each port difference has a port node. Source: map-21.
 
+**Acceptance criteria**
+
+- [ ] A note gives each behaviour and each port difference has a port node.
+- [ ] Source: map-21.
+
 <a id="or-q-enemy-fighter-select-wuq"></a>
 ### Q: Can an enemy fighter group be selected, and what does the fighter panel show then?
 
-`or-q-enemy-fighter-select-wuq` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-enemy-fighter-select-wuq` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > FUN_005e16a0 picks the type table by the local player's side (FUN_00595c40), not the group's owner, so an enemy group would match no type and draw no art. Start from FUN_005a5270, FUN_005ad8d0, FUN_005e16a0. Done when the page says whether the selection set can hold enemy groups and what the panel draws for one.
 
+**Acceptance criteria**
+
+- [ ] The page says whether the selection set can hold enemy groups and what the panel draws for one.
+
 <a id="or-q-event-registry-m5r"></a>
 ### Q: What does each event id 0x300-0x31d, 0x121-0x124 and 0x370/0x371 mean, who sends it and which handler runs?
 
-`or-q-event-registry-m5r` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-event-registry-m5r` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Reconcile senders, handlers and notification slots for events 0x300-0x31d (incl. 0x30b/0x30e/0x30f-0x311/0x312/0x314/0x316-0x318/0x319/0x31a/0x31b/0x31d), 0x121-0x124, 0x128, 0x1e0, 0x1f1, 0x360, 0x370/0x371 and notification 0x230, plus the registries FUN_0051ef80, FUN_0054f140 and DAT_006b2fd8 (FUN_0041e580). Start from FUN_0051ef80, FUN_0054f140, FUN_00514820, FUN_00515480, FUN_00515bb0, FUN_00515c00-FUN_00515ef0, FUN_004fae40, FUN_004fb310, FUN_004fb810, FUN_0053f950, FUN_0053fe40, FUN_005400f0, FUN_0057a5e0, FUN_00577a20, FUN_00577d40. Done when a note tables id, sender, handler and effect, checked against agent_docs/simulation.md's event list. Sources: map-02, -05, -11, -12, -13, -14, -15.
 
+**Acceptance criteria**
+
+- [ ] A note tables id, sender, handler and effect, checked against agent_docs/simulation.md's event list.
+- [ ] Sources: map-02, -05, -11, -12, -13, -14, -15.
+
 <a id="or-q-fighter-group-split-f95"></a>
 ### Q: How does FUN_005ab650 split squadrons into Red/Blue/Green/Gold groups?
 
-`or-q-fighter-group-split-f95` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-fighter-group-split-f95` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > One group per fighter type slot (colour index = slot); for an empty colour slot, the type with the most squadrons (at least 8) is halved into it (0x005abe5f-0x005abf2c), read but unchecked. Start from FUN_005ab650, FUN_005adfa0, FUN_005ae330, FUN_005c7140. Done when the page gives the exact split rule and ordering for both sides, so the port's grouping can match it.
 
+**Acceptance criteria**
+
+- [ ] The page gives the exact split rule and ordering for both sides, so the port's grouping can match it.
+
 <a id="or-q-message-classes-uhu"></a>
 ### Q: What do game message classes 0x21-0x2d do, and what Message Index state survives a battle report?
 
-`or-q-message-classes-uhu` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-message-classes-uhu` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Message classes 0x21-0x2d (vtables 0x65b0b0-0x65b450) have per-class event handlers and no port equivalent; several are one-sided (Assassination, Rescue, Dagobah Alliance; Emperor at Coruscant Empire). The Message Index restores DAT_006b2904..914 on return from a battle report; the port lacks it. Start from FUN_0048b050, FUN_0048b6e0, FUN_0048be60, FUN_004974f0, FUN_00469d60, FUN_00469db0, list model FUN_004ad620-FUN_004ad750. Done when a note gives each class's trigger, side and text, and the saved Message Index state. Sources: map-03, -05.
 
+**Acceptance criteria**
+
+- [ ] A note gives each class's trigger, side and text, and the saved Message Index state.
+- [ ] Sources: map-03, -05.
+
 <a id="or-q-new-game-seeding-2u9"></a>
 ### Q: What do the new-game setup stages seed, where do the named characters start, and what is the seat of power?
 
-`or-q-new-game-seeding-2u9` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-new-game-seeding-2u9` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Setup stages 0x10 (facility top-up), 0x14 (character side rule), 0x18 (side-view pass); Alliance HQ FUN_0051a680 and Empire Coruscant FUN_0051a870; placement of 0x34000280, 0x35000281, 0x38000380..38c and the Yavin set (is Vader aboard a fleet?); core/rim Populate; SeedTableMgr load order and resource 0x642 ids 0x6a4-0x6b5 (0x6b1 missing); seat-of-power flag on 0x90000109; settings record fields; starter production managers 0xa0000005/0xa2000006/0xa4000007. Start from FUN_0051a680, FUN_0051a870, FUN_0055f730, FUN_00562520, FUN_0055f7b0, FUN_00562710, FUN_0055fe70, FUN_00566d40, FUN_0056a550, FUN_005674e0, FUN_00567c90, FUN_005617b0, FUN_0051c740, FUN_0050e200, FUN_004f40b0. Done when a note gives each stage's effect for both sides, checked against crates/rebellion-data seeds.rs. Sources: map-11, -13, -14, -16.
 
-<a id="or-q-opening-view-0aa"></a>
-### Q: How does the battle open: camera, holocube, ships shown, and the 'Battle Paused' text's font and colour?
+**Acceptance criteria**
 
-`or-q-opening-view-0aa` · **open** · P2 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
-Unblocks: [or-r-opening-view-fpd](reviews.md#or-r-opening-view-fpd)
-
-> Question: How does the battle open: camera, holocube, ships shown, and the 'Battle Paused' text's font and colour?
->
-> Known (cite, don't redo): A1 opens framing the planet with no holocube and no ships; its 'Battle Paused' is red and in another font (Yaga journey). The pause-label and aperture regions fail in TAC-01.
->
-> Deliver: a feature-wiki page executable/<packet>.md and the cited decompiles under assets/decompiles/ on the Worker's branch. Done when the page answers the question with function and address citations, for both sides where the code branches.
+- [ ] A note gives each stage's effect for both sides, checked against crates/rebellion-data seeds.rs.
+- [ ] Sources: map-11, -13, -14, -16.
 
 <a id="or-q-panel-16-vs-18-btm"></a>
 ### Q: Which tactical units select panel 0x16 and which 0x18?
 
-`or-q-panel-16-vs-18-btm` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-panel-16-vs-18-btm` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Panel 0x16 (FUN_005e7030, refresh FUN_005e7b10: bitmap 1302, hull/shield meters, five subsystem bitmaps, 'Task Force #') is guarded by FUN_005ad870 (unit+0x170 in {2,4,6}); 0x18 (capital, FUN_005e4b40) by FUN_005ad900 and +0x68 == 3. Start from FUN_005ad870, FUN_005ad900, FUN_005a1400, FUN_005a4330. Done when the page names the unit kinds that get each panel, both sides, with citations.
+
+**Acceptance criteria**
+
+- [ ] The page names the unit kinds that get each panel, both sides, with citations.
 
 **Notes**
 
@@ -182,102 +177,113 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-q-port-observation-levels-jgy"></a>
 ### Should the port's fog follow the original's observation levels?
 
-`or-q-port-observation-levels-jgy` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-port-observation-levels-jgy` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > fog.rs keeps one visible-system set and per-system known facilities per side. The original copies state into each side's view by level (observation-levels.md): informants reveal a held system to its opponent at INFORMTB levels 1-4/7-10, espionage at 10, mission ends at 6, event 0x319 at 11 to both sides, timer 0x393 shows Han Solo's system to the Empire at 5, and new-game step 0x18 (FUN_0051b990) reveals Yavin (0x92000121) to the Empire at level 10, which fog.rs's seed does not do. Decide which of these the port needs for parity and how a level maps onto fog.rs's state; side encodings in side-numbering.md.
 
+**Acceptance criteria**
+
+- [ ] A note maps each original observation level onto fog.rs state
+- [ ] Tom decides which levels the port needs
+- [ ] A port node is filed for each chosen level
+
 <a id="or-q-rng-float-c2x"></a>
 ### Q: Which game rules draw from the Lehmer RNG versus MSVC rand, and which formulas truncate through __ftol?
 
-`or-q-rng-float-c2x` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-rng-float-c2x` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Lehmer RNG (0xa18e) callers vs rand FUN_0061a310; pow FUN_00407180/FUN_005f7420, floor/ceil FUN_00619610 and the 47 __ftol sites, to check the Rust formulas' truncation and precision. Done when a note lists each caller with the rule it serves and the port's matching RNG and rounding. Sources: map-20, -22.
 
+**Acceptance criteria**
+
+- [ ] A note lists each caller with the rule it serves and the port's matching RNG and rounding.
+- [ ] Sources: map-20, -22.
+
+**Notes**
+
+> Merged from or-q-ftol-sites-6tv0: rebexe-map.md (0x00610b70-0x00629000) puts __ftol at 47 call sites; in range it truncates toward zero like Rust 'as i32', but out-of-range and NaN inputs differ (Rust saturates). The note should table the 47 sites, say which can receive out-of-range or NaN values (combat damage, economy rates, tactical positions), and name the port code that mirrors each.
+
 <a id="or-q-save-format-jve"></a>
 ### Q: What is the original save layout: archive slots, CRC, game session, AI controller and mid-battle tactical state?
 
-`or-q-save-format-jve` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-save-format-jve` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Serialization archive trio and slots 2/3/4, the CRC-32 FUN_005f60f0 (169 callers; multiplayer state hash?), game-session save/load, game-root stream slots, a system record's field order, the AI controller's task lists, and the tactical TacticalSide/TaskForce/object-set/TacEvent save-load-size triples. Slot 1 is load and slot 2 save across the AI modules. Start from FUN_005f4ce0, FUN_005f4d00, FUN_005f4d90, FUN_005f4db0, FUN_005f60f0, FUN_006173b0, FUN_0054eb00, FUN_0054eb80, FUN_0051cec0, FUN_0051d2c0, FUN_00513df0, FUN_0050e410, FUN_0050e4e0, FUN_004be840, FUN_004beea0, FUN_005c7690, FUN_005c9940, FUN_005cd870, FUN_005ce630. Done when a note gives the record order for each class. Sources: map-07, -11, -13, -15, -18, -20.
 
+**Acceptance criteria**
+
+- [ ] A note gives the record order for each class.
+- [ ] Sources: map-07, -11, -13, -15, -18, -20.
+
 <a id="or-q-system-flag-hooks-u99"></a>
 ### Q: What does each star-system +0x88 flag bit mean, and which hook, notification and event fires when it changes?
 
-`or-q-system-flag-hooks-u99` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-system-flag-hooks-u99` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Finish the table of +0x88 bits 0..20 -> setter -> hook slot +0x220..+0x258 -> notif slot +0x25c..+0x2e4 -> event id, plus the +0x84 status word, the +0x78 packed word, child +0x40 values 0xc/0xe/0xf, spare-fleet bits, blockade hook record and the system vtable 0x65e640 slots. Start from FUN_0050a430, FUN_0050a5f0-FUN_0050ac10, FUN_00511300-FUN_00511b30, FUN_0050fec0-FUN_00510760, FUN_0050b610, FUN_00511780, FUN_0050bfe0, FUN_00592600, FUN_00508c60. Done when the note's table has every bit with its setter and effect. Sources: map-11, -16.
 
+**Acceptance criteria**
+
+- [ ] The note's table has every bit with its setter and effect.
+- [ ] Sources: map-11, -16.
+
 <a id="or-q-tac-unit-messages-zgd"></a>
 ### Q: What are tactical message types 0x03-0x4a, unit states +0x170, and orders 1, 2, 3 and 6?
 
-`or-q-tac-unit-messages-zgd` · **open** · P2 · ghidra, question · updated 2026-10-14  
+`or-q-tac-unit-messages-zgd` · **open** · P2 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Executors of FUN_005a96b0 (table 0x005a9bc4) and whether they are network-only or local replay; unit+0x170 states 4, 6, 7, 8, 10; the 11 order executors from FUN_005ca6d0 (Escort 0x66ceb8, unnamed 0x66cdc8; order 6 Alliance-only); the 0xbc order/group record; UI event types 0-3 and command codes 0xf-0x15; which TaskForce vtable (0x66bf70, 0x66bee0, 0x66cd28) is capital vs fighter group; side objects this+0x24c/+0x250; result cues 0x96-0x99/0x118-0x11b. Start from FUN_005a96b0, FUN_005ad870, FUN_005af910, FUN_005ca6d0, FUN_005d0af0, FUN_005cf930, FUN_005aded0, FUN_005cbf50, FUN_0059a3f0, FUN_0059b130, FUN_005c9db0, FUN_005af5f0, FUN_005ba8b0. Done when a note tables each with both sides' branches. Sources: map-16, -17, -18.
 
-<a id="or-q-trench-run-timing-eub"></a>
-### Q: When does the trench run launch after the order, and can the Death Star be selected?
+**Acceptance criteria**
 
-`or-q-trench-run-timing-eub` · **open** · P2 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
-Unblocks: [or-r-trench-run-timing-lws](reviews.md#or-r-trench-run-timing-lws)
-
-> Question: When does the trench run launch after the order, and can the Death Star be selected?
->
-> Known (cite, don't redo): The original acknowledges with voice 14097 at the commit and launches about 61 s later with 15161; A1 launches at the commit. A1 draws a selectable 5010 Death Star sprite; the original draws none (TAC-03-C020 settled).
->
-> Deliver: a feature-wiki page executable/<packet>.md and the cited decompiles under assets/decompiles/ on the Worker's branch. Done when the page answers the question with function and address citations, for both sides where the code branches.
+- [ ] A note tables each with both sides' branches.
+- [ ] Sources: map-16, -17, -18.
 
 <a id="or-ai-progress-counters-tm4f"></a>
 ### Q: What consumes the AI side object's +0x190/+0x194 progress counters?
 
-`or-ai-progress-counters-tm4f` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-ai-progress-counters-tm4f` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Start from FUN_004189b0, FUN_00418500, FUN_00485b40 and the AI posture classes 0x4ae150-0x4bca20 (game-end-path.md).
 
-<a id="or-movie-window-close-3bo3"></a>
-### Q: Who sends 0x402-0x404 to the movie window, and what does Esc do there?
+**Acceptance criteria**
 
-`or-movie-window-close-3bo3` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> Start from FUN_004213e0, FUN_00421790, FUN_00421340 and the class at vtable 0x00658bb0 (game-end-path.md).
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
 
 <a id="or-q-advice-music-state-rkf2"></a>
 ### Q: What writes the advice agents' +0x170 situation byte, and which battle-result tracks mean win?
 
-`or-q-advice-music-state-rkf2` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-advice-music-state-rkf2` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
 Unblocks: [or-port-music-selector-v9nd](ports.md#or-port-music-selector-v9nd)
 
 > ghidra/notes/audio-dispatch.md: the situational music track (FUN_004c48e0 Alliance, FUN_004c2700 Empire) switches on agent byte +0x170 (1, 2, 4, 0x10, 0x20, 0x40). Find its writers (start at FUN_004c27f0, FUN_004c0710) and name each situation. Also settle which of tracks 12/13 (Alliance) and 14/15 (Empire) FUN_0046f360 picks on a win, from its +0x50/+0x54 branches against battle-alert-lists.md, and whether the MCI device FUN_00611e90 (type 0x204) or the CD path is reachable.
 
-<a id="or-q-ai-death-star-use-z9ow"></a>
-### Q: Where do the AI's Destroy System inputs come from, and does the AI ever build or fire the Death Star?
+**Acceptance criteria**
 
-`or-q-ai-death-star-use-z9ow` · **open** · P3 · ghidra, question · updated 2026-10-19  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> ghidra/notes/death-star-strategic.md, AI: the posture emitter FUN_004b1070 issues 0x223 when the fleet record flag +0x38 & 0x10 (from object +0x50 bit 7 via FUN_00433780) and the target record +0x110 are set; trace +0x110's writers (FUN_004739b0 and the census) and whether the AI class flag 0x200000 (FUN_0042e960, FUN_0041b230) admits CAPSHPSD record 136. Also the refusal a second family-0x18 ship at one system raises (FUN_00550bd0, FUN_0054fd90) and what clears a destroyed system's populated bit (FUN_0050b760, FUN_0050a3c0, FUN_00508660).
-
-**Notes**
-
-> 2026-10-18: the module-11 budget is read (FUN_004ca5e0): the hull needs capacity 2223, and the module's budget is 0.27 x capacity - c+0x24c. Measured 2026-10-17 on the release playtest (dual AI, standard galaxy, medium difficulty, seeds 1-24): no Death Star build, no DestroySystem order and no death_star_fired in 1,500 or 5,000 days, and no game ended by victory. Capacity is not the gate (the Empire reaches 2,223 by day 1,500 in 17 seeds); the fielded capital-ship maintenance c+0x24c is, with budget median 35 at day 1,500, 15 at 3,000, 13 at 5,000. Of 240 samples three reach 600 (seeds 22, 7, 4), and the class is listed in all 240. Around seed 22's day 2,000 module 11 builds capital-ship keys 17 and 18 instead, so an earlier row of FUN_004ca5e0 holds the turn (hyp: which row is not traced). The budget mismatch is ported; no seed issues 0x223 yet.
-> 2026-10-18 (module 11's turn): the request rows run in a fixed order (FUN_004ca5e0.c:57-139) and a blocker lasts one request (FUN_004ca910.c:26 clears all, :67-68 sets only the failed row's), so a row whose class fits runs every pass. The troop-room row (rec+0x64 bit 4, R+0x74 < 0 after FUN_00477e80's takers) comes first and wins whenever one record holds the bit; its cheap transport classes (mask 0x100004, key 0x100) always fit, so the hull row (eighth) is never reached. The port's request and pick match the code (ai_production.rs ship_request, capital_ships). Measured on the port's seed 22 (dual AI, release playtest, trace in a private copy): the Empire's budget clears 600 from day 1,594 (603 to 872 by day 1,800); every request to day 1,904 takes the troop-room row with blockers 0 and builds class key 28 (maintenance 20), 41 transports between days 1,300 and 1,700, while fielded capital-ship maintenance falls from 736 (day 1,100) to 430 (day 1,552) and a record stays troop-short. No port change, so the 24-seed census needs no re-measure; the strict fleet rule did not touch the census inputs. Remaining scope: (1) why a record stays short of troop room while transports are built and lost: the takers of FUN_00477e80 (take_free, poach) and the troop-room counter of FUN_00477cb0 against the original, and where the transports go; (2) the 0x223 seed test with a ready hull fleet at an HQ system with regiments loaded.
-> 2026-10-18 (troop-room stall, item 1): line-by-line against the decompiles, no deviation. FUN_00477cb0's counters (troop room = fleet +0x84 sum) match sum_and_require; FUN_00477e80's short set, need bits and let-go test match shortfall_and_surplus; the kind-6 requirement FUN_004b6a60 (P+0x3c rises to the larger of sector +0x134 and c+0x170, never falls while the posture lasts) matches requirement(); take_free matches FUN_004782a0 (nearest fleets with 0x8005, ships with 0x20000 and none of 0xc03800, serving a shortfall); poach matches FUN_00478690 (0x8001, none of 0xf0000006, later plan entry, ships none of 0xc23800); repair_move matches FUN_004c8e90 except the port's hyp that a Move to the fleet's own system is not issued (the original issues 0x201 whenever the pick is a system). Seed 22 trace (private copy): the short record is kind 6 at Sumitra, troop room 3-5 below 18 from day 1,275; take_free finds nothing each pass because every free transport is en route (0x800) or damaged (0x1000); transports 13 and 47 stay free and damaged from day 1,425 and keep changing systems (Bortras, Coruscant, Yaga Minor); the Empire issues one repair move in the run (day 1,609, Bothawui to Orto); Empire fleet moves in that window (fleet 28v5, days 1,476 and 1,481) carry no AI order (hyp: post-battle retreats, unchecked). No port change, so no re-measure. Whether the original escapes the stall on a comparable game is a game-state question the code cannot settle; it needs an original-game observation (an Empire AI game soaked under Wine to the day its troop records go short). Remaining: the repair_move own-system hyp (minor), and that observation.
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
 
 <a id="or-q-ai-jedi-training-jfdh"></a>
 ### Q: Does any computer-player path order Jedi Training?
 
-`or-q-ai-jedi-training-jfdh` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-ai-jedi-training-jfdh` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > force-users.md R17: FUN_00402720 compares 0x58000042 and sets no capability bit. Check the mission launcher (Feature Wiki executable/map-08-4cfed0) and ai-mission-planning.md for any other path. Done when a note says yes with the path or no with the paths checked.
+
+**Acceptance criteria**
+
+- [ ] A note says yes with the path or no with the paths checked.
 
 **Notes**
 
@@ -286,190 +292,245 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-q-ai-side-use-pax8"></a>
 ### Q: How do the AI context objects use the side?
 
-`or-q-ai-side-use-pax8` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-ai-side-use-pax8` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > side-switches.md: the AI sub-objects' side use is untraced. Start from FUN_004178f0, FUN_00417cb0, FUN_004bee50, FUN_004be7e0. Done when a note says which AI paths branch on side.
 
+**Acceptance criteria**
+
+- [ ] A note says which AI paths branch on side.
+
 <a id="or-q-app-shell-vyx"></a>
 ### Q: What are the app states 1-0x13, the settings object's fields, and the strategic-to-tactical handoff?
 
-`or-q-app-shell-vyx` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-app-shell-vyx` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > App/settings object DAT_006be3b8 fields, jump table 0x4146c4 and app states 1-0x13, why WinMain forces flag 0x10, CPlayerMgr (DAT_006b14e4) slots, the strategic->tactical conversion order and snapshot contents, tactical import factories and the engine singleton DAT_006bc248, text DAT parse path FUN_00594f30, and the static constructor table 0x6a6000-0x6a7bd8 with the 262 string-id initializer objects. Start from FUN_00414330, FUN_00414830, FUN_00414a80, FUN_004165b0, FUN_0040b0e0, FUN_0040bcd0, FUN_0040c4b0, FUN_00409d20, FUN_00486120, FUN_00597610, FUN_00594f30, FUN_0061d5d0, FUN_005d93f0. Done when a note tables the states and the handoff order. Sources: map-01, -02, -16, -18, -22.
 
+**Acceptance criteria**
+
+- [ ] A note tables the states and the handoff order.
+- [ ] Sources: map-01, -02, -16, -18, -22.
+
 <a id="or-q-bounty-timer-zq5r"></a>
 ### Q: How does story timer 0x393 re-arm, and what do its bounty roll and experience scale read?
 
-`or-q-bounty-timer-zq5r` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-bounty-timer-zq5r` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
 Unblocks: [or-port-bounty-and-abodes-lvee](ports.md#or-port-bounty-and-abodes-lvee)
 
 > story-encounters.md: timers 0x392 (GNPRTB 0x1802/0x1803) and 0x393 (0x1804/0x1805, bounty roll 0x1806) drive the bounty chain; the re-arm and the roll are hyp. Start from FUN_0053e290, FUN_0053e170 and the 0x393 handler. Done when a note gives the re-arm rule and the roll.
 
+**Acceptance criteria**
+
+- [ ] A note gives the re-arm rule and the roll.
+
 <a id="or-q-carrier-ship-lost-en-route-hpxe"></a>
 ### Q: What happens to a unit whose carrier ship is destroyed en route?
 
-`or-q-carrier-ship-lost-en-route-hpxe` · **open** · P3 · ghidra, question · updated 2026-10-18  
+`or-q-carrier-ship-lost-en-route-hpxe` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > When a unit is moved by a carrier ship (R4: the carrier is chosen at order time, the one with most room counting units en route, else the order is refused with 1/0x27; followers are seeded onto the lead ship; `FUN_00556390`, `FUN_004fe160`, `FUN_0051aa50`), what happens to the unit if that ship is destroyed before the unit arrives?
 >
 > Known: the carrier is fixed at order time and every carrier-0 branch is removed in the port. Open: whether the unit dies, is rehomed to another ship of the fleet, or arrives regardless. Trace the carrier's destruction path against the units that name it, and the arrival handler's carrier lookup. Both sides where the code branches.
 
+**Acceptance criteria**
+
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
+
 <a id="or-q-char-flag-bits-gp95"></a>
 ### Q: What do character +0xac bits 6, 8, 10 and the +0xb0 flags mean?
 
-`or-q-char-flag-bits-gp95` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-char-flag-bits-gp95` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > force-users.md: bits 8 and 10 clear on capture and pulse with timer 0x38a; bit 6 and the Han/Luke/Leia +0xb0 flags are unread. Start from FUN_004eeb10, FUN_004eeb80, FUN_004eebf0, FUN_004ef150. Done when a note names each bit with its setters and readers.
 
+**Acceptance criteria**
+
+- [ ] A note names each bit with its setters and readers.
+
 <a id="or-q-character-vtables-9pvs"></a>
 ### Q: Which character classes override the Force-related vtable slots?
 
-`or-q-character-vtables-9pvs` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-character-vtables-9pvs` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > force-users.md: nine parallel character tables (e.g. 0x00665c58) hold the Force event dispatchers; Luke's (0x00665fd8) overrides +0x31c. Find each class's overrides of +0x31c, +0x208, +0x358, +0x35c, +0x364, notably Vader's and Palpatine's. Start from FUN_004f3e50, FUN_004f3eb0, FUN_004f3f10. Done when a note tables the overrides per class.
 
+**Acceptance criteria**
+
+- [ ] A note tables the overrides per class.
+
 <a id="or-q-cmun-registry-wugo"></a>
 ### Q: Can a scenario add a seed table, or only replace the nine?
 
-`or-q-cmun-registry-wugo` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-cmun-registry-wugo` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > scenario-literals.md: FUN_0055d520-FUN_0055d5e0 bind CMUN*TB registry ids to seeding steps. Done when a note says how tables bind and whether a tenth is possible.
 
+**Acceptance criteria**
+
+- [ ] A note says how tables bind and whether a tenth is possible.
+
 <a id="or-q-control-sound-modules-eybm"></a>
 ### Q: Which DLL does each window's control sound resolve in, and where do the dialog and briefing waves come from?
 
-`or-q-control-sound-modules-eybm` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-control-sound-modules-eybm` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ghidra/notes/audio-dispatch.md: FUN_00602840 takes its module from the control's owning DLL (+0x1c via FUN_005feff0); confirm module 7 or 8 for each of the 15 windows. List callers that play 0x25a, 0x25b, 0x261 or 0x1f43 by computed id. Trace the record behind FUN_00469de0's two waves (FUN_0046a320 words +0x2c, +0x32) and the module-13 briefing sound path (FUN_0042b1d0, FUN_00404440).
 
+**Acceptance criteria**
+
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
+
+**Notes**
+
+> or-ep-task-force-strip-5kdd.2 needs to know whether any FUN_00602840 call site sets a sound on the tactical window's strip controls (FUN_005ef240, FUN_0059be80, FUN_0059c030 or FUN_005c52e0); name the tactical window's call sites when walking the 53.
+
 <a id="or-q-coruscant-ai-cases-7gph"></a>
 ### Q: What do the AI's Coruscant special cases change?
 
-`or-q-coruscant-ai-cases-7gph` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-coruscant-ai-cases-7gph` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > scenario-literals.md: FUN_004c94c0, FUN_004d76f0 and FUN_004e5870 treat Coruscant apart (flags +0x30 & 1, +0x28 & 2, +0xdc). Done when a note gives each rule.
 
+**Acceptance criteria**
+
+- [ ] A note gives each rule.
+
 <a id="or-q-dagobah-slot-atny"></a>
 ### Q: What does Dagobah's vtable slot +0x1d8 (FUN_00544130) decide?
 
-`or-q-dagobah-slot-atny` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-dagobah-slot-atny` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
 Unblocks: [or-port-bounty-and-abodes-lvee](ports.md#or-port-bounty-and-abodes-lvee)
 
 > story-encounters.md: slot +0x1d8 of the Dagobah mission tests the current mission family of the story characters; its effect on the Dagobah chain is untraced. Done when a note says what it gates.
 
-<a id="or-q-empire-trench-movies-ipqy"></a>
-### Q: Does an Empire human player see the trench-run movies?
+**Acceptance criteria**
 
-`or-q-empire-trench-movies-ipqy` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> movies.md: the tactical trench run plays 0x71 (success) or 0x70 (failure) through FUN_005c0fb0; whether the Empire side sees them is untraced. Start from FUN_005cfec0, FUN_005c0fb0, tactical-death-star-path.md. Done when a note answers for both sides.
+- [ ] A note says what it gates.
 
 <a id="or-q-encyclopedia-topic-art-ddn8"></a>
 ### Q: How does the encyclopedia resolve a topic's bitmap and caption?
 
-`or-q-encyclopedia-topic-art-ddn8` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-encyclopedia-topic-art-ddn8` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ground-unit-assets.md: topics key id+0x1000 into ENCYTEXT/EDATA; FUN_0045f970 resolves the bitmap and caption. Done when a note gives the resolution and what a new topic needs.
 
+**Acceptance criteria**
+
+- [ ] A note gives the resolution and what a new topic needs.
+
 <a id="or-q-families-a0-a5-8ctv"></a>
 ### Q: What are the per-system objects of families 0xa0-0xa5?
 
-`or-q-families-a0-a5-8ctv` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-families-a0-a5-8ctv` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > galaxy-limits.md: saves hold about one 0xa0, 0xa2 and 0xa4 record per system; FUN_00537180 tests [0xa0,0xa2). Start from FUN_00537180, FUN_004f3220, FUN_0044acd0 and the 0xa0 object's constructor. Done when a note names each family and its owner.
 
+**Acceptance criteria**
+
+- [ ] A note names each family and its owner.
+
 <a id="or-q-force-detect-lists-xhlb"></a>
 ### Q: Which mission lists does Force detection flag, and whose side is each?
 
-`or-q-force-detect-lists-xhlb` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-force-detect-lists-xhlb` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > force-users.md R11: FUN_0058a9e0/FUN_0058ab00 flag Luke and Vader then one random entry per list in the manager's +0x50/+0x58/+0x60/+0x68 lists; which side each list holds decides who is "first" in FUN_0058a3f0. Start from FUN_005897c0, FUN_005898f0, FUN_0058a5f0, FUN_0058a6c0. Done when a note names each list.
 
+**Acceptance criteria**
+
+- [ ] A note names each list.
+
 <a id="or-q-force-root-object-lfhu"></a>
 ### Q: What is the game-root object 0xfa00000a at +0xc0 that gates Force discovery and detection?
 
-`or-q-force-root-object-lfhu` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-force-root-object-lfhu` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > force-users.md: FUN_00506e80 returns root +0xc0 (id 0xfa00000a, created by FUN_00519910); R8 and R11 run only when it exists. Start from FUN_00519910, FUN_004f7d50, FUN_00506e80. Done when a note says what the object is and whether it is ever null.
 
+**Acceptance criteria**
+
+- [ ] A note says what the object is and whether it is ever null.
+
 <a id="or-q-force-timer-0w5h"></a>
 ### Q: What is the period and re-arm rule of the Force discovery timer 0x389?
 
-`or-q-force-timer-0w5h` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-force-timer-0w5h` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > force-users.md R8: timer 0x389 (FUN_0057cff0) runs discovery for a bit-7 character; timer-scheduler.md lists it untraced. Start from FUN_0053fb00, FUN_00540200, FUN_0057cff0 and its table row. Done when a note gives the period and what re-arms it.
 
+**Acceptance criteria**
+
+- [ ] A note gives the period and what re-arms it.
+
 <a id="or-q-formation-targets-ob4"></a>
 ### Q: How does a formation choose target policy A or B, and what does Stand Off's Simulate variant change?
 
-`or-q-formation-targets-ob4` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-formation-targets-ob4` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Start from FUN_005ecb90, FUN_005ea250 and the leader id < 1,000,000 test. Done when a note gives the selection rule for both sides. Source: map-20.
 
-<a id="or-q-ftol-sites-6tv0"></a>
-### Q: Which of the original's 47 __ftol conversions can see out-of-range floats, and does the port match them?
+**Acceptance criteria**
 
-`or-q-ftol-sites-6tv0` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> rebexe-map.md (0x00610b70-0x00629000): the original converts floats to integers through __ftol at 47 call sites; for values in range it truncates toward zero like Rust 'as i32', but out-of-range and NaN inputs differ (Rust saturates). List the 47 sites, say which can receive out-of-range or NaN values (combat damage, economy rates, tactical positions), and name the port code that mirrors each. Done when a note tables the sites and the port's matching casts.
-
-<a id="or-q-game-type-reads-jy80"></a>
-### Q: Where is the game type read besides the victory check?
-
-`or-q-game-type-reads-jy80` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> scenario-literals.md: only FUN_005180e0 is confirmed to read root +0x60. Search every read and check the AI and seeding callers; start from FUN_0051c740. Done when a note lists every reader.
+- [ ] A note gives the selection rule for both sides.
+- [ ] Source: map-20.
 
 <a id="or-q-intro-gate-lf1l"></a>
 ### Q: What does FUN_00597480 gate between the intro movie and the menu?
 
-`or-q-intro-gate-lf1l` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-intro-gate-lf1l` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > movies.md hyp: FUN_00597480 (DAT_006be354) chooses app state 1 (intro) or 5 (menu). Start from its writers FUN_005974c0, FUN_005f8600, FUN_005fa5e0. Done when a note says what sets it and when the intro is skipped.
 
-<a id="or-q-message-movie-consumer-prbo"></a>
-### Q: What reads a message's movie id at +0x5c, and when do MDATA 101-104 play?
+**Acceptance criteria**
 
-`or-q-message-movie-consumer-prbo` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> story-encounters.md and movies.md: four message classes store a movie id at +0x5c; the consumer that plays it is not fully traced. Start from FUN_004019a0, FUN_00406000, FUN_00405560. Done when a note gives the path from message to movie for both sides.
+- [ ] A note says what sets it and when the intro is skipped.
 
 <a id="or-q-missing-named-character-yqil"></a>
 ### Q: Does a missing named character abort the new game?
 
-`or-q-missing-named-character-yqil` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-missing-named-character-yqil` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > scenario-literals.md: FUN_0055f7b0 ANDs every placement and returns it as the stage result, and FUN_005136d0 stops on a failed stage. Start from FUN_0055fe70, FUN_005136d0, FUN_0053efa0, FUN_0053ef00. Done when a note says what happens when a mod removes a named character.
 
+**Acceptance criteria**
+
+- [ ] A note says what happens when a mod removes a named character.
+
 <a id="or-q-mission-order-vtables-qox"></a>
 ### Q: What are the full slot tables of the order base (0x65ed28) and mission (0x65edf8) vtables, and the order-check reason codes?
 
-`or-q-mission-order-vtables-qox` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-mission-order-vtables-qox` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Mission phase machine, lead-member selection, detection flags, per-side mission copies and the notification gate, end code 2 and slot +0x1d8, the manager's order-slot dispatch table, the 22 mission vtables, orders at 0x6619b0/0x661a08 and the 0x203 rename, and the FUN_00520580 status-pair reason codes (errors 0x15/0x17). Start from FUN_0051fa20, FUN_0051fcb0, FUN_00525690, FUN_00524a80, FUN_00523310, FUN_00521300, FUN_00522870, FUN_00520ec0, FUN_00523d70, FUN_00524530, FUN_00527d00-FUN_00529cd0, FUN_00520580, FUN_0053daa0, FUN_004ed9d0, FUN_004fddd0. Done when a note tables each slot with its implementation. Sources: map-10, -11, -12.
+
+**Acceptance criteria**
+
+- [ ] A note tables each slot with its implementation.
+- [ ] Sources: map-10, -11, -12.
 
 **Notes**
 
@@ -478,74 +539,121 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-q-movie-resume-path-029c"></a>
 ### Q: How does the strategic view resume after a movie's 0x402?
 
-`or-q-movie-resume-path-029c` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-movie-resume-path-029c` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > movies.md: FUN_00422ce0 handles 0x402 by removing the stored message; the resume path is untraced. Start from FUN_00422ce0, FUN_0041d330. Done when a note gives the resume sequence.
 
+**Acceptance criteria**
+
+- [ ] A note gives the resume sequence.
+
 <a id="or-q-movie-window-posts-mrzr"></a>
 ### Q: Who posts 0x465 and WM_COMMAND 0xf1 to the movie and app windows?
 
-`or-q-movie-window-posts-mrzr` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-movie-window-posts-mrzr` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > movies.md hyp: the senders of 0x465 and WM_COMMAND 0xf1 are untraced. Start from FUN_004138a0 and FUN_00421790. Done when a note names each sender and what it does.
 
+**Acceptance criteria**
+
+- [ ] A note names each sender and what it does.
+
 <a id="or-q-nearness-after-load-8ebq"></a>
 ### Q: What happens to the nearness table at manager +0x68 after a save loads?
 
-`or-q-nearness-after-load-8ebq` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-nearness-after-load-8ebq` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > galaxy-limits.md hyp: the table is built only at new game; the load path (FUN_00513a50) does not rebuild it, so +0x68 may be null after a load and its readers skip it. Start from FUN_00554150, FUN_005545e0, FUN_00513a50; settle in the original game if needed. Done when a note says what the retreat path reads after a load.
 
+**Acceptance criteria**
+
+- [ ] A note says what the retreat path reads after a load.
+
 <a id="or-q-net-messages-e2t"></a>
 ### Q: What are the multiplayer message kinds and the DirectPlay CommMgr wire format?
 
-`or-q-net-messages-e2t` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-net-messages-e2t` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Name message kinds 1, 2, 4, 5 and 0x10-0x16, the CommMgr facade and its packet vtables 0x66de28-0x66de70, and which setting maps a player to a side. Start from FUN_0040ec60, FUN_004104b0, FUN_004101e0, FUN_004114a0, FUN_00420bd0, FUN_00420d70, FUN_00420f10, FUN_00596fa0, FUN_005971e0, FUN_005f9090, FUN_005f91c0, FUN_005f7d90, FUN_0040fe10. Done when a note lists each kind with its fields and sender. Sources: map-01, -02, -16, -20.
 
+**Acceptance criteria**
+
+- [ ] A note lists each kind with its fields and sender.
+- [ ] Sources: map-01, -02, -16, -20.
+
 <a id="or-q-panel-button-caption-v6t"></a>
 ### Q: What does the panel base's vtable slot +0x4c do with the button key (hover caption?), and which handler reads 0xdd02?
 
-`or-q-panel-button-caption-v6t` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-panel-button-caption-v6t` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > FUN_005e1550 passes 0xddcd 'Maneuvers & Tactics' with id 0xdd02 and 0xdd8c 'Missions' with 0xdd01; A0 shows the left button opens Maneuvers and Tactics. Start from the panel base vtable slot +0x4c and FUN_005e1660. Done when the page says where the key string is shown and which handler each id reaches.
 
+**Acceptance criteria**
+
+- [ ] The page says where the key string is shown and which handler each id reaches.
+
+**Notes**
+
+> FUN_005e1550.c:29, :37 call vtable +0x4c as (button, 0, &key), the shape of FUN_005ef240(this, button, caption, hover) in FUN_0059be80.c:44, :69, which or-ep-task-force-strip-5kdd.1 reads. If +0x4c resolves to FUN_005ef240 or an override of it, one note answers both beads.
+
 <a id="or-q-parameter-tables-s4j"></a>
 ### Q: Which parameter table does each id loaded by FUN_00513f70 hold, and which port constants bind to them?
 
-`or-q-parameter-tables-s4j` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-parameter-tables-s4j` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Ids 0x200 through 0x1e57 loaded by FUN_00513f70, the GNPRTB/SDPRTB loaders FUN_00558bb0, TableRegistry's 33 ids, and GNPRTB groups 0x200/0x600/0xc00 by mission phase. Start from FUN_00513f70, FUN_0053e390, FUN_00558bb0, FUN_0058b420, FUN_0058c580, FUN_0058dc10, FUN_0058e320. Done when a note maps every id to its DAT_006bb... address and port constant. Sources: map-11, -13, -15.
 
+**Acceptance criteria**
+
+- [ ] A note maps every id to its DAT_006bb... address and port constant.
+- [ ] Sources: map-11, -13, -15.
+
 <a id="or-q-production-managers-k60"></a>
 ### Q: How do the production managers, ProcFacil states and the Build validator work?
 
-`or-q-production-managers-k60` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-production-managers-k60` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ProcFacil states 1..4 and flag bits, the production manager (vtable 0x65fbf8), ship-construction manager (0x662e60), raw/refined queues, command 0x210 Build validator (error 0xf3/1), commands 0x240/0x242, SideState R&D points +0x90..+0xc4, energy/raw capacity trimming, yard flag +0x60 bit 0, and why AI types 1 and 3 both build Mines and Refineries. Start from FUN_0053aca0, FUN_0053aa40, FUN_0057f540, FUN_00506e80, FUN_0052fbf0, FUN_0052fd30, FUN_005326f0, FUN_00530460, FUN_0050ad80, FUN_00528100, FUN_004db2f0, FUN_004d6e70. Done when a note gives each rule with its source, compared with the port's manufacturing. Sources: map-08, -11, -12, -13, -15.
 
+**Acceptance criteria**
+
+- [ ] A note gives each rule with its source, compared with the port's manufacturing.
+- [ ] Sources: map-08, -11, -12, -13, -15.
+
 <a id="or-q-recruit-pick-edges-9qkq"></a>
 ### Q: Can the recruit pick draw a dead or captured minor, and what do the Recruitment member lists hold?
 
-`or-q-recruit-pick-edges-9qkq` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-recruit-pick-edges-9qkq` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ghidra/notes/character-roster.md: FUN_0055fc80 filters minors only by family, side and +0x50 bit 1 (state mode 4 accepts every state). Read the kill path 0x004ef690 and the release FUN_004ef510 for +0x50 bits 1 and 2 to settle whether a dead or captured minor stays drawable. Name the three member lists FUN_0056b370 checks (+0x18/+0x1c/+0x20 or +0x24/+0x28/+0x2c by +8; FUN_0056b300's constructor, FUN_005868c0), the order that asks character slot +0x1c0 (callers of FUN_00540da0, FUN_0052ed50, FUN_0054e170), and what a new game does with a character record in a family without a factory (FUN_00562520, FUN_005136d0).
 
+**Acceptance criteria**
+
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
+
 <a id="or-q-registry-edges-vuet"></a>
 ### Q: What do the AI's special-force request bits match, and how does the loader treat a short header, a shared research tier or a wide class id?
 
-`or-q-registry-edges-vuet` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-registry-edges-vuet` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ghidra/notes/record-registry.md: (1) what capability bit 0x800000 means and what FUN_004d0480's request word 0x1000000 << k is matched against (FUN_004d01a0, FUN_004d15f0, FUN_00402720), so the AI's special-force training can be ported; (2) whether a header count larger than the data reads zeros or fails (FUN_0058e6b0 has no end-of-file test; FUN_005f4d90); (3) whether a second record at one research tier appears on the research screen (FUN_00567c90, FUN_00567ba0, FUN_0051cb90 callers); (4) whether a saved class id above 0xff survives (FUN_0051cec0, FUN_005688d0, FUN_00568560); (5) where appended special forces and minor characters are placed in play (FUN_0051a280, FUN_0051bc70).
+
+**Acceptance criteria**
+
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
 
 <a id="or-q-restored-window-clamp-wqt5"></a>
 ### Question: does a restored strategic window keep a position outside the galaxy view?
@@ -554,127 +662,192 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 
 > The port clamps a restored window into the galaxy view (prepare_open -> clamp_window_to_galaxy), while a drag has no clamp: an Alliance Fleet window dragged to y 90 comes back at y 86. The original loader FUN_00441190 passes the saved x, y (+0x8..+0x14) to each window constructor (FUN_004591d0, FUN_004a2630, FUN_00452fc0, FUN_004a7790, FUN_0049f130) without clamping. Settle whether those constructors or the original drag clamp, then match the port (drag clamp, restore clamp, or neither), both sides.
 
-<a id="or-q-row-overlays-7p9o"></a>
-### Q: What do the FUN_0042c3b0 row overlays show, and is +0x50 bit 0x200 on-mission?
+**Acceptance criteria**
 
-`or-q-row-overlays-7p9o` · **open** · P3 · ghidra, question · updated 2026-10-14  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> ground-unit-assets.md: FUN_0042c3b0 draws overlay ids 0x2cf1, 0x2cf5, 0x2cfb, 0x2ced, 0x2d32/34. Done when a note names each overlay and its condition.
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
+- [ ] The port's drag and restore clamps match, checked in the browser on both sides
 
 <a id="or-q-second-death-star-order-same-day-y2cw"></a>
 ### Q: Is a second Death Star order refused on the same day as the first?
 
-`or-q-second-death-star-order-same-day-y2cw` · **open** · P3 · ghidra, question · updated 2026-10-18  
+`or-q-second-death-star-order-same-day-y2cw` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > What does the original do when a second Death Star order is refused on the same day as the first?
 >
 > Known: a second family-0x18 ship at one system is refused at order time (FUN_00550bd0, FUN_0054fd90); native seed 42 shows the refusal {0x90,3} (advisor slot 18) on a later day. Unobserved: a second order on the same day as the first, and whether the first order's +0x50 bit 6 spare-fleet object is already visible to the mode 3 count within the day.
 
+**Acceptance criteria**
+
+- [ ] A note says, with citations, whether a second Death Star order on the first order's day is refused
+- [ ] A VM or Wine check where a save allows, and a port node if the port differs
+
 <a id="or-q-ship-family-testers-psaz"></a>
 ### Q: What do the 47 capital-ship family testers do for a family past 0x1b?
 
-`or-q-ship-family-testers-psaz` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-ship-family-testers-psaz` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ship-type-assets.md: 47 functions test [0x14,0x1c) (assets/map/mod-ships/familybands.tsv in the Feature Wiki), unread. Done when a note classifies each and says what a new ship family breaks.
 
+**Acceptance criteria**
+
+- [ ] A note classifies each and says what a new ship family breaks.
+
 <a id="or-q-ship-name-slots-3vda"></a>
 ### Q: How are the 38 ship-name slots in FUN_00597610 bound to text?
 
-`or-q-ship-name-slots-3vda` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-ship-name-slots-3vda` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ship-type-assets.md: the registry holds 0x26 name slots; how names bind to TEXTSTRA or literals is untraced. Done when a note says how a new type gets a name.
 
+**Acceptance criteria**
+
+- [ ] A note says how a new type gets a name.
+
 <a id="or-q-ship-ordinal-effects-0baz"></a>
 ### Q: What per-type effects does the ship ordinal select through FUN_005c12d0?
 
-`or-q-ship-ordinal-effects-0baz` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-ship-ordinal-effects-0baz` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ship-type-assets.md: FUN_005b1f60 passes the ordinal to FUN_005c12d0, untraced. Done when a note lists what the ordinal selects there and whether a new ordinal needs code.
 
+**Acceptance criteria**
+
+- [ ] A note lists what the ordinal selects there and whether a new ordinal needs code.
+
 <a id="or-q-ship-texture-binding-auqo"></a>
 ### Q: How does a capital-ship mesh find its textures?
 
-`or-q-ship-texture-binding-auqo` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-ship-texture-binding-auqo` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ship-type-assets.md hyp: type-303 texture names may live inside the type-301 .x mesh; FUN_005d26c0 binds them. Done when a note says how a new mesh base gets its textures.
 
+**Acceptance criteria**
+
+- [ ] A note says how a new mesh base gets its textures.
+
 <a id="or-q-side-class-flags-5rtu"></a>
 ### Q: How are the class is_alliance/is_empire flags laid out and read?
 
-`or-q-side-class-flags-5rtu` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-side-class-flags-5rtu` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > side-switches.md and scenario-literals.md: class +0x40/+0x44 decide per-side availability (FUN_00567880, FUN_0053b860). Done when a note maps the flags to every DAT file and every reader.
 
+**Acceptance criteria**
+
+- [ ] A note maps the flags to every DAT file and every reader.
+
 <a id="or-q-side-save-layout-4pbr"></a>
 ### Q: What does the save hold per side?
 
-`or-q-side-save-layout-4pbr` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-side-save-layout-4pbr` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > side-switches.md: session slots +0x10/+0x14 are saved by FUN_00435db0/FUN_00435ec0 as exactly two entries. Start from those and FUN_0048a960, FUN_0048a9f0. Done when a note lists each per-side save field.
 
+**Acceptance criteria**
+
+- [ ] A note lists each per-side save field.
+
 <a id="or-q-side-window-art-v3km"></a>
 ### Q: Which resources do the 35 side-dependent window builders choose?
 
-`or-q-side-window-art-v3km` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-side-window-art-v3km` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > side-switches.md: 35 functions pick art by +0x9c == 1 or base + (side != 1). Start from FUN_0044c630, FUN_0046f360, FUN_004665f0. Done when a note tables each window's per-side resource ids.
 
+**Acceptance criteria**
+
+- [ ] A note tables each window's per-side resource ids.
+
 <a id="or-q-story-event-senders-qm3b"></a>
 ### Q: Who sends story events 0x211 and 0x231?
 
-`or-q-story-event-senders-qm3b` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-story-event-senders-qm3b` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > story-encounters.md: senders of events 0x211 and 0x231 are untraced. Start from FUN_0056fbe0, FUN_0056f650 (slot +0x3ec), FUN_0055f650. Done when a note names each sender and condition.
 
+**Acceptance criteria**
+
+- [ ] A note names each sender and condition.
+
 <a id="or-q-system-table-readers-0541"></a>
 ### Q: Which code reads SYFCCRTB, SYFCRMTB and SCTRANTB?
 
-`or-q-system-table-readers-0541` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-system-table-readers-0541` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > galaxy-limits.md lists these galaxy tables without readers. Start from FUN_005674e0, FUN_0058b420. Done when a note gives each table's reader and rule.
 
+**Acceptance criteria**
+
+- [ ] A note gives each table's reader and rule.
+
 <a id="or-q-tac-camera-e1d"></a>
 ### Q: What do tactical camera modes 7-11 do, and who selects the chase camera over the orbit camera?
 
-`or-q-tac-camera-e1d` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-tac-camera-e1d` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Mode 7 offset is +0x96 Empire, -0x1e Alliance (FUN_005c2990, checked). Start from FUN_005c2990, FUN_005c30b0, FUN_005d9580, FUN_005d9a70-FUN_005d9e40, FUN_005c6610, constant _DAT_0066cb10. Done when a note gives each mode's placement for both sides. Sources: map-18, -19.
 
+**Acceptance criteria**
+
+- [ ] A note gives each mode's placement for both sides.
+- [ ] Sources: map-18, -19.
+
+**Notes**
+
+> Mode 0xb (F1-F12 follow) is FUN_005c2990's default case, which builds FUN_005d9a70 (FUN_005c2990.c:87-114). Whether that camera changes the selection is or-ep-task-force-strip-5kdd.3's; link its note.
+
 <a id="or-q-tac-scene-effects-597"></a>
 ### Q: What do the tactical marker sprite, marker meshes and scene effect draw?
 
-`or-q-tac-scene-effects-597` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-tac-scene-effects-597` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Marker sprite FUN_005d43c0 (resources 4200-4209) and creator FUN_005c1fc0; FUN_005d8c30's five meshes DAT_006bcbe0-bcbf0 and RmFramedVisual types 1-3; scene effect FUN_005da150, spawner FUN_005d59e0, readers of DAT_006bcbd4+0x654; texture loaders FUN_005d5e10/FUN_005d6170 and FUN_005d8b30. Done when a note names each visual and when it shows, with A0 frames where one appears. Sources: map-18, -19.
 
+**Acceptance criteria**
+
+- [ ] A note names each visual and when it shows, with A0 frames where one appears.
+- [ ] Sources: map-18, -19.
+
 <a id="or-q-tactical-sound-events-zf4k"></a>
 ### Q: Which tactical family does each computed FUN_005ba980 event caller cover?
 
-`or-q-tactical-sound-events-zf4k` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-tactical-sound-events-zf4k` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ghidra/notes/audio-dispatch.md: 42 of 102 FUN_005ba980 callers pass base + index (0xed, 0xf6, 0xb6, 0x9c) from functions in 0x005a2000..0x005a5000. Read FUN_005a3740, FUN_005a3850, FUN_005a3630 and the rest; map the 317 events (0..0x13c) to effect, ship-voice and command families and to the wave ids FUN_005bae60 assigns, so the port's tactical sound and voice dispatch can be checked.
 
+**Acceptance criteria**
+
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
+
 <a id="or-q-timers-o8d"></a>
 ### Q: What do timers 0x380-0x389 and 0x392 arm and fire?
 
-`or-q-timers-o8d` · **open** · P3 · ghidra, question · updated 2026-10-16  
+`or-q-timers-o8d` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > Timer 0x380/0x389 targets (vtable +0x228 on family 0x14..0x20), 0x383-0x386 delay records on +0x54+0x18/0x28/0x30, and MissionMgr's init timer 0x392. Start from FUN_00565400, FUN_00565730, FUN_00565a60, FUN_00565d90, FUN_0050ca80-FUN_0050cb20, FUN_005116d0, FUN_00511610, FUN_0053fa60, FUN_00560a30, FUN_00556fa0, FUN_0057c2c0. Done when a note tables each timer's delay source and effect. Sources: map-11, -13, -14, -15.
+
+**Acceptance criteria**
+
+- [ ] A note tables each timer's delay source and effect.
+- [ ] Sources: map-11, -13, -14, -15.
 
 **Notes**
 
@@ -683,10 +856,14 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-q-troop-finder-icons-pdy5"></a>
 ### Q: Where do the Troop Finder column icons come from?
 
-`or-q-troop-finder-icons-pdy5` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-troop-finder-icons-pdy5` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ground-unit-assets.md: FUN_0046d8d0 has ten literal troop ids; whether the column icons live in the STRATEGY finder backgrounds 10335/10336/10584/10588 is untraced. Done when a note names each column's art.
+
+**Acceptance criteria**
+
+- [ ] A note names each column's art.
 
 <a id="or-q-unfinished-ship-finder-two-yards-i8u7"></a>
 ### Verify in the original: the unfinished ship in the Finder on its order day, and two yards ordering for one system on one day
@@ -695,47 +872,62 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 
 > death-star-product.md, 'Needs a VM run', items 1 and 5. (1) On the order day, do the Ship Finder and the Fleet Finder list the unfinished ship and its fleet, and does the galaxy view draw the fleet's icon? The port lists the ship by the existing bit 6 (FUN_004f7d50(.., 1, 0); the_ship_finder_lists_an_unfinished_ship_for_either_side). (2) Two capital ships ordered for one system from two yards on one day: one fleet or two? The port seats both in the side's bit-1 spare, which keeps bit 1 while it holds ships (FUN_0050bc60.c:41-51). Staging needs a save with two shipyards of one side; in ds-b Coruscant is the only Imperial yard. Done when both answers are in the note, on both sides where a save allows, and the port matches them or a port node is filed.
 
-<a id="or-q-unfinished-ship-owner-on-capture-y2nz"></a>
-### Q: Who owns an unfinished ship after its system changes hands?
+**Acceptance criteria**
 
-`or-q-unfinished-ship-owner-on-capture-y2nz` · **open** · P3 · ghidra, question · updated 2026-10-18  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> Who owns an unfinished ship (an `unfinished` ShipInstance in a destination's spare fleet, Death Star family; death-star-product.md section 1) after its system changes hands by capture or control change?
->
-> Known: the spare fleet and the unfinished Death Star carry +0x50 bit 6 from the order day, so the mode 3 census counts it, and Destroy System leaves a capital ship in the spare fleet untouched. Open: whether ownership follows the system's side, stays with the orderer, or the ship is destroyed or relocated, and whether the census still counts it for the old owner.
+- [ ] Both answers are in the note, on both sides where a save allows, and the port matches them or a port node is filed.
 
 <a id="or-q-ungated-story-events-h0sr"></a>
 ### Q: Which story events bypass the FUN_005438a0 gate?
 
-`or-q-ungated-story-events-h0sr` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-ungated-story-events-h0sr` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > story-encounters.md: events 0x307, 0x312 and 0x30a appear to reach story checks without the six-character gate. Done when a note lists every path into the flag checks and its trigger.
 
+**Acceptance criteria**
+
+- [ ] A note lists every path into the flag checks and its trigger.
+
 <a id="or-q-version-gate-ids-wusm"></a>
 ### Q: What do TEXTSTRA ids 0x1a00, 0x87b0 and 0x4da0 hold under the version gate, and how wide may a label be?
 
-`or-q-version-gate-ids-wusm` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-version-gate-ids-wusm` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ghidra/notes/text-sources.md: with a TEXTSTRA whose FileVersion minor or revision is non-zero, FUN_0049eea0, FUN_0044a2e0 and FUN_00441520 read ids 0x1a00, 0x87b0 and 0x4da0, which no shipped DLL holds; read how FUN_00441520 joins 0x4da0 to the name and what FUN_0049a8b0 builds with ':  '. Also find the width limits a translated label meets (FUN_00601aa0, the buffers of FUN_005f35b0) so the port can keep the same truncation.
 
+**Acceptance criteria**
+
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
+
 <a id="or-q-window-caption-dialogs-qc4c"></a>
 ### Q: Which window does 'Rebellion' name, and which dialogs show REBDLOG and CDDERR text?
 
-`or-q-window-caption-dialogs-qc4c` · **open** · P3 · ghidra, question · updated 2026-10-14  
+`or-q-window-caption-dialogs-qc4c` · **open** · P3 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > ghidra/notes/text-sources.md: the literal 'Rebellion' (0x006a80ec) is pushed at 0x0040dbac in a function Ghidra has not defined (start at 0x0040db90 with CreateAndDecompileTargets.java); settle whether it is the main window caption or a class name. List the windows that load REBDLOG (group 12) strings 0x1200-0x1911 (start from FUN_00413000 and the group-12 lookups) and whether the CDDERR boxes (FUN_00614530) are reachable in single player. The port needs the same captions and dialogs.
 
+**Acceptance criteria**
+
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
+
 <a id="or-q-audio-w4r"></a>
 ### Q: How does the audio system choose, mix and stop its sounds?
 
-`or-q-audio-w4r` · **open** · P4 · ghidra, question · updated 2026-10-14  
+`or-q-audio-w4r` · **open** · P4 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > No note covers the audio system yet. Deliver as for every question node.
+
+**Acceptance criteria**
+
+- [ ] A note gives how concurrent effects and voices are mixed and stopped (FUN_006115f0, FUN_00611890), cited
+- [ ] Decompiles in ghidra/notes
 
 **Notes**
 
@@ -744,10 +936,16 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-q-directdraw-2ln"></a>
 ### Q: How does the game set up and present through DirectDraw?
 
-`or-q-directdraw-2ln` · **open** · P4 · ghidra, question · updated 2026-10-14  
+`or-q-directdraw-2ln` · **open** · P4 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > No note covers the DirectDraw layer yet. Deliver as for every question node.
+
+**Acceptance criteria**
+
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
 
 **Notes**
 
@@ -756,10 +954,16 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-q-intro-credits-p68"></a>
 ### Q: How do the intro and credits play?
 
-`or-q-intro-credits-p68` · **open** · P4 · ghidra, question · updated 2026-10-14  
+`or-q-intro-credits-p68` · **open** · P4 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > No note covers the intro and credits yet. Deliver as for every question node.
+
+**Acceptance criteria**
+
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
 
 **Notes**
 
@@ -768,8 +972,14 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-q-main-menu-gb1"></a>
 ### Q: How does the main menu build and route its controls?
 
-`or-q-main-menu-gb1` · **open** · P4 · ghidra, question · updated 2026-10-14  
+`or-q-main-menu-gb1` · **open** · P4 · ghidra, question · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > No note covers the main menu yet. Deliver as for every question node.
+
+**Acceptance criteria**
+
+- [ ] A note in ghidra/notes answers the question with function and address citations
+- [ ] The cited decompiles are in ghidra/notes
+- [ ] Both sides are covered where the code branches
 

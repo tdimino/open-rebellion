@@ -1791,10 +1791,20 @@ async function probeTacticalProductionParticipants(
   const released = await stableInteractionFrame(page, folder, "task-force-unassigned-released");
   assert.equal(sha256(held), sha256(stable.bytes),
     "unassigned task-force press escaped the disabled bitmap state");
-  assert.equal(sha256(released), sha256(stable.bytes),
-    "unassigned task-force release changed tactical selection");
-  assert.equal(consoleLines.filter(({ text }) => text.includes("[tactical_groups]")).length,
-    transitionLogCount, "unassigned task-force input emitted a selection transition");
+  // The fixture opens with one own capital selected, mode 0xe with the
+  // player-command flag set, so the slot's command makes that ship a task
+  // force in the clicked slot and selects it (FUN_0059b450.c:39-44,
+  // FUN_0059f6e0.c:7-9, FUN_005a2160.c:16-20, FUN_005a34e0.c:47-48).
+  const formedSlot = unassignedTaskIndex + 1;
+  const captionRect = [{ x: 8, y: 2, width: 8, height: 12 }];
+  const formed = verifyTacticalControlBitmap(
+    viewport, released, 1006, ready, `task-force-${formedSlot}`, captionRect,
+  );
+  const transitions = consoleLines.filter(({ text }) => text.includes("[tactical_groups]"))
+    .slice(transitionLogCount).map(({ text }) => text);
+  assert.equal(transitions.length, 1, "the unassigned slot's release did not form one task force");
+  assert.match(transitions[0], new RegExp(`task_force_assigned slot=${formedSlot} members=1`),
+    "the unassigned slot's release did not make the selected ship its task force");
   probes.push({
     type: "task-force-unassigned-hover-disabled",
     task_force_resource: 1007,
@@ -1806,8 +1816,7 @@ async function probeTacticalProductionParticipants(
     hover_sha256: sha256(hovered),
     held_sha256: sha256(held),
     released_sha256: sha256(released),
-    state_unchanged: true,
-    transition_log_count: transitionLogCount,
+    formed_task_force: { slot: formedSlot, ...formed, log: transitions[0] },
   });
 
   // FUN_005ab0e0 sizes both hulls' collision envelopes from their meshes
@@ -1835,12 +1844,19 @@ async function probeTacticalProductionParticipants(
   const scale = Math.min(viewport.width / 640, viewport.height / 480);
   const offsetX = (viewport.width - 640 * scale) / 2;
   const offsetY = (viewport.height - 480 * scale) / 2;
+  // The slot click above left the new task force selected; a plain pick of
+  // the player's ship returns to the one-ship selection (mode 0xe) with
+  // both strips released (FUN_005c2060.c:130-133), which the reselection
+  // below reproduces.
+  await page.mouse.click(player.x, player.y, { button: "left" });
+  await page.waitForTimeout(80);
+  const unlit = await stableInteractionFrame(page, folder, "production-ship-picked");
   for (const [x, y] of [[532, 317], [497, 317]]) {
     await page.mouse.click(offsetX + x * scale, offsetY + y * scale);
     await page.waitForTimeout(80);
   }
   const lit = await stableInteractionFrame(page, folder, "production-highlights-on");
-  assert.notEqual(sha256(lit), sha256(stable.bytes),
+  assert.notEqual(sha256(lit), sha256(unlit),
     "highlight switches did not light the faction wireframes");
   // The traced camera (FUN_005d9640) stands behind the player's own line, so
   // the player's ship projects near the aperture's lower-left corner (A0
@@ -1860,6 +1876,7 @@ async function probeTacticalProductionParticipants(
   await page.mouse.click(empty.x, empty.y, { button: "left" });
   await page.waitForTimeout(80);
   const deselected = await stableInteractionFrame(page, folder, "production-deselection");
+  const reselectionLogStart = consoleLines.length;
   await page.mouse.click(player.x, player.y, { button: "left" });
   await page.waitForTimeout(80);
   const selected = await stableInteractionFrame(page, folder, "production-selection");
@@ -1873,7 +1890,7 @@ async function probeTacticalProductionParticipants(
   assert.notEqual(sha256(targeted), sha256(selected),
     "projected capital targeting produced no stable framebuffer change");
 
-  const selectionLog = consoleLines.find(({ text }) =>
+  const selectionLog = consoleLines.slice(reselectionLogStart).find(({ text }) =>
     text.includes(`[tactical_3d] selection object_id=${playerObjectId}`));
   const focusLog = consoleLines.find(({ text }) =>
     text.includes(`[tactical_3d] focus source_object_ids=${playerObjectId} `)
@@ -4415,6 +4432,78 @@ async function probeTacticalCoruscant(
   return [forces, { type: "coruscant-death-star-journey", journey, captured, targets }];
 }
 
+// Replay the A0 trace of the first battle after `alliance-transit-day149`
+// (capture index rows TAC-01-C001 and TAC-02-C013) against the fixture that
+// rebuilds it: the battle opens with no task force selected (C001), then the
+// trace clicks task force 1 at game (70, 10) (C013). The run had turned Show
+// Planet off on the galaxy map, so no planet is loaded or drawn.
+async function probeTacticalCoruscantTransit(
+  page, viewport, folder, stable, consoleLines, ready, scenario,
+) {
+  const journey = scenario.transit_journey;
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const offsetX = (viewport.width - 640 * scale) / 2;
+  const offsetY = (viewport.height - 480 * scale) / 2;
+  const point = (x, y) => ({ x: offsetX + x * scale, y: offsetY + y * scale });
+  const settle = () => page.waitForTimeout(80);
+  const click = async (x, y) => {
+    const target = point(x, y);
+    await page.mouse.click(target.x, target.y);
+    await settle();
+  };
+  const away = async () => {
+    const target = point(320, 470);
+    await page.mouse.move(target.x, target.y);
+    await settle();
+  };
+  const captured = [];
+  const capture = async (name) => {
+    await stableInteractionFrame(page, folder, name);
+    captured.push(name);
+  };
+  const allianceCapitals = ready.participants
+    .filter(({ kind, faction: side }) => kind === "capital-ship" && side === "alliance")
+    .map(({ name }) => name);
+  const allianceFighters = ready.participants
+    .filter(({ kind, faction: side }) => kind === "fighter-group" && side === "alliance");
+  const forces = {
+    type: "coruscant-transit-forces",
+    state_match: scenario.state_match,
+    system: ready.system,
+    attacker_ships: ready.attacker_ships,
+    defender_ships: ready.defender_ships,
+    fighters: ready.fighters,
+    alliance_capitals: allianceCapitals,
+    alliance_fighter_groups: allianceFighters.length,
+  };
+  // Fleet 1 (two ships) arrives against Tyrant (two TIE squadrons aboard)
+  // and Judicator (six), with nine squadrons held at Coruscant.
+  assert.equal(ready.system, "Coruscant");
+  assert.equal(ready.attacker_ships, 2);
+  assert.equal(ready.defender_ships, 2);
+  assert.equal(ready.fighters, 17);
+  assert.equal(ready.death_star, null);
+  assert.deepEqual(allianceCapitals, ["Corellian Corvette 1", "Medium Transport 1"]);
+  assert.equal(allianceFighters.length, 0, "the transit battle seated an Alliance fighter group");
+  fs.writeFileSync(path.join(folder, "initial.png"), stable.bytes);
+  captured.push("initial");
+  // Take Command opens with nothing selected (FUN_005c5800; A0 TAC-01-C001).
+  assert.equal(ready.selected_ship ?? null, null, "the transit battle opened with a ship selected");
+  if (ready.faction === "alliance") {
+    if (journey !== "task-force-1") throw new Error(`unknown transit journey ${journey}`);
+    const groupLogStart = consoleLines.length;
+    await click(70, 10); await away(); await capture("tf1-selected");
+    assert.ok(consoleLines.slice(groupLogStart).some(({ text }) =>
+      text.includes("[tactical_groups] task_force_selected slot=1 ")),
+    "the click on task force 1 selected nothing");
+  }
+  const planetLogs = consoleLines.filter(({ text }) =>
+    /\[tactical_3d\] planet_(loaded|scene)/.test(text)).map(({ text }) => text);
+  assert.deepEqual(planetLogs, [], "Show Planet is off, yet the battle loaded or drew the planet");
+  return [forces, { type: "coruscant-transit-journey", journey, captured, show_planet: false,
+    ...(ready.faction === "alliance" ? {} : { skipped: "the A0 trace is the Alliance player's" }) }];
+}
+
 function probeTacticalSubsystemFieldCommandPresentation(viewport, folder, stable, ready) {
   const probes = probeTacticalSelectedDamagePresentation(viewport, folder, stable, ready);
   const selected = ready.selected_ship;
@@ -4471,7 +4560,11 @@ async function probeTacticalGroupPresentation(
   const offsetX = (viewport.width - 640 * scale) / 2;
   const offsetY = (viewport.height - 480 * scale) / 2;
   const capture = async (name) => stableInteractionFrame(page, folder, name);
-  const labelMask = [{ x: 4, y: 2, width: 17, height: 14 }];
+  // The caption's measured box, which the bitmap does not hold: a digit 8 px
+  // wide centred in the 25 x 17 slot (FUN_006026e0.c:24-48), inking slot rows
+  // 3-12 (A0 TAC-05-C023) with one row of the smoothed face's fringe each way;
+  // the same box as the compare spec's task-force-caption masks.
+  const captionRect = [{ x: 8, y: 2, width: 8, height: 12 }];
   const playerFighter = ready.participants.find((participant) =>
     participant.kind === "fighter-group" && participant.faction === faction
       && participant.fighter_group === 3);
@@ -4494,21 +4587,23 @@ async function probeTacticalGroupPresentation(
   const taskHeader = slot("task-force-header");
   const fighterHeader = slot("fighter-group-header");
   const probes = [];
+  // The headers are keyed strobe buttons too (FUN_0059be80.c:39,
+  // FUN_0059c030.c:35; FUN_00602d30.c:68).
   probes.push({
     type: "task-force-header",
     ...verifyTacticalBitmap(viewport, stable.bytes, faction === "alliance" ? 1001 : 1004,
-      taskHeader.x, taskHeader.y, taskButtons),
+      taskHeader.x, taskHeader.y, taskButtons, [], { button: true }),
   });
   probes.push({
     type: "fighter-group-header",
     ...verifyTacticalBitmap(viewport, stable.bytes, faction === "alliance" ? 1008 : 1010,
-      fighterHeader.x, fighterHeader.y, fighterButtons),
+      fighterHeader.x, fighterHeader.y, fighterButtons, [], { button: true }),
   });
   for (const [index, button] of taskButtons.entries()) {
     probes.push({
       type: "task-force-initial",
       slot: index + 1,
-      ...control(stable.bytes, button.id, button.name, labelMask),
+      ...control(stable.bytes, button.id, button.name, captionRect),
     });
   }
   for (const [index, button] of fighterButtons.entries()) {
@@ -4519,12 +4614,28 @@ async function probeTacticalGroupPresentation(
     });
   }
 
-  const matte = tacticalControlPoint(viewport, ready, "fighter-group-1", { x: 0.1, y: 0.1 });
-  await page.mouse.click(matte.x, matte.y);
+  // A strip slot takes its whole rectangle, the bitmap's transparent
+  // pixels included (FUN_006035f0.c:24-38, FUN_00602150.c:115-116): local
+  // (0, 1) of 1012 holds the key, index 17 (strip-bitmap-keys.md), where a
+  // pixel hit test would miss. A second click on the selected slot returns
+  // to the base mode, leaving the battle as it opened (FUN_0059fd40.c:69-88).
+  const corner = tacticalControlPoint(viewport, ready, "fighter-group-1", { x: 0.5, y: 1.5 });
+  await page.mouse.click(corner.x, corner.y);
   await page.waitForTimeout(80);
-  const matteFrame = await capture("group-transparent-matte");
-  assert.equal(sha256(matteFrame), sha256(stable.bytes),
-    "transparent fighter-group matte changed the paused battle");
+  const cornerFrame = await capture("red-group-corner-selected");
+  probes.push({ type: "red-group-corner-selected",
+    ...control(cornerFrame, 1016, "fighter-group-1") });
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_groups] fighter_group_selected slot=1 ")),
+  "a click on the Red slot's keyed pixel did not select the group");
+  await page.mouse.click(corner.x, corner.y);
+  await page.waitForTimeout(80);
+  const clearedFrame = await capture("red-group-cleared");
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_groups] fighter_group_cleared slot=1")),
+  "a second click on the selected Red slot did not clear the selection");
+  assert.equal(sha256(clearedFrame), sha256(stable.bytes),
+    "clearing the Red group did not restore the battle as it opened");
 
   const taskEight = tacticalControlPoint(viewport, ready, "task-force-8");
   await page.mouse.move(taskEight.x, taskEight.y);
@@ -4532,14 +4643,14 @@ async function probeTacticalGroupPresentation(
   await page.waitForTimeout(80);
   const taskEightHeld = await capture("task-force-8-held");
   probes.push({ type: "task-force-8-held",
-    ...control(taskEightHeld, 1006, "task-force-8", labelMask) });
+    ...control(taskEightHeld, 1006, "task-force-8", captionRect) });
   await page.mouse.up({ button: "left" });
   await page.waitForTimeout(80);
   const taskEightSelected = await capture("task-force-8-selected");
   probes.push({ type: "task-force-8-selected",
-    ...control(taskEightSelected, 1006, "task-force-8", labelMask) });
+    ...control(taskEightSelected, 1006, "task-force-8", captionRect) });
   probes.push({ type: "task-force-1-released",
-    ...control(taskEightSelected, 1005, "task-force-1", labelMask) });
+    ...control(taskEightSelected, 1005, "task-force-1", captionRect) });
 
   const gold = tacticalControlPoint(viewport, ready, "fighter-group-4");
   await page.mouse.move(gold.x, gold.y);
@@ -4669,16 +4780,43 @@ async function probeTacticalGroupPresentation(
     screenshot_sha256: sha256(rejectedTarget),
   });
 
+  // F1-F12 only follow an existing group with camera mode 0xb; they post
+  // no selection (FUN_0059b730.c:98-130; FUN_005d9a70 writes none), so the
+  // two-ship selection above keeps both strips raised.
   await page.keyboard.press("F1");
   await page.waitForTimeout(80);
   const taskOneHotkey = await capture("task-force-1-hotkey");
   probes.push({ type: "task-force-1-hotkey",
-    ...control(taskOneHotkey, 1006, "task-force-1", labelMask) });
+    ...control(taskOneHotkey, 1005, "task-force-1", captionRect) });
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_camera] command=follow kind=task_force group=1")),
+  "F1 did not follow task force 1");
   await page.keyboard.press("F12");
   await page.waitForTimeout(80);
   const goldHotkey = await capture("gold-group-hotkey");
   probes.push({ type: "gold-group-f12-hotkey",
-    ...control(goldHotkey, 1019, "fighter-group-4") });
+    ...control(goldHotkey, 1015, "fighter-group-4") });
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_camera] command=follow kind=fighter_group group=4")),
+  "F12 did not follow the Gold group");
+  // Key 8 presses task-force slot 8, which posts its command like a click
+  // (FUN_0059b730.c:58-97, FUN_00603710.c:18-20); pressed again, the
+  // selected slot returns to the base mode (FUN_0059fd40.c:40-59).
+  await page.keyboard.press("8");
+  await page.waitForTimeout(80);
+  const taskEightKey = await capture("task-force-8-key");
+  probes.push({ type: "task-force-8-key",
+    ...control(taskEightKey, 1006, "task-force-8", captionRect) });
+  assert.ok(consoleLines.some(({ text }) => text.includes("[tactical_groups] key=8 slot=8")),
+    "key 8 did not reach task-force slot 8");
+  await page.keyboard.press("8");
+  await page.waitForTimeout(80);
+  const taskEightKeyCleared = await capture("task-force-8-key-cleared");
+  probes.push({ type: "task-force-8-key-cleared",
+    ...control(taskEightKeyCleared, 1005, "task-force-8", captionRect) });
+  assert.ok(consoleLines.some(({ text }) =>
+    text.includes("[tactical_groups] task_force_cleared slot=8")),
+  "key 8 on the selected task force did not clear it");
 
   assert.ok(consoleLines.some(({ text }) =>
     text.includes("[tactical_groups] task_force_selected slot=8 members=1")),
@@ -4701,7 +4839,7 @@ async function probeTacticalGroupPresentation(
         far: active_far_resource,
         indicator: active_indicator_resource,
       })),
-    keyboard: { task_forces: "F1-F8", fighter_groups: "F9-F12" },
+    keyboard: { task_force_slots: "1-8", follow_task_forces: "F1-F8", follow_fighter_groups: "F9-F12" },
   });
   return probes;
 }
@@ -5017,6 +5155,9 @@ async function runScenarioOnce(server, executable, scenario, faction, viewport) 
         ? await probeTacticalYagaDay30(page, viewport, folder, stable, ready, scenario.yaga_journey)
         : scenario.death_star_journey
         ? await probeTacticalCoruscant(page, viewport, folder, stable, consoleLines, ready, scenario)
+        : scenario.transit_journey
+        ? await probeTacticalCoruscantTransit(page, viewport, folder, stable, consoleLines, ready,
+          scenario)
         : scenario.camera_journey
         ? await probeTacticalCameraJourney(page, viewport, folder, stable)
         : scenario.lod_journey
@@ -5963,8 +6104,8 @@ async function main() {
     // synthetic ones.
     const synthetic = catalog.scenarios.filter(({ state_match }) => !state_match);
     assert.deepEqual(catalog.scenarios.filter(({ state_match }) => state_match)
-      .map(({ slug, state_match, yaga_journey, death_star_journey }) =>
-        [slug, state_match, yaga_journey ?? death_star_journey]), [
+      .map(({ slug, state_match, yaga_journey, death_star_journey, transit_journey }) =>
+        [slug, state_match, yaga_journey ?? death_star_journey ?? transit_journey]), [
       ["yaga-day30", "empire-day30-yaga-alert-control", "master"],
       ["yaga-day30-options", "empire-day30-yaga-alert-control", "options"],
       ["yaga-day30-pointer", "empire-day30-yaga-alert-control", "pointer"],
@@ -5974,6 +6115,7 @@ async function main() {
       ["coruscant-day676-charge", "empire-death-star-pre-alert", "charge"],
       ["coruscant-day1173", "alliance-day1169-deathstar-trench-run", "attack-death-star"],
       ["coruscant-day1173-launch", "alliance-day1169-deathstar-trench-run", "launch"],
+      ["coruscant-transit-day149", "alliance-transit-day149", "task-force-1"],
     ]);
     assert.deepEqual(synthetic.map(({ slug }) => slug),
       ["battle-entry", "battle-entry-proof-off", "lod-close", "lod-medium", "lod-far",

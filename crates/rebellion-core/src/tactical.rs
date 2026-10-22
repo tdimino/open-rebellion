@@ -628,6 +628,12 @@ pub struct TacticalShip {
     pub tactic: TacticalTactic,
     /// Zero-based task-force assignment shown in the eight source HUD slots.
     pub task_force: u8,
+    /// When the ship entered its task force: 0 for the battle's own
+    /// assignment, then one more for each join or formation. A task force's
+    /// member list keeps that order, and its mode focuses the head
+    /// (`FUN_005a34e0`, `FUN_005c6070(piVar2 + 0x11)`); A0 TAC-03-C014 and
+    /// C015 show the original member before a ship that joined.
+    pub task_force_joined: u32,
     /// The strategic fleet this hull belongs to. Every fleet of a side at
     /// the system fights (`FUN_0040b0e0`), not only the lead one.
     pub fleet: Option<FleetKey>,
@@ -1781,8 +1787,19 @@ pub struct BattleSession {
     pub source_layout: OriginalTacticalLayout,
     /// Index of currently selected ship (in `ships`), if any.
     pub selected_ship: Option<usize>,
-    /// Selected player fighter group, if the HUD is displaying a squadron.
+    /// Selected player fighter group, if the HUD is displaying a squadron:
+    /// the controller's fighter-group mode, ids 9-12 (`FUN_005a4640`).
     pub selected_fighter_group: Option<u8>,
+    /// Selected player task force: the controller's task-force mode, ids
+    /// 1-8 (`FUN_005a33d0`), entered by its strip slot and left by a second
+    /// click on that slot or by any ship pick
+    /// (ghidra/notes/tactical-selection-modes.md).
+    pub selected_task_force: Option<u8>,
+    /// The controller's player-command flag `*this`: set at the start
+    /// (`FUN_0059eb70.c:77`) and cleared by the player's Withdraw, command
+    /// `0x7a` (`FUN_0059fd40.c:141-167`). Mode `0xe` takes an unassigned
+    /// task-force slot only while it is set (`FUN_0059f6e0.c:7-13`).
+    pub player_command: bool,
     /// Whether the placement phase is confirmed (player clicked "Begin Battle").
     pub placement_confirmed: bool,
     /// Game tick when the battle started.
@@ -3941,6 +3958,8 @@ impl BattleSession {
             source_layout,
             selected_ship,
             selected_fighter_group: None,
+            selected_task_force: None,
+            player_command: true,
             placement_confirmed: true,
             start_tick: tick,
             combat_tick: 0,
@@ -4396,6 +4415,7 @@ impl BattleSession {
                 // Source initialization of the first task force is known;
                 // automatic distribution across later slots is not yet.
                 task_force: 0,
+                task_force_joined: 0,
                 fleet: Some(fleet_key),
                 fleet_ship_index: ship_idx,
                 // IDs 2001 through 2130 are not a linear class sprite table.
@@ -6096,7 +6116,10 @@ impl BattleSession {
     /// only when it is alive, can jump and is within 8.0 of the line; any
     /// other front ship holds the rest back (`FUN_005cc300.c:77-145`).
     /// port: the source moves the group's leader and the formation brings
-    /// the members along; the port moves each unit.
+    /// the members along; the port moves each unit. port: the port's task
+    /// forces survive Withdraw, where `FUN_005aded0` first gives each
+    /// capital ship a group of its own (`FUN_005ad530.c:61-81`;
+    /// or-p-withdraw-regroup-98kv).
     fn advance_withdraw_orders(&mut self, is_attacker: bool) {
         let side = usize::from(!is_attacker);
         let (facing, line) = self.withdrawal_line(is_attacker);
@@ -6663,6 +6686,7 @@ impl BattleSession {
         self.paused = true;
         self.selected_ship = None;
         self.selected_fighter_group = None;
+        self.selected_task_force = None;
     }
 
     /// One side's ships fire through the four source battery records recovered

@@ -626,6 +626,19 @@
       "expected_status": "battle-ready",
       "audit_cells": [],
       "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
+    },
+    {
+      "slug": "coruscant-transit-day149",
+      "description": "The original's first battle after the day-149 transit save rebuilt from its master records: the Alliance's Fleet 1 against Tyrant and Judicator at Coruscant with Show Planet off, replaying the A0 trace to task force 1 selected",
+      "fixture_codes": { "alliance": 65832, "empire": 66088 },
+      "execution_kind": "journey",
+      "tactical_proof": false,
+      "production_participants": true,
+      "state_match": "alliance-transit-day149",
+      "transit_journey": "task-force-1",
+      "expected_status": "battle-ready",
+      "audit_cells": [],
+      "acceptance": "State-matched A1 reference frames for the A0 comparison (tools/interface-parity/tactical-a0-compare.mjs). It maps no cell itself; the comparison spec pairs its frames with the A0 cells captured from the same save."
     }
   ]
 }

@@ -186,7 +186,7 @@ What a mod adding a regiment, special force or facility must do in REBEXE, by co
 
 1. Regiment-against-regiment ground combat is resolved by `FUN_0058c120` and its steps, with attack `+0x64` and defence `+0x68` (`ground-assault.md`).
 2. Does `FUN_0046d8d0`'s column bitmap (28 pixels wide, five columns) draw per-type icons that sit in the STRATEGY finder backgrounds (10335, 10336, 10584, 10588)? Settle by reading the background bitmaps; then a mod can recolour a column without code.
-3. What does each of the five `FUN_0042c3b0` overlay ids (`0x2cf1`, `0x2cf5`, `0x2cfb`, `0x2ced`, `0x2d32/34`) show, and is `+0x50` bit `0x200` the "on mission" bit? Start from `FUN_0042c3b0` and `object-state-flags.md`.
+3. Is `+0x50` bit `0x200` the "on mission" bit? Start from `object-state-flags.md`. (The five `FUN_0042c3b0` overlays are in `fleet-window.md`, "En route marks", and `operation-report-window.md` for `0x2d32`/`0x2d34`.)
 4. How are DAT class tables registered (the list `thunk_FUN_005f5060` read by `FUN_0058ec90`): is there a cap on tables or records per table? Start from `FUN_00584150`, `FUN_005841a0`.
 5. Which regiment overrides (`FUN_00504960`, `FUN_00504990`) run for an object whose family byte is `0x11..0x13`, if a mod forced such a record? Probably none (no factory), which the registry reading predicts but does not prove.
 6. What do the 31 ENCYBMAP string tables hold: the encyclopedia topic captions or the picture names? Start from `FUN_0045f970`.

@@ -116,8 +116,10 @@ scripts/invariants.py DIR|FILE [--cap N]
 
 `gates.sh` runs the pre-commit gates through `mini-cargo.sh` (workspace tests,
 the same tests with `interface-test-fixtures` as `fixtures`, the ignored replay
-golden, `telemetry_coverage`, `provenance-scan`, the WASM `cargo check`, two
-leak greps on `.beads/issues.jsonl`), one PASS/FAIL line each, and stops at the first failure unless `--keep-going`. The second leak
+golden, `telemetry_coverage`, `provenance-scan`, the WASM `cargo check`,
+`beads` (no `br lint` warning on an open bead, no dependency cycle, no
+closed bead with an unchecked box, `task-index.py --check` clean), two leak greps on `.beads/issues.jsonl`), one
+PASS/FAIL line each, and stops at the first failure unless `--keep-going`. The second leak
 grep reads its pattern from `$GATES_PRIVATE_NAME` and skips when unset. It
 never regenerates a golden.
 

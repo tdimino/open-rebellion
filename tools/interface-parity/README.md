@@ -291,7 +291,7 @@ shell/control checkpoint, and fixed selection from one source-bound three-LOD
 family, one live LOD journey, and the source camera/target/layout/participant
 journey. Run
 `node run.mjs --battle --no-build` for four smoke cases or
-`node run.mjs --battle --all --no-build` for all 180 (45 scenarios, both
+`node run.mjs --battle --all --no-build` for all 184 (46 scenarios, both
 factions, both viewports) entry, negative-control,
 fixed-LOD, live-LOD, camera, production-participant, fighter-detail, group,
 impact-effect, projectile/field, selected-damage, subsystem/field-command,
@@ -301,7 +301,8 @@ attack-target-lifecycle, Death Star presentation and superlaser, trench-run
 success and failure routing, Battle Results, Battle Options and withdrawal,
 navigation, empty-space, detail-escort, Battle Alert entry, audio routing,
 and original-save battle cases (Yaga Minor day 30, Coruscant days 676 and
-1173, each replaying its A0 trace). The tactical probes cover pause stability,
+1173, and Coruscant after the day-149 transit save with Show Planet off,
+each replaying its A0 trace). The tactical probes cover pause stability,
 faction highlights, zoom round trips, source-shaped control misses, held pressed
 art, aperture isolation, typed resource diagnostics, runtime measurements, and
 proof-on/off pixel differences. The camera journey also checks the recovered

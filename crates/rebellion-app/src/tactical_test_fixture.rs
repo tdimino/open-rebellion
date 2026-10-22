@@ -13,7 +13,8 @@ use rebellion_render::tactical_view::{
 #[cfg(feature = "interface-test-fixtures")]
 use rebellion_render::TacticalLodView;
 use rebellion_render::{
-    CockpitFaction, CockpitState, MessageLog, TacticalState, TacticalTrenchRunOutcome,
+    CockpitFaction, CockpitState, GameOptionsState, MessageLog, TacticalState,
+    TacticalTrenchRunOutcome,
 };
 use serde::Serialize;
 
@@ -67,6 +68,10 @@ const CORUSCANT_DAY676_SCENARIO: u32 = 38;
 /// (`alliance-day1169-deathstar-trench-run`): the Alliance's 59 squadrons
 /// attack the Imperial fleets holding Death Star 1.
 const CORUSCANT_DAY1173_SCENARIO: u32 = 39;
+/// The original's first battle after `alliance-transit-day149`: the
+/// Alliance's Fleet 1 arrives at Imperial Coruscant against Judicator and
+/// Tyrant, with Show Planet off (A0 TAC-01-C001 and TAC-02-C013).
+const CORUSCANT_TRANSIT_DAY149_SCENARIO: u32 = 40;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TacticalLodFixture {
@@ -144,6 +149,9 @@ pub(crate) struct TacticalFixtureRequest {
     pub yaga_day30: bool,
     pub coruscant_day676: bool,
     pub coruscant_day1173: bool,
+    pub coruscant_transit_day149: bool,
+    /// The Game Options Show Planet flag the battle opens with.
+    pub show_planet: bool,
     /// Battles open with nothing selected; these gates read a selected ship.
     pub stage_player_selection: bool,
     lod_fixture: TacticalLodFixture,
@@ -363,7 +371,8 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         | TACTICAL_AUDIO_PRESENTATION_SCENARIO
         | YAGA_DAY30_SCENARIO
         | CORUSCANT_DAY676_SCENARIO
-        | CORUSCANT_DAY1173_SCENARIO => (
+        | CORUSCANT_DAY1173_SCENARIO
+        | CORUSCANT_TRANSIT_DAY149_SCENARIO => (
             false,
             true,
             false,
@@ -439,6 +448,8 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
         yaga_day30: scenario == YAGA_DAY30_SCENARIO,
         coruscant_day676: scenario == CORUSCANT_DAY676_SCENARIO,
         coruscant_day1173: scenario == CORUSCANT_DAY1173_SCENARIO,
+        coruscant_transit_day149: scenario == CORUSCANT_TRANSIT_DAY149_SCENARIO,
+        show_planet: scenario != CORUSCANT_TRANSIT_DAY149_SCENARIO,
         stage_player_selection: matches!(
             scenario,
             CAMERA_JOURNEY_SCENARIO | PRODUCTION_PARTICIPANTS_SCENARIO
@@ -473,6 +484,8 @@ pub(crate) fn apply(
         coruscant_day676_encounter(world)?
     } else if request.coruscant_day1173 {
         coruscant_day1173_encounter(world)?
+    } else if request.coruscant_transit_day149 {
+        coruscant_transit_day149_encounter(world)?
     } else {
         synthetic_encounter(request, world)?
     };
@@ -496,6 +509,14 @@ pub(crate) fn apply(
         game_mode,
     )
     .map_err(|error| format!("fixture battle entry failed: {error:?}"))?;
+    // A battle reads the Game Options display flags as it opens, as the
+    // campaign's battle entry does (main.rs). The other fixtures keep the
+    // defaults the battle entry already holds.
+    if !request.show_planet {
+        let mut display = GameOptionsState::default();
+        display.show_planet = false;
+        tactical.set_display_options(display.tactical_flags());
+    }
     #[cfg(feature = "interface-test-fixtures")]
     if !request.battle_alert_presentation {
         tactical.dismiss_battle_alert_for_fixture();
@@ -1063,14 +1084,27 @@ fn coruscant_day676_encounter(
     ] {
         saved_fleet(world, system, true, ships)?;
     }
+    saved_system_squadrons(world, system, 1, 7, true)?;
+    Ok((system, attacker, defender))
+}
+
+/// The squadrons a save's system holds for one side outside any fleet,
+/// `count` of the FIGHTSD index `class`.
+fn saved_system_squadrons(
+    world: &mut GameWorld,
+    system: SystemKey,
+    class: u32,
+    count: u32,
+    is_alliance: bool,
+) -> Result<(), String> {
     let held = world
         .fighter_classes
         .iter()
-        .find(|(_, class)| class.dat_id.index() == 1)
+        .find(|(_, value)| value.dat_id.index() == class)
         .map(|(key, _)| key)
-        .ok_or("no fighter class 1")?;
-    world.systems[system].add_squadrons(held, 7, true);
-    Ok((system, attacker, defender))
+        .ok_or(format!("no fighter class {class}"))?;
+    world.systems[system].add_squadrons(held, count, is_alliance);
+    Ok(())
 }
 
 /// The forces of the original's day-1173 Battle at Coruscant, read from the
@@ -1140,6 +1174,36 @@ fn coruscant_day1173_encounter(
             saved(0x8d, "Bear", &[5; 6]),
             saved(0x8d, "Cronos", &[5, 5, 5, 6, 6, 6]),
             saved(0x82, "Lord", &[]),
+        ],
+    )?;
+    Ok((system, attacker, defender))
+}
+
+/// The forces of the original's first battle after
+/// `alliance-transit-day149.sav`, read from its master records (A0
+/// TAC-01-C001 and TAC-02-C013; `tools/original-capture/saves/INDEX.md`).
+/// Imperial-held Coruscant (`0x90000109`) lists Fleet 5 (Tyrant, a CAPSHPSD
+/// `0x84`, with two TIE Fighter squadrons among its children), then Fleet 48
+/// (Judicator, `0x85`, with six), then nine TIE squadrons of its own. The
+/// Alliance's Fleet 1 (Corellian Corvette 1 and Medium Transport 1, no
+/// squadron) was saved in transit there from Ithor and arrives last. The
+/// characters aboard and the regiments (two Alliance regiments in the
+/// transport, one in Tyrant) are left out: neither cell's frame shows a
+/// ship's contents.
+fn coruscant_transit_day149_encounter(
+    world: &mut GameWorld,
+) -> Result<(SystemKey, FleetKey, FleetKey), String> {
+    let system = saved_coruscant(world, Faction::Empire)?;
+    let defender = saved_fleet(world, system, false, &[saved(0x84, "Tyrant", &[5, 5])])?;
+    saved_fleet(world, system, false, &[saved(0x85, "Judicator", &[5; 6])])?;
+    saved_system_squadrons(world, system, 5, 9, false)?;
+    let attacker = saved_fleet(
+        world,
+        system,
+        true,
+        &[
+            saved(0x45, "Corellian Corvette 1", &[]),
+            saved(0x46, "Medium Transport 1", &[]),
         ],
     )?;
     Ok((system, attacker, defender))
@@ -1891,7 +1955,8 @@ mod tests {
         assert!(!decode(0x10127).unwrap().coruscant_day676);
         assert!(decode(0x10127).unwrap().production_participants);
         assert!(decode(0x10100).is_none());
-        assert!(decode(0x10128).is_none());
+        assert!(decode(0x10128).unwrap().coruscant_transit_day149);
+        assert!(decode(0x10129).is_none());
         assert!(decode(0x10301).is_none());
         assert!(decode(0x00101).is_none());
     }
@@ -1950,5 +2015,117 @@ mod tests {
         assert_eq!(fighters.len(), 1);
         assert_eq!((fighters[0].class, fighters[0].count), (tie, 6));
         assert_eq!(fighters[0].carrier, ships[1].tag);
+    }
+
+    /// A0 TAC-01-C001 and TAC-02-C013 come from the run that turned Show
+    /// Planet off on the galaxy map before `alliance-transit-day149`'s battle
+    /// and entered it with no task force selected (the capture index rows).
+    #[test]
+    fn the_transit_save_battle_opens_with_show_planet_off_and_nothing_selected() {
+        let alliance = decode(0x10128).unwrap();
+        assert_eq!(alliance.faction, CockpitFaction::Alliance);
+        assert!(alliance.coruscant_transit_day149);
+        assert!(!alliance.coruscant_day1173);
+        assert!(alliance.production_participants);
+        assert!(!alliance.show_planet);
+        assert!(!alliance.stage_player_selection);
+        let empire = decode(0x10228).unwrap();
+        assert_eq!(empire.faction, CockpitFaction::Empire);
+        assert!(empire.coruscant_transit_day149);
+        assert!(!empire.show_planet);
+        // Every other battle keeps the Game Options default, Show Planet on.
+        assert!(decode(0x10127).unwrap().show_planet);
+        assert!(!decode(0x10127).unwrap().coruscant_transit_day149);
+        assert!(decode(0x10125).unwrap().show_planet);
+    }
+
+    /// The master records of `alliance-transit-day149.sav`: Coruscant
+    /// (`0x90000109`) lists Fleet 5 (`0x0800093d`: Tyrant, CAPSHPSD `0x84`,
+    /// two TIE squadrons among its children), then Fleet 48 (`0x08000997`:
+    /// Judicator, `0x85`, six), then nine TIE squadrons of its own; the
+    /// Alliance's Fleet 1 (`0x0800077b`: Corellian Corvette 1, `0x45`, and
+    /// Medium Transport 1, `0x46`) is bound there from Ithor with no squadron.
+    #[test]
+    fn the_transit_save_battle_brings_alliance_fleet_1_against_tyrant_and_judicator() {
+        use rebellion_core::ids::DatId;
+        use rebellion_core::world::{CapitalShipClass, FighterClass, System};
+
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System {
+            name: "Coruscant".into(),
+            control: ControlKind::Controlled(Faction::Alliance),
+            ..Default::default()
+        });
+        for index in [0x45, 0x46, 0x84, 0x85] {
+            world.capital_ship_classes.insert(CapitalShipClass {
+                dat_id: DatId::new(0x1400_0000 | index),
+                hull: 100,
+                ..Default::default()
+            });
+        }
+        let tie = world.fighter_classes.insert(FighterClass {
+            dat_id: DatId::new(0x1c00_0005),
+            ..Default::default()
+        });
+        let seeded = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            bombarding: false,
+        });
+        world.systems[system].fleets.push(seeded);
+        world.systems[system].add_squadrons(tie, 2, true);
+
+        let (coruscant, attacker, defender) =
+            coruscant_transit_day149_encounter(&mut world).unwrap();
+
+        assert_eq!(coruscant, system);
+        let held = &world.systems[system];
+        assert_eq!(held.control, ControlKind::Controlled(Faction::Empire));
+        assert_eq!(held.squadron_count(false), 9);
+        assert_eq!(held.squadron_count(true), 0);
+        let names = |fleet: FleetKey| -> Vec<(u32, String)> {
+            world.fleets[fleet]
+                .capital_ships
+                .iter()
+                .map(|ship| {
+                    (
+                        world.capital_ship_classes[ship.class].dat_id.index(),
+                        ship.name.clone().unwrap_or_default(),
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(held.fleets.len(), 3);
+        assert_eq!(held.fleets[0], defender);
+        assert_eq!(held.fleets[2], attacker);
+        let judicator = held.fleets[1];
+
+        assert!(world.fleets[attacker].is_alliance);
+        assert_eq!(
+            names(attacker),
+            [
+                (0x45, "Corellian Corvette 1".to_string()),
+                (0x46, "Medium Transport 1".to_string()),
+            ]
+        );
+        assert!(world.fleets[attacker].fighters.is_empty());
+
+        for (fleet, name, class, squadrons) in [
+            (defender, "Tyrant", 0x84, 2),
+            (judicator, "Judicator", 0x85, 6),
+        ] {
+            let value = &world.fleets[fleet];
+            assert!(!value.is_alliance);
+            assert_eq!(names(fleet), [(class, name.to_string())]);
+            assert_eq!(value.fighters.len(), 1);
+            assert_eq!(
+                (value.fighters[0].class, value.fighters[0].count),
+                (tie, squadrons)
+            );
+            assert_eq!(value.fighters[0].carrier, value.capital_ships[0].tag);
+        }
     }
 }

@@ -993,7 +993,8 @@ tasks find no character before then.
   `FUN_0041ab40` (their flags) and the Create Fleet targets of
   `FUN_004782a0`, `FUN_00478690`, `FUN_00478aa0`.
 - Fleet record fields `+0x5c`, `+0x68`, `+0x74`, `+0x80` and system record
-  fields `+0x110`, `+0x118`; whether fleet flag `0x10` marks the Death Star.
+  field `+0x118` (fleet flag `0x10` and `+0x110` are in `ai-death-star.md`,
+  items 4 and 7).
 - Why module 7 scraps fighters when no source is found; module 3's
   Coruscant case.
 - Who drives player slots `0x64`/`0x68` (the live `c+0x184`, `+0x188`).

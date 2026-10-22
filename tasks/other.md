@@ -4,48 +4,22 @@
 
 Decisions, chores and unlabelled nodes. Back to the [index](INDEX.md).
 
-15 open.
-
-<a id="or-dec-c6-text-masks-rue"></a>
-### Decide: may C6 mask label text boxes, citing the accepted anti-aliased font?
-
-`or-dec-c6-text-masks-rue` · **open** · P1 · decision, tactical · updated 2026-10-14  
-Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Unblocks: [or-acc-status-2ls](acceptance.md#or-acc-status-2ls)
-
-> Tom accepted the port's anti-aliased Liberation Sans where the original draws aliased GDI Arial (2026-10-14). C6 thresholds (changed pixels <= 0.5%, SSIM >= 0.995) still fail any region holding text: TAC-03-C019 status-panel matches A0 in content, art and layout but fails at SSIM 0.952, 3.7% changed. Proposal: mask only the measured label boxes (e.g. the fighter panel's four labels from tactical-fighter-group-panel.md), each mask citing this decision, and keep a separate text check that the strings, positions and em size match A0. Done when Tom approves or rejects the masks.
-
-<a id="or-3ioq"></a>
-### Port the production modules' ascending kind order (FUN_005f4f10 tree, FUN_004be980)
-
-`or-3ioq` · **open** · P2 · updated 2026-10-16
-
-> ghidra/notes/ai-order-emission.md, ai-production.md U10: the module list is a tree keyed by kind (FUN_005f4f10, comparator FUN_005f5560); FUN_004be980 starts at the leftmost node (FUN_005f5060), so the scheduler walks 1, 2, 3, 5, 6, 7, 10, 11 for the implemented modules. ai_production.rs Module::ALL and the doc comment near line 38 follow insertion order (13, 2, 1, 3, 6, 7, ...), read earlier from FUN_00485a50. Verify the two readings against each other before changing; golden for a named cause.
-
-**Notes**
-
-> Settled 2026-10-16: the node base constructor FUN_004ec940 stores the kind at +0x18 (FUN_005f5600), FUN_005f5500 looks modules up by it and FUN_005f4f10 inserts by it, and FUN_004be980 walks the in-order links from the leftmost node, so the scheduler visits ascending kind whatever FUN_00485a50's insertion order. Module::ALL is now Yards, DeficitRelief, Defences, SpecialForces, Regiments, SystemFighters, FleetFighters, CapitalShips (1, 2, 3, 5, 6, 7, 10, 11); ai-parity-tracker.md says so. Open: the port's one-round-per-day cadence (hyp) still runs modules 13, 8, 9, 12 before production; the original steps one armed module per pass in ascending id. Golden pending (cause: the production modules' ascending order).
-
-<a id="or-ahj2"></a>
-### A loaded save reuses freed slotmap slots in a different order than the uninterrupted game
-
-`or-ahj2` · **open** · P2 · updated 2026-10-16
-
-> Playtest staging (2026-10-16): a save at day 60 loaded and run 15 days diverges from the straight run (fingerprints cd7111ed2f3840a8 vs 654f1a00678d424a; equal at +10). A world JSON diff shows exactly one difference: a new manufacturing facility at manufacturing_facilities[47] version 3 (freed slot reused) in the straight run, [99] version 2 (fresh slot) after load. Every other world field matches, and the restored sim_rng and the other states are identical. So the slotmap free list is not restored in its pre-save order, and since the AI walks the world's slotmap order (e.g. ai_production scrap_system_fighter after the 2026-10-16 determinism fix) a loaded game plays differently. Fix: persist and restore each slotmap's free order (save bump), or allocate new objects in an order independent of slot reuse. Gate: agent_docs/simulation.md --load paragraph; hyp: the replay golden's save-reload test passes because its window frees no slot before the save (unverified).
-
-**Notes**
-
-> Fixed: world slotmaps are saved as {slots, free} (crates/rebellion-core/src/world/slot_order.rs, serde(with) on the 11 GameWorld arenas, save v48). slotmap's serde keeps slots+versions but rebuilds the free list in descending index order; the adapter writes the pop order (probed on a clone) and rebuilds each map by remove/insert cycles to saved versions, freeing vacant slots in reverse pop order; rejects a free list that is not a permutation of the vacant slots. Proof (same binary): seed 42 and 7 save@60 +15 == straight 75; seed 42 save@300 +700 == straight 1000; seed 7 save@300 +300 == straight 600. Seed 7 straight runs are themselves nondeterministic between day 600 and 700 (same binary, three different fingerprints), unrelated to load. Replay golden: initial fingerprint no longer matches (free order is now in the canonical fingerprint); not regenerated.
+11 open.
 
 <a id="or-d-gnd-plan-glw"></a>
 ### Plan the TAC-08 port in phases and explain it to Tom
 
-`or-d-gnd-plan-glw` · **open** · P2 · decision, ground-assault, owner · updated 2026-10-20  
+`or-d-gnd-plan-glw` · **open** · P2 · decision, ground-assault, owner · updated 2026-10-21  
 Epic: [Ground assault (TAC-08): port the original's report-only flow](INDEX.md#or-ep-gnd-mmf)  
-Waits on: [or-c-gnd-alliance-qqg](closed.md#or-c-gnd-alliance-qqg), [or-r-gnd-5hu](reviews.md#or-r-gnd-5hu)  
+Waits on: [or-c-gnd-alliance-qqg](closed.md#or-c-gnd-alliance-qqg), [or-r-gnd-5hu](closed.md#or-r-gnd-5hu)  
 Unblocks: [or-p-gnd-ykv](ports.md#or-p-gnd-ykv)
 
 > Well over three files: phases, each explained before implementing.
+
+**Acceptance criteria**
+
+- [ ] A phased TAC-08 plan (A1 fixtures, compare regions, the Alliance's A0 frames from the VM) is written and explained to Tom
+- [ ] Tom approves or rejects it
 
 **Notes**
 
@@ -54,46 +28,88 @@ Unblocks: [or-p-gnd-ykv](ports.md#or-p-gnd-ykv)
 <a id="or-k1b8"></a>
 ### Native Alliance opening: the day clock stalls during the droids' cockpit briefing with briefing=false
 
-`or-k1b8` · **open** · P2 · updated 2026-10-16
+`or-k1b8` · **open** · P2 · updated 2026-10-21
 
 > Seed 42, Alliance player, native (--live), 2026-10-16. The day clock stood still from ~9.3 s to ~20.4 s at day 8, Slow, with Status reporting briefing=false and pause_alert=false; it began as the Alliance droids' cockpit briefing ran ('[advisor] cockpit step 2 13 at step 5', nine advice topics filed, the Advice index opened then closed by the dev policy). The same opening held a new game at day 0 for 300 frames. Empire runs show nothing like it. Find what holds the clock (advisor_state.holds_clock? the cockpit step?) and settle against the original's briefing (FUN_00487ff0 hold_speed_for_advice). Found by the scheduler step-4 native checks; does not affect their results.
+>
+> ## Steps to Reproduce
+>
+> 1. Start a native `--live` game, seed 42, as the Alliance, at Slow.
+> 2. Let the droids' cockpit briefing run at day 8.
+> 3. Status reports briefing=false and pause_alert=false while the day clock stands still from about 9.3 s to 20.4 s.
+
+**Acceptance criteria**
+
+- [ ] What holds the clock is named and settled against the original's briefing (`FUN_00487ff0`).
+- [ ] The day clock behaves as the original's through the briefing, Alliance and Empire.
 
 <a id="or-nn7x"></a>
 ### Q: Does the original resolve every battle of a day before the day moves on, and the AI order again?
 
-`or-nn7x` · **open** · P2 · updated 2026-10-16
+`or-nn7x` · **open** · P2 · updated 2026-10-21
 
 > Native port (scheduler step 4): the combat loop opens one player battle per tick and leaves the other contested systems for the next tick's combat stage (held_battles); AI orders touching them are recorded 'held' and the module resets (settle(false)), so module 8 re-issues the same Reinforce move about every second round: ~300 held ai_action records in one Very Slow day (seed 42, Alliance player, battles staged at Coruscant and Ghorman). held orders are uncounted, so the cap is unaffected. The original shows Battle Alerts in sequence while the day stands still (FUN_0040a050 states 5-0x17; save alliance-day54, Praesitlyn days 508/532), which suggests all of a day's battles resolve before the next round. Settle in the VM with two battles due the same day: does the second alert open before the day advances? If so, port it (open the remaining battles before the clock resumes) and drop the next-tick deferral; the held flood goes with it. Until then, no damping.
+
+**Acceptance criteria**
+
+- [ ] A VM or Wine run with two battles due the same day records whether the second alert opens before the day advances
+- [ ] The port opens the day's battles as the original does, and the held ai_action flood is gone on the seed 42 staging, both sides
 
 <a id="or-port-transit-rules-v4tk"></a>
 ### Port: transit ticks follow FUN_00555b30's container rule and the constant 100
 
-`or-port-transit-rules-v4tk` · **open** · P2 · updated 2026-10-14  
+`or-port-transit-rules-v4tk` · **open** · P2 · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > movement.rs transit_ticks_between divides by GNPRTB 1 where FUN_0055d8c0 divides by DAT_00661a88 (100), and the port has no FUN_00555b30 rule (same container 0 ticks; different containers that are not both systems 1 tick). Source: ghidra/notes/build-delivery.md Travel and Port. Both factions identical (no side branch).
 
+**Acceptance criteria**
+
+- [ ] transit_ticks_between divides by the constant 100 (DAT_00661a88)
+- [ ] Every mover (fleets, characters, products) applies FUN_00555b30's container rule; tests
+
+**Notes**
+
+> 2026-10-20 reconcile: Half open: FUN_00555b30's container rule is ported for deliveries (delivery.rs:119), but transit_ticks_between still divides by GNPRTB 1, not DAT_00661a88 (build-delivery.md:291).
+
 <a id="or-a631"></a>
 ### Re-source or retire eval_parity's golden-value oracle
 
-`or-a631` · **open** · P3 · chore · updated 2026-10-16
+`or-a631` · **open** · P3 · chore · updated 2026-10-21
 
 > scripts/eval_parity.py grades a playtest log against scripts/golden_values.json, added in a08294da with no source for its ranges. On .artifacts/playtests/2026-10-15-research/seed42-dual.jsonl, 8 checks fail: ai.interval_vs_original/current (expect 1, see 7, a log from before the scheduler), combat.combat_ground and combat.bombardment present, and story_events support_change (500..=6000, see 17), natural_disaster (100..=3000), units_deployed (500..=8000) and manufacturing_idle (100..=3500). The research.completion_event_ids check was removed on 2026-10-16: events 0x125-0x127 are the original's internal research level-change events (FUN_0041e580.c:74, ai-mission-planning.md:299-310), which the port never emitted. Give each remaining range a source (a VM run or a decompile) or remove it; calibrate.py and calibration-reference.json may already cover the same ground.
+
+**Acceptance criteria**
+
+- [ ] Each range in scripts/golden_values.json cites a VM run or a decompile, or is removed
+- [ ] eval_parity.py passes on a current dual-AI seed-42 log, or is retired in favour of calibrate.py and calibration-reference.json
 
 <a id="or-ch-hyp-m04"></a>
 ### Turn the ~40 hyp:/port: markers into question nodes
 
-`or-ch-hyp-m04` · **open** · P3 · chore, ghidra · updated 2026-10-14  
+`or-ch-hyp-m04` · **open** · P3 · chore, ghidra · updated 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
 
 > One question per marker that the executable can settle; leave port: markers that are design choices.
 
+**Notes**
+
+> 2026-10-20 reconcile: Needs re-scoping. The 2026-10-18 sweep filed the B/C tags as port nodes (gqbq, 7djk, w0mx, xugn, vv4g, hxns, pr7k, 7o9n, zes0, i6yx, cw3m, d76h, xz1l, n9le, kpnz, 3078, rore, karc, lvee). Crates now hold 1,326 port:/hyp: lines. Either close with a pointer to the sweep, or redefine the inventory.
+
 <a id="or-chore-tooling-after-scheduler-qw7m"></a>
 ### Chore: test tooling after the scheduler commit
 
-`or-chore-tooling-after-scheduler-qw7m` · **open** · P3 · chore · updated 2026-10-16
+`or-chore-tooling-after-scheduler-qw7m` · **open** · P3 · chore · updated 2026-10-21
 
 > Test tooling after the scheduler commit: a `Pause policy: resume` developer command; `Show system` and `List fleets` readouts with owner and blockader; a day-by-day divergence check that re-syncs from the native save each day so the first real behavioural difference shows despite the RNG; the remaining scripts/invariants.py rules (A->B->A fleet shuttles, orders sent to a pending battle, mission churn); calibrate.py --compare. Source: the 2026-10-16 tooling brainstorm.
+
+**Acceptance criteria**
+
+- [ ] `Pause policy: resume` works natively on both sides and is documented in dev-commands.md
+- [ ] Show system / List fleets print the blockader
+- [ ] divergence.py re-syncs from the native save each day and names the first behavioural difference
+- [ ] invariants.py checks A->B->A shuttles, orders sent to a pending battle and mission churn; calibrate.py --compare exists
+- [ ] scripts/stages/unattended.txt waits out the Alliance opening briefing
 
 **Notes**
 
@@ -102,39 +118,50 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 <a id="or-chore-uprising-at-command-6q65"></a>
 ### Chore: an Uprising at developer command for the rebelling-yard repair check
 
-`or-chore-uprising-at-command-6q65` · **open** · P3 · chore · updated 2026-10-16
+`or-chore-uprising-at-command-6q65` · **open** · P3 · chore · updated 2026-10-21
 
 > A developer command `Uprising at <system>` that starts an uprising at a system, so a damaged ship at its own rebelling yard can be staged and the repair cadence checked there (FUN_00528040: a rebelling yard does not count as a working yard, so the ship repairs every 30 days, not every 2). An own blockaded yard never holds its holder's damaged ship (the post-battle pass moves or destroys every loser, FUN_00516ef0 -> FUN_00515480), so only the rebelling half needs a check. Done when the command works on both factions and the native repair telemetry shows the 30-day step at a rebelling own yard.
+
+**Acceptance criteria**
+
+- [ ] The command works on both factions and the native repair telemetry shows the 30-day step at a rebelling own yard.
 
 <a id="or-i7uo"></a>
 ### Port: regiments of both sides keep the earlier troop side (FUN_0050b610 bits 4-5)
 
-`or-i7uo` · **open** · P3 · updated 2026-10-15
+`or-i7uo` · **open** · P3 · updated 2026-10-22
 
 > FUN_0050b610 leaves the troop-side bits 4-5 unchanged when both sides have regiments at a system, and FUN_005588f0 takes the holder from those bits when set, so the earlier troop side keeps the system; economy.rs resolve_system_control returns ControlKind::Contested instead (a port: tag). For an unpopulated system (+0x88 bit 0 clear) FUN_0050b610 sets the support bits 2-3 to 3 (neutral), but the troop bits still decide; the port returns Uncontrolled before reading regiments. Contested is read by blockade, the UI and the AI, so the change crosses crates: explain before changing. Done when both cases follow the original, verified e2e on both sides.
+
+**Acceptance criteria**
+
+- [ ] Both cases follow the original, verified e2e on both sides.
 
 <a id="or-port-gid-unit-mode-colour-xgrr"></a>
 ### Port the GID fleet and personnel modes' marker colour
 
-`or-port-gid-unit-mode-colour-xgrr` · **open** · P3 · updated 2026-10-17
+`or-port-gid-unit-mode-colour-xgrr` · **open** · P3 · updated 2026-10-21
 
 > FUN_0042b330 cases 0x20-0x22 and 0x43-0x44 pick the marker's side from the units counted, not the system's holder: the player's side when the player's fleets are there, the enemy's when only the enemy's are, the mixed sprite 0x27b0 (10160) with the summed count when both are, and the system's side when neither is (0x0042b7fb-0x0042b83a). The port colours every metric mode by System::control (gid_marker_for_system). Original: destroyed, neutral Yaga Minor shows a large green marker under Idle Fleets for the two Imperial fleets in orbit (empire-huge-deathstar-built.sav played to day 315). Both sides.
+
+**Acceptance criteria**
+
+- [ ] Modes 0x20-0x22 and 0x43-0x44 take the marker side from the counted units, with the mixed sprite 10160, cited to 0x0042b7fb-0x0042b83a
+- [ ] A browser or native check of destroyed Yaga Minor's green marker under Idle Fleets, and of a mixed system, on both sides
 
 <a id="or-q-emptied-fleet-crew-iz3z"></a>
 ### Q: What happens to the characters aboard a fleet whose last ship dies?
 
-`or-q-emptied-fleet-crew-iz3z` · **open** · P3 · updated 2026-10-17
+`or-q-emptied-fleet-crew-iz3z` · **open** · P3 · updated 2026-10-21
 
 > post_battle::destroy_fleet makes them captives of the other side (hyp, from the tactical loser's emptied fleet). It serves battles and bombardment defence fire alike (integrator resolve_strike), where the other side may not be present: a side may bombard its own system, and its own KDY/LNR batteries can empty its fleet (FUN_00527550, FUN_005272e0 take no side). Trace the fleet destroy slots +0xac(2)/+0xac(5) on a fleet's character children and whether the adrift setter FUN_00534790 or the prisoner path runs; settle in the VM (a fleet with a character emptied by batteries at its own system, both sides).
 
-<a id="or-rhik"></a>
-### Port persistent research planners (FUN_004bced0, FUN_004e8290) without the yard pre-test
+**Acceptance criteria**
 
-`or-rhik` · **open** · P3 · updated 2026-10-16
-
-> ghidra/notes/research.md: a research planner keeps its member claimed and re-emits Create Mission 0x240 every pass (state 8 FUN_0047b360, empty team while the member is on the mission or in transit); it retires only through the controller drop request (FUN_004e5710, FUN_004d2580 -> FUN_0042f690 flag 0x10000000, FUN_0047aff0 releases members), fired when the live count exceeds the limit or the tree's controller bit is set (FUN_004e8290). Nothing moves a scientist to a yard: the target is the member's own system (FUN_004bd0a0), no Move, no yard test. Port today: ai.rs evaluate_research pre-tests for a working yard and passes to the next tree, and a planner lives only as long as its mission. Port: per-tree planners holding one claimed member, the order emitted without the yard pre-test (the validator refuses), retirement only on exhaustion or the count limit.
+- [ ] A VM or Wine run empties a fleet carrying a character with its own batteries, on both sides, and records the character's fate
+- [ ] post_battle::destroy_fleet follows FUN_00502840 (adrift plus wound roll, never captive), and its hyp: is gone
 
 **Notes**
 
-> Landed: ai_research.rs ResearchPlanners (saved in AIState.research_planners, SAVE_VERSION 47) replaces evaluate_research: persistent per-tree planners each claim one member (Planner::pick_research_member), re-emit the Research order every round at the member's own system (held, not blockaded) with no yard pre-test; member on mission/in transit sends nothing; released flags 0x7400051 drop the member. Controller request FUN_004e8290: add while tree bit clear and count<capable; drop (oldest unflagged, hyp: slot +0x18 untraced) when count>capable or tree done and count>0. Open: yard/exhausted test is not at creation in dispatch_guarded (mission created then ends 0xc), planner flags 0x20000000/0x40000000 setters.
+> 2026-10-20 reconcile: Answered by code read in tactical-results.md 3, 'The lost ship's characters': a lost ship's characters go adrift (FUN_004ef2e0) and take the wound roll, and none is captured. The port's post_battle::destroy_fleet still makes them captive (post_battle.rs:713, hyp citing this node). The VM settle is not done. Open a port node, or fold the fix here. Port work: or-port-lost-ship-crew-adrift-4mpf.
 

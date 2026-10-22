@@ -2,14 +2,1334 @@
 
 # Closed
 
-110 closed nodes, newest first. Back to the [index](INDEX.md).
+162 closed nodes, newest first. Back to the [index](INDEX.md).
+
+<a id="or-p-task-force-strip-07t"></a>
+### Port the task-force strip slots, headers and group selection
+
+`or-p-task-force-strip-07t` · **closed** · P1 · port, tactical · assigned to lead · closed 2026-10-22  
+Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
+Waits on: [or-ep-task-force-strip-5kdd.13](#or-ep-task-force-strip-5kdd.13), [or-ep-task-force-strip-5kdd.14](#or-ep-task-force-strip-5kdd.14), [or-ep-task-force-strip-5kdd.6](#or-ep-task-force-strip-5kdd.6), [or-ep-task-force-strip-5kdd.7](#or-ep-task-force-strip-5kdd.7), [or-ep-task-force-strip-5kdd.8](#or-ep-task-force-strip-5kdd.8), [or-ep-task-force-strip-5kdd.9](#or-ep-task-force-strip-5kdd.9), [or-r-task-force-strip-42a](#or-r-task-force-strip-42a)  
+Unblocks: [or-acc-fighter-strip-239](acceptance.md#or-acc-fighter-strip-239), [or-acc-taskforce-0oy](acceptance.md#or-acc-taskforce-0oy)
+
+> Draw the strip as the original and select a group from its slot.
+>
+> The work is beaded out in `or-ep-task-force-strip-5kdd` (plan `docs/plans/2026-10-20-feat-task-force-strip.md`); this node closes when its beads do. Cite the recovered functions in the code; unit tests are shown red first in a Mini clone, and the change is verified end to end in the running game (native dev commands and the battle runner), both factions.
+
+**Acceptance criteria**
+
+- [x] Task-force number labels draw at the original's font, size and state colours (or-ep-task-force-strip-5kdd.6)
+- [x] The strip slots take the whole button rectangle, as FUN_006035f0 and FUN_00602150 do (or-ep-task-force-strip-5kdd.7)
+- [x] Slot clicks, keys 1-8 and F1-F12 act as FUN_0059b450, FUN_0059b620, FUN_0059fd40 and FUN_0059b730 do (or-ep-task-force-strip-5kdd.8, .9), checked natively on both sides (or-ep-task-force-strip-5kdd.14)
+- [x] Unassigned task-force slots act only in the modes FUN_0059b450 and FUN_0059f6e0 allow, replacing the Ctrl+click rule (or-ep-task-force-strip-5kdd.10)
+- [x] The 17 fighter-strip edge pixels are explained or fixed (or-ep-task-force-strip-5kdd.13)
+
+**Notes**
+
+> 2026-10-14: geometry ported from FUN_0059be80/FUN_0059c030 (ghidra/notes/tactical-group-strips.md): task-force header (9,1), slots 60+29i; fighter header (296,1), slots 347+29i at 25x15 (bitmaps clipped to 15 rows). Native Mac Mini both factions: (360,10) selects Red Group. C6 2026-10-14T18-52-43-758Z: displacement 0 everywhere; fighter-group-strip SSIM 0.367 -> 0.997 (17 edge/corner pixels differ, likely the button bitmaps' transparent edge over the strip background); task-force-strip SSIM 0.942, 3.9% changed. Open: (1) the task-force number labels draw much larger in A0 than the port's 13 px label (size, not anti-aliasing); (2) the 17 edge pixels; (3) a native check that a task-force slot click and keys 1-8 select as FUN_0059b450/FUN_0059b730 do.
+> 2026-10-20 reconcile: Partly done: geometry ported (FUN_0059be80, FUN_0059c030); slot selection is cited (tactical_view.rs:10043). Open: the label size, the 17 edge pixels, the whole-rectangle hit test, and a native check of slot clicks and keys 1-8.
+> 2026-10-22, in the strip epic's commit: every criterion met through or-ep-task-force-strip-5kdd .6-.10, .13 and .14. The number labels use the original's font size, place and state colours in the port's Liberation Sans, which Tom chose over GDI Arial's glyphs (.5, 2026-10-21). Native check on both sides: seed 42, Yavin (Alliance) and Coruscant (Empire), day 2.
+
+**Closed:** Criteria met through the epic's beads; evidence in notes
+
+<a id="or-ep-task-force-strip-5kdd.14"></a>
+### Native check of both group strips on both sides
+
+`or-ep-task-force-strip-5kdd.14` · **closed** · P1 · tactical, verify · closed 2026-10-22  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Waits on: [or-ep-task-force-strip-5kdd.10](#or-ep-task-force-strip-5kdd.10), [or-ep-task-force-strip-5kdd.6](#or-ep-task-force-strip-5kdd.6), [or-ep-task-force-strip-5kdd.7](#or-ep-task-force-strip-5kdd.7), [or-ep-task-force-strip-5kdd.8](#or-ep-task-force-strip-5kdd.8), [or-ep-task-force-strip-5kdd.9](#or-ep-task-force-strip-5kdd.9)  
+Unblocks: [or-p-task-force-strip-07t](#or-p-task-force-strip-07t)
+
+> ## Background
+>
+> The strip ports change clicks, keys, labels and pressed looks. The tactical HUD has no named controls, so the native check uses raw coordinates (`agent_docs/dev-commands.md`). Task-force slot n (1-8) is centred at x = 43 + 29n, y 10 (`FUN_0059be80.c:55`: x `0x3c + 0x1d*i`, y 2, 25x17); fighter slot n (1-4) at x = 330 + 29n, y 9 (`FUN_0059c030.c:52`: x `0x15b + 0x1d*i`, y 2, 25x15).
+>
+> ## E2E
+>
+> On the Mini, silent: `scripts/launch-native.sh --live --seed <n>`, then a `scripts/dev-run.sh` batch, once with `Start game: Empire` and once with `Start game: Alliance`. Record the seed. The briefing and the Advice index hold the clock until skipped and closed, and the policies do not act during `Wait until battle alert` (`agent_docs/dev-commands.md`; the same opening as `scripts/native-checks/scheduler-battle-hold-empire.txt`):
+>
+> 1. `Start game: <side>`, `Wait 3000 ms`, `Skip briefing`, `Battle policy: stop`, `Advice policy: close`, `Click control: MessageIndex/Close`.
+> 2. `List systems`. Choose a system where `Battle at` gives the player's side at least two task forces, one unassigned task-force slot and the Red group, and record it (the same seed meets the same galaxy on the next launch).
+> 3. `Battle at <system>`, `Fast forward: on`, `Wait until battle alert within 600 frames`, `Fast forward: off`, `Click control: BattleAlert/Tactical`, `Wait until battle`.
+> 4. A `Capture` after each of: `Click 72,10`, `Click 72,10`, `Click 60,2`, `Press 2`, a click at the centre of the first unassigned task-force slot (x = 43 + 29n), `Click 360,10`, `Click 360,10`, `Click 347,2`, `Press f1`, `Press f9`.
+> 5. `Quit`.
+>
+> `Press` releases at once, so a held key's look is not checked here. Entering the assignment modes is `or-ep-task-force-strip-5kdd.10`'s native check.
+>
+> ## Evidence
+>
+> Seed, system and day; the `[tactical_groups]` and `[tactical_camera]` lines; capture names; the binary's hash; `pmset -g assertions` clean of audio-out on both machines.
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] The Empire run shows in captures and logs: select, clear and corner select on both strips; Press 2 acting as or-ep-task-force-strip-5kdd.9 states; the unassigned-slot click changing nothing; F1 and F9 following, with the selection as the modes question's note (or-ep-task-force-strip-5kdd.3) states for FUN_005d9a70
+- [x] The Alliance run shows the same
+- [x] In the captures a pressed slot's number is white, a released one black, and an unassigned slot shows none, both sides
+- [x] Seed, system, day, binary hash and clean audio assertions on both machines are recorded on this bead
+
+**Notes**
+
+> 2026-10-22, binary eb0a3a92 (source 072d8289 with this work), seed 42, Yavin, days 1-2 (corner runs day 2), mute on, pmset audio-out clean on the Mini and this Mac after each run. Alliance: select, clear and corner select on both strips; Press 2 on the unassigned slot changing nothing; F1, F9 and F10 following with the selection unchanged; the pressed 1 white, released black, slots 2-8 blank. Empire: the same for the task-force strip and F1. Open: the Empire's fighter strip, whose slots stay greyed because Imperial Fleet 1's six squadrons hold no slot in that battle (or-d-imperial-squadrons-no-slot-pndt); the browser gate's group-presentation probe shows the Empire fighter select and clear meanwhile.
+> Empire fighter strip, 2026-10-22, binary 25073c7e (built from the strip epic's commit), seed 42, Battle at Coruscant (Alliance Fleet 1 from Yavin attacks; the Empire defends with its 10 system squadrons), day 2, mute on: Red, Blue and Green hold slots, Gold greyed. Click 359,9 logs fighter_group_selected slot=1 members=4 then fighter_group_cleared slot=1; Click 347.5,2.5 selects Red again; F9 logs follow kind=fighter_group group=1 with the selection unchanged; F1 follows task force 1; Click 60.5,2.5 selects task force 1; Click 101,9 and Press 2 on unassigned slot 2 change nothing; Press 1 releases Red and presses task force 1; Click 288,9 does nothing. Captures show the pressed 1 white, the released 1 black, slots 2-8 blank. pmset: the Mini clean; this Mac's only audio-out assertions are a Chrome helper (37 days up) and cliamp (6 days up), neither part of the run.
+
+**Closed:** Criteria met; evidence in notes
+
+<a id="or-ep-task-force-strip-5kdd.10"></a>
+### Unassigned task-force slots act only in the original's modes
+
+`or-ep-task-force-strip-5kdd.10` · **closed** · P1 · port, tactical · closed 2026-10-22  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Waits on: [or-ep-task-force-strip-5kdd.4](#or-ep-task-force-strip-5kdd.4), [or-ep-task-force-strip-5kdd.8](#or-ep-task-force-strip-5kdd.8), [or-ep-task-force-strip-5kdd.9](#or-ep-task-force-strip-5kdd.9)  
+Unblocks: [or-ep-task-force-strip-5kdd.14](#or-ep-task-force-strip-5kdd.14)
+
+> ## Background
+>
+> An unassigned task-force slot ignores a click unless `FUN_00595b90` -> `FUN_0059a520` -> `FUN_0059f6e0` holds: mode `0xe` with the controller flag, or mode `0x10` (`FUN_0059b450.c:18-19`, `FUN_0059f6e0.c:7-13`). When it holds, the slot takes its hover text (`FUN_00600c40`, which sets hover text, not the caption: `FUN_00600cc0.c:13-21`) and its images (`FUN_005c5480`), presses (state 5, `FUN_006030c0`) and posts command 2+i (`FUN_0059b450.c:39-44`). The executor passes that command to the current mode's `+0x14(i)` only while the controller flag `*this` is set (`FUN_0059fd40.c:33-38`). In mode `0x10` with the flag clear, the command calls no `+0x14`.
+>
+> Whether an unassigned slot can be clicked at all, or is reached only by keys 1-8, is the input question's to settle (`or-ep-task-force-strip-5kdd.2`). The modes and their `+0x14` are the modes question's (`.3`). The port assigns with Ctrl+click and a next-blank rule (`crates/rebellion-render/src/tactical_view.rs:3116-3141`, `:4944-4961`), tested at `:9601-9618` against manual pp. 143 and 148; no traced function checks it (inferred). The A1 yaga `task-force-2` journey (`TAC-03-C014`/`C015`) depends on today's input, and `tools/interface-parity/run.mjs:1784-1797` asserts an unassigned slot press logs no `[tactical_groups]` line.
+>
+> ## Scope
+>
+> Replace or reconcile the Ctrl+click path with the modes the modes question names, entered through the input path the input question names. Change the `:9601` test only with the question's evidence, cited. Keep the yaga `task-force-2` journey reproducing its cells, and change its input only with the traced path, named in the commit.
+>
+> ## Tests
+>
+> `an_unassigned_task_force_click_is_ignored_outside_the_assignment_modes` (`FUN_0059b450.c:18-19`, `FUN_0059f6e0.c:7-13`), and one positive test per mode the question names, including the flag-clear case of mode `0x10` (`FUN_0059fd40.c:34-37`). Red first; `cargo mutants` on the touched functions.
+>
+> ## E2E
+>
+> The interface-parity `task-force-2` journey, both sides. A native assignment on both sides, entering the mode the modes question names.
+>
+> ## Evidence
+>
+> C6 rows for `TAC-03-C014`/`C015` before and after, by run id; `[tactical_groups] assigned slot=..` lines.
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] An unassigned slot acts only in the modes the modes question names, through the input path the input question names (click or keys 1-8), both sides
+- [x] Outside those modes an unassigned slot's click or key changes no selection and logs no [tactical_groups] line, both sides
+- [x] The C6 rows for TAC-03-C014 and TAC-03-C015 give the same result as the last run before the change, both run ids named
+- [x] If or-f-sixteen-tie-c43 reproduces TAC-02-C001's split by input, its C6 row for TAC-02-C001 gives the same result as the last run before the change, run ids named
+- [x] The named tests are green after being shown red, and the scoped mutants are killed or explained
+
+**Notes**
+
+> Done 2026-10-22. Native, seed 42, Yavin, binary eb0a3a92: with task force 1 selected (a strip mode), Click 101,9 on unassigned slot 2 and Press 2 log no task_force line and change nothing, both sides. Units: an unassigned slot forms a task force in mode 0xe with the player-command flag set and in 0x10, presses only in 0x10 with the flag clear, and is ignored otherwise (five tests). C6 TAC-03-C014 and C015, before (run 2026-10-19T18-04-56-271Z) and after (run 2026-10-22T03-14-09-732Z): status-panel fails in both (C014 SSIM 0.941 and 0.941, C015 0.737 and 0.806), aperture fails in both (0.908 and 0.955). The panel now steps the same ships as A0 (Carrack, ISD, Carrack); the hull numbers differ (or-d-yaga-hull-numbers-0iad). or-f-sixteen-tie-c43 has not landed, so TAC-02-C001 stays not-run. Red-first and mutants as on .8.
+
+**Closed:** Criteria met; evidence in notes
+
+<a id="or-ep-task-force-strip-5kdd.9"></a>
+### Number keys 1-8 and F1-F12 on the group strips
+
+`or-ep-task-force-strip-5kdd.9` · **closed** · P1 · port, tactical · closed 2026-10-22  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Waits on: [or-ep-task-force-strip-5kdd.4](#or-ep-task-force-strip-5kdd.4), [or-ep-task-force-strip-5kdd.8](#or-ep-task-force-strip-5kdd.8)  
+Unblocks: [or-ep-task-force-strip-5kdd.10](#or-ep-task-force-strip-5kdd.10), [or-ep-task-force-strip-5kdd.14](#or-ep-task-force-strip-5kdd.14), [or-p-task-force-strip-07t](#or-p-task-force-strip-07t)
+
+> ## Background
+>
+> On key-down, keys 1-8 release all eight task-force and four fighter slots (`FUN_0059b430`, `FUN_0059b600`) and press task-force slot i through `FUN_0059ca90(0xad02+i, 1)` (`FUN_0059b730.c:58-97`). Whether that press posts command 2+i is the input question's (`FUN_00603710`). F1-F8 follow task force i, and F9-F12 fighter group i, with camera mode `0xb` (`FUN_005c2990`, follow camera `FUN_005d9a70`), only when the group exists (`FUN_00595ba0`/`FUN_00595bc0`, `FUN_0059b730.c:98-130`). The key path posts no selection command; whether the follow camera itself changes the selection is the modes question's (`or-ep-task-force-strip-5kdd.3`). The numpad digits drive the camera buttons `0xad19`-`0xad20` or nothing (`FUN_0059b730.c:34-57`), and 9 and 0 have no case. The port has no digit path, and its F keys select as well as follow (`crates/rebellion-render/src/tactical_view.rs:5079-5122`); `tools/interface-parity/run.mjs:4672-4681` encodes that.
+>
+> ## Scope
+>
+> A pure `tactical_key_action(KeyCode) -> Option<TacticalKeyAction>`. Digits act per the input question. F keys follow existing groups and change the selection only as the modes question's note settles for `FUN_005d9a70`. Keys 9, 0 and the numpad are not strip keys. Say what a camera-only F key does to `command_panel` (today it sets `Display`, `:5093`, `:5109`). Correct the `run.mjs` hotkey assertions (`:4672-4681`), naming the cause in the commit.
+>
+> ## Tests
+>
+> `a_digit_key_releases_both_strips_before_pressing_its_slot` (`FUN_0059b730.c:58-97`); `f_keys_follow_existing_groups_without_changing_selection` (`:98-130`; it asserts the key action carries no selection change, not the camera's effect); `nine_zero_and_the_numpad_press_no_strip_slot` (`:17-97`: only `0x31`-`0x38` reach the strips). Red first; `cargo mutants` on `tactical_key_action` (the `+ 8` offset, index off by one, presence gates).
+>
+> ## E2E
+>
+> On the Mini, silent: `scripts/launch-native.sh --live --seed <n>`, then a `scripts/dev-run.sh` batch, once with `Start game: Empire` and once with `Start game: Alliance`. Record the seed (opening as `scripts/native-checks/scheduler-battle-hold-empire.txt`; `agent_docs/dev-commands.md`):
+>
+> 1. `Start game: <side>`, `Wait 3000 ms`, `Skip briefing`, `Battle policy: stop`, `Advice policy: close`, `Click control: MessageIndex/Close`.
+> 2. `List systems`. Choose a system where `Battle at` gives the player's side task forces 1 and 2 and the Red group, and record it.
+> 3. `Battle at <system>`, `Fast forward: on`, `Wait until battle alert within 600 frames`, `Fast forward: off`, `Click control: BattleAlert/Tactical`, `Wait until battle`.
+> 4. A `Capture` after each of: `Click 72,10` (select task force 1), `Press 2`, `Press f1`, `Press f9`, `Press 9`.
+> 5. `Quit`.
+>
+> Then the interface-parity hotkey probe (in `probeTacticalGroupPresentation`), both factions.
+>
+> ## Evidence
+>
+> Seed, system and day; a new `[tactical_groups] key=..` line, and the existing `[tactical_camera] command=follow kind=task_force|fighter_group group=N` lines (`tactical_view.rs:5097`, `:5113`); the selection before and after F1 and F9, as the modes question's note states for `FUN_005d9a70`; the probe's result.json.
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] Keys 1-8 release both strips and press task-force slot i, with the command behaviour the input question settles, both sides
+- [x] Keys 9, 0 and the numpad press no strip slot
+- [x] F1-F8 and F9-F12 follow only existing groups and change the selection only as the modes question's note settles for FUN_005d9a70
+- [x] The three named tests are green after being shown red, the run.mjs hotkey probe passes in its result.json, and the scoped mutants are killed or explained
+
+**Notes**
+
+> Done 2026-10-22. Native, seed 42, Yavin, binary eb0a3a92: Press 1 logs key=1 slot=1 then task_force_selected slot=1 on both sides; Press 2 (task force 2 unassigned, task force 1 selected) logs key=2 slot=2 and changes nothing. F1 logs [tactical_camera] command=follow kind=task_force group=1 (both sides), F9 and F10 kind=fighter_group group=1 and 2 (Alliance), each with the selection unchanged; the Empire's F9 follows nothing, its fighter slots being empty (or-d-imperial-squadrons-no-slot-pndt). Keys 9, 0 and the numpad: nine_zero_and_the_numpad_press_no_strip_slot. The run.mjs hotkey probe passes (gate 2026-10-22T02-51-42-664Z-92329). Red-first: the three tests fail under each old rule; mutant survivors are draw-call fields only.
+
+**Closed:** Criteria met; evidence in notes
+
+<a id="or-ep-task-force-strip-5kdd.13"></a>
+### Record the fighter-strip edge-pixel cause and rerun the full strip
+
+`or-ep-task-force-strip-5kdd.13` · **closed** · P1 · tactical, verify · closed 2026-10-22  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Waits on: [or-ep-task-force-strip-5kdd.11](#or-ep-task-force-strip-5kdd.11)  
+Unblocks: [or-acc-fighter-strip-239](acceptance.md#or-acc-fighter-strip-239), [or-p-task-force-strip-07t](#or-p-task-force-strip-07t)
+
+> ## Background
+>
+> C6 run 2026-10-18T03-12-34-223Z failed `fighter-group-strip` only on changed pixels (17 of 1,751). Run 2026-10-19T18-04-56-271Z passed it at SSIM 1 with 0 changed in `TAC-01-C011`, `TAC-02-C002` and `TAC-03-C019`. Between them, commit `ff3099fd` drew the fighter slots through the keyed `draw_tactical_button_clipped`, keying a strobe-button bitmap on its first stored pixel (`BmpCache::get_macroquad_button`). The original keys on the bitmap's byte `+8` (8-bit) or colour `+9` (`FUN_005fd0f0.c:13-16`). After `FUN_005fc500` loads the bits, `FUN_005fbd20` sets `+8` to the first pixel's palette index and `+9`-`+0xb` to the first pixel's colour (`FUN_005fbd20.c:15-18`, `FUN_005fd170.c:10-33`); `ghidra/notes/tactical-results.md:78-81` reads index 252, palette blue, on the results marks and tabs, and `ghidra/notes/gid-legend.md:83` notes a palette-blue first pixel on the GID legend bitmaps. Whether each fighter slot bitmap's key equals the port's first stored pixel is `or-ep-task-force-strip-5kdd.15`'s check. That region left out Gold, so the full strip has not been compared.
+>
+> ## Scope
+>
+> A C6 run with the corrected fighter rect; the cause written on `or-p-task-force-strip-07t` and its edge-pixel box checked.
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] A comment on or-p-task-force-strip-07t states the cause. Run 2026-10-18T03-12-34-223Z failed fighter-group-strip on 17 of 1,751 changed pixels; commit ff3099fd then drew the fighter slots through the keyed button blit; run 2026-10-19T18-04-56-271Z passed it with 0 changed. The comment cites FUN_005fd0f0.c:13-16 for the original's key and FUN_005fd170.c:10-33 (via FUN_005fbd20.c:15-18) for its value, and states the fighter bitmaps' key from or-ep-task-force-strip-5kdd.15's note once that bead closes, else says that check is open
+- [x] A C6 run with [296,1,163,19], named by run id, compares the fighter strip in TAC-01-C011, TAC-02-C002, TAC-03-C019 and TAC-05-C023; each cell passes, or its difference (pixels, rows, slot) is written on this bead and a port or diagnose bead is proposed for it (discovered-from)
+
+**Notes**
+
+> Done 2026-10-22. The cause is a comment on or-p-task-force-strip-07t. C6 run 2026-10-22T03-14-09-732Z with fighter-group-strip [296,1,163,19] passes TAC-01-C011, TAC-02-C002, TAC-03-C019 and both TAC-05-C023 pairs (and TAC-02-C013) at SSIM 1.
+
+**Closed:** Criteria met; evidence in notes
+
+<a id="or-ep-task-force-strip-5kdd.8"></a>
+### Group-selection mode with toggling slot clicks on both strips
+
+`or-ep-task-force-strip-5kdd.8` · **closed** · P1 · port, tactical · closed 2026-10-22  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Waits on: [or-ep-task-force-strip-5kdd.4](#or-ep-task-force-strip-5kdd.4)  
+Unblocks: [or-acc-fighter-strip-239](acceptance.md#or-acc-fighter-strip-239), [or-acc-taskforce-0oy](acceptance.md#or-acc-taskforce-0oy), [or-ep-task-force-strip-5kdd.10](#or-ep-task-force-strip-5kdd.10), [or-ep-task-force-strip-5kdd.14](#or-ep-task-force-strip-5kdd.14), [or-ep-task-force-strip-5kdd.9](#or-ep-task-force-strip-5kdd.9), [or-p-task-force-strip-07t](#or-p-task-force-strip-07t)
+
+> ## Background
+>
+> An assigned task-force slot posts command 2+i and releases every other assigned slot (`FUN_0059b450.c:27-37`); an existing fighter slot posts `0xb+i` and releases the others (`FUN_0059b620.c:12-30`); a missing group does nothing. The executor installs task-force mode `FUN_005a33d0(i)` or fighter mode `FUN_005a4640(i)`, and a second click on the selected slot returns to the base mode `FUN_005a0c80`, clearing the selection (`FUN_0059fd40.c:24-88`); the fighter case has no fallback for a missing group (`:67-68`). The button toggles itself: every slot carries toggle bit 8 (`FUN_0059be80.c:61`, `FUN_0059c030.c:58`), and on release a hit flips its pressed bit 4 before `WM_COMMAND` is posted (`FUN_006028c0.c:184-192`), while `FUN_0059b450`/`FUN_0059b620` release only the others (`FUN_006030f0(5)` clears bits 1 and 4). `FUN_0059e760.c:11-31` acts per group only in modes 1-12 (its callees are the modes question's); A0 `TAC-03-C018` shows slot 1 unpressed after a ship click. The port always reselects (`select_task_force`, `crates/rebellion-render/src/tactical_view.rs:3092`; `select_fighter_group`, `:3162`) and presses the slot of whatever ships are selected (`selected_player_task_force`, `:2992`).
+>
+> ## Scope
+>
+> `crates/rebellion-core/src/tactical.rs`: a non-serialized group-selection mode on `BattleSession` (task force i or fighter group i). `tactical_view.rs`: a second click clears ships and the mode; a ship pick in the 3D view clears the mode; the pressed look reads the mode, which must equal the button's own toggle. Say what a deselect does to `command_panel` (today a click sets `Display`, `:4954`). Keep `selected_player_task_force` for focus targets, navigation and the voice cue (`:3016-3140`, `:3354`, tests `:9622-9760`); `task_force_and_fighter_group_selection_are_mutually_exclusive` (`:9560`) stays green. Keep the `[tactical_groups]` strings `run.mjs:4683-4688` matches (`task_force_selected slot=.. members=..`, `fighter_group_selected slot=.. members=..`, logged at `:4956`, `:4974`), and add `task_force_cleared slot=..` and `fighter_group_cleared slot=..` for a deselect.
+>
+> ## Tests
+>
+> `clicking_the_selected_task_force_slot_again_clears_the_selection` (`FUN_0059fd40.c:40-59`); `clicking_the_selected_fighter_group_slot_again_clears_the_selection` (`:69-88`); `clicking_an_assigned_slot_releases_only_the_other_assigned_slots` (`FUN_0059b450.c:27-37`); `a_missing_fighter_group_click_changes_no_selection` (`FUN_0059b620.c:18-25`; if the slot is reachable, also assert the present slots are released); `selecting_one_ship_does_not_press_its_task_force_slot` (`FUN_0059e760.c:11-22`). Both sides. Red first; `cargo mutants` on the touched functions in both files.
+>
+> ## E2E
+>
+> On the Mini, silent: `scripts/launch-native.sh --live --seed <n>`, then a `scripts/dev-run.sh` batch, once with `Start game: Empire` and once with `Start game: Alliance`. Record the seed (opening as `scripts/native-checks/scheduler-battle-hold-empire.txt`; `agent_docs/dev-commands.md`):
+>
+> 1. `Start game: <side>`, `Wait 3000 ms`, `Skip briefing`, `Battle policy: stop`, `Advice policy: close`, `Click control: MessageIndex/Close`.
+> 2. `List systems`. Choose a system where `Battle at` gives the player's side task force 1 and the Red group, and record it.
+> 3. `Battle at <system>`, `Fast forward: on`, `Wait until battle alert within 600 frames`, `Fast forward: off`, `Click control: BattleAlert/Tactical`, `Wait until battle`.
+> 4. A `Capture` after each of: `Click 72,10`, `Click 72,10`, `Click 360,10`, `Click 360,10`. Select, clear, select, clear shows in the captures and logs.
+> 5. `Quit`.
+>
+> ## Evidence
+>
+> Seed, system and day; `[tactical_groups] task_force_selected|task_force_cleared slot=..` and `fighter_group_selected|fighter_group_cleared slot=..` lines; the probe's result.json.
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] A second click on the selected task-force or fighter slot clears the selection as the modes question's note states for FUN_005a0c80, both sides
+- [x] After that deselect the command area shows what panel 0x15 (nothing selected) shows, the panel FUN_005a0c80 installs (FUN_005a0c80.c:18 -> FUN_005c0e80; ghidra/notes/tactical-command-assignment.md, Commit and return), both sides
+- [x] Clicking an assigned slot releases only the other assigned slots
+- [x] A ship pick in the 3D view presses no slot (A0 TAC-03-C018; the modes question's note)
+- [x] Focus-target and capital-navigation tests stay green
+- [x] The battle gate's group-presentation probe (probeTacticalGroupPresentation, tools/interface-parity/run.mjs:4467-4705) passes both factions in its result.json, any assertion changed only for a cited cause named in the commit
+- [x] The five named tests are green after being shown red, and the scoped mutants are killed or explained
+
+**Notes**
+
+> Done 2026-10-22. Native, seed 42, Yavin, binary eb0a3a92: a second click on task force 1 logs task_force_cleared slot=1 on both sides, and on Red fighter_group_cleared slot=1 (Alliance; the Empire's fighter case in the browser probe, both factions, run 2026-10-22T02-51-42-664Z-92329). After the clear the command area shows the Display panel (unit test clicking_the_selected_task_force_slot_again_clears_the_selection). Pressing Red releases task force 1 (Alliance capture 06). A ship pick presses no slot (selecting_one_ship_does_not_press_its_task_force_slot). Workspace tests green, focus-target and capital navigation included. Gate 2026-10-22T02-51-42-664Z-92329 passes 184 of 184, group presentation both factions. Assertions changed, each for a cited cause: the unassigned-slot release forms a task force in mode 0xe (FUN_0059b450.c:39-44, FUN_0059f6e0.c:7-9, FUN_005a2160.c:16-20); the letterbox corner click moves to the pixel centre; the participants journey picks the player's ship before the highlight clicks. Task forces keep their members in join order (TacticalShip::task_force_joined; FUN_005a34e0 focuses the head; A0 TAC-03-C014 and C015): a_ship_that_joins_a_task_force_follows_its_original_members. Red-first and mutants: the named tests fail under each old rule; logic survivors are killed by added assertions, and the formation branch's members > 0 against >= 0 is equivalent (a formation has at least one member).
+
+**Closed:** Criteria met; evidence in notes
+
+<a id="or-ep-task-force-strip-5kdd.7"></a>
+### Strip slots take a click anywhere in their rectangle
+
+`or-ep-task-force-strip-5kdd.7` · **closed** · P1 · port, tactical · closed 2026-10-22  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Waits on: [or-ep-task-force-strip-5kdd.4](#or-ep-task-force-strip-5kdd.4)  
+Unblocks: [or-ep-task-force-strip-5kdd.14](#or-ep-task-force-strip-5kdd.14), [or-p-task-force-strip-07t](#or-p-task-force-strip-07t)
+
+> ## Background
+>
+> The strip slots hit-test their client rectangle. `FUN_006035f0.c:24-38` uses a bitmap hit only when flag `0x10` of `+0xc4` is set, and the CoolStrobeButton ctor ORs that bit only when its last argument is 0 (`FUN_00602150.c:115-116`). Both slot builders pass 1 (`FUN_005c52e0.c:17-18`, `FUN_0059c030.c:52-53`). Both headers pass 0 (`FUN_0059be80.c:39`, `FUN_0059c030.c:35`) and keep a bitmap hit. A disabled button (bit 2), or one with no image for its state, takes no hit (`FUN_006035f0.c:24-26`). `FUN_006028c0` runs the test on press (`:89-105`) and on release before posting the command (`:163-194`). `+0x38`/`+0x3c` are the control's width and height (`FUN_005ff910.c:135-136`). A press lands only inside the window. A release counts at local x <= width and y <= height (`FUN_006035f0.c:33-34`): x <= 25 and y <= 17 on a task-force slot, x <= 25 and y <= 15 on a fighter slot (`FUN_0059be80.c:55`, `FUN_0059c030.c:52`).
+>
+> The held look is fixed at button-down. The proc passes bit 1 of `+0xc4` as the paint state (`FUN_006028c0.c:27-28`). Paint state 1 draws the held image and colour only while `+0xf8` is set (`FUN_00602d30.c:19-25`), and `+0xf8` is set only by the hit test (`FUN_006035f0.c:30,35`). The proc has no `WM_MOUSEMOVE` (0x200) case; that message falls to `DefWindowProcA` (`FUN_006028c0.c:53-55`, `:89-133`). So dragging off a held slot keeps it held. The port recomputes the held look from the pointer each frame (`pressed_tactical_hud_control`, `tactical_view.rs:3381-3391`).
+>
+> The port instead requires an opaque bitmap pixel for both strips (`tactical_hud_control_at`, `crates/rebellion-render/src/tactical_view.rs:2603-2636`). The ignored test `original_tactical_controls_use_source_bitmap_hit_masks` (`:9314-9430`) asserts the old 26-pixel pitch and transparent misses (`:9414-9430`). `tools/interface-parity/run.mjs:4522-4527` asserts a fighter matte click changes nothing. Edge inclusivity, disabled slots and whether an unassigned task-force slot takes a click come from the input question (`or-ep-task-force-strip-5kdd.2`).
+>
+> ## Scope
+>
+> A pure `group_strip_slot_at(x, y)` used by `tactical_hud_control_at`: a rectangle test for `TASK_FORCE_BUTTONS` and `FIGHTER_GROUP_BUTTONS` only (fighter slots 15 rows, `FUN_0059c030.c:52`). The headers and every other tactical control keep their bitmap masks. A held slot keeps its held look until release, wherever the pointer goes. An unassigned task-force slot's press and release follow the input question's note, and the `run.mjs` unassigned probe (`:1775-1797`) changes only with that note cited.
+>
+> Correct the stale ignored test to the traced geometry (`FUN_0059be80`, `FUN_0059c030`) and the `run.mjs` matte assertion (`:4522-4527`); name the cause (traced geometry and hit rule) in the commit. Keep the existing `[tactical_groups]` log strings that `run.mjs:4683-4688` matches; an unassigned slot's press logs nothing (`run.mjs:1784-1797`).
+>
+> ## Tests
+>
+> - `a_task_force_slot_takes_a_click_anywhere_in_its_rectangle` and `a_fighter_group_slot_takes_a_click_anywhere_in_its_fifteen_rows`, both on `group_strip_slot_at` and citing `FUN_006035f0.c:24-38` and `FUN_00602150.c:115-116`. Red today: the function does not exist, the strip hit needs bitmap data, and it misses a transparent corner.
+> - `a_held_strip_slot_stays_held_when_the_pointer_leaves_it` (`FUN_006028c0.c:89-133`, `FUN_00602d30.c:19-25`).
+>
+> A guard checks that a press on row 15 of a fighter slot stays None (`NativeRect::contains` is half-open, `tactical_view.rs:158-160`). Run `cargo mutants` on the touched functions.
+>
+> ## E2E
+>
+> On the Mini, silent: `scripts/launch-native.sh --live --seed <n>`, then a `scripts/dev-run.sh` batch, once with `Start game: Empire` and once with `Start game: Alliance`. Record the seed. The briefing and the Advice index hold the clock until skipped and closed, and the policies do not act during `Wait until battle alert` (`agent_docs/dev-commands.md`; the same opening as `scripts/native-checks/scheduler-battle-hold-empire.txt`):
+>
+> 1. `Start game: <side>`, `Wait 3000 ms`, `Skip briefing`, `Battle policy: stop`, `Advice policy: close`, `Click control: MessageIndex/Close`.
+> 2. `List systems`. Choose a system where `Battle at` gives the player's side task force 1 and the Red group, and record it (the same seed meets the same galaxy on the next launch).
+> 3. `Battle at <system>`, `Fast forward: on`, `Wait until battle alert within 600 frames`, `Fast forward: off`, `Click control: BattleAlert/Tactical`, `Wait until battle`.
+> 4. `Click 60,2` (task force 1's top-left corner) and `Click 347,2` (the Red group's), with a `Capture` after each.
+> 5. `Quit`.
+>
+> The battle gate's group-presentation probe (`probeTacticalGroupPresentation`, `run.mjs:4467`), with its matte click corrected here, passes both factions.
+>
+> ## Evidence
+>
+> Seed, system and day; `[tactical_groups]` lines for each corner click; the gate's result.json (not its printed PASS line).
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] Corner clicks at (60,2) and (347,2) select their slot on both sides, shown by their [tactical_groups] lines
+- [x] Pixels outside a slot's traced rectangle select nothing (edges per the input question's note)
+- [x] An unassigned task-force slot's press and release draw the look the input question's note states (hit taken or refused, pressed bit, state-2 image), both sides; what the click does to the selection is or-ep-task-force-strip-5kdd.10's
+- [x] The strip headers and other tactical controls keep their bitmap hit masks (their existing tests stay green)
+- [x] Dragging off a held slot keeps its held look until release
+- [x] The ignored hit-mask test passes under --ignored with the traced coordinates, and the group-presentation probe's result.json passes both factions with the matte click corrected
+- [x] The three named tests are green after being shown red, and the scoped mutants are killed or explained
+
+**Notes**
+
+> Done 2026-10-22. Native, seed 42, Yavin, day 2, binary eb0a3a92: Click 60.5,2.5 logs task_force_selected slot=1 on both sides; Click 347.5,2.5 logs fighter_group_selected slot=1 then fighter_group_cleared slot=1 on the Alliance side. The Empire's fighter slots are greyed there (its fleet's squadrons hold no slot, or-d-imperial-squadrons-no-slot-pndt), so its fighter corner is shown by the browser gate's group-presentation probe, which logs fighter_group_selected slot=1 and fighter_group_cleared slot=1 for both factions (run 2026-10-22T02-51-42-664Z-92329, result.json pass). Click 288,9 (past slot 8) logs nothing on both sides. A dev Click at an integer corner (60,2) lands on the pixel's corner, which the 1.667 scale maps just outside the slot; the pixel centre hits, as the browser probe uses. The unassigned slot's press and release look passes in the production-participants probe (both factions). The ignored hit-mask test passes under --ignored (Mini, 2026-10-22) with the traced strip coordinates, after the Battle Options and withdraw-confirmation buttons took their rectangles as FUN_005dab90 and FUN_005f0f40 build them (last argument 1, FUN_00602150.c:115-116, FUN_006035f0.c:24-38); that test had failed at HEAD on Battle Options Close (579,219). Dragging off a held slot: a_held_strip_slot_stays_held_when_the_pointer_leaves_it. Red-first and mutants: the three tests fail under the old bitmap rule, the exclusive release edge and the pointer-following held look; mutant survivors in the touched functions are draw-call fields only.
+
+**Closed:** Criteria met; evidence in notes
+
+<a id="or-ep-task-force-strip-5kdd.6"></a>
+### Draw the task-force slot labels in font 4 with the state colours
+
+`or-ep-task-force-strip-5kdd.6` · **closed** · P1 · port, tactical · closed 2026-10-22  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Waits on: [or-ep-task-force-strip-5kdd.11](#or-ep-task-force-strip-5kdd.11), [or-ep-task-force-strip-5kdd.4](#or-ep-task-force-strip-5kdd.4), [or-ep-task-force-strip-5kdd.5](#or-ep-task-force-strip-5kdd.5)  
+Unblocks: [or-acc-taskforce-0oy](acceptance.md#or-acc-taskforce-0oy), [or-ep-task-force-strip-5kdd.14](#or-ep-task-force-strip-5kdd.14), [or-p-task-force-strip-07t](#or-p-task-force-strip-07t)
+
+> ## Background
+>
+> The strobe button paints its caption centred in the slot (`FUN_00602d30.c:80-90`, layout `FUN_006026e0.c:28-48`: left = (25 - w)/2, top = (17 - h)/2 in integers) in application font 4, a 16-pixel cell (`FUN_005ff910.c:145-147`, `FUN_0060eed0.c:49-51`; the face, Arial, is the caption question's to confirm). Text is black normally (`FUN_00602150.c:75`), white when pressed (`FUN_0059be80.c:64`, painted at `FUN_00602d30.c:57`), and white while held (`+0xb8`, `FUN_00602150.c:76`, painted at `FUN_00602d30.c:20-23`). Both sides share the code; only the header bitmap branches (`FUN_0059be80.c:27-32`). The port draws 13 px, baseline 16, always black (`crates/rebellion-render/src/tactical_view.rs:4064-4085`).
+>
+> A0 frames of the labels:
+>
+> - Empire `TAC-02-C006`: the "1" spans x 70-72, rows 5-14, baseline y 15; unassigned slots draw none.
+> - Empire `TAC-02-C009` (hover): the "1" is black. `TAC-02-C010` (held): the "1" is white. In both, the VM pointer rests on the label, and the C6 mask `a0-pointer-task-force-1` `[69,5,16,14]` (`tools/interface-parity/scenarios/tactical-a0-compare.json:44-46`) covers the whole label, so C6 does not judge its colour there.
+> - Empire `TAC-02-C011`: slot 1 pressed, "1" white.
+> - Empire `TAC-02-C001` (`empire-sixteen-tie`): labels 1-8, slot 8 pressed with a white "8". It runs once `or-f-sixteen-tie-c43` lands.
+> - Alliance `TAC-05-C023`: all eight task forces assigned, labels 1-8 black.
+> - Alliance `TAC-01-C001` (slot 1 released, black) and `TAC-02-C013` (slot 1 pressed, white) run once `or-ep-task-force-strip-5kdd.12` lands. `or-acc-taskforce-0oy` judges them.
+>
+> ## Scope
+>
+> `tactical_view.rs`: add `task_force_label_layout(text_width) -> (left, top)` and `task_force_label_color(pressed)`; draw through the result-text path (`RESULT_FONT`, `ARIAL_ASCENT`) at `theme::game_font_size(4)`, baseline = slot y + top + 13; no label on unassigned slots; rasterization per the decision bead. Out: the strip bitmaps and hit test.
+>
+> ## Tests
+>
+> `a_task_force_label_sits_in_font_four_centred_in_its_slot` (`FUN_006026e0.c:28-48`, `FUN_0060eed0.c:49-51`); `a_pressed_task_force_label_is_white_and_a_released_one_black` (`FUN_00602d30.c:41-57`, `FUN_0059be80.c:64`); `a_held_task_force_label_is_white` (`FUN_00602150.c:76`, `FUN_00602d30.c:20-23`); `an_unassigned_task_force_slot_draws_no_label` (A0 `TAC-02-C006`, shown red with the assigned check removed). Red first in a Mini clone; `cargo mutants` on the two helpers and the label draw.
+>
+> ## E2E
+>
+> C6 `task-force-1` in `TAC-02-C008`, `TAC-02-C009`, `TAC-02-C010` and `TAC-02-C011`, and `task-force-strip` in `TAC-02-C006` and Alliance `TAC-05-C023`. Inspect slot 1 in the A1 frames `yaga-day30-pointer/tf1-hover` and `yaga-day30-pointer/tf1-held`, which the mask leaves unjudged. Native captures of a pressed and a released slot on both sides.
+>
+> ## Evidence
+>
+> The C6 run id and the region's metrics per cell; the label colour read from the two A1 pointer frames; capture names with seed, system and day.
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] Assigned slots draw their number at font 4 (em 14.32) centred per FUN_006026e0, baseline y 15, both sides (native captures named on this bead)
+- [x] A pressed or held slot's number is white and a released one black
+- [x] An unassigned slot draws no number
+- [x] The four named tests are green after being shown red, and the scoped mutants are killed or explained
+- [x] C6 task-force-1 passes TAC-02-C008, TAC-02-C009, TAC-02-C010 and TAC-02-C011 (pressed, white number) under the decision bead's rule, run id named; in C009 and C010 the a0-pointer-task-force-1 mask [69,5,16,14] covers the whole label, so those two judge the rest of the button only
+- [x] The A1 frames yaga-day30-pointer/tf1-hover and yaga-day30-pointer/tf1-held, inspected at slot 1, draw the 1 black and white respectively, as A0 TAC-02-C009 and TAC-02-C010 show outside the pointer; the run id is named
+- [x] C6 task-force-strip passes TAC-02-C006 and the Alliance TAC-05-C023 (labels 1-8 released) under the decision bead's rule, run id named
+
+**Notes**
+
+> Done 2026-10-22. Labels are smoothed Liberation Sans at game_font_size(4), centred by task_force_label_origin (FUN_006026e0), baseline y 15; white pressed or held, black at rest; none on unassigned slots (Tom's decision on .5). Native, seed 42, Yavin, day 1, binary eb0a3a92: Alliance (task force 1 of two ships) and Empire (one ship) captures show the 1 black at rest and after the second click, white after the click and after key 1, and no number on slots 2-8. Red-first: the four label tests fail under each break (old baseline, always black, labels on unassigned slots) and pass on the fix, in a Mini clone. Mutants: the survivor (17 - 16) / 2 against (17 / 16) / 2 is equivalent (both 0); the draw-call field survivors need a GL context and are covered by C6. C6 run 2026-10-22T03-14-09-732Z (A1 run 2026-10-22T02-51-42-664Z-92329): task-force-1 passes TAC-02-C008, C009, C010, C011; task-force-strip passes TAC-02-C006 and the Alliance TAC-05-C023 (both pairs), with the caption cells masked as task-force-caption-1..8 under or-dec-c6-text-masks-rue. A1 yaga-day30-pointer/tf1-hover draws the 1 black and tf1-held white at slot 1, as A0 TAC-02-C009 and C010 show.
+
+**Closed:** Criteria met; evidence in notes
+
+<a id="or-ep-task-force-strip-5kdd.4"></a>
+### Review the strip questions and correct tactical-group-strips.md
+
+`or-ep-task-force-strip-5kdd.4` · **closed** · P1 · review, tactical · closed 2026-10-22  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Waits on: [or-ep-task-force-strip-5kdd.1](#or-ep-task-force-strip-5kdd.1), [or-ep-task-force-strip-5kdd.2](#or-ep-task-force-strip-5kdd.2), [or-ep-task-force-strip-5kdd.3](#or-ep-task-force-strip-5kdd.3)  
+Unblocks: [or-ep-task-force-strip-5kdd.10](#or-ep-task-force-strip-5kdd.10), [or-ep-task-force-strip-5kdd.6](#or-ep-task-force-strip-5kdd.6), [or-ep-task-force-strip-5kdd.7](#or-ep-task-force-strip-5kdd.7), [or-ep-task-force-strip-5kdd.8](#or-ep-task-force-strip-5kdd.8), [or-ep-task-force-strip-5kdd.9](#or-ep-task-force-strip-5kdd.9)
+
+> ## Background
+>
+> `ghidra/notes/tactical-group-strips.md` makes claims the decompiles do not support: `FUN_00600c40` sets hover text, not the caption (`FUN_00600cc0.c:13-21`, `FUN_00600860.c:11-27`); `FUN_0059b730` has no key-up case for keys 1-8 (`:133-179`); the "alternate image pair" is 1007/1007, the unassigned look (`FUN_0059be80.c:55-56`, `FUN_005c52e0.c:17-39`); F1-F12 gate on the group existing (`FUN_00595ba0`/`FUN_00595bc0`), not on a held slot (`FUN_0059b730.c:98-130`). The three question beads before this one add the caption, input and mode answers.
+>
+> ## Scope
+>
+> Reread every claim in the note and the three question notes against our own Ghidra project; rewrite the note as current facts (no history prose, `agent_docs/ghidra-re.md`). No port code.
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] Every claim in tactical-group-strips.md is confirmed or corrected against our Ghidra project, with citations
+- [x] The hover-text, key-up, alternate-image, state-2 (unassigned) and fighter-disabled claims, and the F-key claim, read as current facts
+- [x] The Port paragraph's history prose (the old pitch and positions) is removed or restated as current fact (agent_docs/ghidra-re.md)
+- [x] The answers of the three question beads are merged into the note or linked from it, and its Open list holds only what they leave open
+- [x] The manual's passages on the task-force and fighter-group strips (pp. 143 and 148 and any others found) are settled in the note as Confirmed, Contradicted or Unresolved (agent_docs/manual-cross-check.md)
+- [x] The .c files the note cites are in ghidra/notes/
+
+**Notes**
+
+> ghidra/notes/tactical-group-strips.md rewritten as the strips' entry point, linking tactical-strip-buttons.md, tactical-selection-modes.md and strip-bitmap-keys.md. Manual pp. 66, 143 (Figs. 4.3, 4.4), 146 and 148: all Confirmed; p. 143's 'next empty space' is narrower than the code (any unassigned slot, one ship enough). New open item: the held look of a slot pressed by code without a click depends on +0xf8, which nothing initialises (FUN_00602d30.c:19-25, FUN_00619190).
+
+**Closed:** Strip note rewritten and cross-checked against the manual
+
+<a id="or-ep-task-force-strip-5kdd.12"></a>
+### Alliance A1 scenario for the alliance-transit-day149 strip cells
+
+`or-ep-task-force-strip-5kdd.12` · **closed** · P1 · fixture, tactical · closed 2026-10-22  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Waits on: [or-ep-task-force-strip-5kdd.11](#or-ep-task-force-strip-5kdd.11)  
+Unblocks: [or-acc-fighter-strip-239](acceptance.md#or-acc-fighter-strip-239), [or-acc-not-run-tdj](acceptance.md#or-acc-not-run-tdj), [or-acc-taskforce-0oy](acceptance.md#or-acc-taskforce-0oy), [or-f-alliance-transit-xxn](acceptance.md#or-f-alliance-transit-xxn)
+
+> ## Background
+>
+> `TAC-01-C001` and `TAC-02-C013` are Alliance A0 captures from save `alliance-transit-day149`. C001 lists `task-force-strip`, and C013 lists both strips (`tools/interface-parity/scenarios/tactical-a0-compare.json:54,86`). Their A1 pairs (`battle-entry/actual`, `production-group-presentation/actual`) have no `state_matches` entry (`:195-205`), so their state regions never run.
+>
+> TAC-01-C001 is the first battle after that save, reached by playing on from the galaxy without a reload, with Show Planet off. TAC-02-C013 shows the Alliance side of the task-force bar from the same run (`docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md`, rows TAC-01-C001 and TAC-02-C013). Both frames show one Alliance task force and no fighter group. Slot 1 is released with a black "1" in C001 and pressed with a white "1" in C013. Slots 2-8 are unassigned. The other Alliance strip frame, `TAC-05-C023`, has all eight task forces released. So C013 is the only Alliance frame of a pressed task-force slot, the Alliance counterpart of Empire `TAC-02-C011` for the slot labels (`or-ep-task-force-strip-5kdd.6`).
+>
+> ## Scope
+>
+> An A1 scenario in `tools/interface-parity/scenarios/tactical.catalog.json` reproducing that battle, with the sides, fleets and task forces the A0 frames show. Add its `state_matches` entry for `alliance-transit-day149` and point the two cells' pairs at it. If the battle cannot be reproduced in A1, write why on this bead and propose a `capture` bead (`discovered-from` this bead) for Alliance strip frames from a reproducible save, one with an Alliance task-force slot pressed and one released.
+>
+> ## Tests
+>
+> The harness unit tests (`npm run test:unit` in `tools/interface-parity`).
+>
+> ## E2E
+>
+> The battle gate on the new scenario, both viewports, then `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls`.
+>
+> ## Evidence
+>
+> The scenario's slug, the C6 run id, and the rows for TAC-01-C001 and TAC-02-C013 (pass or fail, with metrics).
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] An A1 scenario in tactical.catalog.json has a state_matches entry naming alliance-transit-day149, and TAC-01-C001 and TAC-02-C013 pair with it; or this bead records why the battle cannot be reproduced and links the capture bead it proposed
+- [x] A C6 run, named by id, runs task-force-strip in TAC-01-C001 and both strip regions in TAC-02-C013 (pass or fail); or the proposed capture bead is linked here
+
+**Notes**
+
+> Scenario coruscant-transit-day149 (fixture codes 0x10128 Alliance, 0x10228 Empire) rebuilds the save's Coruscant battle from its master records: Tyrant (fleet 5) and Judicator (fleet 48) with their TIEs and nine system squadrons against Alliance Fleet 1 (Corellian Corvette 1, Medium Transport 1), Show Planet off. Battle gate run 2026-10-22T00-10-50-353Z: 4/4 cases pass (result.json). C6 run 2026-10-22T00-11-22-865Z (negative controls ok), before the label port: TAC-01-C001 task-force-strip fail (SSIM 0.9685, changed 0.0160), status-panel pass (SSIM 1); TAC-02-C013 task-force-strip fail (SSIM 0.9669, changed 0.0160), fighter-group-strip fail (SSIM 0.9801, changed 0.0191). Causes: both headers' row 1 drawn panel grey (#484848 where A0 has #b2b2b2/#b8b8b8), and slot 1's label (old 13 px font, black when pressed); slots 2-8 and the empty fighter slots match with 0 changed.
+
+**Closed:** Scenario reproduces the battle; C6 judges both cells
+
+<a id="or-ep-task-force-strip-5kdd.3"></a>
+### Question: tactical selection modes 0xe, 0x10, 0x11 and the unassigned-slot handler
+
+`or-ep-task-force-strip-5kdd.3` · **closed** · P1 · question, tactical · closed 2026-10-22  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Unblocks: [or-ep-task-force-strip-5kdd.4](#or-ep-task-force-strip-5kdd.4)
+
+> ## Question
+>
+> What are the tactical UI modes with ids `0xe`, `0x10` and `0x11`, what does an unassigned task-force slot do in them, and does an F-key follow camera change the selection?
+>
+> What is known: `FUN_0059b450.c:18-19` lets an unassigned slot act only when `FUN_0059f6e0` holds: mode id `0xe` with the controller's `*this` set, or `0x10` (`FUN_0059f6e0.c:7-13`). The executor `FUN_0059fd40.c:24-88` installs task-force mode `FUN_005a33d0(i)` or fighter mode `FUN_005a4640(i)`, returns to the base mode `FUN_005a0c80` when the same slot is clicked again (ids 1-8 and 9-12 by comparison), and calls the current mode's `+0x14(i)` for an unassigned slot when `*this != 0`; the fighter case has no such fallback and breaks with no mode (`:67-68`). The controller flag `*this` is toggled by command `0x7b` (`FUN_0059fd40.c:168-193`, via `FUN_005c7e10`) and cleared by `0x7a` (`:157`). `FUN_0059e760.c:11-31` acts per group only for mode ids 1-12, through callees not on disk. F1-F12 call `FUN_005c2990(camera, 0xb, i)`, a follow camera `FUN_005d9a70` (`FUN_005c2990.c:87-114`). The port assigns with Ctrl+click and a next-blank rule, tested at `crates/rebellion-render/src/tactical_view.rs:9601-9618` against manual pp. 143 and 148; no traced function checks it (inferred from the files read). Entering the base mode runs `FUN_005c0e70`, `FUN_005c0e60` and `FUN_005c0e80` (`FUN_005a0c80.c:16-18`); `FUN_005c0e80` shows panel `0x15`, nothing selected (`ghidra/notes/tactical-command-assignment.md:83-84`, `:96`), so what remains is what `FUN_005c0e60` and `FUN_005c0e70` clear. Camera mode `0xb` takes `FUN_005c2990`'s default case, which builds `FUN_005d9a70` (vtable `0x0066d478`, `FUN_005d9a70.c:14-20`) and keeps or builds the `FUN_005d9580` camera (`FUN_005c2990.c:87-114`). `or-q-tac-camera-e1d` asks where modes 7-11 place the camera; this bead asks only whether the follow camera changes the selection, and each note links the other.
+>
+> ## Where to look
+>
+> The `+8` id of every mode class: `FUN_005a0c80` (vtable `0x0066be30`), `FUN_005a33d0` (`0x0066bc48`), `FUN_005a4640`, and the classes returning `0xe`, `0x10`, `0x11`; their `+0x14`; commands `0x7a`/`0x7b` and `FUN_005c7e10`; `FUN_0059f5d0`, `FUN_0059f5f0`, `FUN_0059fc50`, `FUN_005c1040`, `FUN_005c0e40`, `FUN_005c0e60`/`70`/`80` (the `FUN_0059e760` callees); `FUN_005d9a70`; callers of `FUN_005a0410`; the input path for Ctrl+click on a ship. Both sides. The Feature Wiki map pages `executable/map-16-58ef80` (`FUN_0059e760`, `FUN_0059f5d0`-`FUN_0059fd40`, `FUN_005a0410`, `FUN_005a0c80`, `FUN_005a33d0`, `FUN_005a4640`), `executable/map-17-5a54ee` (`FUN_005c0e40`-`FUN_005c1040`), `executable/map-18-5c2990` (`FUN_005c2990`, `FUN_005c7e10`) and `executable/map-19-5d895e` (`FUN_005d9a70`) give each function's role.
+
+**Acceptance criteria**
+
+- [x] A note lists every tactical mode class with its +8 id, constructor and vtable, with citations
+- [x] The note names modes 0xe, 0x10 and 0x11, the controller flag commands 0x7a/0x7b toggle, and what an unassigned slot click does in each mode (their +0x14, and the executor's *this gate, FUN_0059fd40.c:34-37)
+- [x] The note states which slot FUN_0059e760 presses in modes 1-12, from its callees
+- [x] The note states what FUN_005c0e60 and FUN_005c0e70 do when the base mode FUN_005a0c80 is entered (FUN_005a0c80.c:16-18): whether the ship and fighter selections clear; the panel it shows is 0x15 (FUN_005c0e80; ghidra/notes/tactical-command-assignment.md:83-84, :96)
+- [x] The note states which mode a ship pick in the 3D view installs and whether it presses or releases a strip slot, squared with A0 TAC-03-C018
+- [x] The note states whether FUN_005d9a70 (camera mode 0xb, FUN_005c2990.c:87-114) changes the selection, and links or-q-tac-camera-e1d's note for its placement
+- [x] The note explains how a ship joins a task force in the original (the Ctrl+click question), against manual pp. 143 and 148
+- [x] Every cited decompile is attached in ghidra/notes/
+
+**Notes**
+
+> ghidra/notes/tactical-selection-modes.md: modes 0 base, 1-8 task force, 9-12 fighter group, 0xd non-capital pick, 0xe one own capital, 0xf one enemy capital, 0x10 two or more own capitals, 0x11 superlaser targeting. An unassigned slot acts only in 0xe (player-command flag set, which starts at 1) or 0x10; their +0x14 forms a new task force in the clicked slot. Base entry releases both strips and deletes the mode's selection. A ship pick presses no slot. F-key follow changes no selection. Ctrl+click an own ship in a task-force mode adds or removes it; Ctrl+click a second own ship in 0xe gives 0x10. Open: Observe/Take Command's 0x7d, FUN_005c2d20, control 0xad10.
+
+**Closed:** Answered in ghidra/notes/tactical-selection-modes.md
+
+<a id="or-ep-task-force-strip-5kdd.2"></a>
+### Question: strobe-button proc, disabled slots and key presses
+
+`or-ep-task-force-strip-5kdd.2` · **closed** · P1 · question, tactical · closed 2026-10-21  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Unblocks: [or-ep-task-force-strip-5kdd.4](#or-ep-task-force-strip-5kdd.4)
+
+> ## Question
+>
+> Is `FUN_006028c0` the strip buttons' proc? What does the fighter builder's vtable `+0x10` call do to a slot? Is an unassigned task-force slot disabled, so that a click never reaches `FUN_0059b450`? What does the parent do with the message the proc posts on press? Does a number key's programmatic press post the slot's command and end itself?
+>
+> What is known: `FUN_006028c0` calls `FUN_006035f0` on `WM_LBUTTONDOWN` (`:89-105`) and again on release before posting `WM_COMMAND` (`:163-194`). On press it also posts message `0x40e` to the parent with the control id (`:104-105`). `FUN_006035f0.c:10-38` reads flags `+0xc4`: bit 2, or no image for the state, gives no hit (`:24-26`), bit `0x10` a bitmap hit (`FUN_005fca00`), otherwise x <= `+0x38` and y <= `+0x3c`, which `FUN_005ff910.c:135-136` stores as width and height. The ctor ORs bit `0x10` only when its last argument is 0 (`FUN_00602150.c:115-116`). Both slot builders pass 1 (`FUN_005c52e0.c:17-18`, `FUN_0059c030.c:52-53`) and both headers 0 (`FUN_0059be80.c:39`, `FUN_0059c030.c:35`), so slots hit their rectangle and headers their bitmap. That `FUN_006028c0` is the proc of vtable `0x0066df58` is inferred from shared fields (`+0xc4`, `+0xf8`).
+>
+> `FUN_0059c030.c:63` makes an argument-less vtable `+0x10` call on each fighter slot. Bit 2 forces paint state 2 (`FUN_00602d30.c:12-15`) and blocks the hit (`FUN_006035f0.c:24-26`), so if `+0x10` sets bit 2, a disabled slot takes no click.
+>
+> Unassigned task-force slots: `FUN_0059be80.c:62` gives every slot's state-2 image the unassigned bitmap 1007, and `:65` calls `FUN_005c54d0` on every slot. State 2 paints `+0x9c` in colour `+0xc0` (`FUN_00602d30.c:26-33`). If `FUN_005c54d0` sets bit 2, an unassigned slot takes no click, and `FUN_0059b450`'s unassigned branch (`:39-44`) is reached only by the key path. If it does not, a click outside the assignment modes flips the slot's pressed bit 4 on release (toggle bit 8, `FUN_006028c0.c:186-188`) while `FUN_0059b450` returns without releasing it (`:18-19`, `:53`). A0 `TAC-02-C012`, a click on blank slot 3, has the same frame hash as the rest frame `TAC-02-C008` (`docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md`), so that click changed nothing visible.
+>
+> Keys 1-8 press a slot through `FUN_0059ca90(.., 1)` -> `FUN_00603710` (`FUN_0059b730.c:58-97`); no key-up case exists for them (`:133-179`). The proc clears bit 1 and releases capture on a `WM_COMMAND` carrying its own id (`FUN_006028c0.c:133-148`), which fits `FUN_00603710` ending its own press.
+>
+> The map gives the CoolStrobeButton's state images at `+0x94` normal, `+0x98` pressed, `+0x9c` disabled and `+0xa0` selected, and its click sound at `+0xdc` with the sound object at `+0xe0` (`ghidra/notes/rebexe-map.md:690-694`, from Feature Wiki `executable/map-21-5fd7c0`). `FUN_00602840` stores a control's sound id at `+0xdc` (`ghidra/notes/audio-dispatch.md:24`); it has 53 call sites in 15 windows, and `FUN_00603710` and `FUN_006028c0` play it (`:59`). None of `FUN_0059be80.c`, `FUN_0059c030.c` and `FUN_005c52e0.c` calls `FUN_00602840`, so the press-sound question comes down to `FUN_005ef240` and the call-site list (Feature Wiki `executable/mod-audio`, `audio-dispatch.md:12`), which `or-q-control-sound-modules-eybm` also walks. A fighter slot whose group is cleared (`FUN_005a0320`) draws state 2 and takes no click (`ghidra/notes/tactical-group-strips.md:39-45`); A0 `TAC-05-C023` shows the Red slot greyed after order 6 (`ghidra/notes/tactical-command-assignment.md:93-103`).
+>
+> ## Where to look
+>
+> Vtable `0x0066df58` (its `+0x10`, `+0x14` and the window proc it registers), `FUN_005c54d0`, `FUN_005c5480`, the tactical window's handler for `0x40e` (vtable `0x0066bb00`, ctor `FUN_0059a8d0`), `FUN_00603710`, `FUN_00603780`, `FUN_00602510`, `FUN_00603120`, `FUN_006030c0`, `FUN_006030f0`. The caption question (`.1`) also reads `FUN_005c54d0`/`FUN_005c5480`, so the two notes may share those decompiles.
+
+**Acceptance criteria**
+
+- [x] A note confirms or refutes that FUN_006028c0 is the CoolStrobeButton proc, with citations
+- [x] The note states what vtable +0x10 sets on a fighter slot and what a click on such a slot does
+- [x] The note states what FUN_005c54d0 and FUN_005c5480 set on a task-force slot, whether an unassigned slot is disabled (+0xc4 bit 2), and what a click on an unassigned slot does outside modes 0xe and 0x10, squared with A0 TAC-02-C012
+- [x] The note states what the tactical window does with message 0x40e, which the proc posts on press (FUN_006028c0.c:104-105)
+- [x] The note settles whether FUN_00603710 posts the slot's command (and so whether keys 1-8 reach FUN_0059b450's unassigned branch) and how the pressed state is released
+- [x] The note states whether any strip slot or header gets a press sound: whether FUN_005ef240, either strip builder or another FUN_00602840 call site sets +0xdc on them, which the proc plays on press (FUN_006028c0.c:106-108; ghidra/notes/audio-dispatch.md:24, :59), both sides
+- [x] Every cited decompile is attached in ghidra/notes/
+
+**Notes**
+
+> ghidra/notes/tactical-strip-buttons.md: FUN_006028c0 is the proc (FUN_00600310 forwards to vtable +0x14). Fighter +0x10 = FUN_006028a0 disables (bit 2, EnableWindow FALSE): no click. An unassigned task-force slot is enabled and takes a click, which changes nothing outside modes 0xe/0x10 (1007/1007, no toggle bit; A0 TAC-02-C012 = C008). 0x40e is ignored. FUN_00603710 posts WM_COMMAND(id) to the parent, so keys reach FUN_0059b450 including the unassigned branch; the key's held bit stays until the next key, another slot click or a release on that slot. Hit test inclusive (x <= 25, y <= 17). No strip control has a press sound. No side branch beyond the header bitmaps.
+
+**Closed:** Answered in ghidra/notes/tactical-strip-buttons.md
+
+<a id="or-ep-task-force-strip-5kdd.1"></a>
+### Question: what sets and hides the task-force slot caption
+
+`or-ep-task-force-strip-5kdd.1` · **closed** · P1 · question, tactical · closed 2026-10-21  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Unblocks: [or-ep-task-force-strip-5kdd.4](#or-ep-task-force-strip-5kdd.4)
+
+> ## Question
+>
+> Where does a task-force slot's drawn caption come from, in which font is it selected, and why does an unassigned slot draw none?
+>
+> What is known: the strobe button paints its `+200` string with `DrawTextA(.., DT_CENTER)` in rectangle `+0xcc` (`FUN_00602d30.c:80-90`). It does so only while `+200` holds a string and bit `0x20` of `+0xc4` is set (`:80-82`); the ctor sets `+0xc4 = 0x10020` and `+200 = 0` (`FUN_00602150.c:37`, `:74`). The rectangle is laid out by `FUN_006026e0.c:28-48`, in application font 4 (`FUN_005ff910.c:145-147`). `FUN_00413000.c:141` sets `+0xb0 = 4`; that this object is the `DAT_006be3b8` that `FUN_00603850` reads is inferred. `FUN_0060eed0` gives entry 4 lfHeight 16 (`:49-51`) and weight 400 (`:89`). Its face comes from `this+0x38` (`:26-47`), which `FUN_0060ee20` fills with "Arial" when `FUN_005ff830` builds the font table at `DAT_006be4f8` (`FUN_005ff830.c:5`, `FUN_0060ee20.c:13`, `:32`; `ghidra/notes/text-sources.md:90`). `ghidra/notes/galaxy-view-framing.md:221-245` tabulates all 14 entries: entry 4 is Arial, lfHeight 16, weight 400, lfQuality 2. What stays open is that the caption selects entry 4 (`FUN_006002c0`, and the `DAT_006be3b8` inference above).
+>
+> `FUN_0059be80.c:66-69` calls `FUN_005ef240(this, slot, &{0xad81+i, DAT_0065d428}, &{0xad92, DAT_0065d428})`. Argument 2 is likely the caption (TEXTTACT `0xad81+i`) and argument 3 the hover text. The controls that draw no number pass 0 as argument 2: the task-force header with `0xad91` (`FUN_0059be80.c:43-44`), the fighter header with `0xad9b` (`FUN_0059c030.c:40-41`) and the fighter slots with `0xad9d+i` (`FUN_0059c030.c:61-62`). `FUN_005ef240` is not on disk. A0 `TAC-02-C006` shows no glyph on unassigned slot 3. `FUN_00600c40` sets hover text, not the caption (`FUN_00600cc0.c:13-21`).
+>
+> ## Where to look
+>
+> - `FUN_005ef240`. The panel base's vtable `+0x4c`, which `FUN_005e1550.c:29`, `:37` call as `(button, 0, &key)`, has the shape of `FUN_005ef240(this, button, caption, hover)` here (`FUN_0059be80.c:44`, `:69`); `or-q-panel-button-caption-v6t` asks what that slot does with the key. If one resolves to the other, one note answers both and the other bead cites it.
+> - `FUN_005c5480` and `FUN_005c54d0`: does either clear `+200` or bit `0x20`? The input question (`or-ep-task-force-strip-5kdd.2`) asks which `+0xc4` bits they set; one reading of the two decompiles answers both beads, and the second note cites the first.
+> - The paint override in vtable `0x0066ca60`.
+> - `FUN_006002c0` (font select), `FUN_005f2fc0`, `DAT_0065d428`.
+> - TEXTTACT RT_STRING `0xad81`-`0xad88`, `0xad91`, `0xad92`, `0xad9b`, `0xad9d`-`0xada0`.
+> - The eight task-slot records `+0xd8`..`+0xf4`, stored by `FUN_0059a8d0.c:37-44` and passed by `FUN_0059b450.c:25,40`.
+> - The Feature Wiki map pages `executable/map-18-5c2990` (`FUN_005c5480`, `FUN_005c54d0`), `executable/map-20-5e9bcb` (`FUN_005ef240`) and `executable/map-21-5fd7c0` (`FUN_006002c0`, the CoolStrobeButton) give each function's role and proposed name.
+>
+> Check both sides wherever the code branches.
+
+**Acceptance criteria**
+
+- [x] A note in ghidra/notes/ names the caption's source string and setter with function and line citations
+- [x] The note states which application font entry the caption selects (FUN_006002c0, and whether the +0xb0 = 4 of FUN_00413000.c:141 is on the DAT_006be3b8 that FUN_00603850 reads), and cites ghidra/notes/galaxy-view-framing.md:221-245 and ghidra/notes/text-sources.md:90 for that entry's face, height and weight
+- [x] The note explains why an unassigned slot draws no caption (A0 TAC-02-C006 slot 3), citing FUN_005c5480/FUN_005c54d0 or the paint override
+- [x] The TEXTTACT ids used by both strips are listed with their roles (caption or hover)
+- [x] Every cited decompile is attached in ghidra/notes/
+
+**Notes**
+
+> ghidra/notes/tactical-strip-buttons.md: caption TEXTTACT 0xad81+i ("1"-"8") set by FUN_005ef240 -> FUN_00602520 at +200; font entry 4 (Arial, lfHeight 16, weight 400), the +0xb0 = 4 inference traced through FUN_005fb850 and FUN_00413000; black at rest, white pressed or held; drawn only while bit 0x20 is set, which FUN_005c54d0 clears on an unassigned slot.
+
+**Closed:** Answered in ghidra/notes/tactical-strip-buttons.md
+
+<a id="or-ep-task-force-strip-5kdd.15"></a>
+### Question: do the strip bitmaps' FUN_005fd170 keys equal the first stored pixel the port keys on?
+
+`or-ep-task-force-strip-5kdd.15` · **closed** · P2 · question, tactical · closed 2026-10-21  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)
+
+> ## Question
+>
+> Do the strip bitmaps' transparent keys, as the original sets them, equal the first stored pixel the port keys on?
+>
+> What is known: `FUN_005fd0f0` passes a loaded bitmap's `+8` and `+9` as the transparent key for 8-bit and colour blits (`FUN_005fd0f0.c:13-16`), and the strobe button blits its images through it (`FUN_00602d30.c:68`). The loader `FUN_005fbd20` calls `FUN_005fc500` and then, when bits are loaded (`+4`), `FUN_005fd170` (`FUN_005fbd20.c:15-18`). For an 8-bit bitmap `FUN_005fd170` stores in `+8` the first stored byte when the header's compression (`+0x10`) is not 1; for RLE8 (1) it stores the first run's colour byte, or the first byte of a leading absolute run (escape above 2), else 0 (`FUN_005fd170.c:10-24`). For a 24-bit bitmap it stores the first pixel's three bytes, reversed, at `+9`-`+0xb` (`:29-33`). `ghidra/notes/tactical-results.md:78-81` reads the result, index 252, palette blue, on the results marks and tabs. Every strip state image loads through `FUN_005fbd20`: the ctors (`FUN_00602150.c:48`, `:63`; `FUN_005c52e0.c:27`, `:37`) and the state setter `FUN_00603150` (`:24`), which `FUN_0059be80.c:62-63` uses. The port keys a strobe-button bitmap on its first stored pixel (`BmpCache::get_macroquad_button`, `crates/rebellion-render/src/bmp_cache.rs:1744`; the hit mask at `:1507-1509` reads uncompressed rows). `ghidra/notes/gid-legend.md:83` notes a palette-blue first pixel on the GID legend bitmaps.
+>
+> What stays open is the data: each strip bitmap's compression and first stored byte, which show where a leading RLE8 escape (key 0) or run would make the port's key differ.
+>
+> ## Where to look
+>
+> The strip bitmaps by resource id (`ghidra/notes/tactical-group-strips.md:20-25`): headers 1001, 1004, 1008 and 1010; task-force slots 1005, 1006 and 1007; fighter slots 1012-1015, 1016-1019 and 1020. `FUN_005fc500`, `FUN_005fc040`, `FUN_005fc100`, `FUN_005fc710` and `FUN_0060e710` only if a bitmap's header is unusual.
+
+**Acceptance criteria**
+
+- [x] A note in ghidra/notes/ states what +8 (8-bit) and +9 to +0xb (24-bit) of a loaded bitmap hold, citing FUN_005fd170.c:10-33 and FUN_005fbd20.c:15-18, with the RLE8 cases
+- [x] The note gives, by resource id, each strip bitmap's compression, first stored byte and resulting key (headers 1001, 1004, 1008, 1010; slots 1005-1007 and 1012-1020, fighter slot 1012 included), and says where the port's first-stored-pixel key (bmp_cache.rs:1744) differs
+- [x] Every cited decompile is attached in ghidra/notes/
+
+**Notes**
+
+> ghidra/notes/strip-bitmap-keys.md: all sixteen strip bitmaps are uncompressed 8-bit, so the original's +8 key is the first stored byte, the byte the port keys on; no bitmap differs. Keys: headers 1001/1008 24, 1004 15, 1010 23; slots 1005, 1012-1015, 1020 key 17; 1006, 1016-1019 key 15; 1007 keys 10.
+
+**Closed:** Keys equal the port's for every strip bitmap
+
+<a id="or-ep-task-force-strip-5kdd.11"></a>
+### Set the strip compare regions to the traced geometry and add the Alliance cell
+
+`or-ep-task-force-strip-5kdd.11` · **closed** · P1 · chore, tactical · closed 2026-10-21  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Unblocks: [or-acc-fighter-strip-239](acceptance.md#or-acc-fighter-strip-239), [or-acc-taskforce-0oy](acceptance.md#or-acc-taskforce-0oy), [or-ep-task-force-strip-5kdd.12](#or-ep-task-force-strip-5kdd.12), [or-ep-task-force-strip-5kdd.13](#or-ep-task-force-strip-5kdd.13), [or-ep-task-force-strip-5kdd.6](#or-ep-task-force-strip-5kdd.6)
+
+> ## Background
+>
+> `tools/interface-parity/scenarios/tactical-a0-compare.json:12,14` still uses the 26-pixel pitch: `task-force-strip` `[60,2,207,17]` cuts slot 8 and leaves out the header; `fighter-group-strip` `[330,2,103,17]` takes the header's right edge and leaves out Gold. The trace gives task `[9,1,279,19]` (`FUN_0059be80`: header (9,1) 49x19 through slot 8's right edge at 287) and fighter `[296,1,163,19]` (`FUN_0059c030`). Every listed cell is Empire; `TAC-05-C023` (`alliance-day1169-deathstar-trench-run`, state-matched) compares the fighter strip only.
+>
+> ## Scope
+>
+> The two rects with `source` citing `FUN_0059be80`/`FUN_0059c030`; `task-force-strip` added to both `TAC-05-C023` pairs. The acceptance nodes `or-acc-taskforce-0oy` and `or-acc-fighter-strip-239` already list `TAC-05-C023`.
+>
+> ## Tests
+>
+> The harness's own unit tests; a negative-controls run.
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] task-force-strip reads [9,1,279,19] and fighter-group-strip [296,1,163,19], each citing its function
+- [x] TAC-05-C023 compares task-force-strip in both pairs
+- [x] npm run test:unit in tools/interface-parity passes, and a node tools/interface-parity/tactical-a0-compare.mjs --negative-controls run, named by id, still fails the controls' rows
+
+**Notes**
+
+> 2026-10-21, on the Mini: npm run test:unit 59/59. C6 run 2026-10-21T23-51-42-472Z with --negative-controls: identity passes; one-pixel geometry, wrong bitmap, wrong action and stale state fail their rows; missing audio is not-run.
+
+**Closed:** Traced strip rects in the spec; unit tests and negative controls green on the Mini
+
+<a id="or-dec-c6-text-masks-rue"></a>
+### Decide: may C6 mask label text boxes, citing the accepted anti-aliased font?
+
+`or-dec-c6-text-masks-rue` · **closed** · P1 · decision, tactical · closed 2026-10-21  
+Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
+Unblocks: [or-acc-status-2ls](acceptance.md#or-acc-status-2ls)
+
+> Tom accepted the port's anti-aliased Liberation Sans where the original draws aliased GDI Arial (2026-10-14). C6 thresholds (changed pixels <= 0.5%, SSIM >= 0.995) still fail any region holding text: TAC-03-C019 status-panel matches A0 in content, art and layout but fails at SSIM 0.952, 3.7% changed. Proposal: mask only the measured label boxes (e.g. the fighter panel's four labels from tactical-fighter-group-panel.md), each mask citing this decision, and keep a separate text check that the strings, positions and em size match A0. Done when Tom approves or rejects the masks.
+
+**Acceptance criteria**
+
+- [x] Tom approves or rejects the masks.
+
+**Notes**
+
+> or-ep-task-force-strip-5kdd.5 is this decision for the task-force slot labels, with a further option (a), aliased labels; decide the two together. The browser gate's labelMask (tools/interface-parity/run.mjs:4474) falls under the same rule.
+> Tom approved on 2026-10-21: measured text-box masks, each citing this decision, plus a separate check that the strings, positions and em size match A0. The task-force slot numbers (or-ep-task-force-strip-5kdd.5) are the exception: drawn aliased, no mask.
+> The task-force slot numbers now fall under this rule as well (Tom, 2026-10-21): smoothed Liberation Sans, caption cells masked as task-force-caption-1..8.
+
+**Closed:** Tom approved measured text-box masks with a separate text check
+
+<a id="or-ep-task-force-strip-5kdd.5"></a>
+### Decision: how C6 judges the task-force labels' glyphs
+
+`or-ep-task-force-strip-5kdd.5` · **closed** · P1 · decision, tactical · closed 2026-10-21  
+Epic: [Tactical group strips: task-force and fighter-group strips match the original](INDEX.md#or-ep-task-force-strip-5kdd)  
+Unblocks: [or-ep-task-force-strip-5kdd.6](#or-ep-task-force-strip-5kdd.6)
+
+> ## Background
+>
+> A0 draws the slot numbers as aliased GDI Arial, black or white, with no intermediate greys (`TAC-02-C006`, `TAC-02-C011`). The port draws anti-aliased text. Tom accepted anti-aliased port text on 2026-10-14 where content, size and position match, but the C6 changed-pixel gate (0.5 %, delta > 2) fails anti-aliased glyphs, and `agent_docs/task-graph.md` ("The chain") allows a mask only with proof of nondeterminism and a written justification; anti-aliasing is not nondeterminism. The browser gate already masks the labels (`labelMask` `{4,2,17,14}`, `tools/interface-parity/run.mjs:4474`, used at `:4511`, `:4535-4542`, `:4676`), which the same rule covers.
+>
+> ## Design
+>
+> Options: (a) draw these labels aliased (alpha thresholded at 0.5), so the region can match exactly and `labelMask` can go; (b) keep anti-aliased glyphs under a documented threshold decision by Tom, outside the mask rule, recorded in the plan and the compare spec, that compares the label rows by glyph position and size instead of pixels. A plain mask is rejected.
+>
+> `or-dec-c6-text-masks-rue` asks Tom the same question for every text region C6 compares (`TAC-03-C019`'s status panel fails at SSIM 0.952, 3.7 % changed): measured label masks, each citing that decision, plus a separate check that the strings, positions and em size match A0. That is option (b) applied to every text region. Decide the two together: if Tom approves it, (b) here cites that decision; if he chooses (a) for these labels, the record says why they differ from the other text regions.
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [x] Tom has chosen (a) aliased labels or (b) a documented threshold decision for the label rows
+- [x] The choice says what happens to run.mjs's labelMask
+- [x] The choice and its reason are recorded in the plan doc
+- [x] The choice cites Tom's decision on or-dec-c6-text-masks-rue, or says why the task-force labels differ from it
+
+**Notes**
+
+> Tom chose (a) on 2026-10-21: the task-force numbers are drawn aliased (coverage thresholded at 0.5), so task-force-strip and task-force-1 match pixel for pixel and run.mjs's labelMask {4,2,17,14} is removed. They differ from or-dec-c6-text-masks-rue because each is one or two glyphs filling a 25x17 slot, where a mask would hide the whole label; the longer text regions take rue's masks, which Tom approved the same day. Recorded in docs/plans/2026-10-20-feat-task-force-strip.md, Decisions.
+> Tom, 2026-10-21, on seeing that GDI Arial's digits (a footless 1, other curves on 2 and 3) cannot come from Liberation Sans: keep the port's smoothed Liberation Sans for the slot numbers, at font 4's size and the original's centred place. C6 masks each caption cell under or-dec-c6-text-masks-rue (task-force-caption-1..8 in tactical-a0-compare.json); the label unit tests check the digit, place and size.
+
+**Closed:** Tom chose aliased labels (a); recorded in the plan doc
+
+<a id="or-cell-tac-05-c023-in8"></a>
+### Cell TAC-05-C023: the committed trench-run order before launch
+
+`or-cell-tac-05-c023-in8` · **closed** · P2 · acceptance, tactical · closed 2026-10-21  
+Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
+Waits on: [or-p-trench-run-timing-e71](#or-p-trench-run-timing-e71)
+
+> Needs the original's launch delay; until then no A1 frame holds the committed order. Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
+**Acceptance criteria**
+
+- [x] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
+**Notes**
+
+> 2026-10-22: box ticked on evidence. C6 2026-10-22T13-10-25-205Z (A1 run 2026-10-22T12-47-53-829Z-10867, 184/184) with --negative-controls: TAC-05-C023 passes mission-attack-death-star, task-force-strip, fighter-group-strip and orders-display in both pairs; the identity control passes and the geometry, bitmap, action and stale-state controls fail their rows.
+
+**Closed:** C6 on the final J12 battle run (2026-10-20, WASM 779d0904, 180/180) passes TAC-05-C009 and C017-C023, 8 of 8, with the ported launch delay and the FUN_005ca530 -> FUN_005a0320 slot clear; commit 072d8289.
+
+<a id="or-p-withdraw-destination-qhz"></a>
+### Port the Withdraw destination and its battle result
+
+`or-p-withdraw-destination-qhz` · **closed** · P1 · port, tactical · closed 2026-10-21  
+Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
+Waits on: [or-r-withdraw-destination-skj](#or-r-withdraw-destination-skj)  
+Unblocks: [or-acc-results-dlw](acceptance.md#or-acc-results-dlw)
+
+> Withdraw moves the fleet where the original does and reports the original's result.
+>
+> Cite the recovered functions in the code. Verify e2e in the running game (native dev commands and the battle runner), both factions; no new unit tests during parity QA.
+
+**Closed:** post_battle::run_pass relocates each loser and names its destination; the withdrawal executors match FUN_005ad530/FUN_005c8780. Native, seed 42: Empire Withdraw (30 s countdown, 0x2a06) and Alliance Withdraw (34.4 s, 0x2a05) (orbital plan J13).
+
+<a id="or-p-trench-run-timing-e71"></a>
+### Port the trench-run delay and drop the selectable Death Star
+
+`or-p-trench-run-timing-e71` · **closed** · P2 · port, tactical · closed 2026-10-21  
+Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
+Waits on: [or-r-trench-run-timing-lws](#or-r-trench-run-timing-lws)  
+Unblocks: [or-acc-laser-5x5](acceptance.md#or-acc-laser-5x5), [or-cell-tac-05-c023-in8](#or-cell-tac-05-c023-in8)
+
+> Launch the run when the original does; draw no selectable Death Star.
+>
+> Cite the recovered functions in the code. Verify e2e in the running game (native dev commands and the battle runner), both factions; no new unit tests during parity QA.
+
+**Notes**
+
+> 2026-10-17 (plan Phase J item 6): in code, the order makes the result object in state 2 (FUN_005d0820) and the run enters state 5 when the group's leader reaches the station (FUN_005cfe80 at 0x5c6924), with the roll FUN_005d04e0 (crates/rebellion-core/src/tactical.rs, tactical/tests.rs; ghidra/notes/tactical-death-star.md). Remaining: the review or-r-trench-run-timing-lws; the render list in tactical_view.rs still pushes object 3001 with the station's resource 5010/5020; and the e2e check in the running game (native dev commands and the battle runner) on both sides.
+> 2026-10-17 (plan Phase J item 6, the 3001 draw): the station is FUN_005d4d10's decal, not an impact frame or a sprite. FUN_005ab650 (0x5ac59b) and FUN_005ab0e0 (0x5ab514) pass battle+0x8d4 (5010/5020) through FUN_005c10a0 -> FUN_005c1d30 -> FUN_005d4d10 (RET 0x14), which builds a 0.5*extent decal at x = -2.0*extent; the pick FUN_005c2d20 accepts only objects with +0x34 != 0 and the surround clears it (0x5d56e3), so it is never selectable (ghidra/notes/tactical-death-star.md section 19, FUN_005d4d10.asm.txt). A0 TAC-03-C020 shows no station on either side, so the port draws none: the invented object 3001 is gone from the impact-effect pass (tactical_effect_render_objects in crates/rebellion-render/src/tactical_view.rs; tests the_impact_effect_pass_never_carries_the_death_star_for_either_side and the_impact_effect_pass_draws_each_frame_on_its_target_only_with_pyrotechnics), and tools/interface-parity/run.mjs now asserts no 5010/5020 effect_scene. Hit-tests, strips and panel arrows walk BattleSession::ships, which holds no Death Star ship. Open: why A0 never shows the decal (back clip, a slot-1 hide, or the texture), a VM question; the review and the e2e check stay open.
+> 2026-10-17 (B, after the VM look): alliance-day1169-deathstar-trench-run.sav, Battle at Coruscant day 1173, zoomed out with PgDn, shows the station decal off one face of the battle box and the planet off the opposite one, so the port now draws FUN_005d4d10's scene surround. TacticalDeathStar::placed puts the station at (-2.0*extent, rand(0.4E)-0.2E, rand(0.4E)-0.2E) and superlaser_source at its child frame +0x4c (0, 0.11E, -0.09E) (crates/rebellion-core/src/tactical.rs; port: the clock-seeded local generator at 0x5d52ab is replaced by one seeded like the battle's). tactical_station_decal / draw_station_decal draw 5010/5020 as a decal (origin 64,64, size 0.5E, never pickable, never an impact effect); tactical_planet_decal_position / draw_planet draw the Show Planet decal at +2.0E (origin 128,128, size E, black transparent); decal_screen_rect scales both by depth and clips them at the camera planes (crates/rebellion-render/src/tactical_view.rs, tactical_assets.rs). Tests: the_station_stands_two_extents_out_on_negative_x_for_either_side, the_superlaser_leaves_from_the_stations_child_frame_for_either_side, the_station_decal_is_half_an_extent_square_on_its_centre_texel_for_either_side, the_planet_decal_stands_two_extents_out_on_positive_x, a_decal_spans_its_world_size_at_its_depth_and_sits_on_its_origin_texel, a_decal_behind_the_camera_or_past_the_back_plane_is_not_drawn, a_transparent_decal_drops_only_its_black_texels; run.mjs probes updated. Notes: tactical-death-star.md section 19. The review and the e2e check stay open.
+> 2026-10-17 (decal removal): FUN_005c1200(station id) -> slot 1 FUN_005d5950 -> slot 12 0x5d59b0 deletes the decal, called from FUN_005cfec0 state 6 (0x5d0267, after FUN_005ba890) and the departure FUN_005ba5e0 (0x5ba611); state 7 keeps it and nothing shows it again. Ported in tactical_station_decal (crates/rebellion-render/src/tactical_view.rs): no decal once trench_run_outcome is Success or the station's action_committed (+0x78) is set. Test the_station_decal_leaves_the_scene_when_a_run_succeeds_or_the_station_departs (both sides); note section 19.
+
+**Closed:** Order makes state 2 (FUN_005d0820), the run starts at the entry point (FUN_005cfe80), roll FUN_005d04e0; object 3001 is gone and the station is an unpickable decal. Native, seed 42: Alliance Red Group's run at Yavin, the Alliance AI's run vs the Empire at Hoth (orbital plan J6, J12).
+
+<a id="or-p-results-window-5sn"></a>
+### Port the Battle Results window placement, art and tabs
+
+`or-p-results-window-5sn` · **closed** · P0 · port, tactical · closed 2026-10-21  
+Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
+Waits on: [or-r-results-window-3tn](#or-r-results-window-3tn)  
+Unblocks: [or-acc-results-dlw](acceptance.md#or-acc-results-dlw)
+
+> Draw the Results window where and as the original does; make every tab switch.
+>
+> Cite the recovered functions in the code. Verify e2e in the running game (native dev commands and the battle runner), both factions; no new unit tests during parity QA.
+
+**Closed:** Battle Summary ported (tactical_view.rs, rebellion_core::battle_summary): art, Filters, four tabs, Left/Right. Native both sides (build ac90a418, seed 42); browser 4/4 per side at both viewports, source-bitmap-exact at 640x480 (orbital plan J13; 072d8289).
+
+<a id="or-p-opening-view-xyu"></a>
+### Port the battle opening view and the Battle Paused label
+
+`or-p-opening-view-xyu` · **closed** · P2 · port, tactical · closed 2026-10-21  
+Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
+Waits on: [or-r-opening-view-fpd](#or-r-opening-view-fpd)  
+Unblocks: [or-acc-aperture-z66](acceptance.md#or-acc-aperture-z66), [or-acc-pause-1ol](acceptance.md#or-acc-pause-1ol)
+
+> Open battles with the original's camera, holocube and pause label.
+>
+> Cite the recovered functions in the code. Verify e2e in the running game (native dev commands and the battle runner), both factions; no new unit tests during parity QA.
+
+**Closed:** OriginalTacticalCamera::pose, the scene window, draw_holocube and battle_paused_label_color are ported (tactical_assets.rs, tactical_view.rs). Browser battle gate 180/180 on both sides at both viewports; TAC-05 C017-C023 pass C6 (orbital plan J12; 072d8289).
+
+<a id="or-r-withdraw-destination-skj"></a>
+### Review: Where does Withdraw send the fleet, and what result does the battle then report?
+
+`or-r-withdraw-destination-skj` · **closed** · P1 · ghidra, review · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Waits on: [or-q-withdraw-destination-m8b](#or-q-withdraw-destination-m8b)  
+Unblocks: [or-p-withdraw-destination-qhz](#or-p-withdraw-destination-qhz)
+
+> Reread every cited decompile against our own project (ghidra/scripts, read-only copy). Done when each claim is confirmed or corrected, the page is merged into the wiki, and the .c files and the note are copied into ghidra/notes/.
+
+**Acceptance criteria**
+
+- [x] Each claim is confirmed or corrected, the page is merged into the wiki, and the .c files and the note are copied into ghidra/notes/.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. Superseded: no Worker page existed to review or merge; the lead wrote the note from this project's own Ghidra, and the note and its .c files are in ghidra/notes.
+
+**Closed:** Superseded: Traced in this project's Ghidra (morale-retreat.md, FUN_00516730.c, FUN_00516ef0.c on disk) and confirmed against VM runs at Carida, Coruscant and Ando.
+
+<a id="or-r-trench-run-timing-lws"></a>
+### Review: When does the trench run launch after the order, and can the Death Star be selected?
+
+`or-r-trench-run-timing-lws` · **closed** · P2 · ghidra, review · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Waits on: [or-q-trench-run-timing-eub](#or-q-trench-run-timing-eub)  
+Unblocks: [or-p-trench-run-timing-e71](#or-p-trench-run-timing-e71)
+
+> Reread every cited decompile against our own project (ghidra/scripts, read-only copy). Done when each claim is confirmed or corrected, the page is merged into the wiki, and the .c files and the note are copied into ghidra/notes/.
+
+**Acceptance criteria**
+
+- [x] Each claim is confirmed or corrected, the page is merged into the wiki, and the .c files and the note are copied into ghidra/notes/.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. Superseded: no Worker page existed to review or merge; the lead wrote the note from this project's own Ghidra, and the note and its .c files are in ghidra/notes.
+
+**Closed:** Superseded: Traced in this project's Ghidra (tactical-death-star.md sections 2, 16, 17, 19, disassembly of FUN_005d4d10) and checked against VM timings (section 20).
+
+<a id="or-r-results-window-3tn"></a>
+### Review: Where is the Battle Results window drawn, with which art, and how do its tabs switch?
+
+`or-r-results-window-3tn` · **closed** · P0 · ghidra, review · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Waits on: [or-q-results-window-yln](#or-q-results-window-yln)  
+Unblocks: [or-p-results-window-5sn](#or-p-results-window-5sn)
+
+> Reread every cited decompile against our own project (ghidra/scripts, read-only copy). Done when each claim is confirmed or corrected, the page is merged into the wiki, and the .c files and the note are copied into ghidra/notes/.
+
+**Acceptance criteria**
+
+- [x] Each claim is confirmed or corrected, the page is merged into the wiki, and the .c files and the note are copied into ghidra/notes/.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. Superseded: no Worker page existed to review or merge; the lead wrote the note from this project's own Ghidra, and the note and its .c files are in ghidra/notes.
+
+**Closed:** Superseded: No Worker page to review: the lead wrote tactical-results.md from this project's decompiles (FUN_0046f360.c, FUN_004714e0.c in ghidra/notes), and the browser gate confirms it source-bitmap-exact.
+
+<a id="or-r-opening-view-fpd"></a>
+### Review: How does the battle open: camera, holocube, ships shown, and the 'Battle Paused' text's font and colour?
+
+`or-r-opening-view-fpd` · **closed** · P2 · ghidra, review · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Waits on: [or-q-opening-view-0aa](#or-q-opening-view-0aa)  
+Unblocks: [or-p-opening-view-xyu](#or-p-opening-view-xyu)
+
+> Reread every cited decompile against our own project (ghidra/scripts, read-only copy). Done when each claim is confirmed or corrected, the page is merged into the wiki, and the .c files and the note are copied into ghidra/notes/.
+
+**Acceptance criteria**
+
+- [x] Each claim is confirmed or corrected, the page is merged into the wiki, and the .c files and the note are copied into ghidra/notes/.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. Superseded: no Worker page existed to review or merge; the lead wrote the note from this project's own Ghidra, and the note and its .c files are in ghidra/notes.
+
+**Closed:** Superseded: Traced in this project's Ghidra (tactical-camera-holocube.md; decompiles listed there) and fitted to A0 TAC-05-C017/C023 (0.28 px RMS over 1,335 holocube pixels).
+
+<a id="or-r-gnd-5hu"></a>
+### Review the ground-assault questions
+
+`or-r-gnd-5hu` · **closed** · P2 · ghidra, review · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Waits on: [or-q-assault-summary-6gi](#or-q-assault-summary-6gi), [or-q-ground-resolution-nms](#or-q-ground-resolution-nms)  
+Unblocks: [or-d-gnd-plan-glw](other.md#or-d-gnd-plan-glw)
+
+> As for every review node.
+
+**Closed:** Superseded: Both questions were traced in this project's Ghidra (ground-assault.md, operation-report-window.md; decompiles committed with ff3099fd) and checked in the VM (Ord Pardon, Drall, Selonia, Orto).
+
+<a id="or-q-ftol-sites-6tv0"></a>
+### Q: Which of the original's 47 __ftol conversions can see out-of-range floats, and does the port match them?
+
+`or-q-ftol-sites-6tv0` · **closed** · P3 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> rebexe-map.md (0x00610b70-0x00629000): the original converts floats to integers through __ftol at 47 call sites; for values in range it truncates toward zero like Rust 'as i32', but out-of-range and NaN inputs differ (Rust saturates). List the 47 sites, say which can receive out-of-range or NaN values (combat damage, economy rates, tactical positions), and name the port code that mirrors each. Done when a note tables the sites and the port's matching casts.
+
+**Acceptance criteria**
+
+- [x] The question is merged into or-q-rng-float-c2x, which carries it and its criterion (a note tabling the 47 sites and the port's matching casts).
+
+**Notes**
+
+> 2026-10-22: criterion restated for a duplicate. It read '- [ ] A note tables the sites and the port's matching casts'; that work is open in or-q-rng-float-c2x, so this node's done-when is the merge.
+
+**Closed:** Duplicate of or-q-rng-float-c2x; its question is in c2x's notes.
+
+<a id="or-port-galaxy-eval-6ih8"></a>
+### Port: re-ground ai.rs evaluate_galaxy_state, which cites new-game stage 0xb
+
+`or-port-galaxy-eval-6ih8` · **closed** · P2 · port, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> crates/rebellion-core/src/ai.rs:1399 evaluate_galaxy_state and agent_automation.rs:11 cite FUN_00519d00 as the computer player's galaxy evaluation; agent_docs/roadmap.md:369 marks it DONE. FUN_00519d00 is new-game stage 0xb, dividing systems between the sides by SDPRTB 0x1e00/0x1e01 (ghidra/notes/galaxy-limits.md, facility-ownership.md). Find what the AI's strategic layer really reads (ai-order-emission.md, ai-mission-planning.md) and replace the sourceless buckets with it, or tag them port:. Explain before changing; both factions.
+
+**Notes**
+
+> ai.rs system_strength() (~1337) has no source either: FUN_00502020 checks what one capital ship carries (ai-behavior-analysis.md, entity-system.md). Replace it with the original's strength reading when this node ports the evaluation.
+
+**Closed:** Superseded: evaluate_galaxy_state is gone with the ported strategic AI; system_strength is the port: stand-in for module 4's Recon planner, tracked by or-3m5f.
+
+<a id="or-rhik"></a>
+### Port persistent research planners (FUN_004bced0, FUN_004e8290) without the yard pre-test
+
+`or-rhik` · **closed** · P3 · closed 2026-10-21
+
+> ghidra/notes/research.md: a research planner keeps its member claimed and re-emits Create Mission 0x240 every pass (state 8 FUN_0047b360, empty team while the member is on the mission or in transit); it retires only through the controller drop request (FUN_004e5710, FUN_004d2580 -> FUN_0042f690 flag 0x10000000, FUN_0047aff0 releases members), fired when the live count exceeds the limit or the tree's controller bit is set (FUN_004e8290). Nothing moves a scientist to a yard: the target is the member's own system (FUN_004bd0a0), no Move, no yard test. Port today: ai.rs evaluate_research pre-tests for a working yard and passes to the next tree, and a planner lives only as long as its mission. Port: per-tree planners holding one claimed member, the order emitted without the yard pre-test (the validator refuses), retirement only on exhaustion or the count limit.
+
+**Notes**
+
+> Landed: ai_research.rs ResearchPlanners (saved in AIState.research_planners, SAVE_VERSION 47) replaces evaluate_research: persistent per-tree planners each claim one member (Planner::pick_research_member), re-emit the Research order every round at the member's own system (held, not blockaded) with no yard pre-test; member on mission/in transit sends nothing; released flags 0x7400051 drop the member. Controller request FUN_004e8290: add while tree bit clear and count<capable; drop (oldest unflagged, hyp: slot +0x18 untraced) when count>capable or tree done and count>0. Open: yard/exhausted test is not at creation in dispatch_guarded (mission created then ends 0xc), planner flags 0x20000000/0x40000000 setters.
+
+**Closed:** ai_research.rs ResearchPlanners persist per tree (save v47), no yard pre-test; FUN_0056c510 refuses at creation a yardless or exhausted tree (0x40/0x2c, 0x40/0x32). Seed 42, 1000 days: Empire 82 Ship and 53 Facility missions (AI plan Phase H item 3).
+
+<a id="or-q-withdraw-destination-m8b"></a>
+### Q: Where does Withdraw send the fleet, and what result does the battle then report?
+
+`or-q-withdraw-destination-m8b` · **closed** · P1 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Unblocks: [or-r-withdraw-destination-skj](#or-r-withdraw-destination-skj)
+
+> Question: Where does Withdraw send the fleet, and what result does the battle then report?
+>
+> Known (cite, don't redo): At Yaga Minor the original withdraws to Ghorman; A1 ends in an Imperial victory. Withdraw with a stranded ship varied between runs in the VM (1 defeat, 2 victories; HANDOFF).
+>
+> Deliver: a feature-wiki page executable/<packet>.md and the cited decompiles under assets/decompiles/ on the Worker's branch. Done when the page answers the question with function and address citations, for both sides where the code branches.
+
+**Acceptance criteria**
+
+- [x] The page answers the question with function and address citations, for both sides where the code branches.
+
+**Notes**
+
+> map-20: withdraw confirm panel FUN_005f0d10, FUN_005f0f40, FUN_00596a70; meaning of DAT_0065d428=3 in the id tables. map-11: retreat option query FUN_00516730 (four outputs, caller FUN_0051dce0); map-18: CanRetreat/ComputeStrength Death Star bonus asymmetry.
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. The note named in the close reason answers it, both sides where the code branches.
+
+**Closed:** morale-retreat.md 'Where a fleet that withdrew goes': p4 by FUN_00516730 -> FUN_005545e0 stages 3-7, loser pass FUN_00516ef0.c:142-180, winner FUN_0040c780.c:60-101. VM: losers at Carida, Coruscant and Ando left for Halowan/Ando.
+
+<a id="or-q-unfinished-ship-owner-on-capture-y2nz"></a>
+### Q: Who owns an unfinished ship after its system changes hands?
+
+`or-q-unfinished-ship-owner-on-capture-y2nz` · **closed** · P3 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> Who owns an unfinished ship (an `unfinished` ShipInstance in a destination's spare fleet, Death Star family; death-star-product.md section 1) after its system changes hands by capture or control change?
+>
+> Known: the spare fleet and the unfinished Death Star carry +0x50 bit 6 from the order day, so the mode 3 census counts it, and Destroy System leaves a capital ship in the spare fleet untouched. Open: whether ownership follows the system's side, stays with the orderer, or the ship is destroyed or relocated, and whether the census still counts it for the old owner.
+
+**Closed:** facility-ownership.md, Control change item 5: the captured system's managers destroy their products with reason 0x16 and no refund (FUN_0052b790 -> FUN_0052a2c0). Another yard's capital ship sits in a fleet, which keeps its side (FUN_0051ebb0). Shown in the Wine Duros replay.
+
+<a id="or-q-trench-run-timing-eub"></a>
+### Q: When does the trench run launch after the order, and can the Death Star be selected?
+
+`or-q-trench-run-timing-eub` · **closed** · P2 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Unblocks: [or-r-trench-run-timing-lws](#or-r-trench-run-timing-lws)
+
+> Question: When does the trench run launch after the order, and can the Death Star be selected?
+>
+> Known (cite, don't redo): The original acknowledges with voice 14097 at the commit and launches about 61 s later with 15161; A1 launches at the commit. A1 draws a selectable 5010 Death Star sprite; the original draws none (TAC-03-C020 settled).
+>
+> Deliver: a feature-wiki page executable/<packet>.md and the cited decompiles under assets/decompiles/ on the Worker's branch. Done when the page answers the question with function and address citations, for both sides where the code branches.
+
+**Acceptance criteria**
+
+- [x] The page answers the question with function and address citations, for both sides where the code branches.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. The note named in the close reason answers it, both sides where the code branches.
+
+**Closed:** tactical-death-star.md: state 2 at the order (FUN_005d0820), state 5 at the entry point (FUN_005cfe80), about 61 s of approach plus the 120000.0 timer (sections 2, 16, 17, 20); the station is FUN_005d4d10's decal, never pickable (section 19).
+
+<a id="or-q-row-overlays-7p9o"></a>
+### Q: What do the FUN_0042c3b0 row overlays show, and is +0x50 bit 0x200 on-mission?
+
+`or-q-row-overlays-7p9o` · **closed** · P3 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> ground-unit-assets.md: FUN_0042c3b0 draws overlay ids 0x2cf1, 0x2cf5, 0x2cfb, 0x2ced, 0x2d32/34. Done when a note names each overlay and its condition.
+
+**Acceptance criteria**
+
+- [x] A note names each overlay and its condition.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. The note named in the close reason answers it, both sides where the code branches.
+
+**Closed:** fleet-window.md 'En route marks': 0x2cf1/0x2cf5/0x2cfb/0x2ced on +0x50 bit 4 without bit 3. operation-report-window.md 5: 0x2d32/0x2d34 for an uncompleted object; bit 0x200 is the damage bit (tactical-results.md 3), not on-mission.
+
+<a id="or-q-results-window-yln"></a>
+### Q: Where is the Battle Results window drawn, with which art, and how do its tabs switch?
+
+`or-q-results-window-yln` · **closed** · P0 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Unblocks: [or-r-results-window-3tn](#or-r-results-window-3tn)
+
+> Question: Where is the Battle Results window drawn, with which art, and how do its tabs switch?
+>
+> Known (cite, don't redo): A1's Results window sits lower than A0's with other art, and its Imperial Forces tab does not switch (Yaga journey). The results-window region is the only failing region in 10 cells.
+>
+> Deliver: a feature-wiki page executable/<packet>.md and the cited decompiles under assets/decompiles/ on the Worker's branch. Done when the page answers the question with function and address citations, for both sides where the code branches.
+
+**Acceptance criteria**
+
+- [x] The page answers the question with function and address citations, for both sides where the code branches.
+
+**Notes**
+
+> map-03: Battle Results filter buttons 0x97-0x9c (FUN_0044c410-FUN_0044edb0); Battle Alert type-7 window FUN_00451050 and FUN_0041ce60 button semantics; Battle Summary identity via the caller of FUN_0042a640 (FUN_0046f360).
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. The note named in the close reason answers it, both sides where the code branches.
+
+**Closed:** ghidra/notes/tactical-results.md section 1: window kind 8, 470x331 (FUN_0046f140); layer art (FUN_0046f360.c:68-109, 305-368); tabs 0x65-0x68 refilled by FUN_004714e0; side buttons 0x70/0x71 (FUN_00471340). Decompiles in ghidra/notes.
+
+<a id="or-q-opening-view-0aa"></a>
+### Q: How does the battle open: camera, holocube, ships shown, and the 'Battle Paused' text's font and colour?
+
+`or-q-opening-view-0aa` · **closed** · P2 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Unblocks: [or-r-opening-view-fpd](#or-r-opening-view-fpd)
+
+> Question: How does the battle open: camera, holocube, ships shown, and the 'Battle Paused' text's font and colour?
+>
+> Known (cite, don't redo): A1 opens framing the planet with no holocube and no ships; its 'Battle Paused' is red and in another font (Yaga journey). The pause-label and aperture regions fail in TAC-01.
+>
+> Deliver: a feature-wiki page executable/<packet>.md and the cited decompiles under assets/decompiles/ on the Worker's branch. Done when the page answers the question with function and address citations, for both sides where the code branches.
+
+**Acceptance criteria**
+
+- [x] The page answers the question with function and address citations, for both sides where the code branches.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. The note named in the close reason answers it, both sides where the code branches.
+
+**Closed:** tactical-camera-holocube.md: camera at 1.7 extents, pitch 30, yaw 150/-30 by side (FUN_005c1d30, FUN_005d9640); 3D window (17,30) 439x437; holocube FUN_005d4d10; Battle Paused 0xddf0 red for the Alliance, green for the Empire (FUN_005c14d0).
+
+<a id="or-q-message-movie-consumer-prbo"></a>
+### Q: What reads a message's movie id at +0x5c, and when do MDATA 101-104 play?
+
+`or-q-message-movie-consumer-prbo` · **closed** · P3 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> story-encounters.md and movies.md: four message classes store a movie id at +0x5c; the consumer that plays it is not fully traced. Start from FUN_004019a0, FUN_00406000, FUN_00405560. Done when a note gives the path from message to movie for both sides.
+
+**Acceptance criteria**
+
+- [x] A note gives the path from message to movie for both sides.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. The note named in the close reason answers it, both sides where the code branches.
+
+**Closed:** movies.md Answer item 3, rows 11-14: the pump plays a kind-6 message's +0x5c (FUN_00488b90 -> FUN_0041d850 -> FUN_00425ce0 -> 0x482 -> FUN_00422ce0 -> FUN_004019a0). MDATA.101-104 by event 0x182, 0x128, 0x305; 'Both sides' section.
+
+<a id="or-q-game-type-reads-jy80"></a>
+### Q: Where is the game type read besides the victory check?
+
+`or-q-game-type-reads-jy80` · **closed** · P3 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> scenario-literals.md: only FUN_005180e0 is confirmed to read root +0x60. Search every read and check the AI and seeding callers; start from FUN_0051c740. Done when a note lists every reader.
+
+**Acceptance criteria**
+
+- [x] A note lists every reader.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. The note named in the close reason answers it, both sides where the code branches.
+
+**Closed:** victory-flag-word.md section 6: the readers are FUN_005180e0 (root +0x60), FUN_004182a0 (AI context +4 bit 0) and the Victory Conditions page (FUN_0044b2d0, FUN_0044bb70). Bit 0 is read by FUN_00401d20, FUN_00484630 and FUN_00474b90.
+
+<a id="or-q-empire-trench-movies-ipqy"></a>
+### Q: Does an Empire human player see the trench-run movies?
+
+`or-q-empire-trench-movies-ipqy` · **closed** · P3 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> movies.md: the tactical trench run plays 0x71 (success) or 0x70 (failure) through FUN_005c0fb0; whether the Empire side sees them is untraced. Start from FUN_005cfec0, FUN_005c0fb0, tactical-death-star-path.md. Done when a note answers for both sides.
+
+**Acceptance criteria**
+
+- [x] A note answers for both sides.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. The note named in the close reason answers it, both sides where the code branches.
+
+**Closed:** tactical-death-star.md 10: FUN_005c0fb0 and FUN_005c0ff0 have no side test, so a windowed Empire player sees MDATA.201/202. Section 20, VM empire-day660-trench-tieless.sav, Empire viewer: the trench-run films play.
+
+<a id="or-q-assault-summary-6gi"></a>
+### Q: What are the Assault Summary window's resources, layout and tabs?
+
+`or-q-assault-summary-6gi` · **closed** · P2 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Unblocks: [or-r-gnd-5hu](#or-r-gnd-5hu)
+
+> Buttons at x=720 in the 800x600 VM frame: Close y=115, Summary y=200, Imperial Forces y=265, System Forces y=345, Go to System y~425. Damage tabs: Trooper Regiments (Operational, Destroyed), capital ships, fighters, facilities, personnel. Also a Message Index entry.
+
+**Closed:** operation-report-window.md: the assault report is the Operation Report window (FUN_0044c410/FUN_0044c630, 470x331), event 0x183, pictures 0x2b98/0x2b99, rail, six force tabs, Index reopen. EVT-03 C007-C010 pass natively and in Chrome on both sides.
+
+<a id="or-q-ai-death-star-use-z9ow"></a>
+### Q: Where do the AI's Destroy System inputs come from, and does the AI ever build or fire the Death Star?
+
+`or-q-ai-death-star-use-z9ow` · **closed** · P3 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> ghidra/notes/death-star-strategic.md, AI: the posture emitter FUN_004b1070 issues 0x223 when the fleet record flag +0x38 & 0x10 (from object +0x50 bit 7 via FUN_00433780) and the target record +0x110 are set; trace +0x110's writers (FUN_004739b0 and the census) and whether the AI class flag 0x200000 (FUN_0042e960, FUN_0041b230) admits CAPSHPSD record 136. Also the refusal a second family-0x18 ship at one system raises (FUN_00550bd0, FUN_0054fd90) and what clears a destroyed system's populated bit (FUN_0050b760, FUN_0050a3c0, FUN_00508660).
+
+**Notes**
+
+> 2026-10-18: the module-11 budget is read (FUN_004ca5e0): the hull needs capacity 2223, and the module's budget is 0.27 x capacity - c+0x24c. Measured 2026-10-17 on the release playtest (dual AI, standard galaxy, medium difficulty, seeds 1-24): no Death Star build, no DestroySystem order and no death_star_fired in 1,500 or 5,000 days, and no game ended by victory. Capacity is not the gate (the Empire reaches 2,223 by day 1,500 in 17 seeds); the fielded capital-ship maintenance c+0x24c is, with budget median 35 at day 1,500, 15 at 3,000, 13 at 5,000. Of 240 samples three reach 600 (seeds 22, 7, 4), and the class is listed in all 240. Around seed 22's day 2,000 module 11 builds capital-ship keys 17 and 18 instead, so an earlier row of FUN_004ca5e0 holds the turn (hyp: which row is not traced). The budget mismatch is ported; no seed issues 0x223 yet.
+> 2026-10-18 (module 11's turn): the request rows run in a fixed order (FUN_004ca5e0.c:57-139) and a blocker lasts one request (FUN_004ca910.c:26 clears all, :67-68 sets only the failed row's), so a row whose class fits runs every pass. The troop-room row (rec+0x64 bit 4, R+0x74 < 0 after FUN_00477e80's takers) comes first and wins whenever one record holds the bit; its cheap transport classes (mask 0x100004, key 0x100) always fit, so the hull row (eighth) is never reached. The port's request and pick match the code (ai_production.rs ship_request, capital_ships). Measured on the port's seed 22 (dual AI, release playtest, trace in a private copy): the Empire's budget clears 600 from day 1,594 (603 to 872 by day 1,800); every request to day 1,904 takes the troop-room row with blockers 0 and builds class key 28 (maintenance 20), 41 transports between days 1,300 and 1,700, while fielded capital-ship maintenance falls from 736 (day 1,100) to 430 (day 1,552) and a record stays troop-short. No port change, so the 24-seed census needs no re-measure; the strict fleet rule did not touch the census inputs. Remaining scope: (1) why a record stays short of troop room while transports are built and lost: the takers of FUN_00477e80 (take_free, poach) and the troop-room counter of FUN_00477cb0 against the original, and where the transports go; (2) the 0x223 seed test with a ready hull fleet at an HQ system with regiments loaded.
+> 2026-10-18 (troop-room stall, item 1): line-by-line against the decompiles, no deviation. FUN_00477cb0's counters (troop room = fleet +0x84 sum) match sum_and_require; FUN_00477e80's short set, need bits and let-go test match shortfall_and_surplus; the kind-6 requirement FUN_004b6a60 (P+0x3c rises to the larger of sector +0x134 and c+0x170, never falls while the posture lasts) matches requirement(); take_free matches FUN_004782a0 (nearest fleets with 0x8005, ships with 0x20000 and none of 0xc03800, serving a shortfall); poach matches FUN_00478690 (0x8001, none of 0xf0000006, later plan entry, ships none of 0xc23800); repair_move matches FUN_004c8e90 except the port's hyp that a Move to the fleet's own system is not issued (the original issues 0x201 whenever the pick is a system). Seed 22 trace (private copy): the short record is kind 6 at Sumitra, troop room 3-5 below 18 from day 1,275; take_free finds nothing each pass because every free transport is en route (0x800) or damaged (0x1000); transports 13 and 47 stay free and damaged from day 1,425 and keep changing systems (Bortras, Coruscant, Yaga Minor); the Empire issues one repair move in the run (day 1,609, Bothawui to Orto); Empire fleet moves in that window (fleet 28v5, days 1,476 and 1,481) carry no AI order (hyp: post-battle retreats, unchecked). No port change, so no re-measure. Whether the original escapes the stall on a comparable game is a game-state question the code cannot settle; it needs an original-game observation (an Empire AI game soaked under Wine to the day its troop records go short). Remaining: the repair_move own-system hyp (minor), and that observation.
+
+**Closed:** ai-death-star.md 1: module 11 hull row (FUN_004ca5e0), fleet flag 0x10 (FUN_00433780), target +0x110 (FUN_00433e40), FUN_004b1070 -> 0x223. Second-hull refusal {0x90,3} is in death-star-product.md 2. The 0x223 seed tests pass for both sides.
+
+<a id="or-port-officer-rank-x4kn"></a>
+### Port: officer rank (CommandKind +0x96) and the command orders 0x260-0x263
+
+`or-port-officer-rank-x4kn` · **closed** · P2 · port, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Waits on: [or-port-character-move-7ba0](#or-port-character-move-7ba0)
+
+> The port has no officer rank: no CommandKind field and no orders 0x260 None, 0x261 Commander, 0x262 Admiral, 0x263 General. The original (ghidra/notes/character-roster.md, Officer rank): only these orders write +0x96 (FUN_00561bb0 -> FUN_004ef340 -> FUN_004ef400; the current kind toggles it off), eligibility is the DAT flags can_be_commander/admiral/general (FUN_004ed750; a character on a mission, injured or a prisoner is refused), moves and a lost command clear it (FUN_00560d50, FUN_004eeed0), the name gains the rank block (+0x6800/+0x6c00/+0x7000, FUN_004f17f0), and the detector officer of decoy-roll.md is the rank holder (FUN_00509330, FUN_005006f0). Players reach it through the object popup's Command submenu (object-popup-menu.md); the AI through module 12. Original UI only. Verify both factions.
+
+**Notes**
+
+> Ported (sim): rebellion-core/src/officer_rank.rs holds CommandKind (+0x96), CommandPost (+0xa8: the character's fleet, else its system, FUN_0055ed30), command_refusal (FUN_004f9860 + FUN_004ed750), give_command (FUN_00561bb0 -> FUN_004ef400: the held kind toggles off; another kind is given and the side's holder of it at the same post loses it), rank_holder (FUN_00509330, FUN_004fd790) and clear_lapsed_ranks (FUN_004eeed0, FUN_00560d50), swept after each tick. Characters carry their ranked TEXTSTRA names (FUN_004f17f0) and display_name(); save v39. Detection uses the officer: espionage x GNPRTB 3588/3589 / 100 in the decoy and FOILTB rolls, combat against RLEVADTB. port: no injury, no per-ship seats (the fleet is the post), captures record the side not the captor key. Open: the Command submenu and its order (the Game Menu Window has no submenus yet), the e2e run, and AI module 12 with FUN_00402230's held-rank record bits (rank 1 -> 0x4000000, 2 -> 0x1000000, 3 -> 0x2000000).
+> Ported (menu): the Game Menu Window opens submenus as FUN_004aab50 does (sticky highlight on enabled rows, the 500 ms timer shows the highlighted row's submenu, FUN_004ab3a0 placement, side arrows 10117/10118 and 10128/10129, a parent always enabled and inert on release, Escape hides a submenu then closes); Command lists None, Admiral, General, Commander, enabled by command_refusal and checked for the held rank (FUN_00580d80 -> FUN_004ed680, never None), and a choice runs give_command. The Status window's Commanding names the post and Fleet Status names its Admiral, General and Commander. The game clears lapsed ranks once a frame. The AI's mission records carry the held rank's bit (FUN_00402230), replacing the in-fleet stand-in. Verified e2e: .artifacts/native-checks/2026-10-15-rank-menu-alliance (Luke General, check, None clears, Han displaced, Leia all disabled, Escape hides then the timer reopens) and -rank-menu-empire (Admiral Vader, check, Emperor all disabled). Open: AI module 12 (spec in ai-order-emission.md) needs a character Move order: or-port-character-move-7ba0; class I also needs the posture kinds (or-q-ai-posture-planner-jta). Not yet seen e2e: a rank lapsing on a mission.
+> Views: the debug-only Officers, Research, Jedi and Loyalty panels are retired (invented UI); the egui encyclopedia browser that listed live names is removed. The Galactic Encyclopedia titles rows from the DAT record's name (FUN_00422620), as the original does, so a ranked character keeps its plain name there.
+> AI module 12 class G ported (crates/rebellion-core/src/character_tasks.rs; AIState::character_tasks, save v42): the controller's kind 1 (General at Coruscant while held, and at the Alliance's held HQ system) and kind 6 (the Emperor to Coruscant, Empire only) requests with never-decremented counts, the drop of the first task without a valid target, the target/character/order machine (FUN_004bbb00): Move 0x201 (AIAction::MoveCharacter -> MissionState::dispatch_move) until the character stands at the target, then Command General 0x263 (AIAction::GiveCommand -> command_refusal/give_command); release gives Command None. Claims clear the record's 0x800000. Traced (FUN_0042dd00, FUN_004198a0/FUN_00419870/FUN_004197b0): every character is reserved (0x8000000) until its side's three research trees reach their highest order (ResearchSystem::tree_exhausted), so the General query finds nobody before then; the port's research seldom gets there. Evidence: headless seed 42 with research maxed gives Command General to Grammel on day 63; without, no task order in 2000 days. Class I (Admiral/Commander/General of a regional record) still needs the postures: or-q-ai-posture-planner-jta.
+
+**Closed:** officer_rank.rs (FUN_00561bb0, FUN_004ed750, FUN_004eeed0) and the Command submenu; native both sides (Luke General, Vader Admiral). Class G and class I tasks issue 0x261-0x263 (AI plan C4b); rank lapse on a mission passed on both sides 2026-10-16.
+
+<a id="or-port-mission-creation-check-f4h2"></a>
+### Port: refuse missions at creation (FUN_00542b60) and filter the AI's mission targets
+
+`or-port-mission-creation-check-f4h2` · **closed** · P1 · port · closed 2026-10-21
+
+> Refuse missions at creation as the original does (the mission order executes in FUN_0054d360 -> FUN_00542b60 -> FUN_0054c590, the class validator with creation checks on), and filter the AI's mission target pickers by the system-record bits the original's queries read (FUN_00433e40; FUN_004035d0's unassigned test; Diplomacy's per-system claim FUN_00481720). Seed 9 over 1000 days dispatched Diplomacy 9,052 times and resolved it 32 times; 8,380 dispatches re-sent the same character to the same target the next day, because dispatch_guarded accepted forbidden targets and the next day's validator ended them. Notes: ghidra/notes/mission-lifecycle.md, ai-mission-planning.md. Done when every dispatch goes through one validated creation path, the churn check on seed 9 shows no next-day same-target re-sends from refused targets, and both factions run natively.
+
+**Acceptance criteria**
+
+- [x] Every dispatch goes through one validated creation path, the churn check on seed 9 shows no next-day same-target re-sends from refused targets, and both factions run natively.
+
+**Notes**
+
+> 2026-10-16: V1 done: missions.rs validate(.., Creation|Running) with TargetRefusal (status words from the class validators), running_end_code unchanged by construction, Research's yard and exhaustion checks folded in, dispatch_validated used by the headless AI. V2 (AI pickers on the round's system records, FUN_004035d0 unassigned test, Diplomacy per-system claim) in progress; the player, native AI and dev paths move to dispatch_validated in scheduler step 4.
+> 2026-10-16 V2 done: the AI pickers read the round's system records (FUN_00433e40 q bits) with validate(Creation) as a backstop; Diplomacy follows the original (own <70, neutral uncapped), the 0.8 cap field removed (v52). Seed 9, 1000 days: Diplomacy 5 dispatched / 55 resolved, no next-day re-sends (was 9,052 / 32 / 8,380). The remaining re-sends are detection-foiled Sabotage/Espionage teams (FOILTB 112, RLEVADTB 69). Left: steps 3-4 move every caller to dispatch_validated.
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. One path (dispatch_validated), seed 9 churn check, native refusals on both sides (seed 11 Alliance, seed 20 Empire).
+
+**Closed:** Every dispatch runs the creation validator (missions.rs dispatch_validated; dispatch_guarded deleted). Seed 9: Diplomacy 5 dispatched/55 resolved, no next-day re-sends. Native refusals: seed 11 Alliance Sabotage, seed 20 Empire Assassination (AI plan H6, H8).
+
+<a id="or-port-headless-battles-tdl"></a>
+### Q: Replace combat.rs's resolver with the tactical engine's headless run for unplayed battles?
+
+`or-port-headless-battles-tdl` · **closed** · P1 · port, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> simulate-runs-tactical-engine.md: the original resolves every space battle with the tactical engine (windowed or headless); the computer always simulates. combat.rs resolve_space_forces (simulation.rs via integrator::resolve_system_space_combat; main.rs computer-vs-computer branch) cites the MissionMgr story checks as phases 1-8 and scales hull damage by GNPRTB 0x1400, which the original reads only as a distance divisor (FUN_0055d8c0). The port already has the headless step (tactical_view.rs headless_step, apply_headless_damage). Decide: route unplayed battles through it, and retire or re-source combat.rs; resolve_ground's cited FUN_00560d50/FUN_005617b0 are also suspect (or-ch-combat-family-notes-yfx). Architecture change: ask before implementing; replay goldens change only for this named cause. Done when both factions' unplayed battles match the headless engine, verified e2e.
+
+**Acceptance criteria**
+
+- [x] Both factions' unplayed battles match the headless engine, verified e2e.
+
+**Notes**
+
+> Tom 2026-10-14: 'we want full parity' — approved routing unplayed battles through the headless tactical engine and retiring/re-sourcing combat.rs. Plan: (1) move the BattleSession engine from rebellion-render tactical_view.rs into a rebellion-core tactical module, no behaviour change; (2) move apply_results write-back into core; (3) route simulation.rs and main.rs computer-vs-computer battles through new_with_forces + simulate_to_end + write-back; (4) retire resolve_space_forces, CombatPhaseFlags, GNPRTB 0x1400 scale (resolve_ground separate); (5) goldens regenerated for this named cause, playtests both factions, native AI-vs-AI check. Uncommitted until Tom says commit.
+> 2026-10-14 progress (uncommitted): steps 1-5 done locally. (1) Engine moved to rebellion-core/src/tactical.rs (+ tactical/resource_ids.rs, test_support.rs, tests.rs: 71 engine tests moved, 20 UI tests stay in render); render seams: extension traits for rendered()/color()/order art, pending_log_lines queue drained by render. (2) apply_results/summarize_results/BattleReturn/withdraw_fleet/reconcile_death_star_result in core tactical::apply; app wrapper prints log lines. (3) integrator::resolve_system_space_combat runs BattleSession::new_with_forces + simulate_to_end + apply_results (seed from one roll); simulation.rs and main.rs fallback both call it. (4) combat.rs space resolver, CombatPhaseFlags, SpaceCombatResult and events removed with 26 tests; integrator apply_space_combat(_result_inner) and 4 tests removed (2 round-loop, 2 hand-built results); 2 kept tests' fixtures given CAPSHPSD-like recharge/range. (5) Replay golden regenerated: checkpoints 4-9, final v1:82d08c945db25ee2 -> v1:6ed0d186615a71d8. Playtests seeds 1-8 x 20000 ticks dual-AI: new 34 battles all decisive (17/17); old combat.rs produced up to 19,905 no-progress draws per run. Open: provenance-scan baseline (114 moved uncited items) needs Tom's call; native Mini checks running.
+> 2026-10-14 (provenance + docs): the 114 moved items are all classified (provenance-scan: tactical.rs 149 cited/10 port/4 hyp/0 uncited; resource_ids 12 cited; test_support 3 port). Scanner now accepts Ghidra's _DAT_ spelling; baseline shrank 114 -> 98 (16 cleared: retired combat.rs resolver, MAX_SYSTEM_COMBAT_ROUNDS, COMBAT_RETRY_TICKS, three _DAT_ citations). ORIGINAL_ENGAGEMENT_UNARMED_FAR set to FUN_005edf80's 0x497423f0 = 999999.0 (played-battle band only; replay golden unchanged). hyp left: 250 ms tactical step, disable_weapon_arcs on a fourth weapon hit, escort follow geometry, the major-character mini offset. Docs updated: agent_docs architecture/simulation/game-domain/systems/combat, docs/mechanics space-combat/bombardment/gnprtb/INDEX, ghidra notes simulate-runs-tactical-engine, system-squadrons-combat, battle-result-text-and-cadence, tactical-engagement-ai, tactical-weapon-loop, fleet-names, squadron-menu-and-transit, rust-implementation-guide, INDEX, ghidra/README. Native: Alliance Simulate passed; Empire played battle ran to correct Battle Results (.artifacts/native-checks/2026-10-14-headless-empire-played/07-superlaser.png). Workspace tests green; replay golden passes.
+> 2026-10-14 (native, both factions): all four runs pass on the Mini: Empire Simulate (.artifacts/native-checks/2026-10-14-headless-empire-sim, winner Defender in 39 s), Alliance played (2026-10-14-headless-alliance-played/04-result: Alliance fleet defeated, attack on Coruscant failed), Empire played, Alliance Simulate. White glows on the results screen are in the results bitmap (identical in 2026-10-10-ds-stalemate-empire/05-result). Builds now run on the Mini through scripts/mini-cargo.sh, which prunes target/ to the last build's units after each build.
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. Native 2026-10-14, both factions: Empire Simulate and played, Alliance Simulate and played (notes above).
+
+**Closed:** Unplayed battles run BattleSession headless (core tactical.rs, integrator::resolve_system_space_combat); the combat.rs resolver and 0x1400 scale are gone (15674b28). Native Simulate and played battles on both sides; the bombardment part closed by orbital plan B9.
+
+<a id="or-port-character-move-7ba0"></a>
+### Port: a character's Move order (0x201/0x202) for the player and the AI
+
+`or-port-character-move-7ba0` · **closed** · P2 · port, question · closed 2026-10-21  
+Unblocks: [or-port-officer-rank-x4kn](#or-port-officer-rank-x4kn)
+
+> The port has no Move for a character or special force: the object menu draws Move and Confirmed Move disabled for them, and the AI cannot move one (ai-order-emission.md, Port). The original moves a character to a system or onto a capital ship (a Move whose target is the ship id), travelling en route (+0x50 bit 4) and arriving in its new container; a container change clears its officer rank (FUN_00560d50). AI module 12 (or-port-officer-rank-x4kn step 4) needs it: kind 1 moves a General to Coruscant or the Alliance HQ, kind 6 the Emperor to Coruscant, kinds 3-5 a character onto a fleet's flagship (ai-order-emission.md, Character tasks (module 12)). Trace the character's travel time and arrival (move-order.md) before porting. Original UI only; both factions.
+
+**Notes**
+
+> Ported: MissionKind::Move (missions.rs: move_order_enabled FUN_0053c100, move_destination_refusal, dispatch_move one mission per location, move_days, MemberBoarded onto a fleet); character and special force Move/Confirmed Move rows, Confirmed Move window (0x7056 when blockaded), drags from Defenses and Fleet window Personnel; save v41; replay golden regenerated for it. Trace: ghidra/notes/move-order.md, 'Characters and special forces (0x241)'. Pending: native e2e both factions.
+> Native e2e 2026-10-15 (evidence .artifacts/native-checks/2026-10-15-character-move-{a,a2,e}): Alliance - Move/Confirmed Move enabled on Luke; neutral planet refused (1,0x28) by menu and by Defenses drag; Luke to Ghorman 86 days; Han to Ghorman Fleet 3 43 days (Han speed) and aboard on arrival; Fleet window drag Han to Ghorman lands him on the surface; General Solo loses the rank on boarding. Empire - Vader Coruscant to Corellia 25 days, arrived day 27; plain Move from blockaded Corellia asks with 0x7056 and picture. Fixed during e2e: Han Solo speed compared the original object id 0x33000243 to the loaded record id 0x243; Defenses Personnel listed fleet crew as surface (system_members now excludes current_fleet).
+> Review fixes: move_refusal validates the whole order before any group starts (per-group free member, Move record masks); the release asks only for a blockaded own-side system, and a character aboard a fleet is in the fleet; occupation captures skip fleet crew. Open (hyp): a travelling Move ends the day after arrival, since a zero-delay phase-8 timer waits for the next tick; the original's same-tick handling of a 0-delay event is untraced.
+> Resolved: a travelling Move ends on its arrival day. The timer queue's head is due once its day is reached (FUN_0054edc0) and phase 5 of FUN_0041dff0 drains due items before the day advances, so phase 8's 0-day timer 0x38b fires the day it is armed (timer-scheduler.md). Original 2026-10-15 (.artifacts/original-checks/2026-10-15-move-timer): Noghri Coruscant to Uvena, 4 days, arrive day 27 with rows disabled, all enabled later that day. Port: MissionSystem::run sets the ready bit for a due phase-8 timer in the same pass; Vader Coruscant to Corellia is listed on arrival with every row enabled (.artifacts/native-checks/2026-10-15-move-timer-port, 07-day26-early). Display gap split out: or-pfv4.
+> Arrival-day end, final: the cause was timer_delay's 1-day floor (uprising.rs), a port clamp FUN_00586130 lacks; the 0-day Move timer became 1 day, and Personnel hides members with a mission key (FUN_00536e20). Without the floor (shipped uprising and disaster minimums are 30 and 1, so those timers are unchanged), Vader ordered day 0 for 25 days is listed at Corellia on day 25 with every row enabled (.artifacts/native-checks/2026-10-15-move-timer-port, 11-day25-menu; 07-day26-early was the clamped build). A repeating mission with a 0-day timer fires once a day (port: the original's drain would not end).
+> The AI now issues the character Move: module 12's class G tasks (AIAction::MoveCharacter, applied through dispatch_move in the app and the integrator).
+
+**Closed:** MissionKind::Move (FUN_0053c100) for characters and special forces, save v41. Native, both sides: Luke Yavin->Ghorman 86 days, Vader Coruscant->Corellia 25 days, listed on arrival day. AI module 12 issues AIAction::MoveCharacter. Landed in a76109b8.
+
+<a id="or-port-ai-round-scheduler-wz8g"></a>
+### Port: the AI round scheduler (FUN_00485b40): rate+1 rounds a day, one order a round, 10 a side a day
+
+`or-port-ai-round-scheduler-wz8g` · **closed** · P1 · port · closed 2026-10-21
+
+> Port the computer player's round scheduler (FUN_00485b40, FUN_004be980, FUN_004bede0; rounds FUN_004361a0; in-day steps FUN_0051dea0; day reset FUN_00485de0 via FUN_0041e500). The original runs rate+1 rounds a side a day (5 Fast, 13 Medium, 61 Slow, 601 Very Slow), at most one order a round, at most 10 counted orders a side a day (cap FUN_00485a50.c:35), the Alliance's round before the Empire's, each round's orders applied at the next step. The port ran three passes a day capped at 10 each: seed 9 over 1000 days issued a median 12 orders a day (max 20). Notes: ghidra/notes/ai-order-emission.md "Scheduler and executor". Steps: 1 module turns (8, 9, production, 12, 4), 2 AISystem::round and Scheduler (ai_scheduler.rs), 3 the headless day of rounds with the AI as the day's last stage, one shared applier and outcome records, playtest --speed (default Fast), 4 native rounds spread over the day. Done when seeds 1-20 stay within 5 orders a side a day at Fast and native runs on both sides pass scripts/native-checks.
+
+**Acceptance criteria**
+
+- [x] Seeds 1-20 stay within 5 orders a side a day at Fast and native runs on both sides pass scripts/native-checks.
+
+**Notes**
+
+> 2026-10-16: steps 1-2 done. Module turns for 8, 9, production, 12 and 4 (FUN_004cf630, FUN_004cf2c0, FUN_004c8ba0, FUN_004c8740, FUN_004d2490), Round::dirty at the original's record writers (FUN_004317d0, FUN_004184f0), ai_scheduler.rs (Scheduler, AISystem::round, settle, end_day; FUN_004bede0, FUN_004be980, orders counted at issue FUN_00485b40.c:39-48), the ai/round trace, the old per-day passes deleted, save v52. Steps 1a-1c and 2a0 leave seed 42's telemetry byte-identical (wall_ms removed). advance runs one round a day until step 3. Core 750 and data 156 pass with no assertion changed.
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. Seeds 1-20 at most 5 orders a side a day at Fast; native tempo, battle hold and mid-day reload on both sides (AI plan H6).
+
+**Closed:** Steps 1-4 done: ai_scheduler.rs (FUN_00485b40, FUN_004bede0), native rounds through ai_step, day_orders 10, rounds_per_day 601/61/13/5. Seeds 1-20: at most 5 orders a side a day at Fast; native tempo, battle hold, mid-day reload on both sides (AI plan H6).
+
+<a id="or-pfv4"></a>
+### Port: a travelling character or special force is listed at its destination, drawn in hyperspace
+
+`or-pfv4` · **closed** · P2 · port · closed 2026-10-21
+
+> The original puts a moved member into its destination container at the order (FUN_00556390 slot +0xa8, move-order.md) and flags it en route until event 0x387: the destination's Personnel lists it from the order with the hyperspace backdrop, and its pop-up disables Move, Confirmed Move, Mission and Retire (original, 2026-10-15: Noghri Death Commandos Coruscant to Uvena, .artifacts/original-checks/2026-10-15-move-timer, 18-ordered, 20-menu-d24, 22-icons). The port takes a travelling member off the map (missions.rs depart, port: tag) and lists it only on arrival (native run .artifacts/native-checks/2026-10-15-move-timer-port, 03-day24-menu). Needs the en-route icon backdrop's resource and a check of every reader of current_system/current_fleet (occupation captures, system_members, mission validators). Original UI only; both factions.
+
+**Notes**
+
+> 2026-10-15: code done, uncommitted. Members stand in the destination container from the order with an en_route flag (Character, SpecialForceUnit); arrival clears it. Readers per move-order.md 'Who reads the en route bit': order gates and dispatch, rule 5, uprising incidents 3-5, AI records 0x20, AI Retire, the bounty's free-Han test skip it; Personnel lists, Status, Finder and the en-route marks (Missions, Fleet, Defenses) show it at the destination. Save v45, golden regenerated, workspace tests green. Open: native e2e on both sides against .artifacts/original-checks/2026-10-15-move-timer.
+
+**Closed:** Members stand in the destination container from the order with en_route set (save v45). Native, both sides: Vader Coruscant->Corellia listed with the mark days 2/24, rows disabled; Luke Yavin->Ghorman days 2/85 (AI plan Phase D).
+
+<a id="or-movie-window-close-3bo3"></a>
+### Q: Who sends 0x402-0x404 to the movie window, and what does Esc do there?
+
+`or-movie-window-close-3bo3` · **closed** · P3 · ghidra, question · closed 2026-10-21  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
+
+> Start from FUN_004213e0, FUN_00421790, FUN_00421340 and the class at vtable 0x00658bb0 (game-end-path.md).
+
+**Closed:** movies.md 'The return path': FUN_005f7240 sends 0x402 at the last frame and 0x404 on Esc or the left button; FUN_005f6920 posts 0x403 on an unknown path. A WM_KEYDOWN Esc posts 0 to the app window and calls the callback; it does not close the window.
+
+<a id="or-map-rebexe-r8t"></a>
+### Map REBEXE: every function and undefined code span has a role and a cluster
+
+`or-map-rebexe-r8t` · **closed** · P2 · closed 2026-10-21
+
+> On 2026-10-14 REBEXE held 11,077 real functions (1.8 MB; Unwind@ funclets and thunks excluded). Notes and the port cite 2,422 of them (41% of code bytes); 4,249 uncited functions of 64 bytes or more (964 KB) and 984 code spans Ghidra never defined as functions (290 KB) remain. Each child maps one address range into a Feature Wiki page executable/<packet>.md. Done when every child closes.
+>
+> ## Success Criteria
+>
+> - Every REBEXE function and undefined code span has a role and a cluster in its `executable/<packet>.md` page.
+> - Every child closes.
+
+**Acceptance criteria**
+
+- [x] Every child closes.
+
+**Notes**
+
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. All 22 children or-map-01..22 are closed.
+
+**Closed:** All 22 map children (or-map-01 through or-map-22) are closed; the node's done-when is that every child closes.
+
+<a id="or-f-death-star-rdq"></a>
+### A1 fixtures reproducing the Death Star saves
+
+`or-f-death-star-rdq` · **closed** · P2 · fixture, tactical · closed 2026-10-21  
+Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
+Unblocks: [or-acc-laser-5x5](acceptance.md#or-acc-laser-5x5), [or-acc-not-run-tdj](acceptance.md#or-acc-not-run-tdj)
+
+> empire-death-star-pre-alert (TAC-05-C017 C018 C019 C020) and alliance-day1169-deathstar-trench-run (TAC-05-C009).
+
+**Notes**
+
+> A1 fixtures coruscant-day676 (empire-death-star-pre-alert; laser, strike, charge journeys) and coruscant-day1173 (alliance-day1169-deathstar-trench-run; attack-death-star, launch journeys) rebuild both saves' forces, station and camera from the saves' master records and the A0 traces, and are mapped in the C6 spec. C6 results: TAC-05-C009, C017, C018, C020, C021 and C022 pass. Two cells fail. C019 fails on the aperture: no battle-box edges are drawn, and the capital layout runs below the aperture. C023 fails because the Confirm returns to the Display panel and leaves the Red slot active, where the original keeps Missions open with Attack Death Star greyed and greys the slot. The node stays open as the acceptance gate for C019 and C023.
+> Recover (order 2) takes the same path as Attack Death Star (FUN_005ca530 -> FUN_005a0320 clears the slot and the selection); the port leaves it out (port: note in tactical_view.rs) because what returns a recovered group's slot is untraced.
+
+**Closed:** Fixtures coruscant-day676 and coruscant-day1173 rebuild both saves, and every listed cell runs (the fixture done-when). C6 passes TAC-05-C009 and C017-C023 (orbital plan J12). C019's SSIM and edge remainder is or-d3drm-raster-match-vog4.
+
+<a id="or-ahj2"></a>
+### A loaded save reuses freed slotmap slots in a different order than the uninterrupted game
+
+`or-ahj2` · **closed** · P2 · closed 2026-10-21
+
+> Playtest staging (2026-10-16): a save at day 60 loaded and run 15 days diverges from the straight run (fingerprints cd7111ed2f3840a8 vs 654f1a00678d424a; equal at +10). A world JSON diff shows exactly one difference: a new manufacturing facility at manufacturing_facilities[47] version 3 (freed slot reused) in the straight run, [99] version 2 (fresh slot) after load. Every other world field matches, and the restored sim_rng and the other states are identical. So the slotmap free list is not restored in its pre-save order, and since the AI walks the world's slotmap order (e.g. ai_production scrap_system_fighter after the 2026-10-16 determinism fix) a loaded game plays differently. Fix: persist and restore each slotmap's free order (save bump), or allocate new objects in an order independent of slot reuse. Gate: agent_docs/simulation.md --load paragraph; hyp: the replay golden's save-reload test passes because its window frees no slot before the save (unverified).
+>
+> ## Steps to Reproduce
+>
+> 1. Stage a playtest game and save it at day 60.
+> 2. Run the uninterrupted game 15 more days and record its fingerprint.
+> 3. Load the day-60 save, run 15 days, and record its fingerprint.
+> 4. The fingerprints differ (cd7111ed2f3840a8 vs 654f1a00678d424a): one new manufacturing facility takes a reused slot in the straight run and a fresh slot after the load.
+
+**Acceptance criteria**
+
+- [x] A game loaded at day 60 and run 15 days matches the uninterrupted run's fingerprint.
+- [x] A test reproduces the slot-order difference and fails before the fix.
+
+**Notes**
+
+> Fixed: world slotmaps are saved as {slots, free} (crates/rebellion-core/src/world/slot_order.rs, serde(with) on the 11 GameWorld arenas, save v48). slotmap's serde keeps slots+versions but rebuilds the free list in descending index order; the adapter writes the pop order (probed on a clone) and rebuilds each map by remove/insert cycles to saved versions, freeing vacant slots in reverse pop order; rejects a free list that is not a permutation of the vacant slots. Proof (same binary): seed 42 and 7 save@60 +15 == straight 75; seed 42 save@300 +700 == straight 1000; seed 7 save@300 +300 == straight 600. Seed 7 straight runs are themselves nondeterministic between day 600 and 700 (same binary, three different fingerprints), unrelated to load. Replay golden: initial fingerprint no longer matches (free order is now in the canonical fingerprint); not regenerated.
+> 2026-10-22: box ticked on review of the close reason, which names the evidence; the bead closed 2026-10-21, before the close policy. Seed 42 and 7 save@60 +15 match the straight runs (notes above).
+> 2026-10-22: crates/rebellion-core/src/world/slot_order.rs test a_loaded_map_reuses_freed_slots_in_the_order_the_removals_left removes slots 1, 3 and 0, round-trips the map through serde and compares four inserts against the live map; on the Mini it fails with the reorder bypassed (load keeps slotmap's own free order) and passes with it.
+
+**Closed:** Arenas save their free order (world/slot_order.rs, save v48). Seed 42 save@60 +15 and @300 +700, seed 7 @60 +15 and @300 +300 match the straight runs (AI plan Phase H item 4).
+
+<a id="or-3ioq"></a>
+### Port the production modules' ascending kind order (FUN_005f4f10 tree, FUN_004be980)
+
+`or-3ioq` · **closed** · P2 · closed 2026-10-21
+
+> ghidra/notes/ai-order-emission.md, ai-production.md U10: the module list is a tree keyed by kind (FUN_005f4f10, comparator FUN_005f5560); FUN_004be980 starts at the leftmost node (FUN_005f5060), so the scheduler walks 1, 2, 3, 5, 6, 7, 10, 11 for the implemented modules. ai_production.rs Module::ALL and the doc comment near line 38 follow insertion order (13, 2, 1, 3, 6, 7, ...), read earlier from FUN_00485a50. Verify the two readings against each other before changing; golden for a named cause.
+
+**Notes**
+
+> Settled 2026-10-16: the node base constructor FUN_004ec940 stores the kind at +0x18 (FUN_005f5600), FUN_005f5500 looks modules up by it and FUN_005f4f10 inserts by it, and FUN_004be980 walks the in-order links from the leftmost node, so the scheduler visits ascending kind whatever FUN_00485a50's insertion order. Module::ALL is now Yards, DeficitRelief, Defences, SpecialForces, Regiments, SystemFighters, FleetFighters, CapitalShips (1, 2, 3, 5, 6, 7, 10, 11); ai-parity-tracker.md says so. Open: the port's one-round-per-day cadence (hyp) still runs modules 13, 8, 9, 12 before production; the original steps one armed module per pass in ascending id. Golden pending (cause: the production modules' ascending order).
+
+**Closed:** Module::ALL walks kinds 1,2,3,5,6,7,10,11 as FUN_004be980 walks the kind-keyed tree (FUN_004ec940 stores the kind) (ai_production.rs:43); golden regenerated for the Phase H causes, v1:7e5c233c69c86cba -> v1:4c13a5dc36e88e1d (AI plan Phase H item 1).
 
 <a id="or-q-ground-resolution-nms"></a>
 ### Q: How does the original resolve a planetary assault?
 
 `or-q-ground-resolution-nms` · **closed** · P2 · ghidra, question · closed 2026-10-21  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
-Unblocks: [or-r-gnd-5hu](reviews.md#or-r-gnd-5hu)
+Unblocks: [or-r-gnd-5hu](#or-r-gnd-5hu)
 
 > Observed in the VM: at Selonia the Empire's assault was repulsed with one Alliance regiment lost and no Imperial loss; at Ord Pardon and Drall, with no defender, the assaulting side took the system with no casualties. The trace kills attackers in defence fire (a KDY-150 or LNR always fires) and in an engagement roll of 4 or less (FUN_0055eb00); with no regiment of either side left, the holder is the support-derived side. Deliver as for every question node.
 
@@ -764,7 +2084,7 @@ Unblocks: [or-acc-fighter-strip-239](acceptance.md#or-acc-fighter-strip-239), [o
 `or-r-task-force-strip-42a` · **closed** · P1 · ghidra, review · closed 2026-10-14  
 Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
 Waits on: [or-q-task-force-strip-1dy](#or-q-task-force-strip-1dy)  
-Unblocks: [or-p-task-force-strip-07t](ports.md#or-p-task-force-strip-07t)
+Unblocks: [or-p-task-force-strip-07t](#or-p-task-force-strip-07t)
 
 > Reread every cited decompile against our own project (ghidra/scripts, read-only copy). Done when each claim is confirmed or corrected, the page is merged into the wiki, and the .c files and the note are copied into ghidra/notes/.
 
@@ -1073,7 +2393,7 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 ### Map 0x005c2990-0x005d895e (tac-panels)
 
 `or-map-18-5c2990-lui` · **closed** · P2 · map, question · assigned to ghidra-map-18-5c2990 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x005c2990-0x005d895e (tac-panels; about 59 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-18-5c2990.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1083,7 +2403,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x00508c53-0x0052a380 (capital-ship-to-system-economy)
 
 `or-map-11-508c53-hxi` · **closed** · P2 · map, question · assigned to ghidra-map-11-508c53 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x00508c53-0x0052a380 (capital-ship-to-system-economy; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-11-508c53.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1093,7 +2413,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x0048a3b0-0x004ae150 (ui-controls-to-save-load)
 
 `or-map-05-48a3b0-5zh` · **closed** · P2 · map, question · assigned to ghidra-map-05-48a3b0 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x0048a3b0-0x004ae150 (ui-controls-to-save-load; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-05-48a3b0.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1103,7 +2423,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x00610b70-0x00629000 (crt-runtime)
 
 `or-map-22-610b70-v7l` · **closed** · P2 · map, question · assigned to ghidra-map-22-610b70 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x00610b70-0x00629000 (crt-runtime; about 81 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-22-610b70.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1113,7 +2433,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x0058ef80-0x005a54ee (mission-dat-to-tactical)
 
 `or-map-16-58ef80-zig` · **closed** · P2 · map, question · assigned to ghidra-map-16-58ef80 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x0058ef80-0x005a54ee (mission-dat-to-tactical; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-16-58ef80.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1123,7 +2443,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x00547ba0-0x00564240 (space-combat-to-bombard-ground)
 
 `or-map-13-547ba0-otq` · **closed** · P2 · map, question · assigned to ghidra-map-13-547ba0 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x00547ba0-0x00564240 (space-combat-to-bombard-ground; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-13-547ba0.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1137,7 +2457,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x0041a460-0x0043eca0 (crt-init-to-ui-dialogs)
 
 `or-map-02-41a460-yzn` · **closed** · P2 · map, question · assigned to ghidra-map-02-41a460 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x0041a460-0x0043eca0 (crt-init-to-ui-dialogs; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-02-41a460.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1147,7 +2467,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x005fd7c0-0x00610b70 (net-ui)
 
 `or-map-21-5fd7c0-ymf` · **closed** · P2 · map, question · assigned to ghidra-map-21-5fd7c0 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x005fd7c0-0x00610b70 (net-ui; about 36 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-21-5fd7c0.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1157,7 +2477,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x005e9bcb-0x005fd7c0 (tac-panels-to-net-ui)
 
 `or-map-20-5e9bcb-cpj` · **closed** · P2 · map, question · assigned to ghidra-map-20-5e9bcb · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x005e9bcb-0x005fd7c0 (tac-panels-to-net-ui; about 57 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-20-5e9bcb.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1167,7 +2487,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x005d895e-0x005e9bcb (tac-panels)
 
 `or-map-19-5d895e-lya` · **closed** · P2 · map, question · assigned to ghidra-map-19-5d895e · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x005d895e-0x005e9bcb (tac-panels; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-19-5d895e.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1177,7 +2497,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x005a54ee-0x005c2990 (tactical-to-tac-panels)
 
 `or-map-17-5a54ee-j3r` · **closed** · P2 · map, question · assigned to ghidra-map-17-5a54ee · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x005a54ee-0x005c2990 (tactical-to-tac-panels; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-17-5a54ee.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1187,7 +2507,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x005771b0-0x0058ef80 (mission-dat)
 
 `or-map-15-5771b0-fp9` · **closed** · P2 · map, question · assigned to ghidra-map-15-5771b0 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x005771b0-0x0058ef80 (mission-dat; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-15-5771b0.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1197,7 +2517,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x00564240-0x005771b0 (bombard-ground-to-mission-dat)
 
 `or-map-14-564240-h0v` · **closed** · P2 · map, question · assigned to ghidra-map-14-564240 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x00564240-0x005771b0 (bombard-ground-to-mission-dat; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-14-564240.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1207,7 +2527,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x0052a380-0x00547ba0 (system-economy-to-space-combat)
 
 `or-map-12-52a380-bmh` · **closed** · P2 · map, question · assigned to ghidra-map-12-52a380 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x0052a380-0x00547ba0 (system-economy-to-space-combat; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-12-52a380.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1217,7 +2537,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x004ed950-0x00508c53 (entity-base-to-capital-ship)
 
 `or-map-10-4ed950-nt5` · **closed** · P2 · map, question · assigned to ghidra-map-10-4ed950 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x004ed950-0x00508c53 (entity-base-to-capital-ship; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-10-4ed950.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1227,7 +2547,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x004deba0-0x004ed950 (multimedia-to-entity-base)
 
 `or-map-09-4deba0-9l2` · **closed** · P2 · map, question · assigned to ghidra-map-09-4deba0 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x004deba0-0x004ed950 (multimedia-to-entity-base; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-09-4deba0.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1237,7 +2557,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x004cfed0-0x004deba0 (multimedia)
 
 `or-map-08-4cfed0-vdg` · **closed** · P2 · map, question · assigned to ghidra-map-08-4cfed0 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x004cfed0-0x004deba0 (multimedia; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-08-4cfed0.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1247,7 +2567,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x004bca20-0x004cfed0 (save-load-to-multimedia)
 
 `or-map-07-4bca20-044` · **closed** · P2 · map, question · assigned to ghidra-map-07-4bca20 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x004bca20-0x004cfed0 (save-load-to-multimedia; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-07-4bca20.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1257,7 +2577,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x004ae150-0x004bca20 (save-load)
 
 `or-map-06-4ae150-0j6` · **closed** · P2 · map, question · assigned to ghidra-map-06-4ae150 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x004ae150-0x004bca20 (save-load; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-06-4ae150.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1267,7 +2587,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x00475890-0x0048a3b0 (ui-controls)
 
 `or-map-04-475890-2sx` · **closed** · P2 · map, question · assigned to ghidra-map-04-475890 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x00475890-0x0048a3b0 (ui-controls; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-04-475890.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1277,7 +2597,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x0043eca0-0x00475890 (ui-dialogs-to-ui-controls)
 
 `or-map-03-43eca0-3b2` · **closed** · P2 · map, question · assigned to ghidra-map-03-43eca0 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x0043eca0-0x00475890 (ui-dialogs-to-ui-controls; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-03-43eca0.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 
@@ -1287,7 +2607,7 @@ Epic: [Map REBEXE: every function and undefined code span has a role and a clust
 ### Map 0x00401000-0x0041a460 (crt-init)
 
 `or-map-01-401000-reu` · **closed** · P2 · map, question · assigned to ghidra-map-01-401000 · closed 2026-10-14  
-Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](INDEX.md#or-map-rebexe-r8t)
+Epic: [Map REBEXE: every function and undefined code span has a role and a cluster](#or-map-rebexe-r8t)
 
 > Map 0x00401000-0x0041a460 (crt-init; about 56 KB of uncited functions and undefined code). Decompile the range with DecompileRange.java, recover every gap with code, and give each function a role, a cluster and a proposed name; link functions the notes already cover instead of re-deriving them. Done when executable/map-01-401000.md on the Worker's branch accounts for every function and gap in the range, with citations, and the parent has merged it.
 

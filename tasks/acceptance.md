@@ -9,7 +9,7 @@ Comparison regions, their diagnoses and fixtures, and A0 captures. Back to the [
 <a id="or-acc-control-h6c"></a>
 ### Control cluster matches A0
 
-`or-acc-control-h6c` · **open** · P0 · acceptance, tactical · updated 2026-10-14  
+`or-acc-control-h6c` · **open** · P0 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Waits on: [or-d-control-y8p](#or-d-control-y8p), [or-p-highlight-4or](ports.md#or-p-highlight-4or)
 
@@ -17,18 +17,26 @@ Waits on: [or-d-control-y8p](#or-d-control-y8p), [or-p-highlight-4or](ports.md#o
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
 <a id="or-acc-results-dlw"></a>
 ### Results window matches A0
 
-`or-acc-results-dlw` · **open** · P0 · acceptance, tactical · updated 2026-10-20  
+`or-acc-results-dlw` · **open** · P0 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Waits on: [or-p-results-window-5sn](ports.md#or-p-results-window-5sn), [or-p-withdraw-destination-qhz](ports.md#or-p-withdraw-destination-qhz)
+Waits on: [or-p-results-window-5sn](closed.md#or-p-results-window-5sn), [or-p-withdraw-destination-qhz](closed.md#or-p-withdraw-destination-qhz)
 
 > The only failing region in 10 cells.
 >
 > Cells (11, C6 run 2026-10-14T15-02-34-940Z-41029): TAC-01-C006 TAC-06-C004 TAC-07-C001 TAC-07-C002 TAC-07-C003 TAC-07-C004 TAC-07-C005 TAC-07-C006 TAC-07-C007 TAC-07-C008 TAC-07-C011
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
 **Notes**
 
@@ -37,29 +45,37 @@ Waits on: [or-p-results-window-5sn](ports.md#or-p-results-window-5sn), [or-p-wit
 <a id="or-d-control-y8p"></a>
 ### Diagnose: why the control cluster differs in 19 cells
 
-`or-d-control-y8p` · **open** · P0 · diagnose, tactical · updated 2026-10-14  
+`or-d-control-y8p` · **open** · P0 · diagnose, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Unblocks: [or-acc-control-h6c](#or-acc-control-h6c)
+Unblocks: [or-acc-control-h6c](#or-acc-control-h6c), [or-p-highlight-4or](ports.md#or-p-highlight-4or)
 
 > Diff A0 against A1 for the control-cluster region (chrome class; best offset 0,0). Known candidate: the faction highlight buttons draw lit in A1 (Yaga journey). Done when each differing element has a named cause and a port node (or a question node) in the graph.
+
+**Acceptance criteria**
+
+- [ ] Each differing element has a named cause and a port node (or a question node) in the graph.
 
 <a id="or-acc-aperture-z66"></a>
 ### Space view (aperture) matches A0
 
-`or-acc-aperture-z66` · **open** · P1 · acceptance, tactical · updated 2026-10-14  
+`or-acc-aperture-z66` · **open** · P1 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Waits on: [or-d-aperture-wrn](#or-d-aperture-wrn), [or-p-opening-view-xyu](ports.md#or-p-opening-view-xyu)
+Waits on: [or-d-aperture-wrn](#or-d-aperture-wrn), [or-p-opening-view-xyu](closed.md#or-p-opening-view-xyu)
 
 > Cells (23, C6 run 2026-10-14T15-02-34-940Z-41029): TAC-01-C002 TAC-01-C003 TAC-01-C008 TAC-01-C010 TAC-01-C011 TAC-02-C011 TAC-03-C014 TAC-03-C015 TAC-03-C016 TAC-03-C018 TAC-04-C001 TAC-04-C002 TAC-04-C004 TAC-04-C005 TAC-04-C006 TAC-04-C007 TAC-04-C008 TAC-04-C009 TAC-04-C010 TAC-04-C011 TAC-04-C012 TAC-04-C013 TAC-06-C002
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
 <a id="or-acc-not-run-tdj"></a>
 ### The 28 not-run cells run against their A0 saves
 
-`or-acc-not-run-tdj` · **open** · P1 · acceptance, tactical · updated 2026-10-14  
+`or-acc-not-run-tdj` · **open** · P1 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Waits on: [or-f-alliance-transit-xxn](#or-f-alliance-transit-xxn), [or-f-death-star-rdq](#or-f-death-star-rdq), [or-f-sixteen-tie-c43](#or-f-sixteen-tie-c43), [or-f-yaga-variants-4qf](#or-f-yaga-variants-4qf)
+Waits on: [or-ep-task-force-strip-5kdd.12](closed.md#or-ep-task-force-strip-5kdd.12), [or-f-alliance-transit-xxn](#or-f-alliance-transit-xxn), [or-f-death-star-rdq](closed.md#or-f-death-star-rdq), [or-f-sixteen-tie-c43](#or-f-sixteen-tie-c43), [or-f-yaga-variants-4qf](#or-f-yaga-variants-4qf)
 
 > Done means each region runs (pass or fail), not that it passes.
 >
@@ -67,10 +83,14 @@ Waits on: [or-f-alliance-transit-xxn](#or-f-alliance-transit-xxn), [or-f-death-s
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
 <a id="or-acc-options-cn9"></a>
 ### Battle Options panel matches A0
 
-`or-acc-options-cn9` · **open** · P1 · acceptance, tactical · updated 2026-10-14  
+`or-acc-options-cn9` · **open** · P1 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Waits on: [or-d-options-dqe](#or-d-options-dqe)
 
@@ -78,10 +98,14 @@ Waits on: [or-d-options-dqe](#or-d-options-dqe)
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
 <a id="or-acc-orders-4m8"></a>
 ### Orders display and tactic toggle match A0
 
-`or-acc-orders-4m8` · **open** · P1 · acceptance, tactical · updated 2026-10-14  
+`or-acc-orders-4m8` · **open** · P1 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Waits on: [or-p-hook-surround-orders-ulz](ports.md#or-p-hook-surround-orders-ulz)
 
@@ -89,91 +113,130 @@ Waits on: [or-p-hook-surround-orders-ulz](ports.md#or-p-hook-surround-orders-ulz
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
 <a id="or-acc-status-2ls"></a>
 ### Status panel matches A0
 
-`or-acc-status-2ls` · **open** · P1 · acceptance, tactical · updated 2026-10-14  
+`or-acc-status-2ls` · **open** · P1 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Waits on: [or-d-status-x1x](#or-d-status-x1x), [or-dec-c6-text-masks-rue](other.md#or-dec-c6-text-masks-rue), [or-p-contents-troops-lse](ports.md#or-p-contents-troops-lse), [or-p-tac-fighter-panel-5kv](closed.md#or-p-tac-fighter-panel-5kv)
+Waits on: [or-d-status-x1x](#or-d-status-x1x), [or-dec-c6-text-masks-rue](closed.md#or-dec-c6-text-masks-rue), [or-p-contents-troops-lse](ports.md#or-p-contents-troops-lse), [or-p-tac-fighter-panel-5kv](closed.md#or-p-tac-fighter-panel-5kv)
 
 > Cells (16, C6 run 2026-10-14T15-02-34-940Z-41029): TAC-01-C002 TAC-01-C011 TAC-02-C002 TAC-02-C011 TAC-03-C001 TAC-03-C012 TAC-03-C014 TAC-03-C015 TAC-03-C016 TAC-03-C018 TAC-03-C019 TAC-04-C002 TAC-04-C004 TAC-04-C005 TAC-05-C011 TAC-06-C008
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
 <a id="or-acc-taskforce-0oy"></a>
 ### Task-force strip and slot 1 match A0
 
-`or-acc-taskforce-0oy` · **open** · P1 · acceptance, tactical · updated 2026-10-14  
+`or-acc-taskforce-0oy` · **open** · P1 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Waits on: [or-p-task-force-strip-07t](ports.md#or-p-task-force-strip-07t)
+Waits on: [or-ep-task-force-strip-5kdd.11](closed.md#or-ep-task-force-strip-5kdd.11), [or-ep-task-force-strip-5kdd.12](closed.md#or-ep-task-force-strip-5kdd.12), [or-ep-task-force-strip-5kdd.6](closed.md#or-ep-task-force-strip-5kdd.6), [or-ep-task-force-strip-5kdd.8](closed.md#or-ep-task-force-strip-5kdd.8), [or-f-sixteen-tie-c43](#or-f-sixteen-tie-c43), [or-p-task-force-strip-07t](closed.md#or-p-task-force-strip-07t)
 
-> Cells (8, C6 run 2026-10-14T15-02-34-940Z-41029): TAC-01-C002 TAC-01-C011 TAC-02-C006 TAC-02-C008 TAC-02-C009 TAC-02-C010 TAC-02-C011 TAC-02-C012
+> Cells (C6 run 2026-10-14T15-02-34-940Z-41029). Empire: TAC-01-C002, TAC-01-C011, TAC-02-C006 and TAC-02-C012 compare `task-force-strip`; TAC-02-C008, TAC-02-C009, TAC-02-C010 and TAC-02-C011 compare `task-force-1` (`[60,2,25,17]`; C009 and C010 under the `a0-pointer-task-force-1` mask); TAC-02-C001 (task forces 1-8 assigned) and TAC-02-C007 (slots 5-8 unassigned) compare `task-force-strip`, state-matched to `empire-sixteen-tie` by `or-f-sixteen-tie-c43`. Alliance: TAC-05-C023 (`task-force-strip`, added by `or-ep-task-force-strip-5kdd.11`), and TAC-01-C001 and TAC-02-C013 (`task-force-strip`, state-matched by `or-ep-task-force-strip-5kdd.12`, or by the capture bead it proposes).
 >
-> Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+> `task-force-strip` is the full strip, `[9,1,279,19]` (`FUN_0059be80`), from `or-ep-task-force-strip-5kdd.11`.
+
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows each listed cell's region (task-force-strip or task-force-1) passing, Empire (including TAC-02-C001 and TAC-02-C007) and Alliance (TAC-05-C023, TAC-01-C001, TAC-02-C013), with the negative controls failing their rows; the run id is named in the close reason
 
 <a id="or-d-aperture-wrn"></a>
 ### Diagnose: the space view (aperture) differs in 23 cells
 
-`or-d-aperture-wrn` · **open** · P1 · diagnose, tactical · updated 2026-10-14  
+`or-d-aperture-wrn` · **open** · P1 · diagnose, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Unblocks: [or-acc-aperture-z66](#or-acc-aperture-z66)
 
 > Separate real defects (camera, opening view, ships, effects) from renderer differences. A mask needs proof of nondeterminism and a written justification; never mask to pass. Done when each cell's difference has a cause node or a justified, named mask.
 
+**Acceptance criteria**
+
+- [ ] Each cell's difference has a cause node or a justified, named mask.
+
 <a id="or-d-options-dqe"></a>
 ### Diagnose: the Battle Options panel differs in 9 cells
 
-`or-d-options-dqe` · **open** · P1 · diagnose, tactical · updated 2026-10-14  
+`or-d-options-dqe` · **open** · P1 · diagnose, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Unblocks: [or-acc-options-cn9](#or-acc-options-cn9)
 
 > Options-panel is the only failing region in 5 cells. Panel 1306 and FUN_005dab90 positions are ported.
 
+**Acceptance criteria**
+
+- [ ] C6 is rerun on current main for the nine cells
+- [ ] Each differing element has a named cause and a port or question node, or a justified, named mask
+
 <a id="or-d-status-x1x"></a>
 ### Diagnose: the status panel differs in 16 cells
 
-`or-d-status-x1x` · **open** · P1 · diagnose, tactical · updated 2026-10-14  
+`or-d-status-x1x` · **open** · P1 · diagnose, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Waits on: [or-v-shipnum-bi6](closed.md#or-v-shipnum-bi6)  
 Unblocks: [or-acc-status-2ls](#or-acc-status-2ls)
 
 > Rerun C6 after ship numbering and the panel fixes of this session, then name the remaining causes. Known: fighter panel labels, contents monitor troops.
 
+**Acceptance criteria**
+
+- [ ] C6 is rerun on current main for the 16 cells
+- [ ] Each differing element has a named cause and a port or question node, or a mask under or-dec-c6-text-masks-rue
+
 <a id="or-f-yaga-variants-4qf"></a>
 ### A1 fixtures for the edited Yaga day-30 saves
 
-`or-f-yaga-variants-4qf` · **open** · P1 · fixture, tactical · updated 2026-10-14  
+`or-f-yaga-variants-4qf` · **open** · P1 · fixture, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Unblocks: [or-acc-not-run-tdj](#or-acc-not-run-tdj)
 
 > Scenario 37 rebuilds empire-day30-yaga-alert-control. Add the edits of ed-subsystems, ed-stranded, ed-damage, ed-fragile, ed-engines and isd-hyperdrive (agent_docs/original-save-editing.md), and map battle-alert-entry, battle-options and battle-results onto the Yaga journeys with state_matches. Cells: TAC-01-C004 C005 C010 C011, TAC-03-C002 C003 C004 C006 C007 C008 C009 C010 C011 C017, TAC-04-C014, TAC-07-C009 C010 C012 C013.
 
+**Acceptance criteria**
+
+- [ ] Scenario 37 variants reproduce ed-subsystems, ed-stranded, ed-damage, ed-fragile, ed-engines and isd-hyperdrive
+- [ ] The 19 listed cells run in C6, pass or fail
+
 <a id="or-acc-fighter-strip-239"></a>
 ### Fighter-group strip matches A0
 
-`or-acc-fighter-strip-239` · **open** · P2 · acceptance, tactical · updated 2026-10-14  
+`or-acc-fighter-strip-239` · **open** · P2 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Waits on: [or-p-tac-fighter-panel-5kv](closed.md#or-p-tac-fighter-panel-5kv), [or-p-task-force-strip-07t](ports.md#or-p-task-force-strip-07t)
+Waits on: [or-ep-task-force-strip-5kdd.11](closed.md#or-ep-task-force-strip-5kdd.11), [or-ep-task-force-strip-5kdd.12](closed.md#or-ep-task-force-strip-5kdd.12), [or-ep-task-force-strip-5kdd.13](closed.md#or-ep-task-force-strip-5kdd.13), [or-ep-task-force-strip-5kdd.8](closed.md#or-ep-task-force-strip-5kdd.8), [or-f-sixteen-tie-c43](#or-f-sixteen-tie-c43), [or-p-tac-fighter-panel-5kv](closed.md#or-p-tac-fighter-panel-5kv), [or-p-task-force-strip-07t](closed.md#or-p-task-force-strip-07t)
 
-> Cells (3, C6 run 2026-10-14T15-02-34-940Z-41029): TAC-01-C011 TAC-02-C002 TAC-03-C019
+> Cells (C6 run 2026-10-14T15-02-34-940Z-41029). Empire: TAC-01-C011, TAC-02-C002 and TAC-03-C019 (Red group only); TAC-02-C003, TAC-02-C004 and TAC-02-C005 (Red, Blue, Green and Gold present), state-matched to `empire-sixteen-tie` by `or-f-sixteen-tie-c43`. Alliance: TAC-05-C023 (added by `or-ep-task-force-strip-5kdd.11`), and TAC-02-C013 (state-matched by `or-ep-task-force-strip-5kdd.12`, or by the capture bead it proposes).
 >
-> Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+> The region is the full strip, `[296,1,163,19]` (`FUN_0059c030`), from `or-ep-task-force-strip-5kdd.11`.
+
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the full region passing in every listed cell, Empire (including TAC-02-C003, TAC-02-C004 and TAC-02-C005) and Alliance (TAC-05-C023, and TAC-02-C013 or the cells of the capture bead or-ep-task-force-strip-5kdd.12 proposed), with the negative controls failing their rows; the run id is named in the close reason
 
 <a id="or-acc-laser-5x5"></a>
 ### Laser control matches A0
 
-`or-acc-laser-5x5` · **open** · P2 · acceptance, tactical · updated 2026-10-14  
+`or-acc-laser-5x5` · **open** · P2 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Waits on: [or-d-missions-0rx](#or-d-missions-0rx), [or-f-death-star-rdq](#or-f-death-star-rdq), [or-p-trench-run-timing-e71](ports.md#or-p-trench-run-timing-e71)
+Waits on: [or-d-missions-0rx](#or-d-missions-0rx), [or-f-death-star-rdq](closed.md#or-f-death-star-rdq), [or-p-trench-run-timing-e71](closed.md#or-p-trench-run-timing-e71)
 
 > Cells (3, C6 run 2026-10-14T15-02-34-940Z-41029): TAC-05-C017 TAC-05-C018 TAC-05-C019
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
 <a id="or-acc-missions-bvi"></a>
 ### Mission buttons match A0
 
-`or-acc-missions-bvi` · **open** · P2 · acceptance, tactical · updated 2026-10-14  
+`or-acc-missions-bvi` · **open** · P2 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Waits on: [or-d-missions-0rx](#or-d-missions-0rx)
 
@@ -181,109 +244,220 @@ Waits on: [or-d-missions-0rx](#or-d-missions-0rx)
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
 <a id="or-acc-pause-1ol"></a>
 ### Battle Paused label matches A0
 
-`or-acc-pause-1ol` · **open** · P2 · acceptance, tactical · updated 2026-10-14  
+`or-acc-pause-1ol` · **open** · P2 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Waits on: [or-p-opening-view-xyu](ports.md#or-p-opening-view-xyu)
+Waits on: [or-p-opening-view-xyu](closed.md#or-p-opening-view-xyu)
 
 > Cells (2, C6 run 2026-10-14T15-02-34-940Z-41029): TAC-01-C003 TAC-01-C004
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
-<a id="or-cell-tac-05-c023-in8"></a>
-### Cell TAC-05-C023: the committed trench-run order before launch
+**Acceptance criteria**
 
-`or-cell-tac-05-c023-in8` · **open** · P2 · acceptance, tactical · updated 2026-10-14  
-Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Waits on: [or-p-trench-run-timing-e71](ports.md#or-p-trench-run-timing-e71)
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
-> Needs the original's launch delay; until then no A1 frame holds the committed order. Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+<a id="or-d-imperial-squadrons-no-slot-pndt"></a>
+### Diagnose: Imperial Fleet 1's six squadrons hold no fighter slot in a native Yavin battle
+
+`or-d-imperial-squadrons-no-slot-pndt` · **open** · P2 · diagnose, tactical · updated 2026-10-22
+
+> ## Background
+>
+> Native run, seed 42, Empire, day 1: `List fleets empire` reads "Fleet 1 Empire at Coruscant ships 1
+> squadrons 6"; `Battle at Yavin` moves it there and Take Command opens the battle. The Empire's
+> fighter strip then shows all four slots greyed, F9 and F10 follow nothing, and a click on Red
+> selects nothing; the scene log reads `fighter_scene requested=4` with families 4004 and 4014. The
+> Alliance run on the same seed and day (Fleet 1 at Yavin, 2 squadrons) fills Red and Blue, and the
+> browser fixtures fill the Imperial Red group (yaga-day30, A0 TAC-02-C002 passes C6).
+>
+> ## Scope
+>
+> Name why the Imperial fleet's squadrons hold no fighter-group slot in that battle: whether they
+> enter the battle at all, start docked (`or-port-tactical-docked-state-xz1l`), or enter without a
+> group, against the original's battle setup (`FUN_0040b0e0`, `FUN_005c5800`) on both sides. Each
+> cause gets its own port or question bead.
+
+**Acceptance criteria**
+
+- [ ] The cause is named on this bead, with a port or question bead for each, or the original is shown to do the same
+
+**Notes**
+
+> Defending at Coruscant on day 2 (seed 42) the Empire's 10 system squadrons hold Red, Blue and Green (Red 4 members), so the gap is the arriving fleet's squadrons at Yavin, not Imperial squadrons in general.
 
 <a id="or-d-missions-0rx"></a>
 ### Diagnose: mission buttons and laser control differ (9 cells)
 
-`or-d-missions-0rx` · **open** · P2 · diagnose, tactical · updated 2026-10-14  
+`or-d-missions-0rx` · **open** · P2 · diagnose, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
 Unblocks: [or-acc-laser-5x5](#or-acc-laser-5x5), [or-acc-missions-bvi](#or-acc-missions-bvi)
 
 > mission-attack-capital (3, sole), mission-attack-fighters, mission-attack-death-star, mission-recover, laser-control (3, sole). Recover art 1170-1175 was fixed this session (FUN_005df110).
 
+**Acceptance criteria**
+
+- [ ] C6 is rerun on current main for the nine cells
+- [ ] Each differing element has a named cause and a port or question node, or a justified, named mask
+
+<a id="or-d-yaga-hull-numbers-0iad"></a>
+### Diagnose: Yaga day 30 numbers its ISD 2 and Carrack 1 where A0 shows ISD 1 and Carrack 2
+
+`or-d-yaga-hull-numbers-0iad` · **open** · P2 · diagnose, tactical · updated 2026-10-22
+
+> ## Background
+>
+> A0 TAC-03-C014 and C015 (Empire, Yaga, day 30, save `empire-day30-yaga-alert-control`) name the
+> two ships of task force 2 "Imperial Star Destroyer 1" and "Carrack Light Cruiser 2". The port's
+> `yaga-day30` fixture names the same hulls "Imperial Star Destroyer 2" and "Carrack Light Cruiser 1"
+> (browser gate run 2026-10-22T01-56-36-490Z, `yaga-day30-task-force-2`). The ship sequence and focus
+> now match A0 (next shows the ISD, previous the Carrack), so the hull numbers and the panel's text
+> face are what is left in those cells' status-panel region (C6 2026-10-22T02-19-06-224Z: C014 SSIM
+> 0.941, C015 0.806).
+>
+> ## Scope
+>
+> Name where each number comes from on both sides: the original's ship-name slot (`FUN_00597610`,
+> `or-q-ship-name-slots-3vda`) and the save's hull records, against the port's fixture and seeding.
+> Each cause gets its own port or question bead. Out: the panel's text face, which
+> `or-dec-c6-text-masks-rue` covers under `or-acc-status-2ls`.
+
+**Acceptance criteria**
+
+- [ ] Each hull-number difference in TAC-03-C014/C015 has a named cause, with its own port or question bead
+
 <a id="or-f-alliance-transit-xxn"></a>
 ### A1 fixture reproducing alliance-transit-day149
 
-`or-f-alliance-transit-xxn` · **open** · P2 · fixture, tactical · updated 2026-10-14  
+`or-f-alliance-transit-xxn` · **open** · P2 · fixture, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
+Waits on: [or-ep-task-force-strip-5kdd.12](closed.md#or-ep-task-force-strip-5kdd.12)  
 Unblocks: [or-acc-not-run-tdj](#or-acc-not-run-tdj)
 
-> Cells: TAC-01-C001 C007 C009, TAC-02-C013, TAC-04-C003.
+> Cells: TAC-01-C007, TAC-01-C009, TAC-04-C003.
+>
+> `or-ep-task-force-strip-5kdd.12` builds the A1 scenario for save `alliance-transit-day149` and its `state_matches` entry, and pairs TAC-01-C001 and TAC-02-C013 with it. This node extends that scenario to the save's other three cells, without a second scenario for the same save. Per the tactical A0 capture index (`docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md`), TAC-01-C007 is empty space on the first run from the save, with Show Planet off. TAC-01-C009 comes after a reload, with Show Planet back on: two Alliance ships against two Imperial, paused at first contact. TAC-04-C003 shows two targets in selection order (manual p. 145). Today their A1 pairs are `production-empty-space-presentation/actual`, `battle-entry/actual` and `production-navigation-camera-presentation/multiple-targets` (`tactical-a0-compare.json:60,62,111`).
 
-<a id="or-f-death-star-rdq"></a>
-### A1 fixtures reproducing the Death Star saves
+**Acceptance criteria**
 
-`or-f-death-star-rdq` · **open** · P2 · fixture, tactical · updated 2026-10-19  
-Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Unblocks: [or-acc-laser-5x5](#or-acc-laser-5x5), [or-acc-not-run-tdj](#or-acc-not-run-tdj)
-
-> empire-death-star-pre-alert (TAC-05-C017 C018 C019 C020) and alliance-day1169-deathstar-trench-run (TAC-05-C009).
-
-**Notes**
-
-> A1 fixtures coruscant-day676 (empire-death-star-pre-alert; laser, strike, charge journeys) and coruscant-day1173 (alliance-day1169-deathstar-trench-run; attack-death-star, launch journeys) rebuild both saves' forces, station and camera from the saves' master records and the A0 traces, and are mapped in the C6 spec. C6 results: TAC-05-C009, C017, C018, C020, C021 and C022 pass. Two cells fail. C019 fails on the aperture: no battle-box edges are drawn, and the capital layout runs below the aperture. C023 fails because the Confirm returns to the Display panel and leaves the Red slot active, where the original keeps Missions open with Attack Death Star greyed and greys the slot. The node stays open as the acceptance gate for C019 and C023.
-> Recover (order 2) takes the same path as Attack Death Star (FUN_005ca530 -> FUN_005a0320 clears the slot and the selection); the port leaves it out (port: note in tactical_view.rs) because what returns a recovered group's slot is untraced.
+- [ ] TAC-01-C007, TAC-01-C009 and TAC-04-C003 pair with the alliance-transit-day149 scenario from or-ep-task-force-strip-5kdd.12, or a journey variant of it, in tools/interface-parity/scenarios/tactical-a0-compare.json
+- [ ] TAC-01-C007, TAC-01-C009 and TAC-04-C003 run in C6, pass or fail, in a run named by id
 
 <a id="or-f-sixteen-tie-c43"></a>
 ### A1 fixture reproducing empire-sixteen-tie
 
-`or-f-sixteen-tie-c43` · **open** · P2 · fixture, tactical · updated 2026-10-14  
+`or-f-sixteen-tie-c43` · **open** · P2 · fixture, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)  
-Unblocks: [or-acc-not-run-tdj](#or-acc-not-run-tdj)
+Unblocks: [or-acc-fighter-strip-239](#or-acc-fighter-strip-239), [or-acc-not-run-tdj](#or-acc-not-run-tdj), [or-acc-taskforce-0oy](#or-acc-taskforce-0oy)
 
-> Cells: TAC-02-C001 C003 C004 C005 C007.
+> ## Background
+>
+> Save `empire-sixteen-tie-day415.sav` (`tools/original-capture/saves/INDEX.md`, row empire-sixteen-tie) is a new Empire game, Huge galaxy, Easy, saved at Coruscant on day 415. Fleet 1 holds all eight Imperial capitals and 16 TIE squadrons. Dragging Fleet 1 to Xyquine (Corellian sector, Alliance) opens the Battle at Xyquine alert about 21 days later.
+>
+> The A0 cells (`docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-13-tactical-a0-capture-index.md`, rows TAC-02-C001 to C007):
+>
+> - `TAC-02-C003`, `C004`, `C005` and `C007` are one frame, paused at Take Command. Task forces 1-4 are assigned, and slots 5-8 are unassigned (bitmap 1007, `FUN_0059be80`). The 16 squadrons split into Red, Blue, Green and Gold (`FUN_005ae460`), all present. C003 to C005 compare `fighter-group-strip`, and C007 compares `task-force-strip`.
+> - `TAC-02-C001`: each of the four two-ship task forces is split by hand into the blank slots, giving task forces 1-8 with one capital each. Slot 8 is pressed, with a white "8". The cell compares `task-force-strip`.
+>
+> Their A1 pairs today are `production-group-presentation/task-force-8-selected` (C001), `production-group-presentation/actual` (C003-C005) and `production-participants/task-force-unassigned-released` (C007) (`tools/interface-parity/scenarios/tactical-a0-compare.json:74-80`). None has a `state_matches` entry (`:195-205`), so their regions never run. `or-acc-taskforce-0oy` and `or-acc-fighter-strip-239` judge these cells, and they are the only frames of all four fighter groups and of task-force labels 2-8 on the Empire side.
+>
+> ## Scope
+>
+> An A1 scenario in `tools/interface-parity/scenarios/tactical.catalog.json` for the Battle at Xyquine, after the pattern of `coruscant-day1173` (`state_match`, journey). Add a `state_matches` entry for `empire-sixteen-tie`, and point C003-C005 and C007 at its Take Command frame and C001 at a split frame. The split takes the port's task-force assignment input. `or-ep-task-force-strip-5kdd.10` replaces that input with the original's modes, so name the input used here; `.10` keeps this journey reproducing C001. If the battle cannot be reproduced in A1, write why on this bead and propose a `capture` bead (`discovered-from` this bead).
+>
+> ## Tests
+>
+> The harness unit tests (`npm run test:unit` in `tools/interface-parity`).
+>
+> ## E2E
+>
+> The battle gate on the new scenario, both viewports, then `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls`. The save is Empire-only, and the Alliance strip cells come from `or-ep-task-force-strip-5kdd.12` and `TAC-05-C023`.
+>
+> ## Evidence
+>
+> The scenario's slug, the C6 run id, and the rows for TAC-02-C001, C003, C004, C005 and C007 (pass or fail, with metrics).
+>
+> ## Constraints
+>
+> AGENTS.md applies: both factions, cited original behaviour, red-first tests in a Mini clone, Mini-only cargo, silent runs, the browser only through the interface-parity gates, no commit before Tom's word.
+
+**Acceptance criteria**
+
+- [ ] An A1 scenario in tools/interface-parity/scenarios/tactical.catalog.json reproduces the Battle at Xyquine from empire-sixteen-tie, and state_matches lists it
+- [ ] TAC-02-C003, C004, C005 and C007 pair with its Take Command frame (task forces 1-4, four fighter groups), and TAC-02-C001 with its split frame (task forces 1-8, slot 8 pressed), in tactical-a0-compare.json
+- [ ] TAC-02-C001, C003, C004, C005 and C007 run in C6, pass or fail, in a run named by id
+- [ ] If the split is reproduced by input, the bead names the input path and links or-ep-task-force-strip-5kdd.10
 
 <a id="or-spike-proxy-dll-orders-9au9"></a>
 ### Spike: a proxy DLL that logs the original's AI orders per day
 
-`or-spike-proxy-dll-orders-9au9` · **open** · P2 · verify · updated 2026-10-16
+`or-spike-proxy-dll-orders-9au9` · **open** · P2 · verify · updated 2026-10-21
 
 > Spike: a proxy version.dll for the original REBEXE.EXE in the capture VM that logs each AI order (side, module kind, order id, validated or refused, day) as GameEventRecord JSONL with source "original", hooking the five bytes after the scheduler's validate call (0x485c47, FUN_00485b40), and optionally divides the 0.25 s step threshold (float 0x6588f0) to speed the strategy clock only. Built with zig cc -target x86-windows-gnu; patches only when the original bytes match; orhook.off disables it, and A0 captures require it absent or disabled. Done when one VM run of a library save writes order records that scripts/telemetry.py --orders reads, and the order counts per side per day are recorded as the original's calibration reference.
+
+**Acceptance criteria**
+
+- [ ] One VM run of a library save writes order records that scripts/telemetry.py --orders reads, and the order counts per side per day are recorded as the original's calibration reference.
 
 <a id="or-acc-minor-eqh"></a>
 ### Subsystem icons and in-battle Game Options match A0
 
-`or-acc-minor-eqh` · **open** · P3 · acceptance, tactical · updated 2026-10-14  
+`or-acc-minor-eqh` · **open** · P3 · acceptance, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)
 
 > Cells (2, C6 run 2026-10-14T15-02-34-940Z-41029): TAC-03-C001 TAC-06-C007
 >
 > Done when: `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
 
+**Acceptance criteria**
+
+- [ ] `node tools/interface-parity/tactical-a0-compare.mjs --a1-run <run> --negative-controls` shows the region passing in every listed cell, both sides, with the negative controls failing their rows.
+
 <a id="or-f-state-trace-nqa"></a>
 ### State-trace check: strategic state persists after battle
 
-`or-f-state-trace-nqa` · **open** · P3 · fixture, tactical · updated 2026-10-14  
+`or-f-state-trace-nqa` · **open** · P3 · fixture, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)
 
 > Cell TAC-07-C014; a state check, not a frame.
 
+**Acceptance criteria**
+
+- [ ] A state-trace check compares the strategic state before and after a battle with the original's save, on both sides
+- [ ] TAC-07-C014 reports pass or fail
+
 <a id="or-f-strategy-after-pwn"></a>
 ### A1 frame of the strategy screen after a battle closes
 
-`or-f-strategy-after-pwn` · **open** · P3 · fixture, tactical · updated 2026-10-14  
+`or-f-strategy-after-pwn` · **open** · P3 · fixture, tactical · updated 2026-10-21  
 Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#or-ep-tac-x15)
 
 > Cell TAC-01-C013.
 
+**Acceptance criteria**
+
+- [ ] An A1 journey captures the strategy screen after the battle closes
+- [ ] TAC-01-C013 runs in C6, pass or fail
+
 <a id="or-v-ai-record-mutants-d5c8"></a>
 ### Verify: cover the FUN_00433e40 record body (178 surviving mutants)
 
-`or-v-ai-record-mutants-d5c8` · **open** · P3 · ground-assault, verify · updated 2026-10-19  
+`or-v-ai-record-mutants-d5c8` · **open** · P3 · ground-assault, verify · updated 2026-10-21  
 Epic: [Ground assault (TAC-08): port the original's report-only flow](INDEX.md#or-ep-gnd-mmf)
 
 > `cargo mutants --re fill_system` on `crates/rebellion-core/src/ai_records.rs` (2026-10-19): 259 tested, 81 caught, 178 missed. Every mutant on the view test and its early return (the held, usable-fleet and core-family clause) is caught. The survivors lie in the rest of the `FUN_00433e40` record body: the S bits (`|` to `^` at the rim and side bits), the blockade and last-seen update, the installation and squadron counts, the regiment need and threat sums, the Q tail; plus struct-field deletions in `fleet_records` and `ship_record`.
 >
 > Done when: each surviving mutant in `fill_system`, `fleet_records` and `ship_record` is caught by a test citing the `FUN_00433e40` / `FUN_00433780` / `FUN_00484630` line it checks, or explained as equivalent, both factions.
+
+**Acceptance criteria**
+
+- [ ] Each surviving mutant in `fill_system`, `fleet_records` and `ship_record` is caught by a test citing the `FUN_00433e40` / `FUN_00433780` / `FUN_00484630` line it checks, or explained as equivalent, both factions.
 
 <a id="or-f-audio-rrp"></a>
 ### Audio comparison for A1 runs

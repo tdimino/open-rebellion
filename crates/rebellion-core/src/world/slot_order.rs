@@ -167,3 +167,32 @@ fn reorder<K: Key, V: Clone + Default>(
     }
     Ok(rebuilt)
 }
+
+#[cfg(test)]
+mod tests {
+    use serde::{Deserialize, Serialize};
+    use slotmap::{new_key_type, SlotMap};
+
+    new_key_type! {
+        struct TestKey;
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct Saved(#[serde(with = "super")] SlotMap<TestKey, u32>);
+
+    // port: persistence mechanism; a load reproduces the uninterrupted run
+    // only if new objects take the same slots (or-ahj2).
+    #[test]
+    fn a_loaded_map_reuses_freed_slots_in_the_order_the_removals_left() {
+        let mut map = SlotMap::<TestKey, u32>::with_key();
+        let keys: Vec<TestKey> = (0..5).map(|value| map.insert(value)).collect();
+        for index in [1, 3, 0] {
+            map.remove(keys[index]);
+        }
+        let saved = serde_json::to_string(&Saved(map.clone())).unwrap();
+        let Saved(mut loaded) = serde_json::from_str(&saved).unwrap();
+        for value in 10..14 {
+            assert_eq!(loaded.insert(value), map.insert(value), "insert {value}");
+        }
+    }
+}

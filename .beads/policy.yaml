@@ -1,0 +1,5 @@
+# A node closes only with every acceptance box checked (agent_docs/task-graph.md).
+workflow:
+  required_fields:
+    closed:
+      - acceptance_criteria

@@ -8,7 +8,8 @@
 //! # Architecture
 //!
 //! The computer opponent's AI (`crate::ai`) uses a **separate pipeline**
-//! (`FUN_00519d00` chain) and shares no code with these player-side modules.
+//! (the round scheduler, `crate::ai_scheduler`, `FUN_00485b40`) and shares no
+//! code with these player-side modules.
 //! This module implements only the player-side Agent, as recovered from:
 //!
 //! - `FUN_00439320` (constructor)
