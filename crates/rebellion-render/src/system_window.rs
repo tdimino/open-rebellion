@@ -1063,7 +1063,7 @@ fn draw_reference_rail(
         let color = relationship_color(relationship(system.control, cockpit_faction(faction)));
         egui::Area::new(egui::Id::new(("original-reference-rail", slot.id.get())))
             .fixed_pos(slot.rect.min)
-            .order(egui::Order::Middle)
+            .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 let (slot_rect, response) =
                     ui.allocate_exact_size(slot.rect.size(), egui::Sense::click());
@@ -2300,6 +2300,100 @@ mod tests {
         assert_eq!(manager.begin_frame().paint_order(), [id]);
         assert_eq!(state.window_id(system), Some(id));
         assert_eq!(state.window_count(), 1);
+    }
+
+    #[test]
+    fn reference_rail_restores_when_a_root_overlay_shares_its_slot() {
+        let (world, systems) = fixture_world(1);
+        let system = systems[0];
+        let layout = layout(CockpitFaction::Alliance, 2.0);
+        let mut manager = WindowManager::new();
+        let opened = manager
+            .apply(WindowCommand::Open(contextual_spec(
+                WindowKind::Missions,
+                system_subject(&world, system).unwrap(),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        let WindowTransition::Opened { id } = opened.transition else {
+            panic!("expected Missions detail open");
+        };
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+
+        let snapshot = manager.begin_frame();
+        let slot = reference_rail_slots(&snapshot, &world, CockpitFaction::Alliance, layout)[0];
+        let point = slot.rect().center();
+        let pointer_button = |pressed| egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        };
+        let frames = [
+            vec![egui::Event::PointerMoved(point)],
+            vec![egui::Event::PointerMoved(point)],
+            vec![pointer_button(true)],
+            vec![pointer_button(false)],
+        ];
+        let ctx = egui::Context::default();
+        let mut router = FrameInputRouter::default();
+        let mut cache = BmpCache::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let fog = FogState::new(Faction::Alliance);
+        let missions = MissionState::new();
+        let mut actions = Vec::new();
+
+        for (index, events) in frames.into_iter().enumerate() {
+            let frame = u64::try_from(index + 1).unwrap();
+            let phase = match index {
+                0 | 1 => PointerPhase::Hover,
+                2 => PointerPhase::Press(PointerButtonId::Primary),
+                _ => PointerPhase::Release(PointerButtonId::Primary),
+            };
+            let event = InputEventId { frame, ordinal: 0 };
+            router.begin_frame(frame, &snapshot);
+            assert_eq!(
+                router.collect_pointer(event, &std::collections::BTreeSet::new(), phase),
+                InputRecipient::Root
+            );
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                events,
+                ..egui::RawInput::default()
+            };
+            let mut frame_actions = Vec::new();
+            let _ = ctx.run(input, |ctx| {
+                egui::Area::new(egui::Id::new("root-cockpit-overlay"))
+                    .fixed_pos(slot.rect().min)
+                    .order(egui::Order::Foreground)
+                    .show(ctx, |ui| {
+                        let _ = ui.allocate_exact_size(slot.rect().size(), egui::Sense::hover());
+                    });
+                frame_actions = draw_reference_rail(
+                    ctx,
+                    &world,
+                    &movement,
+                    &fog,
+                    &missions,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &snapshot,
+                    &[SystemWindowInputEvent {
+                        id: event,
+                        point: (point.x, point.y),
+                        phase,
+                    }],
+                    &mut router,
+                );
+            });
+            actions.extend(frame_actions);
+        }
+
+        assert_eq!(actions, [SystemWindowAction::RestoreReferenceWindow(id)]);
     }
 
     #[test]
