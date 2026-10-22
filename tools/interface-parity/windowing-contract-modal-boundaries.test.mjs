@@ -8,6 +8,7 @@ import {
   AVAILABLE_MODAL_CASES,
   assertCloseFrameAndOrphanRelease,
   alternateViewport,
+  createRouteReceiptLedger,
   detailTitleButtonPoint,
   projectNativePoint,
   windowingContractCases,
@@ -92,6 +93,28 @@ test("windowing_journey_c_pointer_clicks_use_fresh_route_receipts", () => {
   assert.match(clickBody, /skipMoveReceipt:\s*true/);
   assert.match(clickBody, /batchActions:\s*true/);
   assert.match(clickBody, /advanceFrame:\s*\(\)\s*=>\s*frames\(page,\s*1\)/);
+});
+
+test("windowing_journey_c_resets_live_route_barrier_for_each_fixture_document", () => {
+  const ledger = createRouteReceiptLedger();
+  const previousDocumentReceipt =
+    "[windowing-route] physical=208:0 kind=pointer router=window:4 application=none underlay=0";
+  const freshDocumentReceipt =
+    "[windowing-route] physical=53:1 kind=pointer router=window:4 application=none underlay=0";
+
+  ledger.record(previousDocumentReceipt);
+  ledger.cursor.physical = "208:0";
+  assert.equal(ledger.checkpoint().route, 1);
+  ledger.beginDocument();
+  assert.equal(ledger.checkpoint().route, 0);
+  ledger.record(freshDocumentReceipt);
+
+  assert.deepEqual(ledger.current, [freshDocumentReceipt]);
+  assert.equal(ledger.cursor.physical, null);
+  assert.deepEqual(ledger.history, [previousDocumentReceipt, freshDocumentReceipt]);
+  assert.equal(ledger.counters().routed, 2);
+  assert.equal(ledger.counters().application, 0);
+  assert.equal(ledger.checkpoint().route, 1);
 });
 
 test("windowing_journey_c_checks_close_frame_and_orphan_release", () => {

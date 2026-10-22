@@ -139,10 +139,37 @@ function tupleMap(entries) {
   return Object.fromEntries(entries ?? []);
 }
 
+export function createRouteReceiptLedger() {
+  const history = [];
+  const current = [];
+  const cursor = { physical: null };
+  return {
+    history,
+    current,
+    cursor,
+    record(line) {
+      history.push(line);
+      current.push(line);
+    },
+    beginDocument() {
+      current.length = 0;
+      cursor.physical = null;
+    },
+    checkpoint() {
+      return { route: current.length };
+    },
+    counters() {
+      return {
+        routed: history.length,
+        application: history.filter((line) => !line.includes(" application=none ")).length,
+      };
+    },
+  };
+}
+
 function createMonitor(page) {
   const states = [];
-  const routes = [];
-  const routeCursor = { physical: null };
+  const routeLedger = createRouteReceiptLedger();
   const errors = [];
   const requests = [];
   let unintendedUnderlay = 0;
@@ -151,7 +178,7 @@ function createMonitor(page) {
     const line = message.text();
     const marker = line.indexOf(STATE_MARKER);
     if (marker >= 0) states.push(JSON.parse(line.slice(marker + STATE_MARKER.length)));
-    if (line.startsWith(ROUTE_MARKER)) routes.push(line);
+    if (line.startsWith(ROUTE_MARKER)) routeLedger.record(line);
     if (line.includes("[windowing-underlay]")) unintendedUnderlay += 1;
     if (message.type() === "error") errors.push(`console:${line}`);
   });
@@ -162,16 +189,24 @@ function createMonitor(page) {
   });
   return {
     states,
-    routes,
-    routeCursor,
+    routes: routeLedger.current,
+    routeHistory: routeLedger.history,
+    routeCursor: routeLedger.cursor,
     errors,
     requests,
     get unintendedUnderlay() { return unintendedUnderlay; },
     checkpoint() {
-      return { state: states.length, route: routes.length, unintendedUnderlay };
+      return {
+        state: states.length,
+        route: routeLedger.checkpoint().route,
+        unintendedUnderlay,
+      };
     },
     beginScope(index) {
       stateFloor = index;
+    },
+    beginDocument() {
+      routeLedger.beginDocument();
     },
     latest(status) {
       const value = states.slice(stateFloor).findLast((state) => state.status === status);
@@ -189,13 +224,14 @@ function createMonitor(page) {
       throw new Error(`${description}; last_${status}=${JSON.stringify(last)}`);
     },
     counters() {
-      const intendedRoot = routes.filter((line) =>
+      const intendedRoot = routeLedger.history.filter((line) =>
         line.includes(" application=galaxy_map ")
           || line.includes(" application=sector_opener ")
           || line.includes(" application=reference_rail ")).length;
+      const receiptCounts = routeLedger.counters();
       return {
-        routed: routes.length,
-        application: routes.filter((line) => !line.includes(" application=none ")).length,
+        routed: receiptCounts.routed,
+        application: receiptCounts.application,
         underlay: unintendedUnderlay + intendedRoot,
       };
     },
@@ -777,6 +813,7 @@ async function runOneModal(context, setup, modal) {
   }
   const checkpoint = setup.monitor.checkpoint();
   setup.monitor.beginScope(checkpoint.state);
+  setup.monitor.beginDocument();
   await context.openFixture();
   const initial = await setup.monitor.wait(
     "modal-boundary-state",
@@ -890,6 +927,7 @@ async function runModalInventory(context, setup, inventory, caseId) {
     faction: context.faction,
     viewport: context.viewport,
     events: setup.events,
+    route_receipts: setup.monitor.routeHistory,
     action_counters: { before: setup.initialCounters, after: setup.monitor.counters() },
     conditions: ["cold", "warm", "resize"],
     system_finder: { status: "excluded", reason: "no paintable port content" },
