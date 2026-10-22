@@ -2556,6 +2556,19 @@ fn status_opened_receipt_line(
     )
 }
 
+fn status_closed_receipt_line(
+    action: &'static str,
+    requested: rebellion_windowing::WindowId,
+    transition: &rebellion_windowing::WindowTransition,
+    removed_content: &[rebellion_windowing::WindowId],
+) -> Option<String> {
+    let rebellion_windowing::WindowTransition::Closed { root, closed, .. } = transition else {
+        return None;
+    };
+    (*root == requested && closed.contains(&requested) && removed_content.contains(&requested))
+        .then(|| format!("[interface] destination=status_window status=closed action={action}"))
+}
+
 const fn managed_mission_dialog_escape_requested(
     close_queued: bool,
     has_keyboard_owner: bool,
@@ -6176,6 +6189,64 @@ mod panel_toggle_tests {
     }
 
     #[test]
+    fn status_closed_receipt_requires_exact_committed_teardown() {
+        use rebellion_windowing::WindowCommand;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let mut status = StatusWindowState::default();
+        let mut world = rebellion_core::world::GameWorld::default();
+        let character = world.characters.insert(Default::default());
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::new();
+        let transport = rebellion_core::troop_transport::TroopTransportState::new();
+        let manufacturing = rebellion_core::manufacturing::ManufacturingState::new();
+        let sources = StatusSources {
+            world: &world,
+            missions: &missions,
+            movement: &movement,
+            transport: &transport,
+            manufacturing: &manufacturing,
+            today: 0,
+        };
+        let subject = coordinator.next_context_subject().unwrap();
+        coordinator.enqueue_status_open(
+            StatusWindowState::prepare_open(sources, StatusObject::Character(character), subject)
+                .unwrap(),
+            None,
+        );
+        let mut opened = coordinator.apply_pending().remove(0);
+        let status_id = opened.status_content_id.unwrap();
+        assert_eq!(
+            status.commit_open(
+                opened.prepared_status.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(status_id)
+        );
+        assert!(coordinator.acknowledge_status_publication(status_id));
+        coordinator.enqueue(WindowCommand::Close(status_id));
+        let closed = coordinator.apply_pending().remove(0);
+        let commit = closed.result.unwrap();
+
+        assert_eq!(closed.removed_content, [status_id]);
+        assert_eq!(
+            super::status_closed_receipt_line(
+                "close",
+                status_id,
+                &commit.transition,
+                &closed.removed_content,
+            ),
+            Some("[interface] destination=status_window status=closed action=close".to_owned())
+        );
+
+        assert_eq!(
+            super::status_closed_receipt_line("close", status_id, &commit.transition, &[],),
+            None,
+            "a transition without the exact released content is not a committed Status close"
+        );
+    }
+
+    #[test]
     fn managed_modal_surfaces_follow_snapshot_order_and_input_eligibility() {
         use rebellion_render::fleet_finder::FleetFinderState;
         use rebellion_windowing::WindowCommand;
@@ -8907,6 +8978,9 @@ async fn main() {
     }
 
     loop {
+        // Carry the exact Status close request to the manager-commit receipt
+        // below; queued input alone is not a committed close.
+        let mut pending_status_close = None;
         let dt = get_frame_time();
         rebellion_render::control_registry::begin_frame();
         // Scripted input posts one event a frame; AppKit delivers it before
@@ -14322,7 +14396,6 @@ async fn main() {
                     // frame's egui events and supplies the outside barrier.
                     let mut encyclopedia_close_queued = false;
                     let mut message_index_close_queued = false;
-                    let mut status_close_queued = false;
                     let mut mission_dialog_close_queued = false;
                     let mut move_confirmation_close_queued = false;
                     let mut scrap_confirmation_close_queued = false;
@@ -14531,7 +14604,13 @@ async fn main() {
                                 ) {
                                     strategic_windowing
                                         .enqueue(rebellion_windowing::WindowCommand::Close(window));
-                                    status_close_queued = true;
+                                    pending_status_close = Some((
+                                        window,
+                                        match action {
+                                            StatusWindowAction::Encyclopedia => "encyclopedia",
+                                            StatusWindowAction::Close => "close",
+                                        },
+                                    ));
                                     macroquad::logging::info!(
                                         "[interface] destination=status_window status=close_queued action={}",
                                         match action {
@@ -14749,13 +14828,14 @@ async fn main() {
                             child_keyboard_handled = true;
                         }
                     }
-                    if !status_close_queued
+                    if pending_status_close.is_none()
                         && status_keyboard_owner.is_some()
                         && strategic_root_keys.contains(KeyCode::Escape)
                     {
                         if let Some(window) = status_window_state.request_close() {
                             strategic_windowing
                                 .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                            pending_status_close = Some((window, "close"));
                             child_keyboard_handled = true;
                         }
                     }
@@ -17467,6 +17547,16 @@ async fn main() {
                             "[windowing] released_content={:?}",
                             removed_content
                         );
+                    }
+                    if let Some((requested, action)) = pending_status_close {
+                        if let Some(receipt) = status_closed_receipt_line(
+                            action,
+                            requested,
+                            &commit.transition,
+                            &removed_content,
+                        ) {
+                            macroquad::logging::info!("{receipt}");
+                        }
                     }
                 }
                 Err(error) => {
