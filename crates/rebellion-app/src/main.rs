@@ -2596,6 +2596,17 @@ fn commit_mission_dialog_publication(
     }
 }
 
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+fn enqueue_unmanaged_mission_dialog(
+    state: &MissionDialogState,
+    coordinator: &mut strategic_windowing::StrategicWindowing,
+) -> bool {
+    let Some(prepared) = state.prepare_adoption() else {
+        return false;
+    };
+    coordinator.enqueue_mission_dialog_open(prepared).is_ok()
+}
+
 fn commit_move_confirmation_publication(
     coordinator: &mut StrategicWindowing,
     state: &mut MoveConfirmationState,
@@ -5825,18 +5836,20 @@ mod panel_toggle_tests {
         child_key_disposition, collect_strategic_pointer_batch, commit_build_selection_gameplay,
         commit_mission_dialog_gameplay, commit_mission_dialog_publication,
         commit_personnel_finder_publication, enqueue_personnel_finder_action,
-        enqueue_troop_finder_action, managed_mission_dialog_escape_requested,
-        managed_strategic_surface_plan, panel_letters_open_panels,
-        release_personnel_finder_dependent, release_troop_finder_dependent, toggle_exclusive_panel,
-        AdvisorFaction, AdvisorState, BuildSelectionAction, ManagedStrategicSurface, MessageLog,
-        MissionDispatchContext, PendingPersonnelFinderOpen, PendingTroopFinderOpen,
-        StrategicPointerBatch, StrategicRawInputCollector, StrategicRawKeyCollector,
-        StrategicRawKeyEvent, StrategicRawPointerEvent, StrategicRootKeyBatch,
+        enqueue_troop_finder_action, enqueue_unmanaged_mission_dialog,
+        managed_mission_dialog_escape_requested, managed_strategic_surface_plan,
+        panel_letters_open_panels, release_personnel_finder_dependent,
+        release_troop_finder_dependent, toggle_exclusive_panel, AdvisorFaction, AdvisorState,
+        BuildSelectionAction, ManagedStrategicSurface, MessageLog, MissionDispatchContext,
+        PendingPersonnelFinderOpen, PendingTroopFinderOpen, StrategicPointerBatch,
+        StrategicRawInputCollector, StrategicRawKeyCollector, StrategicRawKeyEvent,
+        StrategicRawPointerEvent, StrategicRootKeyBatch,
     };
     use macroquad::miniquad::{EventHandler, KeyMods, MouseButton};
     use macroquad::prelude::KeyCode;
     use rebellion_render::build_selection::BuildSelectionState;
     use rebellion_render::message_index::MessageIndexState;
+    use rebellion_render::mission_dialog::MissionDialogState;
     use rebellion_render::personnel_finder::{
         ManagedPersonnelFinderAction, PersonnelFinderAction, PersonnelFinderState,
         PERSONNEL_FINDER_LIST_CONTROL, PERSONNEL_FINDER_NAME_CONTROL,
@@ -7342,6 +7355,74 @@ mod panel_toggle_tests {
     }
 
     #[test]
+    fn fixture_mission_dialog_is_enqueued_for_initial_manager_publication() {
+        use rebellion_core::ids::SystemKey;
+        use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember};
+
+        let mut state = MissionDialogState::default();
+        assert!(state.open(
+            MissionFaction::Alliance,
+            SystemKey::default(),
+            vec![MissionMember::Character(Default::default())],
+            vec![MissionKind::Diplomacy],
+        ));
+        state
+            .dialog_mut()
+            .expect("fixture Mission content is open")
+            .show_page(rebellion_render::mission_dialog::MissionDialogPage::Agents);
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+
+        assert!(
+            enqueue_unmanaged_mission_dialog(&state, &mut coordinator),
+            "startup must enqueue pre-manager Mission content for adoption"
+        );
+        let mut applied = coordinator.apply_pending().remove(0);
+        let id = applied
+            .mission_dialog_content_id
+            .expect("the initial manager command publishes a Mission identity");
+        let transition = applied
+            .result
+            .as_ref()
+            .expect("manager open succeeds")
+            .transition
+            .clone();
+        let prepared = applied
+            .prepared_mission_dialog
+            .take()
+            .expect("the initial command retains the prepared dialog");
+        assert!(commit_mission_dialog_publication(
+            &mut coordinator,
+            &mut state,
+            prepared,
+            id,
+            &transition,
+        )
+        .is_empty());
+        assert_eq!(state.window_id(), Some(id));
+        assert_eq!(
+            state.dialog().expect("adopted dialog remains open").page(),
+            rebellion_render::mission_dialog::MissionDialogPage::Agents
+        );
+        let frame = coordinator.begin_frame();
+        assert_eq!(
+            managed_strategic_surface_plan(
+                &frame,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(id),
+                None,
+                None,
+            ),
+            [(ManagedStrategicSurface::MissionDialog(id), true)]
+        );
+    }
+
+    #[test]
     fn mission_dialog_confirm_consumes_key_and_dispatches_once() {
         use rebellion_core::dat::{ExplorationStatus, Faction};
         use rebellion_core::ids::{DatId, SectorKey};
@@ -8680,6 +8761,12 @@ async fn main() {
     let mut strategic_windowing = strategic_windowing::StrategicWindowing::new();
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
     if let Some(request) = interface_fixture_request {
+        if mission_dialog_state.is_open() {
+            assert!(
+                enqueue_unmanaged_mission_dialog(&mission_dialog_state, &mut strategic_windowing,),
+                "fixture Mission content must be queued for managed startup adoption"
+            );
+        }
         enqueue_managed_fixture_sector(
             request.scenario,
             request.faction,

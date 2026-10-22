@@ -219,6 +219,17 @@ impl PreparedMissionDialogConfirm {
 }
 
 impl MissionDialogState {
+    /// Prepares publication of an existing legacy dialog that has no manager
+    /// identity yet. Its current page and member selection are retained.
+    #[must_use]
+    pub fn prepare_adoption(&self) -> Option<PreparedMissionDialog> {
+        let dialog = self.dialog.as_ref()?.clone();
+        dialog.window_id.is_none().then_some(PreparedMissionDialog {
+            dialog,
+            replacing: None,
+        })
+    }
+
     /// Prepares a fresh logical Mission context without changing the currently
     /// published dialog. Empty mission/team contexts reject before a manager
     /// command can replace the old identity.
@@ -261,7 +272,11 @@ impl MissionDialogState {
     ) -> Option<WindowId> {
         match *transition {
             WindowTransition::Opened { id }
-                if self.dialog.is_none() && prepared.replacing.is_none() =>
+                if prepared.replacing.is_none()
+                    && (self.dialog.is_none()
+                        || self.dialog.as_ref().is_some_and(|dialog| {
+                            dialog.window_id.is_none() && dialog == &prepared.dialog
+                        })) =>
             {
                 prepared.dialog.window_id = Some(id);
                 self.dialog = Some(prepared.dialog);
@@ -1261,6 +1276,51 @@ mod tests {
         assert_eq!(dialog.kind(), MissionKind::Espionage);
         assert_eq!(dialog.page(), MissionDialogPage::Mission);
         assert!(dialog.decoys().is_empty());
+    }
+
+    #[test]
+    fn mission_dialog_adoption_assigns_manager_identity_without_resetting_page_or_team() {
+        let team = members(2);
+        let mut state = open_with(team.clone());
+        state
+            .dialog_mut()
+            .expect("the legacy dialog is open")
+            .show_page(MissionDialogPage::Agents);
+        state
+            .dialog_mut()
+            .expect("the legacy dialog is open")
+            .toggle(team[0]);
+
+        let prepared = state
+            .prepare_adoption()
+            .expect("unmanaged content is adoptable");
+        let mut manager = WindowManager::new();
+        let committed = manager
+            .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
+                crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                1,
+            ))))
+            .expect("manager accepts Mission dialog");
+        let WindowTransition::Opened { id } = committed.transition else {
+            panic!("expected new Mission identity");
+        };
+
+        assert_eq!(
+            state.commit_open(prepared, &committed.transition),
+            Some(id),
+            "an existing identity-less fixture dialog must adopt the exact manager receipt"
+        );
+        let dialog = state.dialog().expect("adopted content remains open");
+        assert_eq!(dialog.page(), MissionDialogPage::Agents);
+        assert_eq!(dialog.agents(), team);
+        assert_eq!(state.window_id(), Some(id));
+        state
+            .dialog_mut()
+            .expect("adopted dialog remains open")
+            .move_selected(true);
+        let dialog = state.dialog().expect("adopted content remains open");
+        assert_eq!(dialog.agents(), &[team[1]]);
+        assert_eq!(dialog.decoys(), &[team[0]]);
     }
 
     #[test]
