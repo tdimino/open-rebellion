@@ -428,8 +428,10 @@ export async function click(page, routes, point, application, { advanceFrame } =
     description: `${label} emitted fewer than two fresh route receipts`,
     advanceFrame: nextFrame,
   });
-  assert.deepEqual([down.application, release.application],
-    [application === "sector_window" ? application : "none", application],
+  // Quadrants acknowledges Sector selection on its routed release after the
+  // draw; the press itself is still the event that changes the selected icon.
+  // Managed child controls likewise publish their action on release.
+  assert.deepEqual([down.application, release.application], ["none", application],
     `${label} receipts did not identify the press and release in order`);
   assert.notEqual(release.physical, down.physical, `${label} reused its down route receipt`);
   for (let frame = 0; frame < 3; frame += 1) await nextFrame();

@@ -108,10 +108,7 @@ test("sector pointer release waits for a fresh post-down route receipt", async (
 
 test("sector click dispatches down and release before waiting for ordered receipts", async () => {
   const { click } = await import("./sector-quadrants.mjs");
-  for (const [application, downApplication] of [
-    ["sector_window", "sector_window"],
-    ["defenses_window", "none"],
-  ]) {
+  for (const application of ["sector_window", "defenses_window"]) {
     const routes = [];
     const calls = [];
     const timeline = [];
@@ -166,7 +163,7 @@ test("sector click dispatches down and release before waiting for ordered receip
       for (const [kind] of freshCalls) {
         physical += 1;
         const routed = kind === "move" ? "pointer_ready"
-          : kind === "down" ? downApplication : application;
+          : kind === "down" ? "none" : application;
         routes.push(`[windowing-route] physical=${physical}:0 kind=pointer router=root application=${routed} underlay=0`);
       }
     };
@@ -183,10 +180,79 @@ test("sector click dispatches down and release before waiting for ordered receip
     const downIndex = timeline.indexOf("down");
     assert.deepEqual(timeline.slice(downIndex, downIndex + 2), ["down", "up"],
       "a frame boundary separated the physical click pair");
-    assert.equal(receipts.down.application, downApplication);
-    assert.equal(receipts.release.application, application);
+    assert.deepEqual([receipts.down.application, receipts.release.application], ["none", application]);
     assert.notEqual(receipts.down.physical, receipts.release.physical);
   }
+});
+
+test("sector icon click orders reverse-arriving same-frame receipts by physical event", async () => {
+  const { click } = await import("./sector-quadrants.mjs");
+  const routes = [];
+  const calls = [];
+  let frame = 0;
+  const page = {
+    mouse: {
+      async move(x, y) { calls.push(["move", x, y]); },
+      async down(options) { calls.push(["down", options]); },
+      async up(options) { calls.push(["up", options]); },
+    },
+    async evaluate(callback, point) {
+      const previous = {
+        document: globalThis.document,
+        HTMLCanvasElement: globalThis.HTMLCanvasElement,
+        MouseEvent: globalThis.MouseEvent,
+        window: globalThis.window,
+      };
+      class FakeMouseEvent {
+        constructor(type, init) {
+          this.type = type;
+          Object.assign(this, init);
+        }
+      }
+      class FakeCanvas {
+        dispatchEvent(event) {
+          calls.push([event.type === "mousedown" ? "down" : "up", event]);
+          return true;
+        }
+      }
+      const canvas = new FakeCanvas();
+      globalThis.document = { getElementById: (id) => id === "glcanvas" ? canvas : null };
+      globalThis.HTMLCanvasElement = FakeCanvas;
+      globalThis.MouseEvent = FakeMouseEvent;
+      globalThis.window = {};
+      try {
+        await callback(point);
+      } finally {
+        globalThis.document = previous.document;
+        globalThis.HTMLCanvasElement = previous.HTMLCanvasElement;
+        globalThis.MouseEvent = previous.MouseEvent;
+        globalThis.window = previous.window;
+      }
+    },
+  };
+  const advanceFrame = async () => {
+    frame += 1;
+    if (frame === 1) {
+      routes.push("[windowing-route] physical=17:0 kind=pointer router=window:1 application=pointer_ready underlay=0");
+    } else if (frame === 2) {
+      // Console delivery is reversed, but physical ordinal 0 is the press and
+      // ordinal 1 is its release in this atomic browser input batch.
+      routes.push("[windowing-route] physical=20:1 kind=pointer router=window:1 application=sector_window underlay=0");
+      routes.push("[windowing-route] physical=20:0 kind=pointer router=window:1 application=none underlay=0");
+    }
+  };
+
+  const receipts = await click(
+    page,
+    routes,
+    { x: 104, y: 221 },
+    "sector_window",
+    { advanceFrame },
+  );
+
+  assert.deepEqual(calls.map(([kind]) => kind), ["move", "down", "up"]);
+  assert.deepEqual([receipts.down.physical, receipts.release.physical], ["20:0", "20:1"]);
+  assert.deepEqual([receipts.down.application, receipts.release.application], ["none", "sector_window"]);
 });
 
 test("sector receipt waits stop at a monotonic wall-clock deadline", async () => {
