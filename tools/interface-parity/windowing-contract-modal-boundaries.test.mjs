@@ -77,6 +77,23 @@ test("windowing_journey_c_uses_the_live_detail_title_button_geometry", () => {
   });
 });
 
+test("windowing_journey_c_pointer_clicks_use_fresh_route_receipts", () => {
+  const ownerSource = fs.readFileSync(
+    path.join(root, "tools/interface-parity/windowing-contract-modal-boundaries.mjs"),
+    "utf8",
+  );
+  const clickBody = ownerSource.match(/async function click\([\s\S]*?\n}/)?.[0];
+
+  assert.match(ownerSource, /import \{ clickWithRouteBarrier \} from "\.\/fleet-window\.mjs";/);
+  assert.ok(clickBody, "modal journey has no shared pointer-click helper");
+  assert.match(clickBody, /clickWithRouteBarrier\(/);
+  assert.match(clickBody, /routes:\s*monitor\.routes/);
+  assert.match(clickBody, /cursor:\s*monitor\.routeCursor/);
+  assert.match(clickBody, /skipMoveReceipt:\s*true/);
+  assert.match(clickBody, /batchActions:\s*true/);
+  assert.match(clickBody, /advanceFrame:\s*\(\)\s*=>\s*frames\(page,\s*1\)/);
+});
+
 test("windowing_journey_c_checks_close_frame_and_orphan_release", () => {
   const underlay = {
     selected_system: 101,

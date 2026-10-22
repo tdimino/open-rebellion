@@ -7,6 +7,7 @@ import {
   WINDOWING_CONTRACT_SCHEMA_VERSION,
   defineWindowingContractCase,
 } from "./windowing-contract.mjs";
+import { clickWithRouteBarrier } from "./fleet-window.mjs";
 
 const STATE_MARKER = "[windowing-contract-state] ";
 const ROUTE_MARKER = "[windowing-route] ";
@@ -141,6 +142,7 @@ function tupleMap(entries) {
 function createMonitor(page) {
   const states = [];
   const routes = [];
+  const routeCursor = { physical: null };
   const errors = [];
   const requests = [];
   let unintendedUnderlay = 0;
@@ -161,6 +163,7 @@ function createMonitor(page) {
   return {
     states,
     routes,
+    routeCursor,
     errors,
     requests,
     get unintendedUnderlay() { return unintendedUnderlay; },
@@ -232,13 +235,18 @@ function routedEvent(modal, triggerId, lines) {
   };
 }
 
-async function click(page, point, button = "left") {
-  await page.mouse.move(point.x, point.y);
-  await frames(page);
-  await page.mouse.down({ button });
-  await frames(page);
-  await page.mouse.up({ button });
-  await frames(page);
+async function click(page, point, monitor, button = "left") {
+  return clickWithRouteBarrier({
+    page,
+    routes: monitor.routes,
+    cursor: monitor.routeCursor,
+    point,
+    label: `modal-boundary ${button} click`,
+    button,
+    skipMoveReceipt: true,
+    batchActions: true,
+    advanceFrame: () => frames(page, 1),
+  });
 }
 
 async function key(page, name) {
@@ -336,7 +344,8 @@ async function openDetail(page, monitor, systemDatId, kind) {
     },
     `${kind} detail did not open`,
     async () => {
-      await page.mouse.dblclick(center(rect).x, center(rect).y);
+      const point = center(rect);
+      await page.mouse.dblclick(point.x, point.y);
       await frames(page, 4);
     },
   );
@@ -403,7 +412,7 @@ async function openMenu(page, point, monitor) {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.evaluate(() => { window.__openRebellionInterfaceObjectMenu = undefined; });
     if (attempt === 0) {
-      await click(page, point, "right");
+      await click(page, point, monitor, "right");
     } else {
       await page.mouse.click(point.x, point.y, { button: "right" });
       await frames(page, 4);
@@ -430,7 +439,7 @@ async function openMenu(page, point, monitor) {
   );
 }
 
-async function chooseMenu(page, menu, field, direct = false) {
+async function chooseMenu(page, monitor, menu, field, direct = false) {
   const row = menu[field];
   assert.notEqual(row, null, `object menu does not expose ${field}: ${JSON.stringify(menu)}`);
   assert.notEqual(row, undefined, `object menu did not report ${field}: ${JSON.stringify(menu)}`);
@@ -443,7 +452,7 @@ async function chooseMenu(page, menu, field, direct = false) {
     await page.mouse.click(point.x, point.y);
     await frames(page, 4);
   } else {
-    await click(page, point);
+    await click(page, point, monitor);
   }
 }
 
@@ -475,6 +484,7 @@ async function openAdvancedModal(page, monitor, modal, underlay) {
         const menu = await openMenu(page, center(underlay.detail.entry_rect), monitor);
         await chooseMenu(
           page,
+          monitor,
           menu,
           modal.kind === "status" ? "status_window_row" : "scrap_row",
         );
@@ -490,8 +500,8 @@ async function openAdvancedModal(page, monitor, modal, underlay) {
       "Move target release did not publish its confirmation",
       async () => {
         const menu = await openMenu(page, center(underlay.detail.entry_rect), monitor);
-        await chooseMenu(page, menu, "confirmed_move_row");
-        await click(page, underlay.targetPoint);
+        await chooseMenu(page, monitor, menu, "confirmed_move_row");
+        await click(page, underlay.targetPoint, monitor);
       },
     );
     return;
@@ -542,7 +552,7 @@ async function openAdvancedModal(page, monitor, modal, underlay) {
       async () => {
         const activeMenu = firstAttempt ? menu : await openMenu(page, buildBandPoint, monitor);
         firstAttempt = false;
-        await chooseMenu(page, activeMenu, "build_row", true);
+        await chooseMenu(page, monitor, activeMenu, "build_row", true);
       },
     );
     return;
@@ -559,7 +569,7 @@ async function openAdvancedModal(page, monitor, modal, underlay) {
           .find(({ dat_id: datId }) => datId === underlay.primary).details.defenses;
         const personnel = tupleMap(detail.tabs).personnel;
         assert.ok(personnel, "Defenses detail has no Personnel tab");
-        await click(page, center(personnel));
+        await click(page, center(personnel), monitor);
         await frames(page, 3);
         state = await latestIdentity(monitor);
         detail = state.systems
@@ -578,8 +588,8 @@ async function openAdvancedModal(page, monitor, modal, underlay) {
           menu = null;
         }
         assert.ok(menu, "no eligible character exposed a Mission command");
-        await chooseMenu(page, menu, "mission_row");
-        await click(page, underlay.targetPoint);
+        await chooseMenu(page, monitor, menu, "mission_row");
+        await click(page, underlay.targetPoint, monitor);
       },
     );
     return;
@@ -694,7 +704,7 @@ async function closeAndProbe(page, monitor, modalWindow, underlay) {
 
   const freshStart = monitor.routes.length;
   const freshStateStart = monitor.states.length;
-  await click(page, { x: underlay.fleetFinderPoint[0], y: underlay.fleetFinderPoint[1] });
+  await click(page, { x: underlay.fleetFinderPoint[0], y: underlay.fleetFinderPoint[1] }, monitor);
   let freshState;
   try {
     freshState = await monitor.wait(
@@ -788,10 +798,10 @@ async function runOneModal(context, setup, modal) {
   setup.screenshots.push([`modal:${modal.kind}`, openPath]);
 
   const inputs = [
-    ["map", () => click(page, { x: underlay.mapPoint[0], y: underlay.mapPoint[1] })],
-    ["cockpit", () => click(page, { x: underlay.cockpitPoint[0], y: underlay.cockpitPoint[1] })],
-    ["rail", () => click(page, { x: underlay.railPoint[0], y: underlay.railPoint[1] })],
-    ["detail", () => click(page, underlay.detailPoint)],
+    ["map", () => click(page, { x: underlay.mapPoint[0], y: underlay.mapPoint[1] }, setup.monitor)],
+    ["cockpit", () => click(page, { x: underlay.cockpitPoint[0], y: underlay.cockpitPoint[1] }, setup.monitor)],
+    ["rail", () => click(page, { x: underlay.railPoint[0], y: underlay.railPoint[1] }, setup.monitor)],
+    ["detail", () => click(page, underlay.detailPoint, setup.monitor)],
   ];
   const blockedInputs = [];
   for (const [surface, input] of inputs) {

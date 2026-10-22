@@ -143,6 +143,62 @@ test("a context click keeps press and release in one browser input batch", async
   assert.equal(cursor.physical, "35:1");
 });
 
+test("a click can settle exact-point movement without requiring a move receipt", async () => {
+  const { clickWithRouteBarrier } = await import("./fleet-window.mjs");
+  const routes = [
+    "[windowing-route] physical=37:4 kind=pointer router=window:1 application=none underlay=0",
+  ];
+  const cursor = { physical: null };
+  const calls = [];
+  let frame = 0;
+  const page = {
+    mouse: {
+      async move(x, y) { calls.push(["move", frame, x, y]); },
+      async down() { calls.push(["split-down", frame]); },
+      async up() { calls.push(["split-up", frame]); },
+    },
+    async evaluate(_callback, argument) {
+      calls.push(["batch", frame, argument]);
+    },
+  };
+  const advanceFrame = async () => {
+    frame += 1;
+    calls.push(["frame", frame]);
+    if (frame === 2) {
+      routes.push("[windowing-route] physical=39:0 kind=pointer router=window:1 application=none underlay=0");
+      routes.push("[windowing-route] physical=39:1 kind=pointer router=window:1 application=defenses_window underlay=0");
+    }
+  };
+
+  const receipts = await clickWithRouteBarrier({
+    page,
+    routes,
+    cursor,
+    point: { x: 112, y: 249 },
+    label: "modal object-menu opener",
+    button: "right",
+    skipMoveReceipt: true,
+    batchActions: true,
+    expectedDown: { application: "none" },
+    expectedRelease: { application: "defenses_window" },
+    advanceFrame,
+    settleFrames: 0,
+  });
+
+  assert.deepEqual(calls, [
+    ["move", 0, 112, 249],
+    ["frame", 1],
+    ["batch", 1, { x: 112, y: 249, button: "right" }],
+    ["frame", 2],
+  ]);
+  assert.equal(receipts.move.skipped, true);
+  assert.deepEqual(
+    [receipts.down.physical, receipts.release.physical],
+    ["39:0", "39:1"],
+  );
+  assert.equal(cursor.physical, "39:1");
+});
+
 test("a managed menu choice consumes its ordered atomic press and release", async () => {
   const { clickWithRouteBarrier } = await import("./fleet-window.mjs");
   const routes = [

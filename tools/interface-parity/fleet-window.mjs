@@ -400,6 +400,7 @@ export async function clickWithRouteBarrier({
   button = "left",
   cursor = { physical: null },
   expectedMove = { application: "pointer_ready" },
+  skipMoveReceipt = false,
   expectedDown,
   expectedRelease,
   batchActions = false,
@@ -407,14 +408,23 @@ export async function clickWithRouteBarrier({
   settleFrames = 3,
 }) {
   const nextFrame = advanceFrame ?? (() => frames(page, 1));
-  const move = await pointerRouteBoundary({
-    routes,
-    cursor,
-    label: `${label} move`,
-    expected: expectedMove,
-    perform: () => page.mouse.move(point.x, point.y),
-    advanceFrame: nextFrame,
-  });
+  let move;
+  if (skipMoveReceipt) {
+    await page.mouse.move(point.x, point.y);
+    await nextFrame();
+    const physical = latestPhysical(routes, cursor);
+    if (physical !== null) cursor.physical = physical;
+    move = { physical, skipped: true };
+  } else {
+    move = await pointerRouteBoundary({
+      routes,
+      cursor,
+      label: `${label} move`,
+      expected: expectedMove,
+      perform: () => page.mouse.move(point.x, point.y),
+      advanceFrame: nextFrame,
+    });
+  }
   let down;
   let release;
   // Ordinary egui clicks and managed-menu actions must keep down/up in one
