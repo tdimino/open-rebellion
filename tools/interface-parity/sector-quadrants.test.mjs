@@ -106,7 +106,7 @@ test("sector pointer release waits for a fresh post-down route receipt", async (
   );
 });
 
-test("click routes Sector capture presses and non-capture window presses", async () => {
+test("sector click dispatches down and release before waiting for ordered receipts", async () => {
   const { click } = await import("./sector-quadrants.mjs");
   for (const [application, downApplication] of [
     ["sector_window", "sector_window"],
@@ -114,23 +114,61 @@ test("click routes Sector capture presses and non-capture window presses", async
   ]) {
     const routes = [];
     const calls = [];
+    const timeline = [];
     let observedCalls = 0;
     let physical = 50;
     const page = {
       mouse: {
-        async move(x, y) { calls.push(["move", x, y]); },
-        async down(options) { calls.push(["down", options]); },
-        async up(options) { calls.push(["up", options]); },
+        async move(x, y) { calls.push(["move", x, y]); timeline.push("move"); },
+        async down(options) { calls.push(["down", options]); timeline.push("down"); },
+        async up(options) { calls.push(["up", options]); timeline.push("up"); },
+      },
+      async evaluate(callback, point) {
+        const previous = {
+          document: globalThis.document,
+          HTMLCanvasElement: globalThis.HTMLCanvasElement,
+          MouseEvent: globalThis.MouseEvent,
+          window: globalThis.window,
+        };
+        class FakeMouseEvent {
+          constructor(type, init) {
+            this.type = type;
+            Object.assign(this, init);
+          }
+        }
+        class FakeCanvas {
+          dispatchEvent(event) {
+            calls.push([event.type === "mousedown" ? "down" : "up", event]);
+            timeline.push(event.type === "mousedown" ? "down" : "up");
+            return true;
+          }
+        }
+        const canvas = new FakeCanvas();
+        globalThis.document = { getElementById: (id) => id === "glcanvas" ? canvas : null };
+        globalThis.HTMLCanvasElement = FakeCanvas;
+        globalThis.MouseEvent = FakeMouseEvent;
+        globalThis.window = {};
+        try {
+          await callback(point);
+        } finally {
+          globalThis.document = previous.document;
+          globalThis.HTMLCanvasElement = previous.HTMLCanvasElement;
+          globalThis.MouseEvent = previous.MouseEvent;
+          globalThis.window = previous.window;
+        }
       },
     };
     const advanceFrame = async () => {
+      timeline.push("frame");
       if (observedCalls === calls.length) return;
+      const freshCalls = calls.slice(observedCalls);
       observedCalls = calls.length;
-      physical += 1;
-      const kind = calls.at(-1)[0];
-      const routed = kind === "move" ? "pointer_ready"
-        : kind === "down" ? downApplication : application;
-      routes.push(`[windowing-route] physical=${physical}:0 kind=pointer router=root application=${routed} underlay=0`);
+      for (const [kind] of freshCalls) {
+        physical += 1;
+        const routed = kind === "move" ? "pointer_ready"
+          : kind === "down" ? downApplication : application;
+        routes.push(`[windowing-route] physical=${physical}:0 kind=pointer router=root application=${routed} underlay=0`);
+      }
     };
 
     const receipts = await click(
@@ -142,10 +180,70 @@ test("click routes Sector capture presses and non-capture window presses", async
     );
 
     assert.deepEqual(calls.map(([kind]) => kind), ["move", "down", "up"]);
+    const downIndex = timeline.indexOf("down");
+    assert.deepEqual(timeline.slice(downIndex, downIndex + 2), ["down", "up"],
+      "a frame boundary separated the physical click pair");
     assert.equal(receipts.down.application, downApplication);
     assert.equal(receipts.release.application, application);
     assert.notEqual(receipts.down.physical, receipts.release.physical);
   }
+});
+
+test("sector receipt waits stop at a monotonic wall-clock deadline", async () => {
+  const { pressWithRouteReceipts } = await import("./sector-quadrants.mjs");
+  let now = 0;
+  let advances = 0;
+  const page = {
+    mouse: {
+      async move() {},
+      async down() {},
+      async up() {},
+    },
+  };
+
+  await assert.rejects(
+    pressWithRouteReceipts({
+      page,
+      routes: [],
+      point: { x: 104, y: 221 },
+      label: "missing receipt",
+      expectedDown: { application: "none" },
+      expectedRelease: { application: "sector_window" },
+      expectedMove: null,
+      advanceFrame: async () => {
+        advances += 1;
+        now += 10;
+      },
+      receiptTimeoutMs: 15,
+      monotonicNow: () => now,
+      settleFrames: 0,
+    }),
+    /deadline/,
+  );
+  assert.ok(advances <= 3, `receipt wait advanced ${advances} frames after its deadline`);
+});
+
+test("sector receipt deadline preempts a stalled animation-frame wait", { timeout: 250 }, async () => {
+  const { pressWithRouteReceipts } = await import("./sector-quadrants.mjs");
+  const page = { mouse: { async move() {}, async down() {}, async up() {} } };
+  const started = performance.now();
+
+  await assert.rejects(
+    pressWithRouteReceipts({
+      page,
+      routes: [],
+      point: { x: 104, y: 221 },
+      label: "stalled frame",
+      expectedMove: { application: "pointer_ready" },
+      expectedDown: { application: "none" },
+      expectedRelease: { application: "sector_window" },
+      advanceFrame: () => new Promise(() => {}),
+      receiptTimeoutMs: 15,
+      settleFrames: 0,
+    }),
+    /deadline/,
+  );
+  assert.ok(performance.now() - started < 150, "receipt deadline did not preempt the frame wait");
 });
 
 test("sector double click reuses one ready pointer without inter-click settling", async () => {

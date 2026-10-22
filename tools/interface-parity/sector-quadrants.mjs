@@ -22,6 +22,7 @@ const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion-
 const ROUTE_MARKER = "[windowing-route] ";
 // Fixture codes are the Scenario index plus one (interface_test_fixture.rs).
 const QUADRANTS = 50;
+const ROUTE_RECEIPT_TIMEOUT_MS = 10_000;
 const factions = [
   { name: "alliance", byte: 1, side: 1, other: 2 },
   { name: "empire", byte: 2, side: 2, other: 1 },
@@ -246,6 +247,27 @@ function parseRoute(line) {
   };
 }
 
+async function advanceFrameWithinDeadline(advanceFrame, deadline, monotonicNow) {
+  const remaining = deadline - monotonicNow();
+  if (remaining <= 0) return true;
+  let timer;
+  let timedOut = false;
+  try {
+    await Promise.race([
+      advanceFrame(),
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          resolve();
+        }, remaining);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+  return timedOut || monotonicNow() >= deadline;
+}
+
 async function waitForRouteReceipt({
   routes,
   after,
@@ -253,18 +275,26 @@ async function waitForRouteReceipt({
   description,
   advanceFrame,
   attempts = 480,
+  timeoutMs = ROUTE_RECEIPT_TIMEOUT_MS,
+  monotonicNow = () => performance.now(),
 }) {
+  const deadline = monotonicNow() + timeoutMs;
+  let deadlineReached = false;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (monotonicNow() >= deadline) break;
     const route = routes.slice(after)
       .map(parseRoute)
       .find((candidate) => candidate.kind === "pointer"
         && (expected.recipient === undefined || candidate.recipient === expected.recipient)
         && candidate.application === expected.application);
     if (route) return route;
-    await advanceFrame();
+    if (await advanceFrameWithinDeadline(advanceFrame, deadline, monotonicNow)) {
+      deadlineReached = true;
+      break;
+    }
   }
   throw new Error(
-    `${description}; last=${JSON.stringify(routes.slice(after).map(parseRoute).at(-1) ?? null)}`,
+    `${description} ${deadlineReached || monotonicNow() >= deadline ? `after ${timeoutMs}ms deadline` : `after ${attempts} frame attempts`}; last=${JSON.stringify(routes.slice(after).map(parseRoute).at(-1) ?? null)}`,
   );
 }
 
@@ -275,8 +305,13 @@ async function waitForFreshPointerReceipts({
   description,
   advanceFrame,
   attempts = 480,
+  timeoutMs = ROUTE_RECEIPT_TIMEOUT_MS,
+  monotonicNow = () => performance.now(),
 }) {
+  const deadline = monotonicNow() + timeoutMs;
+  let deadlineReached = false;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (monotonicNow() >= deadline) break;
     const receipts = routes.slice(after).map(parseRoute)
       .filter((candidate) => candidate.kind === "pointer");
     if (receipts.length >= count) {
@@ -286,10 +321,13 @@ async function waitForFreshPointerReceipts({
         return leftFrame - rightFrame || leftOrdinal - rightOrdinal;
       });
     }
-    await advanceFrame();
+    if (await advanceFrameWithinDeadline(advanceFrame, deadline, monotonicNow)) {
+      deadlineReached = true;
+      break;
+    }
   }
   throw new Error(
-    `${description}; last=${JSON.stringify(routes.slice(after).map(parseRoute).at(-1) ?? null)}`,
+    `${description} ${deadlineReached || monotonicNow() >= deadline ? `after ${timeoutMs}ms deadline` : `after ${attempts} frame attempts`}; last=${JSON.stringify(routes.slice(after).map(parseRoute).at(-1) ?? null)}`,
   );
 }
 
@@ -304,6 +342,8 @@ export async function pressWithRouteReceipts({
   button = "left",
   advanceFrame,
   settleFrames = 3,
+  receiptTimeoutMs = ROUTE_RECEIPT_TIMEOUT_MS,
+  monotonicNow = () => performance.now(),
 }) {
   const nextFrame = advanceFrame ?? (() => frames(page, 1));
   const moveStart = routes.length;
@@ -315,6 +355,8 @@ export async function pressWithRouteReceipts({
       expected: expectedMove,
       description: `${label} move emitted no expected fresh route receipt`,
       advanceFrame: nextFrame,
+      timeoutMs: receiptTimeoutMs,
+      monotonicNow,
     });
   } else {
     await nextFrame();
@@ -327,6 +369,8 @@ export async function pressWithRouteReceipts({
     expected: expectedDown,
     description: `${label} down emitted no expected fresh route receipt`,
     advanceFrame: nextFrame,
+    timeoutMs: receiptTimeoutMs,
+    monotonicNow,
   });
   const releaseStart = routes.length;
   await page.mouse.up({ button });
@@ -336,6 +380,8 @@ export async function pressWithRouteReceipts({
     expected: expectedRelease,
     description: `${label} release emitted no expected fresh route receipt`,
     advanceFrame: nextFrame,
+    timeoutMs: receiptTimeoutMs,
+    monotonicNow,
   });
   assert.notEqual(release.physical, down.physical, `${label} reused its down route receipt`);
   for (let frame = 0; frame < settleFrames; frame += 1) {
@@ -345,16 +391,49 @@ export async function pressWithRouteReceipts({
 }
 
 export async function click(page, routes, point, application, { advanceFrame } = {}) {
-  return pressWithRouteReceipts({
-    page,
+  const label = `${application} click`;
+  const nextFrame = advanceFrame ?? (() => frames(page, 1));
+  const moveStart = routes.length;
+  await page.mouse.move(point.x, point.y);
+  await waitForRouteReceipt({
     routes,
-    point,
-    label: `${application} click`,
-    expectedMove: { application: "pointer_ready" },
-    expectedDown: { application: application === "sector_window" ? application : "none" },
-    expectedRelease: { application },
-    advanceFrame,
+    after: moveStart,
+    expected: { application: "pointer_ready" },
+    description: `${label} move emitted no expected fresh route receipt`,
+    advanceFrame: nextFrame,
   });
+  const actionStart = routes.length;
+  await page.evaluate(({ x, y }) => {
+    const canvas = document.getElementById("glcanvas");
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("missing game canvas");
+    const emit = (type, buttons) => canvas.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: x,
+      clientY: y,
+      screenX: x,
+      screenY: y,
+      button: 0,
+      buttons,
+      detail: 1,
+    }));
+    emit("mousedown", 1);
+    emit("mouseup", 0);
+  }, point);
+  const [down, release] = await waitForFreshPointerReceipts({
+    routes,
+    after: actionStart,
+    count: 2,
+    description: `${label} emitted fewer than two fresh route receipts`,
+    advanceFrame: nextFrame,
+  });
+  assert.deepEqual([down.application, release.application],
+    [application === "sector_window" ? application : "none", application],
+    `${label} receipts did not identify the press and release in order`);
+  assert.notEqual(release.physical, down.physical, `${label} reused its down route receipt`);
+  for (let frame = 0; frame < 3; frame += 1) await nextFrame();
+  return { down, release };
 }
 
 // Two clicks inside egui's double-click time.
