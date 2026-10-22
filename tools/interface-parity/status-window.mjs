@@ -20,7 +20,7 @@ import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
 import { sectorDoubleClick } from "./sector-double-click.mjs";
-import { clickStatusWithRouteBarrier } from "./status-window-input.mjs";
+import { appendStatusConsoleLine, clickStatusWithRouteBarrier } from "./status-window-input.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -318,6 +318,7 @@ async function inspect(server, source, faction, testCase, executable) {
   fs.mkdirSync(directory, { recursive: true });
   const errors = [];
   const consoleLines = [];
+  const routeReceipts = [];
   const routeCursor = { physical: null };
   const launchAttempts = [];
   let browser;
@@ -339,8 +340,9 @@ async function inspect(server, source, faction, testCase, executable) {
     page = await context.newPage();
     page.on("pageerror", (error) => errors.push(`pageerror:${error.stack || error.message}`));
     page.on("console", (message) => {
-      consoleLines.push(message.text());
-      if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(message.text())) errors.push(`console:${message.type()}:${message.text()}`);
+      const line = message.text();
+      appendStatusConsoleLine({ consoleLines, routes: routeReceipts, line });
+      if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(line)) errors.push(`console:${message.type()}:${line}`);
     });
     const fixtureCode = testCase.code | (faction.byte << 8);
     await page.goto(`http://127.0.0.1:${server.address().port}/?fixture-code=${fixtureCode}`, { waitUntil: "load", timeout: 30_000 });
@@ -349,7 +351,7 @@ async function inspect(server, source, faction, testCase, executable) {
     assert.equal(ready.status, "ready", JSON.stringify(ready));
     await page.evaluate(() => document.fonts.ready);
 
-    const routeContext = { routes: consoleLines, cursor: routeCursor };
+    const routeContext = { routes: routeReceipts, cursor: routeCursor };
     const target = await testCase.target(page, faction, routeContext);
     const openStatus = () => chooseStatus(page, target, routeContext.routes, routeContext.cursor);
     const opened = new RegExp(`command=0x103 destination=status_window status=opened object=${testCase.family}[ (].+ rect=(\\d+),(\\d+),(\\d+),(\\d+)`);

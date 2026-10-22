@@ -1,5 +1,10 @@
 import { clickWithRouteBarrier } from "./fleet-window.mjs";
 
+export function appendStatusConsoleLine({ consoleLines, routes, line }) {
+  consoleLines.push(line);
+  if (line.startsWith("[windowing-route]")) routes.push(line);
+}
+
 export async function clickStatusWithRouteBarrier({
   page,
   routes,
