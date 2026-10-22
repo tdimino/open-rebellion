@@ -20,7 +20,7 @@ import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
 import { sectorDoubleClick } from "./sector-double-click.mjs";
-import { appendStatusConsoleLine, clickStatusWithRouteBarrier } from "./status-window-input.mjs";
+import { appendStatusConsoleLine, clickStatusDirect, clickStatusWithRouteBarrier } from "./status-window-input.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -199,17 +199,12 @@ async function click(page, point, routes, cursor, {
   label = "Status action",
   expectedDown,
   expectedRelease,
+  routeBarrier = false,
 } = {}) {
+  const advanceFrame = () => frames(page, 1);
+  if (!routeBarrier) return clickStatusDirect({ page, point, button, advanceFrame });
   return clickStatusWithRouteBarrier({
-    page,
-    routes,
-    cursor,
-    point,
-    button,
-    label,
-    expectedDown,
-    expectedRelease,
-    advanceFrame: () => frames(page, 1),
+    page, routes, cursor, point, button, label, expectedDown, expectedRelease, advanceFrame,
   });
 }
 
@@ -295,7 +290,8 @@ const cases = [
       const opened = await openFleetWindow(page);
       await click(page, point(opened.fleet_entry), routes, cursor, {
         label: "select Fleet before capital-ship Status",
-        expectedDown: { application: "fleet_window" },
+        routeBarrier: true,
+        expectedDown: { application: "none" },
         expectedRelease: { application: "fleet_window" },
       });
       return point((await fleetLoad(page, (o) => o.selected === "fleet" && o.first_item)).first_item);

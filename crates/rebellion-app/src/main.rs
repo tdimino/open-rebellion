@@ -17555,7 +17555,7 @@ async fn main() {
                             &commit.transition,
                             &removed_content,
                         ) {
-                            macroquad::logging::info!("{receipt}");
+                            macroquad::logging::info!("{}", receipt);
                         }
                     }
                 }
