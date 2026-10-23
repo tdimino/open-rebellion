@@ -138,6 +138,18 @@ test("windowing_journey_ab_checks_identity_and_recipient_deltas", () => {
   ), /raw route.*recipient|reached root/i);
 });
 
+test("windowing_journey_ab_underlay_failures_include_the_offending_route_receipts", () => {
+  const offendingRoute = "[windowing-route] physical=54:1 kind=pointer router=root application=sector-opener underlay=1";
+  assert.throws(() => routedReceipt(
+    "underlay-diagnostic",
+    0,
+    [offendingRoute, "[windowing-route] physical=54:2 kind=pointer router=root application=none underlay=0"],
+    "root",
+    "sector-opener",
+    2,
+  ), (error) => error.message.includes(offendingRoute));
+});
+
 test("windowing_journey_ab_checks_exact_history_victim", () => {
   const before = {
     history: Array.from({ length: 12 }, (_, index) => index + 101),

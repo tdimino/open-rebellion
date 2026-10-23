@@ -275,7 +275,10 @@ export function routedReceipt(
     expectedApplicationRecipient,
     `${triggerId} reached application ${applicationRecipient}, expected ${expectedApplicationRecipient}`,
   );
-  assert.ok(parsed.every((route) => route.underlay === 0), `${triggerId} leaked an underlay action`);
+  assert.ok(
+    parsed.every((route) => route.underlay === 0),
+    `${triggerId} leaked an underlay action: ${JSON.stringify(lines)}`,
+  );
   return {
     trigger_id: triggerId,
     event_id: eventId,
