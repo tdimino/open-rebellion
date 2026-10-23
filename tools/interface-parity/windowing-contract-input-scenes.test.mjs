@@ -234,6 +234,61 @@ test("pointer release waits for a fresh down route receipt", async () => {
   assert.equal(receipts.release.physical, "311:0");
 });
 
+test("Fleet context-menu press is atomic and waits for its owner route receipts", async () => {
+  const module = await import("./windowing-contract-input-scenes.mjs");
+  const routes = [
+    "[windowing-route] physical=101:0 kind=pointer router=window:7 application=pointer_ready underlay=0",
+  ];
+  const calls = [];
+  let frame = 0;
+  let batched = false;
+  const page = {
+    mouse: {
+      async move(x, y) { calls.push(["move", x, y]); },
+      async down({ button }) { calls.push(["down", button]); },
+      async up({ button }) { calls.push(["up", button]); },
+    },
+    async evaluate(_callback, argument) {
+      if (argument && typeof argument === "object" && "button" in argument) {
+        batched = true;
+        calls.push(["batch", argument]);
+      }
+    },
+  };
+  const advanceFrame = async () => {
+    frame += 1;
+    if (batched && frame === 2) {
+      // Console delivery is allowed to publish the same-frame pair out of order.
+      routes.push("[windowing-route] physical=108:1 kind=pointer router=window:7 application=fleet_window underlay=0");
+      routes.push("[windowing-route] physical=108:0 kind=pointer router=window:7 application=none underlay=0");
+    } else if (!batched && frame === 2) {
+      routes.push("[windowing-route] physical=108:0 kind=pointer router=window:7 application=none underlay=0");
+    } else if (!batched && frame === 3) {
+      routes.push("[windowing-route] physical=109:0 kind=pointer router=window:7 application=fleet_window underlay=0");
+    }
+  };
+
+  const receipts = await module.pressWithRouteReceipts({
+    page,
+    routes,
+    point: { x: 421, y: 166 },
+    label: "Fleet object menu",
+    button: "right",
+    batchActions: true,
+    skipMoveReceipt: true,
+    expectedDown: { recipient: "window:7", application: "none" },
+    expectedRelease: { recipient: "window:7", application: "fleet_window" },
+    advanceFrame,
+    settleFrames: 0,
+  });
+
+  assert.deepEqual(calls, [
+    ["move", 421, 166],
+    ["batch", { x: 421, y: 166, button: "right" }],
+  ]);
+  assert.deepEqual([receipts.down.physical, receipts.release.physical], ["108:0", "108:1"]);
+});
+
 function deferred() {
   let resolve;
   const promise = new Promise((finish) => { resolve = finish; });

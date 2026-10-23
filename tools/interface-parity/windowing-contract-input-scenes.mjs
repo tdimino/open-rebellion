@@ -7,6 +7,7 @@ import {
   WINDOWING_CONTRACT_SCHEMA_VERSION,
   defineWindowingContractCase,
 } from "./windowing-contract.mjs";
+import { clickWithRouteBarrier } from "./fleet-window.mjs";
 
 const FACTIONS = Object.freeze(["alliance", "empire"]);
 const VIEWPORTS = Object.freeze(["native", "letterboxed"]);
@@ -279,8 +280,29 @@ export async function pressWithRouteReceipts({
   expectedDown,
   expectedRelease,
   button = "left",
+  batchActions = false,
+  skipMoveReceipt = false,
+  cursor = { physical: null },
+  settleFrames = 3,
   advanceFrame,
 }) {
+  if (batchActions) {
+    return clickWithRouteBarrier({
+      page,
+      routes,
+      point,
+      label,
+      button,
+      batchActions: true,
+      skipMoveReceipt,
+      cursor,
+      expectedDown,
+      expectedRelease,
+      advanceFrame,
+      settleFrames,
+    });
+  }
+
   const nextFrame = advanceFrame ?? (() => frames(page, 1));
   await page.mouse.move(point.x, point.y);
   await nextFrame();
@@ -544,10 +566,21 @@ async function selectFleetEntry(setup, index = 0) {
   return { state, entry, id: state.systems[index].details.fleet.id };
 }
 
-async function openObjectMenu(setup, point) {
+async function openObjectMenu(setup, point, ownerId) {
+  assert.ok(Number.isSafeInteger(ownerId), "Fleet object menu has no stable owner identity");
   await setup.page.evaluate(() => { window.__openRebellionInterfaceObjectMenu = undefined; });
   const stateStart = setup.monitor.states.length;
-  await click(setup.page, point, "right");
+  await pressWithRouteReceipts({
+    page: setup.page,
+    routes: setup.monitor.routes,
+    point,
+    label: "Fleet object menu",
+    button: "right",
+    batchActions: true,
+    skipMoveReceipt: true,
+    expectedDown: { recipient: `window:${ownerId}`, application: "none" },
+    expectedRelease: { recipient: `window:${ownerId}`, application: "fleet_window" },
+  });
   await setup.page.waitForFunction(
     () => window.__openRebellionInterfaceObjectMenu?.status === "object-menu",
     null,
@@ -577,7 +610,7 @@ function menuRowPoint(menu, row) {
 
 async function beginRename(setup, index = 0) {
   const selected = await selectFleetEntry(setup, index);
-  const { menu } = await openObjectMenu(setup, center(selected.entry));
+  const { menu } = await openObjectMenu(setup, center(selected.entry), selected.id);
   const start = setup.monitor.states.length;
   await click(setup.page, menuRowPoint(menu, menu.rename_row));
   const focused = await setup.monitor.wait(
@@ -815,7 +848,7 @@ async function runJourneyD(context, setup, caseId = "journey-d") {
   const childHit = routeEvent(setup, "menu-submenu-hit", setup.monitor.routes.slice(childRoutes), "pointer");
 
   const selected = await selectFleetEntry(setup);
-  const outsideMenu = await openObjectMenu(setup, center(selected.entry));
+  const outsideMenu = await openObjectMenu(setup, center(selected.entry), selected.id);
   const rootBefore = setup.monitor.rootActions();
   const outsideRoutes = setup.monitor.routes.length;
   const outsideStateStart = setup.monitor.states.length;
@@ -852,7 +885,11 @@ async function runJourneyD(context, setup, caseId = "journey-d") {
   const expectedFocus = replacementSelected.state.snapshot.paint_order
     .filter((id) => id !== ownerId)
     .at(-1) ?? null;
-  const replacementMenu = await openObjectMenu(setup, center(replacementSelected.entry));
+  const replacementMenu = await openObjectMenu(
+    setup,
+    center(replacementSelected.entry),
+    replacementSelected.id,
+  );
   const oldMenuId = replacementMenu.record.id;
   const ownerRect = replacementMenu.state.systems[0].details.fleet.rect;
   const replacementStart = setup.monitor.states.length;
