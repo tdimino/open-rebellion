@@ -144,7 +144,21 @@ export function assertFailClosedSceneAndReset(value) {
   assert.ok(!absent?.registered.includes(absent.id), "explicitly absent modeless content remained registered");
   assert.deepEqual(absent.removed, [absent.id]);
   assert.equal(absent.removal_count, 1, "explicit absence did not tear down exactly once");
-  steps.E04 = 3;
+  const sectorClose = value.sectorClose;
+  assert.ok(sectorClose, "journey E omitted the Sector close after modeless absence");
+  assert.equal(sectorClose.down.recipient, `window:${sectorClose.id}`,
+    "Sector close press did not reach the exact Sector owner");
+  assert.equal(sectorClose.down.application, "none",
+    "Sector close press performed an action before release");
+  assert.equal(sectorClose.release.recipient, `window:${sectorClose.id}`,
+    "Sector close release did not reach the exact Sector owner");
+  assert.equal(sectorClose.release.application, "sector_window",
+    "Sector close release was not handled by the Sector window");
+  assert.notEqual(sectorClose.down.physical, sectorClose.release.physical,
+    "Sector close reused the press receipt for release");
+  assert.equal(sectorClose.after_id, null,
+    "Sector remained registered after its close action");
+  steps.E04 = 10;
 
   const tactical = value.tactical;
   assert.ok(tactical, "journey E omitted tactical scene evidence");
@@ -329,6 +343,33 @@ export async function pressWithRouteReceipts({
   await nextFrame();
   await nextFrame();
   return { down, release };
+}
+
+export async function closeSectorAfterModelessAbsence({
+  page,
+  routes,
+  sectorId,
+  point,
+  advanceFrame,
+  waitForClosed,
+}) {
+  assert.ok(Number.isSafeInteger(sectorId), "modeless absence left no Sector owner to close");
+  const receipts = await pressWithRouteReceipts({
+    page,
+    routes,
+    point,
+    label: "Sector close after modeless absence",
+    expectedDown: { recipient: `window:${sectorId}`, application: "none" },
+    expectedRelease: { recipient: `window:${sectorId}`, application: "sector_window" },
+    advanceFrame,
+  });
+  const closedState = await waitForClosed();
+  return {
+    id: sectorId,
+    down: receipts.down,
+    release: receipts.release,
+    after_id: closedState?.systems?.[0]?.sector_id ?? null,
+  };
 }
 
 function createMonitor(page) {
@@ -1145,17 +1186,22 @@ async function runJourneyE(context, setup, caseId = "journey-e") {
   await issueCommand(setup, COMMAND.recoverContent, "recover-after-modeless-absence");
   await frames(setup.page, 4);
   const sectorState = setup.monitor.latest("identity-history-state");
-  const sectorClose = sectorState.systems[0].sector_close_point;
-  if (sectorState.systems[0].sector_id && sectorClose) {
-    const closeStart = setup.monitor.states.length;
-    await click(setup.page, { x: sectorClose[0], y: sectorClose[1] });
-    await setup.monitor.wait(
+  const sector = sectorState.systems[0];
+  assert.ok(sector?.sector_id && sector.sector_close_point,
+    "modeless absence left no live Sector owner close target");
+  const closeStart = setup.monitor.states.length;
+  const sectorClose = await closeSectorAfterModelessAbsence({
+    page: setup.page,
+    routes: setup.monitor.routes,
+    sectorId: sector.sector_id,
+    point: { x: sector.sector_close_point[0], y: sector.sector_close_point[1] },
+    waitForClosed: () => setup.monitor.wait(
       "identity-history-state",
       (state) => state.systems[0].sector_id === null,
       "Sector owner did not close after modeless absence",
       closeStart,
-    );
-  }
+    ),
+  });
 
   const dormant = await openEncyclopedia(setup, "open-dormant-galaxy-modal");
   const alert = await issueCommand(
@@ -1299,6 +1345,7 @@ async function runJourneyE(context, setup, caseId = "journey-e") {
     unpaintableModal,
     unpaintableModeless,
     absentModeless,
+    sectorClose,
     tactical,
     reset,
     geometry,

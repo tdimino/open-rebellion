@@ -133,6 +133,12 @@ test("windowing_journey_de_checks_fail_closed_scene_and_reset", async () => {
     },
     unpaintableModeless: { id: 7, registered: [7], removed: [] },
     absentModeless: { id: 7, registered: [], removed: [7], removal_count: 1 },
+    sectorClose: {
+      id: 33,
+      down: { recipient: "window:33", application: "none", physical: "401:0" },
+      release: { recipient: "window:33", application: "sector_window", physical: "403:0" },
+      after_id: null,
+    },
     tactical: {
       dormant_galaxy_modal: 21,
       dormant_galaxy_registered: true,
@@ -287,6 +293,59 @@ test("Fleet context-menu press is atomic and waits for its owner route receipts"
     ["batch", { x: 421, y: 166, button: "right" }],
   ]);
   assert.deepEqual([receipts.down.physical, receipts.release.physical], ["108:0", "108:1"]);
+});
+
+test("Sector close after modeless absence waits for fresh owner route receipts", async () => {
+  const module = await import("./windowing-contract-input-scenes.mjs");
+  const routes = [
+    "[windowing-route] physical=390:0 kind=pointer router=window:3 application=fleet_window underlay=0",
+  ];
+  const calls = [];
+  let frame = 0;
+  let upBeforeDownReceipt = false;
+  let closureObserved = false;
+  const page = {
+    mouse: {
+      async move(x, y) { calls.push(["move", x, y]); },
+      async down({ button }) { calls.push(["down", button]); },
+      async up({ button }) { calls.push(["up", button]); },
+    },
+  };
+  const advanceFrame = async () => {
+    frame += 1;
+    if (frame === 2) {
+      upBeforeDownReceipt = calls.some(([kind]) => kind === "up");
+      routes.push("[windowing-route] physical=401:0 kind=pointer router=window:33 application=none underlay=0");
+    } else if (frame === 3) {
+      routes.push("[windowing-route] physical=403:0 kind=pointer router=window:33 application=sector_window underlay=0");
+    }
+  };
+
+  const closed = await module.closeSectorAfterModelessAbsence({
+    page,
+    routes,
+    sectorId: 33,
+    point: { x: 1090, y: 81 },
+    advanceFrame,
+    waitForClosed: async () => {
+      closureObserved = true;
+      assert.equal(calls.at(-1)?.[0], "up", "Sector closure was awaited before pointer release");
+      assert.ok(routes.some((line) => line.includes("physical=403:0")
+        && line.includes("application=sector_window")), "Sector closure was awaited before its release receipt");
+      return null;
+    },
+  });
+
+  assert.equal(closureObserved, true);
+  assert.equal(upBeforeDownReceipt, false, "Sector release occurred before its fresh down route receipt");
+  assert.deepEqual(calls, [["move", 1090, 81], ["down", "left"], ["up", "left"]]);
+  assert.equal(closed.id, 33);
+  assert.equal(closed.down.recipient, "window:33");
+  assert.equal(closed.down.application, "none");
+  assert.equal(closed.release.recipient, "window:33");
+  assert.equal(closed.release.application, "sector_window");
+  assert.notEqual(closed.down.physical, closed.release.physical);
+  assert.equal(closed.after_id, null);
 });
 
 function deferred() {
