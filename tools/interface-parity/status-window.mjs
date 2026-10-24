@@ -20,7 +20,7 @@ import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
 import { sectorDoubleClick } from "./sector-double-click.mjs";
-import { appendStatusConsoleLine, clickStatusDirect, clickStatusWithRouteBarrier } from "./status-window-input.mjs";
+import { appendStatusConsoleLine, clickStatusClose, clickStatusDirect, clickStatusWithRouteBarrier } from "./status-window-input.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -375,14 +375,13 @@ async function inspect(server, source, faction, testCase, executable) {
 
     const closes = {};
     // 0x65 closes.
-    await click(
+    const closeLine = await clickStatusClose({
       page,
-      { x: rect.x + buttons.close.x + 16, y: rect.y + buttons.close.y + 15 },
-      routeContext.routes,
-      routeContext.cursor,
-      { label: "close Status window" },
-    );
-    closes.close = (await logged("Close closes it", closed, 1)).match(closed)[1];
+      point: { x: rect.x + buttons.close.x + 16, y: rect.y + buttons.close.y + 15 },
+      waitForClose: () => logged("Close closes it", closed, 1),
+      advanceFrame: () => frames(page, 1),
+    });
+    closes.close = closeLine.match(closed)[1];
     if (testCase.closes) {
       // Escape closes (port: no key slot is traced).
       await openStatus();

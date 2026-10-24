@@ -1,5 +1,41 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+
+test("Status close batches its click and waits for semantic closure", async () => {
+  const runner = readFileSync(new URL("./status-window.mjs", import.meta.url), "utf8");
+  assert.match(runner, /await clickStatusClose\(/,
+    "the Status close control must use its receipt-synchronized helper");
+
+  const { clickStatusClose } = await import("./status-window-input.mjs");
+  const calls = [];
+  let frame = 0;
+  const page = {
+    mouse: { async move(x, y) { calls.push(["move", x, y]); } },
+    async evaluate(callback, argument) {
+      calls.push(["batch", argument]);
+      assert.equal(typeof callback, "function");
+    },
+  };
+  const advanceFrame = async () => { frame += 1; calls.push(["frame", frame]); };
+
+  const receipts = await clickStatusClose({
+    page,
+    point: { x: 511, y: 315 },
+    waitForClose: async () => { calls.push(["closed"]); return "status=closed"; },
+    advanceFrame,
+    settleFrames: 1,
+  });
+
+  assert.deepEqual(calls, [
+    ["move", 511, 315],
+    ["frame", 1],
+    ["batch", { x: 511, y: 315 }],
+    ["frame", 2],
+    ["closed"],
+  ]);
+  assert.equal(receipts, "status=closed");
+});
 
 test("capital-ship Status selection accepts the Fleet batch down/release application pair", async () => {
   const { clickStatusWithRouteBarrier } = await import("./status-window-input.mjs");

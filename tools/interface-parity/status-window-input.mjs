@@ -1,5 +1,42 @@
 import { clickWithRouteBarrier } from "./fleet-window.mjs";
 
+export async function clickStatusClose({
+  page,
+  point,
+  waitForClose,
+  advanceFrame,
+  settleFrames = 3,
+}) {
+  const nextFrame = advanceFrame ?? (() => page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  })));
+  await page.mouse.move(point.x, point.y);
+  await nextFrame();
+  // Closing removes the Status window before routed pointer receipts are
+  // published. Keep egui's click in one input batch, then wait for the
+  // semantic close receipt instead of requiring receipts from a dead owner.
+  await page.evaluate(({ x, y }) => {
+    const canvas = document.getElementById("glcanvas");
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("missing game canvas");
+    const emit = (type, buttons) => canvas.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: x,
+      clientY: y,
+      screenX: x,
+      screenY: y,
+      button: 0,
+      buttons,
+      detail: 1,
+    }));
+    emit("mousedown", 1);
+    emit("mouseup", 0);
+  }, point);
+  for (let frame = 0; frame < settleFrames; frame += 1) await nextFrame();
+  return waitForClose();
+}
+
 export async function clickStatusDirect({ page, point, button = "left", advanceFrame, settleFrames = 3 }) {
   const nextFrame = advanceFrame ?? (() => page.evaluate(() => new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(resolve));
