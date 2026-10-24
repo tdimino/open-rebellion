@@ -653,7 +653,16 @@ async function beginRename(setup, index = 0) {
   const selected = await selectFleetEntry(setup, index);
   const { menu } = await openObjectMenu(setup, center(selected.entry), selected.id);
   const start = setup.monitor.states.length;
-  await click(setup.page, menuRowPoint(menu, menu.rename_row));
+  await pressWithRouteReceipts({
+    page: setup.page,
+    routes: setup.monitor.routes,
+    point: menuRowPoint(menu, menu.rename_row),
+    label: "Fleet Rename choice",
+    skipMoveReceipt: true,
+    expectedDown: { application: "none" },
+    expectedRelease: { application: "none" },
+    batchActions: true,
+  });
   const focused = await setup.monitor.wait(
     "input-scenes-state",
     (state) => state.focused?.window === selected.id && state.focused?.control === RENAME_CONTROL,
@@ -806,7 +815,16 @@ async function runJourneyD(context, setup, caseId = "journey-d") {
     y: fleetBefore.rect[1] + 9 * beforeDetailState.scale,
   };
   const minimizeStart = setup.monitor.states.length;
-  await click(setup.page, minimizePoint);
+  await pressWithRouteReceipts({
+    page: setup.page,
+    routes: setup.monitor.routes,
+    point: minimizePoint,
+    label: "Fleet detail minimize",
+    skipMoveReceipt: true,
+    expectedDown: { recipient: `window:${fleetBefore.id}`, application: "none" },
+    expectedRelease: { recipient: `window:${fleetBefore.id}`, application: "fleet_window" },
+    batchActions: true,
+  });
   const minimizedState = await setup.monitor.wait(
     "identity-history-state",
     (state) => state.snapshot.history.includes(fleetBefore.id)

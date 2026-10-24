@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -6,6 +7,42 @@ import { fileURLToPath } from "node:url";
 import { discoverCaseModules } from "./windowing-contract.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+test("Fleet Rename choice waits for managed-menu route receipts", () => {
+  const source = readFileSync(new URL("./windowing-contract-input-scenes.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("async function beginRename(");
+  const end = source.indexOf("\nasync function beginFleetDrag(", start);
+  assert.ok(start >= 0 && end > start, "Journey D exposes its Fleet Rename entry point");
+  const rename = source.slice(start, end);
+
+  assert.match(rename, /await pressWithRouteReceipts\(\{[\s\S]*?label: "Fleet Rename choice"/,
+    "the Rename menu choice must use the routed pointer helper");
+  assert.match(rename, /skipMoveReceipt: true/,
+    "managed-menu movement must not assume a pointer-ready hover receipt");
+  assert.match(rename, /batchActions: true/,
+    "the managed-menu click must preserve the atomic egui press/release batch");
+  assert.match(rename, /expectedDown: \{ application: "none" \}/,
+    "the choice press must observe its fresh menu-row route");
+  assert.match(rename, /expectedRelease: \{ application: "none" \}/,
+    "the choice release must observe a distinct menu-row route");
+});
+
+test("Journey D Fleet minimize waits for owner route receipts", () => {
+  const source = readFileSync(new URL("./windowing-contract-input-scenes.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("const minimizeStart = setup.monitor.states.length;");
+  const end = source.indexOf("const minimizedState = await setup.monitor.wait(", start);
+  assert.ok(start >= 0 && end > start, "Journey D exposes its Fleet minimize action");
+  const minimize = source.slice(start, end);
+
+  assert.match(minimize, /await pressWithRouteReceipts\(\{[\s\S]*?label: "Fleet detail minimize"/,
+    "Fleet minimize must use the routed pointer helper");
+  assert.match(minimize, /skipMoveReceipt: true/,
+    "Fleet titlebar movement must not assume a pointer-ready receipt");
+  assert.match(minimize, /expectedDown: \{ recipient: `window:\$\{fleetBefore\.id\}`, application: "none" \}/,
+    "Fleet minimize press must identify the exact owner");
+  assert.match(minimize, /expectedRelease: \{ recipient: `window:\$\{fleetBefore\.id\}`, application: "fleet_window" \}/,
+    "Fleet minimize release must identify the exact owner action");
+});
 
 test("windowing_journey_de_checks_child_consumption_and_gesture_cancellation", async () => {
   const cases = await discoverCaseModules(here);
