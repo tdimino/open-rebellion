@@ -275,7 +275,10 @@ original (`ghidra/notes/gid-legend.md`, "Escape and the keyboard focus"). A
 window a command or a double-click opens does not take the focus: click it
 before `Press escape` to close it. After the first GID press of a game the
 menu holds the focus, and its Escape shows the top window rather than
-closing one.
+closing one. Each physical key event gets its own projected manager snapshot,
+so `Press escape; Press escape` in one batch first closes the focused detail
+and then routes the second Escape to the newly exposed eligible window. One
+physical Escape still has only one owner and cannot fall through to the root.
 
 ### Batches and telemetry
 

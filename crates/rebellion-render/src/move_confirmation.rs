@@ -194,11 +194,18 @@ impl MoveConfirmationState {
     /// every mover must retain its transit line.
     #[must_use]
     pub fn prepare_open(&self, confirmation: MoveConfirmation) -> Option<PreparedMoveConfirmation> {
-        let movers = confirmation.fleets.len() + confirmation.members.len();
-        if movers == 0
-            || (!confirmation.fleets.is_empty() && !confirmation.members.is_empty())
-            || confirmation.lines.len() != movers
-        {
+        let family_count = usize::from(!confirmation.fleets.is_empty())
+            + usize::from(!confirmation.members.is_empty())
+            + usize::from(confirmation.ships.is_some())
+            + usize::from(!confirmation.units.is_empty());
+        let line_count = confirmation.fleets.len()
+            + confirmation.members.len()
+            + confirmation.ships.as_ref().map_or(0, |mover| match mover {
+                FleetMover::Fleet(_) => 1,
+                FleetMover::Ships { ships, .. } => ships.len(),
+            })
+            + confirmation.units.len();
+        if family_count != 1 || confirmation.lines.len() != line_count {
             return None;
         }
         Some(PreparedMoveConfirmation {
@@ -1606,6 +1613,44 @@ mod tests {
         assert!(MoveConfirmationState::default()
             .prepare_open(valid_member)
             .is_some());
+
+        // Source: FUN_00487740 -> FUN_00487cc0 -> FUN_0049a350. Confirmed
+        // ship teams and blockaded regiment/squadron moves use the same
+        // confirmation family and keep one display line per mover.
+        for faction in [MissionFaction::Alliance, MissionFaction::Empire] {
+            let valid_ships = MoveConfirmation {
+                faction,
+                fleets: Vec::new(),
+                members: Vec::new(),
+                ships: Some(FleetMover::Ships {
+                    fleet: FleetKey::default(),
+                    ships: vec![0, 1],
+                    roster: 1,
+                }),
+                units: Vec::new(),
+                destination: SystemKey::default(),
+                join: None,
+                blockaded: false,
+                lines: vec![("Ship 1".into(), 2), ("Ship 2".into(), 3)],
+            };
+            assert!(MoveConfirmationState::default()
+                .prepare_open(valid_ships)
+                .is_some());
+            let valid_unit = MoveConfirmation {
+                faction,
+                fleets: Vec::new(),
+                members: Vec::new(),
+                ships: None,
+                units: vec![UnitMover::Regiment(Default::default())],
+                destination: SystemKey::default(),
+                join: None,
+                blockaded: true,
+                lines: vec![("Regiment".into(), 1)],
+            };
+            assert!(MoveConfirmationState::default()
+                .prepare_open(valid_unit)
+                .is_some());
+        }
 
         let mut legacy = open(MissionFaction::Alliance);
         let inert = legacy

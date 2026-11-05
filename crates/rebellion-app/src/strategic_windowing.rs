@@ -207,8 +207,8 @@ pub struct LegacyInputBlockers {
 }
 
 impl LegacyInputBlockers {
-    const fn blocks_migrated_input(self) -> bool {
-        self.strategic_modal || self.focused_control || self.transient_menu || self.root_gesture
+    const fn blocks_router_input(self) -> bool {
+        self.strategic_modal || self.focused_control
     }
 
     const fn blocks_root_keyboard(self) -> bool {
@@ -346,6 +346,29 @@ pub struct StrategicFrameBoundary {
     legacy: LegacyInputBlockers,
 }
 
+/// Per-backend-event manager projection used while normalizing one input
+/// batch. Commands applied here do not mutate production state; they make a
+/// later key observe the focus/order produced by an earlier key's queued
+/// lifecycle command.
+#[derive(Debug, Clone)]
+pub struct KeyboardRoutingCursor {
+    manager: rebellion_windowing::WindowManager,
+}
+
+impl KeyboardRoutingCursor {
+    /// Current projected route for the next physical keyboard event.
+    #[must_use]
+    pub fn snapshot(&self) -> RoutingSnapshot {
+        self.manager.begin_frame()
+    }
+
+    /// Advances the projection only when the exact manager command is valid.
+    /// Production enqueues the same accepted command for the commit boundary.
+    pub fn apply(&mut self, command: WindowCommand) -> bool {
+        self.manager.apply(command).is_ok()
+    }
+}
+
 impl StrategicFrameBoundary {
     #[must_use]
     pub const fn snapshot(&self) -> &RoutingSnapshot {
@@ -356,7 +379,7 @@ impl StrategicFrameBoundary {
     /// surface that is not a strategic window.
     #[must_use]
     pub const fn application_input_held(&self) -> bool {
-        self.locks.blocks_router_input() || self.legacy.blocks_migrated_input()
+        self.locks.blocks_router_input() || self.legacy.blocks_router_input()
     }
 
     #[must_use]
@@ -499,23 +522,27 @@ impl StrategicWindowing {
         self.manager.begin_frame()
     }
 
+    /// Starts an event-by-event keyboard projection from current manager
+    /// state. This prevents two physical keys collected in one render frame
+    /// from sharing a stale focus lease after the first queues a close.
+    #[must_use]
+    pub fn keyboard_routing_cursor(&self) -> KeyboardRoutingCursor {
+        KeyboardRoutingCursor {
+            manager: self.manager.clone(),
+        }
+    }
+
     /// Returns manager-owned Galaxy save order even while another scene is
-    /// active: visible windows bottom-to-top followed by minimized history
-    /// oldest-to-newest. The boolean identifies visible versus minimized.
+    /// active. `FUN_00440ea0` walks one z list, so minimized identities remain
+    /// in their former positions instead of moving to a history-only suffix.
+    /// The boolean identifies visible versus minimized.
     #[must_use]
     pub fn saved_galaxy_order(&self) -> Vec<(WindowId, bool)> {
         self.manager
-            .visible_order()
+            .serialized_order()
             .iter()
             .copied()
-            .map(|window| (window, true))
-            .chain(
-                self.manager
-                    .presentation_history()
-                    .iter()
-                    .copied()
-                    .map(|window| (window, false)),
-            )
+            .map(|window| (window, self.manager.visible_order().contains(&window)))
             .collect()
     }
 
@@ -2276,6 +2303,7 @@ mod tests {
                                 .prepare_open(
                                     MissionFaction::Alliance,
                                     system,
+                                    None,
                                     vec![MissionMember::Character(Default::default())],
                                     vec![MissionKind::Diplomacy],
                                 )
@@ -2753,6 +2781,7 @@ mod tests {
                     .prepare_open(
                         MissionFaction::Alliance,
                         SystemKey::default(),
+                        None,
                         vec![MissionMember::Character(Default::default())],
                         vec![MissionKind::Diplomacy],
                     )
@@ -2936,7 +2965,26 @@ mod tests {
             MoveConfirmation, MoveConfirmationState, ScrapConfirmation, ScrapConfirmationState,
         };
 
+        let open_sentinel = |coordinator: &mut StrategicWindowing, value| {
+            coordinator.enqueue(WindowCommand::Open(contextual_spec(
+                WindowKind::System,
+                SubjectId::new(SUBJECT_COMMAND_CONTEXT, value),
+                WindowOwner::StrategicRoot,
+            )));
+            match coordinator
+                .apply_pending()
+                .remove(0)
+                .result
+                .unwrap()
+                .transition
+            {
+                WindowTransition::Opened { id } => id,
+                transition => panic!("sentinel did not open: {transition:?}"),
+            }
+        };
+
         let mut move_coordinator = StrategicWindowing::new();
+        let move_sentinel = open_sentinel(&mut move_coordinator, 91);
         move_coordinator
             .enqueue_move_confirmation_open(
                 MoveConfirmationState::default()
@@ -2963,9 +3011,13 @@ mod tests {
             move_coordinator.rollback_move_confirmation_publication(id),
             [id]
         );
-        assert!(move_coordinator.begin_frame().key(id).is_none());
+        let move_snapshot = move_coordinator.begin_frame();
+        assert!(move_snapshot.key(id).is_none());
+        assert!(move_snapshot.key(move_sentinel).is_some());
+        assert_eq!(move_snapshot.paint_order(), [move_sentinel]);
 
         let mut scrap_coordinator = StrategicWindowing::new();
+        let scrap_sentinel = open_sentinel(&mut scrap_coordinator, 92);
         scrap_coordinator
             .enqueue_scrap_confirmation_open(
                 ScrapConfirmationState::default()
@@ -2987,7 +3039,10 @@ mod tests {
             scrap_coordinator.rollback_scrap_confirmation_publication(id),
             [id]
         );
-        assert!(scrap_coordinator.begin_frame().key(id).is_none());
+        let scrap_snapshot = scrap_coordinator.begin_frame();
+        assert!(scrap_snapshot.key(id).is_none());
+        assert!(scrap_snapshot.key(scrap_sentinel).is_some());
+        assert_eq!(scrap_snapshot.paint_order(), [scrap_sentinel]);
     }
 
     #[test]
@@ -3003,6 +3058,7 @@ mod tests {
                     .prepare_open(
                         MissionFaction::Alliance,
                         SystemKey::default(),
+                        None,
                         vec![member],
                         vec![MissionKind::Diplomacy],
                     )
@@ -5255,6 +5311,24 @@ mod tests {
         assert!(frame.application_input_held());
         assert!(!frame.root_pointer_allowed());
         assert!(!frame.root_shortcuts_allowed());
+
+        for legacy in [
+            LegacyInputBlockers {
+                strategic_modal: true,
+                ..LegacyInputBlockers::default()
+            },
+            LegacyInputBlockers {
+                focused_control: true,
+                ..LegacyInputBlockers::default()
+            },
+        ] {
+            assert!(
+                coordinator
+                    .begin_production_frame_with_legacy(ApplicationInputLocks::default(), legacy,)
+                    .application_input_held(),
+                "{legacy:?}"
+            );
+        }
     }
 
     #[test]
@@ -5342,6 +5416,7 @@ mod tests {
         ] {
             let frame = coordinator
                 .begin_production_frame_with_legacy(ApplicationInputLocks::default(), owner);
+            assert!(!frame.application_input_held(), "{owner:?}");
             assert!(!frame.legacy_surface_input_allowed(), "{owner:?}");
             assert!(frame.legacy_owned_pointer_allowed(), "{owner:?}");
             let briefing = ApplicationInputLocks {

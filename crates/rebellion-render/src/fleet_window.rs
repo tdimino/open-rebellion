@@ -1014,6 +1014,19 @@ impl FleetWindowState {
         self.windows.iter().any(|window| window.rename.is_some())
     }
 
+    /// Applies the Fleet rename control's Escape without relying on egui's
+    /// frame-wide key set. Ordered backend dispatch uses this before routing
+    /// a later physical Escape to the parent window.
+    pub fn cancel_rename_for_escape(&mut self, target: FocusTarget) -> bool {
+        if target.control != Some(FLEET_RENAME_CONTROL) {
+            return false;
+        }
+        self.windows
+            .iter_mut()
+            .find(|window| window.id == Some(target.window))
+            .is_some_and(|window| window.rename.take().is_some())
+    }
+
     #[must_use]
     pub fn window_count(&self) -> usize {
         self.windows.len()

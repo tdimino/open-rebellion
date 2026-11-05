@@ -233,34 +233,6 @@ pub enum BattleResultTab {
     GoDirectlyTo,
 }
 
-/// Unit family selected inside an Alliance or Imperial force-detail tab.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum BattleResultCategory {
-    #[default]
-    CapitalShips,
-    Fighters,
-    Troops,
-    Personnel,
-}
-
-impl BattleResultCategory {
-    const ALL: [Self; 4] = [
-        Self::CapitalShips,
-        Self::Fighters,
-        Self::Troops,
-        Self::Personnel,
-    ];
-
-    const fn label(self) -> &'static str {
-        match self {
-            Self::CapitalShips => "Capital Ships",
-            Self::Fighters => "Fighters",
-            Self::Troops => "Troops",
-            Self::Personnel => "Personnel",
-        }
-    }
-}
-
 /// Original right-rail page inside the pre-battle Battle Alert window.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 enum BattleAlertTab {
@@ -301,7 +273,6 @@ enum BattleAlertControl {
 enum BattleResultControl {
     Close,
     Tab(BattleResultTab),
-    Category(BattleResultCategory),
     System,
     Fleet,
 }
@@ -448,8 +419,6 @@ pub struct TacticalState {
     pub highlight_empire: bool,
     /// Active source tab in the post-battle Battle Results window.
     pub battle_result_tab: BattleResultTab,
-    /// Active force family in the Alliance or Imperial result tab.
-    pub battle_result_category: BattleResultCategory,
     battle_result_pressed: Option<BattleResultControl>,
     /// The Battle Summary's filter tab (`+0x180`, `0x65` at open,
     /// `FUN_0046f140`).
@@ -540,7 +509,6 @@ impl Default for TacticalState {
             highlight_alliance: false,
             highlight_empire: false,
             battle_result_tab: BattleResultTab::Summary,
-            battle_result_category: BattleResultCategory::CapitalShips,
             battle_result_pressed: None,
             battle_result_filter: ReportTab::CapitalShips,
             battle_result_scroll: 0,
@@ -722,7 +690,6 @@ impl TacticalState {
         self.highlight_alliance = false;
         self.highlight_empire = false;
         self.battle_result_tab = BattleResultTab::Summary;
-        self.battle_result_category = BattleResultCategory::CapitalShips;
         self.battle_result_pressed = None;
         self.reset_battle_result_filter();
         self.battle_record = None;
@@ -7644,22 +7611,6 @@ fn battle_result_control_at(
             return Some(BattleResultControl::Tab(BattleResultTab::from_index(index)));
         }
     }
-    if matches!(
-        state.battle_result_tab,
-        BattleResultTab::AllianceForces | BattleResultTab::ImperialForces
-    ) {
-        for (index, category) in BattleResultCategory::ALL.into_iter().enumerate() {
-            let rect = NativeRect::new(
-                BATTLE_RESULTS_WINDOW_X + 14.0 + index as f32 * 96.0,
-                BATTLE_RESULTS_WINDOW_Y + 58.0,
-                96.0,
-                25.0,
-            );
-            if rect.contains(point.0, point.1) {
-                return Some(BattleResultControl::Category(category));
-            }
-        }
-    }
     if state.battle_result_tab == BattleResultTab::GoDirectlyTo {
         let system = NativeRect::new(
             BATTLE_RESULTS_WINDOW_X + 29.0,
@@ -7714,20 +7665,16 @@ fn apply_battle_result_input(
         let action = match control {
             BattleResultControl::Close => TacticalAction::ReturnToGalaxy,
             BattleResultControl::Tab(tab) => {
-                state.battle_result_tab = tab;
+                if state.battle_result_tab != tab {
+                    state.battle_result_tab = tab;
+                    // FUN_00471340: a page change refills the source list
+                    // from its first row and releases any held scroll part.
+                    state.battle_result_scroll = 0;
+                    state.battle_result_scroll_drag = crate::scroll_bar::ScrollDrag::default();
+                }
                 macroquad::logging::info!(
-                    "[tactical-results] tab={} category={}",
-                    state.battle_result_tab.label(),
-                    state.battle_result_category.label()
-                );
-                TacticalAction::None
-            }
-            BattleResultControl::Category(category) => {
-                state.battle_result_category = category;
-                macroquad::logging::info!(
-                    "[tactical-results] tab={} category={}",
-                    state.battle_result_tab.label(),
-                    category.label()
+                    "[tactical-results] tab={}",
+                    state.battle_result_tab.label()
                 );
                 TacticalAction::None
             }

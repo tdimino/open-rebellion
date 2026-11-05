@@ -3168,7 +3168,7 @@ mod tests {
                     &[],
                     &mut router,
                 );
-                crate::windowing::realize_managed_focus(ctx, &snapshot, |window| {
+                crate::windowing::realize_managed_order(ctx, &snapshot, |window| {
                     state.managed_layer_id(window).map(|layer| vec![layer])
                 });
             },

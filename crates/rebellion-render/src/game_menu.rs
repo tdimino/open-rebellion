@@ -75,10 +75,18 @@ impl ManagedMenuState {
     }
 
     /// Prepares the command-center GID menu under its strategic-root
-    /// invoker. An unrelated active modal still rejects this placement.
+    /// invoker. Unlike an object menu, native `FUN_00427270` leaves this
+    /// menu open while command-center controls and accelerators act.
     #[must_use]
     pub fn prepare_root_open(&self) -> PreparedMenuOpen {
-        self.prepare_open_for(WindowOwner::StrategicRoot)
+        let mut prepared = self.prepare_open_for(WindowOwner::StrategicRoot);
+        prepared.spec.policy.input = rebellion_windowing::InputPolicy::Modeless;
+        // FUN_00427270 leaves the GID menu registered while Message Index and
+        // other strategic modals open above it. Keep this root presentation
+        // in the normal band; owner-attached object menus remain transient.
+        prepared.spec.policy.band = rebellion_windowing::StackBand::Normal;
+        prepared.spec.policy.placement = rebellion_windowing::OpenPlacement::TopOfBand;
+        prepared
     }
 
     fn prepare_open_for(&self, owner: WindowOwner) -> PreparedMenuOpen {
@@ -841,7 +849,7 @@ mod tests {
                     .show(ctx, |ui| {
                         ui.allocate_response(egui::vec2(400.0, 400.0), egui::Sense::click());
                     });
-                crate::windowing::realize_managed_focus(ctx, &frame, |window| {
+                crate::windowing::realize_managed_order(ctx, &frame, |window| {
                     (window == menu_window)
                         .then(|| game_menu_layer_ids(ctx, egui::Id::new(MENU_ID)))
                 });
@@ -1608,6 +1616,41 @@ mod tests {
             manager.apply(unrelated.command()),
             Err(rebellion_windowing::WindowError::InvalidPlacement)
         );
+    }
+
+    #[test]
+    fn strategic_modal_opens_above_the_still_registered_gid_menu() {
+        // Source: FUN_00427270 and gid-legend.md, "Presses while the menu is
+        // open": Message Index opens above the GID menu and closing it leaves
+        // the menu open with its galaxy children still hidden.
+        let mut manager = rebellion_windowing::WindowManager::new();
+        let detail = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
+        let mut menu = ManagedMenuState::default();
+        let prepared = menu.prepare_root_open();
+        let opened = manager.apply(prepared.command()).unwrap();
+        let menu_id = menu.commit_open(prepared, &opened.transition).unwrap();
+        let modal_spec = crate::windowing_policy::singleton_spec(
+            rebellion_windowing::WindowKind::MessageIndex,
+            rebellion_windowing::WindowOwner::StrategicRoot,
+        );
+        let modal = opened_id(
+            &manager
+                .apply(rebellion_windowing::WindowCommand::Open(modal_spec))
+                .unwrap(),
+        );
+
+        let modal_frame = manager.begin_frame();
+        assert_eq!(modal_frame.paint_order(), &[detail, menu_id, modal]);
+        assert!(!modal_frame.allows_input(menu_id));
+        assert_eq!(menu.window_id(), Some(menu_id));
+
+        manager
+            .apply(rebellion_windowing::WindowCommand::Close(modal))
+            .unwrap();
+        let restored = manager.begin_frame();
+        assert_eq!(restored.paint_order(), &[detail, menu_id]);
+        assert!(restored.allows_input(menu_id));
+        assert_eq!(menu.window_id(), Some(menu_id));
     }
 
     #[test]

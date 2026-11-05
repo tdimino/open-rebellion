@@ -3,7 +3,7 @@ title: "Strategic Windowing Toolkit Contract"
 description: "Original strategic-window identity, registry, stacking, modality, focus, capture, keyboard routing, close, and restoration behavior"
 category: "ghidra"
 created: 2026-10-10
-updated: 2026-10-14
+updated: 2026-11-05
 ---
 
 # Strategic Windowing Toolkit Contract
@@ -378,11 +378,11 @@ minimized window keeps its z serial on the rail, so `saved_interface`
 writes every window in one list by z serial, a hidden one at its own place
 and a window the GID menu hides as hidden (`FUN_00440ea0.c:19-24`).
 `restore_interface` rebuilds them in that order and appends each hidden one
-to the rail as it meets it (`FUN_00428b40`); Fleet windows open through the
-window manager, so `finish_interface_restore` gives a hidden one its rail
-slot before the manager's minimize, raises every window again in saved
-order, and `GalaxyFocusState::after_load` takes the focus. During play a
-minimize still appends to the rail; only a load orders it by z.
+to the rail as it meets it (`FUN_00428b40`). Every family opens through the
+window manager; `finish_interface_restore` gives a hidden Fleet its rail slot
+before the manager's minimize, replays serialized order with focus-preserving
+`Raise`, and then focuses the top shown non-Sector. During play a minimize
+still appends to the rail; only a load orders it by z.
 
 ## Modality and input routing
 
@@ -451,9 +451,13 @@ child rules:
 
 Thus a focused edit/list owns the keystrokes it handles, while unhandled keys
 may bubble to its top-level and then the strategic view. The strategic modal
-guard still applies to bubbled F1--F7. The routing snapshot must retain the
-owner for the whole dispatch so Escape cannot both close a dialog and trigger
-an exposed cockpit binding.
+guard still applies to bubbled F1--F7. A routing snapshot must retain the
+owner for one physical dispatch so Escape cannot both close a dialog and
+trigger an exposed cockpit binding. A batch may contain multiple physical key
+events: after each one, the app projects its accepted lifecycle command into
+an event-local manager cursor before routing the next event. Thus two Escapes
+may close two windows without either Escape falling through to a newly exposed
+root binding.
 
 ## Window-family matrix
 

@@ -2,8 +2,8 @@
 title: "Strategic Windowing Toolkit Implementation Plan"
 created: 2026-10-10
 status: active
-progress: "Bounded SW-00–SW-14 backend implementation/evidence graph complete at accepted r29; original-runtime, native-Windows, System Finder, and A0 parity evidence remain open"
-updated: 2026-10-25
+progress: "100% of the bounded SW-00–SW-14 backend implementation/evidence graph; original-runtime, native-Windows, System Finder, and A0 parity evidence remain open"
+updated: 2026-11-05
 ---
 
 # Strategic Windowing Toolkit Implementation Plan
@@ -11,7 +11,7 @@ updated: 2026-10-25
 > **For future implementers:** Execute the reviewed plan task-by-task using the applicable implementation workflow. This document does not authorize implementation or delegation. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Status:** The bounded SW-00–SW-14 strategic-windowing backend and acceptance
-evidence sequence is complete at the accepted r29 candidate. The SW-14
+evidence sequence is 100% complete. The SW-14
 reconciliation records the final candidate, browser and production-native
 evidence without changing strict interface-cell statuses. This plan remains
 active because original-runtime comparisons, native-Windows proof, the System
@@ -22,7 +22,7 @@ claim of full original-interface parity.
 
 **Goal:** Add a renderer- and platform-independent strategic-window kernel, migrate every existing strategic surface to it as the sole authority for identity, ordering, focus, modality, capture, and input routing, and prove the recovered original behavior without overstating unresolved runtime evidence.
 
-**Architecture:** A new std-only `rebellion-windowing` crate will hold semantic window records and produce immutable per-frame routing snapshots. `rebellion-render` will translate those decisions into current-frame hit regions, per-event input permits, egui focus requests, and a transparent modal input barrier while continuing to own all window contents. A prerequisite adapter experiment must prove exact paint and hit order on locked egui 0.31.1; repeatedly raising every Area is not an implementation of arbitrary stack order. `rebellion-app` will own the manager, combine its route with the existing non-window game-mode locks, and apply feature actions after the current snapshot has finished routing the frame.
+**Architecture:** A new std-only `rebellion-windowing` crate will hold semantic window records and produce immutable routing snapshots. `rebellion-render` will translate those decisions into current-frame hit regions, per-event input permits, egui focus requests, and a transparent modal input barrier while continuing to own all window contents. Pointer input uses a frozen frame snapshot; keyboard input derives an event-local snapshot and projects each accepted lifecycle command before the next physical key event. A prerequisite adapter experiment must prove exact paint and hit order on locked egui 0.31.1; repeatedly raising every Area is not an implementation of arbitrary stack order. `rebellion-app` will own the manager, combine its route with the existing non-window game-mode locks, and commit feature actions at the coordinator boundary.
 
 **Tech Stack:** Rust 2021 workspace, standard-library collections, egui through `egui-macroquad`, macroquad, existing Rust unit/integration tests, cargo-mutants, the existing WASM package path, and Playwright-based interface-parity scripts.
 
@@ -43,7 +43,7 @@ strict audit status remains 1/15/27 families and 13/627 cells.
 - `rebellion-windowing` is a std-only, ephemeral UI-state crate. It must not depend on `rebellion-core`, `rebellion-render`, `rebellion-app`, egui, macroquad, assets, serialization, the filesystem, audio, or platform APIs.
 - Public domain concepts are semantic window kinds, opaque session identities, ownership, visibility, order, focus, modality, and bounded pointer capture. Do not expose HWNDs, Win32 message numbers, intrusive tree nodes, or egui `Order` values.
 - Identity/existence, bottom-to-top order, twelve-entry presentation history, focused top-level/control, modal boundary, and pointer capture remain separate state. No collection may silently stand in for two of them.
-- Route one frame's keyboard and pointer events against one immutable `RoutingSnapshot`. Applying `Close` during that frame affects only the next snapshot, so the closing event never falls through.
+- Route pointer events against the immutable frame `RoutingSnapshot`. Route each physical keyboard event against an event-local snapshot, then project its accepted lifecycle command before the next physical event. The closing event never falls through, while a later Escape in the same frame can target the newly exposed window.
 - A visible strategic modal blocks all lower strategic input, including clicks outside its rectangle and cockpit hotkeys. Its own controls and eligible owned transients remain usable; its blocked owner may still paint. Modality is not lifetime pointer capture.
 - A registered window is not destroyed because it failed to paint. Reconciliation distinguishes explicitly absent feature state from temporarily unpaintable or off-scene content; a missing modal remains a fail-closed blocker until an explicit lifecycle action closes it.
 - Duplicate-open behavior is declared per family: Finder/Message/Encyclopedia singletons and duplicate Sector opens are no-ops; detail windows restore/raise; contextual dialogs use an explicit context key rather than a generic raise rule.
@@ -806,17 +806,21 @@ All scene switches retain the current event's lease until dispatch completes.
 
 1. Commit any explicitly scheduled pre-frame scene/hold changes; cancel old
    gestures if needed. Never use post-close state to reroute the old event.
-2. Build one immutable manager snapshot and restrict it to the active scene.
+2. Build the immutable frame snapshot, restrict it to the active scene, and
+   initialize an event-local keyboard cursor from the same manager state.
 3. Collect current geometry and freeze application holds/base-child hit regions.
-4. Normalize the input batch once; assign each event one route/propagation chain.
-5. Route owner/control input; retain `Handled` dispositions and gesture ownership.
+4. Normalize the input batch once. Route pointer events against the frame
+   snapshot; route physical key events in order against the keyboard cursor.
+5. Retain `Handled` dispositions and gesture ownership. Project each accepted
+   keyboard lifecycle command into the cursor before routing the next key.
 6. Dispatch root shortcuts only for explicitly unhandled, permitted events.
 7. Paint through the proven adapter in snapshot order; update content only with
    permits belonging to its window/control. Collect feature/window intents.
 8. Commit pending intents, deliver cancellation/teardown/focus receipts to all
    affected content stores, then reconcile explicit content reports.
-9. Assert manager/content agreement and emit changed-state diagnostics. New
-   windows and new focus become eligible through the next frame's snapshot.
+9. Assert manager/content agreement and emit changed-state diagnostics. Feature
+   opens and geometry become eligible through the next frame; only projected
+   keyboard close/focus restoration affects later physical keys in this frame.
 
 A restrictive hold that starts mid-frame may suppress remaining input; releasing
 one never makes that frame more permissive. An ordinary modal opened by input
@@ -2103,7 +2107,7 @@ implementation satisfies its happy path but violates one of these shared cases.
 | Press on pause-alert rectangle | Existing base child | Its scoped handler | Uncovered map remains independently eligible |
 | Scene-transition trigger | Old scene recipient | Stop | No action in newly exposed scene |
 | App loses focus during drag | Cancellation path | None until fresh press | Drag payload/capture clear |
-| Two events in one frame | Independently identified events | Each frozen route/claim | No conflation by final cursor/key state |
+| Two events in one frame | Independently identified events | Each event-local route/claim | No conflation by final cursor/key state |
 
 For a key class not represented above, follow actual control disposition and
 the same propagation boundary. Do not add a permissive default branch that

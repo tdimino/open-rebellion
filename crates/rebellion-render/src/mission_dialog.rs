@@ -240,6 +240,7 @@ impl MissionDialogState {
         &self,
         faction: MissionFaction,
         target: SystemKey,
+        object: Option<MissionTarget>,
         team: Vec<MissionMember>,
         kinds: Vec<MissionKind>,
     ) -> Option<PreparedMissionDialog> {
@@ -260,7 +261,7 @@ impl MissionDialogState {
                 selected: Vec::new(),
                 agents_row: 0,
                 decoys_row: 0,
-                object: None,
+                object,
             },
             replacing: self.window_id(),
         })
@@ -1221,6 +1222,7 @@ mod tests {
             .prepare_open(
                 MissionFaction::Alliance,
                 SystemKey::default(),
+                None,
                 team,
                 vec![MissionKind::Diplomacy, MissionKind::Espionage],
             )
@@ -1240,6 +1242,49 @@ mod tests {
     }
 
     #[test]
+    fn managed_mission_keeps_the_released_object_through_confirmation() {
+        // FUN_00422ce0 passes the release object's +0x68 identity to the
+        // Mission dialog; FUN_00521030 later reads the same order object.
+        for faction in [MissionFaction::Alliance, MissionFaction::Empire] {
+            let mut state = MissionDialogState::default();
+            let target = MissionTarget::Fleet(Default::default());
+            let prepared = state
+                .prepare_open(
+                    faction,
+                    SystemKey::default(),
+                    Some(target),
+                    members(1),
+                    vec![MissionKind::Sabotage],
+                )
+                .expect("the released object is a valid mission context");
+            let mut manager = WindowManager::new();
+            let opened = manager
+                .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
+                    crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                    1,
+                ))))
+                .unwrap();
+            let WindowTransition::Opened { id } = opened.transition else {
+                panic!("expected managed Mission identity")
+            };
+            assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+
+            let confirmed = state.prepare_confirm().unwrap();
+            let closed = manager.apply(WindowCommand::Close(id)).unwrap();
+            assert!(matches!(
+                state.commit_confirm(confirmed, &[id]),
+                Some(MissionDialogAction::Begin {
+                    object: Some(object),
+                    ..
+                }) if object == target
+            ));
+            assert!(
+                matches!(closed.transition, WindowTransition::Closed { id: closed } if closed == id)
+            );
+        }
+    }
+
+    #[test]
     fn mission_dialog_windowing_failed_context_preserves_old() {
         let team = members(2);
         let mut state = MissionDialogState::default();
@@ -1254,6 +1299,7 @@ mod tests {
             .prepare_open(
                 MissionFaction::Empire,
                 SystemKey::default(),
+                None,
                 team.clone(),
                 Vec::new(),
             )
@@ -1264,6 +1310,7 @@ mod tests {
             .prepare_open(
                 MissionFaction::Empire,
                 SystemKey::default(),
+                None,
                 team,
                 vec![MissionKind::Espionage],
             )
@@ -1425,6 +1472,7 @@ mod tests {
                     .prepare_open(
                         MissionFaction::Alliance,
                         SystemKey::default(),
+                        None,
                         team.clone(),
                         vec![MissionKind::Diplomacy],
                     )
@@ -1443,6 +1491,7 @@ mod tests {
             .prepare_open(
                 MissionFaction::Alliance,
                 SystemKey::default(),
+                None,
                 team.clone(),
                 vec![MissionKind::Diplomacy],
             )
@@ -1458,6 +1507,7 @@ mod tests {
             .prepare_open(
                 MissionFaction::Alliance,
                 SystemKey::default(),
+                None,
                 team.clone(),
                 vec![MissionKind::Diplomacy],
             )
@@ -1469,6 +1519,7 @@ mod tests {
             .prepare_open(
                 MissionFaction::Empire,
                 SystemKey::default(),
+                None,
                 team,
                 vec![MissionKind::Espionage],
             )

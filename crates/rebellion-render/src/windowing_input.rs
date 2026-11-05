@@ -83,7 +83,8 @@ struct EventState {
     root_claimed: bool,
 }
 
-/// One immutable-snapshot router with bounded cross-frame gesture ownership.
+/// Frame pointer routing plus event-local keyboard routing, with bounded
+/// cross-frame gesture ownership.
 #[derive(Debug, Default)]
 pub struct FrameInputRouter {
     frame_number: Option<u64>,
@@ -197,14 +198,34 @@ impl FrameInputRouter {
 
     /// Routes one keyboard event against the frame's immutable focus lease.
     pub fn collect_keyboard(&mut self, event: InputEventId) -> InputRecipient {
-        if !self.valid_event(event) || self.events.contains_key(&event) {
-            return InputRecipient::Blocked;
-        }
         let route = self
             .snapshot
             .as_ref()
             .expect("begin_frame installs a snapshot")
             .keyboard_route();
+        self.collect_keyboard_route(event, route)
+    }
+
+    /// Routes one physical keyboard event against its event-local manager
+    /// projection. Pointer gestures retain the frame snapshot and their
+    /// press owner; this override is only for ordered keyboard dispatch after
+    /// an earlier key projected a lifecycle/focus command.
+    pub fn collect_keyboard_from_snapshot(
+        &mut self,
+        event: InputEventId,
+        snapshot: &RoutingSnapshot,
+    ) -> InputRecipient {
+        self.collect_keyboard_route(event, snapshot.keyboard_route())
+    }
+
+    fn collect_keyboard_route(
+        &mut self,
+        event: InputEventId,
+        route: rebellion_windowing::KeyboardRoute,
+    ) -> InputRecipient {
+        if !self.valid_event(event) || self.events.contains_key(&event) {
+            return InputRecipient::Blocked;
+        }
         let recipient = if self.frame_locked {
             InputRecipient::Blocked
         } else {

@@ -729,10 +729,10 @@ fn raise_restore_reopen_rejects_now_ineligible_transient_placement_atomically() 
 }
 
 #[test]
-fn background_minimize_preserves_the_previous_focus_candidate_ahead_of_topmost_fallback() {
-    // Port shared focus contract: hiding an unrelated detail preserves the eligible
-    // previous window, so a later close restores it before the topmost fallback.
-    // Break caught: clearing an eligible previous candidate during minimization.
+fn close_after_background_minimize_uses_the_topmost_eligible_focus_walk() {
+    // Source: FUN_00422ce0 message 0x467 and gid-legend.md, "Escape and the
+    // keyboard focus": restoration walks current z-order from the top.
+    // Break caught: preferring historical `previous_eligible` over z-order.
     let mut manager = WindowManager::new();
     let previous = open(
         &mut manager,
@@ -755,7 +755,7 @@ fn background_minimize_preserves_the_previous_focus_candidate_ahead_of_topmost_f
         .events
         .is_empty());
     let target = Some(FocusTarget {
-        window: previous,
+        window: top,
         control: None,
     });
     assert_eq!(
@@ -1005,9 +1005,9 @@ fn activate_changes_order_and_focus_but_focus_alone_does_not() {
 }
 
 #[test]
-fn raise_already_top_still_repairs_different_focus() {
-    // Source: implementation plan, public kernel interface contract for `Raise`.
-    // Break caught: returning early on already-top order before repairing focus.
+fn serialized_raise_keeps_focus_while_replaying_z_order() {
+    // FUN_00440ea0 serializes the shared z walk independently of keyboard
+    // focus. Break caught: load-order replay focusing every raised window.
     let mut manager = WindowManager::new();
     let first = open(
         &mut manager,
@@ -1028,7 +1028,7 @@ fn raise_already_top_still_repairs_different_focus() {
     assert_eq!(
         manager
             .apply(WindowCommand::Raise(top))
-            .expect("already-top raise repairs focus")
+            .expect("already-top serialized raise")
             .transition,
         WindowTransition::Raised { id: top }
     );
@@ -1036,8 +1036,8 @@ fn raise_already_top_still_repairs_different_focus() {
     assert_eq!(
         manager.focused(),
         Some(FocusTarget {
-            window: top,
-            control: None,
+            window: first,
+            control: Some(ControlId(8)),
         })
     );
     assert_eq!(manager.validate(), Ok(()));
@@ -1098,9 +1098,10 @@ fn duplicate_raise_restore_repairs_focus_without_reallocating() {
 }
 
 #[test]
-fn close_chooses_previous_eligible_survivor_outside_removed_subtree() {
-    // Source: implementation plan, "Lifecycle, focus, and history".
-    // Break caught: restoring an owned descendant or ignoring the one global previous candidate.
+fn close_chooses_topmost_eligible_survivor_outside_removed_subtree() {
+    // Source: FUN_00422ce0 message 0x467 and gid-legend.md, "Escape and the
+    // keyboard focus": restoration walks current z-order from the top.
+    // Break caught: restoring an owned descendant or a historical focus target.
     let mut manager = WindowManager::new();
     let owner = open(
         &mut manager,
@@ -1136,8 +1137,8 @@ fn close_chooses_previous_eligible_survivor_outside_removed_subtree() {
         .expect("owner subtree closes");
 
     let restored = FocusTarget {
-        window: previous,
-        control: Some(ControlId(12)),
+        window: topmost,
+        control: None,
     };
     assert_eq!(
         commit.transition,
@@ -1188,10 +1189,10 @@ fn close_preserves_surviving_root_focus() {
 }
 
 #[test]
-fn close_retains_a_previous_candidate_while_a_modal_temporarily_blocks_it() {
-    // Source: implementation plan, one global previous-eligible survivor is
-    // revalidated when restoration is attempted, not discarded while blocked.
-    // Break caught: an unrelated close under a modal erasing the later restore target.
+fn closing_a_modal_uses_current_topmost_order_after_unrelated_close() {
+    // Source: FUN_00422ce0 message 0x467 and gid-legend.md, "Escape and the
+    // keyboard focus": closing a modal starts a fresh top-down focus walk.
+    // Break caught: restoring a historical focus target instead of current z-order.
     let mut manager = WindowManager::new();
     let previous = open(
         &mut manager,
@@ -1221,8 +1222,8 @@ fn close_retains_a_previous_candidate_while_a_modal_temporarily_blocks_it() {
         .expect("modal closes");
 
     let restored = FocusTarget {
-        window: previous,
-        control: Some(ControlId(23)),
+        window: fallback,
+        control: None,
     };
     assert_eq!(
         commit.transition,
@@ -1283,6 +1284,49 @@ fn ordinary_window_close_uses_global_eligible_order_not_a_private_focus_stack() 
         manager.focused().map(|target| target.window),
         Some(old_focus)
     );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn gid_escape_focus_walk_keeps_menu_registered_and_preserves_z_order() {
+    // Source: FUN_00422ce0 message 0x467 and FUN_004aab50; gid-legend.md,
+    // "Escape and the keyboard focus". Menu Escape restores the top child
+    // without destroying or reordering the still-open GID menu.
+    let mut manager = WindowManager::new();
+    let lower = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let top = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
+    );
+    let menu = open(&mut manager, menu_spec(top));
+    let order_before = manager.visible_order().to_vec();
+
+    let commit = manager
+        .apply(WindowCommand::RestoreFocus)
+        .expect("GID Escape focus walk succeeds");
+
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Focused {
+            previous: Some(FocusTarget {
+                window: menu,
+                control: None,
+            }),
+            current: Some(FocusTarget {
+                window: top,
+                control: None,
+            }),
+        }
+    );
+    assert_eq!(manager.visible_order(), order_before);
+    assert_eq!(
+        manager.id_for(WindowKey::singleton(WindowKind::Menu)),
+        Some(menu)
+    );
+    assert_eq!(manager.visible_order(), &[lower, top, menu]);
     assert_eq!(manager.validate(), Ok(()));
 }
 

@@ -1964,7 +1964,7 @@ mod tests {
                     &mut cache,
                     &frame,
                 );
-                crate::windowing::realize_managed_focus(ctx, &frame, |window| {
+                crate::windowing::realize_managed_order(ctx, &frame, |window| {
                     state.managed_layer_id(window).map(|layer| vec![layer])
                 });
             });

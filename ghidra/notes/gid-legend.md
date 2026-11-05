@@ -216,17 +216,20 @@ Evidence, under Wine:
   double-click opened the Corellian sector window, then the first GID press,
   then Escape changed nothing.
 
-port: `GalaxyFocusState` in `rebellion-render`'s `window_focus` holds the
-focus (`GalaxyFocus` menu, child or view) and the current child, and its
-`sync` hands the focus on after any closure, or a focus left on a window
-that is gone, even in a frame where another window opens. Every child
-window kind keeps a z serial (`window_focus::GalaxyChild`, `children()`,
-`raise()`), and
-`GidUiState::shown` lists the children shown again under the open menu,
-which each family's draw filter lets through. `GidUiState::built` marks the
-menu built; a load clears it, and the press that builds it gives the menu
-the focus. `GalaxyFocusState::after_load` takes the windows a load restored
-and focuses the top one that is not a sector window, or the view.
+port: `rebellion-windowing::WindowManager` is the sole owner of strategic
+identity, z-order and focus. Fresh Sector and detail windows use
+`FocusOnOpen::Preserve`; pointer `Activate` raises and focuses, while `Raise`
+changes only z-order. Close, minimize and scene transitions consult each
+family's `FocusRestoration` policy and otherwise walk manager order from the
+top to the first eligible window. `GidUiState::open_menu` hides galaxy
+children without minimizing them. Escape at the managed GID-menu identity
+keeps that menu open, applies `RestoreFocus`, and adds the revealed child to
+`GidUiState::shown`; controls, hotkeys and a strategic modal may still act
+over the modeless root menu. A load replays serialized order with
+focus-preserving `Raise`, then focuses the top shown non-Sector identity.
+Keyboard routing snapshots are per physical event: an Escape retains one
+owner, but a later Escape in the same frame observes the projected close or
+focus restoration from the earlier event.
 
 ## GID menu highlight
 

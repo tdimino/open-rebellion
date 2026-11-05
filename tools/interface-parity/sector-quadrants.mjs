@@ -780,6 +780,12 @@ const cases = [
       const icon = faction.side === 1 ? 11533 : 11534;
       const railChecks = [{ id: icon, ...compareIcon(screenshot, slot, resource(source, icon), "rail-icon", directory) }];
       assertExact(railChecks);
+      const hiddenChecks = compareTabs(screenshot, source, retained, directory, "railed-hidden");
+      for (const check of hiddenChecks) {
+        assert.ok(check.pixels_checked > 0, `${check.label} checked nothing`);
+        assert.ok(check.different_pixels > 0,
+          `${check.label} still paints after the manager minimized its identity`);
+      }
 
       await click(page, routes, { x: slot[0] + slot[2] / 2, y: slot[1] + slot[3] / 2 }, "reference_rail");
       const restored = defensesWindow(await until(page, "the rail slot restores the window",
@@ -889,6 +895,12 @@ const cases = [
       const icon = MISSIONS_RAIL[faction.other];
       const railChecks = [{ id: icon, ...compareIcon(screenshot, slot, resource(source, icon), "rail-icon", directory) }];
       assertExact(railChecks);
+      const hiddenChecks = compareMissionTabs(screenshot, source, retained, directory, "railed-hidden");
+      for (const check of hiddenChecks) {
+        assert.ok(check.pixels_checked > 0, `${check.label} checked nothing`);
+        assert.ok(check.different_pixels > 0,
+          `${check.label} still paints after the manager minimized its identity`);
+      }
 
       await click(page, routes, { x: slot[0] + slot[2] / 2, y: slot[1] + slot[3] / 2 }, "reference_rail");
       const restored = missionsWindow(await until(page, "the rail slot restores the window",

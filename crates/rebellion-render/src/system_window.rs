@@ -1249,12 +1249,6 @@ pub enum SystemWindowAction {
         selection: Option<MenuObject>,
         point: (i16, i16),
     },
-    /// A click on a minimized Fleet window's rail slot restores it.
-    RestoreFleetWindow {
-        id: WindowId,
-        system: SystemKey,
-        logical_position: (i16, i16),
-    },
     /// A click on a minimized Defenses window's rail slot restores it.
     RestoreDefensesWindow {
         system: SystemKey,
@@ -1545,7 +1539,16 @@ fn draw_system_windows_with_snapshot(
                 }
             }
             (Some(BandRenameOutcome::Escape), Some(_)) => {
-                state.close(system);
+                state.band_rename = None;
+                if let Some(window) = window.id {
+                    // FUN_004ac950/FUN_004aca40: Escape abandons the edit and
+                    // closes the containing System window. Manager-owned
+                    // content must close through its exact identity so the
+                    // renderer cannot orphan a live registry entry.
+                    actions.push(SystemWindowAction::Close(window));
+                } else {
+                    state.close(system);
+                }
                 continue;
             }
             _ => {}

@@ -22,19 +22,20 @@ pub fn managed_child_id(window: WindowId) -> egui::Id {
     egui::Id::new(("strategic-window-managed-child", window.get()))
 }
 
-/// Projects the manager's single focused identity into egui's persistent area
-/// stack. Feature modules expose stable layer IDs but never raise themselves;
-/// this adapter is the sole cross-family realization point.
-pub fn realize_managed_focus(
+/// Projects the manager's immutable bottom-to-top order into egui's persistent
+/// area stack. Keyboard focus is deliberately irrelevant: `Focus` preserves
+/// z-order, while `Activate` changes both in the manager before this pass.
+pub fn realize_managed_order(
     ctx: &egui::Context,
     frame: &RoutingSnapshot,
     mut layers_for: impl FnMut(WindowId) -> Option<Vec<egui::LayerId>>,
 ) {
-    let Some(layers) = frame.focused().and_then(|focus| layers_for(focus.window)) else {
-        return;
-    };
-    for layer in layers {
-        ctx.move_to_top(layer);
+    for window in frame.paint_order() {
+        if let Some(layers) = layers_for(*window) {
+            for layer in layers {
+                ctx.move_to_top(layer);
+            }
+        }
     }
 }
 
@@ -242,15 +243,15 @@ mod tests {
     }
 
     #[test]
-    fn focus_adapter_resolves_only_the_managers_exact_focused_identity() {
+    fn order_adapter_resolves_the_managers_exact_bottom_to_top_walk() {
         let mut manager = WindowManager::new();
         let first = open(&mut manager, 1);
         let second = open(&mut manager, 2);
-        manager.apply(WindowCommand::Raise(first)).unwrap();
+        manager.apply(WindowCommand::Activate(first)).unwrap();
         let frame = manager.begin_frame();
         let mut resolved = Vec::new();
 
-        realize_managed_focus(&egui::Context::default(), &frame, |window| {
+        realize_managed_order(&egui::Context::default(), &frame, |window| {
             resolved.push(window);
             Some(vec![egui::LayerId::new(
                 egui::Order::Foreground,
@@ -258,7 +259,7 @@ mod tests {
             )])
         });
 
-        assert_eq!(resolved, [first]);
+        assert_eq!(resolved, [second, first]);
         assert_ne!(first, second);
     }
 }

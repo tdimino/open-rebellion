@@ -65,7 +65,7 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
     match kind {
         // fact: FUN_00429ce0 creates at most two low-band Sector windows and
         // returns an existing subject without raising it.
-        WindowKind::Sector => policy(
+        WindowKind::Sector => preserve_focus_policy(
             Cardinality::Subject { max_open: Some(2) },
             StackBand::Low,
             OpenPlacement::BottomOfBand,
@@ -78,7 +78,7 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
         // fact: FUN_0045aac0 restores/raises system-keyed modeless details;
         // FUN_00428b40/FUN_00429020 supply their shared presentation history.
         WindowKind::System | WindowKind::Fleet | WindowKind::Defenses | WindowKind::Missions => {
-            policy(
+            preserve_focus_policy(
                 Cardinality::Subject { max_open: None },
                 StackBand::Normal,
                 OpenPlacement::TopOfBand,
@@ -218,6 +218,49 @@ const fn policy(
     presentation: PresentationPolicy,
     restoration: FocusRestoration,
 ) -> WindowPolicy {
+    policy_with_focus(
+        cardinality,
+        band,
+        placement,
+        existing,
+        input,
+        presentation,
+        FocusOnOpen::Window,
+        restoration,
+    )
+}
+
+const fn preserve_focus_policy(
+    cardinality: Cardinality,
+    band: StackBand,
+    placement: OpenPlacement,
+    existing: ExistingOpenPolicy,
+    input: InputPolicy,
+    presentation: PresentationPolicy,
+    restoration: FocusRestoration,
+) -> WindowPolicy {
+    policy_with_focus(
+        cardinality,
+        band,
+        placement,
+        existing,
+        input,
+        presentation,
+        FocusOnOpen::Preserve,
+        restoration,
+    )
+}
+
+const fn policy_with_focus(
+    cardinality: Cardinality,
+    band: StackBand,
+    placement: OpenPlacement,
+    existing: ExistingOpenPolicy,
+    input: InputPolicy,
+    presentation: PresentationPolicy,
+    focus_on_open: FocusOnOpen,
+    restoration: FocusRestoration,
+) -> WindowPolicy {
     WindowPolicy {
         cardinality,
         band,
@@ -225,7 +268,7 @@ const fn policy(
         existing,
         input,
         presentation,
-        focus_on_open: FocusOnOpen::Window,
+        focus_on_open,
         restoration,
     }
 }
@@ -268,6 +311,29 @@ mod tests {
         }
     }
 
+    const fn preserve_focus_policy(
+        cardinality: Cardinality,
+        band: StackBand,
+        placement: OpenPlacement,
+        existing: ExistingOpenPolicy,
+        input: InputPolicy,
+        presentation: PresentationPolicy,
+        restoration: FocusRestoration,
+    ) -> WindowPolicy {
+        WindowPolicy {
+            focus_on_open: FocusOnOpen::Preserve,
+            ..policy(
+                cardinality,
+                band,
+                placement,
+                existing,
+                input,
+                presentation,
+                restoration,
+            )
+        }
+    }
+
     const SUBJECT: Cardinality = Cardinality::Subject { max_open: None };
     const SINGLETON: Cardinality = Cardinality::Singleton;
 
@@ -299,7 +365,7 @@ mod tests {
         let cases = [
             (
                 WindowKind::Sector,
-                policy(
+                preserve_focus_policy(
                     Cardinality::Subject { max_open: Some(2) },
                     StackBand::Low,
                     OpenPlacement::BottomOfBand,
@@ -312,7 +378,7 @@ mod tests {
             ),
             (
                 WindowKind::System,
-                policy(
+                preserve_focus_policy(
                     SUBJECT,
                     StackBand::Normal,
                     OpenPlacement::TopOfBand,
@@ -325,7 +391,7 @@ mod tests {
             ),
             (
                 WindowKind::Fleet,
-                policy(
+                preserve_focus_policy(
                     SUBJECT,
                     StackBand::Normal,
                     OpenPlacement::TopOfBand,
@@ -338,7 +404,7 @@ mod tests {
             ),
             (
                 WindowKind::Defenses,
-                policy(
+                preserve_focus_policy(
                     SUBJECT,
                     StackBand::Normal,
                     OpenPlacement::TopOfBand,
@@ -351,7 +417,7 @@ mod tests {
             ),
             (
                 WindowKind::Missions,
-                policy(
+                preserve_focus_policy(
                     SUBJECT,
                     StackBand::Normal,
                     OpenPlacement::TopOfBand,
