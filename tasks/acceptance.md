@@ -4,7 +4,7 @@
 
 Comparison regions, their diagnoses and fixtures, and A0 captures. Back to the [index](INDEX.md).
 
-27 open, 1 deferred.
+28 open, 1 deferred.
 
 <a id="or-acc-control-h6c"></a>
 ### Control cluster matches A0
@@ -331,6 +331,29 @@ Unblocks: [or-acc-laser-5x5](#or-acc-laser-5x5), [or-acc-missions-bvi](#or-acc-m
 **Acceptance criteria**
 
 - [ ] Each hull-number difference in TAC-03-C014/C015 has a named cause, with its own port or question bead
+
+<a id="or-ep-pr46-review-du66.31"></a>
+### Re-review PR #46 head after 0e9c9f4c
+
+`or-ep-pr46-review-du66.31` · **open** · P2 · review-pr, verify, windowing · updated 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)
+
+> ## Background
+>
+> PR #46 (Will Forster, branch feat/strategic-windowing-fleet-lifecycle) was returned again with request changes on 2026-11-05 against head 0e9c9f4c. That head failed cargo check (render lib re-export of the removed BattleResultCategory; app keys_down, FocusTarget::window and test imports). With a six-line local build patch, 14 workspace tests failed, and a probe showed a confirmed ship or unit move refusing EmptyTeam (commit_move_confirmation_gameplay drops ships and units). Open from the review: Escape on Stop closing the focused System window, modeless Speed and Agent menus, GID menu not closing on a galaxy press and hiding only System windows, windows opened under the GID menu never shown, report Go To lost under the Message Index, double close of an Operation Report, object-menu alert-report refusal, the 100% plan claims.
+>
+> ## Scope
+>
+> When a new head lands: cargo check --workspace --all-targets and test --workspace --no-fail-fast, plain and with interface-test-fixtures, on the unmodified head; rerun the round-2 probe tests (move confirmation, alert report under an object menu, orphan report, loaded Fleet rail, re-open focus, Fleet Finder empty tab, root popup outside press); rerun the interface-parity gates on Chrome for Testing 153; give each finding of both reviews a verdict.
+>
+> ## Constraints
+>
+> No comment, approval, push to the fork or merge without Tom's word. Cargo only through the worktree's own scripts/mini-cargo.sh with its own build dir on the Mini; browsers only through the interface-parity gates, every run silent on both machines; at most four agents at a time.
+
+**Acceptance criteria**
+
+- [ ] The unmodified new head builds and its workspace tests are recorded (pass/fail counts, plain and fixtures).
+- [ ] Every finding of the 2026-11-05 reviews of 44704a7e and 0e9c9f4c has a verdict on the new head (fixed, still present, changed), with file:line and a test, probe or gate result.
 
 <a id="or-f-alliance-transit-xxn"></a>
 ### A1 fixture reproducing alliance-transit-day149

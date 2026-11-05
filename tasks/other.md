@@ -4,7 +4,25 @@
 
 Decisions, chores and unlabelled nodes. Back to the [index](INDEX.md).
 
-11 open.
+12 open.
+
+<a id="or-b-move-confirm-flaky-lg8h"></a>
+### Move confirmation's doubled-layout hit test fails about one run in four
+
+`or-b-move-confirm-flaky-lg8h` · **open** · P2 · render, test · updated 2026-11-04
+
+> `rebellion-render`'s `move_confirmation::tests::a_doubled_layout_hits_the_same_bitmap_pixels` fails about one run in four on `main` (`e8ae0457`): on 2026-11-04 it failed in `gates.sh`'s workspace `test` gate and passed in the same run's fixtures gate and in three reruns of `cargo test -p rebellion-render --lib`. The failing assertion is the keyed-corner miss at `crates/rebellion-render/src/move_confirmation.rs:841` (`clicked((x + 1.5, y + height - 0.5))` expected `None`), with the strategy-DLL bitmaps reported unavailable (`[bmp_cache] asset unavailable source=strategy-dll resource_id=11125`, 1018, 10930). A test that reads a shared bitmap cache or the process-wide control registry (`control_registry.rs:21`, the `ENABLED` atomic) while another test thread changes it would explain a parallel-only failure (hyp:).
+>
+> ## Steps to Reproduce
+>
+> 1. On `main`, run `scripts/mini-cargo.sh -- test -p rebellion-render --lib --color never` repeatedly (or `scripts/gates.sh`).
+> 2. About one run in four, `a_doubled_layout_hits_the_same_bitmap_pixels` fails at `move_confirmation.rs:841`.
+> 3. With `-- --test-threads=1` it should never fail (unconfirmed).
+
+**Acceptance criteria**
+
+- [ ] The cause is named with evidence (a shared cache, the control registry or another global).
+- [ ] The test passes 20 parallel runs of the render library in a row on the Mini.
 
 <a id="or-d-gnd-plan-glw"></a>
 ### Plan the TAC-08 port in phases and explain it to Tom

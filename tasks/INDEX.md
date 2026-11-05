@@ -10,7 +10,7 @@ session keeps with [br](https://github.com/Dicklesworthstone/beads_rust);
 [agent_docs/task-graph.md](../agent_docs/task-graph.md) explains the node
 kinds and how work is claimed and closed.
 
-323 nodes: 160 open, 1 deferred, 162 closed.
+356 nodes: 163 open, 1 deferred, 192 closed.
 
 ## Pages
 
@@ -18,10 +18,10 @@ kinds and how work is claimed and closed.
 |---|---|---|
 | [Ports](ports.md) | 45 | Changing the port to match the original. |
 | [Reviews](reviews.md) | 2 | Rereading a question's decompiles against our own Ghidra project. |
-| [Acceptance](acceptance.md) | 28 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
+| [Acceptance](acceptance.md) | 29 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
 | [Questions](questions.md) | 71 | Questions about the original, answered from the executable. |
-| [Other](other.md) | 11 | Decisions, chores and unlabelled nodes. |
-| [Closed](closed.md) | 162 closed | Finished work and how it closed. |
+| [Other](other.md) | 12 | Decisions, chores and unlabelled nodes. |
+| [Closed](closed.md) | 192 closed | Finished work and how it closed. |
 
 ## Plans
 
@@ -66,6 +66,31 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 `or-ep-mod-surface-vdch` · **closed** · 13 of 13 closed
 
 > What the original fixes in code rather than data, so the port can open it to mods: Force users and their training, the story encounters (Luke/Vader, Vader/Palpatine), mission types, ship types and their art, the galaxy's size, and the movies. Each question ends in a note naming every constant, family check, fixed-size table and hand-coded id, with function citations, and says which of them a DAT or resource table already drives. The port's extension work (mods.rs `add` entities, data-driven encounters) follows from these notes and gets its own port nodes; questions here are worker-ok.
+
+<a id="or-ep-pr46-review-du66"></a>
+### PR #46 review: strategic windowing surface migration
+
+`or-ep-pr46-review-du66` · **open** · 30 of 31 closed
+
+> Review contributor PR #46 ("feat(windowing): complete strategic surface migration", Will Forster, head `44704a7e`, merge base `main` `e8ae0457`) well enough to merge it, repair it on the fork branch, split it, or return it with verified findings. Plan: `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`.
+>
+> The PR moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630. The first read found the focus model changing owner (every window takes the focus on open; Escape on the GID menu closes it; Escape no longer reaches System, Defenses and Missions windows), 493 lines of `main`'s production code left inside block comments by the merge from `main`, evidence that predates the PR's last two commits and is Linux-only for native, and a contributor-built WASM binary. Deleted tests are not findings; lost behaviour is.
+>
+> Nothing outward (review comment, approval, push to the fork, merge) before Tom decides on the findings ledger.
+>
+> ## Success Criteria
+>
+> - `gates.sh` passes on the PR head, or each failure is a ledger finding.
+> - The workspace tests pass in parallel and serially, or the difference is a finding.
+> - The Linux-only code compiles for `x86_64-unknown-linux-gnu`, or Tom waives the check.
+> - Each behaviour the 35 deleted tests guarded holds on the PR head, is changed with the original's agreement, or is a finding.
+> - Lanes A-H and the Codex Sol review have reported, and every finding has a verification verdict.
+> - At least 30 sampled new tests go red when their code is broken.
+> - Mutant survivors in the scoped functions are closed or explained.
+> - The browser gates pass on the PR head (summary and result files read).
+> - The native journeys pass on the macOS Mini for the Empire and the Alliance.
+> - The battle gate passes all its cases, and C6's strip cells read as on `main`.
+> - Tom has the findings ledger and a recommendation, and has chosen an outcome.
 
 <a id="or-ep-tac-x15"></a>
 ### Tactical parity: every TAC-01..07 A0 cell passes or is settled
@@ -131,11 +156,13 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P2 | [or-86pj](ports.md#or-86pj) | Port: remove facilities and mines over a system's capacity (FUN_0050ad80) |
 | P2 | [or-acc-pause-1ol](acceptance.md#or-acc-pause-1ol) | Battle Paused label matches A0 |
 | P2 | [or-alliance-hq-move-o9ms](ports.md#or-alliance-hq-move-o9ms) | Port the Alliance AI's headquarters move (module 13)? |
+| P2 | [or-b-move-confirm-flaky-lg8h](other.md#or-b-move-confirm-flaky-lg8h) | Move confirmation's doubled-layout hit test fails about one run in four |
 | P2 | [or-d-gnd-plan-glw](other.md#or-d-gnd-plan-glw) | Plan the TAC-08 port in phases and explain it to Tom |
 | P2 | [or-d-imperial-squadrons-no-slot-pndt](acceptance.md#or-d-imperial-squadrons-no-slot-pndt) | Diagnose: Imperial Fleet 1's six squadrons hold no fighter slot in a native Yavin battle |
 | P2 | [or-d-missions-0rx](acceptance.md#or-d-missions-0rx) | Diagnose: mission buttons and laser control differ (9 cells) |
 | P2 | [or-d-yaga-hull-numbers-0iad](acceptance.md#or-d-yaga-hull-numbers-0iad) | Diagnose: Yaga day 30 numbers its ISD 2 and Carrack 1 where A0 shows ISD 1 and Carrack 2 |
 | P2 | [or-d3drm-raster-match-vog4](ports.md#or-d3drm-raster-match-vog4) | Match Direct3D RM's 8-bit palette, line stepping and rasterizer for the tactical aperture |
+| P2 | [or-ep-pr46-review-du66.31](acceptance.md#or-ep-pr46-review-du66.31) | Re-review PR #46 head after 0e9c9f4c |
 | P2 | [or-f-alliance-transit-xxn](acceptance.md#or-f-alliance-transit-xxn) | A1 fixture reproducing alliance-transit-day149 |
 | P2 | [or-f-sixteen-tie-c43](acceptance.md#or-f-sixteen-tie-c43) | A1 fixture reproducing empire-sixteen-tie |
 | P2 | [or-invented-log-text-82ba](ports.md#or-invented-log-text-82ba) | Replace the invented message-log text outside the strike plan |
