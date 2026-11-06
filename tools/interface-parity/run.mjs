@@ -13,6 +13,7 @@ import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { performCommand } from "./command-events.mjs";
 import { launchBrowser, summarizeBrowserAttempts } from "./browser-launch.mjs";
+import { cropPng, logicalCropDifference, movableWindowBody } from "./window-raster.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -307,42 +308,6 @@ function sectorFixtureWindow(faction) {
     : { x: 120, y: 40, width: 235, height: 360 };
 }
 
-// The pixels of a 640x480 logical rect in a screenshot of `viewport`.
-function cropPng(png, viewport, rect) {
-  const scale = Math.min(viewport.width / 640, viewport.height / 480);
-  const density = png.width / viewport.width;
-  const x0 = Math.round(((viewport.width - 640 * scale) / 2 + rect.x * scale) * density);
-  const y0 = Math.round(((viewport.height - 480 * scale) / 2 + rect.y * scale) * density);
-  const width = Math.round(rect.width * scale * density);
-  const height = Math.round(rect.height * scale * density);
-  const out = Buffer.alloc(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    const start = ((y0 + y) * png.width + x0) * 4;
-    png.data.copy(out, y * width * 4, start, start + width * 4);
-  }
-  return out;
-}
-
-function logicalCropDifference(actual, actualRect, expected, expectedRect, viewport) {
-  const actualPixels = cropPng(actual, viewport, actualRect);
-  const expectedPixels = cropPng(expected, viewport, expectedRect);
-  assert.equal(actualPixels.length, expectedPixels.length,
-    "logical window crops must have the same dimensions");
-  const scale = Math.min(viewport.width / 640, viewport.height / 480);
-  const density = actual.width / viewport.width;
-  const width = Math.round(actualRect.width * scale * density);
-  const height = Math.round(actualRect.height * scale * density);
-  const differentPixels = pixelmatch(
-    actualPixels,
-    expectedPixels,
-    null,
-    width,
-    height,
-    { threshold: 0.2, includeAA: false },
-  );
-  return { differentPixels, differenceRatio: differentPixels / (width * height) };
-}
-
 // FUN_00422ce0 0x132 builds the GID menu with FUN_00451130 at (370,233) for
 // side 1 and (420,233) for side 2, 160 by 160.
 function gidMenuOrigin(faction) {
@@ -595,8 +560,8 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
       y: SYSTEM_FIXTURE_WINDOW.y - 20 };
     const dragged = await stableInteractionFrame(page, folder, "title-dragged");
     const titleDragDifference = logicalCropDifference(
-      PNG.sync.read(dragged), windowContent(moved),
-      PNG.sync.read(settled), windowContent(SYSTEM_FIXTURE_WINDOW),
+      PNG.sync.read(dragged), movableWindowBody(moved),
+      PNG.sync.read(settled), movableWindowBody(SYSTEM_FIXTURE_WINDOW),
       viewport,
     );
     assert.ok(
@@ -623,8 +588,8 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     const bodyMoved = { ...moved, x: moved.x + 30, y: moved.y + 10 };
     const bodyDragged = await stableInteractionFrame(page, folder, "body-dragged");
     const bodyDragDifference = logicalCropDifference(
-      PNG.sync.read(bodyDragged), windowContent(bodyMoved),
-      PNG.sync.read(settled), windowContent(SYSTEM_FIXTURE_WINDOW),
+      PNG.sync.read(bodyDragged), movableWindowBody(bodyMoved),
+      PNG.sync.read(settled), movableWindowBody(SYSTEM_FIXTURE_WINDOW),
       viewport,
     );
     assert.ok(
