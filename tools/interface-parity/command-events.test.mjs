@@ -34,6 +34,22 @@ test("waits for a command delivered later than the old 80 ms delay", async () =>
   }
 });
 
+test("waits for a command delivered just beyond the old two-second bound", {
+  timeout: 6_000,
+}, async () => {
+  const page = new PageEvents();
+  let timer;
+  try {
+    await performCommand(page, expected, async () => {
+      timer = setTimeout(() => emit(page), 2_100);
+    });
+    assert.equal(page.listenerCount("console"), 0);
+    assert.ok(page.paints >= 2);
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
 test("observes an event emitted synchronously by the action", async () => {
   const page = new PageEvents();
   await performCommand(page, expected, () => emit(page));
@@ -43,7 +59,10 @@ test("observes an event emitted synchronously by the action", async () => {
 test("a prior opening cannot satisfy a new click", async () => {
   const page = new PageEvents();
   emit(page);
-  await assert.rejects(performCommand(page, expected, () => {}, 30), /0x132/);
+  await assert.rejects(performCommand(page, expected, () => {}, 30), (error) => {
+    assert.equal(error.name, "CommandPaintTimeoutError");
+    return /0x132/.test(error.message);
+  });
   assert.equal(page.listenerCount("console"), 0);
 });
 
@@ -72,6 +91,9 @@ test("does not continue before the command has been painted", async () => {
 test("a stalled paint remains bounded and cleans up the listener", async () => {
   const page = new PageEvents();
   page.evaluate = () => new Promise(() => {});
-  await assert.rejects(performCommand(page, expected, () => emit(page), 30), /event and paint/);
+  await assert.rejects(performCommand(page, expected, () => emit(page), 30), (error) => {
+    assert.equal(error.name, "CommandPaintTimeoutError");
+    return /event and paint/.test(error.message);
+  });
   assert.equal(page.listenerCount("console"), 0);
 });

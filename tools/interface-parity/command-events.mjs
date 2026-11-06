@@ -1,11 +1,25 @@
 // Register before the action so synchronous events are captured, and only a
 // fresh event can satisfy each click. The event is emitted during game update;
 // wait through the following paint before inspecting or interacting with UI.
-export async function performCommand(page, expected, action, timeout = 2_000) {
+export const COMMAND_PAINT_TIMEOUT_MS = 5_000;
+
+export class CommandPaintTimeoutError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "CommandPaintTimeoutError";
+  }
+}
+
+export async function performCommand(
+  page,
+  expected,
+  action,
+  timeout = COMMAND_PAINT_TIMEOUT_MS,
+) {
   let listener;
   let timer;
   const deadline = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(
+    timer = setTimeout(() => reject(new CommandPaintTimeoutError(
       `Timed out after ${timeout} ms waiting for fresh interface event and paint: ${expected}`,
     )), timeout);
   });
