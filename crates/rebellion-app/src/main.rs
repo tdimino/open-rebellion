@@ -1432,75 +1432,99 @@ impl StrategicRootKeyBatch {
     /// projection. Escape lifecycle commands advance the projection before
     /// the next physical key is routed, while production still commits the
     /// same commands at the ordinary end-of-frame boundary.
+    #[cfg(test)]
     fn collect_from_indexed_raw_sequential(
         frame: u64,
         router: &mut FrameInputRouter,
         events: &[StrategicIndexedKeyEvent],
-        routing: &mut strategic_windowing::KeyboardRoutingCursor,
+        routing: &mut strategic_windowing::PhysicalInputRoutingCursor,
         gid_menu: Option<rebellion_windowing::WindowId>,
     ) -> Self {
-        use rebellion_windowing::{RouteTarget, WindowCommand, WindowKind};
-
         let mut collected = Vec::with_capacity(events.len());
         let mut sequential_escape_commands = Vec::new();
         for indexed in events {
-            let id = InputEventId {
+            Self::collect_indexed_event_sequential(
                 frame,
-                ordinal: indexed.ordinal,
-            };
-            let snapshot = routing.snapshot();
-            let route = snapshot.keyboard_route();
-            let recipient = router.collect_keyboard_from_snapshot(id, &snapshot);
-            let event = StrategicKeyEvent {
-                key: indexed.event.key,
-                id,
-                alt: indexed.event.alt,
-                repeat: indexed.event.repeat,
-            };
-            collected.push(event);
-            if event.repeat || event.key != KeyCode::Escape || recipient == InputRecipient::Blocked
-            {
-                continue;
-            }
-            let RouteTarget::Window(target) = route.target else {
-                continue;
-            };
-            let Some(key) = snapshot.key(target.window) else {
-                continue;
-            };
-            let command = match key.kind {
-                // FUN_004593e0 forwards every Sector key to the view; neither
-                // it nor the bare galaxy assigns Escape an action.
-                WindowKind::Sector => None,
-                // FUN_004aca40 consumes the first Escape in a Fleet rename;
-                // a later physical Escape in the same backend batch reaches
-                // the now-unfocused top-level Fleet window.
-                WindowKind::Fleet if target.control == Some(FLEET_RENAME_CONTROL) => {
-                    Some(WindowCommand::InvalidateControl(target))
-                }
-                // FUN_004aab50 leaves the GID Menu alive and posts the
-                // strategic 0x467 focus walk. Other Menu presentations use
-                // their ordinary keyed close.
-                WindowKind::Menu if gid_menu == Some(target.window) => {
-                    Some(WindowCommand::RestoreFocus)
-                }
-                _ => Some(WindowCommand::Close(target.window)),
-            };
-            if let Some(command) = command.filter(|command| routing.apply(*command)) {
-                let revealed = (gid_menu.is_some()
-                    && matches!(
-                        command,
-                        WindowCommand::RestoreFocus | WindowCommand::Close(_)
-                    ))
-                .then(|| routing.snapshot().focused().map(|focus| focus.window))
-                .flatten()
-                .filter(|window| Some(*window) != gid_menu);
-                sequential_escape_commands.push((id, command, revealed));
-            }
+                router,
+                *indexed,
+                routing,
+                gid_menu,
+                &mut collected,
+                &mut sequential_escape_commands,
+            );
         }
         Self {
             events: collected,
             sequential_escape_commands,
+        }
+    }
+
+    fn collect_indexed_event_sequential(
+        frame: u64,
+        router: &mut FrameInputRouter,
+        indexed: StrategicIndexedKeyEvent,
+        routing: &mut strategic_windowing::PhysicalInputRoutingCursor,
+        gid_menu: Option<rebellion_windowing::WindowId>,
+        collected: &mut Vec<StrategicKeyEvent>,
+        sequential_escape_commands: &mut Vec<(
+            InputEventId,
+            rebellion_windowing::WindowCommand,
+            Option<rebellion_windowing::WindowId>,
+        )>,
+    ) {
+        use rebellion_windowing::{RouteTarget, WindowCommand, WindowKind};
+
+        let id = InputEventId {
+            frame,
+            ordinal: indexed.ordinal,
+        };
+        let snapshot = routing.snapshot();
+        let route = snapshot.keyboard_route();
+        let recipient = router.collect_keyboard_from_snapshot(id, &snapshot);
+        let event = StrategicKeyEvent {
+            key: indexed.event.key,
+            id,
+            alt: indexed.event.alt,
+            repeat: indexed.event.repeat,
+        };
+        collected.push(event);
+        if event.repeat || event.key != KeyCode::Escape || recipient == InputRecipient::Blocked {
+            return;
+        }
+        let RouteTarget::Window(target) = route.target else {
+            return;
+        };
+        let Some(key) = snapshot.key(target.window) else {
+            return;
+        };
+        let command = match key.kind {
+            // FUN_004593e0 forwards every Sector key to the view; neither
+            // it nor the bare galaxy assigns Escape an action.
+            WindowKind::Sector => None,
+            // FUN_004aca40 consumes the first Escape in a Fleet rename;
+            // a later physical Escape in the same backend batch reaches
+            // the now-unfocused top-level Fleet window.
+            WindowKind::Fleet if target.control == Some(FLEET_RENAME_CONTROL) => {
+                Some(WindowCommand::InvalidateControl(target))
+            }
+            // FUN_004aab50 leaves the GID Menu alive and posts the
+            // strategic 0x467 focus walk. Other Menu presentations use
+            // their ordinary keyed close.
+            WindowKind::Menu if gid_menu == Some(target.window) => {
+                Some(WindowCommand::RestoreFocus)
+            }
+            _ => Some(WindowCommand::Close(target.window)),
+        };
+        if let Some(command) = command.filter(|command| routing.apply(*command)) {
+            let revealed = (gid_menu.is_some()
+                && matches!(
+                    command,
+                    WindowCommand::RestoreFocus | WindowCommand::Close(_)
+                ))
+            .then(|| routing.snapshot().focused().map(|focus| focus.window))
+            .flatten()
+            .filter(|window| Some(*window) != gid_menu);
+            sequential_escape_commands.push((id, command, revealed));
         }
     }
 
@@ -1761,9 +1785,11 @@ struct StrategicPointerEvent {
 #[derive(Debug, Default)]
 struct StrategicPointerBatch {
     events: Vec<StrategicPointerEvent>,
+    projected_lifecycle_commands: Vec<(InputEventId, rebellion_windowing::WindowCommand)>,
 }
 
 impl StrategicPointerBatch {
+    #[cfg(test)]
     fn collect_from_raw(
         frame: u64,
         router: &mut FrameInputRouter,
@@ -1785,7 +1811,10 @@ impl StrategicPointerBatch {
                 }
             })
             .collect();
-        Self { events }
+        Self {
+            events,
+            projected_lifecycle_commands: Vec::new(),
+        }
     }
 
     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
@@ -1811,6 +1840,12 @@ impl StrategicPointerBatch {
             .iter()
             .map(|event| (event.id, event.phase))
             .collect()
+    }
+
+    fn projected_lifecycle_commands(
+        &self,
+    ) -> &[(InputEventId, rebellion_windowing::WindowCommand)] {
+        &self.projected_lifecycle_commands
     }
 
     fn latest_root_secondary_release(
@@ -1890,6 +1925,95 @@ impl StrategicPointerBatch {
             event.phase == phase && router.pointer_recipient(event.id) != InputRecipient::Root
         })
     }
+}
+
+/// Routes one backend batch in its physical ordinal order. Pointer activation
+/// and dismiss-on-outside lifecycle effects advance only the cloned manager
+/// projection, then their accepted commands join keyboard lifecycle commands
+/// at the ordinary production commit boundary.
+fn collect_strategic_input_in_physical_order(
+    frame: u64,
+    router: &mut FrameInputRouter,
+    raw: &StrategicRawInputBatch,
+    routing: &mut strategic_windowing::PhysicalInputRoutingCursor,
+    gid_menu: Option<rebellion_windowing::WindowId>,
+    mut hit_windows: impl FnMut((f32, f32)) -> BTreeSet<rebellion_windowing::WindowId>,
+) -> (StrategicPointerBatch, StrategicRootKeyBatch) {
+    let mut pointer_index = 0;
+    let mut key_index = 0;
+    let mut pointers = Vec::with_capacity(raw.pointers.len());
+    let mut projected_lifecycle_commands = Vec::new();
+    let mut keys = Vec::with_capacity(raw.keys.len());
+    let mut sequential_escape_commands = Vec::new();
+
+    while pointer_index < raw.pointers.len() || key_index < raw.keys.len() {
+        let next_pointer = raw.pointers.get(pointer_index);
+        let next_key = raw.keys.get(key_index);
+        let take_pointer = match (next_pointer, next_key) {
+            (Some(pointer), Some(key)) => pointer.ordinal < key.ordinal,
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (None, None) => break,
+        };
+
+        if take_pointer {
+            let pointer = *next_pointer.expect("pointer branch has an event");
+            pointer_index += 1;
+            let id = InputEventId {
+                frame,
+                ordinal: pointer.ordinal,
+            };
+            let snapshot = routing.snapshot();
+            let hits = hit_windows(pointer.point);
+            let target = snapshot.pointer_route(&hits).target;
+            router.collect_pointer_from_snapshot(id, &snapshot, &hits, pointer.phase);
+            pointers.push(StrategicPointerEvent {
+                id,
+                point: pointer.point,
+                phase: pointer.phase,
+            });
+            if matches!(pointer.phase, PointerPhase::Press(_)) && !router.application_fences(id) {
+                if let Some(command) = routing.project_pointer_press(target) {
+                    projected_lifecycle_commands.push((id, command));
+                }
+            }
+            continue;
+        }
+
+        let indexed = *next_key.expect("key branch has an event");
+        key_index += 1;
+        StrategicRootKeyBatch::collect_indexed_event_sequential(
+            frame,
+            router,
+            indexed,
+            routing,
+            gid_menu,
+            &mut keys,
+            &mut sequential_escape_commands,
+        );
+    }
+
+    debug_assert_eq!(pointer_index, raw.pointers.len());
+    debug_assert_eq!(key_index, raw.keys.len());
+    debug_assert!(raw
+        .pointers
+        .windows(2)
+        .all(|events| events[0].ordinal < events[1].ordinal));
+    debug_assert!(raw
+        .keys
+        .windows(2)
+        .all(|events| events[0].ordinal < events[1].ordinal));
+
+    (
+        StrategicPointerBatch {
+            events: pointers,
+            projected_lifecycle_commands,
+        },
+        StrategicRootKeyBatch {
+            events: keys,
+            sequential_escape_commands,
+        },
+    )
 }
 
 fn latch_map_pointer_from_strategic_batch(
@@ -2125,10 +2249,10 @@ fn commit_pending_tactical_window_action(
     }))
 }
 
-/// Collects the app's normalized strategic pointer batch and folds the
-/// manager-owned Message Index surface into the same hit set as the retained
-/// strategic windows. Keeping this seam shared by production and tests makes
-/// the modal's outside-click block observable before galaxy-map dispatch.
+/// Focused-test adapter for pointer-only batches. Production uses
+/// [`collect_ordered_strategic_input_batch`] so keys share this hit set and
+/// physical-order projection.
+#[cfg(test)]
 fn collect_strategic_pointer_batch(
     frame_number: u64,
     router: &mut FrameInputRouter,
@@ -2160,6 +2284,52 @@ fn collect_strategic_pointer_batch(
         }
         hits
     })
+}
+
+/// Production counterpart of [`collect_strategic_pointer_batch`] that also
+/// routes keyboard events through the same physical-order projection.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The production routing seam receives the frozen manager surfaces and their hit-test adapters together."
+)]
+fn collect_ordered_strategic_input_batch(
+    frame_number: u64,
+    router: &mut FrameInputRouter,
+    raw: &StrategicRawInputBatch,
+    routing: &mut strategic_windowing::PhysicalInputRoutingCursor,
+    gid_menu: Option<rebellion_windowing::WindowId>,
+    frame: &rebellion_windowing::RoutingSnapshot,
+    layout: rebellion_render::CockpitLayout,
+    message_index: &MessageIndexState,
+    status: &StatusWindowState,
+    build_selection: &BuildSelectionState,
+    targeting_active: bool,
+    retained_hits: impl FnMut((f32, f32)) -> BTreeSet<rebellion_windowing::WindowId>,
+) -> (StrategicPointerBatch, StrategicRootKeyBatch) {
+    let mut retained_hits = retained_hits;
+    collect_strategic_input_in_physical_order(
+        frame_number,
+        router,
+        raw,
+        routing,
+        gid_menu,
+        |point| {
+            if targeting_active {
+                return BTreeSet::new();
+            }
+            let mut hits = retained_hits(point);
+            if let Some(window) = message_index.hit_window(frame, layout, point) {
+                hits.insert(window);
+            }
+            if let Some(window) = status.hit_window(frame, layout, point) {
+                hits.insert(window);
+            }
+            if let Some(window) = build_selection.hit_window(frame, layout, point) {
+                hits.insert(window);
+            }
+            hits
+        },
+    )
 }
 
 /// Whether the galaxy view acts on a root key: its accelerators (TEXTCOMM 11,
@@ -4526,6 +4696,7 @@ mod frame_input_tests {
                 point: (64.0, 65.0),
                 phase: PointerPhase::Release(PointerButtonId::Primary),
             }],
+            ..StrategicPointerBatch::default()
         };
         let mut receipts = Vec::new();
 
@@ -6467,7 +6638,7 @@ mod frame_input_tests {
         .unwrap();
         let mut router = FrameInputRouter::default();
         router.begin_frame(7, &coordinator.begin_frame());
-        let mut routing = coordinator.keyboard_routing_cursor();
+        let mut routing = coordinator.physical_input_routing_cursor();
         let keys = StrategicRootKeyBatch::collect_from_indexed_raw_sequential(
             7,
             &mut router,
@@ -9381,7 +9552,7 @@ mod panel_toggle_tests {
                 event: key(KeyCode::Escape, false),
             },
         ];
-        let mut routing = coordinator.keyboard_routing_cursor();
+        let mut routing = coordinator.physical_input_routing_cursor();
         let batch = StrategicRootKeyBatch::collect_from_indexed_raw_sequential(
             6,
             &mut router,
@@ -9571,6 +9742,137 @@ mod panel_toggle_tests {
             rebellion_render::windowing_input::InputRecipient::Blocked,
             "the key physically after the restricting release is fenced"
         );
+    }
+
+    #[test]
+    fn pointer_activation_before_a_key_changes_its_recipient_but_the_inverse_order_does_not() {
+        // Source: FUN_00422ce0 dispatches each backend message in queue order;
+        // the pointer's activation therefore changes the focus used by only
+        // later keyboard messages in that same batch.
+        use rebellion_render::windowing_policy::contextual_spec;
+        use rebellion_windowing::{
+            SubjectId, WindowCommand, WindowKind, WindowOwner, WindowTransition,
+        };
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let fleet = opened_fleet(&mut coordinator);
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::System,
+            SubjectId::new(2, 101),
+            WindowOwner::StrategicRoot,
+        )));
+        let system = match coordinator
+            .apply_pending()
+            .remove(0)
+            .result
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected System open, got {transition:?}"),
+        };
+        coordinator.enqueue(WindowCommand::Activate(system));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        let frame = coordinator.begin_frame();
+
+        let route = |pointer_first: bool, frame_number| {
+            let mut collector = StrategicRawInputCollector::default();
+            if pointer_first {
+                collector.mouse_button_down_event(MouseButton::Left, 30.0, 40.0);
+            }
+            collector.key_down_event(KeyCode::Key2, KeyMods::default(), false);
+            if !pointer_first {
+                collector.mouse_button_down_event(MouseButton::Left, 30.0, 40.0);
+            }
+            let raw = collector.take();
+            let mut router = FrameInputRouter::default();
+            router.begin_frame(frame_number, &frame);
+            let mut routing = coordinator.physical_input_routing_cursor();
+            let (pointers, keys) = super::collect_strategic_input_in_physical_order(
+                frame_number,
+                &mut router,
+                &raw,
+                &mut routing,
+                None,
+                |_| std::iter::once(fleet).collect(),
+            );
+            (
+                router.keyboard_recipient(keys.events[0].id),
+                pointers.projected_lifecycle_commands().to_vec(),
+            )
+        };
+
+        let (recipient, commands) = route(true, 51);
+        assert_eq!(
+            recipient,
+            InputRecipient::Window(fleet),
+            "a pointer activation before the key must change the key recipient"
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].0.ordinal, 0);
+        assert_eq!(commands[0].1, WindowCommand::Activate(fleet));
+        let (recipient, commands) = route(false, 52);
+        assert_eq!(
+            recipient,
+            InputRecipient::Window(system),
+            "a key before the pointer must retain the pre-pointer recipient"
+        );
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].0.ordinal, 1);
+        assert_eq!(commands[0].1, WindowCommand::Activate(fleet));
+        coordinator.enqueue(commands[0].1);
+        coordinator.enqueue(commands[0].1);
+        let applied = coordinator.apply_pending();
+        assert_eq!(applied.len(), 1, "the real commit queues one activation");
+        assert!(applied[0].result.is_ok());
+        assert_eq!(coordinator.begin_frame().focused().unwrap().window, fleet);
+    }
+
+    #[test]
+    fn outside_menu_press_before_a_key_projects_the_exact_close_before_routing_the_key() {
+        // Source: FUN_00442b90 closes on the outside press before the next
+        // queued message; a later key therefore reaches the revealed owner.
+        use rebellion_render::game_menu::ManagedMenuState;
+        use rebellion_windowing::WindowCommand;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let fleet = opened_fleet(&mut coordinator);
+        let mut managed = ManagedMenuState::default();
+        let prepared = managed.prepare_open(fleet);
+        coordinator.enqueue(prepared.command());
+        let applied = coordinator.apply_pending().remove(0).result.unwrap();
+        let menu = managed
+            .commit_open(prepared, &applied.transition)
+            .expect("accepted menu open publishes its exact identity");
+        let frame = coordinator.begin_frame();
+
+        let mut collector = StrategicRawInputCollector::default();
+        collector.mouse_button_down_event(MouseButton::Left, 500.0, 400.0);
+        collector.key_down_event(KeyCode::Key2, KeyMods::default(), false);
+        let raw = collector.take();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(53, &frame);
+        let mut routing = coordinator.physical_input_routing_cursor();
+        let (pointers, keys) = super::collect_strategic_input_in_physical_order(
+            53,
+            &mut router,
+            &raw,
+            &mut routing,
+            None,
+            |_| Default::default(),
+        );
+        assert!(pointers.has_blocked_press(&router));
+        assert_eq!(
+            pointers.projected_lifecycle_commands(),
+            &[(pointers.events[0].id, WindowCommand::Close(menu))]
+        );
+
+        assert_eq!(
+            router.keyboard_recipient(keys.events[0].id),
+            InputRecipient::Window(fleet),
+            "the exact dismissible menu Close must reveal its owner before the later key"
+        );
+        assert_eq!(managed.window_id(), Some(menu));
     }
 
     // Source: the tactical window acts on every WM_KEYDOWN of a held number
@@ -14219,16 +14521,24 @@ async fn main() {
                 let strategic_dispatch_restricted_before_input = strategic_dispatch_restricted;
                 #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                 let mut pending_windowing_route_receipts = Vec::<WindowingRouteReceipt>::new();
-                let strategic_pointer_events = if strategic_frame_sequence_valid {
+                let gid_menu = (cockpit_state.gid_ui.menu_open
+                    && cockpit_state.gid_ui.windows_hidden)
+                    .then(|| managed_menu.window_id())
+                    .flatten();
+                let mut physical_routing = strategic_windowing.physical_input_routing_cursor();
+                let mut strategic_pointer_events = StrategicPointerBatch::default();
+                let mut strategic_root_keys = StrategicRootKeyBatch::default();
+                if strategic_frame_sequence_valid {
                     // Hit testing follows the layers egui itself routes this
                     // frame's pointer through, so a retained window painted
                     // over a Fleet window keeps the event from it.
-                    let mut batch = StrategicPointerBatch::default();
                     egui_macroquad::cfg(|ctx| {
-                        batch = collect_strategic_pointer_batch(
+                        let batches = collect_ordered_strategic_input_batch(
                             strategic_frame_number,
                             &mut strategic_input_router,
-                            &strategic_raw_input_events.pointers,
+                            &strategic_raw_input_events,
+                            &mut physical_routing,
+                            gid_menu,
                             strategic_frame_boundary.snapshot(),
                             cockpit_layout,
                             &message_index,
@@ -14368,56 +14678,21 @@ async fn main() {
                                 hits
                             },
                         );
+                        strategic_pointer_events = batches.0;
+                        strategic_root_keys = batches.1;
                     });
                     if let Some(window) = tactical_window_identity {
                         // Position/down/wheel are continuous backend samples;
                         // the adapter emits them only for exact events routed
                         // and claimed by this manager identity.
                         tactical_window_input = route_tactical_window_input(
-                            &batch,
+                            &strategic_pointer_events,
                             &mut strategic_input_router,
                             window.id,
                             mouse_position(),
                             is_mouse_button_down(MouseButton::Left),
                             mouse_wheel().1,
                         );
-                    }
-                    batch
-                } else {
-                    StrategicPointerBatch::default()
-                };
-                // Normalize keys before dispatching any pointer-derived
-                // action. Both batches carry the backend collector's shared
-                // ordinals, so a later pointer fence cannot retroactively
-                // suppress an earlier key (and can still stop a later one).
-                let strategic_root_keys = if strategic_frame_sequence_valid {
-                    let gid_menu = (cockpit_state.gid_ui.menu_open
-                        && cockpit_state.gid_ui.windows_hidden)
-                        .then(|| managed_menu.window_id())
-                        .flatten();
-                    let mut keyboard_routing = strategic_windowing.keyboard_routing_cursor();
-                    StrategicRootKeyBatch::collect_from_indexed_raw_sequential(
-                        strategic_frame_number,
-                        &mut strategic_input_router,
-                        &strategic_raw_input_events.keys,
-                        &mut keyboard_routing,
-                        gid_menu,
-                    )
-                } else {
-                    StrategicRootKeyBatch::default()
-                };
-                if managed_menu.window_id().is_some()
-                    && strategic_pointer_events.has_blocked_press(&strategic_input_router)
-                {
-                    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-                    queue_windowing_pointer_receipt(
-                        &mut pending_windowing_route_receipts,
-                        &strategic_pointer_events,
-                        "managed_menu",
-                    );
-                    if let Some(window) = managed_menu.request_close() {
-                        strategic_windowing
-                            .enqueue(rebellion_windowing::WindowCommand::Close(window));
                     }
                 }
                 if cockpit_state.gid_ui.menu_open {
@@ -14509,8 +14784,22 @@ async fn main() {
                 let mut egui_claims_pointer = false;
                 let mut egui_claims_keyboard = false;
                 let mut child_keyboard_handled = false;
+                let mut projected_pointer_commands = strategic_pointer_events
+                    .projected_lifecycle_commands()
+                    .iter()
+                    .peekable();
                 for (event, command, revealed) in strategic_root_keys.sequential_escape_commands() {
                     use rebellion_windowing::{WindowCommand, WindowKind};
+
+                    while projected_pointer_commands
+                        .peek()
+                        .is_some_and(|(pointer, _)| pointer < event)
+                    {
+                        let (_, command) = projected_pointer_commands
+                            .next()
+                            .expect("peeked projected pointer command");
+                        strategic_windowing.enqueue(*command);
+                    }
 
                     let recipient = strategic_input_router.keyboard_recipient(*event);
                     let window = match (*command, recipient) {
@@ -14586,6 +14875,23 @@ async fn main() {
                         );
                     }
                     child_keyboard_handled = true;
+                }
+                for (_, command) in projected_pointer_commands {
+                    strategic_windowing.enqueue(*command);
+                }
+                if managed_menu.window_id().is_some()
+                    && strategic_pointer_events.has_blocked_press(&strategic_input_router)
+                {
+                    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
+                    queue_windowing_pointer_receipt(
+                        &mut pending_windowing_route_receipts,
+                        &strategic_pointer_events,
+                        "managed_menu",
+                    );
+                    if let Some(window) = managed_menu.request_close() {
+                        strategic_windowing
+                            .enqueue(rebellion_windowing::WindowCommand::Close(window));
+                    }
                 }
                 let sequential_escape_routed =
                     !strategic_root_keys.sequential_escape_commands().is_empty();

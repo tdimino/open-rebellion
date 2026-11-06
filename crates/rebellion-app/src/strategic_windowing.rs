@@ -27,8 +27,8 @@ use rebellion_render::{
 };
 use rebellion_windowing::{
     BubblePolicy, ContentReport, ContentStatus, ExistingEffect, FocusTarget, ReconcileReport,
-    RoutingSnapshot, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId,
-    WindowKind, WindowOwner, WindowTransition,
+    RouteTarget, RoutingSnapshot, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent,
+    WindowId, WindowKind, WindowOwner, WindowTransition,
 };
 
 use crate::encyclopedia_surface::{EncyclopediaSurfaceController, EncyclopediaWindowOpenError};
@@ -287,17 +287,17 @@ pub struct StrategicFrameBoundary {
     locks: ApplicationInputLocks,
 }
 
-/// Per-backend-event manager projection used while normalizing one input
-/// batch. Commands applied here do not mutate production state; they make a
-/// later key observe the focus/order produced by an earlier key's queued
-/// lifecycle command.
+/// Per-backend-event manager projection used while normalizing one physical
+/// input batch. Commands applied here do not mutate production state; they
+/// make each later pointer or key observe lifecycle effects from earlier
+/// events while production still commits at its ordinary frame boundary.
 #[derive(Debug, Clone)]
-pub struct KeyboardRoutingCursor {
+pub struct PhysicalInputRoutingCursor {
     manager: rebellion_windowing::WindowManager,
 }
 
-impl KeyboardRoutingCursor {
-    /// Current projected route for the next physical keyboard event.
+impl PhysicalInputRoutingCursor {
+    /// Current projected route for the next physical input event.
     #[must_use]
     pub fn snapshot(&self) -> RoutingSnapshot {
         self.manager.begin_frame()
@@ -307,6 +307,32 @@ impl KeyboardRoutingCursor {
     /// Production enqueues the same accepted command for the commit boundary.
     pub fn apply(&mut self, command: WindowCommand) -> bool {
         self.manager.apply(command).is_ok()
+    }
+
+    /// Projects the lifecycle effect of one admitted physical press.
+    ///
+    /// A press in a different managed window activates that exact identity;
+    /// a press in the focused owner leaves its control focus intact for the
+    /// renderer to resolve. A press outside a dismiss-on-outside menu closes
+    /// the blocker, while a strategic modal remains fail-closed. The returned
+    /// command is queued at the ordinary production commit boundary.
+    pub fn project_pointer_press(&mut self, route: RouteTarget) -> Option<WindowCommand> {
+        let snapshot = self.snapshot();
+        let command = match route {
+            RouteTarget::Window(target)
+                if snapshot
+                    .focused()
+                    .is_none_or(|focused| focused.window != target.window) =>
+            {
+                WindowCommand::Activate(target.window)
+            }
+            RouteTarget::Window(_) => return None,
+            RouteTarget::BlockedBy(window) if snapshot.active_modal() != Some(window) => {
+                WindowCommand::Close(window)
+            }
+            RouteTarget::StrategicRoot | RouteTarget::BlockedBy(_) => return None,
+        };
+        self.apply(command).then_some(command)
     }
 }
 
@@ -439,12 +465,13 @@ impl StrategicWindowing {
         self.manager.begin_frame()
     }
 
-    /// Starts an event-by-event keyboard projection from current manager
-    /// state. This prevents two physical keys collected in one render frame
-    /// from sharing a stale focus lease after the first queues a close.
+    /// Starts an event-by-event physical input projection from current manager
+    /// state. This prevents pointer/key events collected in one render frame
+    /// from sharing a stale focus lease after an earlier event queues a
+    /// lifecycle change.
     #[must_use]
-    pub fn keyboard_routing_cursor(&self) -> KeyboardRoutingCursor {
-        KeyboardRoutingCursor {
+    pub fn physical_input_routing_cursor(&self) -> PhysicalInputRoutingCursor {
+        PhysicalInputRoutingCursor {
             manager: self.manager.clone(),
         }
     }
@@ -479,14 +506,12 @@ impl StrategicWindowing {
         reason = "feature-family migrations enqueue the first commands"
     )]
     pub fn enqueue(&mut self, command: WindowCommand) {
-        if let WindowCommand::Close(id) = command {
-            if self
-                .pending
-                .iter()
-                .any(|queued| queued.command == WindowCommand::Close(id))
-            {
-                return;
-            }
+        if matches!(
+            command,
+            WindowCommand::Close(_) | WindowCommand::Activate(_)
+        ) && self.pending.iter().any(|queued| queued.command == command)
+        {
+            return;
         }
         self.pending.push(QueuedWindowCommand {
             command,

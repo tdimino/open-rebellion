@@ -153,14 +153,38 @@ impl FrameInputRouter {
         hit_windows: &BTreeSet<WindowId>,
         phase: PointerPhase,
     ) -> InputRecipient {
+        let target = self
+            .snapshot
+            .as_ref()
+            .expect("begin_frame installs a snapshot")
+            .pointer_route(hit_windows)
+            .target;
+        self.collect_pointer_route(event, target, phase)
+    }
+
+    /// Routes one pointer event against its event-local manager projection.
+    /// Gesture ownership remains in this router; only the hit-test snapshot
+    /// advances after an earlier physical lifecycle event.
+    pub fn collect_pointer_from_snapshot(
+        &mut self,
+        event: InputEventId,
+        snapshot: &RoutingSnapshot,
+        hit_windows: &BTreeSet<WindowId>,
+        phase: PointerPhase,
+    ) -> InputRecipient {
+        self.collect_pointer_route(event, snapshot.pointer_route(hit_windows).target, phase)
+    }
+
+    fn collect_pointer_route(
+        &mut self,
+        event: InputEventId,
+        target: RouteTarget,
+        phase: PointerPhase,
+    ) -> InputRecipient {
         if !self.valid_event(event) || self.events.contains_key(&event) {
             return InputRecipient::Blocked;
         }
-        let snapshot = self
-            .snapshot
-            .as_ref()
-            .expect("begin_frame installs a snapshot");
-        let routed = route_recipient(snapshot.pointer_route(hit_windows).target);
+        let routed = route_recipient(target);
         if let PointerPhase::Press(button) = phase {
             // A new press proves this same button returned up even if its
             // earlier release was not observed. Other buttons remain isolated.
@@ -269,6 +293,13 @@ impl FrameInputRouter {
     #[must_use]
     pub fn keyboard_recipient(&self, event: InputEventId) -> InputRecipient {
         self.recipient(event)
+    }
+
+    /// Whether an application hold, rather than the manager route itself,
+    /// fences this physical event.
+    #[must_use]
+    pub fn application_fences(&self, event: InputEventId) -> bool {
+        self.event_blocked(event)
     }
 
     /// Claims one physical event once across macroquad and egui copies.
