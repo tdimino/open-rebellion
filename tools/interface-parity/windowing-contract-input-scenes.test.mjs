@@ -44,6 +44,39 @@ test("Journey D Fleet minimize waits for owner route receipts", () => {
     "Fleet minimize release must identify the exact owner action");
 });
 
+test("GID submenu arms its state barrier before an awaited hover can publish", async () => {
+  const module = await import("./windowing-contract-input-scenes.mjs");
+  const states = [{ status: "input-scenes-state", menu_rects: [[10, 20, 30, 40]] }];
+  let observedAfter = null;
+  const monitor = {
+    states,
+    async wait(status, predicate, description, after) {
+      observedAfter = after;
+      const state = states.slice(after).find((candidate) =>
+        candidate.status === status && predicate(candidate));
+      assert.ok(state, description);
+      return state;
+    },
+  };
+
+  const submenu = await module.actAndWaitForFreshState({
+    monitor,
+    status: "input-scenes-state",
+    predicate: (state) => state.menu_rects.length === 2,
+    description: "the synchronous submenu publication was missed",
+    action: async () => {
+      states.push({
+        status: "input-scenes-state",
+        menu_rects: [[10, 20, 30, 40], [50, 20, 30, 40]],
+      });
+    },
+    settle: async () => {},
+  });
+
+  assert.equal(observedAfter, 1, "the barrier was armed after the hover published");
+  assert.equal(submenu.menu_rects.length, 2);
+});
+
 test("windowing_journey_de_checks_child_consumption_and_gesture_cancellation", async () => {
   const cases = await discoverCaseModules(here);
   const journey = cases.find(({ id }) => id === "journey-d");

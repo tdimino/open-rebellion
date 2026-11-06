@@ -249,6 +249,21 @@ function screenPoint(context, x, y) {
   };
 }
 
+export async function actAndWaitForFreshState({
+  monitor,
+  status,
+  predicate,
+  description,
+  action,
+  settle,
+  attempts,
+}) {
+  const after = monitor.states.length;
+  await action();
+  await settle();
+  return monitor.wait(status, predicate, description, after, attempts);
+}
+
 function parseRoute(line) {
   const match = line.match(
     /^\[windowing-route\] physical=(\d+:\d+) kind=(pointer|key) router=(root|blocked|window:\d+) application=([a-z0-9_:-]+) underlay=(\d+)$/,
@@ -889,15 +904,14 @@ async function runJourneyD(context, setup, caseId = "journey-d") {
   );
   const menuRecord = recordOfKind(gidOpen, "menu");
   const rootPoint = screenPoint(context, 470, 246);
-  await setup.page.mouse.move(rootPoint.x, rootPoint.y);
-  const submenuStart = setup.monitor.states.length;
-  await frames(setup.page, 5);
-  const submenuState = await setup.monitor.wait(
-    "input-scenes-state",
-    (state) => state.menu_rects.length === 2,
-    "GID submenu did not publish both hit rectangles",
-    submenuStart,
-  );
+  const submenuState = await actAndWaitForFreshState({
+    monitor: setup.monitor,
+    status: "input-scenes-state",
+    predicate: (state) => state.menu_rects.length === 2,
+    description: "GID submenu did not publish both hit rectangles",
+    action: () => setup.page.mouse.move(rootPoint.x, rootPoint.y),
+    settle: () => frames(setup.page, 5),
+  });
   const rootRoutes = setup.monitor.routes.length;
   await click(setup.page, rootPoint);
   const rootHit = routeEvent(setup, "menu-root-hit", setup.monitor.routes.slice(rootRoutes), "pointer");
