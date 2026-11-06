@@ -1211,6 +1211,8 @@ struct StrategicRawPointerEvent {
 struct StrategicRawInputBatch {
     keys: Vec<StrategicIndexedKeyEvent>,
     pointers: Vec<StrategicRawPointerEvent>,
+    /// Exact backend wheel deltas keyed by their shared physical ordinal.
+    wheel_deltas: BTreeMap<u32, (f32, f32)>,
     /// Every key-down in order, autorepeats included, for the tactical
     /// window ([`TacticalState::set_frame_key_downs`]).
     key_downs: Vec<KeyCode>,
@@ -1223,6 +1225,7 @@ struct StrategicRawInputCollector {
     next_ordinal: u32,
     keys: Vec<StrategicIndexedKeyEvent>,
     pointers: Vec<StrategicRawPointerEvent>,
+    wheel_deltas: BTreeMap<u32, (f32, f32)>,
     key_downs: Vec<KeyCode>,
     pressed: BTreeSet<PointerButtonId>,
     pointer: (f32, f32),
@@ -1234,6 +1237,7 @@ impl StrategicRawInputCollector {
         StrategicRawInputBatch {
             keys: std::mem::take(&mut self.keys),
             pointers: std::mem::take(&mut self.pointers),
+            wheel_deltas: std::mem::take(&mut self.wheel_deltas),
             key_downs: std::mem::take(&mut self.key_downs),
         }
     }
@@ -1251,6 +1255,17 @@ impl StrategicRawInputCollector {
                 point,
                 phase,
             });
+        }
+    }
+
+    fn push_wheel(&mut self, point: (f32, f32), delta: (f32, f32)) {
+        if let Some(ordinal) = self.next_ordinal() {
+            self.pointers.push(StrategicRawPointerEvent {
+                ordinal,
+                point,
+                phase: PointerPhase::Auxiliary,
+            });
+            self.wheel_deltas.insert(ordinal, delta);
         }
     }
 }
@@ -1299,8 +1314,8 @@ impl macroquad::miniquad::EventHandler for StrategicRawInputCollector {
         self.push_pointer(self.pointer, phase);
     }
 
-    fn mouse_wheel_event(&mut self, _x: f32, _y: f32) {
-        self.push_pointer(self.pointer, PointerPhase::Auxiliary);
+    fn mouse_wheel_event(&mut self, x: f32, y: f32) {
+        self.push_wheel(self.pointer, (x, y));
     }
 
     fn mouse_button_down_event(
@@ -1780,6 +1795,7 @@ struct StrategicPointerEvent {
     id: InputEventId,
     point: (f32, f32),
     phase: PointerPhase,
+    wheel_delta: Option<(f32, f32)>,
 }
 
 #[derive(Debug, Default)]
@@ -1808,6 +1824,7 @@ impl StrategicPointerBatch {
                     id,
                     point: event.point,
                     phase: event.phase,
+                    wheel_delta: None,
                 }
             })
             .collect();
@@ -1971,6 +1988,7 @@ fn collect_strategic_input_in_physical_order(
                 id,
                 point: pointer.point,
                 phase: pointer.phase,
+                wheel_delta: raw.wheel_deltas.get(&pointer.ordinal).copied(),
             });
             if matches!(pointer.phase, PointerPhase::Press(_)) && !router.application_fences(id) {
                 if let Some(command) = routing.project_pointer_press(target) {
@@ -2031,7 +2049,6 @@ fn route_tactical_window_input(
     window: rebellion_windowing::WindowId,
     pointer_screen: (f32, f32),
     primary_down: bool,
-    wheel_y: f32,
 ) -> TacticalWindowInput {
     let owner = InputRecipient::Window(window);
     let mut input = TacticalWindowInput {
@@ -2060,10 +2077,14 @@ fn route_tactical_window_input(
                     .events
                     .push(TacticalWindowEvent::PrimaryRelease(event.point));
             }
-            PointerPhase::Auxiliary => input.events.push(TacticalWindowEvent::Wheel {
-                screen: event.point,
-                delta_y: wheel_y,
-            }),
+            PointerPhase::Auxiliary => {
+                if let Some(delta) = event.wheel_delta {
+                    input.events.push(TacticalWindowEvent::Wheel {
+                        screen: event.point,
+                        delta,
+                    });
+                }
+            }
             PointerPhase::Press(_)
             | PointerPhase::Motion(_)
             | PointerPhase::Release(_)
@@ -4156,7 +4177,8 @@ mod frame_input_tests {
         enqueue_managed_fixture_system,
     };
     use super::{
-        approve_tactical_window_action, child_key_disposition, collect_strategic_pointer_batch,
+        approve_tactical_window_action, child_key_disposition,
+        collect_strategic_input_in_physical_order, collect_strategic_pointer_batch,
         commit_pending_tactical_window_action, commit_sector_window_publication,
         enqueue_managed_fixture_sector, enqueue_sector_manager_action, enqueue_sector_window,
         pump_pending_sector_publication, queue_routed_sector_release_receipt,
@@ -4166,11 +4188,13 @@ mod frame_input_tests {
         with_strategic_input, with_visual_fixture_pointer, CommittedTacticalWindowAction,
         PendingSectorPublication, PreparedTacticalWindowAction, RoutedEguiInputFilter,
         SectorDependentIntent, SectorPublicationIntent, StrategicIndexedKeyEvent,
-        StrategicPointerBatch, StrategicPointerEvent, StrategicRawKeyEvent,
-        StrategicRawPointerEvent, StrategicRootKeyBatch, TacticalResultDestination,
+        StrategicPointerBatch, StrategicPointerEvent, StrategicRawInputCollector,
+        StrategicRawKeyEvent, StrategicRawPointerEvent, StrategicRootKeyBatch,
+        TacticalResultDestination,
     };
     use crate::strategic_windowing::StrategicWindowing;
     use egui_macroquad::egui;
+    use macroquad::miniquad::EventHandler;
     use rebellion_render::build_selection::BuildSelectionState;
     #[cfg(feature = "interface-test-fixtures")]
     use rebellion_render::defenses_window::DefensesWindowState;
@@ -4189,7 +4213,7 @@ mod frame_input_tests {
     };
     use rebellion_render::{CockpitFaction, CockpitLayout, CockpitViewport};
     use rebellion_windowing::{WindowCommand, WindowManager, WindowTransition};
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     /// Clicks a retained window's area and reports whether the window saw
     /// the click and whether the input reached owners drawn after it.
@@ -4695,6 +4719,7 @@ mod frame_input_tests {
                 id: release,
                 point: (64.0, 65.0),
                 phase: PointerPhase::Release(PointerButtonId::Primary),
+                wheel_delta: None,
             }],
             ..StrategicPointerBatch::default()
         };
@@ -6882,7 +6907,7 @@ mod frame_input_tests {
             |_| BTreeSet::from([alert]),
         );
         let admitted =
-            route_tactical_window_input(&press, &mut router, alert, (300.0, 350.0), true, 0.0);
+            route_tactical_window_input(&press, &mut router, alert, (300.0, 350.0), true);
         assert_eq!(
             admitted.events,
             vec![TacticalWindowEvent::PrimaryPress((300.0, 350.0))]
@@ -6903,7 +6928,7 @@ mod frame_input_tests {
             |_| BTreeSet::new(),
         );
         let quarantined =
-            route_tactical_window_input(&release, &mut router, alert, (300.0, 350.0), false, 0.0);
+            route_tactical_window_input(&release, &mut router, alert, (300.0, 350.0), false);
         assert_eq!(quarantined.events, vec![TacticalWindowEvent::CancelGesture]);
         assert_eq!(
             router.pointer_recipient(release.events[0].id),
@@ -6951,12 +6976,12 @@ mod frame_input_tests {
         ];
         let mut router = FrameInputRouter::default();
         router.begin_frame(1, &coordinator.begin_frame());
-        let batch = StrategicPointerBatch::collect_from_raw(1, &mut router, &raw, |_| {
+        let mut batch = StrategicPointerBatch::collect_from_raw(1, &mut router, &raw, |_| {
             BTreeSet::from([alert])
         });
+        batch.events[3].wheel_delta = Some((0.5, -2.5));
 
-        let routed =
-            route_tactical_window_input(&batch, &mut router, alert, (9.0, 10.0), false, -2.5);
+        let routed = route_tactical_window_input(&batch, &mut router, alert, (9.0, 10.0), false);
         assert_eq!(
             routed.events,
             vec![
@@ -6965,7 +6990,7 @@ mod frame_input_tests {
                 TacticalWindowEvent::PrimaryPress((301.0, 302.0)),
                 TacticalWindowEvent::Wheel {
                     screen: (401.0, 402.0),
-                    delta_y: -2.5,
+                    delta: (0.5, -2.5),
                 },
             ]
         );
@@ -6977,6 +7002,120 @@ mod frame_input_tests {
             .events
             .iter()
             .all(|event| { !router.claim(event.id, InputRecipient::Window(alert)) }));
+    }
+
+    #[test]
+    fn tactical_wheels_keep_each_physical_ordinal_and_xy_delta_for_the_exact_alert() {
+        use crate::strategic_windowing::WindowScene;
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let alert = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(5),
+                TacticalWindowPhase::Alert,
+            )
+            .unwrap()
+            .window
+            .unwrap()
+            .id;
+        let mut collector = StrategicRawInputCollector::default();
+        collector.pointer = (401.0, 402.0);
+        collector.mouse_wheel_event(0.25, -1.0);
+        collector.mouse_wheel_event(-0.5, -2.0);
+        let raw = collector.take();
+        assert_eq!(
+            raw.pointers
+                .iter()
+                .map(|event| (event.ordinal, event.phase))
+                .collect::<Vec<_>>(),
+            [(0, PointerPhase::Auxiliary), (1, PointerPhase::Auxiliary),]
+        );
+        assert_eq!(
+            raw.wheel_deltas,
+            BTreeMap::from([(0, (0.25, -1.0)), (1, (-0.5, -2.0))])
+        );
+
+        let frame = coordinator.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(61, &frame);
+        let mut routing = coordinator.physical_input_routing_cursor();
+        let (batch, _) = collect_strategic_input_in_physical_order(
+            61,
+            &mut router,
+            &raw,
+            &mut routing,
+            None,
+            |_| BTreeSet::from([alert]),
+        );
+        assert_eq!(
+            batch
+                .events
+                .iter()
+                .map(|event| (event.id.ordinal, event.wheel_delta))
+                .collect::<Vec<_>>(),
+            [(0, Some((0.25, -1.0))), (1, Some((-0.5, -2.0)))]
+        );
+        let routed = route_tactical_window_input(&batch, &mut router, alert, (9.0, 10.0), false);
+        assert_eq!(
+            routed.events,
+            [
+                TacticalWindowEvent::Wheel {
+                    screen: (401.0, 402.0),
+                    delta: (0.25, -1.0),
+                },
+                TacticalWindowEvent::Wheel {
+                    screen: (401.0, 402.0),
+                    delta: (-0.5, -2.0),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn tactical_wheel_for_another_recipient_never_reaches_the_alert() {
+        use rebellion_render::windowing_policy::contextual_spec;
+        use rebellion_windowing::{SubjectId, WindowKind, WindowOwner};
+
+        let mut manager = WindowManager::new();
+        let mut open = |kind, subject| match manager
+            .apply(WindowCommand::Open(contextual_spec(
+                kind,
+                SubjectId::new(1, subject),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected open, got {other:?}"),
+        };
+        let alert = open(WindowKind::System, 6);
+        let other = open(WindowKind::Sector, 7);
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(62, &manager.begin_frame());
+        let mut batch = StrategicPointerBatch::collect_from_raw(
+            62,
+            &mut router,
+            &[StrategicRawPointerEvent {
+                ordinal: 0,
+                point: (80.0, 90.0),
+                phase: PointerPhase::Auxiliary,
+            }],
+            |_| BTreeSet::from([other]),
+        );
+        batch.events[0].wheel_delta = Some((3.0, -4.0));
+        assert_eq!(
+            router.pointer_recipient(batch.events[0].id),
+            InputRecipient::Window(other)
+        );
+        assert!(
+            route_tactical_window_input(&batch, &mut router, alert, (80.0, 90.0), false)
+                .events
+                .is_empty()
+        );
+        assert!(router.claim(batch.events[0].id, InputRecipient::Window(other)));
     }
 
     #[test]
@@ -14671,16 +14810,14 @@ async fn main() {
                         strategic_root_keys = batches.1;
                     });
                     if let Some(window) = tactical_window_identity {
-                        // Position/down/wheel are continuous backend samples;
-                        // the adapter emits them only for exact events routed
-                        // and claimed by this manager identity.
+                        // Position/down are continuous backend samples. Wheel
+                        // deltas stay on their exact routed physical events.
                         tactical_window_input = route_tactical_window_input(
                             &strategic_pointer_events,
                             &mut strategic_input_router,
                             window.id,
                             mouse_position(),
                             is_mouse_button_down(MouseButton::Left),
-                            mouse_wheel().1,
                         );
                     }
                 }

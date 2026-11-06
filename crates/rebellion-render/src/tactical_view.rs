@@ -329,10 +329,10 @@ pub enum TacticalWindowEvent {
     CancelGesture,
     PrimaryPress((f32, f32)),
     PrimaryRelease((f32, f32)),
-    /// Event-local wheel position and admitted vertical delta.
+    /// Event-local wheel position and admitted backend x/y delta.
     Wheel {
         screen: (f32, f32),
-        delta_y: f32,
+        delta: (f32, f32),
     },
 }
 
@@ -7287,7 +7287,7 @@ fn apply_battle_alert_scroll_input(
                     pointer,
                 );
             }
-            TacticalWindowEvent::Wheel { screen, delta_y } => {
+            TacticalWindowEvent::Wheel { screen, delta } => {
                 let point = canvas.logical_pointer(screen.0, screen.1);
                 let in_list = point.0 >= BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X
                     && point.0
@@ -7296,6 +7296,7 @@ fn apply_battle_alert_scroll_input(
                     && point.1
                         < BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y + BATTLE_ALERT_LIST_HEIGHT;
                 let range = battle_alert_scroll_range(state.battle_alert_scroll, rows);
+                let delta_y = delta.1;
                 if in_list && delta_y != 0.0 && range.overflows() {
                     let rows = (delta_y.abs().ceil() as usize).clamp(1, 3);
                     state.battle_alert_scroll = if delta_y > 0.0 {
@@ -10194,7 +10195,7 @@ mod tests {
             pointer_screen: (0.0, 0.0),
             events: vec![TacticalWindowEvent::Wheel {
                 screen: inside_list,
-                delta_y: -1.0,
+                delta: (0.0, -1.0),
             }],
             ..TacticalWindowInput::default()
         };
@@ -10205,6 +10206,8 @@ mod tests {
 
     #[test]
     fn tactical_windowing_alert_scroll_honors_the_wheel_delta() {
+        // FUN_0060f6d0 emits one scroll notification per physical step; the
+        // port maps an admitted backend y magnitude to 1..=3 row steps.
         let mut state = TacticalState {
             battle_alert_scroll: 4,
             ..TacticalState::default()
@@ -10218,7 +10221,7 @@ mod tests {
             pointer_screen: (0.0, 0.0),
             events: vec![TacticalWindowEvent::Wheel {
                 screen: inside_list,
-                delta_y,
+                delta: (0.0, delta_y),
             }],
             ..TacticalWindowInput::default()
         };
@@ -10227,6 +10230,40 @@ mod tests {
         assert_eq!(state.battle_alert_scroll, 7);
         apply_battle_alert_scroll_input(&mut state, canvas, 20, &input(2.0));
         assert_eq!(state.battle_alert_scroll, 5);
+    }
+
+    #[test]
+    fn tactical_windowing_alert_scroll_applies_each_inside_wheel_once_and_ignores_outside() {
+        // FUN_0060f6d0 ids 100/101 move one row for each delivered step.
+        // Separate backend events therefore keep separate magnitudes; an
+        // aggregate reused for both inside events would move six rows here.
+        let mut state = TacticalState::default();
+        let inside = (
+            BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X + 20.0,
+            BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y + 20.0,
+        );
+        let outside = (BATTLE_ALERT_WINDOW_X - 5.0, BATTLE_ALERT_WINDOW_Y - 5.0);
+        let input = TacticalWindowInput {
+            pointer_screen: outside,
+            events: vec![
+                TacticalWindowEvent::Wheel {
+                    screen: inside,
+                    delta: (0.25, -1.0),
+                },
+                TacticalWindowEvent::Wheel {
+                    screen: outside,
+                    delta: (9.0, -3.0),
+                },
+                TacticalWindowEvent::Wheel {
+                    screen: inside,
+                    delta: (-0.5, -2.0),
+                },
+            ],
+            ..TacticalWindowInput::default()
+        };
+
+        apply_battle_alert_scroll_input(&mut state, TacticalCanvas::new(640.0, 480.0), 20, &input);
+        assert_eq!(state.battle_alert_scroll, 3);
     }
 
     #[test]
