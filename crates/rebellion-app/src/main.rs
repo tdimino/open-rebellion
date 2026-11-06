@@ -10262,6 +10262,7 @@ async fn main() {
     let mut operation_report_open_pending = false;
     let mut operation_report_close_pending = false;
     let mut pending_report_reopen_index: Option<u16> = None;
+    let mut prepared_report_destination: Option<(SystemKey, FinderTarget)> = None;
     let mut pending_report_destination: Option<(SystemKey, FinderTarget)> = None;
     // The open Message Index (window 0x0d) and the speed its Advice
     // category saved (FUN_00487ff0 +0x58).
@@ -14485,36 +14486,24 @@ async fn main() {
                         operation_report_state.open(&world, message, cockpit_state.faction, None);
                     }
                 }
-                if operation_report_state.is_open()
-                    && operation_report_window_id.is_none()
-                    && !operation_report_open_pending
-                {
-                    if object_menu.is_some()
-                        || game_speed_ui.menu_anchor.is_some()
-                        || agent_menu_state.anchor.is_some()
-                    {
-                        if let Some(menu) = managed_menu.request_close() {
-                            strategic_windowing
-                                .enqueue(rebellion_windowing::WindowCommand::Close(menu));
-                        }
-                    }
-                    let report_id = operation_report_state
-                        .message()
-                        .expect("an open report has a message identity");
-                    let report =
-                        rebellion_render::windowing_policy::operation_report_spec(report_id);
-                    if let Some(index) = message_index.window_id() {
-                        pending_report_reopen_index.get_or_insert(message_index.category());
-                        strategic_windowing.enqueue(rebellion_windowing::WindowCommand::Replace {
-                            old: index,
-                            new: report,
-                        });
-                        message_index_close_queued = true;
-                    } else {
-                        strategic_windowing
-                            .enqueue(rebellion_windowing::WindowCommand::Open(report));
-                    }
-                    operation_report_open_pending = true;
+                let dismissible_menu = (object_menu.is_some()
+                    || game_speed_ui.menu_anchor.is_some()
+                    || agent_menu_state.anchor.is_some())
+                .then(|| managed_menu.request_close())
+                .flatten();
+                let replacing_index = message_index
+                    .window_id()
+                    .map(|window| (window, message_index.category()));
+                if enqueue_operation_report_publication(
+                    &mut strategic_windowing,
+                    &operation_report_state,
+                    operation_report_window_id,
+                    &mut operation_report_open_pending,
+                    dismissible_menu,
+                    replacing_index,
+                    &mut pending_report_reopen_index,
+                ) {
+                    message_index_close_queued = replacing_index.is_some();
                     strategic_dispatch_restricted = true;
                     strategic_input_router.set_application_hold(true);
                 }
@@ -17233,29 +17222,20 @@ async fn main() {
                                     }) {
                                         if let Some(message) = msg_log.get(message_id) {
                                             let category = message_index.category();
-                                            if operation_report_state.open(
+                                            if enqueue_message_index_operation_report(
+                                                &mut strategic_windowing,
+                                                &mut operation_report_state,
                                                 &world,
                                                 message,
                                                 cockpit_state.faction,
-                                                Some(category),
+                                                category,
+                                                message_index.window_id(),
+                                                &mut operation_report_open_pending,
+                                                &mut pending_report_reopen_index,
                                             ) {
                                                 opening_report = true;
-                                                if !operation_report_open_pending {
-                                                    if let Some(old) = message_index.window_id() {
-                                                        let new = rebellion_render::windowing_policy::operation_report_spec(message_id);
-                                                        strategic_windowing.enqueue(
-                                                            rebellion_windowing::WindowCommand::Replace { old, new },
-                                                        );
-                                                        operation_report_open_pending = true;
-                                                        pending_report_reopen_index =
-                                                            Some(category);
-                                                        message_index_close_queued = true;
-                                                        strategic_dispatch_restricted = true;
-                                                    } else {
-                                                        operation_report_state =
-                                                            OperationReportState::default();
-                                                    }
-                                                }
+                                                message_index_close_queued = true;
+                                                strategic_dispatch_restricted = true;
                                             }
                                         }
                                     }
@@ -17321,28 +17301,20 @@ async fn main() {
                                             )
                                             .unwrap_or_default(),
                                     ) {
-                                        match &action {
-                                            OperationReportAction::Closed { reopen_index } => {
-                                                pending_report_reopen_index = *reopen_index;
-                                            }
-                                            OperationReportAction::GotoSystem { .. }
-                                            | OperationReportAction::GotoFleet { .. } => {
-                                                let destination = report_destination(&action);
-                                                pending_report_destination = destination;
-                                                #[cfg(all(
-                                                    target_arch = "wasm32",
-                                                    feature = "interface-test-fixtures"
-                                                ))]
-                                                {
-                                                    report_choice = destination;
-                                                }
-                                            }
-                                        }
-                                        if !operation_report_close_pending {
-                                            strategic_windowing.enqueue(
-                                                rebellion_windowing::WindowCommand::Close(window),
-                                            );
-                                            operation_report_close_pending = true;
+                                        let _destination = enqueue_operation_report_action(
+                                            &mut strategic_windowing,
+                                            window,
+                                            &mut operation_report_close_pending,
+                                            &action,
+                                            &mut pending_report_reopen_index,
+                                            &mut prepared_report_destination,
+                                        );
+                                        #[cfg(all(
+                                            target_arch = "wasm32",
+                                            feature = "interface-test-fixtures"
+                                        ))]
+                                        {
+                                            report_choice = _destination;
                                         }
                                     }
                                 }
@@ -19635,81 +19607,19 @@ async fn main() {
                 )
                 .or(pending_stop_gameplay);
             }
-            let pending_report_message = operation_report_state.message();
-            let report_open_command = pending_report_message.is_some_and(|message_id| {
-                let report_key =
-                    rebellion_render::windowing_policy::operation_report_spec(message_id).key;
-                match &command {
-                    rebellion_windowing::WindowCommand::Open(spec) => spec.key == report_key,
-                    rebellion_windowing::WindowCommand::Replace { new, .. } => {
-                        new.key == report_key
-                    }
-                    _ => false,
-                }
-            });
-            if report_open_command && operation_report_open_pending {
-                match &result {
-                    Ok(commit) => {
-                        let id = match commit.transition {
-                            rebellion_windowing::WindowTransition::Opened { id }
-                            | rebellion_windowing::WindowTransition::Replaced { new: id, .. } => {
-                                Some(id)
-                            }
-                            _ => None,
-                        };
-                        if let Some(id) = id.filter(|id| strategic_windowing.attach_content(*id)) {
-                            operation_report_window_id = Some(id);
-                            operation_report_open_pending = false;
-                        } else {
-                            macroquad::logging::error!(
-                                "[windowing] Operation Report open receipt did not publish content"
-                            );
-                            if let Some(id) = id {
-                                removed_content
-                                    .extend(strategic_windowing.rollback_detail_publication(id));
-                            }
-                            operation_report_open_pending = false;
-                        }
-                    }
-                    Err(error) => {
-                        macroquad::logging::warn!(
-                            "[windowing] Operation Report open rejected error={error:?}"
-                        );
-                        operation_report_open_pending = false;
-                    }
-                }
-            }
-            if operation_report_close_pending
-                && operation_report_window_id.is_some_and(|window| {
-                    command == rebellion_windowing::WindowCommand::Close(window)
-                })
-            {
-                let closed = result.as_ref().is_ok_and(|commit| {
-                    operation_report_window_id.is_some_and(|window| {
-                        matches!(
-                            &commit.transition,
-                            rebellion_windowing::WindowTransition::Closed { root, closed, .. }
-                                if *root == window && closed.contains(&window)
-                        )
-                    }) && operation_report_window_id
-                        .is_some_and(|window| removed_content.contains(&window))
-                });
-                operation_report_close_pending = false;
-                if closed {
-                    operation_report_window_id = None;
-                    operation_report_state.close();
-                    if let Some(message_id) = operation_report_state.message() {
-                        strategic_windowing.enqueue(rebellion_windowing::WindowCommand::Open(
-                            rebellion_render::windowing_policy::operation_report_spec(message_id),
-                        ));
-                        operation_report_open_pending = true;
-                    } else if let Some(category) = pending_report_reopen_index.take() {
-                        if let Some(prepared) = MessageIndexState::prepare_open(category) {
-                            strategic_windowing.enqueue_message_index_open(prepared);
-                        }
-                    }
-                }
-            }
+            commit_operation_report_receipt(
+                &mut strategic_windowing,
+                &mut operation_report_state,
+                &mut operation_report_window_id,
+                &mut operation_report_open_pending,
+                &mut operation_report_close_pending,
+                &mut pending_report_reopen_index,
+                &mut prepared_report_destination,
+                &mut pending_report_destination,
+                &command,
+                &result,
+                &mut removed_content,
+            );
             let pending_object_menu = pending_object_menu_publications
                 .iter()
                 .position(|(prepared, _, _)| prepared.command() == command)
@@ -22460,6 +22370,206 @@ fn message_choice_sector_dependent(
         }),
         FinderTarget::Missions(member) => Some(SectorDependentIntent::Missions { system, member }),
         FinderTarget::Sector => None,
+    }
+}
+
+/// Queues the one manager publication for the report currently at the head of
+/// `state`. A dismissible Menu must retire before a fresh strategic modal can
+/// open; an existing Message Index is instead atomically replaced.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The report payload, exact manager identities, and pending receipt state stay explicit at this lifecycle boundary."
+)]
+fn enqueue_operation_report_publication(
+    coordinator: &mut strategic_windowing::StrategicWindowing,
+    state: &OperationReportState,
+    window_id: Option<rebellion_windowing::WindowId>,
+    open_pending: &mut bool,
+    dismissible_menu: Option<rebellion_windowing::WindowId>,
+    replacing_index: Option<(rebellion_windowing::WindowId, u16)>,
+    pending_reopen_index: &mut Option<u16>,
+) -> bool {
+    if window_id.is_some() || *open_pending {
+        return false;
+    }
+    let Some(message_id) = state.message() else {
+        return false;
+    };
+
+    if let Some(menu) = dismissible_menu {
+        coordinator.enqueue(rebellion_windowing::WindowCommand::Close(menu));
+    }
+    let report = rebellion_render::windowing_policy::operation_report_spec(message_id);
+    if let Some((index, category)) = replacing_index {
+        pending_reopen_index.get_or_insert(category);
+        coordinator.enqueue(rebellion_windowing::WindowCommand::Replace {
+            old: index,
+            new: report,
+        });
+    } else {
+        coordinator.enqueue(rebellion_windowing::WindowCommand::Open(report));
+    }
+    *open_pending = true;
+    true
+}
+
+/// Adds a Message Index report to the renderer FIFO. When no report
+/// publication is already in flight, the Index's exact identity is replaced;
+/// otherwise the already queued head report retains that manager publication
+/// and this report waits behind it.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The Index identity and report publication state must remain explicit at their shared lifecycle boundary."
+)]
+fn enqueue_message_index_operation_report(
+    coordinator: &mut strategic_windowing::StrategicWindowing,
+    state: &mut OperationReportState,
+    world: &GameWorld,
+    message: &GameMessage,
+    faction: CockpitFaction,
+    category: u16,
+    index: Option<rebellion_windowing::WindowId>,
+    open_pending: &mut bool,
+    pending_reopen_index: &mut Option<u16>,
+) -> bool {
+    if !state.open(world, message, faction, Some(category)) {
+        return false;
+    }
+    if *open_pending {
+        return true;
+    }
+    let Some(old) = index else {
+        *state = OperationReportState::default();
+        return false;
+    };
+
+    coordinator.enqueue(rebellion_windowing::WindowCommand::Replace {
+        old,
+        new: rebellion_render::windowing_policy::operation_report_spec(message.id),
+    });
+    *open_pending = true;
+    *pending_reopen_index = Some(category);
+    true
+}
+
+/// Captures one report action under its exact live manager identity. Content
+/// remains on the shown report until the matching Close receipt commits, so a
+/// repeated pointer sample cannot advance the FIFO or replace the first
+/// accepted destination.
+fn enqueue_operation_report_action(
+    coordinator: &mut strategic_windowing::StrategicWindowing,
+    window: rebellion_windowing::WindowId,
+    close_pending: &mut bool,
+    action: &OperationReportAction,
+    pending_reopen_index: &mut Option<u16>,
+    prepared_destination: &mut Option<(SystemKey, FinderTarget)>,
+) -> Option<(SystemKey, FinderTarget)> {
+    if *close_pending {
+        return None;
+    }
+
+    let destination = report_destination(action);
+    match action {
+        OperationReportAction::Closed { reopen_index } => {
+            *pending_reopen_index = *reopen_index;
+        }
+        OperationReportAction::GotoSystem { .. } | OperationReportAction::GotoFleet { .. } => {
+            *prepared_destination = destination;
+        }
+    }
+    coordinator.enqueue(rebellion_windowing::WindowCommand::Close(window));
+    *close_pending = true;
+    destination
+}
+
+/// Applies only the exact Operation Report manager receipt. An accepted Close
+/// advances the renderer FIFO once, then either queues the next report or
+/// restores the Message Index route that produced the completed report.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The report payload and each manager/pending identity are checked together at the receipt boundary."
+)]
+fn commit_operation_report_receipt(
+    coordinator: &mut strategic_windowing::StrategicWindowing,
+    state: &mut OperationReportState,
+    window_id: &mut Option<rebellion_windowing::WindowId>,
+    open_pending: &mut bool,
+    close_pending: &mut bool,
+    pending_reopen_index: &mut Option<u16>,
+    prepared_destination: &mut Option<(SystemKey, FinderTarget)>,
+    pending_destination: &mut Option<(SystemKey, FinderTarget)>,
+    command: &rebellion_windowing::WindowCommand,
+    result: &Result<rebellion_windowing::WindowCommit, rebellion_windowing::WindowError>,
+    removed_content: &mut Vec<rebellion_windowing::WindowId>,
+) {
+    let report_open_command = state.message().is_some_and(|message_id| {
+        let report_key = rebellion_render::windowing_policy::operation_report_spec(message_id).key;
+        match command {
+            rebellion_windowing::WindowCommand::Open(spec) => spec.key == report_key,
+            rebellion_windowing::WindowCommand::Replace { new, .. } => new.key == report_key,
+            _ => false,
+        }
+    });
+    if report_open_command && *open_pending {
+        match result {
+            Ok(commit) => {
+                let id = match commit.transition {
+                    rebellion_windowing::WindowTransition::Opened { id }
+                    | rebellion_windowing::WindowTransition::Replaced { new: id, .. } => Some(id),
+                    _ => None,
+                };
+                if let Some(id) = id.filter(|id| coordinator.attach_content(*id)) {
+                    *window_id = Some(id);
+                    *open_pending = false;
+                } else {
+                    macroquad::logging::error!(
+                        "[windowing] Operation Report open receipt did not publish content"
+                    );
+                    if let Some(id) = id {
+                        removed_content.extend(coordinator.rollback_detail_publication(id));
+                    }
+                    *open_pending = false;
+                }
+            }
+            Err(error) => {
+                macroquad::logging::warn!(
+                    "[windowing] Operation Report open rejected error={error:?}"
+                );
+                *open_pending = false;
+            }
+        }
+    }
+
+    if *close_pending
+        && window_id
+            .is_some_and(|window| *command == rebellion_windowing::WindowCommand::Close(window))
+    {
+        let closed = result.as_ref().is_ok_and(|commit| {
+            window_id.is_some_and(|window| {
+                matches!(
+                    &commit.transition,
+                    rebellion_windowing::WindowTransition::Closed { root, closed, .. }
+                        if *root == window && closed.contains(&window)
+                )
+            }) && window_id.is_some_and(|window| removed_content.contains(&window))
+        });
+        let destination = prepared_destination.take();
+        *close_pending = false;
+        if closed {
+            *pending_destination = destination;
+            *window_id = None;
+            state.close();
+            if let Some(message_id) = state.message() {
+                coordinator.enqueue(rebellion_windowing::WindowCommand::Open(
+                    rebellion_render::windowing_policy::operation_report_spec(message_id),
+                ));
+                *open_pending = true;
+            } else if let Some(category) = pending_reopen_index.take() {
+                if let Some(prepared) = MessageIndexState::prepare_open(category) {
+                    coordinator.enqueue_message_index_open(prepared);
+                }
+            }
+        }
     }
 }
 
@@ -25327,6 +25437,187 @@ fn report_destination(action: &OperationReportAction) -> Option<(SystemKey, Find
 #[cfg(test)]
 mod report_destination_tests {
     use super::*;
+    use rebellion_core::operation_report::OperationReport;
+    use rebellion_render::game_menu::ManagedMenuState;
+    use rebellion_render::message_index::MessageIndexState;
+    use rebellion_render::windowing_policy::contextual_spec;
+    use rebellion_windowing::{
+        SubjectId, WindowCommand, WindowId, WindowKind, WindowOwner, WindowTransition,
+    };
+    use std::sync::Arc;
+
+    const REPORT_FACTIONS: [CockpitFaction; 2] = [CockpitFaction::Alliance, CockpitFaction::Empire];
+
+    #[derive(Default)]
+    struct ReportWindowHarness {
+        state: OperationReportState,
+        window_id: Option<WindowId>,
+        open_pending: bool,
+        close_pending: bool,
+        reopen_index: Option<u16>,
+        prepared_destination: Option<(SystemKey, FinderTarget)>,
+        destination: Option<(SystemKey, FinderTarget)>,
+    }
+
+    impl ReportWindowHarness {
+        fn open(
+            &mut self,
+            world: &GameWorld,
+            message: &GameMessage,
+            faction: CockpitFaction,
+            reopen_index: Option<u16>,
+        ) {
+            assert!(self.state.open(world, message, faction, reopen_index));
+        }
+
+        fn enqueue_publication(
+            &mut self,
+            coordinator: &mut StrategicWindowing,
+            dismissible_menu: Option<WindowId>,
+            replacing_index: Option<(WindowId, u16)>,
+        ) -> bool {
+            super::enqueue_operation_report_publication(
+                coordinator,
+                &self.state,
+                self.window_id,
+                &mut self.open_pending,
+                dismissible_menu,
+                replacing_index,
+                &mut self.reopen_index,
+            )
+        }
+
+        fn open_from_index(
+            &mut self,
+            coordinator: &mut StrategicWindowing,
+            world: &GameWorld,
+            message: &GameMessage,
+            faction: CockpitFaction,
+            category: u16,
+            index: Option<WindowId>,
+        ) -> bool {
+            super::enqueue_message_index_operation_report(
+                coordinator,
+                &mut self.state,
+                world,
+                message,
+                faction,
+                category,
+                index,
+                &mut self.open_pending,
+                &mut self.reopen_index,
+            )
+        }
+
+        fn action(
+            &mut self,
+            coordinator: &mut StrategicWindowing,
+            action: &OperationReportAction,
+        ) -> Option<(SystemKey, FinderTarget)> {
+            super::enqueue_operation_report_action(
+                coordinator,
+                self.window_id.expect("a published report has an identity"),
+                &mut self.close_pending,
+                action,
+                &mut self.reopen_index,
+                &mut self.prepared_destination,
+            )
+        }
+
+        fn commit(
+            &mut self,
+            coordinator: &mut StrategicWindowing,
+            applied: &mut strategic_windowing::AppliedWindowCommand,
+        ) {
+            super::commit_operation_report_receipt(
+                coordinator,
+                &mut self.state,
+                &mut self.window_id,
+                &mut self.open_pending,
+                &mut self.close_pending,
+                &mut self.reopen_index,
+                &mut self.prepared_destination,
+                &mut self.destination,
+                &applied.command,
+                &applied.result,
+                &mut applied.removed_content,
+            );
+        }
+    }
+
+    fn report_fixture(id: u64, faction: CockpitFaction) -> (GameWorld, SystemKey, GameMessage) {
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(rebellion_core::world::System {
+            name: format!("Report {id}"),
+            ..rebellion_core::world::System::default()
+        });
+        let owner = match faction {
+            CockpitFaction::Alliance => Faction::Alliance,
+            CockpitFaction::Empire => Faction::Empire,
+        };
+        let mut message =
+            GameMessage::new(id, format!("Report {id}"), MessageCategory::Combat).with_report(
+                Arc::new(OperationReport::new(system, false, Faction::Neutral, owner)),
+            );
+        message.id = id;
+        (world, system, message)
+    }
+
+    fn open_object_menu(coordinator: &mut StrategicWindowing) -> (ManagedMenuState, WindowId) {
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::System,
+            SubjectId::new(2, 0x61_03),
+            WindowOwner::StrategicRoot,
+        )));
+        let owner = match coordinator
+            .apply_pending()
+            .remove(0)
+            .result
+            .expect("the menu owner opens")
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected owner open, got {other:?}"),
+        };
+        let mut menu = ManagedMenuState::default();
+        let prepared = menu.prepare_open(owner);
+        coordinator.enqueue(prepared.command());
+        let opened = coordinator.apply_pending().remove(0);
+        let menu_id = menu
+            .commit_open(
+                prepared,
+                &opened.result.expect("the object menu opens").transition,
+            )
+            .expect("the object menu publishes");
+        assert!(coordinator.attach_content(menu_id));
+        (menu, menu_id)
+    }
+
+    fn open_message_index(
+        coordinator: &mut StrategicWindowing,
+        category: u16,
+    ) -> (MessageIndexState, WindowId) {
+        let mut index = MessageIndexState::new();
+        coordinator.enqueue_message_index_open(
+            MessageIndexState::prepare_open(category).expect("a recovered rail category"),
+        );
+        let mut opened = coordinator.apply_pending().remove(0);
+        let expected_id = opened
+            .message_index_content_id
+            .expect("the manager names Message Index content");
+        let (id, _) = index
+            .commit_open(
+                opened
+                    .prepared_message_index
+                    .take()
+                    .expect("the prepared Message Index content accompanies its command"),
+                &opened.result.expect("the Message Index opens").transition,
+            )
+            .expect("Message Index content accepts the exact receipt");
+        assert_eq!(id, expected_id);
+        assert!(coordinator.acknowledge_message_index_publication(id));
+        (index, id)
+    }
 
     #[test]
     fn the_reports_fleet_button_opens_the_systems_fleet_window_with_nothing_selected() {
@@ -25348,6 +25639,220 @@ mod report_destination_tests {
             report_destination(&OperationReportAction::Closed { reopen_index: None }),
             None
         );
+    }
+
+    #[test]
+    fn an_alert_under_an_object_menu_retires_the_menu_before_opening_once() {
+        for faction in REPORT_FACTIONS {
+            let (world, _, alert) = report_fixture(0x6103, faction);
+            let mut coordinator = StrategicWindowing::new();
+            let (mut menu, menu_id) = open_object_menu(&mut coordinator);
+            let mut report = ReportWindowHarness::default();
+            report.open(&world, &alert, faction, None);
+
+            assert!(report.enqueue_publication(&mut coordinator, menu.request_close(), None,));
+            let mut receipts = coordinator.apply_pending();
+            assert_eq!(receipts.len(), 2, "{faction:?}");
+            assert!(matches!(
+                receipts[0].result.as_ref().map(|commit| &commit.transition),
+                Ok(WindowTransition::Closed { root, .. }) if *root == menu_id
+            ));
+            menu.remove_content(&receipts[0].removed_content);
+            assert_eq!(menu.window_id(), None, "{faction:?}");
+
+            report.commit(&mut coordinator, &mut receipts[1]);
+            assert_eq!(report.state.message(), Some(alert.id), "{faction:?}");
+            assert!(report.window_id.is_some(), "{faction:?}");
+            assert!(!report.open_pending, "{faction:?}");
+            assert_eq!(
+                receipts
+                    .iter()
+                    .filter(|receipt| matches!(
+                        receipt.result.as_ref().map(|commit| &commit.transition),
+                        Ok(WindowTransition::Opened { .. })
+                    ))
+                    .count(),
+                1,
+                "{faction:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_alert_and_index_report_in_one_frame_keep_one_shown_and_one_waiting() {
+        const CATEGORY: u16 = 0x79;
+        for faction in REPORT_FACTIONS {
+            let (world, _, alert) = report_fixture(0x6113, faction);
+            let (_, _, index_report) = report_fixture(0x6114, faction);
+            let mut coordinator = StrategicWindowing::new();
+            let (mut index, index_id) = open_message_index(&mut coordinator, CATEGORY);
+            let mut report = ReportWindowHarness::default();
+
+            report.open(&world, &alert, faction, None);
+            assert!(report.enqueue_publication(&mut coordinator, None, Some((index_id, CATEGORY)),));
+            assert!(report.open_from_index(
+                &mut coordinator,
+                &world,
+                &index_report,
+                faction,
+                CATEGORY,
+                Some(index_id),
+            ));
+
+            let mut replaced = coordinator.apply_pending().remove(0);
+            assert!(matches!(
+                replaced.result.as_ref().map(|commit| &commit.transition),
+                Ok(WindowTransition::Replaced { old, .. }) if *old == index_id
+            ));
+            index.remove_content(&replaced.removed_content);
+            report.commit(&mut coordinator, &mut replaced);
+            assert_eq!(report.state.message(), Some(alert.id), "{faction:?}");
+            assert!(report.window_id.is_some(), "{faction:?}");
+
+            report.action(
+                &mut coordinator,
+                &OperationReportAction::Closed { reopen_index: None },
+            );
+            let mut closed = coordinator.apply_pending().remove(0);
+            report.commit(&mut coordinator, &mut closed);
+            assert_eq!(
+                report.state.message(),
+                Some(index_report.id),
+                "the same-frame Index report remains first in the FIFO for {faction:?}"
+            );
+            assert!(report.window_id.is_none(), "{faction:?}");
+            assert!(report.open_pending, "{faction:?}");
+
+            let mut next = coordinator.apply_pending().remove(0);
+            report.commit(&mut coordinator, &mut next);
+            assert_eq!(report.state.message(), Some(index_report.id));
+            assert!(report.window_id.is_some(), "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn report_goto_precedes_a_choice_from_the_reopened_message_index() {
+        const CATEGORY: u16 = 0x79;
+        for faction in REPORT_FACTIONS {
+            let (world, report_system, message) = report_fixture(0x6123, faction);
+            let mut coordinator = StrategicWindowing::new();
+            let (mut index, index_id) = open_message_index(&mut coordinator, CATEGORY);
+            let mut report = ReportWindowHarness::default();
+            report.open(&world, &message, faction, Some(CATEGORY));
+            assert!(report.enqueue_publication(&mut coordinator, None, Some((index_id, CATEGORY)),));
+            let mut replaced = coordinator.apply_pending().remove(0);
+            index.remove_content(&replaced.removed_content);
+            report.commit(&mut coordinator, &mut replaced);
+
+            let action = match faction {
+                CockpitFaction::Alliance => OperationReportAction::GotoSystem {
+                    system: report_system,
+                },
+                CockpitFaction::Empire => OperationReportAction::GotoFleet {
+                    system: report_system,
+                },
+            };
+            let expected = report
+                .action(&mut coordinator, &action)
+                .expect("a Go To action captures its destination");
+            assert_eq!(
+                report.destination, None,
+                "navigation waits for the exact Close receipt for {faction:?}"
+            );
+            let mut closed = coordinator.apply_pending().remove(0);
+            report.commit(&mut coordinator, &mut closed);
+            assert!(report.state.message().is_none(), "{faction:?}");
+            assert_eq!(report.destination, Some(expected), "{faction:?}");
+
+            let mut reopened = coordinator.apply_pending().remove(0);
+            report.commit(&mut coordinator, &mut reopened);
+            let reopened_content = reopened
+                .message_index_content_id
+                .expect("the accepted report Close queues the Index publication");
+            let (reopened_id, _) = index
+                .commit_open(
+                    reopened
+                        .prepared_message_index
+                        .take()
+                        .expect("the reopened Index retains its category"),
+                    &reopened
+                        .result
+                        .as_ref()
+                        .expect("the underlying Index reopens")
+                        .transition,
+                )
+                .expect("the Index accepts its exact reopen receipt");
+            assert_eq!(reopened_id, reopened_content, "{faction:?}");
+            assert_eq!(index.category(), CATEGORY, "{faction:?}");
+            assert!(
+                coordinator.acknowledge_message_index_publication(reopened_id),
+                "{faction:?}"
+            );
+
+            let (index_world, index_system, _) = report_fixture(0x6124, faction);
+            drop(index_world);
+            let index_choice = Some((index_system, FinderTarget::Defenses));
+            assert_eq!(
+                super::prefer_report_destination(report.destination.take(), index_choice),
+                Some(expected),
+                "{faction:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn one_mouse_close_receipt_advances_exactly_once_to_the_waiting_report() {
+        for faction in REPORT_FACTIONS {
+            let (world, _, first) = report_fixture(0x6133, faction);
+            let (_, _, second) = report_fixture(0x6134, faction);
+            let mut coordinator = StrategicWindowing::new();
+            let mut report = ReportWindowHarness::default();
+            report.open(&world, &first, faction, None);
+            report.open(&world, &second, faction, None);
+            assert!(report.enqueue_publication(&mut coordinator, None, None));
+            let mut opened = coordinator.apply_pending().remove(0);
+            report.commit(&mut coordinator, &mut opened);
+
+            assert_eq!(
+                report.action(
+                    &mut coordinator,
+                    &OperationReportAction::Closed { reopen_index: None },
+                ),
+                None
+            );
+            assert_eq!(
+                report.state.message(),
+                Some(first.id),
+                "the draw action must not advance renderer content for {faction:?}"
+            );
+            assert_eq!(
+                report.action(
+                    &mut coordinator,
+                    &OperationReportAction::Closed {
+                        reopen_index: Some(0x79),
+                    },
+                ),
+                None,
+                "a repeated pointer sample is inert for {faction:?}"
+            );
+            assert_eq!(report.reopen_index, None, "{faction:?}");
+
+            let mut closed = coordinator.apply_pending().remove(0);
+            report.commit(&mut coordinator, &mut closed);
+            assert_eq!(report.state.message(), Some(second.id), "{faction:?}");
+            assert!(report.open_pending, "{faction:?}");
+            report.commit(&mut coordinator, &mut closed);
+            assert_eq!(
+                report.state.message(),
+                Some(second.id),
+                "replaying the same exact receipt cannot skip the FIFO for {faction:?}"
+            );
+
+            let mut next = coordinator.apply_pending().remove(0);
+            report.commit(&mut coordinator, &mut next);
+            assert_eq!(report.state.message(), Some(second.id), "{faction:?}");
+            assert!(report.window_id.is_some(), "{faction:?}");
+        }
     }
 }
 
