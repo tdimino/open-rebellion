@@ -1378,6 +1378,7 @@ pub fn draw_defenses_windows(
         None,
         &[],
         None,
+        &|_| true,
     )
 }
 
@@ -1401,6 +1402,43 @@ pub fn draw_managed_defenses_windows(
     pointer_events: &[(InputEventId, PointerPhase)],
     router: &mut FrameInputRouter,
 ) -> Vec<DefensesWindowAction> {
+    draw_managed_defenses_windows_shown(
+        ctx,
+        world,
+        fog,
+        missions,
+        economy,
+        state,
+        faction,
+        layout,
+        cache,
+        snapshot,
+        pointer_events,
+        router,
+        &|_| true,
+    )
+}
+
+/// [`draw_managed_defenses_windows`] with command-center GID visibility.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
+)]
+pub fn draw_managed_defenses_windows_shown(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    fog: &FogState,
+    missions: &MissionState,
+    economy: &EconomyState,
+    state: &mut DefensesWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    snapshot: &RoutingSnapshot,
+    pointer_events: &[(InputEventId, PointerPhase)],
+    router: &mut FrameInputRouter,
+    shown: &dyn Fn(GalaxyChild) -> bool,
+) -> Vec<DefensesWindowAction> {
     draw_defenses_windows_with_snapshot(
         ctx,
         world,
@@ -1414,6 +1452,7 @@ pub fn draw_managed_defenses_windows(
         Some(snapshot),
         pointer_events,
         Some(router),
+        shown,
     )
 }
 
@@ -1440,7 +1479,7 @@ fn draw_defenses_windows_with_snapshot(
     world: &GameWorld,
     fog: &FogState,
     missions: &MissionState,
-    economy: &EconomyState,
+    _economy: &EconomyState,
     state: &mut DefensesWindowState,
     faction: CockpitFaction,
     layout: CockpitLayout,
@@ -1448,6 +1487,7 @@ fn draw_defenses_windows_with_snapshot(
     snapshot: Option<&RoutingSnapshot>,
     pointer_events: &[(InputEventId, PointerPhase)],
     mut router: Option<&mut FrameInputRouter>,
+    shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<DefensesWindowAction> {
     state.update_title_drag(ctx, layout);
     if state.windows.iter().all(|window| window.id.is_none()) {
@@ -1477,6 +1517,7 @@ fn draw_defenses_windows_with_snapshot(
                 .find(|window| window.id == Some(id))
                 .cloned()
             {
+                Some(window) if !shown(GalaxyChild::Defenses(window.system)) => continue,
                 Some(window) if window.release_target_visible && key.subject == window.subject => {
                     windows.push(window);
                 }

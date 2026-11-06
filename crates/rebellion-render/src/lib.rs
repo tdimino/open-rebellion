@@ -166,8 +166,8 @@ pub use tactical_assets::install_native_tactical_lod_family;
 #[cfg(feature = "interface-test-fixtures")]
 pub use tactical_assets::TacticalLodView;
 pub use tactical_view::{
-    draw_tactical_view, BattlePhase, BattleResultCategory, BattleSession, CombatWinner,
-    OriginalTacticalRng, TacticalAction, TacticalState, TacticalTrenchRunOutcome,
+    draw_tactical_view, BattlePhase, BattleSession, CombatWinner, OriginalTacticalRng,
+    TacticalAction, TacticalState, TacticalTrenchRunOutcome,
 };
 pub use video_player::{VideoError, VideoPlayer};
 pub use windowing::GalaxyChild;

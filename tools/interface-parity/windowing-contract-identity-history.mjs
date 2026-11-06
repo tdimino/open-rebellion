@@ -532,7 +532,7 @@ async function openDetail(context, setup, kind, systemIndex, triggerId) {
       const opened = detail(candidate, system.dat_id, kind).id;
       return existingId === null
         ? opened !== null
-        : opened === existingId && candidate.snapshot.focused?.window === existingId;
+        : opened === existingId && candidate.snapshot.paint_order.at(-1) === existingId;
     },
     {
       triggerId,
@@ -853,9 +853,14 @@ async function runJourneyA(context, setup) {
       );
     if (index === 0) {
       assert.equal(
-        JSON.stringify(compact(transition.after)),
-        JSON.stringify(compact(transition.before)),
-        "clicking the already-focused Defenses tab changed its content",
+        transition.after.snapshot.focused?.window,
+        target,
+        "the exposed Defenses click did not establish explicit keyboard focus",
+      );
+      assert.deepEqual(
+        detail(transition.after, defensesOpen.systemDatId, "defenses").selection,
+        detail(transition.before, defensesOpen.systemDatId, "defenses").selection,
+        "clicking the current Defenses tab changed its content",
       );
     }
     assert.equal(
@@ -950,6 +955,11 @@ async function runJourneyA(context, setup) {
   );
   assert.equal(detail(reopened.after, fleetOpen.systemDatId, "fleet").id, fleetOpen.id);
   assert.equal(JSON.stringify(detail(reopened.after, fleetOpen.systemDatId, "fleet").selection), fleetContent);
+  assert.equal(
+    reopened.after.snapshot.focused?.window,
+    systemByDatId(beforeReopen, fleetOpen.systemDatId).sector_id,
+    "a detail reopen stole keyboard focus from its real Sector opener",
+  );
   pushStep(setup, "A08", beforeReopen, reopened.after, reopened.event, 6);
 
   const sectorOrigin = systemByDatId(reopened.after, systemOpen.systemDatId);
@@ -1204,7 +1214,11 @@ async function runJourneyB(context, setup) {
     },
   );
   assert.equal(detail(restoredMiddle.after, minimizedFleet.systemDatId, "fleet").id, minimizedFleet.id);
-  assert.equal(restoredMiddle.after.snapshot.focused?.window, minimizedFleet.id);
+  assert.deepEqual(
+    restoredMiddle.after.snapshot.focused,
+    restoredMiddle.before.snapshot.focused,
+    "middle-history restore changed keyboard focus",
+  );
   assert.equal(
     JSON.stringify(detail(restoredMiddle.after, minimizedFleet.systemDatId, "fleet").selection),
     stableFleetContent,
@@ -1228,7 +1242,11 @@ async function runJourneyB(context, setup) {
     "pointer-B05-reopen-minimized-system",
   );
   assert.equal(detail(reopenedSystem.after, minimizedSystem.systemDatId, "system").id, minimizedSystem.id);
-  assert.equal(reopenedSystem.after.snapshot.focused?.window, minimizedSystem.id);
+  assert.equal(
+    reopenedSystem.after.snapshot.focused?.window,
+    systemByDatId(reopenedSystem.before, minimizedSystem.systemDatId).sector_id,
+    "normal-opener restore stole keyboard focus from its Sector",
+  );
   assert.ok(
     !reopenedSystem.after.snapshot.history.includes(minimizedSystem.id),
     "normal opener left restored System in presentation history",
@@ -1342,7 +1360,11 @@ async function runJourneyB(context, setup) {
       firstFrame: true,
     },
   );
-  assert.equal(freshRestore.after.snapshot.focused?.window, restoreSlot.id);
+  assert.deepEqual(
+    freshRestore.after.snapshot.focused,
+    freshRestore.before.snapshot.focused,
+    "fresh rail restore changed keyboard focus",
+  );
   assert.equal(
     freshRestore.before.snapshot.history.length - freshRestore.after.snapshot.history.length,
     1,

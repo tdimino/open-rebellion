@@ -163,6 +163,32 @@ async function waitForLog(consoleLines, fragment, timeoutMs = 60_000) {
   }
 }
 
+async function waitForFreshLog(consoleLines, fragment, after, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs;
+  const count = () => consoleLines.filter((line) => line.text.includes(fragment)).length;
+  while (count() <= after) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for fresh console log: ${fragment}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+// A production site may contain the decoded opening and faction movies. End
+// each one through the browser shell's real video pointer path, as a player
+// click does, so the journey never clicks through a movie onto the menu below.
+async function waitForMovieBoundary(page, consoleLines, pattern, timeoutMs = 240_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!consoleLines.some((line) => pattern.test(line.text))) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for console log: ${pattern}`);
+    await page.evaluate(() => {
+      const video = document.querySelector("video.movie");
+      if (video && video.currentTime > 0.5) {
+        video.dispatchEvent(new PointerEvent("pointerdown", { button: 0, bubbles: true }));
+      }
+    });
+    await page.waitForTimeout(250);
+  }
+}
+
 async function frames(page, count = 6) {
   for (let index = 0; index < count; index += 1) {
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
@@ -184,9 +210,14 @@ function observePage(page, origin) {
       requests.push({ path: new URL(response.url()).pathname, status: response.status() });
     }
   });
-  page.on("requestfailed", (request) => failures.push(
-    `request:${request.url()}:${request.failure()?.errorText}`,
-  ));
+  page.on("requestfailed", (request) => {
+    const error = request.failure()?.errorText;
+    const pathname = new URL(request.url()).pathname;
+    // The journey intentionally ends real movie overlays through their
+    // pointer handler; Chromium reports a still-streaming video as aborted.
+    if (pathname.startsWith("/data/movies/") && error === "net::ERR_ABORTED") return;
+    failures.push(`request:${request.url()}:${error}`);
+  });
   page.on("pageerror", (error) => failures.push(`page:${error.stack || error.message}`));
   page.on("console", (message) => {
     consoleLines.push({ type: message.type(), text: message.text() });
@@ -225,16 +256,26 @@ async function runFactionJourney(browser, origin, faction, namespace) {
     )));
     assertFourRequestStartup(observed.requests);
     assert.equal(await page.evaluate(() => typeof window.__openRebellionInterfaceReady), "undefined");
-    await page.waitForTimeout(12_000);
+    await waitForMovieBoundary(
+      page,
+      observed.consoleLines,
+      /\[movie\] ended id=0x66 next=MainMenu/,
+    );
+    await frames(page, 2);
     await page.mouse.click(faction.menu.x, faction.menu.y, { delay: 250 });
     await waitForLog(observed.consoleLines, `[campaign] faction=${faction.campaign}`);
+    await waitForMovieBoundary(
+      page,
+      observed.consoleLines,
+      new RegExp(`\\[movie\\] ended id=${faction.movie} next=Galaxy`),
+    );
     await frames(page, 8);
     const campaign = await screenshot(page, directory, "01-campaign");
 
     await page.keyboard.press("F7");
     await waitForLog(
       observed.consoleLines,
-      "command=0x131 destination=encyclopedia status=opened_original",
+      "command=0x131 destination=encyclopedia status=opened_managed",
     );
     await frames(page, 8);
     const index = await screenshot(page, directory, "02-index");
@@ -288,13 +329,13 @@ async function runFactionJourney(browser, origin, faction, namespace) {
     assert.notEqual(returned.sha256, next.sha256, "Escape returns to the command center");
 
     const opens = observed.consoleLines.filter(({ text }) => text.includes(
-      "command=0x131 destination=encyclopedia status=opened_original",
+      "command=0x131 destination=encyclopedia status=opened_managed",
     )).length;
     await page.keyboard.press("F7");
-    await waitForLog(observed.consoleLines, "command=0x131 destination=encyclopedia status=opened_original");
+    await waitForLog(observed.consoleLines, "command=0x131 destination=encyclopedia status=opened_managed");
     await frames(page, 4);
     assert.equal(observed.consoleLines.filter(({ text }) => text.includes(
-      "command=0x131 destination=encyclopedia status=opened_original",
+      "command=0x131 destination=encyclopedia status=opened_managed",
     )).length, opens + 1, "returned campaign accepts a second production entry");
     const ships = categoryControls.find(({ command }) => command === 0x71);
     assert.ok(ships);
@@ -319,7 +360,7 @@ async function runFactionJourney(browser, origin, faction, namespace) {
     await page.keyboard.press("F3");
     await waitForLog(
       observed.consoleLines,
-      "command=0x12e destination=fleet_finder status=opened_original",
+      "command=0x12e destination=fleet_finder status=opened_managed",
     );
     await frames(page, 6);
     const finderOrigin = faction.name === "alliance" ? { x: 62.5, y: 50 } : { x: 125, y: 52.5 };
@@ -343,10 +384,14 @@ async function runFactionJourney(browser, origin, faction, namespace) {
       // too little room to its right.
       ? { x: 385, y: 327 }
       : { x: 434, y: 333 };
+    const committedBefore = observed.consoleLines.filter(({ text }) => text.includes(
+      "production_route status=committed identity=",
+    )).length;
     await page.mouse.click(encyclopediaRow.x, encyclopediaRow.y, { delay: 150 });
-    await waitForLog(
+    await waitForFreshLog(
       observed.consoleLines,
-      "production_route status=opened origin=contextual caller=FUN_00486fb0_event_0x100",
+      "production_route status=committed identity=",
+      committedBefore,
     );
     await frames(page, 8);
     const contextualTopic = await screenshot(page, directory, "08-contextual-topic");
@@ -400,6 +445,21 @@ async function runFactionJourney(browser, origin, faction, namespace) {
       console: observed.consoleLines,
       failures: observed.failures,
     };
+  } catch (error) {
+    const failure = {
+      status: "fail",
+      faction: faction.name,
+      error: error instanceof Error ? error.stack || error.message : String(error),
+      requests: observed.requests,
+      console: observed.consoleLines,
+      failures: observed.failures,
+    };
+    fs.writeFileSync(
+      path.join(directory, "failure.json"),
+      `${JSON.stringify(failure, null, 2)}\n`,
+    );
+    await screenshot(page, directory, "failure");
+    throw error;
   } finally {
     await context.close();
   }
@@ -423,9 +483,19 @@ async function runOldPackJourney(browser) {
     );
     assertFourRequestStartup(observed.requests);
     assert.equal(await page.evaluate(() => typeof window.__openRebellionInterfaceReady), "undefined");
-    await page.waitForTimeout(12_000);
+    await waitForMovieBoundary(
+      page,
+      observed.consoleLines,
+      /\[movie\] ended id=0x66 next=MainMenu/,
+    );
+    await frames(page, 2);
     await page.mouse.click(472, 333, { delay: 250 });
     await waitForLog(observed.consoleLines, "[campaign] faction=Rebel Alliance");
+    await waitForMovieBoundary(
+      page,
+      observed.consoleLines,
+      /\[movie\] ended id=0x68 next=Galaxy/,
+    );
     await page.keyboard.press("F7");
     await waitForLog(
       observed.consoleLines,
@@ -472,8 +542,8 @@ async function main() {
     const journeys = [];
     const requestedFaction = process.env.OPEN_REBELLION_ENCYCLOPEDIA_FACTION;
     for (const faction of [
-      { name: "alliance", campaign: "Rebel Alliance", menu: { x: 472, y: 333 } },
-      { name: "empire", campaign: "Galactic Empire", menu: { x: 180, y: 333 } },
+      { name: "alliance", campaign: "Rebel Alliance", movie: "0x68", menu: { x: 472, y: 333 } },
+      { name: "empire", campaign: "Galactic Empire", movie: "0x69", menu: { x: 180, y: 333 } },
     ].filter((faction) => !requestedFaction || faction.name === requestedFaction)) {
       journeys.push(await runFactionJourney(browser, origin, faction, namespace));
     }

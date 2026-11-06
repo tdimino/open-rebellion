@@ -88,6 +88,7 @@ fn kind_name(kind: WindowKind) -> &'static str {
         WindowKind::BuildSelection => "build-selection",
         WindowKind::MissionDialog => "mission-dialog",
         WindowKind::MoveConfirmation => "move-confirmation",
+        WindowKind::StopConfirmation => "stop-confirmation",
         WindowKind::ScrapConfirmation => "scrap-confirmation",
         WindowKind::BattleAlert => "battle-alert",
         WindowKind::BattleResults => "battle-results",

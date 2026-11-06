@@ -309,7 +309,7 @@ const ADAPTER_SMOKE_ROUTES = Object.freeze({
     kind: "pointer",
     recipient: "root",
     applicationRecipient: "gid_menu",
-    tokens: Object.freeze(["command=0x132", "destination=gid_menu", "status=opened_original"]),
+    tokens: Object.freeze(["command=0x132", "destination=gid_menu", "status=opened_managed"]),
   }),
   "pointer-select": Object.freeze({
     kind: "pointer",
@@ -890,7 +890,7 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
             await frames(page);
             const opened = await performCommand(
               page,
-              "command=0x132 destination=gid_menu status=opened_original",
+              "command=0x132 destination=gid_menu status=opened_managed",
               () => page.mouse.up(),
             );
             await frames(page);

@@ -15,6 +15,7 @@ import { sectorDoubleClick } from "./sector-double-click.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
 const site = path.join(root, ".artifacts/interface-parity/site");
+const movies = path.join(root, "assets/references/ref-videos");
 const browserManifest = JSON.parse(fs.readFileSync(path.join(here, "browser.json"), "utf8"));
 const noBuild = process.argv.includes("--no-build");
 // `--only=alliance/load` runs the named cases alone.
@@ -38,17 +39,18 @@ const markColor = { alliance: [255, 0, 0], empire: [0, 255, 0] };
 // FUN_004a2630: the Fleet window, 235 by 304 (background 10770).
 const windowSize = { width: 235, height: 304 };
 // Side art: the Alliance's resources, the Empire's 50 higher
-// (FUN_004a4b10); the title strip is the active one of the viewer's side
-// (FUN_004a3340), since the viewer's fleet is listed. `sectors` are the two
+// (FUN_004a4b10); the title strip follows manager focus (FUN_004a3340).
+// A fresh Fleet open preserves focus, while clicking its row activates it.
+// `sectors` are the two
 // sector window columns, 235 wide (sector_window.rs,
 // window_logical_position); the fixture fills both. `rail` is the galaxy
 // view rail's first slot (system_window.rs, rail_slot_rect).
 // `galaxy` is the galaxy view, which centers the move confirmation
 // (fleet-move.mjs).
 const factions = [
-  { name: "alliance", byte: 1, art: 0, title: 10299, sectors: [60, 300], rail: { x: 544, y: 61, width: 62, height: 18 },
+  { name: "alliance", byte: 1, art: 0, title: { active: 10299, inactive: 10200 }, sectors: [60, 300], rail: { x: 544, y: 61, width: 62, height: 18 },
     galaxy: { x: 55, y: 40, width: 485, height: 350 } },
-  { name: "empire", byte: 2, art: 50, title: 10201, sectors: [120, 365], rail: { x: 21, y: 48, width: 54, height: 18 },
+  { name: "empire", byte: 2, art: 50, title: { active: 10201, inactive: 10302 }, sectors: [120, 365], rail: { x: 21, y: 48, width: 54, height: 18 },
     galaxy: { x: 120, y: 40, width: 480, height: 355 } },
 ];
 // FUN_00487cc0: the move confirmation, 424 by 331, and its checkmark
@@ -107,6 +109,7 @@ function mimeType(file) {
   if (file.endsWith(".html")) return "text/html; charset=utf-8";
   if (file.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (file.endsWith(".wasm")) return "application/wasm";
+  if (file.endsWith(".webm")) return "video/webm";
   return "application/octet-stream";
 }
 
@@ -115,8 +118,11 @@ async function startServer() {
     const pathname = new URL(request.url, "http://localhost").pathname;
     const relative = path.posix.normalize(decodeURIComponent(pathname)).replace(/^\/+/, "")
       || "index.html";
-    const candidate = path.resolve(site, relative);
-    if (!candidate.startsWith(`${site}${path.sep}`)) {
+    const [base, rest] = relative.startsWith("data/movies/")
+      ? [movies, relative.slice("data/movies/".length)]
+      : [site, relative];
+    const candidate = path.resolve(base, rest);
+    if (!candidate.startsWith(`${base}${path.sep}`)) {
       response.writeHead(403).end();
       return;
     }
@@ -197,7 +203,12 @@ function blit(destination, image, x, y, { width = image.width, height = image.he
 function composeExpected(source, faction, state) {
   const expected = resource(source, 10770);
   assert.deepEqual([expected.width, expected.height], [windowSize.width, windowSize.height]);
-  blit(expected, resource(source, faction.title), 2, 2);
+  blit(
+    expected,
+    resource(source, state.focused ? faction.title.active : faction.title.inactive),
+    2,
+    2,
+  );
   blit(expected, resource(source, 10209), 3, 3);
   blit(expected, resource(source, 10253), 204, 3);
   blit(expected, resource(source, 10108), 218, 3);
@@ -710,9 +721,9 @@ async function moveRegimentOntoFleet(page, setup, observed, directory) {
   return menu;
 }
 
-// The browser has no keypad +, so the clock starts through the Game Speed
-// menu on the day readout: Fast, its fifth row (FUN_0042d190).
-async function runFast(page, setup) {
+// Choose a clock speed through the Game Speed menu on the day readout
+// (FUN_0042d190). This exercises the same managed menu path as a player.
+async function chooseSpeed(page, setup, row) {
   await page.evaluate(() => { window.__openRebellionInterfaceSpeedMenu = undefined; });
   await click(page, point(setup.day_readout), "right", {
     batchActions: true,
@@ -724,7 +735,7 @@ async function runFast(page, setup) {
   const height = (menu.height - 2) / menu.rows;
   await click(
     page,
-    { x: menu.left + menu.width / 2, y: menu.top + 2 + height * 4.5 },
+    { x: menu.left + menu.width / 2, y: menu.top + 2 + height * (row + 0.5) },
     "left",
     {
       batchActions: true,
@@ -732,8 +743,13 @@ async function runFast(page, setup) {
       expectedRelease: { application: "none" },
     },
   );
-  await waitForFixtureMenuClosed(page, "the Fast choice closes its managed menu");
+  await waitForFixtureMenuClosed(page, "the speed choice closes its managed menu");
   return menu;
+}
+
+// The browser has no keypad +, so time-based cases select Fast, the fifth row.
+async function runFast(page, setup) {
+  return chooseSpeed(page, setup, 4);
 }
 
 async function loadRegiment(page, setup, directory) {
@@ -799,7 +815,7 @@ const cases = [
       const opened = await openFleetWindow(page, setup);
       const origin = { x: opened.origin[0], y: opened.origin[1] };
       const openCheck = compare(await stableWindow(page, origin, directory, "open"),
-        composeExpected(source, faction, { selected: false }), masks.open, "open", directory);
+        composeExpected(source, faction, { selected: false, focused: false }), masks.open, "open", directory);
       const selected = await selectFleet(page, opened);
       assert.equal(selected.tab, "CapitalShips");
       assert.deepEqual(selected.enabled, [true, false, false, false]);
@@ -809,7 +825,12 @@ const cases = [
       assert.equal(markPixels(selectedImage, origin, selected.first_item, faction), 0,
         "a completed ship shows the under-construction mark");
       const selectedCheck = compare(selectedImage,
-        composeExpected(source, faction, { selected: true, enabled: selected.enabled, tab: 0 }),
+        composeExpected(source, faction, {
+          selected: true,
+          focused: true,
+          enabled: selected.enabled,
+          tab: 0,
+        }),
         [...masks.open, ...masks.selected], "selected", directory);
       // 0x280d minimizes the window to the rail (FUN_004a76e0); the rail
       // entry restores it where it was.
@@ -945,16 +966,18 @@ const cases = [
     // than an existing unpopulated system, is refused 1/0x28. The regiment
     // starts aboard, and the Defenses window shows the other side's
     // populated target (the Fleet window covers its planet).
-    async run(page, faction, setup, directory) {
+    async run(page, faction, setup, directory, source, log) {
       const opened = await openFleetWindow(page, setup);
       const selected = await selectFleet(page, opened);
       assert.ok(selected.aboard, JSON.stringify(selected));
       assert.deepEqual(selected.enabled, [true, false, true, false], "the Troops tab lights with a regiment aboard");
       const troops = await openTroopsTab(page, selected);
       await dragItem(page, point(troops.first_item), point(setup.defenses_window));
-      const refusal = "Regiment move rejected: the destination belongs to another side";
-      const refused = await until(page, "the other side's planet refuses the regiment",
-        (o, text) => o.last_message === text, refusal);
+      await log.logged("the other side's planet refuses the regiment",
+        /\[order\] unit move refused: OtherSideDestination$/);
+      await log.logged("the refusal uses the original other-side code",
+        /\[advisor\] refusal 0x1\/0x28 at step 1$/);
+      const refused = await settle(page);
       assert.ok(refused.aboard, JSON.stringify(refused));
       assert.equal(refused.regiment_travelling, false);
       return { opened, selected, troops, refused };
@@ -986,14 +1009,17 @@ const cases = [
     code: FLEET_LOAD_FULL,
     // FUN_00500b40: no room is left, so the move is refused and nothing
     // boards.
-    async run(page, faction, setup, directory) {
+    async run(page, faction, setup, directory, source, log) {
       const opened = await openFleetWindow(page, setup);
       const before = await settle(page);
       assert.equal(before.cargo, setup.capacity);
       const menu = await moveRegimentOntoFleet(page, setup, opened, directory);
-      const refusal = `Regiment move rejected: troop capacity exceeded: capacity ${setup.capacity}, requested ${setup.capacity + 1}`;
-      const refused = await until(page, "the full fleet refuses the regiment",
-        (o, text) => o.last_message === text, refusal);
+      await log.logged("the full fleet refuses the regiment", new RegExp(
+        `\\[order\\] unit move refused: CapacityExceeded \\{ capacity: ${setup.capacity}, requested: ${setup.capacity + 1} \\}$`,
+      ));
+      await log.logged("the refusal uses the original capacity code",
+        /\[advisor\] refusal 0x1\/0x27 at step 1$/);
+      const refused = await settle(page);
       assert.equal(refused.aboard, false);
       assert.equal(refused.cargo, setup.capacity);
       assert.equal(refused.troop_system_dat_id, setup.primary_dat_id);
@@ -1021,12 +1047,14 @@ const cases = [
     code: FLEET_JOIN,
     // A ship dropped on its own fleet goes nowhere (FUN_00553aa0 makes the
     // move into the mover's own fleet 0x26).
-    async run(page, faction, setup, directory) {
+    async run(page, faction, setup, directory, source, log) {
       const selected = await openJoining(page, setup);
       await dragItem(page, point(selected.first_item), point(selected.fleets[0].entry));
-      const refusal = "Fleet move rejected: a fleet cannot move into itself";
-      const refused = await until(page, "the ship's own fleet refuses it",
-        (o, text) => o.last_message === text, refusal);
+      await log.logged("the ship's own fleet refuses it",
+        /\[order\] ship move refused: IntoItself$/);
+      await log.logged("the refusal uses the original into-itself code",
+        /\[advisor\] refusal 0x1\/0x26 at step 1$/);
+      const refused = await settle(page);
       assert.deepEqual(ships(refused), [2, 1]);
       return { selected, refused };
     },
@@ -1119,14 +1147,16 @@ const cases = [
     code: FLEET_JOIN,
     // The order is checked before it asks (FUN_00487740): a Confirmed Move
     // onto the fleet itself is refused and opens no window (FUN_00553aa0).
-    async run(page, faction, setup, directory) {
+    async run(page, faction, setup, directory, source, log) {
       const opened = await openFleetWindow(page, setup, 2);
       const menu = await openMenu(page, point(opened.fleets[0].entry), directory, "fleet", "fleet_window");
       await choose(page, menu, menu.confirmed_move_row, "Confirmed Move");
       await click(page, point(opened.fleets[0].entry));
-      const refusal = "Fleet move rejected: a fleet cannot move into itself";
-      const refused = await until(page, "the fleet refuses itself",
-        (o, text) => o.last_message === text, refusal);
+      await log.logged("the fleet refuses itself",
+        /\[order\] fleet join refused: IntoItself$/);
+      await log.logged("the refusal uses the original into-itself code",
+        /\[advisor\] refusal 0x1\/0x26 at step 1$/);
+      const refused = await settle(page);
       const settled = await settle(page);
       assert.equal(settled.confirmation_open, false, "the confirmation opened for a refused order");
       assert.deepEqual(ships(settled), [2, 1]);
@@ -1225,6 +1255,17 @@ async function inspect(server, source, faction, testCase, executable) {
       serviceWorkers: "block",
     });
     page = await context.newPage();
+    // Fast-forward can surface a story movie. End it through the shell's
+    // real video pointer handler so it cannot absorb the next gate action.
+    await page.addInitScript(() => {
+      window.setInterval(() => {
+        const video = document.querySelector("video.movie");
+        if (video && video.currentTime > 0.5 && video.dataset.fleetGateSkipped !== "true") {
+          video.dataset.fleetGateSkipped = "true";
+          video.dispatchEvent(new PointerEvent("pointerdown", { button: 0, bubbles: true }));
+        }
+      }, 100);
+    });
     pageRoutes.set(page, routes);
     pageRouteCursors.set(page, { physical: null });
     const serverOrigin = `http://127.0.0.1:${server.address().port}`;
@@ -1234,7 +1275,10 @@ async function inspect(server, source, faction, testCase, executable) {
       }
     });
     page.on("requestfailed", (request) => {
-      errors.push(`requestfailed:${request.url()}:${request.failure()?.errorText}`);
+      const pathname = new URL(request.url()).pathname;
+      const error = request.failure()?.errorText;
+      if (pathname.startsWith("/data/movies/") && error === "net::ERR_ABORTED") return;
+      errors.push(`requestfailed:${request.url()}:${error}`);
     });
     page.on("pageerror", (error) => errors.push(`pageerror:${error.stack || error.message}`));
     page.on("console", (message) => {
@@ -1263,6 +1307,9 @@ async function inspect(server, source, faction, testCase, executable) {
     const startsAboard = testCase.code === REGIMENT_UNLOAD_REFUSED;
     assert.equal(start.aboard, startsAboard, JSON.stringify(start));
     assert.equal(start.troop_system_dat_id, startsAboard ? null : setup.primary_dat_id, JSON.stringify(start));
+    // Keep setup deterministic. Cases that exercise travel explicitly choose
+    // Fast through the real Game Speed menu after issuing their order.
+    await chooseSpeed(page, setup, 0);
     await page.evaluate(() => document.fonts.ready);
     const { bytes: _ready, ...before } = await shot(page, directory, "ready");
 
@@ -1283,8 +1330,11 @@ async function inspect(server, source, faction, testCase, executable) {
     await page.mouse.move(2, 2);
     await frames(page);
     const { bytes: _final, ...after } = await shot(page, directory, "final");
-    assert.deepEqual(requests.map(({ url }) => url).sort(), [...expectedRequests].sort());
-    assert.ok(requests.every(({ status }) => status === 200), "startup has non-200 requests");
+    const coreRequests = requests.filter(({ url }) => !url.startsWith("/data/movies/"));
+    const movieRequests = requests.filter(({ url }) => url.startsWith("/data/movies/"));
+    assert.deepEqual(coreRequests.map(({ url }) => url).sort(), [...expectedRequests].sort());
+    assert.ok(coreRequests.every(({ status }) => status === 200), "startup has non-200 requests");
+    assert.ok(movieRequests.every(({ status }) => status === 200), "a story movie failed to load");
     assert.deepEqual(errors, [], `browser diagnostics: ${errors.join("; ")}`);
     result = {
       status: "pass",

@@ -388,6 +388,7 @@ pub struct GidUiState {
     /// activation shows (`FUN_00422ce0` 0x467, `ShowWindow` 5) and any
     /// window opened since, which is created visible.
     pub shown: Vec<GalaxyChild>,
+    hidden: Vec<GalaxyChild>,
 }
 
 impl GidUiState {
@@ -402,15 +403,31 @@ impl GidUiState {
     /// (`+0x248`). True when this press built the menu, whose `WM_CREATE`
     /// step (`FUN_004511e0`) ends with `SetFocus` on it.
     pub fn open_menu(&mut self) -> bool {
+        self.open_menu_with_children(std::iter::empty())
+    }
+
+    /// Opens the GID menu and hides exactly the children that already exist.
+    /// A child registered later remains visible, as native window creation
+    /// does, and pressing the already-open GID control changes nothing.
+    pub fn open_menu_with_children(
+        &mut self,
+        children: impl IntoIterator<Item = GalaxyChild>,
+    ) -> bool {
         let built_now = !self.built;
         self.built = true;
         if !self.menu_open {
             self.menu_open = true;
             self.category = None;
+            self.windows_hidden = true;
+            self.shown.clear();
+            self.hidden.clear();
+            for child in children {
+                if !self.hidden.contains(&child) {
+                    self.hidden.push(child);
+                }
+            }
+            self.legend_open = false;
         }
-        self.windows_hidden = true;
-        self.shown.clear();
-        self.legend_open = false;
         built_now
     }
 
@@ -424,12 +441,13 @@ impl GidUiState {
         self.category = None;
         self.windows_hidden = false;
         self.shown.clear();
+        self.hidden.clear();
     }
 
     /// Whether the open menu keeps `child` hidden.
     #[must_use]
     pub fn hides(&self, child: GalaxyChild) -> bool {
-        self.windows_hidden && !self.shown.contains(&child)
+        self.windows_hidden && self.hidden.contains(&child) && !self.shown.contains(&child)
     }
 
     /// Show `child` again under the open menu; nothing while no window is
@@ -1659,17 +1677,31 @@ pub fn gid_menu_layer_ids(state: &GidUiState) -> Vec<egui::LayerId> {
     if !state.menu_open {
         return Vec::new();
     }
-    let mut layers = vec![egui::LayerId::new(
-        egui::Order::Foreground,
-        gid_root_menu_id(),
-    )];
+    let mut layers = vec![egui::LayerId::new(egui::Order::Middle, gid_root_menu_id())];
     if state.category.is_some() {
-        layers.push(egui::LayerId::new(
-            egui::Order::Foreground,
-            gid_submenu_id(),
-        ));
+        layers.push(egui::LayerId::new(egui::Order::Middle, gid_submenu_id()));
     }
     layers
+}
+
+/// Whether a primary release belongs to the galaxy view while the GID menu
+/// is open. Native command-center controls and both menu rectangles keep the
+/// release; the remaining view closes the menu and reveals its hidden set.
+#[must_use]
+pub fn gid_menu_dismisses_at(
+    ctx: &egui::Context,
+    state: &CockpitState,
+    layout: CockpitLayout,
+    point: (f32, f32),
+) -> bool {
+    if !state.gid_ui.menu_open {
+        return false;
+    }
+    let point = egui::pos2(point.0, point.1);
+    let rects = gid_menu_rects(ctx, &state.gid_ui);
+    !rects.is_empty()
+        && !on_cockpit_control(state, layout, point)
+        && !rects.iter().any(|rect| rect.contains(point))
 }
 
 /// Where `FUN_00422ce0` 0x132 builds the menu (`FUN_00451130`): (370,233)
@@ -1689,6 +1721,7 @@ const GID_MENU_SIZE: f32 = 160.0;
     clippy::cast_precision_loss,
     reason = "Preserve existing conversion of bitmap sizes and bounded UI indices into pixel coordinates. Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
+#[cfg(test)]
 fn draw_gid_menu(
     ctx: &egui::Context,
     state: &mut CockpitState,
@@ -1719,7 +1752,10 @@ fn draw_gid_menu_with_dismissal(
         layout.canvas.y + root_y * layout.scale,
     );
     let root = egui::Area::new(gid_root_menu_id())
-        .order(egui::Order::Foreground)
+        // The GID menu is a manager-owned normal-band surface. Keeping it in
+        // the same egui order as strategic windows lets the manager's 0x467
+        // focus walk raise a revealed window above the still-open menu.
+        .order(egui::Order::Middle)
         .fade_in(false)
         .fixed_pos(root_pos)
         .show(ctx, |ui| {
@@ -1775,7 +1811,7 @@ fn draw_gid_menu_with_dismissal(
         );
         let submenu_pos = egui::pos2(root_pos.x - 246.0 * scale, submenu_y);
         let submenu = egui::Area::new(gid_submenu_id())
-            .order(egui::Order::Foreground)
+            .order(egui::Order::Middle)
             .fade_in(false)
             .fixed_pos(submenu_pos)
             .show(ctx, |ui| {
@@ -2321,6 +2357,12 @@ mod tests {
             );
             assert!(state.gid_ui.menu_open, "{faction:?}");
             assert!(state.gid_ui.windows_hidden, "{faction:?}");
+            assert!(
+                gid_menu_layer_ids(&state.gid_ui)
+                    .iter()
+                    .all(|layer| layer.order == egui::Order::Middle),
+                "the normal-band GID menu must share the managed strategic layer order"
+            );
         }
     }
 
@@ -2393,7 +2435,7 @@ mod tests {
     #[test]
     fn a_child_shown_under_the_open_menu_stays_shown_until_the_control_hides_all_again() {
         // FUN_00422ce0: 0x467 shows one child (ShowWindow 5) under the open
-        // menu; a press on the GID control (0x132) hides every child again.
+        // menu; a second GID-control press reuses the open menu unchanged.
         let mut world = rebellion_core::world::GameWorld::default();
         let first = GalaxyChild::System(
             world
@@ -2409,12 +2451,12 @@ mod tests {
             let mut gid = CockpitState::new(faction).gid_ui;
             gid.show_child(first);
             assert!(!gid.hides(first) && gid.shown.is_empty(), "{faction:?}");
-            gid.open_menu();
+            gid.open_menu_with_children([first, second]);
             assert!(gid.hides(first) && gid.hides(second));
             gid.show_child(first);
             assert!(!gid.hides(first) && gid.hides(second));
             gid.open_menu();
-            assert!(gid.hides(first), "{faction:?}");
+            assert!(!gid.hides(first), "{faction:?}");
             gid.show_child(second);
             gid.close_menu();
             assert!(!gid.hides(second) && gid.shown.is_empty());
@@ -2929,7 +2971,7 @@ mod tests {
         // submenu a second presentation identity, lets root rows lose input.
         let mut manager = rebellion_windowing::WindowManager::new();
         let mut menu = crate::game_menu::ManagedMenuState::default();
-        let prepared = menu.prepare_root_open();
+        let prepared = menu.prepare_gid_open();
         let opened = manager
             .apply(prepared.command())
             .expect("root-owned GID menu opens without a modal");
@@ -3054,9 +3096,10 @@ mod tests {
         assert!(!router.claim_root(trigger_press));
 
         let menu = crate::game_menu::ManagedMenuState::default();
+        assert!(manager.apply(menu.prepare_gid_open().command()).is_ok());
         assert_eq!(
-            manager.apply(menu.prepare_root_open().command()),
-            Err(rebellion_windowing::WindowError::InvalidPlacement)
+            manager.begin_frame().active_modal(),
+            Some(frame.active_modal().unwrap())
         );
     }
 

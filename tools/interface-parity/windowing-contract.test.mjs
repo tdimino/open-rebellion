@@ -49,9 +49,9 @@ function observation(overrides = {}) {
         recipient: "root",
         application_recipient: "gid_menu",
         underlay_action_count: 0,
-        observed_command: "[interface] command=0x132 destination=gid_menu status=opened_original",
+        observed_command: "[interface] command=0x132 destination=gid_menu status=opened_managed",
         observed_route: "[windowing-route] physical=41:2 kind=pointer router=root application=gid_menu underlay=0",
-        observed_actions: ["[interface] command=0x132 destination=gid_menu status=opened_original"],
+        observed_actions: ["[interface] command=0x132 destination=gid_menu status=opened_managed"],
       },
       {
         trigger_id: "pointer-select",
@@ -668,7 +668,7 @@ test("adapter smoke CLI and GID geometry are deterministic", () => {
 test("adapter smoke counters distinguish menu and keyboard actions", () => {
   assert.deepEqual(smokeActionCounters([]), { gid_menu: 0, gid_selection: 0 });
   assert.deepEqual(smokeActionCounters([
-    "[interface] command=0x132 destination=gid_menu status=opened_original",
+    "[interface] command=0x132 destination=gid_menu status=opened_managed",
     "[interface] command=0x80 destination=gid status=selected label=Display Off",
     "[interface] command=0x12 destination=gid status=selected label=Uprisings source=accelerator",
   ]), { gid_menu: 1, gid_selection: 2 });

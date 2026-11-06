@@ -1278,9 +1278,10 @@ mod tests {
                     ..
                 }) if object == target
             ));
-            assert!(
-                matches!(closed.transition, WindowTransition::Closed { id: closed } if closed == id)
-            );
+            assert!(matches!(
+                closed.transition,
+                WindowTransition::Closed { root, .. } if root == id
+            ));
         }
     }
 

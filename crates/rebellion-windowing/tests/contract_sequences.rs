@@ -98,7 +98,8 @@ fn reports(
 
 #[test]
 fn contract_sequence_preserves_all_authorities() {
-    // Port: deterministic fixture permutations compose the bounded SW-02R/03/04 contracts.
+    // Port: deterministic fixture permutations compose the replacement, lifecycle,
+    // and reconciliation contracts.
     // Sources: FUN_00428b40 history, FUN_00601080 capture, FUN_00606960 deferred close.
     for seed in 0..32 {
         let mut manager = WindowManager::new();
@@ -231,7 +232,7 @@ fn contract_sequence_preserves_all_authorities() {
             .iter()
             .filter_map(|event| match event {
                 WindowEvent::Closed { window, reason, .. } => {
-                    // FUN_005ffb60 owner cascade; SW-02R's root alone has Replaced.
+                    // FUN_005ffb60 owner cascade; the replacement root alone has Replaced.
                     assert_eq!(
                         *reason,
                         if *window == root {

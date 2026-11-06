@@ -22,16 +22,46 @@ pub fn managed_child_id(window: WindowId) -> egui::Id {
     egui::Id::new(("strategic-window-managed-child", window.get()))
 }
 
-/// Projects the manager's immutable bottom-to-top order into egui's persistent
-/// area stack. Keyboard focus is deliberately irrelevant: `Focus` preserves
-/// z-order, while `Activate` changes both in the manager before this pass.
+/// Incremental projection of the manager's immutable bottom-to-top order into
+/// egui's persistent area stack.
+///
+/// Egui batches every [`egui::Context::move_to_top`] request made during one
+/// pass and deliberately preserves the requested layers' previous relative
+/// order. Raising every managed layer in one pass therefore cannot impose a
+/// new order. This projector first raises only the manager's top window, then
+/// grows an already-correct suffix by one window per pass. The authoritative
+/// top is correct after the first pass and remains top while the rest of the
+/// stack converges.
+#[derive(Debug, Default)]
+pub struct ManagedOrderProjector {
+    target: Vec<WindowId>,
+    ordered_suffix: usize,
+}
+
+impl ManagedOrderProjector {
+    fn suffix_for<'a>(&mut self, frame: &'a RoutingSnapshot) -> &'a [WindowId] {
+        if self.target != frame.paint_order() {
+            self.target = frame.paint_order().to_vec();
+            self.ordered_suffix = 0;
+        }
+        self.ordered_suffix = self
+            .ordered_suffix
+            .saturating_add(1)
+            .min(frame.paint_order().len());
+        &frame.paint_order()[frame.paint_order().len() - self.ordered_suffix..]
+    }
+}
+
+/// Projects the manager's order without allowing keyboard focus to raise a
+/// layer. Only `Activate` changes both focus and z-order in the manager.
 pub fn realize_managed_order(
     ctx: &egui::Context,
     frame: &RoutingSnapshot,
+    projector: &mut ManagedOrderProjector,
     mut layers_for: impl FnMut(WindowId) -> Option<Vec<egui::LayerId>>,
 ) {
-    for window in frame.paint_order() {
-        if let Some(layers) = layers_for(*window) {
+    for &window in projector.suffix_for(frame) {
+        if let Some(layers) = layers_for(window) {
             for layer in layers {
                 ctx.move_to_top(layer);
             }
@@ -250,16 +280,94 @@ mod tests {
         manager.apply(WindowCommand::Activate(first)).unwrap();
         let frame = manager.begin_frame();
         let mut resolved = Vec::new();
+        let mut projector = ManagedOrderProjector::default();
 
-        realize_managed_order(&egui::Context::default(), &frame, |window| {
-            resolved.push(window);
-            Some(vec![egui::LayerId::new(
-                egui::Order::Foreground,
-                managed_child_id(window),
-            )])
-        });
+        realize_managed_order(
+            &egui::Context::default(),
+            &frame,
+            &mut projector,
+            |window| {
+                resolved.push(window);
+                Some(vec![egui::LayerId::new(
+                    egui::Order::Foreground,
+                    managed_child_id(window),
+                )])
+            },
+        );
 
-        assert_eq!(resolved, [second, first]);
+        assert_eq!(resolved, [first]);
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn order_projection_corrects_a_stale_overlap_without_displacing_the_top() {
+        let mut manager = WindowManager::new();
+        let bottom = open(&mut manager, 1);
+        let middle = open(&mut manager, 2);
+        let top = open(&mut manager, 3);
+        let frame = manager.begin_frame();
+        let ctx = egui::Context::default();
+        let mut projector = ManagedOrderProjector::default();
+        let ids = [
+            (bottom, managed_child_id(bottom), egui::vec2(80.0, 80.0)),
+            (middle, managed_child_id(middle), egui::vec2(60.0, 60.0)),
+            (top, managed_child_id(top), egui::vec2(40.0, 40.0)),
+        ];
+        let layer = |id| egui::LayerId::new(egui::Order::Foreground, id);
+        let input = || egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(100.0, 100.0),
+            )),
+            ..Default::default()
+        };
+        let draw_reverse = |ctx: &egui::Context| {
+            for (_, id, size) in ids.into_iter().rev() {
+                egui::Area::new(id)
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(egui::Pos2::ZERO)
+                    .show(ctx, |ui| {
+                        ui.allocate_response(size, egui::Sense::click());
+                    });
+            }
+        };
+
+        let _ = ctx.run(input(), |ctx| draw_reverse(ctx));
+        assert_eq!(
+            ctx.layer_id_at(egui::pos2(20.0, 20.0)),
+            Some(layer(ids[0].1))
+        );
+
+        let _ = ctx.run(input(), |ctx| {
+            draw_reverse(ctx);
+            realize_managed_order(ctx, &frame, &mut projector, |window| {
+                ids.iter()
+                    .find_map(|(candidate, id, _)| (*candidate == window).then(|| vec![layer(*id)]))
+            });
+        });
+        assert_eq!(
+            ctx.layer_id_at(egui::pos2(20.0, 20.0)),
+            Some(layer(ids[2].1))
+        );
+        assert_eq!(
+            ctx.layer_id_at(egui::pos2(50.0, 50.0)),
+            Some(layer(ids[0].1))
+        );
+
+        let _ = ctx.run(input(), |ctx| {
+            draw_reverse(ctx);
+            realize_managed_order(ctx, &frame, &mut projector, |window| {
+                ids.iter()
+                    .find_map(|(candidate, id, _)| (*candidate == window).then(|| vec![layer(*id)]))
+            });
+        });
+        assert_eq!(
+            ctx.layer_id_at(egui::pos2(20.0, 20.0)),
+            Some(layer(ids[2].1))
+        );
+        assert_eq!(
+            ctx.layer_id_at(egui::pos2(50.0, 50.0)),
+            Some(layer(ids[1].1))
+        );
     }
 }

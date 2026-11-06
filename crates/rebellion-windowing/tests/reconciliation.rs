@@ -54,7 +54,7 @@ fn focus(window: WindowId) -> Option<FocusTarget> {
 
 #[test]
 fn reconciliation_paint_absence_is_not_content_absence() {
-    // port: SW-04R and source-plan "Content Reporting and Error Recovery".
+    // port: source-plan "Content Reporting and Error Recovery".
     // Break caught: deriving content deletion from missing paint or report receipts.
     let mut manager = WindowManager::new();
     let visible = open(&mut manager, detail(WindowKind::System, 1));
@@ -178,7 +178,7 @@ fn unpaintable_modeless_content_is_retained_without_implicit_close() {
 #[test]
 fn explicitly_absent_modeless_content_closes_with_events() {
     // Sources: FUN_005ffb60 child-first ownership teardown and FUN_00422ce0 focus restoration.
-    // port: SW-04R reuses close receipts for explicitly absent snapshot content, exactly once.
+    // port: reuse close receipts for explicitly absent snapshot content, exactly once.
     // Break caught: direct registry subtraction, duplicate cleanup, or missing hidden/capture cleanup.
     let mut manager = WindowManager::new();
     let root_spec = detail(WindowKind::System, 1);
@@ -274,7 +274,7 @@ fn absent_modal_reports_blocker_until_explicit_close() {
 
 #[test]
 fn suspended_content_is_retained_without_claiming_it_painted() {
-    // port: scene membership belongs to SW-04S; Suspended alone cannot change registry/input state.
+    // port: scene membership is separate; Suspended alone cannot change registry/input state.
     // Break caught: deleting or hiding content from a temporary scene report.
     let mut manager = WindowManager::new();
     let id = open(&mut manager, detail(WindowKind::System, 1));

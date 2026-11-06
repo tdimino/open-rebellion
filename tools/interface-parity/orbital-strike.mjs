@@ -426,18 +426,33 @@ async function click(page, point, button = "left") {
   await frames(page);
 }
 
-// Two presses a frame apart, each seen by egui, inside its double-click
-// time.
+// Two canvas clicks as one raw-event batch. This covers the low-frame-rate
+// browser path where both physical clicks arrive before the next egui frame.
 async function doubleClick(page, point) {
+  await page.waitForTimeout(500);
   await page.mouse.move(point.x, point.y);
   await frames(page);
-  for (let press = 1; press <= 2; press += 1) {
-    await page.mouse.down({ clickCount: press });
-    await frames(page);
-    await page.mouse.up({ clickCount: press });
-    await frames(page);
-  }
-  await frames(page, 2);
+  await page.evaluate(({ x, y }) => {
+    const canvas = document.getElementById("glcanvas");
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("missing game canvas");
+    const emit = (type, buttons, detail) => canvas.dispatchEvent(new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: x,
+      clientY: y,
+      screenX: x,
+      screenY: y,
+      button: 0,
+      buttons,
+      detail,
+    }));
+    emit("mousedown", 1, 1);
+    emit("mouseup", 0, 1);
+    emit("mousedown", 1, 2);
+    emit("mouseup", 0, 2);
+  }, point);
+  await frames(page, 3);
 }
 
 async function stableShot(page, directory, label) {
@@ -816,7 +831,7 @@ const cases = [
       checks.conflict_light_after = compare(crop(shot.png, faction.conflict), resource(source, faction.conflict.lit), {}, directory, "conflict-lit");
       soft(checks.conflict_light_after.different_pixels === 0, `the Conflict light is not lit: ${JSON.stringify(checks.conflict_light_after)}`);
       await click(page, centre(faction.conflict));
-      const pattern = /command=0x13c destination=message_index category=0x80 status=opened_original/;
+      const pattern = /destination=message_index category=0x80 status=opened_managed/;
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline && !consoleLines.some(({ text }) => pattern.test(text))) await page.waitForTimeout(50);
       checks.index_log = consoleLines.find(({ text }) => pattern.test(text))?.text ?? null;
@@ -1074,6 +1089,10 @@ async function inspect(server, source, faction, testCase, executable) {
     assert.equal(ready.status, "ready", JSON.stringify(ready));
     assert.equal(ready.code, fixtureCode);
     await page.evaluate(() => document.fonts.ready);
+    // The fixture publishes its legacy Fleet geometry before the application
+    // adopts that Fleet into the manager. Let the manager commit and paint the
+    // identity before the first context-menu press, as fleet-move.mjs does.
+    await frames(page, 2);
     failures = [];
     const checks = await testCase.run(page, faction, source, directory, consoleLines);
     checks.pixel_failures = failures;

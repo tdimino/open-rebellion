@@ -1384,6 +1384,7 @@ mod tests {
         let mut cache = BmpCache::new();
         let manufacturing = ManufacturingState::new();
         let lower = egui::Id::new("raising-lower-managed-surface");
+        let mut order_projector = crate::windowing::ManagedOrderProjector::default();
 
         for _ in 0..3 {
             let input = egui::RawInput {
@@ -1413,9 +1414,12 @@ mod tests {
                     layout,
                     &mut cache,
                 );
-                crate::windowing::realize_managed_order(ctx, &frame, |window| {
-                    state.managed_layer_id(window).map(|layer| vec![layer])
-                });
+                crate::windowing::realize_managed_order(
+                    ctx,
+                    &frame,
+                    &mut order_projector,
+                    |window| state.managed_layer_id(window).map(|layer| vec![layer]),
+                );
             });
         }
 

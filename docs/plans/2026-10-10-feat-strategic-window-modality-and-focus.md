@@ -3,7 +3,7 @@ title: "Strategic Window Modality and Focus"
 description: "Design for recovering the original strategic-window contract, introducing a renderer-independent windowing crate, and migrating the existing strategic surfaces to one focus and input authority"
 type: feat
 status: active
-progress: "100% of the bounded SW-00–SW-14 implementation/evidence sequence; original-runtime, native-Windows, System Finder, and A0 parity gaps remain open"
+progress: "80%: shared authority and family migrations implemented; current acceptance, native-Windows, System Finder, A0 parity, and evidence reconciliation remain open"
 updated: 2026-11-05
 created: 2026-10-10
 tags: [interface, parity, windowing, focus, modality, input, architecture]
@@ -80,7 +80,10 @@ The strict acceptance authorities remain:
 - `docs/qa/2026-09-10-interface-parity-audit/known-deviations.md`;
 - the applicable original-runtime capture and browser evidence records.
 
-## Current implementation
+## Historical pre-migration implementation
+
+This section records the baseline that motivated the design. It is retained
+for decision history and does not describe the current branch.
 
 There is no project-owned shared window manager. The port currently combines
 three partial mechanisms.
@@ -409,12 +412,13 @@ No renderer integration belongs in this workstream.
 Integrate Sector, System, Fleet, Defenses, Missions, and any other recovered
 modeless strategic family. Preserve content and appearance. Remove private
 global-focus meaning and per-family layer raising as each family migrates.
-**Backend/evidence sequence complete at r29:** the egui adapter and coordinator
-were followed by the modeless family migrations, shared history, capture and
-focus-loss cancellation, and frame-scoped routing. Cross-target acceptance is
-indexed in the [SW-14 reconciliation](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md).
-Original-runtime/A0 comparisons and native-Windows evidence remain outside
-that completion claim.
+The earlier r29 checkpoint recorded the egui adapter, coordinator, modeless
+family migrations, shared history, capture and focus-loss cancellation, and
+frame-scoped routing. Its
+[strategic-windowing reconciliation](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md)
+is evidence for that revision only. It does not establish acceptance of the
+current post-merge branch. Original-runtime/A0 comparisons and native-Windows
+evidence remain open.
 
 ### Workstream 4: migrate strategic modals
 
@@ -422,8 +426,9 @@ Integrate Status, all Finder families, Message, and Encyclopedia. Replace the
 relevant handwritten application pointer and keyboard exceptions only after
 each reachable member of this proven manual set uses the shared authority. Add
 the outside-modal input barrier and preserve focused child-control behavior.
-The bounded backend journeys are included in the r29 reconciliation; missing
-System Finder content and original visual/runtime acceptance remain open.
+The r29 reconciliation includes its bounded backend journeys, but the current
+post-merge candidate must rerun them. Missing System Finder content and
+original visual/runtime acceptance remain open.
 
 ### Workstream 5: migrate owned children and Battle Summary
 

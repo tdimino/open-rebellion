@@ -544,15 +544,16 @@ pub fn cell_layers(unit: &ReportUnit, tab: ReportTab, status: CellStatus) -> Vec
     let id = unit.dat_id;
     if tab == ReportTab::Personnel {
         return match id.family() {
-            0x30..=0x3b => crate::system_window::character_mini_resource_id(id, unit.major).map(
-                |mini| {
-                    let mut layers = mini_layers(MiniObject::Character, mini, status.en_route, None);
+            0x30..=0x3b => {
+                crate::system_window::character_mini_resource_id(id, unit.major).map(|mini| {
+                    let mut layers =
+                        mini_layers(MiniObject::Character, mini, status.en_route, None);
                     if status.captive {
                         layers.push((DllSource::Gokres, mini + 0x3000));
                     }
                     layers
-                },
-            ),
+                })
+            }
             _ => crate::system_window::special_force_mini(id).map(|(mini, _)| {
                 mini_layers(MiniObject::SpecialForce(id), mini, status.en_route, None)
             }),
@@ -702,9 +703,13 @@ impl OperationReportState {
     /// The shown report with its title and body.
     #[must_use]
     pub fn shown(&self) -> Option<(&OperationReport, &str, &str)> {
-        self.window
-            .as_ref()
-            .map(|window| (window.report.as_ref(), window.title.as_str(), window.body.as_str()))
+        self.window.as_ref().map(|window| {
+            (
+                window.report.as_ref(),
+                window.title.as_str(),
+                window.body.as_str(),
+            )
+        })
     }
 
     #[must_use]
@@ -1031,11 +1036,8 @@ fn draw_at(
                     let y = LIST.1 + cell_h * row as f32;
                     match cell {
                         ReportCell::Object(unit) => {
-                            let layers = cell_layers(
-                                unit,
-                                window.tab,
-                                cell_status(world, movement, unit),
-                            );
+                            let layers =
+                                cell_layers(unit, window.tab, cell_status(world, movement, unit));
                             let size = layers
                                 .first()
                                 .and_then(|&(source, id)| cache.original_resource_size(source, id))
@@ -1194,9 +1196,6 @@ fn draw_at(
     }
     if let Some(tab) = new_tab {
         state.set_tab(tab);
-    }
-    if action.is_some() {
-        state.close();
     }
     action
 }
@@ -1523,27 +1522,48 @@ mod tests {
             captive: true,
             ..none
         };
-        let ship = crate::panels::fleets::capital_ship_mini_id(DatId::new(0x1400_0040)).unwrap()
-            - 0x4000;
+        let ship =
+            crate::panels::fleets::capital_ship_mini_id(DatId::new(0x1400_0040)).unwrap() - 0x4000;
         let ship_unit = unit(0x1400_0040, "Ship");
         let tab = ReportTab::CapitalShips;
-        assert_eq!(cell_layers(&ship_unit, tab, none), [(DllSource::Gokres, ship)]);
         assert_eq!(
-            cell_layers(&ship_unit, tab, en_route),
-            [(DllSource::Gokres, ship + 0x1000), (DllSource::Gokres, ship)]
+            cell_layers(&ship_unit, tab, none),
+            [(DllSource::Gokres, ship)]
         );
         assert_eq!(
-            cell_layers(&ship_unit, tab, CellStatus { en_route: true, ..damaged }),
+            cell_layers(&ship_unit, tab, en_route),
+            [
+                (DllSource::Gokres, ship + 0x1000),
+                (DllSource::Gokres, ship)
+            ]
+        );
+        assert_eq!(
+            cell_layers(
+                &ship_unit,
+                tab,
+                CellStatus {
+                    en_route: true,
+                    ..damaged
+                }
+            ),
             [
                 (DllSource::Gokres, ship + 0x1000),
                 (DllSource::Gokres, ship + 0x2000),
                 (DllSource::Gokres, ship)
             ]
         );
-        let wing = crate::panels::fleets::fighter_mini_id(DatId::new(0x1c00_0001)).unwrap() - 0x4000;
+        let wing =
+            crate::panels::fleets::fighter_mini_id(DatId::new(0x1c00_0001)).unwrap() - 0x4000;
         assert_eq!(
-            cell_layers(&unit(0x1c00_0001, "Wing"), ReportTab::FighterSquadrons, damaged),
-            [(DllSource::Gokres, wing + 0x2000), (DllSource::Gokres, wing)]
+            cell_layers(
+                &unit(0x1c00_0001, "Wing"),
+                ReportTab::FighterSquadrons,
+                damaged
+            ),
+            [
+                (DllSource::Gokres, wing + 0x2000),
+                (DllSource::Gokres, wing)
+            ]
         );
 
         let troops = ReportTab::TrooperRegiments;
@@ -1598,7 +1618,14 @@ mod tests {
         // burn marks on a mini wrap to 11502, which no state here sets.
         let guerrillas = unit(0x3c00_0001, "Guerrillas");
         assert_eq!(
-            cell_layers(&guerrillas, personnel, CellStatus { en_route: true, ..captive }),
+            cell_layers(
+                &guerrillas,
+                personnel,
+                CellStatus {
+                    en_route: true,
+                    ..captive
+                }
+            ),
             [
                 (DllSource::Strategy, 11_500),
                 (DllSource::Strategy, 11_501),
@@ -1993,6 +2020,11 @@ mod tests {
             let system = state.window.as_ref().unwrap().report.system;
             let went = run(&mut state, click((100.0, 230.0)));
             assert_eq!(went.actions, [OperationReportAction::GotoSystem { system }]);
+            assert!(
+                state.is_open(),
+                "content waits for the manager close receipt"
+            );
+            state.close();
             assert!(!state.is_open());
 
             let mut state = opened(faction, owner);
@@ -2003,6 +2035,12 @@ mod tests {
                 [OperationReportAction::GotoFleet { system }],
                 "{faction:?}"
             );
+            assert!(
+                state.is_open(),
+                "content waits for the manager close receipt"
+            );
+            state.close();
+            assert!(!state.is_open());
         }
     }
 
@@ -2025,7 +2063,11 @@ mod tests {
                     .map_or(0, |&(_, rows)| rows)
             };
             assert_eq!(rows("Fleet"), 1);
-            assert_eq!(text(&display, "Fleet").pos.y, 182.0 + 40.0 + 36.0, "{faction:?}");
+            assert_eq!(
+                text(&display, "Fleet").pos.y,
+                182.0 + 40.0 + 36.0,
+                "{faction:?}"
+            );
             let caption = "Outer Rim Territories Shipping Lanes Beyond";
             let system = text(&display, caption);
             assert!(rows(caption) > 1, "{faction:?}");
@@ -2055,6 +2097,11 @@ mod tests {
                     reopen_index: Some(0x80)
                 }]
             );
+            assert!(
+                state.is_open(),
+                "content waits for the manager close receipt"
+            );
+            state.close();
             assert!(!state.is_open());
             let mut state = opened(faction, owner);
             let escaped = run(&mut state, key(egui::Key::Escape));
@@ -2065,6 +2112,12 @@ mod tests {
                 }],
                 "{faction:?}"
             );
+            assert!(
+                state.is_open(),
+                "content waits for the manager close receipt"
+            );
+            state.close();
+            assert!(!state.is_open());
         }
     }
 

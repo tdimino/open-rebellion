@@ -74,11 +74,17 @@ impl ManagedMenuState {
         self.prepare_open_for(WindowOwner::Window(owner))
     }
 
-    /// Prepares the command-center GID menu under its strategic-root
-    /// invoker. Unlike an object menu, native `FUN_00427270` leaves this
-    /// menu open while command-center controls and accelerators act.
+    /// Prepares a root-owned dismissible menu, such as Game Speed or Agent.
     #[must_use]
     pub fn prepare_root_open(&self) -> PreparedMenuOpen {
+        self.prepare_open_for(WindowOwner::StrategicRoot)
+    }
+
+    /// Prepares the command-center GID menu under its strategic-root
+    /// invoker. Unlike other root menus, native `FUN_00427270` leaves this
+    /// menu open while command-center controls and accelerators act.
+    #[must_use]
+    pub fn prepare_gid_open(&self) -> PreparedMenuOpen {
         let mut prepared = self.prepare_open_for(WindowOwner::StrategicRoot);
         prepared.spec.policy.input = rebellion_windowing::InputPolicy::Modeless;
         // FUN_00427270 leaves the GID menu registered while Message Index and
@@ -831,6 +837,7 @@ mod tests {
                 .expect("menu opens"),
         );
         let frame = manager.begin_frame();
+        let mut order_projector = crate::windowing::ManagedOrderProjector::default();
         for _ in 0..3 {
             let _ = ctx.run(egui::RawInput::default(), |ctx| {
                 let _ = draw_game_menu(
@@ -849,10 +856,15 @@ mod tests {
                     .show(ctx, |ui| {
                         ui.allocate_response(egui::vec2(400.0, 400.0), egui::Sense::click());
                     });
-                crate::windowing::realize_managed_order(ctx, &frame, |window| {
-                    (window == menu_window)
-                        .then(|| game_menu_layer_ids(ctx, egui::Id::new(MENU_ID)))
-                });
+                crate::windowing::realize_managed_order(
+                    ctx,
+                    &frame,
+                    &mut order_projector,
+                    |window| {
+                        (window == menu_window)
+                            .then(|| game_menu_layer_ids(ctx, egui::Id::new(MENU_ID)))
+                    },
+                );
             });
         }
         let menu = ctx
@@ -1626,7 +1638,7 @@ mod tests {
         let mut manager = rebellion_windowing::WindowManager::new();
         let detail = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
         let mut menu = ManagedMenuState::default();
-        let prepared = menu.prepare_root_open();
+        let prepared = menu.prepare_gid_open();
         let opened = manager.apply(prepared.command()).unwrap();
         let menu_id = menu.commit_open(prepared, &opened.transition).unwrap();
         let modal_spec = crate::windowing_policy::singleton_spec(
@@ -1655,7 +1667,7 @@ mod tests {
 
     #[test]
     fn menu_detail_invoker_has_registered_owner() {
-        // SW-07X establishes detail lifetime under StrategicRoot; the Menu
+        // Detail lifetime remains under StrategicRoot; the Menu
         // itself must name the exact routed detail identity, not a guessed
         // sector or an unregistered renderer key.
         // Break caught: registering Menu under a surrogate/root owner.

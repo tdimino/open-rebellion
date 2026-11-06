@@ -729,7 +729,7 @@ fn place_moving_fleet(
         primary,
         (
             (galaxy.x + galaxy.width - FLEET_WINDOW_WIDTH) as i16 - 5,
-            galaxy.y as i16 + 5,
+            galaxy.y as i16,
         ),
         request.faction,
         layout,
@@ -1092,6 +1092,12 @@ fn place_loading_fleet(
     for system in [primary, target] {
         world.systems[system].control = ControlKind::Controlled(player);
         world.systems[system].exploration_status = ExplorationStatus::Explored;
+        // Keep the deterministic interaction fixture from changing holder
+        // while a browser journey boards or unloads its only regiment. The
+        // generic fixture baseline otherwise gives the first system strong
+        // Alliance support even for an Empire scenario.
+        world.systems[system].popularity_alliance = if player_is_alliance { 0.9 } else { 0.1 };
+        world.systems[system].popularity_empire = if player_is_alliance { 0.1 } else { 0.9 };
     }
     for (key, value) in &mut world.fleets {
         if key != fleet
@@ -1951,7 +1957,6 @@ pub struct QuadrantWindows<'a> {
     pub missions_windows: &'a MissionsWindowState,
     pub fog: &'a FogState,
     pub missions: &'a MissionState,
-    pub economy: &'a EconomyState,
 }
 
 fn defenses_page_name(page: DefensesPage) -> &'static str {
@@ -4174,6 +4179,35 @@ mod tests {
     }
 
     #[test]
+    fn the_fleet_load_scenarios_keep_both_interaction_systems_loyal_to_the_player() {
+        // port: deterministic fixture isolation. Loading the only regiment
+        // must not let an unrelated daily support shift change the drop target.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let applied = apply_to_loading_world(request(Scenario::FleetLoad, faction));
+            let player = match faction {
+                CockpitFaction::Alliance => Faction::Alliance,
+                CockpitFaction::Empire => Faction::Empire,
+            };
+            for system in applied.world.systems.values().take(2) {
+                assert_eq!(
+                    system.control,
+                    ControlKind::Controlled(player),
+                    "{faction:?}"
+                );
+                let (player_support, enemy_support) = match faction {
+                    CockpitFaction::Alliance => {
+                        (system.popularity_alliance, system.popularity_empire)
+                    }
+                    CockpitFaction::Empire => {
+                        (system.popularity_empire, system.popularity_alliance)
+                    }
+                };
+                assert!(player_support > enemy_support, "{faction:?}");
+            }
+        }
+    }
+
+    #[test]
     fn the_fleet_load_scenarios_defenses_window_sits_five_pixels_into_the_galaxy_view() {
         // port: the fixture's own placement.
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
@@ -4487,13 +4521,10 @@ mod tests {
             ));
 
             let layout = CockpitState::new(faction).layout_for(640.0, 480.0);
-            // The Fleet window's top-left corner, 5 pixels in from the
-            // galaxy view's top-right.
+            // The Fleet window's top-left corner, 5 pixels left of the
+            // galaxy view's top-right and aligned with its top edge.
             let galaxy = layout.galaxy;
-            let corner = (
-                galaxy.x + galaxy.width - FLEET_WINDOW_WIDTH - 5.0,
-                galaxy.y + 5.0,
-            );
+            let corner = (galaxy.x + galaxy.width - FLEET_WINDOW_WIDTH - 5.0, galaxy.y);
             assert!(applied.fleets.contains_screen_point(layout, corner));
             assert!(!applied
                 .fleets
@@ -4839,7 +4870,6 @@ mod tests {
         let primary = applied.world.systems.keys().next().unwrap();
         let mut fog = FogState::new(Faction::Alliance);
         fog.reveal(primary);
-        let economy = EconomyState::default();
         let mut defenses = DefensesWindowState::default();
         let mut missions_windows = MissionsWindowState::default();
         let mut manager = WindowManager::new();
@@ -4857,7 +4887,6 @@ mod tests {
                         missions_windows: &missions_windows,
                         fog: &fog,
                         missions: &applied.missions,
-                        economy: &economy,
                     },
                 )
             }};
@@ -5005,7 +5034,6 @@ mod tests {
                     missions_windows: &missions_windows,
                     fog: &fog,
                     missions: &applied.missions,
-                    economy: &economy,
                 },
             )
             .is_none());

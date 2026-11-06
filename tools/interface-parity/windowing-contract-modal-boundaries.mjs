@@ -34,8 +34,8 @@ export const AVAILABLE_MODAL_CASES = Object.freeze([
   ["status", "object-menu-status", "crates/rebellion-render/src/status_window.rs", "status_window_windowing_preserves_context"],
   ["build-selection", "manufacturing-menu-build", "crates/rebellion-render/src/build_selection.rs", "build_selection_duplicate_open_preserves_manufacturing_context"],
   ["mission-dialog", "character-menu-mission-target", "crates/rebellion-render/src/mission_dialog.rs", "mission_dialog_windowing_rejects_mismatched_publication_receipts"],
-  ["move-confirmation", "fleet-menu-confirmed-move-target", "crates/rebellion-render/src/windowing_policy.rs", "windowing_policy_inventory_covers_all_nineteen_kinds"],
-  ["scrap-confirmation", "fleet-menu-scrap", "crates/rebellion-render/src/windowing_policy.rs", "windowing_policy_inventory_covers_all_nineteen_kinds"],
+  ["move-confirmation", "fleet-menu-confirmed-move-target", "crates/rebellion-render/src/windowing_policy.rs", "windowing_policy_inventory_covers_all_twenty_kinds"],
+  ["scrap-confirmation", "fleet-menu-scrap", "crates/rebellion-render/src/windowing_policy.rs", "windowing_policy_inventory_covers_all_twenty_kinds"],
 ].map(([kind, entry, source, test]) => Object.freeze({
   kind,
   entry,
@@ -862,7 +862,9 @@ async function runOneModal(context, setup, modal) {
     `${modal.kind} outside wheel`,
   );
   blockedInputs.push({ input: "wheel:detail", receipts: wheelRoutes.map(({ line }) => line) });
-  for (const shortcut of ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "r"]) {
+  // Probe only real strategic shortcuts: bare R has no native accelerator or
+  // galaxy WM_KEYDOWN action and is intentionally absent from route telemetry.
+  for (const shortcut of ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "Tab"]) {
     const routes = await outsideInput(
       page,
       setup.monitor,

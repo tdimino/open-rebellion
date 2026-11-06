@@ -573,6 +573,7 @@ pub struct FleetWindowState {
     faction: CockpitFaction,
     windows: Vec<OpenFleetWindow>,
     pending_control_invalidations: Vec<FocusTarget>,
+    pending_control_focus: Vec<FocusTarget>,
     drag: Option<ItemDrag>,
     drag_owner: Option<WindowId>,
     /// A window drag in progress.
@@ -585,6 +586,7 @@ impl Default for FleetWindowState {
             faction: CockpitFaction::Alliance,
             windows: Vec::new(),
             pending_control_invalidations: Vec::new(),
+            pending_control_focus: Vec::new(),
             drag: None,
             drag_owner: None,
             title_drag: None,
@@ -685,7 +687,7 @@ impl FleetWindowState {
         self.windows
             .iter()
             .filter_map(|window| {
-                let id = window.id.filter(|id| !minimized(*id))?;
+                window.id.filter(|id| !minimized(*id))?;
                 Some((
                     0,
                     SavedWindow {
@@ -749,7 +751,8 @@ impl FleetWindowState {
         transition: &WindowTransition,
     ) -> Option<WindowId> {
         let subject = prepared.spec.key.subject?;
-        match *transition {
+        let rename_focus = prepared.rename.is_some();
+        let committed = match *transition {
             WindowTransition::Opened { id } => {
                 // A fixture's direct window has no manager identity; the
                 // manager's own window for its system takes its place.
@@ -816,7 +819,17 @@ impl FleetWindowState {
                 Some(id)
             }
             _ => None,
+        };
+        if let Some(id) = committed.filter(|_| rename_focus) {
+            let target = FocusTarget {
+                window: id,
+                control: Some(FLEET_RENAME_CONTROL),
+            };
+            if !self.pending_control_focus.contains(&target) {
+                self.pending_control_focus.push(target);
+            }
         }
+        committed
     }
 
     /// Compatibility helper for renderer tests and explicit interface
@@ -915,6 +928,8 @@ impl FleetWindowState {
         self.windows
             .retain(|window| window.id.is_none_or(|id| !removed.contains(&id)));
         self.pending_control_invalidations
+            .retain(|target| !removed.contains(&target.window));
+        self.pending_control_focus
             .retain(|target| !removed.contains(&target.window));
         if self
             .drag_owner
@@ -1054,9 +1069,23 @@ impl FleetWindowState {
         layout: CockpitLayout,
         point: (f32, f32),
     ) -> bool {
+        self.contains_shown_screen_point(snapshot, layout, point, &|_| true)
+    }
+
+    /// [`Self::contains_visible_screen_point`] after GID visibility is
+    /// projected onto manager-owned Fleet identities.
+    #[must_use]
+    pub fn contains_shown_screen_point(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+        shown: &dyn Fn(GalaxyChild) -> bool,
+    ) -> bool {
         let point = egui::pos2(point.0, point.1);
         self.windows.iter().any(|window| {
             window.id.is_none_or(|id| snapshot.is_visible(id))
+                && window.id.is_none_or(|id| shown(GalaxyChild::Fleet(id)))
                 && rect_contains(window_screen_rect(window, layout), point)
         })
     }
@@ -1074,6 +1103,20 @@ impl FleetWindowState {
         point: (f32, f32),
         top_layer: Option<egui::LayerId>,
     ) -> std::collections::BTreeSet<WindowId> {
+        self.hit_shown_window_ids(snapshot, layout, point, top_layer, &|_| true)
+    }
+
+    /// [`Self::hit_window_ids`] after GID visibility is projected onto the
+    /// registered Fleet identity.
+    #[must_use]
+    pub fn hit_shown_window_ids(
+        &self,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+        top_layer: Option<egui::LayerId>,
+        shown: &dyn Fn(GalaxyChild) -> bool,
+    ) -> std::collections::BTreeSet<WindowId> {
         let point = egui::pos2(point.0, point.1);
         self.windows
             .iter()
@@ -1081,6 +1124,7 @@ impl FleetWindowState {
             .filter_map(|window| {
                 window.id.filter(|id| {
                     snapshot.is_visible(*id)
+                        && shown(GalaxyChild::Fleet(*id))
                         && rect_contains(window_screen_rect(window, layout), point)
                 })
             })
@@ -1292,6 +1336,7 @@ impl FleetWindowState {
     pub fn clear(&mut self) {
         self.windows.clear();
         self.pending_control_invalidations.clear();
+        self.pending_control_focus.clear();
         self.drag = None;
         self.drag_owner = None;
     }
@@ -2342,7 +2387,7 @@ fn draw_fleet_windows_with_snapshot(
     snapshot: Option<&RoutingSnapshot>,
     pointer_events: &[(InputEventId, PointerPhase)],
     mut router: Option<&mut FrameInputRouter>,
-    front: bool,
+    _front: bool,
     shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<FleetWindowAction> {
     if state.windows.iter().all(|window| window.id.is_none()) {
@@ -2396,6 +2441,11 @@ fn draw_fleet_windows_with_snapshot(
         .into_iter()
         .map(FleetWindowAction::InvalidateControl)
         .collect();
+    actions.extend(
+        std::mem::take(&mut state.pending_control_focus)
+            .into_iter()
+            .map(FleetWindowAction::FocusControl),
+    );
     actions.extend(ended_drag.actions);
     let escape = ctx.input(|input| input.key_pressed(egui::Key::Escape));
     for window in &windows {
@@ -3682,10 +3732,7 @@ pub(crate) mod tests {
             .expect("live system has a stable DAT subject");
         let (id, opened) = commit_prepared_fleet_window(&mut manager, &mut state, first);
         assert_eq!(opened, WindowTransition::Opened { id });
-        assert_eq!(
-            state.keyboard_owner(&manager.begin_frame()),
-            Some((id, false))
-        );
+        assert_eq!(state.keyboard_owner(&manager.begin_frame()), None);
         let content = state.window_mut(system).unwrap();
         content.tab = FleetWindowTab::Troops;
         content.selected_item = Some(2);
@@ -3745,10 +3792,7 @@ pub(crate) mod tests {
         assert!(state.window_mut(system).unwrap().rename.is_some());
         // Publication restores the existing Fleet owner first. The renderer
         // requests child focus only after the Rename widget is realized.
-        assert_eq!(
-            state.keyboard_owner(&manager.begin_frame()),
-            Some((id, false))
-        );
+        assert_eq!(state.keyboard_owner(&manager.begin_frame()), None);
     }
 
     #[test]
@@ -6532,6 +6576,9 @@ pub(crate) mod tests {
             )
             .unwrap();
         let (window, _) = commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+        manager
+            .apply(WindowCommand::Activate(window))
+            .expect("starting a rename in the clicked Fleet activates its owner");
         assert!(state.begin_rename(&world, system, FleetWindowEntry::Fleet(fleet)));
         (world, system, fleet, manager, state, window)
     }

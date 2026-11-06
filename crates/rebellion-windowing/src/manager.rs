@@ -447,7 +447,14 @@ impl WindowManager {
             .is_some_and(|target| !self.is_focus_eligible(target.window))
             || (self.focused.is_none() && (self.active_modal().is_some() || membership_changed));
         if focus_needs_repair {
-            self.set_focus(self.topmost_eligible_restoration());
+            let restoration = self
+                .previous_eligible
+                .filter(|target| self.is_focus_eligible(target.window))
+                .or_else(|| self.topmost_eligible_restoration());
+            self.set_focus(restoration);
+            if self.previous_eligible == restoration {
+                self.previous_eligible = None;
+            }
         }
         if focus_before != self.focused {
             events.push(WindowEvent::FocusChanged {
@@ -967,18 +974,21 @@ impl WindowManager {
                         return Err(WindowError::InvalidPlacement);
                     }
                     self.raise_visible(id)?;
-                    if self.is_focus_eligible(id) {
-                        self.set_focus(Some(crate::FocusTarget {
-                            window: id,
-                            control: None,
-                        }));
-                    }
                     ExistingEffect::Raised
                 }
             };
             let mut events = Vec::new();
             if existing.policy.input == InputPolicy::StrategicModal {
                 events.extend(self.cancel_capture_if_ineligible(CaptureCancelReason::ModalOpened));
+                if self
+                    .focused
+                    .is_some_and(|target| !self.is_focus_eligible(target.window))
+                {
+                    self.set_focus(Some(crate::FocusTarget {
+                        window: id,
+                        control: None,
+                    }));
+                }
             }
             if focus_before != self.focused {
                 events.push(WindowEvent::FocusChanged {
@@ -1039,7 +1049,7 @@ impl WindowManager {
     }
 
     fn replace(&mut self, old: WindowId, new: WindowSpec) -> Result<WindowCommit, WindowError> {
-        // port: SW-02R preflights the complete lifecycle transaction privately.
+        // port: preflight the complete lifecycle transaction privately.
         // Ordinary close/open remain the authorities for cleanup, placement and allocation.
         let mut proposed = Self {
             manager_id: self.manager_id,
@@ -1181,6 +1191,9 @@ impl WindowManager {
     fn restore_focus(&mut self) -> Result<WindowCommit, WindowError> {
         let previous = self.focused;
         let current = self.topmost_eligible_restoration();
+        if let Some(target) = current {
+            self.raise_visible(target.window)?;
+        }
         self.set_focus(current);
         Ok(WindowCommit {
             transition: WindowTransition::Focused { previous, current },
@@ -1564,7 +1577,6 @@ impl WindowManager {
                 return Err(WindowError::InvalidPlacement);
             }
         }
-        let focused_before = self.focused;
         let insertion = self.proposed_insertion_index(spec);
         let mut proposed_order = self.visible_order.clone();
         proposed_order.insert(insertion, id);
@@ -1574,21 +1586,9 @@ impl WindowManager {
         self.presentation_history.retain(|entry| *entry != id);
         self.visible_order = proposed_order;
         self.serialized_order = serialized_order;
-        if self.is_focus_eligible(id) {
-            self.set_focus(Some(crate::FocusTarget {
-                window: id,
-                control: None,
-            }));
-        }
         Ok(WindowCommit {
             transition: WindowTransition::Restored { id },
-            events: (focused_before != self.focused)
-                .then_some(WindowEvent::FocusChanged {
-                    previous: focused_before,
-                    current: self.focused,
-                })
-                .into_iter()
-                .collect(),
+            events: Vec::new(),
         })
     }
 
@@ -2079,7 +2079,7 @@ mod tests {
 
     #[test]
     fn replacement_exhaustion_preserves_all_lifecycle_state_and_the_final_id_is_fresh() {
-        // port: SW-02R must preflight the impractical u64 allocator boundary before publication.
+        // port: preflight the impractical u64 allocator boundary before publication.
         // Break caught: committed teardown on exhaustion or reuse of an old identity.
         let mut manager = WindowManager::new();
         let spec = modeless_spec(WindowKind::System, 1);

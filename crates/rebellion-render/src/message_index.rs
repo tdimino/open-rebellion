@@ -1578,7 +1578,31 @@ fn draw_list_rows(
                     ui.id().with(("msg-index-row", row_index)),
                     egui::Sense::click(),
                 );
-                if response.clicked() {
+                let batched_same_row_double_click = ui.input(|input| {
+                    input
+                        .events
+                        .iter()
+                        .filter(|event| {
+                            matches!(
+                                event,
+                                egui::Event::PointerButton {
+                                    pos,
+                                    button: egui::PointerButton::Primary,
+                                    pressed: false,
+                                    ..
+                                } if row_rect.contains(*pos)
+                            )
+                        })
+                        .take(2)
+                        .count()
+                        == 2
+                });
+                if batched_same_row_double_click && response.double_clicked() {
+                    // A slow renderer may receive both physical clicks in
+                    // one frame. egui retains that raw-event sequence even
+                    // though `Response::clicked` represents it once.
+                    display_message = Some(msg.id);
+                } else if response.clicked() {
                     let now = ui.input(|input| input.time);
                     let delay = ctx.options(|options| options.input_options.max_double_click_delay);
 
@@ -3190,6 +3214,35 @@ mod tests {
             (pos, vec![press(pos, false)]),
         ];
         let result = drive(&log, &mut state, frames);
+
+        assert_eq!(state.mode, IndexMode::SingleMessage);
+        assert_eq!(state.viewing, Some(rows[1].id));
+        assert!(result
+            .actions
+            .contains(&MessageIndexAction::MessageDisplayed(rows[1].id)));
+    }
+
+    #[test]
+    fn egui_batched_double_click_switches_to_mode_2_and_marks_read() {
+        let log = test_log();
+        let rows = make_rows(&log);
+        let mut state = MessageIndexState::new();
+        state.set_category(0x79);
+
+        let pos = row_center(1);
+        let result = drive(
+            &log,
+            &mut state,
+            vec![(
+                pos,
+                vec![
+                    press(pos, true),
+                    press(pos, false),
+                    press(pos, true),
+                    press(pos, false),
+                ],
+            )],
+        );
 
         assert_eq!(state.mode, IndexMode::SingleMessage);
         assert_eq!(state.viewing, Some(rows[1].id));

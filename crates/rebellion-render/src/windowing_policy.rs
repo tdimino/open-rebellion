@@ -111,7 +111,10 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
         // fact: the 2026-10-12 retained original-runtime closeout confirms the
         // blocking boundary for Status, Mission, and Move on both factions.
         // Their per-open logical context remains app-owned.
-        WindowKind::Status | WindowKind::MissionDialog | WindowKind::MoveConfirmation => policy(
+        WindowKind::Status
+        | WindowKind::MissionDialog
+        | WindowKind::MoveConfirmation
+        | WindowKind::StopConfirmation => policy(
             Cardinality::Subject { max_open: None },
             StackBand::Normal,
             OpenPlacement::TopOfBand,
@@ -358,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn windowing_policy_inventory_covers_all_nineteen_kinds() {
+    fn windowing_policy_inventory_covers_all_twenty_kinds() {
         // `ghidra/notes/strategic-windowing-toolkit.md`, "Window-family
         // matrix", supplies the recovered family axes. Scrap modality and
         // outside-press Menu dismissal are explicitly labeled port policy.
@@ -547,6 +550,19 @@ mod tests {
             ),
             (
                 WindowKind::MoveConfirmation,
+                policy(
+                    SUBJECT,
+                    StackBand::Normal,
+                    OpenPlacement::TopOfBand,
+                    ExistingOpenPolicy::NoOp,
+                    InputPolicy::StrategicModal,
+                    PresentationPolicy::None,
+                    FocusRestoration::PreviousEligible,
+                ),
+                false,
+            ),
+            (
+                WindowKind::StopConfirmation,
                 policy(
                     SUBJECT,
                     StackBand::Normal,

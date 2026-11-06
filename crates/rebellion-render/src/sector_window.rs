@@ -1132,6 +1132,7 @@ pub fn draw_sector_windows(
         None,
         &[],
         None,
+        &|_| true,
     );
     state.windows.extend(hidden);
     actions
@@ -1158,6 +1159,45 @@ pub fn draw_managed_sector_windows(
     pointer_events: &[SectorWindowInputEvent],
     router: &mut FrameInputRouter,
 ) -> Vec<SectorWindowAction> {
+    draw_managed_sector_windows_shown(
+        ctx,
+        world,
+        movement,
+        fog,
+        state,
+        faction,
+        layout,
+        cache,
+        missions,
+        uprisings,
+        snapshot,
+        pointer_events,
+        router,
+        &|_| true,
+    )
+}
+
+/// [`draw_managed_sector_windows`] with command-center GID visibility.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep explicit state and routing inputs at this existing UI boundary."
+)]
+pub fn draw_managed_sector_windows_shown(
+    ctx: &egui::Context,
+    world: &GameWorld,
+    movement: &rebellion_core::movement::MovementState,
+    fog: &FogState,
+    state: &mut SectorWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+    missions: &rebellion_core::missions::MissionState,
+    uprisings: &rebellion_core::uprising::UprisingState,
+    snapshot: &RoutingSnapshot,
+    pointer_events: &[SectorWindowInputEvent],
+    router: &mut FrameInputRouter,
+    shown: &dyn Fn(GalaxyChild) -> bool,
+) -> Vec<SectorWindowAction> {
     draw_sector_windows_with_snapshot(
         ctx,
         world,
@@ -1172,6 +1212,7 @@ pub fn draw_managed_sector_windows(
         Some(snapshot),
         pointer_events,
         Some(router),
+        shown,
     )
 }
 
@@ -1586,6 +1627,7 @@ fn draw_sector_windows_with_snapshot(
     snapshot: Option<&RoutingSnapshot>,
     pointer_events: &[SectorWindowInputEvent],
     mut router: Option<&mut FrameInputRouter>,
+    shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<SectorWindowAction> {
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
@@ -1606,6 +1648,7 @@ fn draw_sector_windows_with_snapshot(
                 .find(|window| window.id == Some(id))
                 .copied()
             {
+                Some(window) if !shown(GalaxyChild::Sector(window.sector)) => continue,
                 Some(window)
                     if key.subject == window.subject
                         && sector_subject(world, window.sector) == window.subject =>
@@ -3086,7 +3129,7 @@ mod tests {
         let mut state = SectorWindowState::default();
         let (id, _) = commit_sector_open(&mut manager, &mut state, &world, first);
         let snapshot = manager.begin_frame();
-        assert_eq!(snapshot.focused().map(|focus| focus.window), Some(id));
+        assert_eq!(snapshot.focused(), None);
         let open = state
             .windows
             .iter()
@@ -3138,6 +3181,7 @@ mod tests {
         assert_eq!(ctx.layer_id_at(point), Some(sentinel_layer));
         router.begin_frame(93, &snapshot);
         let mut actions = Vec::new();
+        let mut order_projector = crate::windowing::ManagedOrderProjector::default();
         let _ = ctx.run(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -3168,9 +3212,12 @@ mod tests {
                     &[],
                     &mut router,
                 );
-                crate::windowing::realize_managed_order(ctx, &snapshot, |window| {
-                    state.managed_layer_id(window).map(|layer| vec![layer])
-                });
+                crate::windowing::realize_managed_order(
+                    ctx,
+                    &snapshot,
+                    &mut order_projector,
+                    |window| state.managed_layer_id(window).map(|layer| vec![layer]),
+                );
             },
         );
         assert!(actions.is_empty());
@@ -6391,9 +6438,7 @@ mod tests {
             );
             if ordinal == 1 {
                 assert!(!managed.close_queued);
-                assert!(!actions
-                    .iter()
-                    .any(|action| *action == SectorWindowAction::Close(window)));
+                assert!(!actions.contains(&SectorWindowAction::Close(window)));
             }
         }
         assert_eq!(

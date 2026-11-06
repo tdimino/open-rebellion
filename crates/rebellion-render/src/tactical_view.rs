@@ -7297,10 +7297,11 @@ fn apply_battle_alert_scroll_input(
                         < BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y + BATTLE_ALERT_LIST_HEIGHT;
                 let range = battle_alert_scroll_range(state.battle_alert_scroll, rows);
                 if in_list && delta_y != 0.0 && range.overflows() {
+                    let rows = (delta_y.abs().ceil() as usize).clamp(1, 3);
                     state.battle_alert_scroll = if delta_y > 0.0 {
-                        state.battle_alert_scroll.saturating_sub(1)
+                        state.battle_alert_scroll.saturating_sub(rows)
                     } else {
-                        (state.battle_alert_scroll + 1).min(range.max_first())
+                        (state.battle_alert_scroll + rows).min(range.max_first())
                     };
                 }
             }
@@ -7709,7 +7710,7 @@ fn draw_original_battle_results(
     state: &mut TacticalState,
     cache: &mut BmpCache,
     world: &GameWorld,
-    troop_transport: &TroopTransportState,
+    _troop_transport: &TroopTransportState,
     input: &TacticalWindowInput,
 ) -> TacticalAction {
     let canvas = TacticalCanvas::new(screen_width(), screen_height());
@@ -10073,6 +10074,56 @@ mod tests {
     }
 
     #[test]
+    fn battle_results_tab_release_resets_the_live_source_scroll() {
+        // FUN_00471340 refills the newly selected Battle Results source list
+        // from row zero. Exercise the actual press/release arm for both skins;
+        // initialization alone would not catch a regression in this path.
+        for player_is_alliance in [true, false] {
+            let skin = battle_result_skin(player_is_alliance);
+            let tab = skin.tab_rects[1];
+            let point = (
+                BATTLE_RESULTS_WINDOW_X + tab.x + 2.0,
+                BATTLE_RESULTS_WINDOW_Y + tab.y + 2.0,
+            );
+            let mut state = TacticalState {
+                battle_result_tab: BattleResultTab::Summary,
+                battle_result_scroll: 3,
+                ..TacticalState::default()
+            };
+            let canvas = TacticalCanvas::new(640.0, 480.0);
+            assert_eq!(
+                apply_battle_result_input(
+                    &mut state,
+                    skin,
+                    canvas,
+                    &TacticalWindowInput {
+                        pointer_screen: point,
+                        events: vec![TacticalWindowEvent::PrimaryPress(point)],
+                        primary_down: true,
+                    },
+                ),
+                TacticalAction::None
+            );
+            assert_eq!(state.battle_result_scroll, 3);
+            assert_eq!(
+                apply_battle_result_input(
+                    &mut state,
+                    skin,
+                    canvas,
+                    &TacticalWindowInput {
+                        pointer_screen: point,
+                        events: vec![TacticalWindowEvent::PrimaryRelease(point)],
+                        ..TacticalWindowInput::default()
+                    },
+                ),
+                TacticalAction::None
+            );
+            assert_eq!(state.battle_result_tab, BattleResultTab::AllianceForces);
+            assert_eq!(state.battle_result_scroll, 0, "{player_is_alliance}");
+        }
+    }
+
+    #[test]
     fn tactical_windowing_results_preserves_release_before_press_order() {
         let mut session = test_session(Vec::new(), Vec::new(), true);
         session.phase = BattlePhase::Results;
@@ -10150,6 +10201,32 @@ mod tests {
 
         apply_battle_alert_scroll_input(&mut state, TacticalCanvas::new(640.0, 480.0), 20, &input);
         assert_eq!(state.battle_alert_scroll, 2);
+    }
+
+    #[test]
+    fn tactical_windowing_alert_scroll_honors_the_wheel_delta() {
+        let mut state = TacticalState {
+            battle_alert_scroll: 4,
+            ..TacticalState::default()
+        };
+        let inside_list = (
+            BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X + 20.0,
+            BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y + 20.0,
+        );
+        let canvas = TacticalCanvas::new(640.0, 480.0);
+        let input = |delta_y| TacticalWindowInput {
+            pointer_screen: (0.0, 0.0),
+            events: vec![TacticalWindowEvent::Wheel {
+                screen: inside_list,
+                delta_y,
+            }],
+            ..TacticalWindowInput::default()
+        };
+
+        apply_battle_alert_scroll_input(&mut state, canvas, 20, &input(-2.5));
+        assert_eq!(state.battle_alert_scroll, 7);
+        apply_battle_alert_scroll_input(&mut state, canvas, 20, &input(2.0));
+        assert_eq!(state.battle_alert_scroll, 5);
     }
 
     #[test]

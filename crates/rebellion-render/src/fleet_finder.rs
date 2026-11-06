@@ -943,24 +943,30 @@ pub fn draw_fleet_finder_focused(
         open_window.first_row = scrolled_to(open_window.first_row, row);
         focus_request = Some(FLEET_FINDER_LIST_CONTROL);
     }
-    if focused_control == Some(FLEET_FINDER_LIST_CONTROL) && !list.is_empty() {
-        let current = open_window
-            .chosen
-            .and_then(|object| list.iter().position(|entry| entry.object == object))
-            .unwrap_or(0);
-        let next = if arrow_down {
-            (current + 1).min(list.len() - 1)
-        } else if arrow_up && current > 0 {
-            current - 1
+    if focused_control == Some(FLEET_FINDER_LIST_CONTROL) {
+        if list.is_empty() {
+            if arrow_up {
+                focus_request = Some(FLEET_FINDER_NAME_CONTROL);
+            }
         } else {
-            current
-        };
-        if arrow_up && current == 0 {
-            focus_request = Some(FLEET_FINDER_NAME_CONTROL);
-        } else if arrow_up || arrow_down {
-            open_window.chosen = Some(list[next].object);
-            open_window.name.clone_from(&list[next].name);
-            open_window.first_row = scrolled_to(open_window.first_row, next);
+            let current = open_window
+                .chosen
+                .and_then(|object| list.iter().position(|entry| entry.object == object))
+                .unwrap_or(0);
+            let next = if arrow_down {
+                (current + 1).min(list.len() - 1)
+            } else if arrow_up && current > 0 {
+                current - 1
+            } else {
+                current
+            };
+            if arrow_up && current == 0 {
+                focus_request = Some(FLEET_FINDER_NAME_CONTROL);
+            } else if arrow_up || arrow_down {
+                open_window.chosen = Some(list[next].object);
+                open_window.name.clone_from(&list[next].name);
+                open_window.first_row = scrolled_to(open_window.first_row, next);
+            }
         }
         if arrow_left || arrow_right {
             let current = tab_index(open_window.tab);
@@ -2075,6 +2081,62 @@ mod tests {
                 vec![vec![key(egui::Key::Enter)]],
             ),
             Some(FleetFinderAction::Open(chosen))
+        );
+    }
+
+    #[test]
+    fn keyboard_can_leave_an_empty_finder_tab() {
+        // FUN_00461e80 keeps the list control in the tab/name traversal even
+        // when FUN_00462be0 produced no rows.
+        let mut galaxy = galaxy();
+        galaxy.fog = FogState::new(Faction::Alliance);
+        let mut manager = WindowManager::new();
+        let mut state = FleetFinderState::default();
+        let prepared = FleetFinderState::prepare_open(CockpitFaction::Alliance);
+        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
+        let id = match opened.transition {
+            WindowTransition::Opened { id } => id,
+            ref other => panic!("expected Fleet Finder open, got {other:?}"),
+        };
+        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        state.set_tab(FinderTab::Imperial);
+        let list_focus = FocusTarget {
+            window: id,
+            control: Some(FLEET_FINDER_LIST_CONTROL),
+        };
+        let ctx = egui::Context::default();
+
+        assert_eq!(
+            drive_focused_in_context(
+                &ctx,
+                &galaxy,
+                &mut state,
+                list_focus,
+                (0.0, 0.0),
+                vec![vec![key(egui::Key::ArrowLeft)]],
+            ),
+            None
+        );
+        assert_eq!(state.window.as_ref().unwrap().tab, FinderTab::Alliance);
+
+        state.set_tab(FinderTab::Imperial);
+        assert_eq!(
+            drive_focused_in_context(
+                &ctx,
+                &galaxy,
+                &mut state,
+                list_focus,
+                (0.0, 0.0),
+                vec![vec![key(egui::Key::ArrowUp)]],
+            ),
+            None
+        );
+        assert_eq!(
+            state.take_focus_request(),
+            Some(FocusTarget {
+                window: id,
+                control: Some(FLEET_FINDER_NAME_CONTROL),
+            })
         );
     }
 

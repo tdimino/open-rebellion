@@ -251,7 +251,7 @@ fn restore_removes_history_and_raises_without_reallocating_identity() {
     assert_eq!(
         manager.focused(),
         Some(FocusTarget {
-            window: id,
+            window: other,
             control: None
         })
     );
@@ -625,16 +625,8 @@ fn restoring_and_reminimizing_a_middle_entry_updates_only_its_age() {
         ids.push(id);
     }
     let commit = manager.apply(WindowCommand::Restore(ids[1])).unwrap();
-    assert_eq!(
-        commit.events,
-        vec![WindowEvent::FocusChanged {
-            previous: None,
-            current: Some(FocusTarget {
-                window: ids[1],
-                control: None
-            })
-        }]
-    );
+    assert!(commit.events.is_empty());
+    assert_eq!(manager.focused(), None);
     assert_eq!(manager.presentation_history(), &[ids[0], ids[2]]);
     manager.apply(WindowCommand::Minimize(ids[1])).unwrap();
     assert_eq!(manager.presentation_history(), &[ids[0], ids[2], ids[1]]);
@@ -1044,9 +1036,9 @@ fn serialized_raise_keeps_focus_while_replaying_z_order() {
 }
 
 #[test]
-fn duplicate_raise_restore_repairs_focus_without_reallocating() {
-    // Source: strategic-windowing-toolkit.md, "Existing-window policy".
-    // Break caught: moving an existing detail to the top while leaving keyboard focus elsewhere.
+fn duplicate_raise_restore_preserves_focus_without_reallocating() {
+    // Source: FUN_0045aac0 raises an existing detail presentation without
+    // assigning keyboard focus to it.
     let mut manager = WindowManager::new();
     let detail_spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
     let detail = open(&mut manager, detail_spec);
@@ -1073,24 +1065,12 @@ fn duplicate_raise_restore_repairs_focus_without_reallocating() {
             effect: rebellion_windowing::ExistingEffect::Raised,
         }
     );
-    assert_eq!(
-        commit.events,
-        vec![WindowEvent::FocusChanged {
-            previous: Some(FocusTarget {
-                window: other,
-                control: None,
-            }),
-            current: Some(FocusTarget {
-                window: detail,
-                control: None,
-            }),
-        }]
-    );
+    assert!(commit.events.is_empty());
     assert_eq!(manager.visible_order(), &[other, detail]);
     assert_eq!(
         manager.focused(),
         Some(FocusTarget {
-            window: detail,
+            window: other,
             control: None,
         })
     );

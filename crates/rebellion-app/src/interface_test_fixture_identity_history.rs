@@ -226,6 +226,7 @@ fn kind_name(kind: WindowKind) -> &'static str {
         WindowKind::BuildSelection => "build-selection",
         WindowKind::MissionDialog => "mission-dialog",
         WindowKind::MoveConfirmation => "move-confirmation",
+        WindowKind::StopConfirmation => "stop-confirmation",
         WindowKind::ScrapConfirmation => "scrap-confirmation",
         WindowKind::BattleAlert => "battle-alert",
         WindowKind::BattleResults => "battle-results",
@@ -426,7 +427,6 @@ pub struct IdentityHistoryWindows<'a> {
     pub fog: &'a FogState,
     pub transport: &'a TroopTransportState,
     pub missions: &'a MissionState,
-    pub economy: &'a rebellion_core::economy::EconomyState,
 }
 
 /// Emits one state document whenever manager/content/geometry state changes.

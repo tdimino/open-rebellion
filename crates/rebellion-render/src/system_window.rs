@@ -1032,6 +1032,7 @@ impl SystemWindowState {
         self.minimize_with_eviction(system).0
     }
 
+    #[cfg(test)]
     fn minimize_with_eviction(&mut self, system: SystemKey) -> (bool, Option<WindowId>) {
         let Some(index) = self
             .windows
@@ -1157,6 +1158,7 @@ impl SystemWindowState {
         evicted
     }
 
+    #[cfg(test)]
     fn restore(&mut self, system: SystemKey) -> bool {
         let Some(index) = self
             .rail
@@ -4155,6 +4157,84 @@ mod tests {
         assert_eq!(renamed(&run.actions), []);
         assert!(state.windows.is_empty());
         assert!(!state.band_rename_open());
+    }
+
+    #[test]
+    fn manager_owned_band_rename_escape_requests_and_commits_exact_close() {
+        // The field passes Escape to the containing System window
+        // (FUN_00605160 -> FUN_00458980). Production content must keep its
+        // registry identity until the manager accepts that exact Close.
+        let (world, systems) = fixture_world(1);
+        let system = systems[0];
+        let layout = layout(CockpitFaction::Alliance, 2.0);
+        let mut manager = WindowManager::new();
+        let mut state = SystemWindowState::default();
+        let prepared = state
+            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, layout)
+            .unwrap();
+        let (id, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+        manager.apply(WindowCommand::Activate(id)).unwrap();
+        assert!(state.begin_band_rename(system, ProductionArea::Shipyard, "Death Star 1"));
+
+        let ctx = egui::Context::default();
+        let mut router = FrameInputRouter::default();
+        let mut cache = BmpCache::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let fog = FogState::new(Faction::Alliance);
+        let missions = MissionState::new();
+        let manufacturing = ManufacturingState::new();
+        let deliveries = DeliveryState::new();
+        let mut actions = Vec::new();
+        for (index, events) in after_opening(vec![
+            vec![egui::Event::Text("Tarkin".into())],
+            vec![key(egui::Key::Escape)],
+        ])
+        .into_iter()
+        .enumerate()
+        {
+            let frame = u64::try_from(index + 1).unwrap();
+            let snapshot = manager.begin_frame();
+            router.begin_frame(frame, &snapshot);
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                events,
+                ..egui::RawInput::default()
+            };
+            let output = ctx.run(input, |ctx| {
+                actions.extend(draw_managed_system_windows(
+                    ctx,
+                    &world,
+                    &movement,
+                    &fog,
+                    &missions,
+                    &manufacturing,
+                    &deliveries,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &snapshot,
+                    &[],
+                    &mut router,
+                    true,
+                    &|_| true,
+                ));
+            });
+            drop(output);
+        }
+
+        assert_eq!(actions, [SystemWindowAction::Close(id)]);
+        assert!(state.contains_window(id));
+        assert!(!state.band_rename_open());
+        let closed = manager.apply(WindowCommand::Close(id)).unwrap();
+        let WindowTransition::Closed { closed, .. } = closed.transition else {
+            panic!("expected exact System close receipt");
+        };
+        state.remove_content(&closed);
+        assert!(!state.contains_window(id));
     }
 
     #[test]

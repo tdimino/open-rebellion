@@ -953,11 +953,32 @@ pub enum StopConfirmationAction {
 #[derive(Debug, Clone, Default)]
 pub struct StopConfirmationState {
     window: Option<StopConfirmation>,
+    window_id: Option<WindowId>,
 }
 
 impl StopConfirmationState {
+    /// Compatibility open for renderer-only tests. Production publishes the
+    /// content only after the manager accepts its identity.
     pub fn open(&mut self, confirmation: StopConfirmation) {
         self.window = Some(confirmation);
+        self.window_id = None;
+    }
+
+    /// Publishes inert Stop content for the exact accepted manager identity.
+    pub fn commit_open(
+        &mut self,
+        confirmation: StopConfirmation,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        let WindowTransition::Opened { id } = *transition else {
+            return None;
+        };
+        if self.window.is_some() || self.window_id.is_some() {
+            return None;
+        }
+        self.window = Some(confirmation);
+        self.window_id = Some(id);
+        Some(id)
     }
 
     #[must_use]
@@ -968,6 +989,67 @@ impl StopConfirmationState {
     #[must_use]
     pub fn confirmation(&self) -> Option<&StopConfirmation> {
         self.window.as_ref()
+    }
+
+    #[must_use]
+    pub const fn window_id(&self) -> Option<WindowId> {
+        self.window_id
+    }
+
+    /// Egui layer attached to the exact manager-issued Stop confirmation.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id == Some(id)).then(|| {
+            egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("original-stop-confirmation"),
+            )
+        })
+    }
+
+    #[must_use]
+    pub fn hit_window(
+        &self,
+        frame: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> Option<WindowId> {
+        let id = self.window_id?;
+        (frame
+            .key(id)
+            .is_some_and(|key| key.kind == WindowKind::StopConfirmation)
+            && frame.allows_input(id)
+            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
+        .then_some(id)
+    }
+
+    #[must_use]
+    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
+        let id = self.window_id?;
+        matches!(
+            frame.keyboard_route().target,
+            rebellion_windowing::RouteTarget::Window(target) if target.window == id
+        )
+        .then_some(id)
+    }
+
+    #[must_use]
+    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
+        self.window_id
+            .filter(|id| frame.key(*id).is_some())
+            .map(|window| ContentReport {
+                window,
+                status: ContentStatus::Ready,
+            })
+            .into_iter()
+            .collect()
+    }
+
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        if self.window_id.is_some_and(|id| removed.contains(&id)) {
+            self.window = None;
+            self.window_id = None;
+        }
     }
 
     /// Whether `point` falls on the open window.
@@ -994,15 +1076,18 @@ pub fn draw_stop_confirmation(
         layout,
         cache,
     )?;
-    let window = state.window.take()?;
-    Some(if confirm {
+    let action = if confirm {
         StopConfirmationAction::Confirm {
             system: window.system,
             area: window.area,
         }
     } else {
         StopConfirmationAction::Cancel
-    })
+    };
+    if state.window_id.is_none() {
+        state.window = None;
+    }
+    Some(action)
 }
 
 #[cfg(test)]
@@ -1143,7 +1228,10 @@ mod tests {
     /// STRATEGY bitmaps 10926 and 10929 leave a few corner pixels keyed.
     /// port: test fixture values, not rules.
     fn keyed_buttons() -> BmpCache {
-        let root = std::env::temp_dir().join(format!("confirm-hit-mask-{}", std::process::id()));
+        static NEXT_FIXTURE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let fixture = NEXT_FIXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root =
+            std::env::temp_dir().join(format!("confirm-hit-mask-{}-{fixture}", std::process::id()));
         let dir = root.join("strategy-dll/BMP");
         std::fs::create_dir_all(&dir).unwrap();
         let (width, height, stride, offset) = (51usize, 35usize, 52usize, 1078usize);

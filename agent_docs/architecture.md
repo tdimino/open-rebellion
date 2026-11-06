@@ -32,9 +32,10 @@ frame snapshot. Keyboard routing derives one snapshot per physical event and
 projects accepted lifecycle commands before routing the next event, preventing
 fall-through while allowing two Escapes in one frame to close two windows.
 Content lifecycle observations are distinct from paint observations.
-The accepted source-level contract and its limits are recorded in the
-[SW-14 strategic-windowing reconciliation](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md);
-it does not promote visual parity cells.
+The earlier source-level checkpoint and its limits are recorded in the
+[strategic-windowing reconciliation](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md);
+it applies to its recorded revision and does not promote visual parity cells
+or accept a later post-merge candidate.
 
 rebellion-playtest (clap, rand_xoshiro, serde_json)  [headless play-test binary]
 ├── rebellion-data

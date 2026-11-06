@@ -27,8 +27,8 @@ use rebellion_render::{
 };
 use rebellion_windowing::{
     BubblePolicy, ContentReport, ContentStatus, ExistingEffect, FocusTarget, ReconcileReport,
-    RouteTarget, RoutingSnapshot, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent,
-    WindowId, WindowKind, WindowOwner, WindowTransition,
+    RoutingSnapshot, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId,
+    WindowKind, WindowOwner, WindowTransition,
 };
 
 use crate::encyclopedia_surface::{EncyclopediaSurfaceController, EncyclopediaWindowOpenError};
@@ -196,64 +196,6 @@ pub struct ApplicationInputLocks {
     pub targeting: bool,
 }
 
-/// Temporary owners outside the registry. These may further restrict input,
-/// but never allocate or mirror a manager identity.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct LegacyInputBlockers {
-    pub strategic_modal: bool,
-    pub focused_control: bool,
-    pub transient_menu: bool,
-    pub root_gesture: bool,
-}
-
-impl LegacyInputBlockers {
-    const fn blocks_router_input(self) -> bool {
-        self.strategic_modal || self.focused_control
-    }
-
-    const fn blocks_root_keyboard(self) -> bool {
-        self.strategic_modal || self.focused_control || self.transient_menu
-    }
-
-    const fn blocks_root_pointer(self) -> bool {
-        self.strategic_modal || self.transient_menu || self.root_gesture
-    }
-
-    #[must_use]
-    pub const fn new_restriction_started(self, current: Self) -> bool {
-        (!self.strategic_modal && current.strategic_modal)
-            || (!self.focused_control && current.focused_control)
-            || (!self.transient_menu && current.transient_menu)
-            || (!self.root_gesture && current.root_gesture)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LegacyInputRestrictionLatch {
-    frozen: LegacyInputBlockers,
-    started: bool,
-}
-
-impl LegacyInputRestrictionLatch {
-    #[must_use]
-    pub const fn new(frozen: LegacyInputBlockers) -> Self {
-        Self {
-            frozen,
-            started: false,
-        }
-    }
-    pub fn observe(&mut self, current: LegacyInputBlockers) {
-        self.started |= self.frozen.new_restriction_started(current);
-    }
-    pub fn note_start(&mut self) {
-        self.started = true;
-    }
-    #[must_use]
-    pub const fn started(self) -> bool {
-        self.started
-    }
-}
-
 impl ApplicationInputLocks {
     /// Whether a non-window application surface blocks collection into the
     /// shared router. Targeting is excluded because its exact routed release
@@ -343,7 +285,6 @@ impl FocusStateCounter {
 pub struct StrategicFrameBoundary {
     snapshot: RoutingSnapshot,
     locks: ApplicationInputLocks,
-    legacy: LegacyInputBlockers,
 }
 
 /// Per-backend-event manager projection used while normalizing one input
@@ -379,12 +320,7 @@ impl StrategicFrameBoundary {
     /// surface that is not a strategic window.
     #[must_use]
     pub const fn application_input_held(&self) -> bool {
-        self.locks.blocks_router_input() || self.legacy.blocks_router_input()
-    }
-
-    #[must_use]
-    pub const fn migrated_input_held(&self) -> bool {
-        self.application_input_held()
+        self.locks.blocks_router_input()
     }
 
     /// Whether a manager-owned modal excludes every retained detail surface.
@@ -396,25 +332,6 @@ impl StrategicFrameBoundary {
     #[must_use]
     pub fn migrated_modal_active(&self) -> bool {
         self.modal_active()
-    }
-
-    #[must_use]
-    pub fn legacy_owned_pointer_allowed(&self) -> bool {
-        !self.locks.blocks_router_input() && self.snapshot.pointer_allows_root()
-    }
-
-    #[must_use]
-    pub fn legacy_surface_input_allowed(&self) -> bool {
-        self.legacy_owned_pointer_allowed()
-            && matches!(
-                self.snapshot.keyboard_route().target,
-                rebellion_windowing::RouteTarget::StrategicRoot
-            )
-    }
-
-    #[must_use]
-    pub fn legacy_pointer_allowed(&self) -> bool {
-        self.legacy_owned_pointer_allowed() && !self.legacy.blocks_root_pointer()
     }
 
     /// Whether the strategic root may admit pointer input this frame.
@@ -550,19 +467,9 @@ impl StrategicWindowing {
     /// dispatch starts.
     #[must_use]
     pub fn begin_production_frame(&self, locks: ApplicationInputLocks) -> StrategicFrameBoundary {
-        self.begin_production_frame_with_legacy(locks, LegacyInputBlockers::default())
-    }
-
-    #[must_use]
-    pub fn begin_production_frame_with_legacy(
-        &self,
-        locks: ApplicationInputLocks,
-        legacy: LegacyInputBlockers,
-    ) -> StrategicFrameBoundary {
         StrategicFrameBoundary {
             snapshot: self.begin_frame(),
             locks,
-            legacy,
         }
     }
 
@@ -572,6 +479,15 @@ impl StrategicWindowing {
         reason = "feature-family migrations enqueue the first commands"
     )]
     pub fn enqueue(&mut self, command: WindowCommand) {
+        if let WindowCommand::Close(id) = command {
+            if self
+                .pending
+                .iter()
+                .any(|queued| queued.command == WindowCommand::Close(id))
+            {
+                return;
+            }
+        }
         self.pending.push(QueuedWindowCommand {
             command,
             prepared_build_selection: None,
@@ -770,6 +686,18 @@ impl StrategicWindowing {
             prepared_status: None,
             prepared_sector: None,
         });
+    }
+
+    /// Allocates a fresh command context for the manufacturing Stop dialog.
+    /// Its content is published by the app only after this open receipt.
+    pub fn enqueue_stop_confirmation_open(&mut self) -> Result<(), WindowError> {
+        let subject = self.next_context_subject()?;
+        self.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::StopConfirmation,
+            subject,
+            WindowOwner::StrategicRoot,
+        )));
+        Ok(())
     }
 
     /// Allocates a fresh command-context subject and queues inert Scrap
@@ -1332,14 +1260,29 @@ impl StrategicWindowing {
                 )
             })
         });
-        let restored_fleet = requested_restore.filter(|window| {
-            result.as_ref().is_ok_and(|commit| {
-                matches!(
-                    &commit.transition,
-                    WindowTransition::Restored { id, .. } if id == window
-                )
+        let restored_fleet = requested_restore
+            .filter(|window| {
+                result.as_ref().is_ok_and(|commit| {
+                    matches!(
+                        &commit.transition,
+                        WindowTransition::Restored { id, .. } if id == window
+                    )
+                })
             })
-        });
+            .or_else(|| {
+                prepared_fleet.as_ref().and_then(|_| {
+                    result
+                        .as_ref()
+                        .ok()
+                        .and_then(|commit| match commit.transition {
+                            WindowTransition::Existing {
+                                id,
+                                effect: ExistingEffect::RestoredAndRaised,
+                            } => Some(id),
+                            _ => None,
+                        })
+                })
+            });
         let mut removed_content = Vec::new();
         let mut build_selection_content_id = None;
         let mut confirmed_build_selection = None;
@@ -1975,7 +1918,7 @@ impl StrategicWindowing {
             removed_content.extend(retired.removed_content);
         }
 
-        events.extend(self.enter_scene(scene));
+        events.extend(self.enter_scene(scene)?);
         if scene == WindowScene::Tactical {
             let committed =
                 self.commit_tactical_phase_for_battle(battle_session, tactical_phase)?;
@@ -2068,19 +2011,18 @@ impl StrategicWindowing {
     }
 
     /// Switches active membership before the next frame snapshot is created.
-    pub fn enter_scene(&mut self, scene: WindowScene) -> Vec<WindowEvent> {
+    pub fn enter_scene(&mut self, scene: WindowScene) -> Result<Vec<WindowEvent>, WindowError> {
         if self.scene == scene {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        self.scene = scene;
         let active = match scene {
             WindowScene::Galaxy => self.galaxy.clone(),
             WindowScene::Tactical => self.tactical.clone(),
             WindowScene::Suspended => BTreeSet::new(),
         };
-        self.manager
-            .set_active_windows(&active)
-            .expect("scene sets contain only manager-owned identities")
+        let events = self.manager.set_active_windows(&active)?;
+        self.scene = scene;
+        Ok(events)
     }
 
     /// Discards queued work, content, gestures, and registered session state.
@@ -2200,8 +2142,8 @@ mod tests {
         SystemWindowTab,
     };
     use rebellion_windowing::{
-        ContentStatus, ControlId, FocusTarget, SubjectId, WindowKey, WindowKind, WindowOwner,
-        WindowSpec,
+        ContentStatus, ControlId, FocusTarget, RouteTarget, SubjectId, WindowKey, WindowKind,
+        WindowOwner, WindowSpec,
     };
 
     fn opened_id(applied: &AppliedWindowCommand) -> WindowId {
@@ -3973,10 +3915,10 @@ mod tests {
         assert_eq!(coordinator.begin_frame().presentation_history(), [id]);
         assert_eq!(coordinator.saved_galaxy_order(), [(id, false)]);
 
-        coordinator.enter_scene(WindowScene::Suspended);
+        coordinator.enter_scene(WindowScene::Suspended).unwrap();
         assert!(coordinator.begin_frame().paint_order().is_empty());
         assert_eq!(coordinator.saved_galaxy_order(), [(id, false)]);
-        coordinator.enter_scene(WindowScene::Galaxy);
+        coordinator.enter_scene(WindowScene::Galaxy).unwrap();
 
         let reopened = state
             .prepare_open(
@@ -4070,6 +4012,67 @@ mod tests {
         coordinator.enqueue_fleet_minimize(id);
         let rejected = coordinator.apply_pending().remove(0);
         assert!(rejected.result.is_err());
+    }
+
+    #[test]
+    fn ordinary_fleet_reopen_reports_the_restored_rail_identity() {
+        let (world, system) = fleet_world();
+        let mut state = FleetWindowState::default();
+        let mut coordinator = StrategicWindowing::new();
+        let prepared = state
+            .prepare_open(
+                &world,
+                system,
+                (40, 50),
+                CockpitFaction::Alliance,
+                fleet_layout(),
+                None,
+            )
+            .unwrap();
+        coordinator.enqueue_fleet_open(prepared);
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = opened.fleet_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                opened.prepared_fleet.take().unwrap(),
+                &opened.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        assert!(coordinator.acknowledge_fleet_publication(id));
+
+        coordinator.enqueue_fleet_minimize_with_rail(id, system, (40, 50));
+        assert_eq!(
+            coordinator
+                .apply_pending()
+                .remove(0)
+                .minimized_fleet
+                .unwrap()
+                .0,
+            id
+        );
+
+        coordinator.enqueue_fleet_open(
+            state
+                .prepare_open(
+                    &world,
+                    system,
+                    (200, 210),
+                    CockpitFaction::Alliance,
+                    fleet_layout(),
+                    None,
+                )
+                .unwrap(),
+        );
+        let reopened = coordinator.apply_pending().remove(0);
+        assert!(matches!(
+            reopened.result.as_ref().unwrap().transition,
+            WindowTransition::Existing {
+                id: existing,
+                effect: ExistingEffect::RestoredAndRaised,
+            } if existing == id
+        ));
+        assert_eq!(reopened.restored_fleet, Some(id));
     }
 
     #[test]
@@ -4637,6 +4640,29 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_close_intents_in_one_frame_commit_once() {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+        )));
+        let id = opened_id(&coordinator.apply_pending()[0]);
+
+        coordinator.enqueue(WindowCommand::Close(id));
+        coordinator.enqueue(WindowCommand::Close(id));
+        let applied = coordinator.apply_pending();
+
+        assert_eq!(applied.len(), 1);
+        assert!(matches!(
+            &applied[0].result,
+            Ok(WindowCommit {
+                transition: WindowTransition::Closed { root, .. },
+                ..
+            }) if *root == id
+        ));
+    }
+
+    #[test]
     fn apply_batch_preserves_non_sector_order_and_defers_receipt_side_enqueue() {
         let mut coordinator = StrategicWindowing::new();
         for kind in [WindowKind::Encyclopedia, WindowKind::MessageIndex] {
@@ -4729,14 +4755,14 @@ mod tests {
     #[test]
     fn suspended_scene_defers_new_window_identity_until_an_active_scene() {
         let mut coordinator = StrategicWindowing::new();
-        coordinator.enter_scene(WindowScene::Suspended);
+        coordinator.enter_scene(WindowScene::Suspended).unwrap();
         coordinator.enqueue(WindowCommand::Open(singleton_spec(
             WindowKind::Encyclopedia,
             WindowOwner::StrategicRoot,
         )));
         assert!(coordinator.apply_pending().is_empty());
         assert!(coordinator.begin_frame().paint_order().is_empty());
-        coordinator.enter_scene(WindowScene::Galaxy);
+        coordinator.enter_scene(WindowScene::Galaxy).unwrap();
         assert_eq!(coordinator.apply_pending().len(), 1);
         assert_eq!(coordinator.begin_frame().paint_order().len(), 1);
     }
@@ -4749,12 +4775,12 @@ mod tests {
         let first = coordinator.apply_pending();
         let id = opened_id(&first[0]);
 
-        coordinator.enter_scene(WindowScene::Suspended);
+        coordinator.enter_scene(WindowScene::Suspended).unwrap();
         coordinator.enqueue(WindowCommand::Open(window_spec));
         coordinator.enqueue(WindowCommand::Close(id));
         assert!(coordinator.apply_pending().is_empty());
 
-        coordinator.enter_scene(WindowScene::Galaxy);
+        coordinator.enter_scene(WindowScene::Galaxy).unwrap();
         let applied = coordinator.apply_pending();
         assert_eq!(applied.len(), 2);
         assert!(applied.iter().all(|result| result.result.is_ok()));
@@ -4777,10 +4803,10 @@ mod tests {
         };
         coordinator.enqueue(WindowCommand::Focus(focused_control));
         assert!(coordinator.apply_pending()[0].result.is_ok());
-        coordinator.enter_scene(WindowScene::Suspended);
+        coordinator.enter_scene(WindowScene::Suspended).unwrap();
         assert!(!coordinator.begin_frame().is_visible(id));
         assert!(coordinator.has_content(id));
-        coordinator.enter_scene(WindowScene::Galaxy);
+        coordinator.enter_scene(WindowScene::Galaxy).unwrap();
         assert!(coordinator.begin_frame().is_visible(id));
         assert_eq!(coordinator.begin_frame().focused(), Some(focused_control));
     }
@@ -4834,7 +4860,7 @@ mod tests {
         use rebellion_windowing::CloseReason;
 
         let mut coordinator = StrategicWindowing::new();
-        coordinator.enter_scene(WindowScene::Tactical);
+        coordinator.enter_scene(WindowScene::Tactical).unwrap();
 
         let alert = coordinator
             .commit_tactical_phase(TacticalWindowPhase::Alert)
@@ -5311,24 +5337,6 @@ mod tests {
         assert!(frame.application_input_held());
         assert!(!frame.root_pointer_allowed());
         assert!(!frame.root_shortcuts_allowed());
-
-        for legacy in [
-            LegacyInputBlockers {
-                strategic_modal: true,
-                ..LegacyInputBlockers::default()
-            },
-            LegacyInputBlockers {
-                focused_control: true,
-                ..LegacyInputBlockers::default()
-            },
-        ] {
-            assert!(
-                coordinator
-                    .begin_production_frame_with_legacy(ApplicationInputLocks::default(), legacy,)
-                    .application_input_held(),
-                "{legacy:?}"
-            );
-        }
     }
 
     #[test]
@@ -5386,7 +5394,7 @@ mod tests {
     }
 
     #[test]
-    fn a_focused_fleet_window_leaves_the_menu_and_the_target_release_their_pointer() {
+    fn a_focused_fleet_window_leaves_the_target_release_to_its_named_root_gesture() {
         // FUN_00422ce0 holds the capture while targeting, so its
         // WM_LBUTTONUP arrives whichever window has the focus, and the
         // popup menu tracks its own clicks (FUN_00486fb0); only an
@@ -5403,46 +5411,30 @@ mod tests {
             control: None,
         }));
         assert!(coordinator.apply_pending()[0].result.is_ok());
-        let none = LegacyInputBlockers::default();
-        for owner in [
-            LegacyInputBlockers {
-                root_gesture: true,
-                ..none
-            },
-            LegacyInputBlockers {
-                transient_menu: true,
-                ..none
-            },
-        ] {
-            let frame = coordinator
-                .begin_production_frame_with_legacy(ApplicationInputLocks::default(), owner);
-            assert!(!frame.application_input_held(), "{owner:?}");
-            assert!(!frame.legacy_surface_input_allowed(), "{owner:?}");
-            assert!(frame.legacy_owned_pointer_allowed(), "{owner:?}");
-            let briefing = ApplicationInputLocks {
-                briefing: true,
-                ..ApplicationInputLocks::default()
-            };
-            assert!(
-                !coordinator
-                    .begin_production_frame_with_legacy(briefing, owner)
-                    .legacy_owned_pointer_allowed(),
-                "{owner:?}"
-            );
-        }
+        let frame = coordinator.begin_production_frame(ApplicationInputLocks {
+            targeting: true,
+            ..ApplicationInputLocks::default()
+        });
+        assert!(!frame.application_input_held());
+        assert!(!frame.root_pointer_allowed());
+        assert!(frame.root_gesture_pointer_allowed());
+        let briefing = coordinator.begin_production_frame(ApplicationInputLocks {
+            briefing: true,
+            targeting: true,
+            ..ApplicationInputLocks::default()
+        });
+        assert!(!briefing.root_gesture_pointer_allowed());
+
         coordinator.enqueue(WindowCommand::Open(singleton_spec(
             WindowKind::Encyclopedia,
             WindowOwner::StrategicRoot,
         )));
         opened_id(&coordinator.apply_pending()[0]);
-        let modal = coordinator.begin_production_frame_with_legacy(
-            ApplicationInputLocks::default(),
-            LegacyInputBlockers {
-                root_gesture: true,
-                ..none
-            },
-        );
-        assert!(!modal.legacy_owned_pointer_allowed());
+        let modal = coordinator.begin_production_frame(ApplicationInputLocks {
+            targeting: true,
+            ..ApplicationInputLocks::default()
+        });
+        assert!(!modal.root_gesture_pointer_allowed());
     }
 
     #[test]

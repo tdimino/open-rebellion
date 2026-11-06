@@ -16,7 +16,7 @@ class PageEvents extends EventEmitter {
   }
 }
 
-const expected = "command=0x132 destination=gid_menu status=opened_original";
+const expected = "command=0x132 destination=gid_menu status=opened_managed";
 const emit = (page, text = expected) => page.emit("console", {
   text: () => `[interface] ${text}`,
 });

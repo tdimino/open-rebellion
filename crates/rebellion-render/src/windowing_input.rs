@@ -93,6 +93,7 @@ pub struct FrameInputRouter {
     press_owners: BTreeMap<PointerButtonId, InputRecipient>,
     quarantined_releases: BTreeSet<PointerButtonId>,
     frame_locked: bool,
+    hold_after_ordinal: Option<u32>,
 }
 
 impl FrameInputRouter {
@@ -118,6 +119,7 @@ impl FrameInputRouter {
         self.snapshot = Some(snapshot.clone());
         self.events.clear();
         self.frame_locked = false;
+        self.hold_after_ordinal = None;
     }
 
     /// Applies an application hold monotonically for the current frame.
@@ -129,6 +131,19 @@ impl FrameInputRouter {
             self.press_owners.clear();
             self.quarantined_releases.extend(pressed_buttons);
         }
+    }
+
+    /// Fences only physical events later than the input that introduced a
+    /// same-frame application restriction. Earlier pointer/key events retain
+    /// their already-earned route; later ones cannot pass the new boundary.
+    pub fn set_application_hold_after(&mut self, event: InputEventId) {
+        if !self.valid_event(event) {
+            return;
+        }
+        self.hold_after_ordinal = Some(
+            self.hold_after_ordinal
+                .map_or(event.ordinal, |ordinal| ordinal.min(event.ordinal)),
+        );
     }
 
     /// Routes one pointer event using its own point-derived hit set.
@@ -163,7 +178,7 @@ impl FrameInputRouter {
                 self.press_owners.remove(&button);
             }
             InputRecipient::Blocked
-        } else if self.frame_locked {
+        } else if self.event_blocked(event) {
             InputRecipient::Blocked
         } else {
             match phase {
@@ -226,7 +241,7 @@ impl FrameInputRouter {
         if !self.valid_event(event) || self.events.contains_key(&event) {
             return InputRecipient::Blocked;
         }
-        let recipient = if self.frame_locked {
+        let recipient = if self.event_blocked(event) {
             InputRecipient::Blocked
         } else {
             route_recipient(route.target)
@@ -258,7 +273,7 @@ impl FrameInputRouter {
 
     /// Claims one physical event once across macroquad and egui copies.
     pub fn claim(&mut self, event: InputEventId, owner: InputRecipient) -> bool {
-        if owner == InputRecipient::Blocked {
+        if owner == InputRecipient::Blocked || self.event_blocked(event) {
             return false;
         }
         let Some(state) = self.events.get_mut(&event) else {
@@ -305,6 +320,9 @@ impl FrameInputRouter {
         owner: InputRecipient,
         result: InputDisposition,
     ) {
+        if self.event_blocked(event) {
+            return;
+        }
         if let Some(state) = self.events.get_mut(&event) {
             if state.recipient == owner && state.disposition.is_none() {
                 state.disposition = Some(result);
@@ -315,6 +333,9 @@ impl FrameInputRouter {
     /// Whether the root may execute this key exactly after owner disposition.
     #[must_use]
     pub fn root_may_handle(&self, event: InputEventId) -> bool {
+        if self.event_blocked(event) {
+            return false;
+        }
         let Some(state) = self.events.get(&event) else {
             return false;
         };
@@ -329,6 +350,19 @@ impl FrameInputRouter {
             }
             InputRecipient::Blocked => false,
         }
+    }
+
+    /// Earliest physical event that a recipient has acted on this frame.
+    /// Used to place a same-frame application fence without erasing earlier
+    /// pointer/key order.
+    #[must_use]
+    pub fn first_handled_event(&self) -> Option<InputEventId> {
+        self.events.iter().find_map(|(event, state)| {
+            (state.recipient_claimed
+                || state.root_claimed
+                || state.disposition == Some(InputDisposition::Handled))
+            .then_some(*event)
+        })
     }
 
     /// Cancels a matching drag and quarantines its eventual physical release.
@@ -352,6 +386,7 @@ impl FrameInputRouter {
         self.press_owners.clear();
         self.quarantined_releases.clear();
         self.frame_locked = false;
+        self.hold_after_ordinal = None;
     }
 
     /// Returns the frozen Escape propagation entry point.
@@ -379,7 +414,18 @@ impl FrameInputRouter {
         self.frame_number == Some(event.frame)
     }
 
+    fn event_blocked(&self, event: InputEventId) -> bool {
+        self.frame_locked
+            || (self.valid_event(event)
+                && self
+                    .hold_after_ordinal
+                    .is_some_and(|ordinal| event.ordinal > ordinal))
+    }
+
     fn recipient(&self, event: InputEventId) -> InputRecipient {
+        if self.event_blocked(event) {
+            return InputRecipient::Blocked;
+        }
         self.events
             .get(&event)
             .map_or(InputRecipient::Blocked, |state| state.recipient)
@@ -442,6 +488,44 @@ mod tests {
             InputDisposition::Handled,
         );
         assert!(!router.root_may_handle(id));
+    }
+
+    #[test]
+    fn windowing_input_same_frame_hold_preserves_pointer_key_physical_order() {
+        let manager = WindowManager::new();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(19, &manager.begin_frame());
+        let key_before = event(19, 0);
+        let pointer_press = event(19, 1);
+        let restricting_pointer = event(19, 2);
+        let key_after = event(19, 3);
+        assert_eq!(router.collect_keyboard(key_before), InputRecipient::Root);
+        assert_eq!(
+            router.collect_pointer(
+                pointer_press,
+                &BTreeSet::new(),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            InputRecipient::Root
+        );
+        assert_eq!(
+            router.collect_pointer(
+                restricting_pointer,
+                &BTreeSet::new(),
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+            InputRecipient::Root
+        );
+        assert_eq!(router.collect_keyboard(key_after), InputRecipient::Root);
+
+        router.set_application_hold_after(restricting_pointer);
+
+        assert!(router.claim_root(key_before));
+        assert_eq!(
+            router.keyboard_recipient(key_after),
+            InputRecipient::Blocked
+        );
+        assert!(!router.claim_root(key_after));
     }
 
     #[test]

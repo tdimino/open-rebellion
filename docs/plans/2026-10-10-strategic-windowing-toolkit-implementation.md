@@ -2,7 +2,7 @@
 title: "Strategic Windowing Toolkit Implementation Plan"
 created: 2026-10-10
 status: active
-progress: "100% of the bounded SW-00–SW-14 backend implementation/evidence graph; original-runtime, native-Windows, System Finder, and A0 parity evidence remain open"
+progress: "80%: kernel and family migrations implemented; post-merge acceptance, native-Windows, System Finder, A0 parity, and current evidence reconciliation remain open"
 updated: 2026-11-05
 ---
 
@@ -10,13 +10,13 @@ updated: 2026-11-05
 
 > **For future implementers:** Execute the reviewed plan task-by-task using the applicable implementation workflow. This document does not authorize implementation or delegation. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** The bounded SW-00–SW-14 strategic-windowing backend and acceptance
-evidence sequence is 100% complete. The SW-14
-reconciliation records the final candidate, browser and production-native
-evidence without changing strict interface-cell statuses. This plan remains
-active because original-runtime comparisons, native-Windows proof, the System
-Finder, and A0 bitmap/layout/text acceptance are still open; this is not a
-claim of full original-interface parity.
+**Status:** Active, estimated at 80%. The kernel and family migrations are
+implemented, but the current post-merge candidate has not completed every
+delivery gate in Tasks 12–14. The older reconciliation remains historical
+evidence for its recorded revision, not acceptance of this branch. Current
+full-matrix/package evidence, native-Windows proof, the System Finder, and A0
+bitmap/layout/text acceptance remain open; this is not a claim of full
+original-interface parity.
 
 **Baseline:** Inspected worktree `/data/tmp/open-rebellion-strategic-window-modality-focus`, commit `f0648ef0e6b1f832a9f7643ccd6321e9f7ea5b52`. Revalidate before execution.
 
@@ -135,9 +135,11 @@ Evidence labels in code comments and records retain their established meanings:
 - `port:` for the chosen Rust mechanism or a safety boundary supported by visible behavior.
 - `unknown:` for bounded unresolved native detail.
 
-## Current Implementation and Exact Seams
+## Historical Pre-Migration Implementation and Exact Seams
 
-The code has useful feature boundaries but no shared window authority:
+This section records the baseline that motivated the migration; it does not
+describe the current branch. At that baseline the code had useful feature
+boundaries but no shared window authority:
 
 - `crates/rebellion-app/src/main.rs` creates all strategic states, snapshots the two-case `FrameKeyboardOwner`, dispatches global shortcuts, assembles `GalaxyMapState::pointer_blocked` from family-specific rectangle/open checks, computes `strategic_input_enabled`, invokes every renderer in a fixed sequence, and hand-codes Escape precedence.
 - `crates/rebellion-render/src/sector_window.rs` stores open sectors in a `Vec`; the last element is treated as focused. `open_for_system` currently calls `focus` on a duplicate, contrary to the newly recovered no-raise opener behavior.
@@ -360,7 +362,7 @@ pub enum WindowKind {
     MessageIndex, Encyclopedia, Status, BuildSelection, MissionDialog,
     MoveConfirmation, ScrapConfirmation, BattleAlert, BattleResults, Menu,
 }
-impl WindowKind { pub const ALL: [Self; 19]; }
+impl WindowKind { pub const ALL: [Self; 20]; }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WindowKey { pub kind: WindowKind, pub subject: Option<SubjectId> }
@@ -1167,7 +1169,7 @@ references survive; a thirteenth minimized detail evicts the oldest through
 the same lifecycle teardown path; saved focus is used only by menus.
 
 - [ ] Add `closing_an_owner_removes_descendants_and_clears_focus_and_capture_before_restoration`.
-- [ ] Add `close_chooses_previous_eligible_survivor_outside_removed_subtree`.
+- [ ] Add `close_chooses_topmost_eligible_survivor_outside_removed_subtree`.
 - [ ] Add `menu_close_restores_saved_control_only_if_still_eligible`.
 - [ ] Add `ordinary_window_close_uses_global_eligible_order_not_a_private_focus_stack`.
 - [ ] Add `minimize_removes_visible_order_and_adds_history_once`.
@@ -1375,7 +1377,7 @@ surfaces respect an active common modal during intermediate commits.
 - [ ] Add `windowing_input_event_coordinates_not_final_cursor_choose_target`.
 - [ ] Add `windowing_input_cancelled_drag_quarantines_later_release`.
 - [ ] Add `windowing_input_hold_release_does_not_unlock_existing_frame`.
-- [ ] Add `windowing_policy_inventory_covers_all_nineteen_kinds`.
+- [ ] Add `windowing_policy_inventory_covers_all_twenty_kinds`.
 - [ ] Add `windowing_subject_fleet_detail_uses_system_dat_id`.
 - [ ] Add `windowing_legacy_bridge_blocks_raw_paths_under_migrated_modal`.
 
