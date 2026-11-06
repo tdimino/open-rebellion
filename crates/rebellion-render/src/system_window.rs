@@ -1300,6 +1300,9 @@ struct WindowDrawResult {
     painted: Vec<FacilityItem>,
     band: Option<ProductionArea>,
     object_menu: Option<(Option<MenuObject>, (i16, i16))>,
+    /// The live edit's screen rectangle, used to distinguish its own press
+    /// from an owning-window press admitted by [`FrameInputRouter`].
+    rename_field: Option<egui::Rect>,
     rename: Option<BandRenameOutcome>,
 }
 
@@ -1414,6 +1417,33 @@ fn claim_system_pointer_event(
     })
 }
 
+/// Claim the exact press that the owning System window routes through the
+/// live band-name edit (`FUN_004534f0`, 0x201/0x204 -> `FUN_00458780`).
+/// Raw egui pointer state is only a presentation copy; manager-owned content
+/// may publish the rename only after this routed event is admitted and
+/// claimed for the window identity.
+fn claim_band_rename_press(
+    router: &mut FrameInputRouter,
+    events: &[SystemWindowInputEvent],
+    window: OpenSystemWindow,
+    layout: CockpitLayout,
+    field: egui::Rect,
+) -> Option<InputEventId> {
+    let id = window.id?;
+    let screen = window_screen_rect(window, layout);
+    events.iter().rev().find_map(|event| {
+        let point = egui::pos2(event.point.0, event.point.1);
+        (matches!(
+            event.phase,
+            PointerPhase::Press(PointerButtonId::Primary | PointerButtonId::Secondary)
+        ) && rect_contains(screen, point)
+            && !rect_contains(field, point)
+            && router.pointer_recipient(event.id) == InputRecipient::Window(id)
+            && router.claim(event.id, InputRecipient::Window(id)))
+        .then_some(event.id)
+    })
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "Shared implementation for production snapshots and fixture-only direct content."
@@ -1507,7 +1537,7 @@ fn draw_system_windows_with_snapshot(
             Some(id) => focused_manager == Some(id) && front,
             None => focused_fixture_system == Some(system) && front,
         };
-        let result = draw_system_window(
+        let mut result = draw_system_window(
             ctx,
             sources,
             window,
@@ -1517,11 +1547,34 @@ fn draw_system_windows_with_snapshot(
             layout,
             cache,
         );
-        if let Some(grab) = result.drag_grab {
-            state.title_drag = Some(TitleDrag {
-                area: area_id(window.system),
-                grab,
-            });
+        let rename_press_text = match (&result.rename, &rename) {
+            (None, Some(edit)) => Some(edit.text.clone()),
+            (Some(BandRenameOutcome::Typed(text)), Some(_)) => Some(text.clone()),
+            _ => None,
+        };
+        let rename_press_claimed = match (
+            rename_press_text,
+            result.rename_field,
+            router.as_deref_mut(),
+        ) {
+            (Some(text), Some(field), Some(router)) => {
+                let claimed =
+                    claim_band_rename_press(router, pointer_events, window, layout, field)
+                        .is_some();
+                if claimed {
+                    result.rename = Some(BandRenameOutcome::Commit(text));
+                }
+                claimed
+            }
+            _ => false,
+        };
+        if !rename_press_claimed {
+            if let Some(grab) = result.drag_grab {
+                state.title_drag = Some(TitleDrag {
+                    area: area_id(window.system),
+                    grab,
+                });
+            }
         }
         match (result.rename.clone(), rename) {
             (Some(BandRenameOutcome::Typed(text)), Some(_)) => {
@@ -2025,11 +2078,15 @@ fn draw_system_window(
                     // Enter does (FUN_004534f0, 0x201 and 0x204 →
                     // FUN_00458780).
                     if let Some((field, edit)) = rename_field {
+                        result.rename_field = Some(field);
                         result.rename = draw_band_rename(ui, field, edit, &font);
                         let elsewhere = pointer.is_some_and(|point| {
                             rect_contains(local, point) && !rect_contains(field, point)
                         });
-                        if any_pressed && elsewhere {
+                        // Direct renderer fixtures have no manager identity or
+                        // routed event stream. Production content must claim
+                        // its owning window's exact admitted press above.
+                        if window.id.is_none() && any_pressed && elsewhere {
                             result.rename = Some(BandRenameOutcome::Commit(match result.rename {
                                 Some(BandRenameOutcome::Typed(ref text)) => text.clone(),
                                 _ => edit.text.clone(),
@@ -4235,6 +4292,184 @@ mod tests {
         };
         state.remove_content(&closed);
         assert!(!state.contains_window(id));
+    }
+
+    #[test]
+    fn a_managed_press_in_the_owning_system_commits_the_band_rename_once_for_both_factions() {
+        // FUN_004534f0 routes the owning window's WM_LBUTTONDOWN (0x201)
+        // and WM_RBUTTONDOWN (0x204) through FUN_00458780 to finish the
+        // edit. The production-routed event, rather than an unowned egui
+        // pointer copy, is the authority for that commit.
+        for (faction, button) in [
+            (CockpitFaction::Alliance, PointerButtonId::Primary),
+            (CockpitFaction::Empire, PointerButtonId::Secondary),
+        ] {
+            let (mut world, systems) = fixture_world(1);
+            let system = systems[0];
+            world.systems[system].control = ControlKind::Controlled(cockpit_faction(faction));
+            let layout = layout(faction, 2.0);
+            let mut manager = WindowManager::new();
+            let mut state = SystemWindowState::default();
+            let prepared = state
+                .prepare_open(&world, system, ORIGIN, faction, layout)
+                .unwrap();
+            let (id, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+            manager.apply(WindowCommand::Activate(id)).unwrap();
+            assert!(state.begin_band_rename(system, ProductionArea::Shipyard, "Death Star 1"));
+
+            let ctx = egui::Context::default();
+            let mut router = FrameInputRouter::default();
+            let mut cache = BmpCache::new();
+            let movement = rebellion_core::movement::MovementState::default();
+            let fog = FogState::new(cockpit_faction(faction));
+            let missions = MissionState::new();
+            let manufacturing = ManufacturingState::new();
+            let deliveries = DeliveryState::new();
+            let mut actions = Vec::new();
+            for (index, events) in after_opening(vec![vec![egui::Event::Text("Tarkin".into())]])
+                .into_iter()
+                .enumerate()
+            {
+                let frame = u64::try_from(index + 1).unwrap();
+                let snapshot = manager.begin_frame();
+                router.begin_frame(frame, &snapshot);
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1400.0, 1000.0),
+                    )),
+                    events,
+                    ..egui::RawInput::default()
+                };
+                let _ = ctx.run(input, |ctx| {
+                    actions.extend(draw_managed_system_windows(
+                        ctx,
+                        &world,
+                        &movement,
+                        &fog,
+                        &missions,
+                        &manufacturing,
+                        &deliveries,
+                        &mut state,
+                        faction,
+                        layout,
+                        &mut cache,
+                        &snapshot,
+                        &[],
+                        &mut router,
+                        true,
+                        &|_| true,
+                    ));
+                });
+            }
+
+            let point = at(20.0, 100.0);
+            let raw_button = match button {
+                PointerButtonId::Primary => egui::PointerButton::Primary,
+                PointerButtonId::Secondary => egui::PointerButton::Secondary,
+                PointerButtonId::Middle | PointerButtonId::Extra(_) => unreachable!(),
+            };
+            let raw_button_event = |pressed| egui::Event::PointerButton {
+                pos: point,
+                button: raw_button,
+                pressed,
+                modifiers: egui::Modifiers::default(),
+            };
+            let snapshot = manager.begin_frame();
+            router.begin_frame(4, &snapshot);
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                events: vec![
+                    egui::Event::PointerMoved(point),
+                    raw_button_event(true),
+                    raw_button_event(false),
+                ],
+                ..egui::RawInput::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                actions.extend(draw_managed_system_windows(
+                    ctx,
+                    &world,
+                    &movement,
+                    &fog,
+                    &missions,
+                    &manufacturing,
+                    &deliveries,
+                    &mut state,
+                    faction,
+                    layout,
+                    &mut cache,
+                    &snapshot,
+                    &[],
+                    &mut router,
+                    true,
+                    &|_| true,
+                ));
+            });
+            assert!(actions.is_empty(), "an unrouted raw press must not publish");
+            assert!(state.band_rename_open());
+            assert!(state.contains_window(id));
+
+            let frame = 5;
+            let press = InputEventId { frame, ordinal: 0 };
+            let phase = PointerPhase::Press(button);
+            let snapshot = manager.begin_frame();
+            router.begin_frame(frame, &snapshot);
+            assert_eq!(
+                router.collect_pointer(press, &std::collections::BTreeSet::from([id]), phase,),
+                InputRecipient::Window(id)
+            );
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1400.0, 1000.0),
+                )),
+                ..egui::RawInput::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                actions.extend(draw_managed_system_windows(
+                    ctx,
+                    &world,
+                    &movement,
+                    &fog,
+                    &missions,
+                    &manufacturing,
+                    &deliveries,
+                    &mut state,
+                    faction,
+                    layout,
+                    &mut cache,
+                    &snapshot,
+                    &[SystemWindowInputEvent {
+                        id: press,
+                        point: (point.x, point.y),
+                        phase,
+                    }],
+                    &mut router,
+                    true,
+                    &|_| true,
+                ));
+            });
+
+            assert_eq!(
+                actions,
+                [SystemWindowAction::RenameProduct {
+                    system,
+                    area: ProductionArea::Shipyard,
+                    name: "Tarkin".into(),
+                }]
+            );
+            assert!(state.contains_window(id));
+            assert!(!state.band_rename_open());
+            assert!(manager.begin_frame().key(id).is_some());
+            assert!(
+                !router.claim(press, InputRecipient::Window(id)),
+                "the rename owner must consume the exact admitted press"
+            );
+        }
     }
 
     #[test]
