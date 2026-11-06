@@ -15554,15 +15554,11 @@ async fn main() {
                                 strategic_windowing.enqueue_system_minimize(window)
                             }
                             SystemWindowAction::RestoreReferenceWindow(window) => {
-                                if strategic_frame_boundary.snapshot().key(window).is_some_and(
-                                    |key| key.kind == rebellion_windowing::WindowKind::Fleet,
-                                ) {
-                                    strategic_windowing.enqueue_fleet_restore(window);
-                                } else {
-                                    strategic_windowing.enqueue(
-                                        rebellion_windowing::WindowCommand::Restore(window),
-                                    );
-                                }
+                                enqueue_system_reference_restore(
+                                    &mut strategic_windowing,
+                                    strategic_frame_boundary.snapshot(),
+                                    window,
+                                );
                             }
                             SystemWindowAction::RestoreDefensesWindow { system, .. } => {
                                 if let Some(window) = defenses_window_state.window_id(system) {
@@ -20069,32 +20065,16 @@ async fn main() {
                 &result,
             );
             removed_content.extend(missions_rollback);
-            if let (Some(prepared), Some(id), Ok(commit)) =
-                (prepared_fleet, fleet_content_id, &result)
-            {
-                if fleet_window_state.commit_open(prepared, &commit.transition) == Some(id) {
-                    let committed = strategic_windowing.has_content(id)
-                        || strategic_windowing.acknowledge_fleet_publication(id);
-                    if !committed {
-                        fleet_window_state.remove_content(&[id]);
-                        removed_content.extend(strategic_windowing.rollback_fleet_publication(id));
-                    }
-                } else {
-                    macroquad::logging::error!(
-                        "[windowing] Fleet content commit did not match identity={:?}",
-                        id
-                    );
-                    if matches!(
-                        commit.transition,
-                        rebellion_windowing::WindowTransition::Opened { .. }
-                    ) {
-                        removed_content.extend(strategic_windowing.rollback_fleet_publication(id));
-                    }
-                }
-            }
-            if let Some(window) = restored_fleet {
-                system_window_state.restore_fleet_window(window);
-            }
+            commit_fleet_window_receipt(
+                &mut strategic_windowing,
+                &mut fleet_window_state,
+                &mut system_window_state,
+                prepared_fleet,
+                fleet_content_id,
+                restored_fleet,
+                &result,
+                &mut removed_content,
+            );
             if let (Some((window, system, logical_position)), Ok(commit)) =
                 (minimized_fleet, &result)
             {
@@ -24427,6 +24407,66 @@ fn enqueue_missions_window_for_member(
     };
     strategic_windowing.enqueue_missions_open(prepared);
     true
+}
+
+/// Dispatches one renderer-owned reference-rail restore through the manager.
+/// Fleet restores carry an exact receipt marker so their temporary System
+/// rail projection retires at the shared publication boundary below.
+fn enqueue_system_reference_restore(
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    snapshot: &rebellion_windowing::RoutingSnapshot,
+    window: rebellion_windowing::WindowId,
+) {
+    if snapshot
+        .key(window)
+        .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Fleet)
+    {
+        strategic_windowing.enqueue_fleet_restore(window);
+    } else {
+        strategic_windowing.enqueue(rebellion_windowing::WindowCommand::Restore(window));
+    }
+}
+
+/// Publishes a prepared Fleet candidate and retires a stale Fleet rail entry
+/// only from the manager's exact restore receipt. Ordinary semantic reopen and
+/// a direct reference-rail Restore converge here without recreating content.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Fleet publication and its System rail projection share one exact manager receipt boundary."
+)]
+fn commit_fleet_window_receipt(
+    strategic_windowing: &mut strategic_windowing::StrategicWindowing,
+    fleets: &mut FleetWindowState,
+    systems: &mut SystemWindowState,
+    prepared: Option<rebellion_render::fleet_window::PreparedFleetWindow>,
+    content_id: Option<rebellion_windowing::WindowId>,
+    restored_fleet: Option<rebellion_windowing::WindowId>,
+    result: &Result<rebellion_windowing::WindowCommit, rebellion_windowing::WindowError>,
+    removed_content: &mut Vec<rebellion_windowing::WindowId>,
+) -> bool {
+    if let (Some(prepared), Some(id), Ok(commit)) = (prepared, content_id, result) {
+        if fleets.commit_open(prepared, &commit.transition) == Some(id) {
+            let committed = strategic_windowing.has_content(id)
+                || strategic_windowing.acknowledge_fleet_publication(id);
+            if !committed {
+                fleets.remove_content(&[id]);
+                removed_content.extend(strategic_windowing.rollback_fleet_publication(id));
+            }
+        } else {
+            macroquad::logging::error!(
+                "[windowing] Fleet content commit did not match identity={:?}",
+                id
+            );
+            if matches!(
+                commit.transition,
+                rebellion_windowing::WindowTransition::Opened { .. }
+            ) {
+                removed_content.extend(strategic_windowing.rollback_fleet_publication(id));
+            }
+        }
+    }
+
+    restored_fleet.is_some_and(|window| systems.restore_fleet_window(window))
 }
 
 #[expect(
@@ -29386,6 +29426,260 @@ mod managed_interface_save_tests {
             }
         }
         (systems, fleets, strategic)
+    }
+
+    fn hidden_fleet_order(
+        world: &GameWorld,
+        fleet_system: SystemKey,
+        shown_system: SystemKey,
+        fleet_position: (i16, i16),
+    ) -> [SavedWindow; 2] {
+        [
+            SavedWindow {
+                kind: SavedWindowKind::Fleet {
+                    system: world.systems[fleet_system].dat_id,
+                    tab: rebellion_render::fleet_window::FleetWindowTab::CapitalShips.control_id(),
+                },
+                position: fleet_position,
+                shown: false,
+            },
+            SavedWindow {
+                kind: SavedWindowKind::System {
+                    system: world.systems[shown_system].dat_id,
+                },
+                position: (300, 120),
+                shown: true,
+            },
+        ]
+    }
+
+    fn click_first_reference_rail_slot(
+        world: &GameWorld,
+        systems: &mut SystemWindowState,
+        strategic: &strategic_windowing::StrategicWindowing,
+        faction: CockpitFaction,
+    ) -> SystemWindowAction {
+        let layout = rebellion_render::CockpitState::new(faction).layout_for(1280.0, 960.0);
+        let slot = rebellion_render::system_window::reference_rail_slots(
+            &strategic.begin_frame(),
+            world,
+            faction,
+            layout,
+        )
+        .into_iter()
+        .next()
+        .expect("the loaded Fleet has a manager-projected rail slot");
+        let point = slot.rect().center();
+        let pointer_button = |pressed| egui_macroquad::egui::Event::PointerButton {
+            pos: point,
+            button: egui_macroquad::egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui_macroquad::egui::Modifiers::default(),
+        };
+        let frames = [
+            (
+                vec![egui_macroquad::egui::Event::PointerMoved(point)],
+                PointerPhase::Hover,
+            ),
+            (
+                vec![egui_macroquad::egui::Event::PointerMoved(point)],
+                PointerPhase::Hover,
+            ),
+            (
+                vec![pointer_button(true)],
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            (
+                vec![pointer_button(false)],
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+        ];
+        let ctx = egui_macroquad::egui::Context::default();
+        let mut router = FrameInputRouter::default();
+        let mut cache = BmpCache::new();
+        let movement = MovementState::default();
+        let fog = FogState::new(Faction::of_alliance(faction == CockpitFaction::Alliance));
+        let missions = MissionState::new();
+        let manufacturing = ManufacturingState::new();
+        let deliveries = DeliveryState::new();
+        let mut actions = Vec::new();
+
+        for (index, (events, phase)) in frames.into_iter().enumerate() {
+            let frame = u64::try_from(index + 1).unwrap();
+            let event = InputEventId { frame, ordinal: 0 };
+            let snapshot = strategic.begin_frame();
+            router.begin_frame(frame, &snapshot);
+            assert_eq!(
+                router.collect_pointer(event, &BTreeSet::new(), phase),
+                InputRecipient::Root
+            );
+            let input = egui_macroquad::egui::RawInput {
+                screen_rect: Some(egui_macroquad::egui::Rect::from_min_size(
+                    egui_macroquad::egui::Pos2::ZERO,
+                    egui_macroquad::egui::vec2(1280.0, 960.0),
+                )),
+                events,
+                ..egui_macroquad::egui::RawInput::default()
+            };
+            let mut frame_actions = Vec::new();
+            let _ = ctx.run(input, |ctx| {
+                frame_actions = draw_managed_system_windows(
+                    ctx,
+                    world,
+                    &movement,
+                    &fog,
+                    &missions,
+                    &manufacturing,
+                    &deliveries,
+                    systems,
+                    faction,
+                    layout,
+                    &mut cache,
+                    &snapshot,
+                    &[SystemWindowInputEvent {
+                        id: event,
+                        point: (point.x, point.y),
+                        phase,
+                    }],
+                    &mut router,
+                    true,
+                    &|_| true,
+                );
+            });
+            actions.extend(frame_actions);
+        }
+
+        assert_eq!(actions.len(), 1, "one physical rail click acts once");
+        actions.remove(0)
+    }
+
+    #[test]
+    fn ordinary_open_of_a_loaded_minimized_fleet_retires_its_exact_stale_rail_entry() {
+        const CURRENT_POSITION: (i16, i16) = (140, 150);
+        const STALE_RAIL_POSITION: (i16, i16) = (20, 30);
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (world, systems_by_key) = fixture_world();
+            let fleet_system = systems_by_key[0];
+            let order =
+                hidden_fleet_order(&world, fleet_system, systems_by_key[1], CURRENT_POSITION);
+            let (mut systems, mut fleets, mut strategic) =
+                restore_manager_owned(&world, &order, faction);
+            let fleet_id = fleets.window_id(fleet_system).unwrap();
+            let current_position = fleets.window_logical_position(fleet_system).unwrap();
+            let focus_before = strategic.begin_frame().focused();
+            assert!(systems.rail_holds_fleet(fleet_id), "{faction:?}");
+            assert_ne!(current_position, STALE_RAIL_POSITION, "{faction:?}");
+
+            // A rail projection can lag the live content position. Cleanup
+            // must make save state read Fleet content, not this stale slot.
+            assert!(systems.restore_fleet_window(fleet_id));
+            systems.insert_fleet_rail(0, fleet_id, fleet_system, STALE_RAIL_POSITION);
+            assert!(enqueue_fleet_window(
+                &mut strategic,
+                &fleets,
+                &world,
+                fleet_system,
+                (500, 400),
+                faction,
+                rebellion_render::CockpitState::new(faction).layout_for(1280.0, 960.0),
+                None,
+            ));
+            let mut reopened = strategic.apply_pending().remove(0);
+            assert!(matches!(
+                reopened.result.as_ref().map(|commit| &commit.transition),
+                Ok(WindowTransition::Existing {
+                    id,
+                    effect: rebellion_windowing::ExistingEffect::RestoredAndRaised,
+                }) if *id == fleet_id
+            ));
+            assert_eq!(reopened.restored_fleet, Some(fleet_id), "{faction:?}");
+            assert!(commit_fleet_window_receipt(
+                &mut strategic,
+                &mut fleets,
+                &mut systems,
+                reopened.prepared_fleet.take(),
+                reopened.fleet_content_id,
+                reopened.restored_fleet,
+                &reopened.result,
+                &mut reopened.removed_content,
+            ));
+
+            let snapshot = strategic.begin_frame();
+            assert!(!systems.rail_holds_fleet(fleet_id), "{faction:?}");
+            assert!(snapshot.is_visible(fleet_id), "{faction:?}");
+            assert_eq!(snapshot.presentation_history(), [], "{faction:?}");
+            assert_eq!(
+                snapshot.paint_order().last(),
+                Some(&fleet_id),
+                "{faction:?}"
+            );
+            assert_eq!(snapshot.focused(), focus_before, "{faction:?}");
+            assert_eq!(fleets.window_id(fleet_system), Some(fleet_id));
+            assert_eq!(
+                fleets.window_logical_position(fleet_system),
+                Some(current_position)
+            );
+            let saved = fleets.saved_windows(&world, |id| systems.rail_holds_fleet(id));
+            assert_eq!(saved.len(), 1, "{faction:?}");
+            assert_eq!(saved[0].1.position, current_position, "{faction:?}");
+        }
+    }
+
+    #[test]
+    fn direct_loaded_fleet_rail_click_restores_the_retained_identity_and_retires_its_slot() {
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (world, systems_by_key) = fixture_world();
+            let fleet_system = systems_by_key[0];
+            let order = hidden_fleet_order(&world, fleet_system, systems_by_key[1], (140, 150));
+            let (mut systems, mut fleets, mut strategic) =
+                restore_manager_owned(&world, &order, faction);
+            let fleet_id = fleets.window_id(fleet_system).unwrap();
+            let current_position = fleets.window_logical_position(fleet_system).unwrap();
+            let focus_before = strategic.begin_frame().focused();
+            let action = click_first_reference_rail_slot(&world, &mut systems, &strategic, faction);
+            assert_eq!(
+                action,
+                SystemWindowAction::RestoreReferenceWindow(fleet_id),
+                "{faction:?}"
+            );
+            let SystemWindowAction::RestoreReferenceWindow(clicked) = action else {
+                unreachable!()
+            };
+            let input_snapshot = strategic.begin_frame();
+            enqueue_system_reference_restore(&mut strategic, &input_snapshot, clicked);
+            let mut restored = strategic.apply_pending().remove(0);
+            assert!(matches!(
+                restored.result.as_ref().map(|commit| &commit.transition),
+                Ok(WindowTransition::Restored { id }) if *id == fleet_id
+            ));
+            assert_eq!(restored.restored_fleet, Some(fleet_id), "{faction:?}");
+            assert!(commit_fleet_window_receipt(
+                &mut strategic,
+                &mut fleets,
+                &mut systems,
+                restored.prepared_fleet.take(),
+                restored.fleet_content_id,
+                restored.restored_fleet,
+                &restored.result,
+                &mut restored.removed_content,
+            ));
+
+            let snapshot = strategic.begin_frame();
+            assert!(!systems.rail_holds_fleet(fleet_id), "{faction:?}");
+            assert!(snapshot.is_visible(fleet_id), "{faction:?}");
+            assert_eq!(snapshot.presentation_history(), [], "{faction:?}");
+            assert_eq!(
+                snapshot.paint_order().last(),
+                Some(&fleet_id),
+                "{faction:?}"
+            );
+            assert_eq!(snapshot.focused(), focus_before, "{faction:?}");
+            assert_eq!(fleets.window_id(fleet_system), Some(fleet_id));
+            assert_eq!(
+                fleets.window_logical_position(fleet_system),
+                Some(current_position)
+            );
+        }
     }
 
     #[test]
