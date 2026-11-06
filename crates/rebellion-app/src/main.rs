@@ -4178,19 +4178,19 @@ mod frame_input_tests {
     };
     use super::{
         approve_tactical_window_action, child_key_disposition,
-        collect_strategic_input_in_physical_order, collect_strategic_pointer_batch,
-        commit_pending_tactical_window_action, commit_sector_window_publication,
-        enqueue_managed_fixture_sector, enqueue_sector_manager_action, enqueue_sector_window,
-        pump_pending_sector_publication, queue_routed_sector_release_receipt,
-        refresh_pending_sector_publication, reset_pending_tactical_handoff, restore_egui_input,
-        route_tactical_window_input, tactical_result_destination,
-        take_approved_tactical_window_action, take_tactical_destination_for_galaxy,
-        with_strategic_input, with_visual_fixture_pointer, CommittedTacticalWindowAction,
-        PendingSectorPublication, PreparedTacticalWindowAction, RoutedEguiInputFilter,
-        SectorDependentIntent, SectorPublicationIntent, StrategicIndexedKeyEvent,
-        StrategicPointerBatch, StrategicPointerEvent, StrategicRawInputCollector,
-        StrategicRawKeyEvent, StrategicRawPointerEvent, StrategicRootKeyBatch,
-        TacticalResultDestination,
+        collect_ordered_strategic_input_batch, collect_strategic_input_in_physical_order,
+        collect_strategic_pointer_batch, commit_pending_tactical_window_action,
+        commit_sector_window_publication, enqueue_managed_fixture_sector,
+        enqueue_sector_manager_action, enqueue_sector_window, pump_pending_sector_publication,
+        queue_routed_sector_release_receipt, refresh_pending_sector_publication,
+        reset_pending_tactical_handoff, restore_egui_input, route_tactical_window_input,
+        tactical_result_destination, take_approved_tactical_window_action,
+        take_tactical_destination_for_galaxy, with_strategic_input, with_visual_fixture_pointer,
+        CommittedTacticalWindowAction, PendingSectorPublication, PreparedTacticalWindowAction,
+        RoutedEguiInputFilter, SectorDependentIntent, SectorPublicationIntent,
+        StrategicIndexedKeyEvent, StrategicPointerBatch, StrategicPointerEvent,
+        StrategicRawInputBatch, StrategicRawInputCollector, StrategicRawKeyEvent,
+        StrategicRawPointerEvent, StrategicRootKeyBatch, TacticalResultDestination,
     };
     use crate::strategic_windowing::StrategicWindowing;
     use egui_macroquad::egui;
@@ -6661,13 +6661,12 @@ mod frame_input_tests {
             [],
         )
         .unwrap();
+        let frame = coordinator.begin_frame();
         let mut router = FrameInputRouter::default();
-        router.begin_frame(7, &coordinator.begin_frame());
+        router.begin_frame(7, &frame);
         let mut routing = coordinator.physical_input_routing_cursor();
-        let keys = StrategicRootKeyBatch::collect_from_indexed_raw_sequential(
-            7,
-            &mut router,
-            &(0..3)
+        let raw = StrategicRawInputBatch {
+            keys: (0..3)
                 .map(|ordinal| StrategicIndexedKeyEvent {
                     ordinal,
                     event: StrategicRawKeyEvent {
@@ -6676,9 +6675,22 @@ mod frame_input_tests {
                         repeat: false,
                     },
                 })
-                .collect::<Vec<_>>(),
+                .collect(),
+            ..StrategicRawInputBatch::default()
+        };
+        let (_, keys) = collect_ordered_strategic_input_batch(
+            7,
+            &mut router,
+            &raw,
             &mut routing,
             Some(menu_id),
+            &frame,
+            rebellion_render::CockpitState::new(CockpitFaction::Alliance).layout_for(1280.0, 960.0),
+            &MessageIndexState::default(),
+            &StatusWindowState::default(),
+            &BuildSelectionState::default(),
+            false,
+            |_| BTreeSet::new(),
         );
 
         assert_eq!(
@@ -18834,7 +18846,7 @@ async fn main() {
                         campaign_config: &mut campaign_config,
                     }
                     .snapshot();
-                    let interface = saved_interface(
+                    let interface = saved_interface_from_manager(
                         &world,
                         &cockpit_state,
                         &sector_window_state,
@@ -18842,8 +18854,7 @@ async fn main() {
                         &fleet_window_state,
                         &defenses_window_state,
                         &missions_window_state,
-                        &strategic_windowing.begin_frame(),
-                        &strategic_windowing.saved_galaxy_order(),
+                        &strategic_windowing,
                     );
                     let active_mods = mod_runtime.enabled_mod_list();
                     // A `Save:` names its file; it opens no slot and logs nothing.
@@ -21725,6 +21736,29 @@ fn saved_interface(
         gid_mode: Some(cockpit.gid_mode.command_id()),
         windows,
     }
+}
+
+/// Production save seam: freeze manager identity, visibility, and serialized
+/// z-order together before joining them to retained renderer content.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The interface reads every galaxy window family."
+)]
+fn saved_interface_from_manager(
+    world: &GameWorld,
+    cockpit: &rebellion_render::CockpitState,
+    sectors: &SectorWindowState,
+    systems: &SystemWindowState,
+    fleets: &FleetWindowState,
+    defenses: &DefensesWindowState,
+    missions: &MissionsWindowState,
+    manager: &strategic_windowing::StrategicWindowing,
+) -> rebellion_data::save::SavedInterface {
+    let snapshot = manager.begin_frame();
+    let order = manager.saved_galaxy_order();
+    saved_interface(
+        world, cockpit, sectors, systems, fleets, defenses, missions, &snapshot, &order,
+    )
 }
 
 /// The galaxy window families a load rebuilds into.
@@ -30174,11 +30208,8 @@ mod managed_interface_save_tests {
             let second_id = manager_id(second, &mut manager);
             let first_id = manager_id(first, &mut manager);
             let third_id = manager_id(third, &mut manager);
-            let snapshot = manager.begin_frame();
-            let mut order = manager.saved_galaxy_order();
-
             let cockpit = rebellion_render::CockpitState::new(faction);
-            let mut saved = saved_interface(
+            let mut saved = saved_interface_from_manager(
                 &world,
                 &cockpit,
                 &SectorWindowState::default(),
@@ -30186,8 +30217,7 @@ mod managed_interface_save_tests {
                 &FleetWindowState::default(),
                 &DefensesWindowState::default(),
                 &MissionsWindowState::default(),
-                &snapshot,
-                &order,
+                &manager,
             );
             assert_eq!(
                 saved
@@ -30211,8 +30241,7 @@ mod managed_interface_save_tests {
 
             manager.enqueue(WindowCommand::Minimize(first_id));
             manager.apply_pending().remove(0).result.unwrap();
-            order = manager.saved_galaxy_order();
-            saved = saved_interface(
+            saved = saved_interface_from_manager(
                 &world,
                 &cockpit,
                 &SectorWindowState::default(),
@@ -30220,8 +30249,7 @@ mod managed_interface_save_tests {
                 &FleetWindowState::default(),
                 &DefensesWindowState::default(),
                 &MissionsWindowState::default(),
-                &manager.begin_frame(),
-                &order,
+                &manager,
             );
             assert_eq!(
                 saved

@@ -2934,7 +2934,7 @@ mod tests {
 
         let open_sentinel = |coordinator: &mut StrategicWindowing, value| {
             coordinator.enqueue(WindowCommand::Open(contextual_spec(
-                WindowKind::System,
+                WindowKind::BattleResults,
                 SubjectId::new(SUBJECT_COMMAND_CONTEXT, value),
                 WindowOwner::StrategicRoot,
             )));
@@ -2951,7 +2951,6 @@ mod tests {
         };
 
         let mut move_coordinator = StrategicWindowing::new();
-        let move_sentinel = open_sentinel(&mut move_coordinator, 91);
         move_coordinator
             .enqueue_move_confirmation_open(
                 MoveConfirmationState::default()
@@ -2974,6 +2973,11 @@ mod tests {
             .remove(0)
             .move_confirmation_content_id
             .unwrap();
+        let move_sentinel = open_sentinel(&mut move_coordinator, 91);
+        assert_eq!(
+            move_coordinator.begin_frame().paint_order(),
+            [id, move_sentinel]
+        );
         assert_eq!(
             move_coordinator.rollback_move_confirmation_publication(id),
             [id]
@@ -2982,9 +2986,7 @@ mod tests {
         assert!(move_snapshot.key(id).is_none());
         assert!(move_snapshot.key(move_sentinel).is_some());
         assert_eq!(move_snapshot.paint_order(), [move_sentinel]);
-
         let mut scrap_coordinator = StrategicWindowing::new();
-        let scrap_sentinel = open_sentinel(&mut scrap_coordinator, 92);
         scrap_coordinator
             .enqueue_scrap_confirmation_open(
                 ScrapConfirmationState::default()
@@ -3002,6 +3004,11 @@ mod tests {
             .remove(0)
             .scrap_confirmation_content_id
             .unwrap();
+        let scrap_sentinel = open_sentinel(&mut scrap_coordinator, 92);
+        assert_eq!(
+            scrap_coordinator.begin_frame().paint_order(),
+            [id, scrap_sentinel]
+        );
         assert_eq!(
             scrap_coordinator.rollback_scrap_confirmation_publication(id),
             [id]
