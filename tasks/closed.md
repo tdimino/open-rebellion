@@ -2,7 +2,2112 @@
 
 # Closed
 
-162 closed nodes, newest first. Back to the [index](INDEX.md).
+192 closed nodes, newest first. Back to the [index](INDEX.md).
+
+<a id="or-ep-pr46-review-du66.30"></a>
+### Re-review PR #46 when a new head lands
+
+`or-ep-pr46-review-du66.30` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`) was returned with a request-changes review on 2026-11-05 against head `44704a7e`. The review asks for a fresh merge from current `main` (the merge `0da9f4fa` commented out 493 lines of `main`'s code and fed the legacy input blockers into the router hold) and for the focus walk of `FUN_00422ce0` (`ghidra/notes/gid-legend.md`, "Escape and the keyboard focus"). Seven P1 findings: Stop, ship/unit Move and orphan-report soft-locks; menus and targeting blocked; missions without a target object; lost Go To; plus the focus contract.
+>
+> ## Scope
+>
+> When a new head lands, diff it against `44704a7e` and `main`, then check each finding of the posted review against it: the merge items first (no `/* */` production blocks, no legacy blockers in `application_input_held`, mission target object carried, Go To arms, Stop and Move confirmations drawn), then the focus walk (FocusOnOpen for Sector and details, z-top close walk, GID hiding and pass-through, System/Defenses/Missions Escape, load focus, per-dispatch routing). Rerun the probe tests from the review on the new head and the interface-parity gates on Chrome for Testing 153, both factions.
+>
+> ## Evidence
+>
+> Each finding gets a verdict on the new head: fixed (test or probe that fails without the fix), still present, or changed; name runs by commit, faction, save, day and values.
+>
+> ## Constraints
+>
+> No comment, approval, push to the fork or merge without Tom's word. Cargo only through the worktree's own `scripts/mini-cargo.sh` with its own build dir on the Mini; browsers only through the interface-parity gates, every run silent on both machines; at most four agents at a time.
+
+**Acceptance criteria**
+
+- [x] Every finding of the 2026-11-05 review has a verdict on the new head (fixed, still present, changed), with file:line and a test, probe or gate result.
+- [x] Tom has the verdicts and a recommendation.
+
+**Notes**
+
+> 2026-11-05: re-reviewed head 0e9c9f4c (971f23cb, 0e9c9f4c). Head fails cargo check in render lib (BattleResultCategory re-export) and app (keys_down, FocusTarget::window, test imports); with a six-line local build patch the workspace builds, 3,158 tests pass and 14 fail (same 14 with fixtures); replay, coverage, wasm, provenance pass. Probes: rows 7, 21, 29, 40, 60 and the root-menu part of 55 fixed; confirmed Move of ships/units refuses EmptyTeam (new P1); rows 20, 52, 54, 55 (object menu), 56 remain; Speed/Agent menus now pass outside presses to the root (new P2). Browser gates on Chrome for Testing 153: 5 of 22 pass (3 on 44704a7e); journey A regressed. Every review finding has a verdict; re-review drafted, not posted.
+
+**Closed:** Re-review of head 0e9c9f4c posted 2026-11-05 as request changes (review 5788482060): head fails to compile; with a six-line local patch 14 workspace tests fail; confirmed ship/unit moves refuse EmptyTeam (probe); 5 of 22 browser gates pass on Chrome for Testing 153. Every first-review finding has a verdict.
+
+<a id="or-ep-pr46-review-du66.28"></a>
+### After Tom decides: comment draft, repair or return, our WASM, open-finding beads
+
+`or-ep-pr46-review-du66.28` · **closed** · P2 · chore, owner, review-pr, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> The leads (L1-L4, L8-L13) are defined in .27's table; .27's verified ledger in `$S/ledger.md` supersedes them.
+>
+> ## Scope
+>
+> ### 8. Phase 6: findings and recommendation
+>
+> The ledger, the recommendation and Tom's choice are .27's; read them in `$S/ledger.md` before starting.
+>
+> Bead `chore` "After Tom decides": the review comment drafted in `$S` for
+> Tom's approval; repair commits if we repair (each through the project's
+> gates and red-first rules); our own production WASM built from the merged
+> source replacing `web/open-rebellion.wasm`; beads for findings left open;
+> squash merge only on Tom's word. Nothing outward before then (plan,
+> "Review posture").
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Review comment drafted in `$S` and approved by Tom before posting.
+- [x] If Tom chose approve, repair or split: `web/open-rebellion.wasm` in the merged tree is our production build (`scripts/build-wasm.sh` from the merged source, never the fixture build .23 and .25 leave in `$WT/web/`), passes `verify-production-exclusion.mjs`, and its hash is recorded; if he chose request changes, recorded as not applicable with his decision.
+- [x] Each open finding is a bead under this epic.
+- [x] `$WT` and `or-native/open-rebellion-pr46` removed after the merge or return.
+
+**Closed:** Request-changes review posted on PR #46 by tdimino, 2026-11-05T12:04:56Z, after Tom read the draft and said yes. WASM: not applicable (request changes). Open findings: carried by the posted review and one follow-up bead, .30, which re-reviews each on the next head rather than 64 separate beads. Worktree and the Mini's open-rebellion-pr46 removed (Mini free 63 to 70 GB); the ledger, lane files and probes stay in the ignored review folder for .30.
+
+<a id="or-ep-pr46-review-du66.27"></a>
+### Findings ledger and recommendation
+
+`or-ep-pr46-review-du66.27` · **closed** · P1 · decision, review-pr, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.2](#or-ep-pr46-review-du66.2), [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20), [or-ep-pr46-review-du66.21](#or-ep-pr46-review-du66.21), [or-ep-pr46-review-du66.22](#or-ep-pr46-review-du66.22), [or-ep-pr46-review-du66.23](#or-ep-pr46-review-du66.23), [or-ep-pr46-review-du66.24](#or-ep-pr46-review-du66.24), [or-ep-pr46-review-du66.25](#or-ep-pr46-review-du66.25), [or-ep-pr46-review-du66.26](#or-ep-pr46-review-du66.26), [or-ep-pr46-review-du66.29](#or-ep-pr46-review-du66.29), [or-ep-pr46-review-du66.3](#or-ep-pr46-review-du66.3), [or-ep-pr46-review-du66.4](#or-ep-pr46-review-du66.4), [or-ep-pr46-review-du66.6](#or-ep-pr46-review-du66.6), [or-ep-pr46-review-du66.7](#or-ep-pr46-review-du66.7)  
+Unblocks: [or-ep-pr46-review-du66.28](#or-ep-pr46-review-du66.28)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L1 | Escape no longer closes a focused System, Defenses or Missions window. `child_key_disposition` returns `Unhandled` for every non-rename key of a generic window; `main`'s `galaxy_focus.escape()` route survives only inside a `/* … */` block. The unchanged `window-restore.mjs` asserts the second Escape closes the System window. | `crates/rebellion-app/src/main.rs:1617-1627`, `:16175-16253` (commented), `tools/interface-parity/window-restore.mjs:476-479` | verified code; behaviour inferred |
+> | L2 | Escape on the GID menu now closes it (manager `Close` → `remove_managed_menu_content` clears `menu_open`). The original keeps it open and shows the top window over it (`FUN_004aab50`; Wine, empire-fleet-to-yaga-minor, days 38-45, `gid-legend.md:167-232`). The PR's own comment says "Escape never closes the menu". | `main.rs:16896-16906`, `main.rs:1488-1508`, test `main.rs:5908`; contrast `crates/rebellion-render/src/cockpit.rs:1813-1815` | verified code; behaviour inferred |
+> | L3 | Every window kind, Sector and Menu included, takes the focus when it opens (`FocusOnOpen::Window` for all), so a double-click-opened System window, a new Sector window and every later GID press take the keyboard. The original leaves the focus where it was (`FUN_0045aac0`, `FUN_00429ce0`; `gid-legend.md`, "A new window leaves the focus where it was") and focuses the menu only on its first build (`FUN_004511e0`; Wine, empire-fleet-to-yaga-minor, days 38-45). | `crates/rebellion-render/src/windowing_policy.rs:228`, `crates/rebellion-windowing/src/manager.rs:966-970` | verified code |
+> | L4 | The merge from `main` (`0da9f4fa`) resolved the conflict by deleting `window_focus.rs` and commenting out two production blocks of `main`'s code (≈414 and ≈79 lines; the second names `galaxy_focus`, `legacy_blockers` and `apply_focus_step`, `main.rs:16208-16215`). The PR's browser and native evidence (candidate `a912b6a9`) predates both this merge and `44704a7e` (+1,036/−912 in save lifecycle). | `main.rs:15519-15932`, `main.rs:16175-16253`; `git blame` → `0da9f4fa` | verified |
+> | L8 | The legacy blocker bridge is not gone: `LegacyInputBlockers`, `LegacyInputRestrictionLatch` and `begin_production_frame_with_legacy` still gate production input, while their tests were deleted. | `strategic_windowing.rs:202-255`, `:530-541`; `main.rs:12618`, `:12650`, `:16925-16947` | verified |
+> | L9 | The movie test's replacement no longer checks the Status window (opened without a manager, so it has no id) and asserts it stays open; Encyclopedia and Index are opened in two different managers. | `crates/rebellion-app/src/movies.rs:325-372` | verified |
+> | L10 | Linux X11 observer: 10 `unsafe` blocks (`:2529`, `:2539`, `:2549`, `:2607`, `:2639`, `:2644`, `:2672`, `:2683`, `:2701`, `:2716`); two lack a `// SAFETY:` comment; `XGetInputFocus` plus up to 16 `XQueryTree`/`XGetWindowProperty` round trips run every frame; its only test is `cfg(all(test, target_os = "linux"))` and never runs here; `sampled_native_focus_losses` has no `cfg` and is dead on macOS and wasm. | `main.rs:2445-2726`, `:2639`, `:2683`, `:2720`, `:2727` | verified code; dead-code warning inferred |
+> | L11 | The new save and restore tests carry no source citation (`main`'s cited `FUN_00440ea0`, `FUN_00441190` and the Wine runs). | `main.rs:27516-28260` | verified |
+> | L12 | Evidence record names a path under the ignored artifacts folder and four "ignored/local" report paths with private run labels; native evidence is Linux only. | `docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md:14`, `:26-29` | verified |
+> | L13 | `dev-commands.md` and `ghidra/notes/gid-legend.md` still document `GalaxyFocusState` and the menu's Escape; the PR does not touch them, so a merge leaves both wrong (L1, L2, L3). | `agent_docs/dev-commands.md:50-53`, `:273-278`; `ghidra/notes/gid-legend.md:167-232` | verified |
+>
+> ## Scope
+>
+> ### 8. Phase 6: findings and recommendation
+>
+> Bead `decision` "Findings ledger and recommendation to Tom": one ledger
+> in `$S/ledger.md` (severity, file:line, failure scenario, verification
+> verdict, lane, phase); a recommendation with the four outcomes (approve,
+> request changes, repair on the fork, split) and their cost. On present
+> leads, a repair touches at least: Escape routing for System, Defenses and
+> Missions (L1), the GID menu's Escape and focus (L2, R3), `FocusOnOpen` for
+> detail and sector windows (L3), the commented blocks (L4), the legacy
+> bridge (L8), the movie test (L9), the X11 observer's comments and cost
+> (L10), test citations (L11), the evidence record and docs (L12, L13), the Stop confirmation's draw and close (`main.rs:15871`, .2), and each lost feature and leftover .29 traces from the compiler warnings.
+>
+> What follows Tom's choice (comment draft, repair, our WASM, open-finding beads, merge) is .28's.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Ledger complete; recommendation names the four outcomes with their cost; Tom has both.
+- [x] Tom has chosen an outcome.
+- [x] origin/pr-46 is still 44704a7e, or the new commits are diffed and the affected lanes rerun.
+
+**Closed:** 64-row ledger (7 P1, 31 P2, 26 P3; 21 confirmed by probes or red-first runs); recommendation request changes with the four outcomes costed; Tom told me to use my judgement and approved posting; head still 44704a7e on 2026-11-05.
+
+<a id="or-ep-pr46-review-du66.26"></a>
+### Settle the open behaviours on Wine
+
+`or-ep-pr46-review-du66.26` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.10](#or-ep-pr46-review-du66.10), [or-ep-pr46-review-du66.24](#or-ep-pr46-review-du66.24), [or-ep-pr46-review-du66.8](#or-ep-pr46-review-du66.8), [or-ep-pr46-review-du66.9](#or-ep-pr46-review-du66.9)  
+Unblocks: [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L5 | Minimized windows now save after every shown window (`saved_galaxy_order` chains `visible_order` then `presentation_history`), not at their own z-place as `FUN_00440ea0` writes them; the rail order after a load becomes the minimize order. Whether the original reorders the rail on load is unsettled. | `crates/rebellion-app/src/strategic_windowing.rs:506-519` | verified code; original unsettled |
+> | L6 | A close keeps a focus that is still eligible, then the menu's saved target, then `previous_eligible`, then the topmost (`manager.rs:1289-1305`); scene repair takes `previous_eligible` before the topmost (`:436-442`). The original's 0x405 → 0x467 walk (`FUN_00422ce0`; `gid-legend.md:183-188`, `:196-199`) activates the topmost non-minimized window after every close. They diverge when a surviving focus is not on top (a Low-band Sector focused by L3, `windowing_policy.rs:68-76`) or `previous_eligible` is not the topmost. | `manager.rs:1289-1305`, `manager.rs:436-442`; `tests/lifecycle.rs:1156` (`close_preserves_surviving_root_focus`) | verified code; divergence inferred |
+> | L7 | Retained detail windows are held during targeting (`blocks_managed_input` includes `targeting`); on `main`, targeting was the `root_gesture` legacy blocker, which kept retained input (`main` `strategic_windowing.rs:1073-1085`), and the doc comment, unchanged from `main` (`strategic_windowing.rs:417`; `main` `:240`), says transient menus and root gestures "keep their own rules". | `strategic_windowing.rs:271-273`, doc at `strategic_windowing.rs:409-418`, test `:5287-5310` | verified; effect inferred |
+>
+> ## Scope
+>
+> ### 7.4 Original game (bead `verify` "Settle the open behaviours on Wine")
+>
+> Wine on the Mini (`tools/original-capture/wine-game.sh`), from saves in
+> `tools/original-capture/saves/INDEX.md`; Wine's mouse only when
+> `wine-game.sh status` prints `mouse=drive64.exe`. Already settled by
+> `gid-legend.md` and needing no new run: F2, F4-F8, R2-R6. New runs only for:
+>
+> 1. S1/L5: minimize a window lying below a shown one, save, load; read the
+>    rail order and whether the restored window's z-place moved.
+> 2. F12/L6: two System windows open, then a sector window focused by a click,
+>    close the top System window with its close button; which window takes
+>    the focus?
+> 3. F9: open a System window (sector double-click) while the GID menu is
+>    open; is it shown over the menu? (`GidUiState::shown` doc says 'any window opened since, which is created visible', `cockpit.rs:387-389`.)
+> 4. I5/L7: during a targeting drag from a Manufacturing band, release over
+>    an open System window's area; does the window or the galaxy take the
+>    release?
+>
+> Every Wine settlement runs for both factions; a
+> disagreement between Wine and the trace goes to the Windows VM, which
+> settles it; no A0 claim is made from Wine frames.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [ ] Each run named by save and day with the observed values; the Phase 2 verdicts updated.
+- [ ] Each Wine result covers the Empire and the Alliance.
+- [ ] Any Wine/trace disagreement is settled on the Windows VM.
+- [ ] After each Wine run, `pmset -g assertions | grep -B1 audio-out` is clean on both machines.
+
+**Notes**
+
+> 2026-11-05: not run. Tom chose to recommend on the probe-confirmed findings (seven P1 rows, 21 rows confirmed by probes or red-first runs) rather than finish this phase on head 44704a7e.
+
+**Closed:** Not run on 44704a7e by Tom's choice to recommend on the confirmed findings; review posted 2026-11-05.
+
+<a id="or-ep-pr46-review-du66.25"></a>
+### Battle gate and C6 on the PR head
+
+`or-ep-pr46-review-du66.25` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.2](#or-ep-pr46-review-du66.2), [or-ep-pr46-review-du66.23](#or-ep-pr46-review-du66.23)  
+Unblocks: [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 7.3 Tactical (bead `verify` "Battle gate and C6 on the PR head")
+>
+> The battle gate needs the fixture site built from this head, and .23 ends with a production `web/open-rebellion.wasm` in place. Rebuild the site first:
+>
+> ```bash
+> cd $WT && $PR scripts/mini-cargo.sh --run 'bash scripts/build-interface-test-wasm.sh' \
+>   --pull web/open-rebellion.wasm --pull <the README's interface-parity site directory>/
+> ```
+>
+> C6 is the tactical A0 comparison, `tactical-a0-compare.mjs --negative-controls`. It reads the A0 manifest and frames from the ignored A0 folder under the repository root (`tactical-a0-compare.mjs:31`; frames by the manifest's paths, `:286-287`). It compares the newest A1 run under the same ignored tree (`:478-483`). So before C6, APFS-clone that A0 folder from the main checkout into `$WT` at the same relative path (`cp -c -R`, never a symlink). Run C6 straight after the battle gate, so the newest A1 run is this head's. The strip cells are those of `or-acc-taskforce-0oy` (TAC-01-C001, C002, C011; TAC-02-C001, C006-C013) and `or-acc-fighter-strip-239` (TAC-01-C011; TAC-02-C002-C005, C013; TAC-03-C019); both list TAC-05-C023.
+>
+> ```bash
+> cd $WT/tools/interface-parity && node run.mjs --battle --all --no-build          # 184 cases: 46 scenarios x 2 factions x 2 viewports
+> cd $WT/tools/interface-parity && node tactical-a0-compare.mjs --negative-controls
+> ```
+>
+> Read the closing summary and every `result.json` (README: a printed PASS
+> can be failed by pair checks). Compare C6's strip cells and TAC-05-C023
+> with `main`'s verdicts from Phase 0.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [ ] 184/184 from `summary.json`, or each failing case listed.
+- [ ] C6 strip cells and TAC-05-C023 read as on `main`; every difference is a row.
+- [ ] After the runs, `pmset -g assertions | grep -B1 audio-out` is clean on this Mac and the Mini, and the test browser and local server are closed.
+
+**Notes**
+
+> 2026-11-05: not run. Tom chose to recommend on the probe-confirmed findings (seven P1 rows, 21 rows confirmed by probes or red-first runs) rather than finish this phase on head 44704a7e.
+
+**Closed:** Not run on 44704a7e by Tom's choice to recommend on the confirmed findings; review posted 2026-11-05.
+
+<a id="or-ep-pr46-review-du66.24"></a>
+### Native journeys on the macOS Mini, both factions
+
+`or-ep-pr46-review-du66.24` · **closed** · P1 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.10](#or-ep-pr46-review-du66.10), [or-ep-pr46-review-du66.2](#or-ep-pr46-review-du66.2), [or-ep-pr46-review-du66.8](#or-ep-pr46-review-du66.8), [or-ep-pr46-review-du66.9](#or-ep-pr46-review-du66.9)  
+Unblocks: [or-ep-pr46-review-du66.26](#or-ep-pr46-review-du66.26), [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 7.2 Native, macOS Mini, both factions (bead `verify` "Native journeys on the PR head")
+>
+> Build the release binary in the PR build dir. Each side runs in its own
+> launch: launch, run batch A, send N5 line by line, run batch B (which ends
+> with `Quit`), then relaunch for the other side.
+>
+> ```bash
+> cd $WT && $PR scripts/mini-cargo.sh -- build --release -p rebellion-app
+> ssh $H "cd or-native/open-rebellion-pr46 && (scripts/launch-native.sh --live --seed 42 --evidence $E >/dev/null 2>&1 &)"
+> cd $WT && $PR scripts/dev-run.sh $E $S/steps-<side>-a.txt --keep-going
+> # N5, line by line, so the host can take the focus between the two halves:
+> ssh $H "cd or-native/open-rebellion-pr46 && scripts/dev-send.sh $E 'Open Fleet window: <own>'"
+> ssh $H "cd or-native/open-rebellion-pr46 && scripts/dev-send.sh $E 'Hold drag <fleet row> to <another system>'"
+> ssh $H 'open -a Finder'
+> ssh $H "cd or-native/open-rebellion-pr46 && scripts/dev-send.sh $E 'Release at <another system>'"
+> ssh $H "cd or-native/open-rebellion-pr46 && scripts/dev-send.sh $E 'Capture: n5-after-release'"
+> cd $WT && $PR scripts/dev-run.sh $E $S/steps-<side>-b.txt --keep-going
+> ```
+>
+> `$E` is an evidence directory named as `agent_docs/dev-commands.md` shows,
+> relative to the repository copy, and expands here, not on the Mini.
+> `dev-run.sh` honours `OPEN_REBELLION_BUILD_DIR` and `OPEN_REBELLION_BUILD_HOST`
+> (`scripts/dev-run.sh:21-34`). Both batches run with `--keep-going`:
+> `scripts/stages/unattended.txt` ends with a bounded `Wait until pause alert within 300 frames`
+> and `Click control: PauseAlert/Resume`, which refuse when no alert comes, and its
+> header says to run with `--keep-going`. Without it the batch stops at the first
+> refusal, before N1, and batch B never reaches `Quit`. Read every `refused`
+> result line; a refused N-step goes into that step's verdict. Stop the game only with `Quit` or by its own
+> pid (the Mini's game is `target/release/open-rebellion`,
+> `scripts/launch-native.sh:43`).
+>
+> Pick `<own>` and `<own2>`, two systems the side holds in different sectors,
+> with `List systems` first. `<own>` has one of the side's fleets, and both
+> show their Defenses icon. `<own>` also needs a mission under way: its
+> Missions icon lights only for a visible mission (`quadrant_icons.rs:727`),
+> and `Open … window:` refuses any window behind a hidden icon except the
+> System window (`sector_window.rs:658-678`; test
+> `a_hidden_icon_refuses_its_window_and_menu_but_the_system_window_opens`,
+> `:8917`). With no mission there, add `Mission: <character> <kind> at <own>`
+> after `List systems`; `List characters <side>` names a character, and a
+> refused kind lists the kinds offered (`dev-commands.md`, `Mission:`).
+> Coordinates come from a `Capture` and `Locate`; the GID control and the
+> System, Missions and Fleet windows have no named controls
+> (`dev-commands.md:218-221`), so record each click point used. `dev-send.sh`
+> skips only lines that start with `#` (`scripts/dev-send.sh:14-16`), so no
+> command line carries a trailing comment.
+>
+> Batch A (`$S/steps-<side>-a.txt`):
+>
+> ```text
+> Start game: <side>
+> Skip briefing
+> Include: scripts/stages/unattended.txt
+> List systems
+> # N1: opens, focus, minimize, restore, close, each family
+> Open sector window: <own>
+> Capture: n1-sector
+> Open System window: <own>
+> Capture: n1-system-opened
+> # original: nothing (the new window took no focus, R2)
+> Press escape
+> Capture: n1-escape-after-open
+> Click <a point in the System window body>
+> # original: closes it (R6)
+> Press escape
+> Capture: n1-escape-after-click
+> Open System window: <own>
+> Click <System window minimize point>
+> Capture: n1-system-on-rail
+> Click <its rail slot>
+> Capture: n1-system-restored
+> Click <System window close point>
+> Open Defenses window: <own>
+> List controls Defenses
+> Click control: Defenses/Minimize
+> Capture: n1-defenses-on-rail
+> Click <its rail slot>
+> Capture: n1-defenses-restored
+> Click control: Defenses/Close
+> Open Missions window: <own>
+> Click <Missions window minimize point>
+> Capture: n1-missions-on-rail
+> Click <its rail slot>
+> Capture: n1-missions-restored
+> Click <Missions window close point>
+> Open Fleet window: <own>
+> Click <Fleet window minimize point>
+> Capture: n1-fleet-on-rail
+> Click <its rail slot>
+> Capture: n1-fleet-restored
+> Click <Fleet window close point>
+> Open sector window: <own2>
+> Capture: n1-second-sector
+> Click <the second sector window's close point>
+> Capture: n1-sector-closed
+> Open System window: <own>
+> Open Missions window: <own>
+> Open Fleet window: <own>
+> Capture: n1-stack
+> # N2: Escape at each level
+> Click <System window body>
+> Press escape
+> Capture: n2-escape-system
+> Press escape
+> Capture: n2-escape-next
+> # S7: the close button in Escape's place (L1)
+> Click <System window close point>
+> Capture: n2-close-button
+> # N3: GID menu
+> Click <GID control>
+> Capture: n3-gid-first
+> # original: the menu stays, the top window shows over it (R5)
+> Press escape
+> Capture: n3-gid-escape-1
+> Press escape
+> Capture: n3-gid-escape-2
+> # closes the menu
+> Click <galaxy background>
+> # second press: the focus stays where it was (R3)
+> Click <GID control>
+> Press escape
+> Capture: n3-gid-second-escape
+> Click <galaxy background>
+> # N4: save and load with windows shown, hidden and minimized
+> Open System window: <own2>
+> Open Defenses window: <own2>
+> Click control: Defenses/Minimize
+> # the GID press hides the rest
+> Click <GID control>
+> Save: pr46-<side>
+> Click <galaxy background>
+> Load: pr46-<side>
+> Capture: n4-loaded
+> List controls
+> # original: closes the top restored non-sector window (R1, R6)
+> Press escape
+> Capture: n4-escape-1
+> ```
+>
+> Batch B (`$S/steps-<side>-b.txt`):
+>
+> ```text
+> # N6: a movie closes Status, Encyclopedia and Index
+> Open Message Index: All
+> Click <Encyclopedia cockpit button point>
+> Capture: n6-before-movie
+> Give Death Star: <Imperial fleet>
+> Destroy system: <that fleet>
+> Wait until galaxy
+> Capture: n6-after-movie
+> Quit
+> ```
+>
+> On the Alliance side the destroy line reads `Destroy system: empire <that fleet>`; either side's Planet Destroyed (0x15) plays movie 0x6f (`dev-commands.md:107-108`). Open Status from a character's pop-up with recorded `Click` points if reachable; otherwise N6's criterion records why. No `[cutscene] opened` line in game.log means N6 did not run.
+>
+> Evidence per side: the captures, `game.log` lines `[windowing] focus_lost
+> fleet_drag_owner=Some(…)` (`main.rs:12691-12694`) for N5 and no move order
+> issued, the `[cutscene] opened` and `[movie] ended` lines for N6, and the
+> `List controls` output. Each step's verdict compares with the original's
+> rule it names; a mismatch is a ledger row citing the rule.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [ ] Alliance batch run and every step's capture read, verdict per step.
+- [ ] Empire batch run likewise.
+- [ ] N5's log shows the cancellation and no order on both sides.
+- [ ] `pmset` assertions clean on both machines; game stopped with `Quit`.
+- [ ] N6 names which of Status, Encyclopedia and Message Index were open when the movie waited, and each one's close line; a surface that could not be opened is recorded with the reason.
+- [ ] Each Phase 2 verdict that names a native step is updated.
+
+**Notes**
+
+> 2026-11-05: not run. Tom chose to recommend on the probe-confirmed findings (seven P1 rows, 21 rows confirmed by probes or red-first runs) rather than finish this phase on head 44704a7e.
+
+**Closed:** Not run on 44704a7e by Tom's choice to recommend on the confirmed findings; review posted 2026-11-05.
+
+<a id="or-ep-pr46-review-du66.23"></a>
+### Browser gates on the PR head
+
+`or-ep-pr46-review-du66.23` · **closed** · P1 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.10](#or-ep-pr46-review-du66.10), [or-ep-pr46-review-du66.2](#or-ep-pr46-review-du66.2), [or-ep-pr46-review-du66.4](#or-ep-pr46-review-du66.4), [or-ep-pr46-review-du66.8](#or-ep-pr46-review-du66.8), [or-ep-pr46-review-du66.9](#or-ep-pr46-review-du66.9)  
+Unblocks: [or-ep-pr46-review-du66.25](#or-ep-pr46-review-du66.25), [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L1 | Escape no longer closes a focused System, Defenses or Missions window. `child_key_disposition` returns `Unhandled` for every non-rename key of a generic window; `main`'s `galaxy_focus.escape()` route survives only inside a `/* … */` block. The unchanged `window-restore.mjs` asserts the second Escape closes the System window. | `crates/rebellion-app/src/main.rs:1617-1627`, `:16175-16253` (commented), `tools/interface-parity/window-restore.mjs:476-479` | verified code; behaviour inferred |
+>
+> ## Scope
+>
+> ### 7.1 Browser (bead `verify` "Browser gates on the PR head")
+>
+> Build the fixture site from `$WT` on the Mini, as the README shows, with the
+> PR build dir. The script is mode 100644 on both heads (`git ls-tree`), and
+> `package.json`'s `build` script runs it with `bash`, so `--run` does too:
+>
+> ```bash
+> cd $WT && $PR scripts/mini-cargo.sh --run 'bash scripts/build-interface-test-wasm.sh' \
+>   --pull web/open-rebellion.wasm --pull <the README's interface-parity site directory>/
+> ```
+>
+> Then from `$WT/tools/interface-parity`, each with `--no-build`, Chrome only
+> (Chrome only unless Tom asks otherwise, per the plan's Phase 5; record
+> "Firefox and Safari parity is not claimed"):
+>
+> ```bash
+> node windowing-contract.mjs --no-build                       # manifest A-E, both factions, both viewports
+> node windowing-contract.mjs --no-build --case adapter-smoke
+> for c in journey-a journey-b journey-c journey-d journey-e identity-history input-scenes modal-boundaries; do
+>   node windowing-contract.mjs --no-build --case $c
+> done
+> node fleet-window.mjs --no-build
+> node fleet-finder.mjs --no-build
+> node sector-quadrants.mjs --no-build
+> node status-window.mjs --no-build
+> node encyclopedia-surface.mjs --no-build
+> node mission-dialog.mjs --no-build
+> node build-selection.mjs --no-build
+> node fleet-move.mjs --no-build
+> node audit-batch.mjs --no-build
+> node message-index-shell.mjs --no-build
+> node encyclopedia-index-shell.mjs --no-build
+> node orbital-strike.mjs --no-build
+> node run.mjs --all --no-build
+> ```
+>
+> Then a production build in `web/` for the two production gates, which serve
+> `web/` and require `data/runtime.orpk` (`window-restore.mjs:48`, `:569-572`;
+> `endings.mjs:45`, `:520-522`). `web/data/` is ignored, so a fresh `$WT` lacks
+> it, and the fixture build above left the fixture WASM in `web/`:
+>
+> ```bash
+> cd $WT && $PR scripts/mini-cargo.sh --run ./scripts/build-wasm.sh --pull web/open-rebellion.wasm --pull web/data/
+> cd $WT/tools/interface-parity
+> node window-restore.mjs --no-build --saves=<dir>     # the saves named in endings.mjs's header
+> node endings.mjs --no-build --saves=<dir>
+> ```
+>
+> `<dir>` is `$S/saves`, holding the four native saves the header of
+> `endings.mjs` names (`endings.mjs:24-29`): `hoth-ds-standard.reb`,
+> `hoth-ds-hqonly.reb`, `coruscant-standard.reb`, `coruscant-hqonly.reb`.
+> `window-restore.mjs` reads the two `standard` ones (`window-restore.mjs:32-33`).
+> They are staged saves kept in the Mini's ignored evidence tree. List them with
+> `ssh $H 'cd ~/or-native/open-rebellion-pr46 && find . \( -name "hoth-ds-*.reb" -o -name "coruscant-*.reb" \)'`,
+> take each name's copy from its own staging directory (not a `probe-` one),
+> and rsync them to `$S/saves/`. Or restage them as that header says. The PR
+> leaves `SAVE_VERSION` alone, so `main`'s saves load. Every gate reads the
+> ignored `tools/interface-parity/browser.json` when it loads
+> (`fleet-finder.mjs:21` and others). If `$WT` lacks it, copy it from the main
+> checkout (.4 found 25 ENOENT failures without it).
+>
+> `window-restore.mjs` is unchanged by the PR and asserts R1 and R6 directly
+> (`window-restore.mjs:465-485`); its second-Escape check is the browser test
+> of L1.
+>
+> `build-selection.mjs` ends each side by stopping the band through the Stop
+> confirmation (`build-selection.mjs:360-373`; `FUN_0044f5e0`, manual p. 84).
+> On this head that confirmation is never drawn (its only call,
+> `main.rs:15871`, sits in a commented block), so a timeout there is the
+> browser test of .2's Stop row, not a flaky case.
+>
+> Read each run's `summary.json` and every case's `result.json`, never the
+> console (`tools/interface-parity/README.md`: a printed PASS can be failed by
+> later pair checks).
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [ ] Every command above run; per gate, cases passed/total from summary.json and each failing case's reason from its result.json.
+- [ ] The default windowing-contract.mjs run reports complete A-E scope, or the reason it does not.
+- [ ] window-restore.mjs result for both factions recorded against L1.
+- [ ] build-selection.mjs's Stop step (build-selection.mjs:360-373) recorded for both factions against .2's Stop confirmation row.
+- [ ] Each Phase 2 verdict of .8, .9 and .10 that names a gate (F2, F5, F10, S3, I5 among them) is updated with that gate's case result, both factions.
+- [ ] After the runs, `pmset -g assertions | grep -B1 audio-out` is clean on this Mac and the Mini, the test browser and local server are closed, and the record states "Firefox and Safari parity is not claimed".
+
+**Notes**
+
+> 2026-11-05, 44704a7e, Chrome for Testing 153.0.8010.12 (the pinned 151 is installed on neither machine; Tom approved the newer build): 22 fixture runs, 3 pass (journey-a, fleet-finder, message-index-shell); routing and timeout failures in windowing-contract B-E/default/adapter-smoke/identity-history/input-scenes/modal-boundaries, fleet-window, status-window, fleet-move, build-selection (before its Stop step), audit-batch, encyclopedia-index-shell, orbital-strike, run.mjs --all; sector-quadrants and mission-dialog blocked by unstaged GOKRES bitmaps and REBEXE cursor; encyclopedia-surface skipped (unmuted launch). Production gates not run. pmset audio-out clean on both machines; no test browser or server left. Firefox and Safari parity is not claimed.
+> Correction to the close reason: the fixture gates did run on Chrome 153 (results in the note above); only the production gates (window-restore, endings) and the two setup-blocked gates did not.
+
+**Closed:** Not run on 44704a7e by Tom's choice to recommend on the confirmed findings; review posted 2026-11-05.
+
+<a id="or-ep-pr46-review-du66.22"></a>
+### Scoped mutants on the new functions
+
+`or-ep-pr46-review-du66.22` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.21](#or-ep-pr46-review-du66.21)  
+Unblocks: [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 6.2 Mutants
+>
+> In `$RED`, with `--in-place` (`agent_docs/agent-tooling.md`, "Builds and the
+> Build Cache"); clear `mutants.out*` before each run with
+> `ssh $H 'rm -rf ~/or-native/wt-pr46-red/mutants.out ~/or-native/wt-pr46-red/mutants.out.old'`.
+> First copy the previous run's outcome files here
+> (`rsync -a $H:or-native/wt-pr46-red/mutants.out/ $S/mutants-<n>/`), because
+> the clear and the clone's final removal both delete them:
+>
+> ```bash
+> $RED scripts/mini-cargo.sh -- mutants --in-place -p rebellion-windowing \
+>   --file crates/rebellion-windowing/src/manager.rs \
+>   --re 'apply|open|close_with_reason|close_order|set_focus|is_focus_eligible|topmost_eligible_focus|reconcile|classify_content_reports|reconciliation_roots|validate_modal_order|raised_order_in|raise_visible|constrain_to_modal_boundary_in|active_modal_in|set_scene|cancel_capture'
+> $RED scripts/mini-cargo.sh -- mutants --in-place -p rebellion-windowing \
+>   --file crates/rebellion-windowing/src/snapshot.rs
+> $RED scripts/mini-cargo.sh -- mutants --in-place -p rebellion-app \
+>   --file crates/rebellion-app/src/strategic_windowing.rs \
+>   --re 'saved_galaxy_order|apply_pending|begin_apply_batch|apply_next_pending|apply_queued|attach_content|acknowledge_|rollback_|reconcile|enter_scene|commit_tactical_|commit_scene_phase|release_matching_content|remove_from_scenes|lost|sample|_allowed|blocks_|application_input_held|new_restriction_started|observe'
+> $RED scripts/mini-cargo.sh -- mutants --in-place -p rebellion-render \
+>   --file crates/rebellion-render/src/sector_window.rs \
+>   --re 'prepare_open|prepare_restore_saved|commit_open|remove_content|content_reports|hit_window_ids|contains_visible_screen_point|drag_owner|cancel_pointer_capture|managed_layer_id'
+> $RED scripts/mini-cargo.sh -- mutants --in-place -p rebellion-app \
+>   --file crates/rebellion-app/src/main.rs \
+>   --re 'saved_interface|restore_interface|finish_interface_restore|saved_window_manager_id|saved_window_key|saved_child|child_key_disposition|handle_managed_gid_escape|remove_managed_menu_content|commit_managed_gid_menu|managed_mission_dialog_escape_requested|managed_confirmation_escape_requested|status_closed_receipt_line'
+> ```
+>
+> `main.rs` code inside `main()` is unreachable by tests and its survivors
+> are recorded, not chased (`agent_docs/agent-tooling.md`, "Test Quality
+> Gates"); the functions above are free functions with tests. The fixture
+> bridges (`interface_test_fixture::emit_*`) are excluded likewise.
+> `sampled_native_focus_losses` is left out: its only test is
+> `cfg(all(test, target_os = "linux"))` (`main.rs:2727`), so on the macOS Mini
+> every mutant of it would be missed.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [ ] Each run's `missed.txt` and `timeout.txt` read; every survivor closed by a test in a probe or explained as equivalent.
+- [ ] `$RED` deleted after the mutants runs (`ssh $H 'rm -rf ~/or-native/wt-pr46-red'`).
+
+**Notes**
+
+> 2026-11-05: not run. Tom chose to recommend on the probe-confirmed findings (seven P1 rows, 21 rows confirmed by probes or red-first runs) rather than finish this phase on head 44704a7e.
+
+**Closed:** Not run on 44704a7e by Tom's choice to recommend on the confirmed findings; review posted 2026-11-05.
+
+<a id="or-ep-pr46-review-du66.20"></a>
+### Adversarially verify every finding
+
+`or-ep-pr46-review-du66.20` · **closed** · P1 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.10](#or-ep-pr46-review-du66.10), [or-ep-pr46-review-du66.11](#or-ep-pr46-review-du66.11), [or-ep-pr46-review-du66.12](#or-ep-pr46-review-du66.12), [or-ep-pr46-review-du66.13](#or-ep-pr46-review-du66.13), [or-ep-pr46-review-du66.14](#or-ep-pr46-review-du66.14), [or-ep-pr46-review-du66.15](#or-ep-pr46-review-du66.15), [or-ep-pr46-review-du66.16](#or-ep-pr46-review-du66.16), [or-ep-pr46-review-du66.17](#or-ep-pr46-review-du66.17), [or-ep-pr46-review-du66.18](#or-ep-pr46-review-du66.18), [or-ep-pr46-review-du66.19](#or-ep-pr46-review-du66.19), [or-ep-pr46-review-du66.29](#or-ep-pr46-review-du66.29), [or-ep-pr46-review-du66.8](#or-ep-pr46-review-du66.8), [or-ep-pr46-review-du66.9](#or-ep-pr46-review-du66.9)  
+Unblocks: [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 5.9 Codex Sol and adversarial verification
+>
+> - Bead `verify` "Adversarially verify every lane finding": one fresh agent
+>   per finding tries to disprove it against `$WT`; only confirmed or
+>   plausible rows stay. Verdicts go in the ledger's verification column.
+>   The agents only read `$WT`. A disproof that needs a run comes back to
+>   the lead as a probe, run one at a time under .8's probe rules
+>   (`$S/probes/`, restore, `git diff --quiet`). Two agents never edit
+>   `$WT` at once.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [ ] Every lane, Phase 2, Sol and code-reading gate finding (.2's Stop confirmation row; .29's lost and leftover rows, which resolve .2's single compiler-warning row) has a verdict: confirmed, plausible or disproved, with the disproving file:line.
+
+**Notes**
+
+> 2026-11-05: not run. Tom chose to recommend on the probe-confirmed findings (seven P1 rows, 21 rows confirmed by probes or red-first runs) rather than finish this phase on head 44704a7e.
+
+**Closed:** Not run on 44704a7e by Tom's choice to recommend on the confirmed findings; review posted 2026-11-05.
+
+<a id="or-ep-pr46-review-du66.21"></a>
+### Red-first sample of at least 30 new tests
+
+`or-ep-pr46-review-du66.21` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.2](#or-ep-pr46-review-du66.2)  
+Unblocks: [or-ep-pr46-review-du66.22](#or-ep-pr46-review-du66.22), [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 6.1 Red-first sample
+>
+> In `$RED` only (`ssh $H 'cd ~/or-native && cp -c -R open-rebellion-pr46 wt-pr46-red'`),
+> synced once from `$WT` with `$RED scripts/mini-cargo.sh --keep -- test --no-run --workspace --color never`.
+> Every `mini-cargo.sh` call, `--run` included, rsyncs `$WT` first and would
+> overwrite a break made on the Mini, so while a break is live never call it.
+> For each row: apply the break and run the test over direct ssh in the clone,
+> `ssh $H 'cd ~/or-native/wt-pr46-red && <break> && PATH=$HOME/.cargo/bin:/usr/bin:/bin cargo test -p <crate> <test> --color never'`,
+> confirm red; revert the same way and confirm green; then `touch` the local
+> file in `$WT` before the next `mini-cargo.sh` run (`agent_docs/agent-tooling.md`,
+> "Builds and the Build Cache", after a hand-applied break). No tracked red-first
+> script exists; the steps above are the whole procedure.
+> Many new tests carry a `// Break caught:` comment naming their break; where
+> one does, use it and record that it matched.
+>
+> | # | Test (file:line) | Break | Expected failure |
+> |---|---|---|---|
+> | 1 | `gid_escape_routes_to_managed_menu_identity_not_root` (`main.rs:5952`) | `handle_managed_gid_escape`: drop the `keyboard_recipient(...) != Window(menu)` clause (`main.rs:1495-1497`) | still green unless the test has a non-menu recipient; if green, a weak test |
+> | 2 | `gid_managed_lifecycle_publishes_and_tears_down_from_receipts` (`main.rs:5908`) | `remove_managed_menu_content`: skip `gid.menu_open = false` (`main.rs:2903`) | `assert!(!gid.menu_open)` fails |
+> | 3 | `galaxy_return_owner_teardown_clears_managed_menu_payload` (`main.rs:5849`) | same function: skip clearing the object-menu payload | `payload.is_none()` fails |
+> | 4 | `mission_dialog_escape_requires_exact_managed_mode` (`main.rs:8455`) | `managed_mission_dialog_escape_requested` returns `has_keyboard_owner && escape_pressed` (`main.rs:3198`) | queued-close case fails |
+> | 5 | `confirmation_managed_modes_compose_and_escape_exactly` (`main.rs:25368`) | same for `managed_confirmation_escape_requested` (`main.rs:3206`) | fails |
+> | 6 | `a_focused_fleet_keeps_its_escape_which_closes_it` (`main.rs:8571`) | `child_key_disposition` Fleet arm: drop `event.key == KeyCode::Escape ||` (`main.rs:1587`) | Escape reported `Unhandled` |
+> | 7 | `a_focused_fleet_without_a_rename_bubbles_every_key_to_root` (`main.rs:8538`) | same arm: return `Handled` for every key | a non-Escape key stops bubbling |
+> | 8 | `encyclopedia_escape_close_keeps_frame_keyboard_lease` (`main.rs:8685`) | Encyclopedia arm: drop `handles_keyboard ||` (`main.rs:1563`) | lease assertion fails |
+> | 9 | `held_keys_dispatch_root_shortcuts_on_their_first_press_only` (`main.rs:8721`) | `presses()`: drop `!event.repeat` (`main.rs:1479`) | repeat dispatches twice |
+> | 10 | `save_order_and_visibility_follow_the_manager_snapshot_not_renderer_serials` (`main.rs:27825`) | `saved_galaxy_order`: iterate `visible_order` reversed (`strategic_windowing.rs:507-511`) | order assertion fails |
+> | 11 | `gid_hidden_detail_is_saved_hidden_while_the_sector_stays_shown_for_both_factions` (`main.rs:27959`) | `main.rs:20624`: `window.shown = *visible` | hidden flag fails |
+> | 12 | `saved_fleet_and_system_order_controls_manager_focus_and_keyboard_owner` (`main.rs:28045`) | `finish_interface_restore`: skip the final raise of the top window (`main.rs:20744-20830`) | focus/paint-order assertion fails |
+> | 13 | `fleet_positions_and_hidden_rail_slots_follow_saved_manager_order` (`main.rs:28150`) | `restore_interface`: ignore saved position for Fleet windows | `(130, 60)` assertion fails |
+> | 14 | `suspended_game_options_save_keeps_shown_and_minimized_fleets_distinct` (`main.rs:28100`) | `saved_galaxy_order`: map history windows to `true` (`:517`) | shown flags fail |
+> | 15 | `sector_window_coordinator_commits_atomic_replace_and_duplicate_noop` (`strategic_windowing.rs:2517`) | `acknowledge_sector_publication` (`:1710`): skip closing the replaced window | replace assertion fails |
+> | 16 | `troop_finder_wrong_publication_is_rejected_and_rolled_back` (`:4274`) | `rollback_troop_finder_publication`: return without closing | id survives |
+> | 17 | `personnel_finder_wrong_publication_is_rejected_and_rolled_back` (`:4346`) | same for Personnel | id survives |
+> | 18 | `confirmation_publication_rollbacks_close_exact_identity` (`:2933`) | `rollback_move_confirmation_publication`: close the newest window instead of the named id | wrong id closed |
+> | 19 | `build_selection_windowing_confirm_is_once` (`:2651`) | allow the prepared confirm to be taken twice (`enqueue_build_selection_confirm`) | second confirm dispatches |
+> | 20 | `scrap_confirmation_receipt_dispatches_once` (`:2813`) | same for Scrap | fails |
+> | 21 | `message_index_app_state_closes_only_from_exact_receipt` (`:4370`) | Index closes its app state on request instead of on the receipt | fails |
+> | 22 | `command_modal_open_cancels_fleet_capture_and_drag_payload` (`:2424`) | `manager.rs:963-965`: drop `cancel_capture_if_ineligible` on a modal open | capture survives |
+> | 23 | `tactical_windowing_scene_switch_cancels_capture_and_orphan_release` (`:5066`) | `enter_scene` (`:2044`): skip the capture cancel | fails |
+> | 24 | `tactical_windowing_return_restores_only_valid_galaxy_content` (`:5103`) | restore every saved galaxy window, valid or not | stale window restored |
+> | 25 | `reference_rail_thirteenth_entry_tears_down_oldest_content` (`:3683`) | `manager.rs:1428` (the eviction in `minimize`): `>` → `>=`, or capacity 13 | teardown count fails |
+> | 26 | `detail_windows_cross_family_activation_changes_one_stack` (`:3552`) | `raise_visible`: skip moving the window to the top | order fails |
+> | 27 | `menu_replacement_is_atomic_and_saves_eligible_invoker_focus` (`game_menu.rs:1406`) | `manager.rs:960-962`: do not insert `saved_menu_focus` | restored focus fails |
+> | 28 | `menu_owner_close_removes_menu_before_restoring_focus` (`game_menu.rs:1546`) | `close_with_reason`: restore focus before removing descendants (`manager.rs:1266-1297`) | fails |
+> | 29 | `scene_focus_repair_distinguishes_changed_from_unchanged_membership` (`manager.rs:2486`) | `manager.rs:428-437`: drop the `membership_changed` term | fails |
+> | 30 | `a_sampled_focus_state_counts_each_change_to_inactive_as_one_loss` (`strategic_windowing.rs:5398`) and `a_focus_loss_is_reported_once_after_the_baseline` (`:5387`) | `FocusStateCounter::sample` counts inactive→inactive (`:330-336`); `FocusLossWatch::lost` returns true on the first sample (`:302-306`) | both fail |
+> | 31 | `defenses_window_stale_subject_does_not_retarget` (`defenses_window.rs:2547`) | retarget by system key ignoring the manager subject | fails |
+> | 32 | `missions_commit_requires_each_exact_identity_component_independently` (`missions_window.rs:2677`) | drop one identity component from the commit check | fails |
+> | 33 | `focus_adapter_resolves_only_the_managers_exact_focused_identity` (`windowing.rs:245`) | `realize_managed_focus`: resolve by kind instead of id | fails |
+> | 34 | `x11_focus_samples_count_real_process_focus_loss_once…` (`main.rs:2732`) | cannot run on macOS; record as unexecuted, or move the pure test out of the Linux `cfg` in a probe | n/a |
+>
+> Kernel and coordinator rows, for tests the rows above do not cover. Draw the sample from both tables: at least 30
+> tests, at least ten of them from this one. Run them in the red clone with
+> `-p rebellion-windowing --test <file> <name>` or `-p rebellion-app <name>`.
+>
+> | # | Test to run | Temporary production break | Expected failure |
+> |---:|---|---|---|
+> | 1 | `contract_sequence_preserves_all_authorities` (`contract_sequences.rs:100`) | `manager.rs:966`, invert the `FocusOnOpen::Window` comparison. | Final focus authority mismatch. |
+> | 2 | `contract_rejected_commands_preserve_complete_state` (`:341`) | `manager.rs:1048`, do not assign the preflighted replacement state. | Successful replacement snapshot differs. |
+> | 3 | `contract_dormant_normal_restore_preserves_scene_membership_and_focus` (`:462`) | `manager.rs:1468-1514`, omit restored ID from visible order. | Restored membership/order assertion fails. |
+> | 4 | `contract_transient_restore_rejects_a_dormant_owner_atomically` (`:490`) | `manager.rs:1585-1689`, permit an inactive owner. | Expected rejection/state-equality assertion fails. |
+> | 5 | `reconciliation_paint_absence_is_not_content_absence` (`reconciliation.rs:56`) | `manager.rs:550-558`, treat missing paint as `Absent`. | Live content is wrongly removed. |
+> | 6 | `reconciliation_new_open_survives_old_snapshot_reports` (`:88`) | `manager.rs:522-527`, validate reports against current registry only. | Newly opened window is wrongly invalidated/removed. |
+> | 7 | `an_unpainted_strategic_modal_is_retained_as_a_fail_closed_blocker` (`:123`) | `manager.rs:497-502`, exclude invalid/unpainted modals from `blocking_unpainted`. | Expected blocker set is empty. |
+> | 8 | `unpaintable_modeless_content_is_retained_without_implicit_close` (`:160`) | `manager.rs:553`, make every non-ready status eligible for close. | Modeless content closes unexpectedly. |
+> | 9 | `explicitly_absent_modeless_content_closes_with_events` (`:179`) | `manager.rs:553`, change `Absent` to `Suspended`. | Expected close and events disappear. |
+> | 10 | `multiple_absent_roots_deliver_cancellation_teardown_then_only_final_focus` (`:464`) | `manager.rs:480-486`, emit focus before teardown or emit each intermediate focus. | Event-order assertion fails. |
+> | 11 | `scene_membership_changes_apply_and_snapshot_together` (`scenes.rs:67`) | In the manager scene-update path, publish the snapshot before assigning active membership. | Snapshot membership assertion fails. |
+> | 12 | `scene_restriction_removes_inactive_modal_and_focus_from_route` (`:209`) | Let inactive modal windows participate in `active_modal`. | Route/focus expectation names the dormant modal. |
+> | 13 | `scene_change_cancels_capture_before_focus_and_preserves_old_lease` (`:249`) | Emit focus before capture cancellation. | Ordered event assertion fails. |
+> | 14 | `active_owner_can_open_a_menu_without_a_dormant_modal_rejecting_it` (`:310`) | Include dormant modals in placement validation. | Menu open rejects unexpectedly. |
+> | 15 | `modal_open_and_replace_reject_an_unrelated_active_transient_atomically` (`:440`) | `manager.rs:1007-1017`, skip replacement preflight. | Rejected operation mutates state or succeeds. |
+> | 17 | `command_modal_interruption_quarantines_later_release` (`strategic_windowing.rs:2474`) | In release routing, accept a release after cancellation. | Later release produces a forbidden action. |
+> | 19 | `build_selection_windowing_modal_cancels_capture` (`strategic_windowing.rs:2617`) | `strategic_windowing.rs:572-624`, omit modal open command. | Capture remains and no exact transition appears. |
+> | 21 | `mission_dialog_windowing_modal_cancels_capture` (`strategic_windowing.rs:2735`) | `strategic_windowing.rs:625-687`, use a modeless policy/spec. | Capture-cancel/modal assertions fail. |
+> | 22 | `confirmation_close_requires_attached_content_receipt` (`strategic_windowing.rs:2861`) | `strategic_windowing.rs:1584-1592`, make `attach_content` report success for unknown ID. | Premature close is accepted. |
+> | 24 | `mission_dialog_confirm_consumes_key_and_dispatches_once` (`strategic_windowing.rs:2994`); a test of the same name is at `main.rs:8285`, so filter by `strategic_windowing::tests::` | Leave the triggering key unconsumed after confirmation. | Underlay/key-recipient or count assertion fails. |
+> | 26 | `fleet_window_switching_selected_fleet_preserves_window_identity` (`strategic_windowing.rs:3593`) | Allocate a fresh Fleet manager ID when selection changes. | Identity stability assertion fails. |
+> | 27 | `detail_windows_reopen_preserves_tabs_rows_scroll_and_selection` (`strategic_windowing.rs:3623`) | Clear renderer state during existing `RaiseRestore`. | Tab/row/scroll/selection assertions fail. |
+> | 28 | `fleet_commit_publishes_content_and_history_only_after_manager_transition` (`strategic_windowing.rs:3956`) | `strategic_windowing.rs:1593-1600`, acknowledge publication before matching receipt. | Premature content/history assertion fails. |
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] At least 30 tests run red then green, at least 10 of them from the kernel table; each green-under-break row is a weak-test ledger row.
+
+**Closed:** 44704a7e in or-native/wt-pr46-red, 2026-11-05: 35 tests red under their break and green after restore (14 kernel, 21 main); 5 tests stayed green under their break: four P2 weak tests (gid_escape_routes_to_managed_menu_identity_not_root, encyclopedia_escape_close_keeps_frame_keyboard_lease, save_order_and_visibility_follow_the_manager_snapshot_not_renderer_serials, confirmation_publication_rollbacks_close_exact_identity) and one P3 (menu_replacement_is_atomic_and_saves_eligible_invoker_focus). Clone files verified identical to the PR head after restore.
+
+<a id="or-ep-pr46-review-du66.12"></a>
+### Lane B: app frame, input and focus (R1-R17)
+
+`or-ep-pr46-review-du66.12` · **closed** · P1 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1), [or-ep-pr46-review-du66.10](#or-ep-pr46-review-du66.10), [or-ep-pr46-review-du66.29](#or-ep-pr46-review-du66.29), [or-ep-pr46-review-du66.8](#or-ep-pr46-review-du66.8)  
+Unblocks: [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L1 | Escape no longer closes a focused System, Defenses or Missions window. `child_key_disposition` returns `Unhandled` for every non-rename key of a generic window; `main`'s `galaxy_focus.escape()` route survives only inside a `/* … */` block. The unchanged `window-restore.mjs` asserts the second Escape closes the System window. | `crates/rebellion-app/src/main.rs:1617-1627`, `:16175-16253` (commented), `tools/interface-parity/window-restore.mjs:476-479` | verified code; behaviour inferred |
+> | L2 | Escape on the GID menu now closes it (manager `Close` → `remove_managed_menu_content` clears `menu_open`). The original keeps it open and shows the top window over it (`FUN_004aab50`; Wine, empire-fleet-to-yaga-minor, days 38-45, `gid-legend.md:167-232`). The PR's own comment says "Escape never closes the menu". | `main.rs:16896-16906`, `main.rs:1488-1508`, test `main.rs:5908`; contrast `crates/rebellion-render/src/cockpit.rs:1813-1815` | verified code; behaviour inferred |
+> | L3 | Every window kind, Sector and Menu included, takes the focus when it opens (`FocusOnOpen::Window` for all), so a double-click-opened System window, a new Sector window and every later GID press take the keyboard. The original leaves the focus where it was (`FUN_0045aac0`, `FUN_00429ce0`; `gid-legend.md`, "A new window leaves the focus where it was") and focuses the menu only on its first build (`FUN_004511e0`; Wine, empire-fleet-to-yaga-minor, days 38-45). | `crates/rebellion-render/src/windowing_policy.rs:228`, `crates/rebellion-windowing/src/manager.rs:966-970` | verified code |
+> | L4 | The merge from `main` (`0da9f4fa`) resolved the conflict by deleting `window_focus.rs` and commenting out two production blocks of `main`'s code (≈414 and ≈79 lines; the second names `galaxy_focus`, `legacy_blockers` and `apply_focus_step`, `main.rs:16208-16215`). The PR's browser and native evidence (candidate `a912b6a9`) predates both this merge and `44704a7e` (+1,036/−912 in save lifecycle). | `main.rs:15519-15932`, `main.rs:16175-16253`; `git blame` → `0da9f4fa` | verified |
+> | L6 | A close keeps a focus that is still eligible, then the menu's saved target, then `previous_eligible`, then the topmost (`manager.rs:1289-1305`); scene repair takes `previous_eligible` before the topmost (`:436-442`). The original's 0x405 → 0x467 walk (`FUN_00422ce0`; `gid-legend.md:183-188`, `:196-199`) activates the topmost non-minimized window after every close. They diverge when a surviving focus is not on top (a Low-band Sector focused by L3, `windowing_policy.rs:68-76`) or `previous_eligible` is not the topmost. | `manager.rs:1289-1305`, `manager.rs:436-442`; `tests/lifecycle.rs:1156` (`close_preserves_surviving_root_focus`) | verified code; divergence inferred |
+> | L7 | Retained detail windows are held during targeting (`blocks_managed_input` includes `targeting`); on `main`, targeting was the `root_gesture` legacy blocker, which kept retained input (`main` `strategic_windowing.rs:1073-1085`), and the doc comment, unchanged from `main` (`strategic_windowing.rs:417`; `main` `:240`), says transient menus and root gestures "keep their own rules". | `strategic_windowing.rs:271-273`, doc at `strategic_windowing.rs:409-418`, test `:5287-5310` | verified; effect inferred |
+>
+> ## Scope
+>
+> ### 4. Lane B's focus rules
+>
+> Every rule `main` holds, its citation, and where the PR head enforces it.
+>
+> | Rule | Citation on `main` | Enforced on `origin/pr-46`? |
+> |---|---|---|
+> | R1. After a load, focus = top restored shown window that is not a sector; with none, the view | `window_focus.rs:93-110` (`after_load`); Wine, empire-fleet-to-yaga-minor, day 38 (`gid-legend.md`, "Escape and the keyboard focus"); `dev-commands.md:273-278` | Partly. `restore_interface`/`finish_interface_restore` (`main.rs:20650-20830`) replay opens and raises; no sector exclusion (F1) |
+> | R2. A new window takes no focus (`FUN_0045aac0`, `FUN_00429ce0`) | `window_focus.rs:147-154`; `gid-legend.md`, "A new window leaves the focus where it was"; `dev-commands.md:275-276` | **No.** `windowing_policy.rs:228`, `manager.rs:966-970` (L3) |
+> | R3. The first GID press builds the menu and focuses it (`FUN_00451130` → `FUN_004511e0`); later presses only show it | `window_focus.rs:112-125` (`gid_opened`); `cockpit.rs:384-386` | **No.** Every press runs `prepare_root_open` (`main.rs:13614`) and the Menu focuses on open; `GidUiState::built` is no longer read by the app |
+> | R4. A GID press hides every child and moves a child's focus to the view (`FUN_00422ce0` 0x132, slot `+8`; Wine, empire-fleet-to-yaga-minor, day 38) | `window_focus.rs:118-121` | Hiding holds (`windows_hidden`); focus goes to the menu, not the view (R3) |
+> | R5. The menu's Escape focuses the view, closes nothing, and the view's 0x467 shows and focuses the top window, menu still open (`FUN_004aab50`, `FUN_00606960`, `FUN_00600f90`) | `window_focus.rs:203-207`; `gid-legend.md:176-181`; `cockpit.rs:1813` | **No.** `main.rs:16896-16906` closes the menu (L2) |
+> | R6. A detail window's Escape closes it (`FUN_004ac3a0`; `FUN_00458980` for System) and 0x467 activates the next | `window_focus.rs:208-213`; `dev-commands.md:50-53` | Fleet only (`fleet_window.rs:2509-2518`). System, Defenses, Missions: **no** (`main.rs:1617-1627`; L1). Band-rename Escape still closes the System window (`system_window.rs:1547-1550`) |
+> | R7. A sector window has no Escape (`FUN_004593e0` passes keys to the view) | `window_focus.rs:214` | Yes: `Unhandled`, and the root has no Escape (`galaxy_root_acts`, test `main.rs:2127`) |
+> | R8. The view's `WM_KEYDOWN` has no `VK_ESCAPE` (`FUN_00422ce0`): Escape never cancels targeting or reaches the main menu | `main.rs` on `main` (`escape_on_the_bare_galaxy…`) | Yes: `main.rs:15934-15944`, test `main.rs:2127` |
+> | R9. A click on a window activates and focuses it (`FUN_004534f0`) | `window_focus.rs:155-183` | Yes, inferred (manager `Activate` on a claimed press); show it (F10) |
+> | R10. A closure activates the topmost remaining non-minimized window, whatever opened in the same frame (0x405 → 0x467, `FUN_00422ce0`) | `window_focus.rs:131-146`, `:170-176` | Differs: a surviving focus is kept, then `previous_eligible` (L6) |
+> | R11. 0x467 with no current child only focuses the view (`FUN_00422ce0`) | `window_focus.rs:128-133` | No equivalent; the menu closes instead (F8) |
+> | R12. A hidden window never has the focus | `window_focus.rs:207-208` | Inferred yes: hidden (minimized) windows leave `visible_order`, which `is_focus_eligible` requires (`manager.rs:1559-1571`). GID-hidden windows stay in `visible_order`; check whether a GID-hidden System window can hold focus (probe: focus a System window, press GID, read `snapshot.focused()`) |
+> | R13. Dev commands: a window a command or double-click opens takes no focus; click it before `Press escape` | `dev-commands.md:275-276` | Contradicted by R2; the doc change is .18's (check 8, L13) |
+> | R14. Key repeat: root shortcuts act on a first press only; the tactical window gets every key-down | `main.rs` `held_keys_dispatch…`, `raw_backend_capture_keeps_every_key_down…` | Yes: tests at `main.rs:8721`, `:8846`; `set_frame_key_downs` at `main.rs:17494` |
+> | R15. Every named control still registers | `dev-commands.md`, "Named controls" | Same 28 `control_registry::` call sites in the same 12 files on both heads (verified by count); confirm with `List controls` in N1 |
+> | R16. A menu's close restores its saved invoker only if that window is still focus-eligible | `ghidra/notes/strategic-windowing-toolkit.md:184-187` | `manager.rs` close path; `tests/lifecycle.rs:894-963`. Check a hidden or closed invoker |
+> | R17. Focus alone never reorders the presentation stack; activate and raise may | `ghidra/notes/strategic-windowing-toolkit.md:140-187` (registry, focus and MRU kept apart) | `tests/lifecycle.rs:966-1005`; confirm no app path raises on a bare focus change |
+>
+> Close each of R1-R17 with a verdict.
+>
+> ### 5.2 Lane B: app frame, input and focus
+>
+> Files and ranges in `crates/rebellion-app/src/main.rs`:
+> `1200-1680` (key and pointer batches, `StrategicRootKeyBatch`,
+> `handle_managed_gid_escape`, `child_key_disposition`, `rename_edit_owns_key`,
+> `personnel_finder_owns_key`), `1680-2120` (pointer batch, tactical routing,
+> `collect_strategic_pointer_batch`, `galaxy_root_acts`), `2196-2410`
+> (route receipts, `RoutedEguiInputFilter`), `2757-2935` (`with_strategic_input`,
+> `managed_strategic_surface_plan`, `commit_managed_gid_menu`,
+> `remove_managed_menu_content`), `3193-3207`, `12540-12708` (frame
+> boundary, locks, keyboard owners, focus loss), `13400-13710` (pointer and
+> key batch collection, GID open), `15934-15944`, `16255-16950` (managed
+> surface paint loop, Escape closes, `realize_managed_focus`,
+> `report_child_keys`, latch), `17490-17500`. Also
+> `crates/rebellion-render/src/windowing.rs`, `windowing_input.rs`,
+> `windowing_policy.rs`, `game_menu.rs` (managed menu), `cockpit.rs`
+> (GID menu, `:371-430`, `:1780-1830`).
+>
+> Questions:
+> 1. R1-R17 (section 4): cite .8's F verdicts for R1-R3, R5, R6 and R9-R11
+>    (F1, F7, F5/F6, F5, F2/F4, F10, F12, F8); give new verdicts for R4, R7,
+>    R8 and R12-R17. R14's root half ("root shortcuts act on a first press
+>    only") carries no original citation on either head
+>    (`held_keys_dispatch_root_shortcuts_on_their_first_press_only`,
+>    `main.rs:8721`): cite the original's source or record it `port:`.
+> 2. L1: confirm no other path closes a focused System, Defenses or Missions
+>    window on Escape (grep `KeyCode::Escape`, `egui::Key::Escape` in
+>    `system_window.rs`, `defenses_window.rs`, `missions_window.rs`; the doc
+>    comments at `defenses_window.rs:1350-1352` and `missions_window.rs:1331-1334`
+>    say their keys are not ported).
+> 3. L2: trace one Escape with the GID menu open from raw event to
+>    `remove_managed_menu_content`; state what the player sees (menu closed,
+>    windows shown, focus to the saved invoker).
+> 4. L4: the two commented blocks (`main.rs:15519-15932`, `16175-16253`).
+>    For each statement inside, name its live replacement or call it lost;
+>    a statement that reads or calls a name .29 traces from the compiler
+>    warnings (`advice_saved_speed`, the legacy input predicates) takes
+>    .29's verdict instead of a second trace.
+>    The first block holds eight surfaces: the Fleet Finder choice → Sector →
+>    Fleet window (`FUN_00429440`, `:15523`), the Troop and Personnel Finders
+>    (`:15568`, `:15584`), the Operation Report (`:15646`), the Status window
+>    (`:15779`), and the Move, Stop and Scrap confirmations (`:15841`,
+>    `:15871`, `:15884`; `FUN_0044f5e0`). Seven have live calls
+>    (`draw_fleet_finder` `:16360`, `draw_troop_finder` `:16382`,
+>    `draw_personnel_finder` `:16403`, `draw_operation_report` `:16520`,
+>    `draw_managed_status_window` `:16554`, `draw_move_confirmation` `:16714`,
+>    `draw_scrap_confirmation` `:16746`); `draw_stop_confirmation`'s only call
+>    is `:15871`, the ledger row .2 recorded. State its failure scenario: a
+>    band's Stop (0x213, manual p. 84) opens `stop_confirmation_state`
+>    (`:15353`); nothing draws or closes it; its `strategic_modal` legacy
+>    blocker (`:12602`, `:16940`; `strategic_windowing.rs:210-221`) holds root
+>    input until a load resets it (`:18027`). The block's comment says
+>    Personnel Finder destinations "wait for the exact manager-owned close
+>    receipt".
+> 5. `child_key_disposition`'s Build Selection arm consumes `Key1`…`Key9`,
+>    `KpAdd`, `KpSubtract` (`main.rs:1594-1612`); cite their original source or
+>    mark `port:`.
+> 6. Escape requested while a close is already queued:
+>    `managed_mission_dialog_escape_requested`/`managed_confirmation_escape_requested`
+>    (`main.rs:3193-3207`); the Encyclopedia, Index and Status closes
+>    (`main.rs:16778-16808`) have their own guards. Can two Escapes in one
+>    frame close two windows?
+> 7. Targeting and retained input (L7): .10's I5 owns the verdict; cite it and add only app-side routing evidence (`main.rs:12540-12708`) that I5 lacks.
+> 8. Dev-command reachability: `Press escape`, `Click control:` and
+>    `Open … window:` still reach the same handlers (N1 shows it).
+>
+> ### Probes
+>
+> Keep each probe's source in `$S/probes/`. To run one, paste it into the
+> `#[cfg(test)]` module of the file it exercises in `$WT`, run it alone
+> (`$PR scripts/mini-cargo.sh --keep -- test -p <crate> <test name> --color never > $S/probes/<name>.txt 2>&1`),
+> then restore the file (`git -C $WT checkout -- <file>`) and confirm
+> `git -C $WT diff --quiet -- <file>`. Run one probe at a time across the
+> epic. Run none while .21 or .22 syncs `$WT` to the Mini: their test and
+> mutants builds compile `cfg(test)` code and would carry it. Run none while
+> .23 or .25 runs a gate either: every `--no-build` run re-hashes the
+> workspace's Rust inputs against the fixture build and fails closed on any
+> mismatch (`tools/interface-parity/README.md:76-80`). `--keep` stops
+> the probe build from pruning units the PR build directory's other builds
+> use.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] R1-R17 each have a verdict with file:line (R1-R3, R5, R6, R9-R11 by citing .8's F verdict).
+- [x] Each statement in both commented blocks is mapped to live code or recorded lost, a statement that reads or calls a name .29 traces citing .29's verdict; each of the first block's eight calls names its live replacement or none.
+- [x] The Stop confirmation's ledger row carries its failure scenario (opened at main.rs:15353, never drawn or closed, strategic_modal blocker held until a load), each step with file:line; its verdict is .20's.
+- [x] Questions 5-8 answered.
+
+**Closed:** 44704a7e: R1-R17 have verdicts (R1-R3, R5, R6, R9-R11 via .8; R4's 'hiding holds' wrong, row 17); both commented blocks mapped statement by statement, warned names citing .29. New: confirmed Scrap skips the regiment holder rerun so saves are refused until the next day, Escape in a band rename orphans an unreopenable System window, live Operation Report watch lost (all P2); Build Selection key arm uncited, P3. Stop row's six-step failure scenario recorded; verdict .20's. Q5-Q8 answered.
+
+<a id="or-ep-pr46-review-du66.13"></a>
+### Lane C: lifecycle, saves, scenes, movies, FFI
+
+`or-ep-pr46-review-du66.13` · **closed** · P1 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1), [or-ep-pr46-review-du66.9](#or-ep-pr46-review-du66.9)  
+Unblocks: [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L5 | Minimized windows now save after every shown window (`saved_galaxy_order` chains `visible_order` then `presentation_history`), not at their own z-place as `FUN_00440ea0` writes them; the rail order after a load becomes the minimize order. Whether the original reorders the rail on load is unsettled. | `crates/rebellion-app/src/strategic_windowing.rs:506-519` | verified code; original unsettled |
+> | L9 | The movie test's replacement no longer checks the Status window (opened without a manager, so it has no id) and asserts it stays open; Encyclopedia and Index are opened in two different managers. | `crates/rebellion-app/src/movies.rs:325-372` | verified |
+> | L10 | Linux X11 observer: 10 `unsafe` blocks (`:2529`, `:2539`, `:2549`, `:2607`, `:2639`, `:2644`, `:2672`, `:2683`, `:2701`, `:2716`); two lack a `// SAFETY:` comment; `XGetInputFocus` plus up to 16 `XQueryTree`/`XGetWindowProperty` round trips run every frame; its only test is `cfg(all(test, target_os = "linux"))` and never runs here; `sampled_native_focus_losses` has no `cfg` and is dead on macOS and wasm. | `main.rs:2445-2726`, `:2639`, `:2683`, `:2720`, `:2727` | verified code; dead-code warning inferred |
+>
+> ## Scope
+>
+> ### 5.3 Lane C: app lifecycle, saves, scenes, movies and FFI
+>
+> Files: `main.rs:20469-20900` (`band_rename_target`, `saved_child`,
+> `saved_window_key`, `saved_interface`, `restore_interface`,
+> `finish_interface_restore`, `saved_window_manager_id`), `main.rs:17820-18010`
+> and `:19700-19720` (save and load call sites), `main.rs:12230-12345`
+> (campaign reset, movies), `main.rs:2410-2756` (wasm focus import, AppKit
+> sample, X11 observer), `main.rs:9706-9720` (observer construction),
+> `crates/rebellion-app/src/strategic_windowing.rs:506-519`
+> (`saved_galaxy_order`), `:2044-2140` (`enter_scene`, scene bookkeeping),
+> `crates/rebellion-app/src/movies.rs:240-275`,
+> `crates/rebellion-app/src/interface_test_fixture.rs:60-75`, `:360-370`,
+> `:1440-1450` and every `open_rebellion_interface_fixture_emit` site,
+> `interface_test_fixture_identity_history.rs`, `…_input_scenes.rs`,
+> `…_modal_boundaries.rs`.
+>
+> Questions:
+> 1. Saved order, places, rail slots, hidden state: S1-S12 plus L5.
+> 2. Load on a campaign whose saved window names a system that no longer
+>    exists: `saved_window_manager_id` and `system_by_dat_id`
+>    (`main.rs:20485-20493`, `:20831+`). Does restore skip it or fail the
+>    whole interface?
+> 3. Every `unsafe` block the PR adds: invariants and a `// SAFETY:` comment.
+>    New in the PR: the 10 X11 blocks (L10: `main.rs:2529`, `:2539`, `:2549`,
+>    `:2607`, `:2639` (no comment), `:2644`, `:2672`, `:2683` (no comment),
+>    `:2701`, `:2716`), `interface_test_fixture.rs:1588` and
+>    `interface_test_fixture_input_scenes.rs:127`; 22 added lines in all, the
+>    rest fn-pointer types. `main.rs:2420` and `:2432`, and the other 16 emit
+>    sites in `interface_test_fixture.rs`, already exist on `main`
+>    (`main.rs:1687` there). Specific checks:
+>    `from_raw_parts(property, size)` uses `size_of::<c_ulong>()` for format 32
+>    (correct for Xlib); `XGetWindowProperty` success is 0 (`:2621`), but
+>    `XGetInputFocus`'s return is not a status on every Xlib (`:2701`);
+>    the title fallback (`:2662-2666`) counts any window with the same title
+>    as ours.
+> 4. Cost: the X11 sample runs every frame (`main.rs:12683-12688`) with up to
+>    16 ancestor walks; measure or bound it.
+> 5. Production exclusion: `mod interface_test_fixture` is
+>    `cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))`
+>    (`main.rs:17-25`); `original_modal_fixture_open` is `false` off the
+>    fixture build (`main.rs:12569-12582`). Confirm the three new fixture
+>    modules carry the same gate, and that `seed_managed_drag_for_test`/
+>    `switch_managed_side_for_test` (`sector_window.rs:513-524`) are
+>    feature-gated only (they are, `cfg(feature = "interface-test-fixtures")`):
+>    a native build with the feature on would export them.
+> 6. Movies: only what happens to a movie that waits for a manager close
+>    that is refused; L9 and I7 are .10's.
+> 7. Scenes: Tactical Alert and Results lifecycle (`enter_scene`, the
+>    `tactical_windowing_*` tests `strategic_windowing.rs:4950-5180`): after
+>    a battle, does the galaxy return with the same windows, focus and rail
+>    (`tactical_windowing_return_restores_only_valid_galaxy_content`, `:5103`)?
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Every `unsafe` site listed with its invariant and comment status.
+- [x] Questions 2, 4 and 6 answered with file:line; question 7 answered for the galaxy's return after a battle (windows, focus, rail), the Alert and Results input lifecycle left to .16.
+- [x] Question 1 answered by citing .9's S1-S12 verdicts and L5.
+- [x] Question 5: each fixture module and `*_for_test` helper listed with its `cfg` gate and file:line.
+
+**Closed:** 44704a7e: .9's eviction-rollback lead refuted, but the stale loaded Fleet rail entry is real and saves the load-time position (probe 13-loaded-fleet-rail-stale FAILED, merged into row 52); X11 focus observer can exit(1) on BadWindow under Xlib's default handler, P2 Linux-only inferred; X11 SAFETY comments, round trips, dead check, P3. Q2 restore skips missing systems as main; Q5 fixture seeders gated as main.
+
+<a id="or-ep-pr46-review-du66.15"></a>
+### Lane E: finders and modals
+
+`or-ep-pr46-review-du66.15` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 5.5 Lane E: finders and modals
+>
+> Files: `troop_finder.rs`, `personnel_finder.rs`, `fleet_finder.rs`,
+> `crates/rebellion-render/src/encyclopedia.rs`,
+> `crates/rebellion-app/src/encyclopedia_surface.rs`, `message_index.rs`,
+> `status_window.rs`, `build_selection.rs`, `mission_dialog.rs`,
+> `move_confirmation.rs`, `object_menu.rs`, `agent_menu.rs`, `game_menu.rs`,
+> `game_speed.rs`; policy `windowing_policy.rs:93-170`; app glue
+> `main.rs:3155-3500`, `main.rs:16255-16808`.
+>
+> Questions:
+> 1. Modal boundary: `policy_for` makes all finders, Index, Encyclopedia,
+>    Status, Mission, Move, Build, Scrap, Battle Alert and Results
+>    `StrategicModal` (`windowing_policy.rs:93-170`). Which of those cite a
+>    runtime check ("2026-10-12 retained original-runtime closeout") and which
+>    are `port:` (Build Selection duplicates, Scrap, Battle Alert pointer
+>    scope)? Each `port:` one is a known deviation to list.
+> 2. Keyboard ownership: `personnel_finder_owns_key` (`main.rs:1656-1674`),
+>    Troop and Fleet Finders consume only Escape (`main.rs:1534-1547`) while
+>    their focused-control tests say text, arrows and Enter
+>    (`troop_finder.rs:1800`, `fleet_finder.rs:1922`); reconcile.
+> 3. Empty-list navigation (`b7e1cd82`, "preserve Troop Finder empty-list
+>    navigation"): find its test; arrow keys on an empty list must not panic.
+> 4. Transient menus: object, agent and speed menus use one managed Menu
+>    (`game_menu.rs`, `ManagedMenuState`); an outside press dismisses without
+>    clicking the underlay (`menu_outside_press_dismisses_without_clicking_underlay`).
+>    Does replacing one menu by another in one frame keep the invoker focus
+>    (`menu_replacement_is_atomic_and_saves_eligible_invoker_focus`,
+>    `game_menu.rs:1406`)?
+> 5. Status context replacement (`status_context_replacement_publishes_new_identity_atomically`,
+>    `strategic_windowing.rs:4432`): opening Status for a second object while
+>    one is open; the original's behaviour: cite the `FUN_` or note that settles it, or record an open `question` row in the ledger (no .26 run covers it).
+> 6. Encyclopedia: `encyclopedia_escape_close_keeps_frame_keyboard_lease`
+>    (`main.rs:8685`); the search field and cockpit shortcuts
+>    (`encyclopedia_search_handling_precedes_cockpit_shortcuts`).
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] A table of every modal family: policy, its citation or `port:` tag, Escape owner, test name.
+- [x] Questions 2-6 answered.
+
+**Closed:** 44704a7e: new P1, ship and unit Move confirmations open through the old path and are never drawn, holding all input (probe FAILED); P2, an alert and an Index report in one frame leave an undrawn active modal (probe FAILED); P2, an alert report under any menu is rejected and wipes the queue (probe FAILED); P3 minors incl. Fleet Finder empty-tab keys (probe FAILED). No confirm dispatches twice. Q2-Q6 answered; 16-row modal table in the lane file.
+
+<a id="or-ep-pr46-review-du66.29"></a>
+### Trace the PR's compiler warnings: lost feature or leftover
+
+`or-ep-pr46-review-du66.29` · **closed** · P1 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.2](#or-ep-pr46-review-du66.2)  
+Unblocks: [or-ep-pr46-review-du66.12](#or-ep-pr46-review-du66.12), [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20), [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### Compiler warnings: lost feature or leftover
+>
+> The PR head builds with 28 distinct rustc warnings where `main` has none
+> (.2's gates log on 44704a7e, `$S/gates-pr46.txt`; .7's Clippy run printed
+> them again): dead `draw_gid_menu` (`cockpit.rs:1692`),
+> `story_event_to_cutscene` and `story_cutscene_path` (`main.rs:359`, `:375`),
+> `personnel_window` (`main.rs:24189`), `sampled_native_focus_losses`
+> (`main.rs:2720`, L10), `enqueue_fleet_restore`
+> (`strategic_windowing.rs:1219`), `minimize_with_eviction` and `restore`
+> (`system_window.rs:1032`) and the legacy input predicates; unused
+> `economy`, `troop_transport`, `target_object` and `activated_fleet`
+> (`main.rs:19196`); `advice_saved_speed` assigned and never read; `Defenses`
+> and `Missions` variants never constructed. For each, find its production
+> callers or readers on `main` (`git grep -n -w <name> origin/main -- crates`)
+> and give one verdict:
+>
+> - lost: `main` calls it from production and the PR head's only call sits in
+>   a commented block (L4: `main.rs:15519-15932`, `16175-16253`) or is gone.
+>   Name the behaviour and its citation. Example: `personnel_window`
+>   (`FUN_00429440` families 0x30-0x3f) was called by the Message Index's Go
+>   To on a personnel message (`main` `main.rs:6487-6489`); the PR head's
+>   match has no `MessageTarget::Personnel` arm (`main.rs:16488-16500`).
+> - leftover: `main` had removed it and the PR's merge restored it
+>   (`story_event_to_cutscene`, `story_cutscene_path`: deleted by `ff3099fd`,
+>   restored by `0da9f4fa`; `git log -S` skips merges, use `git log -m -S`),
+>   or the PR replaced its last caller and left it.
+> - platform: dead only off Linux (`sampled_native_focus_losses`).
+>
+> Each lost verdict is a ledger row with a failure scenario; the leftovers
+> share one row. L14's public sector APIs raise no warning and stay .14's.
+> .12's question 4 cites these verdicts for the commented-block statements
+> that use a warned name.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Each of the PR head's 28 rustc warnings has a verdict (lost, leftover or platform) with its main caller or reader by file:line.
+- [x] Each lost verdict is a ledger row naming the behaviour, its citation and a failure scenario, the Message Index personnel Go To among them.
+
+**Closed:** 44704a7e, 28 new warnings traced (cargo check --workspace --all-targets): 6 lost features, 1 platform, 21 leftovers. New P1: missions no longer carry their target object (merge 0da9f4fa; Sabotage refused TargetMissing, fleet-release Move goes to the system). New P2: a cockpit control press closes the GID menu and does nothing. P3: RestoreFleetWindow never constructed. Commented-block statements that use warned names mapped for .12 in the lane file.
+
+<a id="or-ep-pr46-review-du66.18"></a>
+### Lane H: rules and docs
+
+`or-ep-pr46-review-du66.18` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L11 | The new save and restore tests carry no source citation (`main`'s cited `FUN_00440ea0`, `FUN_00441190` and the Wine runs). | `main.rs:27516-28260` | verified |
+> | L12 | Evidence record names a path under the ignored artifacts folder and four "ignored/local" report paths with private run labels; native evidence is Linux only. | `docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md:14`, `:26-29` | verified |
+> | L13 | `dev-commands.md` and `ghidra/notes/gid-legend.md` still document `GalaxyFocusState` and the menu's Escape; the PR does not touch them, so a merge leaves both wrong (L1, L2, L3). | `agent_docs/dev-commands.md:50-53`, `:273-278`; `ghidra/notes/gid-legend.md:167-232` | verified |
+>
+> ## Scope
+>
+> ### 5.8 Lane H: rules and docs
+>
+> Files: all `.md` and `.json` in the diff (`agent_docs/roadmap.md` +428,
+> `agent_docs/architecture.md`, the two windowing plans, `docs/plans/INDEX.md`,
+> the audit files, the new evidence record, `known-deviations.md`); and every
+> new test's name and citation.
+>
+> Checks:
+> 1. Evidence by save, day and values; no local artifact or ignored report
+>    path (L12, evidence `:14`, `:26-29`); no private run label.
+> 2. History prose in `roadmap.md` and the plans ("accepted r29",
+>    "superseded", dated delivery notes; 20 added roadmap lines match
+>    `2026-10-|r[0-9]+|candidate|accepted|superseded`).
+> 3. Spaced em dashes: 58 added lines contain an em dash with a space on each side.
+> 4. Test names as behaviour sentences: many new names are identifiers
+>    (`windowing_no_family_production_frame_preserves_root`,
+>    `tactical_windowing_alert_requires_an_admitted_matching_press_and_release`,
+>    `managed_scroll_thumb_motion_commits_with_motion_phase`). List them.
+> 5. Both factions in every new test: list the new tests that run one side
+>    only (many `strategic_windowing.rs` tests use `CockpitFaction::Alliance`
+>    alone, for example `fleet_world`/`fleet_layout` helpers).
+> 6. Citations for original-behaviour tests (`CLAUDE.md`, "Testing"): L11 and
+>    any `fact:` in `windowing_policy.rs` without a `FUN_` or run.
+> 7. Plan percentages: the two windowing plans' `progress` lines against what
+>    the review finds.
+> 8. Docs the PR should have changed and did not (L13).
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] One row per violation with file:line; the four counts (artifact paths, em dashes, non-sentence test names, one-faction tests) recorded.
+
+**Closed:** 44704a7e: the merge restores 427 lines of roadmap history main deleted and regresses the plan index counts; both windowing plans claim complete with no N% (at most 72% claimable); the evidence record cites only ignored paths and private labels and predates the merge; nine docs still describe the old focus model or the deleted window_focus.rs (L13); P3 rule counts: 5 ignored-report paths, 27 private run labels, 64 spaced em dashes, 8 broken and 97 code-tag-led test names of 367, 216 one-faction tests. Rows 44-49.
+
+<a id="or-ep-pr46-review-du66.14"></a>
+### Lane D: strategic windows
+
+`or-ep-pr46-review-du66.14` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L14 | Legacy unmanaged APIs survive with no production caller: `SectorWindowState::open_for_system`, `children`, `raise`, `saved_windows`, `restore_saved`, the `z` serial (its doc still cites `window_focus`), `draw_sector_windows`; `GidUiState::shown`/`built` are no longer fed by the app. | `crates/rebellion-render/src/sector_window.rs:98-101`, `:538-612`, `:832-900`, `:1099`; `cockpit.rs:384-390` | verified (callers only in the commented block) |
+>
+> ## Scope
+>
+> ### 5.4 Lane D: strategic windows
+>
+> Files: `crates/rebellion-render/src/sector_window.rs` (9,015 lines; +5,946/−275),
+> `system_window.rs` (+1,686/−597), `defenses_window.rs` (+1,332/−162),
+> `missions_window.rs` (+1,696/−123), `fleet_window.rs` (+1,461/−242);
+> `strategic_windowing.rs:814-1010` (detail and sector opens),
+> `:1584-1810` (attach, acknowledge, rollback), `main.rs:3051-3155`
+> (`commit_sector_window_publication`, `enqueue_sector_manager_action`).
+>
+> Questions:
+> 1. Atomic Sector replacement and rollback: `prepare_open` (`sector_window.rs:196-254`),
+>    `commit_open` (`:292-386`), `remove_content` (`:395-402`),
+>    `rollback_sector_publication` (`strategic_windowing.rs:1776-1811`),
+>    `refresh_queued_sector_open` (`:873-954`). Test
+>    `sector_window_coordinator_commits_atomic_replace_and_duplicate_noop`
+>    (`strategic_windowing.rs:2517`). Is the two-column rule (`FUN_00429ce0`,
+>    `ghidra/notes/sector-window-placement.md`; policy `max_open: Some(2)`,
+>    `windowing_policy.rs:68-76`) still enforced through the manager path, and
+>    does replacing the column's window keep the other?
+> 2. Drag capture and cancellation: `drag_owner` (`:501`),
+>    `cancel_pointer_capture` (`:526-531`), the fleet drag in
+>    `fleet_window.rs` (`EscapeRoute`, `:2387-2420`) and
+>    `enqueue_application_hold_capture_cancellation` (`main.rs:3030-3050`).
+>    A drag cancelled by focus loss must drop no order (N5).
+> 3. Layout and paint unchanged where only lifecycle moved: for each of the
+>    five files, diff the paint functions (`git diff e8ae0457 44704a7e -- <file>`)
+>    and list any change to a rect, resource ID or colour; each needs a
+>    citation or a parity gate.
+> 4. Legacy APIs (L14): delete or explain each surviving unmanaged method.
+> 5. The `z` field's doc still cites `window_focus` (`sector_window.rs:98-101`).
+>
+> ### Probes
+>
+> Keep each probe's source in `$S/probes/`. To run one, paste it into the
+> `#[cfg(test)]` module of the file it exercises in `$WT`, run it alone
+> (`$PR scripts/mini-cargo.sh --keep -- test -p <crate> <test name> --color never > $S/probes/<name>.txt 2>&1`),
+> then restore the file (`git -C $WT checkout -- <file>`) and confirm
+> `git -C $WT diff --quiet -- <file>`. Run one probe at a time across the
+> epic. Run none while .21 or .22 syncs `$WT` to the Mini: their test and
+> mutants builds compile `cfg(test)` code and would carry it. Run none while
+> .23 or .25 runs a gate either: every `--no-build` run re-hashes the
+> workspace's Rust inputs against the fixture build and fails closed on any
+> mismatch (`tools/interface-parity/README.md:76-80`). `--keep` stops
+> the probe build from pruning units the PR build directory's other builds
+> use.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Questions 1-2 answered with a probe or a gate step.
+- [x] Paint-change list per file, each item cited or flagged.
+- [x] Each L14 legacy API is marked delete or keep, with its production caller.
+
+**Closed:** 44704a7e: Operation Report Fleet button opens only the Sector (message_choice_sector_dependent handles only Fleet(_)), P2, both factions; restoring the personnel Go To arm alone still opens only the Sector (mapper drops Defenses and Missions), P2; gate fixtures seed Sector/System windows outside the manager so gates bypass production routing, P2; rail moved to Order::Foreground, lost report Go To on a shared frame, dead z field, P3. Q1 and Q2 hold; probes 14-sector-two-column and 14-sector-drag-focus-loss PASSED on the Mini. L14 cleanup list in the lane file.
+
+<a id="or-ep-pr46-review-du66.19"></a>
+### Codex Sol architecture review, extra-high
+
+`or-ep-pr46-review-du66.19` · **closed** · P1 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 5.9 Codex Sol and adversarial verification
+>
+> - Bead `verify` "Codex Sol architecture review at extra-high effort"
+>   (`agent_docs/agent-tooling.md`, "Required Review Lanes"): give it the
+>   diff range `e8ae0457..44704a7e`, the windowing toolkit note
+>   (`ghidra/notes/strategic-windowing-toolkit.md`), `gid-legend.md`
+>   "Escape and the keyboard focus", and the questions "is the manager the
+>   right owner of galaxy focus, and does it reproduce `FUN_00422ce0`'s
+>   0x467/0x405 walk?", not this spec's leads.
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Sol's report received at extra-high effort through codex-orchestrator; each of its findings is a ledger row (severity, file:line, failure scenario, lane Sol) handed to .20 for its verdict.
+
+**Closed:** gpt-5.6-sol xhigh, read-only, on 44704a7e (2026-11-05): the manager is the right owner of galaxy focus; the PR does not reproduce FUN_00422ce0's 0x467/0x405 walk. Ten findings: three new rows (GID shares object-menu dismissal, P1; one routing snapshot per render frame with pointers before keys, P1; renderer focus raises the egui layer, P2); seven match existing rows, several at a higher severity (new-window focus, close walk, System/Defenses/Missions Escape, GID state machine all P1). All handed to .20.
+
+<a id="or-ep-pr46-review-du66.17"></a>
+### Lane G: gate scripts
+
+`or-ep-pr46-review-du66.17` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 5.7 Lane G: gate scripts
+>
+> Files: every new or changed `tools/interface-parity/*.mjs` (diff stat:
+> `windowing-contract-identity-history.mjs` +1,542, `…-input-scenes.mjs`
+> +1,538, `…-modal-boundaries.mjs` +1,086, `fleet-window.mjs` +388/−64,
+> `sector-quadrants.mjs` +316/−46, `fleet-finder.mjs` +71/−38, `status-window.mjs`
+> +62/−27, `encyclopedia-surface.mjs` +34/−36, `mission-dialog.mjs`,
+> `build-selection.mjs`, `prepare-site.mjs`, `verify-production-exclusion.mjs`,
+> new helpers `status-window-input.mjs`, `mission-dialog-input.mjs`,
+> `sector-double-click.mjs`, `encyclopedia-surface-geometry.mjs`) and their
+> `.test.mjs` files.
+>
+> Questions:
+> 1. Can each new journey fail? For each, name one assertion and a code
+>    change that would trip it (feeds Phase 4).
+> 2. Receipt waits: `waitForRouteReceipt`/`pressWithRouteReceipts`
+>    (`windowing-contract-input-scenes.mjs:267-347`), `clickWithRouteBarrier`
+>    (exported from `fleet-window.mjs`, used at `fleet-finder.mjs:251`, imported at `:14`). Does
+>    a missing receipt fail with a named reason, or time out into a pass?
+> 3. Loosened checks: `fleet-finder.mjs` now falls back to the shorter tab when
+>    the opposite list fills the Finder (diff lines 74-109); `fleet-window.mjs`
+>    and `status-window.mjs` dropped `waitForFunction(…status === "object-menu")`
+>    waits; `sector-quadrants.mjs` dropped `assert.equal(restored.selected, 0)`
+>    and two absence predicates; `encyclopedia-surface.mjs` dropped a
+>    pixel-difference comparison and `assert.notEqual(topic.sha256, category.sha256)`.
+>    For each, name what replaced it or record a loosened check.
+> 4. Manifest: the three new modules declare cases `journey-a`…`journey-e`
+>    plus `identity-history`, `input-scenes`, `modal-boundaries`
+>    (`windowing-contract-identity-history.mjs:1492-1542`,
+>    `…-input-scenes.mjs:1447-1538`, `…-modal-boundaries.mjs:1034-1082`); the
+>    manifest (`windowing-contract-manifest.json`) lists only A-E. Does a
+>    default run accept or reject the three extra cases?
+> 5. `OPEN_REBELLION_INTERFACE_SITE` override (`fleet-finder.mjs:18-19` and
+>    peers): can it point a gate at a stale site without the build-manifest
+>    hash check?
+> 6. Every gate still launches muted: seven of the eight touched gates import
+>    `browser-launch.mjs`; `encyclopedia-surface.mjs` launches chromium directly
+>    with the mute args (`:22`, `:167`), and a second time without them for the
+>    version string (`:291`; the same on `main`, `:293`).
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Each loosened check in question 3 has a verdict.
+- [x] Questions 1, 2, 4, 5 answered with file:line.
+- [x] Question 6: each touched gate's browser launch listed with file:line and its mute args; any launch without `--mute-audio --disable-audio-output` is a ledger row (`encyclopedia-surface.mjs:291`, the same on `main`).
+
+**Closed:** 44704a7e: sector-quadrants.mjs minimize checks inverted (:769-777, :878-886), P2; every gate clicks press+release in one synthetic frame, multi-frame clicks unguarded, P2 to .24; site overrides with no hash check, journey C self-counting assertion, receipt parser copied four times, exclusion needles miss new markers, P3. Q1/Q2/Q4/Q5 answered; Q3 loosened checks each given a verdict; Q6: encyclopedia-surface.mjs:291 launches Chrome without mute args (as on main), a ledger row.
+
+<a id="or-ep-pr46-review-du66.16"></a>
+### Lane F: tactical
+
+`or-ep-pr46-review-du66.16` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 5.6 Lane F: tactical
+>
+> Files: `crates/rebellion-render/src/tactical_view.rs` (+1,012/−215 per plan;
+> `git diff e8ae0457 44704a7e -- crates/rebellion-render/src/tactical_view.rs`),
+> `cockpit.rs`, `targeting.rs`, `game_speed.rs`; app side `main.rs:1825-2052`
+> (`route_tactical_window_input`, prepared and committed tactical actions),
+> `main.rs:17480-17520`, `strategic_windowing.rs:4950-5180`.
+>
+> Questions:
+> 1. Which hunks change behaviour and which only reformat (many are rustfmt
+>    churn, for example `tactical_view.rs:4317-4332`, `:5450-5453`)? List
+>    behaviour hunks only.
+> 2. `draw_battle_result_destinations` loses its `mouse_released` parameter
+>    (diff hunk at old `tactical_view.rs:6551-6560`, ~14 lines removed at old
+>    `:6640`): what now ends a destination click, and does the routed release
+>    keep release-before-press order (`tactical_windowing_results_preserves_release_before_press_order`, `tactical_view.rs:10129`)? No original function is cited for that order there or at `apply_battle_result_input` (`:7688`): name one, or flag the rule as uncited.
+> 3. Battle Alert list (`draw_battle_alert_list`, +131/−34 around
+>    `tactical_view.rs:7274-7470`): scroll by event coordinate, admitted
+>    press/release pairs. Any change to the alert's rows, art or text?
+> 4. Strips, combat input and Withdraw unchanged: compare counts of the strip work's symbols from `e8ae0457` on both heads (`git grep -c` under `crates/`: `in_player_task_force` 6/6, `task_force_joined` 12/12, `strip_header_art` 3/3), and read every
+>    hunk touching `TacticalState` fields (`:427-455`, `:594-646`).
+> 5. Key repeat, tactical side: `route_tactical_window_input` (`main.rs:1825-2052`) receives every key-down `set_frame_key_downs` (`main.rs:17494`) hands it, repeats included (keys 1-8 act again on each autorepeat, `FUN_0059b730.c:8-11`); the root side is R14 in .12.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Behaviour-hunk list with a verdict each; each hunk names the battle-gate case or C6 cell (.25) that exercises it, or is flagged unexercised.
+- [x] Questions 2-5 answered with file:line.
+
+**Closed:** 44704a7e: Battle Results view change keeps the list scroll (main's FUN_00471340 reset dropped, tactical_view.rs:7716-7723), P2; sourceless undrawn category row takes filter-tab clicks, P3; Alert list steps a row per wheel event, P3; three probes FAILED as predicted on the Mini. Q2-Q5 answered: press/release on one control matches CoolStrobeButton; Alert rows unchanged; strip symbol counts equal (6/6, 12/12, 3/3); key repeat unchanged. Unexercised by any gate: Alert scrolling, Retreat, Simulate, Results Close, the scroll reset.
+
+<a id="or-ep-pr46-review-du66.10"></a>
+### Phase 2c: input-boundary and movie behaviours (I1-I7)
+
+`or-ep-pr46-review-du66.10` · **closed** · P2 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.12](#or-ep-pr46-review-du66.12), [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20), [or-ep-pr46-review-du66.23](#or-ep-pr46-review-du66.23), [or-ep-pr46-review-du66.24](#or-ep-pr46-review-du66.24), [or-ep-pr46-review-du66.26](#or-ep-pr46-review-du66.26)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L7 | Retained detail windows are held during targeting (`blocks_managed_input` includes `targeting`); on `main`, targeting was the `root_gesture` legacy blocker, which kept retained input (`main` `strategic_windowing.rs:1073-1085`), and the doc comment, unchanged from `main` (`strategic_windowing.rs:417`; `main` `:240`), says transient menus and root gestures "keep their own rules". | `strategic_windowing.rs:271-273`, doc at `strategic_windowing.rs:409-418`, test `:5287-5310` | verified; effect inferred |
+> | L8 | The legacy blocker bridge is not gone: `LegacyInputBlockers`, `LegacyInputRestrictionLatch` and `begin_production_frame_with_legacy` still gate production input, while their tests were deleted. | `strategic_windowing.rs:202-255`, `:530-541`; `main.rs:12618`, `:12650`, `:16925-16947` | verified |
+> | L9 | The movie test's replacement no longer checks the Status window (opened without a manager, so it has no id) and asserts it stays open; Encyclopedia and Index are opened in two different managers. | `crates/rebellion-app/src/movies.rs:325-372` | verified |
+>
+> ## Scope
+>
+> ### 3.3 Input boundaries and the movie (bead `verify` "Phase 2c: input-boundary and movie behaviours")
+>
+> Old tests: `strategic_windowing.rs` on `main` 694, 961, 1012, 1030, 1050,
+> 1192; `windowing_input.rs:757` on `main`; `movies.rs:322` on `main`.
+>
+> | # | Behaviour | PR head | Verdict | How to show it |
+> |---|---|---|---|---|
+> | I1 | Fleet content and its rail entry publish only after the manager transition | renamed | **holds** | `fleet_commit_publishes_content_and_history_only_after_manager_transition` (`strategic_windowing.rs:3956`) |
+> | I2 | Under a manager modal, no raw root path runs (two tests, `LegacyInputBridge`) | `LegacyInputBridge` deleted with its users | **holds** | `windowing_no_legacy_underlay_action_under_modal` (`strategic_windowing.rs:5181`) |
+> | I3 | A frame with no window keeps the root fully admitted | | **holds** for locks | `windowing_no_family_production_frame_preserves_root` (`:5235`) |
+> | I4 | A legacy blocker restricts input without a shadow identity | Legacy blockers still live (L8); the new test exercises a lock, not a blocker | **holds untested** | `windowing_application_lock_restricts_without_shadow_identity` (`:5247`); probe with `begin_production_frame_with_legacy(…, LegacyInputBlockers { transient_menu: true, .. })` |
+> | I5 | Retained windows hold input under application locks and legacy modals; transient menus and root gestures keep retained input | Targeting now holds retained input (L7) | **changed**; original unsettled | `retained_windows_hold_input_under_named_application_locks` (`:5287`); probe a build-band targeting drag released over a System window's Fleet icon in the browser (`fleet-move.mjs` covers the System-window drag, check its steps); `FUN_00422ce0` holds capture during targeting (comment in `a_focused_fleet_window_leaves_the_menu_and_the_target_release_their_pointer`), so settle against Wine |
+> | I6 | The restriction latch remembers an ephemeral owner | Latch still live (`main.rs:12650`, `:16925-16947`) | **holds untested** | Probe: port `main`'s test body (`strategic_windowing.rs:1192-1210` on `main`) unchanged; it should compile and pass |
+> | I7 | A waiting movie closes the Status window, the Encyclopedia and the Index; nothing closes while none waits (`FUN_00422ce0.c:1192-1232`) | Production queues manager closes each frame a movie waits (`main.rs:12333-12342`; `movies.rs:255-271`); the test omits Status (L9) | **holds** in code (inferred); Status **unshown** | Probe: open Status through `enqueue_status_open` so it has an id; assert it is in `clear_for_movie`'s list. Check that repeated `Close` commands for a window already closing do not log errors (`main.rs:12339-12341` enqueues every frame until `movie_window_free`). Native N6 |
+>
+> ### Probes
+>
+> Keep each probe's source in `$S/probes/`. To run one, paste it into the
+> `#[cfg(test)]` module of the file it exercises in `$WT`, run it alone
+> (`$PR scripts/mini-cargo.sh --keep -- test -p <crate> <test name> --color never > $S/probes/<name>.txt 2>&1`),
+> then restore the file (`git -C $WT checkout -- <file>`) and confirm
+> `git -C $WT diff --quiet -- <file>`. Run one probe at a time across the
+> epic. Run none while .21 or .22 syncs `$WT` to the Mini: their test and
+> mutants builds compile `cfg(test)` code and would carry it. Run none while
+> .23 or .25 runs a gate either: every `--no-build` run re-hashes the
+> workspace's Rust inputs against the fixture build and fails closed on any
+> mismatch (`tools/interface-parity/README.md:76-80`). `--keep` stops
+> the probe build from pruning units the PR build directory's other builds
+> use.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Each of I1-I7 has a verdict with test, code or probe evidence; a verdict that needs a gate, native or Wine step names it for .23, .24 or .26.
+- [x] L8 is a ledger row naming each live use of `LegacyInputBlockers`/`LegacyInputRestrictionLatch` (`main.rs:12597`, `:12618`, `:12650`, `:16935`) and the deleted test that covered it.
+
+**Closed:** 44704a7e: I1-I3 hold; I4, I6, I7 hold (probes PASSED on the Mini); I5 changed, original for transient menus to .26. P1: merge 0da9f4fa feeds LegacyInputBlockers into application_input_held (strategic_windowing.rs:358-360), so the router blocks menu presses and the targeting release; probe 10-router-hold-menu-targeting FAILED both cases under production legacy flags. L8 row lists every live use and the deleted main tests that covered them. Runtime to .23 fleet-move.mjs and .24.
+
+<a id="or-ep-pr46-review-du66.8"></a>
+### Phase 2a: focus and Escape behaviours (F1-F13)
+
+`or-ep-pr46-review-du66.8` · **closed** · P1 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.12](#or-ep-pr46-review-du66.12), [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20), [or-ep-pr46-review-du66.23](#or-ep-pr46-review-du66.23), [or-ep-pr46-review-du66.24](#or-ep-pr46-review-du66.24), [or-ep-pr46-review-du66.26](#or-ep-pr46-review-du66.26)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L1 | Escape no longer closes a focused System, Defenses or Missions window. `child_key_disposition` returns `Unhandled` for every non-rename key of a generic window; `main`'s `galaxy_focus.escape()` route survives only inside a `/* … */` block. The unchanged `window-restore.mjs` asserts the second Escape closes the System window. | `crates/rebellion-app/src/main.rs:1617-1627`, `:16175-16253` (commented), `tools/interface-parity/window-restore.mjs:476-479` | verified code; behaviour inferred |
+> | L2 | Escape on the GID menu now closes it (manager `Close` → `remove_managed_menu_content` clears `menu_open`). The original keeps it open and shows the top window over it (`FUN_004aab50`; Wine, empire-fleet-to-yaga-minor, days 38-45, `gid-legend.md:167-232`). The PR's own comment says "Escape never closes the menu". | `main.rs:16896-16906`, `main.rs:1488-1508`, test `main.rs:5908`; contrast `crates/rebellion-render/src/cockpit.rs:1813-1815` | verified code; behaviour inferred |
+> | L3 | Every window kind, Sector and Menu included, takes the focus when it opens (`FocusOnOpen::Window` for all), so a double-click-opened System window, a new Sector window and every later GID press take the keyboard. The original leaves the focus where it was (`FUN_0045aac0`, `FUN_00429ce0`; `gid-legend.md`, "A new window leaves the focus where it was") and focuses the menu only on its first build (`FUN_004511e0`; Wine, empire-fleet-to-yaga-minor, days 38-45). | `crates/rebellion-render/src/windowing_policy.rs:228`, `crates/rebellion-windowing/src/manager.rs:966-970` | verified code |
+> | L6 | A close keeps a focus that is still eligible, then the menu's saved target, then `previous_eligible`, then the topmost (`manager.rs:1289-1305`); scene repair takes `previous_eligible` before the topmost (`:436-442`). The original's 0x405 → 0x467 walk (`FUN_00422ce0`; `gid-legend.md:183-188`, `:196-199`) activates the topmost non-minimized window after every close. They diverge when a surviving focus is not on top (a Low-band Sector focused by L3, `windowing_policy.rs:68-76`) or `previous_eligible` is not the topmost. | `manager.rs:1289-1305`, `manager.rs:436-442`; `tests/lifecycle.rs:1156` (`close_preserves_surviving_root_focus`) | verified code; divergence inferred |
+> | L14 | Legacy unmanaged APIs survive with no production caller: `SectorWindowState::open_for_system`, `children`, `raise`, `saved_windows`, `restore_saved`, the `z` serial (its doc still cites `window_focus`), `draw_sector_windows`; `GidUiState::shown`/`built` are no longer fed by the app. | `crates/rebellion-render/src/sector_window.rs:98-101`, `:538-612`, `:832-900`, `:1099`; `cockpit.rs:384-390` | verified (callers only in the commented block) |
+>
+> ## Scope
+>
+> ### 3.1 Focus and Escape (bead `verify` "Phase 2a: focus and Escape behaviours")
+>
+> Old tests: `crates/rebellion-render/src/window_focus.rs` on `main`, lines
+> 324-688 (whole file deleted). Wine evidence for all of them:
+> `ghidra/notes/gid-legend.md`, "Escape and the keyboard focus" (lines 167-232),
+> saves empire-fleet-to-yaga-minor (day 38) and alliance-day54-advice (day 61).
+>
+> | # | Behaviour (old test, `main` line) | PR head | Verdict | How to show it |
+> |---|---|---|---|---|
+> | F1 | A load focuses the top restored window that is not a sector; a sector alone or none leaves the view focused (`a_load_focuses_the_top_restored_window_that_is_not_a_sector`, 325) | Focus after restore is whatever the replayed opens and raises leave; every open focuses (L3). Sector exclusion has no code. Fleet/System case shown by `saved_fleet_and_system_order_controls_manager_focus_and_keyboard_owner` (`main.rs:28045`) | holds for Fleet/System; sector case **unclear** | Probe: restore `[System shown, Sector shown]` (sector saved last) and `[Sector shown]` through `restore_manager_owned` (`main.rs:27396-27512`); expect focus on the System window, then on nothing/root. Native step N4. |
+> | F2 | With the menu never opened, Escape closes the restored top window, then reaches the sector and does nothing (`with_the_menu_never_opened…`, 346) | System Escape unrouted (L1) | **lost** (inferred) | Gate `window-restore.mjs` second-Escape assertion (`window-restore.mjs:476-479`); native N2 |
+> | F3 | A focused Fleet window's Escape closes it through the manager (`a_focused_fleet_windows_escape_closes_it_through_the_manager`, 361) | `fleet_window.rs:2509-2518` closes on Escape when the route names the window | **holds** | `escape_closes_the_focused_fleet_window` (`fleet_window.rs:7138`), `a_focused_fleet_keeps_its_escape_which_closes_it` (`main.rs:8571`) |
+> | F4 | A click in a System window keeps its Escape closing it (`a_click_in_a_system_window_keeps_its_escape_closing_it`, 401) | Click focuses (manager `Activate`, inferred from `system_window.rs` `result.focus` claim path near `:1557-1570`); Escape unrouted (L1) | **lost** (inferred) | Native N2 step "click then Escape" |
+> | F5 | First GID press gives the menu the focus; its Escape shows the top window over the open menu; the next closes it; the sector's does nothing (`the_first_gid_press…`, 414) | Escape closes the managed menu (L2) and focus returns to the saved invoker (`FocusRestoration::SavedMenuTarget`, `windowing_policy.rs:183`) | **changed**, and the original contradicts it (empire-fleet-to-yaga-minor, days 38-45) | Native N3; gate `windowing-contract-input-scenes.mjs` if a step presses Escape on the menu (check) |
+> | F6 | A later GID press takes the focus from the window it hides; Escape then does nothing (`a_later_gid_press…`, 447) | Each press opens a new managed Menu, which focuses (L3); Escape closes it (L2) | **changed**, original contradicts (empire-fleet-to-yaga-minor, days 38-45: Escape after a later press did nothing) | Native N3 |
+> | F7 | A new window leaves the focus where it was (`a_new_window_leaves_the_focus_where_it_was`, 471) | `manager.rs:966-970` focuses every eligible new open | **lost** (finding) | Probe: open Sector, focus it, open a System window; assert focus unchanged. Native N1 |
+> | F8 | The first menu's Escape with no window ever activated only focuses the view (`the_first_menus_escape…`, 498) | Menu closes on Escape (L2) | **changed**, original contradicts (alliance-day54-advice, day 61) | Native N3 |
+> | F9 | A focus step raises, shows or closes the window it names, both factions (`a_focus_step_raises_shows_or_closes_the_window_it_names`, 516) | Raise and close are manager commands; "show a child under the open menu" (`GidUiState::show_child`) has no app caller (L14) | raise/close **hold**; show-under-menu **unclear** | `detail_windows_cross_family_activation_changes_one_stack` (`strategic_windowing.rs:3552`); probe/native N3: open a System window while the GID menu is open, capture whether it shows over the menu (original: created visible, `GidUiState::shown` doc, `cockpit.rs:387-389`) |
+> | F10 | A click on a window gives it the focus (`a_click_on_a_window_gives_it_the_focus`, 598) | Manager `Activate` on press (inferred) | **holds** (to show) | Journey A/B steps that click a lower window (`windowing-contract-identity-history.mjs`); or a probe |
+> | F11 | A frame with no window raised leaves the focus alone (`a_frame_with_no_window_raised…`, 627) | Focus changes only through commands (`manager.rs:1536-1545`) | **holds** by construction | Read `set_focus` callers in `manager.rs`; no probe needed |
+> | F12 | A closed window hands the focus to the top one left (`a_closed_window_hands_the_focus_to_the_top_one_left`, 642) | a surviving focus is kept, then `previous_eligible` (L6) | **changed in mechanism**; equal in most sequences | Probe: open System A, System B, then Sector S (S focused by L3, previous B); close B with its close button; original 0x467 activates A (Sectors sit at the bottom: `HWND_BOTTOM`, `FUN_00429ce0`, `gid-legend.md:190-192`; `StackBand::Low` in the port); PR keeps S because S's focus survives (`manager.rs:1289-1299`), not through `previous_eligible`. Wine check if the probe diverges. |
+> | F13 | A closure hands the focus on even in a frame where a window opens; a stale focus takes the same walk (`a_closure_hands_the_focus_on…`, 659) | Commands apply in queue order; an open in the same batch focuses the new window | **holds** for the open case (inferred); stale-focus case **holds** (`close_with_reason` repairs when focus is not eligible, `manager.rs:1290-1305`) | Probe one batch `[Close(A), Open(B)]` |
+>
+> ### Probes
+>
+> Keep each probe's source in `$S/probes/`. To run one, paste it into the
+> `#[cfg(test)]` module of the file it exercises in `$WT`, run it alone
+> (`$PR scripts/mini-cargo.sh --keep -- test -p <crate> <test name> --color never > $S/probes/<name>.txt 2>&1`),
+> then restore the file (`git -C $WT checkout -- <file>`) and confirm
+> `git -C $WT diff --quiet -- <file>`. Run one probe at a time across the
+> epic. Run none while .21 or .22 syncs `$WT` to the Mini: their test and
+> mutants builds compile `cfg(test)` code and would carry it. Run none while
+> .23 or .25 runs a gate either: every `--no-build` run re-hashes the
+> workspace's Rust inputs against the fixture build and fails closed on any
+> mismatch (`tools/interface-parity/README.md:76-80`). `--keep` stops
+> the probe build from pruning units the PR build directory's other builds
+> use.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Each of F1-F13 has a verdict with test, code or probe evidence (test name and file:line, or probe result); a verdict that needs a gate, native or Wine step names it for .23, .24 or .26.
+- [x] Every "lost" or "changed against the original" verdict is a ledger row citing the gid-legend evidence by save and day (empire-fleet-to-yaga-minor days 38-45; alliance-day54-advice day 61).
+- [x] Each probe's source and output are in $S/probes/, and $WT's file was restored after its one run (git diff --quiet).
+
+**Closed:** 44704a7e: F3, F10, F11, F13 hold, F9 raise/close holds; lost or changed: F2/F4 (Escape no longer closes System, Defenses, Missions), F5/F6/F8 (Escape closes the GID menu the original keeps; empire-fleet-to-yaga-minor days 38-45, alliance-day54-advice day 61), F7 (every new window takes focus), F1 (load focuses a sector), F9 (GID press no longer hides galaxy windows). Probes on the Mini: f1, f7, f9 FAILED as predicted both factions; f13 PASSED; f12 covered by .11's P-11a (FAILED as predicted). WT restored after each run.
+
+<a id="or-ep-pr46-review-du66.11"></a>
+### Lane A: windowing kernel
+
+`or-ep-pr46-review-du66.11` · **closed** · P1 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L3 | Every window kind, Sector and Menu included, takes the focus when it opens (`FocusOnOpen::Window` for all), so a double-click-opened System window, a new Sector window and every later GID press take the keyboard. The original leaves the focus where it was (`FUN_0045aac0`, `FUN_00429ce0`; `gid-legend.md`, "A new window leaves the focus where it was") and focuses the menu only on its first build (`FUN_004511e0`; Wine, empire-fleet-to-yaga-minor, days 38-45). | `crates/rebellion-render/src/windowing_policy.rs:228`, `crates/rebellion-windowing/src/manager.rs:966-970` | verified code |
+> | L6 | A close keeps a focus that is still eligible, then the menu's saved target, then `previous_eligible`, then the topmost (`manager.rs:1289-1305`); scene repair takes `previous_eligible` before the topmost (`:436-442`). The original's 0x405 → 0x467 walk (`FUN_00422ce0`; `gid-legend.md:183-188`, `:196-199`) activates the topmost non-minimized window after every close. They diverge when a surviving focus is not on top (a Low-band Sector focused by L3, `windowing_policy.rs:68-76`) or `previous_eligible` is not the topmost. | `manager.rs:1289-1305`, `manager.rs:436-442`; `tests/lifecycle.rs:1156` (`close_preserves_surviving_root_focus`) | verified code; divergence inferred |
+>
+> ## Scope
+>
+> ### 5.1 Lane A: windowing kernel
+>
+> Files: `crates/rebellion-windowing/src/manager.rs` (2,643 lines; diff
+> +499/−153), `snapshot.rs` (diff +46), `tests/contract_sequences.rs`,
+> `tests/reconciliation.rs`, `tests/scenes.rs` (all new), plus
+> `policy.rs` and `lib.rs` for context.
+>
+> Questions, with the code that raises them:
+> 1. Open focus (`manager.rs:944-985`): every `FocusOnOpen::Window` open takes
+>    focus. Is `FocusOnOpen::Preserve` used anywhere? (`policy.rs:56-61`; grep
+>    shows no production use.) This is the kernel side of L3.
+> 2. Close focus (`manager.rs:1235-1335`): `current_focus_survives`, then saved
+>    menu target, then `previous_eligible`, then topmost. L6's first
+>    divergence (a surviving focus not on top) is .8's F12 probe; do not
+>    rebuild it. Construct the second as a kernel-only sequence: a close where
+>    `previous_eligible` is not the topmost eligible window.
+> 3. Scene repair (`manager.rs:405-449`): `focus_needs_repair` when focus is
+>    ineligible or when membership changed and `previous_eligible` is
+>    eligible; test `scene_focus_repair_distinguishes_changed_from_unchanged_membership`
+>    (`manager.rs:2486`). Is `previous_eligible` cleared on scene change?
+> 4. Reconciliation removal order (`manager.rs:452-520`,
+>    `classify_content_reports`, `reconciliation_roots`): roots closed in what
+>    order, and does `tests/reconciliation.rs:464` (`multiple_absent_roots_deliver_cancellation_teardown_then_only_final_focus`)
+>    pin that order?
+> 5. Modal order (`validate_modal_order`, `raised_order_in`,
+>    `constrain_to_modal_boundary_in`): can a transient Menu end above a
+>    modal it does not belong to? (`manager.rs:1614-1640` transient checks.)
+> 6. History cap: `PRESENTATION_HISTORY_CAPACITY = 12` (`manager.rs:304`; eviction `:1428`; the check in `validate` `:684`)
+>    against `REFERENCE_RAIL_SLOTS = 12` (`system_window.rs:48`); the 13th
+>    minimize tears down the oldest content (`strategic_windowing.rs:3683`).
+>    Is that the original's rail behaviour (`FUN_00428b40`)? Cite or flag.
+> 7. Rollback and receipts: do failed commands leave the snapshot lineage
+>    intact (`private_rejections_preserve_snapshot_lineage_and_complete_lifecycle_state`,
+>    `manager.rs:2456`; `contract_rejected_commands_preserve_complete_state`,
+>    `tests/contract_sequences.rs:341`)?
+> 8. Renderer independence: `crates/rebellion-windowing/Cargo.toml` is
+>    unchanged (no manifest change in the PR); confirm `use` lines in the
+>    three new test files import only the crate and std.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Questions 1-8 answered with file:line.
+- [x] Every kernel finding has a failure scenario a probe could run.
+
+**Closed:** 44704a7e, code read: Q1-Q8 answered. Rows: close/minimize/scene focus walks to previous_eligible, not the topmost (manager.rs:1297-1305; probe P-11a); every strategic modal open fails with InvalidPlacement while a root-owned menu is open (manager.rs:1638-1660; probe P-11b); enter_scene .expect trap; scene change over a deliberate galaxy focus unclear. 12-slot cap and eviction match the original; failed commands leave state unchanged; Cargo.toml unchanged. Probes written, not run.
+
+<a id="or-ep-pr46-review-du66.9"></a>
+### Phase 2b: save, restore and rail behaviours (S1-S12)
+
+`or-ep-pr46-review-du66.9` · **closed** · P1 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.13](#or-ep-pr46-review-du66.13), [or-ep-pr46-review-du66.20](#or-ep-pr46-review-du66.20), [or-ep-pr46-review-du66.23](#or-ep-pr46-review-du66.23), [or-ep-pr46-review-du66.24](#or-ep-pr46-review-du66.24), [or-ep-pr46-review-du66.26](#or-ep-pr46-review-du66.26)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L1 | Escape no longer closes a focused System, Defenses or Missions window. `child_key_disposition` returns `Unhandled` for every non-rename key of a generic window; `main`'s `galaxy_focus.escape()` route survives only inside a `/* … */` block. The unchanged `window-restore.mjs` asserts the second Escape closes the System window. | `crates/rebellion-app/src/main.rs:1617-1627`, `:16175-16253` (commented), `tools/interface-parity/window-restore.mjs:476-479` | verified code; behaviour inferred |
+> | L5 | Minimized windows now save after every shown window (`saved_galaxy_order` chains `visible_order` then `presentation_history`), not at their own z-place as `FUN_00440ea0` writes them; the rail order after a load becomes the minimize order. Whether the original reorders the rail on load is unsettled. | `crates/rebellion-app/src/strategic_windowing.rs:506-519` | verified code; original unsettled |
+> | L11 | The new save and restore tests carry no source citation (`main`'s cited `FUN_00440ea0`, `FUN_00441190` and the Wine runs). | `main.rs:27516-28260` | verified |
+>
+> ## Scope
+>
+> ### 3.2 Save, restore and the rail (bead `verify` "Phase 2b: save, restore and rail behaviours")
+>
+> Old tests: `main.rs` on `main` 16514-16990; `system_window.rs` on `main`
+> 2960, 3030, 3073, 4052, 4107, 4187; `defenses_window.rs:2477` and
+> `missions_window.rs:2463` on `main`.
+>
+> | # | Behaviour (old test) | PR head | Verdict | How to show it |
+> |---|---|---|---|---|
+> | S1 | A save keeps every window bottom-up, a hidden one at its own place (`a_save_keeps_every_window_from_the_bottom_of_the_z_order_up`; `FUN_00440ea0.c:19-24`) | `saved_galaxy_order` puts all hidden windows after all shown ones (L5) | **changed** | Compare `save_restore_minimize_and_restore_order_are_manager_owned_for_both_factions` (`main.rs:27516`, its 7-key `expected`, `:27633-27660`) with `main`'s interleaved expectation; Wine: save with a minimized window below a shown one, read the `.sav` order or the rail after load |
+> | S2 | A window the GID menu hides saves hidden, a sector stays shown (`a_window_the_gid_menu_hides…`) | `main.rs:20624` `shown = visible && !hidden_by_gid` | **holds** | `gid_hidden_detail_is_saved_hidden_while_the_sector_stays_shown_for_both_factions` (`main.rs:27959`) |
+> | S3 | A load rebuilds the saved order, two rail entries, and focuses the top non-sector window (`a_load_rebuilds_the_saved_order_and_focuses_the_top_window`) | Order: holds; focus: see F1 | **holds** (order); focus per F1 | `main.rs:27516`; `main.rs:27825`; gate `window-restore.mjs` |
+> | S4 | A Fleet window saved on top comes back in front with the keyboard; saved under, the System window stays in front and the root keeps the keyboard (`a_fleet_window_saved_on_top…`) | System on top now owns the keyboard itself (`main.rs:28079-28085`), not the root | **holds** for Fleet; **changed** for System (on purpose: manager-owned) | `main.rs:28045`; whether System holding the keyboard matters depends on L1 |
+> | S5 | A save from Game Options keeps a shown Fleet window shown and a minimized one hidden (`a_save_from_game_options…`) | | **holds** | `suspended_game_options_save_keeps_shown_and_minimized_fleets_distinct` (`main.rs:28100`) |
+> | S6 | A load keeps Fleet windows at their saved places and rail slots, hidden ones in rail order among the others (`a_load_keeps_fleet_windows…`) | | **holds** (check the rail order under L5) | `fleet_positions_and_hidden_rail_slots_follow_saved_manager_order` (`main.rs:28150`); compare its rail expectation with `main`'s `[Defenses 0x9000_0002, Fleet 0x9000_0004, System…]` |
+> | S7 | After an Escape, the window behind ranks where it took the focus; another kind focused between stays above (three files, one behaviour) | One manager stack keeps cross-kind order; the Escape trigger is lost for these kinds (L1) | order **holds**; trigger **lost** | `detail_windows_cross_family_activation_changes_one_stack` (`strategic_windowing.rs:3552`); native N2 with the close button instead |
+> | S8 | A saved minimized window comes back on the rail in order | | **holds** within L5's order | `saved_minimized_content_round_trips_without_renderer_z_serials` (`system_window.rs:4277`) |
+> | S9 | A load's hidden window takes the next place in the z-order (`lift_hidden`) | Mechanism removed; manager replays saved order | **holds** if S1's order is accepted | `main.rs:27516` |
+> | S10 | A minimized Defenses window keeps its own rail slot and restores from it | | slot **holds**; restore **holds** | `fixture_defenses_rail_projection_keeps_its_own_slot` (`system_window.rs:5241`), `reference_rail_restore_removes_entry_without_recreating_content` (`system_window.rs:3103`) |
+> | S11 | Same for Missions | | **holds** | `fixture_missions_rail_projection_keeps_its_own_slot` (`system_window.rs:5265`), `system_window.rs:3103` |
+> | S12 | A minimized Fleet window keeps one rail slot beside its System window | | **holds** | `fixture_fleet_rail_projection_keeps_each_window_slot` (`system_window.rs:5320`) |
+>
+> The `fixture_…` rail tests drive the renderer projection only
+> (`system_window.rs:5260-5262` says restore routing is shown elsewhere);
+> native step N5 shows the restore end to end. Citations: none of
+> `main.rs:27516-28260` cites `FUN_00440ea0`/`FUN_00441190` or a Wine run
+> (L11); the rail tests keep theirs (`FUN_004aa4a0`, `FUN_004a21c0`).
+>
+> ### Probes
+>
+> Keep each probe's source in `$S/probes/`. To run one, paste it into the
+> `#[cfg(test)]` module of the file it exercises in `$WT`, run it alone
+> (`$PR scripts/mini-cargo.sh --keep -- test -p <crate> <test name> --color never > $S/probes/<name>.txt 2>&1`),
+> then restore the file (`git -C $WT checkout -- <file>`) and confirm
+> `git -C $WT diff --quiet -- <file>`. Run one probe at a time across the
+> epic. Run none while .21 or .22 syncs `$WT` to the Mini: their test and
+> mutants builds compile `cfg(test)` code and would carry it. Run none while
+> .23 or .25 runs a gate either: every `--no-build` run re-hashes the
+> workspace's Rust inputs against the fixture build and fails closed on any
+> mismatch (`tools/interface-parity/README.md:76-80`). `--keep` stops
+> the probe build from pruning units the PR build directory's other builds
+> use.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Each of S1-S12 has a verdict with test, code or probe evidence; a verdict that needs a gate, native or Wine step names it for .23, .24 or .26.
+- [x] S1's order change is handed to .26 (its Wine run 1) with the window set and the order each head writes; it stays an open row until .26 settles it.
+
+**Closed:** 44704a7e, code read: S2, S3, S5, S6, S8-S12 hold (S8/S9 within S1's order); S4 changed for System deliberately; S7 order holds, Escape trigger lost (L1). S1 open for .26 run 1: the PR saves shown windows first, then minimized by minimize order (strategic_windowing.rs:506-519); main saved by z place. Rows: save order P2 pending Wine, stale docs, hidden windows load shown a frame, duplicated Fleet block, rail tests on the old SystemWindowState.rail, uncited save tests. SAVE_VERSION 63 unchanged, no schema change. Probes S1 and S10-S12 written, not run.
+
+<a id="or-ep-pr46-review-du66.6"></a>
+### Check the Linux-only code compiles
+
+`or-ep-pr46-review-du66.6` · **closed** · P3 · review-pr, verify, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1), [or-ep-pr46-review-du66.5](#or-ep-pr46-review-du66.5)  
+Unblocks: [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 2.4 Linux compile (bead `decision`, then `verify`)
+>
+> Once Tom approves the target in .5 (it changes the Mini's toolchain; plan, Phase 1):
+>
+> ```bash
+> ssh $H 'rustup target add x86_64-unknown-linux-gnu'
+> cd $WT && $PR scripts/mini-cargo.sh -- check --target x86_64-unknown-linux-gnu -p rebellion-app --color never
+> $PR scripts/mini-cargo.sh -- clippy --target x86_64-unknown-linux-gnu -p rebellion-app --color never
+> ```
+>
+> `check` does not link, so missing system X11 libraries do not matter;
+> miniquad's own Linux code is pure FFI loading (`main.rs:2494-2495` loads
+> `libX11.so.6` at run time). The cfg-gated test
+> `x11_focus_samples_count_real_process_focus_loss_once_and_ignore_unknown_samples`
+> (`main.rs:2727-2754`) cannot run here; note it as unexecuted.
+>
+> Tom's approval or waiver is .5's; this bead runs the commands above.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] `check` and `clippy` for the Linux target pass, or each error is a row, or Tom waived the check in .5.
+
+**Notes**
+
+> Correction to the close reason: the 17 Linux warnings being a subset of the macOS gate's 28 is not verified; the macOS gate log was lost and the 28 count comes from a workspace test build, not this check. .29 traces the warnings.
+
+**Closed:** 44704a7e on the Mini for x86_64-unknown-linux-gnu, 2026-11-04: check and clippy -p rebellion-app both exit 0 with no errors (17 rustc warnings, the macOS set's subset; 26 Clippy warnings, warnings not denied). The cfg-gated x11_focus_samples_count_real_process_focus_loss_once_and_ignore_unknown_samples (main.rs:2727-2754) compiled but did not run: unexecuted.
+
+<a id="or-ep-pr46-review-du66.5"></a>
+### Approve the Linux target on the Mini
+
+`or-ep-pr46-review-du66.5` · **closed** · P1 · decision, review-pr, windowing · closed 2026-11-05  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Unblocks: [or-ep-pr46-review-du66.6](#or-ep-pr46-review-du66.6)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 2.4 Linux compile (bead `decision`, then `verify`)
+>
+> Needs Tom: adding a rustup target changes the Mini's toolchain (plan,
+> Phase 1). What he approves is one command,
+> `ssh $H 'rustup target add x86_64-unknown-linux-gnu'`; nothing else is
+> installed, since `check` does not link and miniquad loads `libX11.so.6` at
+> run time (`main.rs:2494-2495`). On approval .6 runs it with the Linux
+> `check` and `clippy` and records the cfg-gated X11 test as unexecuted; this
+> bead is Tom's approval only.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Tom approved adding x86_64-unknown-linux-gnu to the Mini's rustup, or waived the check.
+
+**Closed:** Tom approved adding x86_64-unknown-linux-gnu on the Mini (2026-11-04); installed beside aarch64-apple-darwin and wasm32.
+
+<a id="or-ep-pr46-review-du66.7"></a>
+### Scoped rustfmt and Clippy against main
+
+`or-ep-pr46-review-du66.7` · **closed** · P3 · review-pr, verify, windowing · assigned to lead · closed 2026-11-04  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> Leads from the first read that this bead weighs (verified or inferred as marked; a lead is a finding only once verified):
+>
+> | # | Lead | Where | Status |
+> |---|------|-------|--------|
+> | L10 | Linux X11 observer: 10 `unsafe` blocks (`:2529`, `:2539`, `:2549`, `:2607`, `:2639`, `:2644`, `:2672`, `:2683`, `:2701`, `:2716`); two lack a `// SAFETY:` comment; `XGetInputFocus` plus up to 16 `XQueryTree`/`XGetWindowProperty` round trips run every frame; its only test is `cfg(all(test, target_os = "linux"))` and never runs here; `sampled_native_focus_losses` has no `cfg` and is dead on macOS and wasm. | `main.rs:2445-2726`, `:2639`, `:2683`, `:2720`, `:2727` | verified code; dead-code warning inferred |
+> | L14 | Legacy unmanaged APIs survive with no production caller: `SectorWindowState::open_for_system`, `children`, `raise`, `saved_windows`, `restore_saved`, the `z` serial (its doc still cites `window_focus`), `draw_sector_windows`; `GidUiState::shown`/`built` are no longer fed by the app. | `crates/rebellion-render/src/sector_window.rs:98-101`, `:538-612`, `:832-900`, `:1099`; `cockpit.rs:384-390` | verified (callers only in the commented block) |
+>
+> ## Scope
+>
+> ### 2.5 Scoped fmt and strict Clippy (bead `verify`)
+>
+> The workspace has audited baseline failures (`CLAUDE.md`, "Commands"), so
+> compare per file with `main`:
+>
+> ```bash
+> F=$(git -C $WT diff --name-only --diff-filter=AM e8ae0457 HEAD -- '*.rs' | tr '\n' ' ')
+> FM=$(git -C $WT diff --name-only --diff-filter=M e8ae0457 HEAD -- '*.rs' | tr '\n' ' ')
+> cd $WT && $PR scripts/mini-cargo.sh --run "rustfmt --edition 2021 --check $F" > $S/fmt-pr46.txt 2>&1
+> cd <main checkout> && OPEN_REBELLION_BUILD_HOST=$H scripts/mini-cargo.sh --run "rustfmt --edition 2021 --check $FM" > $S/fmt-main.txt 2>&1
+> cd $WT && $PR scripts/mini-cargo.sh -- clippy -p rebellion-windowing -p rebellion-render -p rebellion-app --all-targets --color never -- -D warnings > $S/clippy-pr46.txt 2>&1
+> cd <main checkout> && OPEN_REBELLION_BUILD_HOST=$H scripts/mini-cargo.sh -- clippy -p rebellion-windowing -p rebellion-render -p rebellion-app --all-targets --color never -- -D warnings > $S/clippy-main.txt 2>&1
+> ```
+>
+> The Mini copy has no `.git`, so the file lists are computed here and passed
+> literally; `--diff-filter` drops `window_focus.rs`, which the PR deletes, and
+> keeps PR-only files off the `main` run. rustfmt also walks `mod` children,
+> so count `Diff in <path>` lines only for the touched paths.
+> Count diagnostics per file on both heads. Watch for `dead_code` on
+> `sampled_native_focus_losses` (`main.rs:2720`, L10) and on the legacy
+> sector APIs (L14), and for `#[allow(dead_code, reason = "feature-family
+> migrations enqueue the first commands")]` on `StrategicWindowing::enqueue`
+> (`strategic_windowing.rs:543-546`), now stale since `enqueue` is called
+> throughout `main.rs`. The `tactical_view.rs` churn is partly reformatting
+> (for example `tactical_key_actions`, `tactical_view.rs:5450-5453`, split
+> onto four lines where `main` had one); fmt will say which head is right.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Per-file fmt and clippy counts for each touched `.rs` on both heads; every increase is a row.
+
+**Closed:** 44704a7e vs e8ae0457, 2026-11-04, touched .rs files only: rustfmt 0 hunks on the PR head, 259 on main (the PR formats every file it touches); strict Clippy (warnings reported, not denied, since -D warnings stops both heads at rebellion-core's baseline) 21 on main, 62 on the PR head, per-file increases in the ledger: main.rs 7 to 26, missions_window.rs and strategic_windowing.rs 0 to 6, cockpit.rs 2 to 5, sector_window.rs 1 to 3, fleet_window.rs 0 to 2, four files 0 to 1.
+
+<a id="or-ep-pr46-review-du66.4"></a>
+### Gate-script unit tests and production exclusion
+
+`or-ep-pr46-review-du66.4` · **closed** · P2 · review-pr, verify, windowing · assigned to lead · closed 2026-11-04  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.23](#or-ep-pr46-review-du66.23), [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 2.3 Gate-script unit tests and production exclusion (bead `verify`)
+>
+> ```bash
+> cd $WT/tools/interface-parity && npm run test:unit > $S/node-unit.txt 2>&1   # node --test *.test.mjs
+> cd $WT && $PR scripts/mini-cargo.sh --run ./scripts/build-wasm.sh --pull web/open-rebellion.wasm
+> node tools/interface-parity/verify-production-exclusion.mjs
+> ```
+>
+> The exclusion check reads `web/open-rebellion.wasm` and `web/index.html`
+> (`verify-production-exclusion.mjs:9-10`); on the PR head that file is the
+> contributor's binary until the build above replaces it, so run it only after
+> our build. The PR adds three forbidden tokens and a second test-WASM
+> bridge check (strengthening, verified in the diff). Also run it against the
+> contributor's binary (`git -C $WT show origin/pr-46:web/open-rebellion.wasm > $S/contrib.wasm`,
+> then `grep -c` each forbidden token) and record the hash difference between
+> the two binaries.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] `npm run test:unit` passes, or each failing file is a row.
+- [x] Our production WASM passes `verify-production-exclusion.mjs`; the contributor's binary is checked for the same tokens and both hashes recorded.
+
+**Closed:** 44704a7e, 2026-11-04: node --test over tools/interface-parity 104/104 pass (with the ignored browser.json present; 25 ENOENT failures without it). Our production WASM (9,101,277 bytes, sha256 438dcc26…a84) passes verify-production-exclusion: 0 fixture tokens, no test bridge. The contributor's (9,852,731 bytes, sha256 f20866b0…8ce) passes the same check; the size gap is a ledger row (replace it with our build).
+
+<a id="or-ep-pr46-review-du66.3"></a>
+### Compare parallel and serial test runs
+
+`or-ep-pr46-review-du66.3` · **closed** · P1 · review-pr, verify, windowing · assigned to lead · closed 2026-11-04  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is. Labels shared across this epic: F1-F13 are the focus rows of or-ep-pr46-review-du66.8, S1-S12 the save rows of .9, I1-I7 the input rows of .10, R1-R17 the rule table of .12, N1-N6 the native steps in .24's batches; L1-L14 are first-read leads, each defined in the lead table of the beads that weigh it (L1-L4 and L8-L13 in .27, L5 in .9, L6 and L14 in .8, L7 in .10).
+>
+> ## Scope
+>
+> ### 2.2 Parallel against serial (bead `verify`)
+>
+> ```bash
+> cd $WT
+> $PR scripts/mini-cargo.sh --keep -- test --workspace --color never > $S/test-par.txt 2>&1
+> $PR scripts/mini-cargo.sh --keep -- test --workspace --color never -- --test-threads=1 > $S/test-ser.txt 2>&1
+> $PR scripts/mini-cargo.sh --keep -- test --workspace --features interface-test-fixtures --exclude provenance-scan --color never > $S/fix-par.txt 2>&1
+> $PR scripts/mini-cargo.sh -- test --workspace --features interface-test-fixtures --exclude provenance-scan --color never -- --test-threads=1 > $S/fix-ser.txt 2>&1
+> ```
+>
+> Compare the `test result:` line of every binary; run the parallel pair three
+> times if any test fails only in parallel. Process-global state that could
+> leak between tests: `rebellion_render::control_registry`'s process-wide
+> `static ENABLED: AtomicBool` (`crates/rebellion-render/src/control_registry.rs:21`);
+> its map is `thread_local!` (`:49-50`), so only the atomic is shared between
+> test threads.
+> The PR adds no new `static`, `thread_local!`, `OnceLock` or atomic (verified
+> by grep of the diff), so a serial-only pass points at the registry or egui
+> contexts.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); shell names in this epic's commands: `H` is the Mini's ssh host, `mac-mini-ts` (the `mini-cargo.sh` default) or `mac-mini` when Tailscale is down on this Mac; `S` is the session's scratch directory outside the repository (ledger, logs, probes); `WT=$S/wt`, the detached `origin/pr-46` worktree (.1); `PR="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46"`; `RED="env OPEN_REBELLION_BUILD_HOST=$H OPEN_REBELLION_BUILD_DIR=or-native/wt-pr46-red"` (`env`, because the shell does not read an expanded `NAME=value` as an assignment). Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Four logs read; per-binary counts equal across parallel and serial, or each difference is a ledger row naming the test.
+- [x] Per-crate counts compared with `main`'s (a `#[test]` line grep gives 2,888 → 3,230, +342; cargo's per-binary totals are authoritative).
+
+**Closed:** 44704a7e on the Mini, 2026-11-04: plain workspace 3,167 tests in 23 binaries and fixtures 3,171 in 21, identical per binary in parallel (gates.sh) and with --test-threads=1, 0 failed. Against main's fixtures gate (ran in full on both): 2,830 to 3,171 (+341): app 278 to 404, render 932 to 1,109, windowing lib 13 to 18, new contract_sequences 4, reconciliation 13, scenes 16.
+
+<a id="or-ep-pr46-review-du66.2"></a>
+### Run gates.sh on the PR head
+
+`or-ep-pr46-review-du66.2` · **closed** · P1 · review-pr, verify, windowing · assigned to lead · closed 2026-11-04  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Waits on: [or-ep-pr46-review-du66.1](#or-ep-pr46-review-du66.1)  
+Unblocks: [or-ep-pr46-review-du66.21](#or-ep-pr46-review-du66.21), [or-ep-pr46-review-du66.23](#or-ep-pr46-review-du66.23), [or-ep-pr46-review-du66.24](#or-ep-pr46-review-du66.24), [or-ep-pr46-review-du66.25](#or-ep-pr46-review-du66.25), [or-ep-pr46-review-du66.27](#or-ep-pr46-review-du66.27), [or-ep-pr46-review-du66.29](#or-ep-pr46-review-du66.29)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is.
+>
+> ## Scope
+>
+> ### 2.1 Gates (bead `verify` "Run gates.sh on the PR head")
+>
+> ```bash
+> cd $WT && $PR scripts/gates.sh --keep-going > $S/gates-pr46.txt 2>&1; echo "exit $?" >> $S/gates-pr46.txt
+> ```
+>
+> Never pipe through `tail` (`agent_docs/test-tooling.md`, gates.sh). Read every
+> PASS/FAIL line: test, fixtures, replay, coverage, provenance, wasm, beads,
+> leak-worker, leak-private (`scripts/gates.sh:26`). The beads gate reads the
+> PR's `.beads/` which the PR leaves untouched (no beads data, plan "The PR").
+> Provenance: the scan covers `rebellion-core`, `integrator.rs`,
+> `simulation.rs` (`agent_docs/agent-tooling.md`, "Provenance Gate"); the PR
+> does not touch them, so any growth is a finding.
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); prefix `OPEN_REBELLION_BUILD_HOST=mac-mini` while Tailscale is down on this Mac. Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] Every gate line read and copied into the ledger header; each FAIL is a ledger row with its first error.
+- [x] Provenance item count ≤ `main`'s.
+
+**Closed:** gates.sh on 44704a7e (or-native/open-rebellion-pr46, 2026-11-04): all eight cargo and graph gates PASS, leak-private SKIP; provenance 0 uncited, equal to main; 6,345 tests passed, 0 failed. Ledger rows: the Stop confirmation's only call sits in a commented block (main.rs:15871), and 28 new compiler warnings against main's none.
+
+<a id="or-ep-pr46-review-du66.1"></a>
+### Set up the review worktree, Mini clone and main baselines
+
+`or-ep-pr46-review-du66.1` · **closed** · P1 · chore, review-pr, windowing · assigned to lead · closed 2026-11-04  
+Epic: [PR #46 review: strategic windowing surface migration](INDEX.md#or-ep-pr46-review-du66)  
+Unblocks: [or-ep-pr46-review-du66.10](#or-ep-pr46-review-du66.10), [or-ep-pr46-review-du66.11](#or-ep-pr46-review-du66.11), [or-ep-pr46-review-du66.12](#or-ep-pr46-review-du66.12), [or-ep-pr46-review-du66.13](#or-ep-pr46-review-du66.13), [or-ep-pr46-review-du66.14](#or-ep-pr46-review-du66.14), [or-ep-pr46-review-du66.15](#or-ep-pr46-review-du66.15), [or-ep-pr46-review-du66.16](#or-ep-pr46-review-du66.16), [or-ep-pr46-review-du66.17](#or-ep-pr46-review-du66.17), [or-ep-pr46-review-du66.18](#or-ep-pr46-review-du66.18), [or-ep-pr46-review-du66.19](#or-ep-pr46-review-du66.19), [or-ep-pr46-review-du66.2](#or-ep-pr46-review-du66.2), [or-ep-pr46-review-du66.3](#or-ep-pr46-review-du66.3), [or-ep-pr46-review-du66.4](#or-ep-pr46-review-du66.4), [or-ep-pr46-review-du66.6](#or-ep-pr46-review-du66.6), [or-ep-pr46-review-du66.7](#or-ep-pr46-review-du66.7), [or-ep-pr46-review-du66.8](#or-ep-pr46-review-du66.8), [or-ep-pr46-review-du66.9](#or-ep-pr46-review-du66.9)
+
+> ## Background
+>
+> PR #46 (Will Forster, `will-forster/open-rebellion` branch `feat/strategic-windowing-fleet-lifecycle`, head `44704a7e`, merge base `main` `e8ae0457`) moves every strategic window, finder and modal onto the `rebellion-windowing` manager: 79 files, +56,440/-10,630, `main.rs` from 17,598 to 28,859 lines. This bead is one part of reviewing it (plan `docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md`). Line numbers are on `origin/pr-46` unless they say `main`. A deleted test is not a finding; only behaviour the PR loses or changes against the original is.
+>
+> ## Scope
+>
+> ### 1. Phase 0: setup
+>
+> Bead: `chore` "Set up the PR #46 review worktree, Mini clones and main baselines".
+>
+> Steps:
+>
+> 1. `git worktree add --detach $S/wt origin/pr-46` from the main checkout, so
+>    the main checkout's untracked files stay as they are; `$WT=$S/wt`. Confirm
+>    `git -C $WT rev-parse HEAD` is `44704a7e…`.
+> 2. Clone the gate packages, never symlink:
+>    `cp -c -R tools/interface-parity/node_modules $WT/tools/interface-parity/`.
+>    Run `npm ci` there only if the PR's `package-lock.json` differs from
+>    `main`'s (`git diff --quiet origin/main origin/pr-46 -- tools/interface-parity/package-lock.json`).
+> 3. Mini clones, APFS only (`agent_docs/agent-tooling.md`, "Builds and the Build Cache"):
+>    `ssh $H 'cd ~/or-native && cp -c -R open-rebellion open-rebellion-pr46'`;
+>    the red clone is made in Phase 4 (`cp -c -R open-rebellion-pr46 wt-pr46-red`).
+>    Two clones is the limit (`agent_docs/agent-tooling.md`, "Builds and the Build Cache").
+> 4. Baselines on `main`, from the main checkout (default build dir), each
+>    prefixed `OPEN_REBELLION_BUILD_HOST=$H` and redirected to a file in `$S`:
+>    - `OPEN_REBELLION_BUILD_HOST=$H scripts/gates.sh --keep-going > $S/gates-main.txt 2>&1; echo $? >> $S/gates-main.txt`
+>    - per-crate test counts: `OPEN_REBELLION_BUILD_HOST=$H scripts/mini-cargo.sh -- test --workspace --color never 2>&1 | grep -E '^(     Running|test result:)' > $S/counts-main.txt`
+>    - provenance: `OPEN_REBELLION_BUILD_HOST=$H scripts/mini-cargo.sh -- run -q -p provenance-scan --color never -- report --json /tmp/prov-main.json` on the Mini, pulled, item count recorded.
+>    - battle gate and C6 verdicts: reuse `main`'s last recorded 184 and C6
+>      run if it names `e8ae0457`; otherwise run them (Phase 5 commands)
+>      against a `main` fixture site.
+> 5. Record the four outputs and the worktree head in the ledger's header.
+>
+> Acceptance criteria:
+>
+> ## Evidence
+>
+> Findings go to the review ledger the lead keeps: severity, file:line, failure scenario, verdict, lane. Name runs by commit, faction, save, day and values, never by a local artifacts path.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No push, review comment, approval or merge without Tom's word. Cargo only through `scripts/mini-cargo.sh` with `OPEN_REBELLION_BUILD_DIR=or-native/open-rebellion-pr46` (red-first and mutants: `or-native/wt-pr46-red`); prefix `OPEN_REBELLION_BUILD_HOST=mac-mini` while Tailscale is down on this Mac. Browser only through the interface-parity gates, native only through `scripts/launch-native.sh`, every run silent on both machines.
+
+**Acceptance criteria**
+
+- [x] `$WT` is a detached worktree at `44704a7e`; the main checkout's `git status` is unchanged.
+- [x] `or-native/open-rebellion-pr46` exists on the Mini as an APFS clone; no other new clone.
+- [x] `main` baselines recorded: gates PASS/FAIL lines, per-crate test counts, provenance item count, battle-gate case count and C6 verdicts.
+
+**Closed:** Worktree detached at 44704a7e (main checkout unchanged); Mini clone or-native/open-rebellion-pr46, the only extra one; main baselines 2026-11-04: gates test FAIL from flaky a_doubled_layout_hits_the_same_bitmap_pixels (filed or-b-move-confirm-flaky-lg8h), other cargo gates PASS, provenance 0 uncited, render 918/core 1264/app 278/data 240 tests; battle gate 184/184 and C6 strip cells passing from the 2026-10-22 run on the e8ae0457 tree less a logic-equivalent guard removal.
 
 <a id="or-p-task-force-strip-07t"></a>
 ### Port the task-force strip slots, headers and group selection
