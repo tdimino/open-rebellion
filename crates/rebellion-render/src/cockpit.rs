@@ -2156,6 +2156,61 @@ mod tests {
     }
 
     #[test]
+    fn the_open_gid_menu_paints_over_the_droid_advisors() {
+        // FUN_00422ce0 0x132 opens the GID menu as a pop-up over the cockpit,
+        // into whose apertures FUN_0042adb0 draws the droids. On the Empire's
+        // 640x480 cockpit the menu's frame (STRATEGY 10103) covers the
+        // advisor's aperture.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = CockpitState::new(faction);
+            let ctx = egui::Context::default();
+            let mut cache = BmpCache::new();
+            let layout = state.layout_for(640.0, 480.0);
+            let droid = egui::Color32::from_rgb(1, 2, 3);
+            let mut shapes = Vec::new();
+            for frame in 0..3 {
+                if frame == 1 {
+                    state.gid_ui.open_menu();
+                }
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(640.0, 480.0),
+                    )),
+                    ..Default::default()
+                };
+                shapes = ctx
+                    .run(input, |ctx| {
+                        crate::advisor::advisor_painter(ctx).rect_filled(
+                            ctx.screen_rect(),
+                            0.0,
+                            droid,
+                        );
+                        let _ = draw_gid_menu(ctx, &mut state, &mut cache, layout, true);
+                    })
+                    .shapes;
+            }
+            let root = ctx
+                .memory(|memory| memory.area_rect(gid_root_menu_id()))
+                .expect("the menu is laid out");
+            let droids = shapes
+                .iter()
+                .position(|clipped| {
+                    matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == droid)
+                })
+                .expect("the droids paint");
+            let menu = shapes
+                .iter()
+                .position(|clipped| {
+                    !matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == droid)
+                        && root.contains_rect(clipped.shape.visual_bounding_rect())
+                })
+                .expect("the menu paints");
+            assert!(droids < menu, "{faction:?}: the droids paint over the GID menu");
+        }
+    }
+
+    #[test]
     fn the_gid_menu_opens_where_the_original_builds_it_on_either_side() {
         // FUN_00422ce0 0x132 builds the menu with FUN_00451130 at (370,233)
         // for side 1 and (420,233) for side 2, 0xa0 by 0xa0; under Wine its
