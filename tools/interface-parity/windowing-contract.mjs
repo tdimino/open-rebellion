@@ -119,7 +119,7 @@ export function validateObservation(value) {
         || typeof event.application_recipient !== "string" || event.application_recipient.length === 0
         || event.underlay_action_count !== 0
         || typeof event.observed_route !== "string" || event.observed_route.length === 0
-        || !Array.isArray(event.observed_actions) || event.observed_actions.length !== 1
+        || !Array.isArray(event.observed_actions) || event.observed_actions.length === 0
         || event.observed_actions.some((receipt) => typeof receipt !== "string" || receipt.length === 0)) {
       fail("malformed event recipient");
     }
@@ -313,7 +313,7 @@ const ADAPTER_SMOKE_ROUTES = Object.freeze({
   }),
   "pointer-select": Object.freeze({
     kind: "pointer",
-    recipient: "blocked",
+    recipient: "window:*",
     applicationRecipient: "gid",
     tokens: Object.freeze(["destination=gid", "status=selected", "label=Display Off"]),
   }),
@@ -324,6 +324,13 @@ const ADAPTER_SMOKE_ROUTES = Object.freeze({
     tokens: Object.freeze(["destination=gid", "status=selected", "source=accelerator"]),
   }),
 });
+
+function applicationActionIdentity(receipt) {
+  if (typeof receipt !== "string" || !receipt.startsWith("[interface] command=")) return null;
+  const command = receipt.match(/\bcommand=([^ ]+)/)?.[1];
+  const destination = receipt.match(/\bdestination=([^ ]+)/)?.[1];
+  return command && destination ? `${command}/${destination}` : null;
+}
 
 export function smokeEventFromReceipts(triggerId, observedCommand, observedRoute, observedActions) {
   const route = ADAPTER_SMOKE_ROUTES[triggerId];
@@ -339,20 +346,32 @@ export function smokeEventFromReceipts(triggerId, observedCommand, observedRoute
   );
   if (match === null) fail(`adapter-smoke event ${triggerId} has a malformed route receipt`);
   const [, eventId, kind, recipient, applicationRecipient, observedUnderlay] = match;
-  if (kind !== route.kind || recipient !== route.recipient
+  const recipientMatches = route.recipient === "window:*"
+    ? /^window:\d+$/.test(recipient)
+    : recipient === route.recipient;
+  if (kind !== route.kind || !recipientMatches
       || applicationRecipient !== route.applicationRecipient) {
-    fail(`adapter-smoke event ${triggerId} has the wrong observed route`);
+    fail(`adapter-smoke event ${triggerId} has the wrong observed route; `
+      + `expected=${route.kind}/${route.recipient}/${route.applicationRecipient}; `
+      + `observed=${kind}/${recipient}/${applicationRecipient}; route=${observedRoute}`);
   }
   if (!Array.isArray(observedActions)
       || observedActions.some((receipt) => typeof receipt !== "string")) {
     fail(`adapter-smoke event ${triggerId} has malformed application action receipts`);
   }
-  const expectedIndex = observedActions.indexOf(observedCommand);
+  const expectedIdentity = applicationActionIdentity(observedCommand);
+  const countedActions = observedActions.filter((receipt) =>
+    !(receipt.includes(" status=queued")
+      && applicationActionIdentity(receipt) === expectedIdentity));
+  const expectedIndex = countedActions.indexOf(observedCommand);
   if (expectedIndex < 0) {
     fail(`adapter-smoke event ${triggerId} did not retain its application action receipt`);
   }
-  const underlayActionCount = Number(observedUnderlay) + observedActions.length - 1;
-  if (underlayActionCount !== 0) fail(`adapter-smoke event ${triggerId} underlay actions must be zero`);
+  const underlayActionCount = Number(observedUnderlay) + countedActions.length - 1;
+  if (underlayActionCount !== 0) {
+    fail(`adapter-smoke event ${triggerId} underlay actions must be zero; `
+      + `route=${observedRoute}; actions=${JSON.stringify(observedActions)}`);
+  }
   return {
     trigger_id: triggerId,
     event_id: eventId,
@@ -681,7 +700,8 @@ export function strategicGidDisplayOffPoint(viewport) {
 
 export function smokeActionCounters(lines) {
   return {
-    gid_menu: lines.filter((line) => line.includes("destination=gid_menu status=")).length,
+    gid_menu: lines.filter((line) => line.includes("destination=gid_menu status=")
+      && !line.includes(" status=queued")).length,
     gid_selection: lines.filter((line) => line.includes("destination=gid status=selected")).length,
   };
 }

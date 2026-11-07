@@ -51,17 +51,20 @@ function observation(overrides = {}) {
         underlay_action_count: 0,
         observed_command: "[interface] command=0x132 destination=gid_menu status=opened_managed",
         observed_route: "[windowing-route] physical=41:2 kind=pointer router=root application=gid_menu underlay=0",
-        observed_actions: ["[interface] command=0x132 destination=gid_menu status=opened_managed"],
+        observed_actions: [
+          "[interface] command=0x132 destination=gid_menu status=queued",
+          "[interface] command=0x132 destination=gid_menu status=opened_managed",
+        ],
       },
       {
         trigger_id: "pointer-select",
         event_id: "45:1",
         kind: "pointer",
-        recipient: "blocked",
+        recipient: "window:1",
         application_recipient: "gid",
         underlay_action_count: 0,
         observed_command: "[interface] command=0x80 destination=gid status=selected label=Display Off",
-        observed_route: "[windowing-route] physical=45:1 kind=pointer router=blocked application=gid underlay=0",
+        observed_route: "[windowing-route] physical=45:1 kind=pointer router=window:1 application=gid underlay=0",
         observed_actions: ["[interface] command=0x80 destination=gid status=selected label=Display Off"],
       },
       {
@@ -606,25 +609,25 @@ test("adapter smoke derives the physical event and recipient from the applicatio
   const event = smokeEventFromReceipts(
     "pointer-select",
     "[interface] command=0x80 destination=gid status=selected label=Display Off",
-    "[windowing-route] physical=77:3 kind=pointer router=blocked application=gid underlay=0",
+    "[windowing-route] physical=77:3 kind=pointer router=window:7 application=gid underlay=0",
     ["[interface] command=0x80 destination=gid status=selected label=Display Off"],
   );
   assert.deepEqual(event, {
     trigger_id: "pointer-select",
     event_id: "77:3",
     kind: "pointer",
-    recipient: "blocked",
+    recipient: "window:7",
     application_recipient: "gid",
     underlay_action_count: 0,
     observed_command: "[interface] command=0x80 destination=gid status=selected label=Display Off",
-    observed_route: "[windowing-route] physical=77:3 kind=pointer router=blocked application=gid underlay=0",
+    observed_route: "[windowing-route] physical=77:3 kind=pointer router=window:7 application=gid underlay=0",
     observed_actions: ["[interface] command=0x80 destination=gid status=selected label=Display Off"],
   });
   assert.throws(
     () => smokeEventFromReceipts(
       "pointer-select",
       "[interface] command=0x80 destination=gid status=selected label=Display Off",
-      "[windowing-route] physical=77:3 kind=pointer router=blocked application=gid underlay=1",
+      "[windowing-route] physical=77:3 kind=pointer router=window:7 application=gid underlay=1",
       ["[interface] command=0x80 destination=gid status=selected label=Display Off"],
     ),
     /underlay.*zero/i,
@@ -633,11 +636,45 @@ test("adapter smoke derives the physical event and recipient from the applicatio
     () => smokeEventFromReceipts(
       "pointer-select",
       "[interface] command=0x80 destination=gid status=selected label=Display Off",
-      "[windowing-route] physical=77:3 kind=pointer router=blocked application=gid underlay=0",
+      "[windowing-route] physical=77:3 kind=pointer router=window:7 application=gid underlay=0",
       [
         "[interface] command=0x80 destination=gid status=selected label=Display Off",
         "[interface] command=0x201 destination=galaxy_map status=applied",
       ],
+    ),
+    /underlay.*zero/i,
+  );
+  assert.throws(
+    () => smokeEventFromReceipts(
+      "pointer-select",
+      "[interface] command=0x80 destination=gid status=selected label=Display Off",
+      "[windowing-route] physical=77:3 kind=pointer router=blocked application=gid underlay=0",
+      ["[interface] command=0x80 destination=gid status=selected label=Display Off"],
+    ),
+    /wrong observed route/i,
+    "the managed GID row must route to its window identity, not a generic blocker",
+  );
+});
+
+test("adapter smoke counts a queued and terminal GID receipt as one application action", () => {
+  const queued = "[interface] command=0x132 destination=gid_menu status=queued";
+  const opened = "[interface] command=0x132 destination=gid_menu status=opened_managed identity=WindowId(1)";
+  const event = smokeEventFromReceipts(
+    "pointer-open",
+    opened,
+    "[windowing-route] physical=25:0 kind=pointer router=root application=gid_menu underlay=0",
+    [queued, opened],
+  );
+  assert.equal(event.underlay_action_count, 0);
+  assert.deepEqual(event.observed_actions, [queued, opened],
+    "lifecycle evidence must retain both the queued and terminal receipts");
+
+  assert.throws(
+    () => smokeEventFromReceipts(
+      "pointer-open",
+      opened,
+      "[windowing-route] physical=25:0 kind=pointer router=root application=gid_menu underlay=0",
+      [queued, opened, "[windowing-underlay] surface=galaxy-map action=selection"],
     ),
     /underlay.*zero/i,
   );
@@ -668,6 +705,7 @@ test("adapter smoke CLI and GID geometry are deterministic", () => {
 test("adapter smoke counters distinguish menu and keyboard actions", () => {
   assert.deepEqual(smokeActionCounters([]), { gid_menu: 0, gid_selection: 0 });
   assert.deepEqual(smokeActionCounters([
+    "[interface] command=0x132 destination=gid_menu status=queued",
     "[interface] command=0x132 destination=gid_menu status=opened_managed",
     "[interface] command=0x80 destination=gid status=selected label=Display Off",
     "[interface] command=0x12 destination=gid status=selected label=Uprisings source=accelerator",
