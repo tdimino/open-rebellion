@@ -741,6 +741,15 @@ pub fn object_menu_rect(ctx: &egui::Context) -> Option<egui::Rect> {
     ctx.memory(|memory| memory.area_rect(egui::Id::new(MENU_ID)))
 }
 
+/// Whether the open menu was on screen last frame. Egui lays a new area out
+/// on its first frame, so only from the second does [`object_menu_rect`]
+/// hold the rectangle the player sees and can click.
+#[must_use]
+pub fn object_menu_settled(ctx: &egui::Context) -> bool {
+    let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new(MENU_ID));
+    ctx.memory(|memory| memory.areas().visible_last_frame(&layer))
+}
+
 /// Root and currently visible child rectangles of the open object menu.
 #[must_use]
 pub fn object_menu_rects(ctx: &egui::Context) -> Vec<egui::Rect> {
@@ -1851,6 +1860,53 @@ mod tests {
             });
         }
         (chosen, rect)
+    }
+
+    #[test]
+    fn the_menu_settles_on_its_second_frame_where_it_is_drawn() {
+        // port: egui lays a new area out on its first frame; a click that
+        // reads the menu's place must wait for the frame after.
+        let layout = galaxy_layout();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let agent = Some(MenuObject::Character(CharacterKey::default()));
+        let mut menu = Some(ObjectMenuState::new(agent, MISSION_GATE, (300, 200)));
+        let mut settled = Vec::new();
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1280.0, 960.0),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                let _ = draw_object_menu(
+                    ctx,
+                    &mut menu,
+                    &mut cache,
+                    layout,
+                    CockpitFaction::Alliance,
+                    true,
+                );
+                settled.push(object_menu_settled(ctx));
+            });
+        }
+        assert_eq!(settled, [false, true, true]);
+        let rect = object_menu_rect(&ctx).expect("the menu is laid out");
+        let open = menu.as_ref().expect("the menu stays open");
+        let origin = GameMenuPlacement {
+            owner: galaxy_owner(layout),
+            point: open.point,
+        }
+        .origin((rect.width() / layout.scale, rect.height() / layout.scale));
+        assert_eq!(
+            rect.min,
+            egui::pos2(
+                layout.canvas.x + origin.0 * layout.scale,
+                layout.canvas.y + origin.1 * layout.scale
+            )
+        );
     }
 
     #[test]

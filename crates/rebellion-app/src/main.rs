@@ -16867,10 +16867,13 @@ async fn main() {
                         Some(_) | None => {}
                     }
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-                    if let (Some(request), Some(menu), Some(rect)) = (
+                    // A gate clicks the rows this report places: publish it
+                    // once the menu's rectangle is the one on screen.
+                    if let (Some(request), Some(menu), Some(rect), true) = (
                         interface_fixture_request,
                         object_menu.as_ref(),
                         rebellion_render::object_menu::object_menu_rect(ctx),
+                        rebellion_render::object_menu::object_menu_settled(ctx),
                     ) {
                         interface_test_fixture::emit_object_menu(
                             request,
