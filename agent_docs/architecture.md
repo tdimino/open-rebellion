@@ -3,7 +3,7 @@ title: "Architecture"
 description: "Crate dependency graph and module structure for the Open Rebellion codebase"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-11-05
+updated: 2026-11-07
 tags: [architecture, crate-graph, entity-identity, simulation]
 ---
 
@@ -32,10 +32,12 @@ frame snapshot. Keyboard routing derives one snapshot per physical event and
 projects accepted lifecycle commands before routing the next event, preventing
 fall-through while allowing two Escapes in one frame to close two windows.
 Content lifecycle observations are distinct from paint observations.
-The earlier source-level checkpoint and its limits are recorded in the
+The historical r29 checkpoint and the separate final PR #46 review-candidate
+VPS regression checkpoint are recorded in the
 [strategic-windowing reconciliation](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md);
-it applies to its recorded revision and does not promote visual parity cells
-or accept a later post-merge candidate.
+each applies only to its exact recorded source/artifact identities and neither
+promotes visual parity cells, original-runtime acceptance, or native-Windows
+parity.
 
 rebellion-playtest (clap, rand_xoshiro, serde_json)  [headless play-test binary]
 ├── rebellion-data

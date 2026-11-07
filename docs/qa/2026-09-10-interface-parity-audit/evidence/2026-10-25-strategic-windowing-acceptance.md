@@ -4,6 +4,8 @@ Accepted-candidate date: 2026-10-25
 Accepted-candidate source: a912b6a95e44ee1b6a00861b68bdf74ce9eb197a
 Review-repair date: 2026-11-05
 Review-repair source: 971f23cb171785e2fe21f17335b178ef09ebd3ba
+Final review-candidate verification date: 2026-11-07
+Final review-candidate code and fixture source: 1d7ea50f6a8dc84d76946f4c4124a53aebd812c4
 
 This reconciliation joins three distinct accepted evidence lanes against the
 same immutable r29 candidate: SW-12B fixture-browser, SW-12P
@@ -73,10 +75,10 @@ text exists or that every original window surface is complete.
 
 ## PR #46 review repair evidence
 
-The additive repair at
-`971f23cb171785e2fe21f17335b178ef09ebd3ba` addresses the maintainer review
-of head `44704a7e139389379354fb442cde7b6da0c89c80`. Its original-game focus
-anchors are named by save, day, and visible result:
+The review-repair sequence began at
+`971f23cb171785e2fe21f17335b178ef09ebd3ba` in response to the maintainer
+review of head `44704a7e139389379354fb442cde7b6da0c89c80`. Its retained original-game
+focus anchors are named by save, day, and visible result:
 
 - `empire-fleet-to-yaga-minor`, days 38--45: load restores Sesswenna below
   Coruscant. Without a GID press, Escape closes Coruscant and the next Escape
@@ -89,25 +91,73 @@ anchors are named by save, day, and visible result:
   opens Message Index above the menu; closing the index leaves the menu open
   and its galaxy children hidden.
 
-Review-repair verification on 2026-11-05:
+The final source-changing repair is
+`1d7ea50f6a8dc84d76946f4c4124a53aebd812c4`. The documentation-only
+reconciliation that contains this section does not change the code, fixture,
+package inputs, or the following artifact identities:
 
-- `git diff --check`: pass.
-- `rustfmt --check --edition 2021` on every changed Rust source, with
-  `skip_children=true` for the application root: pass.
-- `node --check tools/interface-parity/sector-quadrants.mjs`: pass.
-- Direct standard-library-only `rustc --test` coverage for
-  `rebellion-windowing`: 154 passed (18 unit, 4 contract, 45 lifecycle,
-  31 open-order, 13 reconciliation, 27 routing, 16 scene tests).
-- The required `scripts/mini-cargo.sh` full-workspace fmt/check path was
-  attempted repeatedly, but the configured `mac-mini-ts` host failed DNS
-  resolution before sync or compilation. No full-workspace success is claimed
-  by this repair record.
+| Final review-candidate object | SHA-256 |
+|---|---|
+| Production WASM | `d0e6b434b3a74314cd3391a1fdf98ebd65e96d67066df97a64b62d14dbd88baa` |
+| Fixture WASM used by the browser gates | `be50230174ca151dbc4bd6f367f140c6fb7f88d02ee2449b40a40c331f34b703` |
+| Runtime ORPK | `d804e130f915deb1bb65036d38e28ed0dd4f606faec25243134bd615e16607f8` |
+| Build manifest | `d2ba62744d8f1ad536bb322d3497ce59c1a05c44d2ba21719db5de14c8619d90` |
+
+Final review-candidate verification on the Linux VPS:
+
+- `cargo check --workspace --all-targets` and the same command with
+  `--features interface-test-fixtures`: pass with zero warnings.
+- `rustfmt --check --edition 2021` on the 45 existing Rust files changed from
+  the pull-request merge base, using `skip_children=true`: pass.
+- `cargo test --workspace --no-fail-fast`: 3,202 passed, 0 failed, 46 ignored.
+  The fixture-feature variant: 3,228 passed, 0 failed, 47 ignored.
+- `cargo build --workspace --release`: pass.
+- `cargo clippy -p rebellion-windowing --all-targets --no-deps -- -D warnings`:
+  pass. The wider changed-package strict command is not green: it exits 101 on
+  29 reported source locations already present in `origin/main`, with zero
+  branch-introduced locations.
+- `node --test tools/interface-parity/*.test.mjs`: 109 passed, 0 failed.
+- `npm run build` in `tools/interface-parity`: production and isolated fixture
+  builds pass, including production-fixture exclusion. `wasm-opt` was not
+  installed, so the build retained its size-only warning.
+
+The no-build browser command set followed that package build. Result reports
+bind the fixture-driven rows to the fixture WASM hash above and, where used,
+the runtime ORPK hash; Encyclopedia Publication binds to the production WASM.
+The GID summary does not retain a WASM hash, so its row is deliberately only a
+same-run regression observation rather than exact-artifact acceptance. None of
+these rows is original-game or native-Windows acceptance:
+
+| Command / gate | Result | Artifact boundary |
+|---|---|---|
+| `node windowing-contract.mjs --case=journey-a,journey-b,journey-c,journey-d,journey-e --no-build` | 20/20 executions; 4,600 assertions; zero diagnostics | fixture WASM |
+| `node fleet-window.mjs --no-build` | 40/40 | fixture WASM and runtime ORPK |
+| `node run.mjs --all --no-build` (GID) | 152/152; zero launch, execution, or recovered timeouts; 152/152 browsers closed | same-run observation; summary omits artifact hashes |
+| `node fleet-move.mjs --no-build` | 12/12 | fixture WASM and runtime ORPK |
+| `node orbital-strike.mjs --no-build` | 22/22 | fixture WASM |
+| `node windowing-contract.mjs --case=adapter-smoke --no-build` | 4/4; 20 assertions; exact recipients and deltas; zero underlay actions | fixture WASM |
+| `node fleet-finder.mjs --no-build` | 18/18 | fixture WASM and runtime ORPK |
+| `node status-window.mjs --no-build` | 10/10 | fixture WASM |
+| `node message-index-shell.mjs --no-build` | pass | fixture WASM and runtime ORPK |
+| `node audit-batch.mjs --no-build` | pass | fixture WASM and runtime ORPK |
+| `node sector-quadrants.mjs --no-build` | 12/12 | fixture WASM and runtime ORPK |
+| `node encyclopedia-publication.mjs` with canonical local EData | pass | production WASM and runtime ORPK |
+| `node scripts/validate-interface-parity-ledgers.mjs --check` | pass | tracked ledger inputs; not a browser artifact |
+| `npm run check` in `tools/interface-parity` | pass; the tactical A0 matrix remains incomplete and has 0 strict parity acceptance | tracked catalog/matrix inputs; not a browser artifact |
+
+All commands above ran directly on the VPS. No Mac Mini, RCH worker, private
+or local network, native-Windows environment, or original-game runtime was
+contacted or used. Generated WASM, browser run directories, proprietary data,
+and local beads state remain outside the contribution commit. The local
+`scripts/task-index.py --check` failure is also not claimed green: the ignored
+working beads graph omits an epic present in the committed JSONL, so that
+local-store drift is not used as pull-request evidence.
 
 ## Audit boundary and open work
 
-No strict interface-parity cell changes in this reconciliation. The audit
-remains at 1 complete, 15 partial, 27 failing required families and 13/627
-strictly accepted required cells. The following remain explicit:
+No strict interface-parity cell changes in this reconciliation. The current
+audit remains at 2 complete, 15 partial, 26 failing required families and
+28/627 strictly accepted required cells. The following remain explicit:
 
 - Original-runtime/W1 gaps and unsupported original behavior are not closed by
   the r29 port-side browser/native runs.
@@ -121,5 +171,6 @@ strictly accepted required cells. The following remain explicit:
 
 The shared initiative plan remains active for those external acceptance and
 original-interface gaps. The bounded SW-12B/SW-12P/SW-13A/SW-13E evidence
-sequence is complete and reconciled at r29; this is not a 100% parity or
+sequence is complete and reconciled at r29, and the final PR #46 repair has a
+separate exact-source VPS regression checkpoint. Neither is a 100% parity or
 release claim.

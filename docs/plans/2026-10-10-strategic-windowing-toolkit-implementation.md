@@ -2,8 +2,8 @@
 title: "Strategic Windowing Toolkit Implementation Plan"
 created: 2026-10-10
 status: active
-progress: "80%: kernel and family migrations implemented; post-merge acceptance, native-Windows, System Finder, A0 parity, and current evidence reconciliation remain open"
-updated: 2026-11-05
+progress: "80%: kernel, family migrations, final-candidate VPS regression verification, and evidence reconciliation complete; native-Windows, original-runtime, System Finder, and A0 parity remain open"
+updated: 2026-11-07
 ---
 
 # Strategic Windowing Toolkit Implementation Plan
@@ -11,10 +11,11 @@ updated: 2026-11-05
 > **For future implementers:** Execute the reviewed plan task-by-task using the applicable implementation workflow. This document does not authorize implementation or delegation. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Status:** Active, estimated at 80%. The kernel and family migrations are
-implemented, but the current post-merge candidate has not completed every
-delivery gate in Tasks 12–14. The older reconciliation remains historical
-evidence for its recorded revision, not acceptance of this branch. Current
-full-matrix/package evidence, native-Windows proof, the System Finder, and A0
+implemented. Task 12's automated Linux/VPS regression and package gates pass
+for exact code/fixture source
+`1d7ea50f6a8dc84d76946f4c4124a53aebd812c4`, and Task 14's tracked evidence
+has been reconciled without promoting strict audit cells. Task 13's
+native-Windows proof, original-runtime gaps, the System Finder, and A0
 bitmap/layout/text acceptance remain open; this is not a claim of full
 original-interface parity.
 
@@ -35,8 +36,12 @@ boundary; it does not promote visual acceptance cells. The final bounded
 reconciliation is
 
 [`2026-10-25-strategic-windowing-acceptance.md`](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md)
-(candidate manifest SHA-256 `28ae5cc5e9b798d02e30a3bb6b0785bcb40781fd0e0e27d8f185808eb09b8221`);
-strict audit status remains 1/15/27 families and 13/627 cells.
+(historical r29 candidate manifest SHA-256
+`28ae5cc5e9b798d02e30a3bb6b0785bcb40781fd0e0e27d8f185808eb09b8221`).
+That record also identifies the final review-candidate code/fixture source
+`1d7ea50f6a8dc84d76946f4c4124a53aebd812c4`, its production and fixture
+artifact hashes, and its VPS regression results. Strict audit status remains
+2 complete, 15 partial, 26 failing families and 28/627 accepted cells.
 
 ## Global Constraints
 

@@ -536,9 +536,10 @@ API-shaping evidence until their call contexts are named.
     the same classes/routing and corroborated cross-family raise, Sector-close
     survival, and Status/Build/Mission/Move blocking and dismissal.
 
-## Current Rust seams to replace
+## Historical Rust seams replaced by PR #46
 
-The present port has useful feature boundaries but no single window authority:
+Before PR #46, the port had useful feature boundaries but no single window
+authority:
 
 - `crates/rebellion-app/src/main.rs` defines `FrameKeyboardOwner` for only
   Cockpit versus Encyclopedia, assembles `GalaxyMapState::pointer_blocked`
@@ -550,7 +551,7 @@ The present port has useful feature boundaries but no single window authority:
 - Finder, Message, Encyclopedia, Status, menus, and confirmations independently
   choose foreground/tooltip ordering and input gates.
 
-The new renderer-independent kernel should therefore expose:
+The renderer-independent kernel now exposes:
 
 - semantic `WindowKind` plus opaque session `WindowId` and optional owner;
 - declared cardinality and existing-open policy (`NoOp`, `RaiseRestore`,
@@ -565,9 +566,17 @@ The new renderer-independent kernel should therefore expose:
 - explicit transitions whose renderer adapter performs as egui raise, focus,
   pointer consumption, or paint-order operations.
 
-**port:** the kernel should model the recovered semantic result, not HWNDs,
+**port:** the kernel models the recovered semantic result, not HWNDs,
 Win32 message numbers, intrusive trees, `PostMessage`, or egui order bands.
-Those are adapters/evidence, not domain API.
+Those are adapters/evidence, not domain API. `rebellion-windowing` owns the
+semantic lifecycle, order, focus, modality, capture, and routing snapshot;
+`rebellion-render` adapts snapshots to egui and physical input; and
+`rebellion-app::StrategicWindowing` owns feature publication, scenes, and the
+commit boundary. Final Linux/VPS regression evidence and its exact source and
+artifact hashes are recorded in the
+[strategic-windowing acceptance record](../../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md).
+That checkpoint does not close the unresolved original-runtime or
+native-Windows items below.
 
 ## Unresolved and deliberately non-load-bearing details
 

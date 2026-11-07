@@ -3,8 +3,8 @@ title: "Strategic Window Modality and Focus"
 description: "Design for recovering the original strategic-window contract, introducing a renderer-independent windowing crate, and migrating the existing strategic surfaces to one focus and input authority"
 type: feat
 status: active
-progress: "80%: shared authority and family migrations implemented; current acceptance, native-Windows, System Finder, A0 parity, and evidence reconciliation remain open"
-updated: 2026-11-05
+progress: "80%: shared authority, family migrations, and final-candidate VPS regression verification complete; native-Windows, original-runtime, System Finder, and A0 parity remain open"
+updated: 2026-11-07
 created: 2026-10-10
 tags: [interface, parity, windowing, focus, modality, input, architecture]
 ---
