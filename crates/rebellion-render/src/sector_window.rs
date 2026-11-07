@@ -1070,6 +1070,7 @@ enum SectorClickTarget {
     Icon(SystemKey, Quadrant),
 }
 
+#[allow(clippy::too_many_arguments)]
 fn sector_click_target(
     world: &GameWorld,
     fog: &FogState,
@@ -2956,6 +2957,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn paint_managed_frame_for_test(
         ctx: &egui::Context,
         world: &GameWorld,

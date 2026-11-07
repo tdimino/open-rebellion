@@ -3679,23 +3679,35 @@ mod tests {
         );
 
         let mut results = Vec::new();
-        let mut focus = WindowDrawResult::default();
-        focus.focus = true;
+        let focus = WindowDrawResult {
+            focus: true,
+            ..WindowDrawResult::default()
+        };
         results.push(focus);
-        let mut close = WindowDrawResult::default();
-        close.close = true;
+        let close = WindowDrawResult {
+            close: true,
+            ..WindowDrawResult::default()
+        };
         results.push(close);
-        let mut minimize = WindowDrawResult::default();
-        minimize.minimize = true;
+        let minimize = WindowDrawResult {
+            minimize: true,
+            ..WindowDrawResult::default()
+        };
         results.push(minimize);
-        let mut open_sector = WindowDrawResult::default();
-        open_sector.open_sector = true;
+        let open_sector = WindowDrawResult {
+            open_sector: true,
+            ..WindowDrawResult::default()
+        };
         results.push(open_sector);
-        let mut select = WindowDrawResult::default();
-        select.select = Some(7);
+        let select = WindowDrawResult {
+            select: Some(7),
+            ..WindowDrawResult::default()
+        };
         results.push(select);
-        let mut tab = WindowDrawResult::default();
-        tab.tab = Some(MissionsTab::Decoys);
+        let tab = WindowDrawResult {
+            tab: Some(MissionsTab::Decoys),
+            ..WindowDrawResult::default()
+        };
         results.push(tab);
 
         assert!(results

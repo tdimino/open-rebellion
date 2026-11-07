@@ -254,6 +254,7 @@ const fn preserve_focus_policy(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 const fn policy_with_focus(
     cardinality: Cardinality,
     band: StackBand,

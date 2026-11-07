@@ -1923,15 +1923,13 @@ pub fn handle_cockpit_egui_input(
         })
     };
 
-    let clicked = update_control_capture(
+    update_control_capture(
         &mut state.pressed_control,
         primary_pressed,
         primary_down,
         primary_released,
         pointer_hit,
-    );
-
-    clicked
+    )
 }
 
 fn should_dismiss_gid_menu(
