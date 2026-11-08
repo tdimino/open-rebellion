@@ -426,33 +426,19 @@ async function click(page, point, button = "left") {
   await frames(page);
 }
 
-// Two canvas clicks as one raw-event batch. This covers the low-frame-rate
-// browser path where both physical clicks arrive before the next egui frame.
+// Two presses a frame apart, each seen by egui, inside its double-click
+// time.
 async function doubleClick(page, point) {
   await page.waitForTimeout(500);
   await page.mouse.move(point.x, point.y);
   await frames(page);
-  await page.evaluate(({ x, y }) => {
-    const canvas = document.getElementById("glcanvas");
-    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("missing game canvas");
-    const emit = (type, buttons, detail) => canvas.dispatchEvent(new MouseEvent(type, {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: x,
-      clientY: y,
-      screenX: x,
-      screenY: y,
-      button: 0,
-      buttons,
-      detail,
-    }));
-    emit("mousedown", 1, 1);
-    emit("mouseup", 0, 1);
-    emit("mousedown", 1, 2);
-    emit("mouseup", 0, 2);
-  }, point);
-  await frames(page, 3);
+  for (let press = 1; press <= 2; press += 1) {
+    await page.mouse.down({ clickCount: press });
+    await frames(page);
+    await page.mouse.up({ clickCount: press });
+    await frames(page);
+  }
+  await frames(page, 2);
 }
 
 async function stableShot(page, directory, label) {
@@ -831,10 +817,15 @@ const cases = [
       checks.conflict_light_after = compare(crop(shot.png, faction.conflict), resource(source, faction.conflict.lit), {}, directory, "conflict-lit");
       soft(checks.conflict_light_after.different_pixels === 0, `the Conflict light is not lit: ${JSON.stringify(checks.conflict_light_after)}`);
       await click(page, centre(faction.conflict));
+      // Rail light 0x13c names itself on the queued receipt; the manager's
+      // terminal receipt names the category it opened.
+      const opener = /command=0x13c destination=message_index category=0x80 status=queued_shared/;
       const pattern = /destination=message_index category=0x80 status=opened_managed/;
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline && !consoleLines.some(({ text }) => pattern.test(text))) await page.waitForTimeout(50);
+      checks.index_opener_log = consoleLines.find(({ text }) => opener.test(text))?.text ?? null;
       checks.index_log = consoleLines.find(({ text }) => pattern.test(text))?.text ?? null;
+      assert.ok(checks.index_opener_log, "the Index on Conflict was not opened by rail light 0x13c");
       assert.ok(checks.index_log, "the Conflict light did not open the Index on Conflict");
       await page.mouse.move(2, 2);
       shot = await stableShot(page, directory, "index-conflict");

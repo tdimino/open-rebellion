@@ -2,7 +2,7 @@
 title: "Strategic Windowing Toolkit Implementation Plan"
 created: 2026-10-10
 status: active
-progress: "80%: kernel, family migrations, final-candidate VPS regression verification, and evidence reconciliation complete; native-Windows, original-runtime, System Finder, and A0 parity remain open"
+progress: "89% — Tasks 0-11 landed (16 of 18); Task 12's production proof without fixture bridges and Task 13's native-Windows and original-runtime acceptance remain open"
 updated: 2026-11-07
 ---
 
@@ -10,14 +10,14 @@ updated: 2026-11-07
 
 > **For future implementers:** Execute the reviewed plan task-by-task using the applicable implementation workflow. This document does not authorize implementation or delegation. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Active, estimated at 80%. The kernel and family migrations are
-implemented. Task 12's automated Linux/VPS regression and package gates pass
-for exact code/fixture source
-`1d7ea50f6a8dc84d76946f4c4124a53aebd812c4`, and Task 14's tracked evidence
-has been reconciled without promoting strict audit cells. Task 13's
-native-Windows proof, original-runtime gaps, the System Finder, and A0
-bitmap/layout/text acceptance remain open; this is not a claim of full
-original-interface parity.
+**Status:** Active, 89%: Tasks 0-11 have landed, 16 of 18. Task 12's
+automated workspace and browser gates pass on the reviewed source (the
+acceptance record binds them to its fixture WASM and runtime ORPK hashes); its
+production interaction without fixture bridges and its per-run browser,
+viewport, seed and revision record remain open. Task 13's native-Windows
+proof, original-runtime gaps, the System Finder, and A0 bitmap/layout/text
+acceptance remain open; this is not a claim of full original-interface
+parity.
 
 **Baseline:** Inspected worktree `/data/tmp/open-rebellion-strategic-window-modality-focus`, commit `f0648ef0e6b1f832a9f7643ccd6321e9f7ea5b52`. Revalidate before execution.
 
@@ -36,12 +36,11 @@ boundary; it does not promote visual acceptance cells. The final bounded
 reconciliation is
 
 [`2026-10-25-strategic-windowing-acceptance.md`](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md)
-(historical r29 candidate manifest SHA-256
-`28ae5cc5e9b798d02e30a3bb6b0785bcb40781fd0e0e27d8f185808eb09b8221`).
-That record also identifies the final review-candidate code/fixture source
-`1d7ea50f6a8dc84d76946f4c4124a53aebd812c4`, its production and fixture
-artifact hashes, and its VPS regression results. Strict audit status remains
-2 complete, 15 partial, 26 failing families and 28/627 accepted cells.
+(candidate manifest SHA-256
+`28ae5cc5e9b798d02e30a3bb6b0785bcb40781fd0e0e27d8f185808eb09b8221`), with
+the reviewed source's workspace and browser gates and their artifact hashes.
+Strict audit status remains 2 complete, 15 partial, 26 failing families and
+28/627 accepted cells.
 
 ## Global Constraints
 

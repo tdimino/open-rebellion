@@ -360,9 +360,14 @@ export function smokeEventFromReceipts(triggerId, observedCommand, observedRoute
     fail(`adapter-smoke event ${triggerId} has malformed application action receipts`);
   }
   const expectedIdentity = applicationActionIdentity(observedCommand);
-  const countedActions = observedActions.filter((receipt) =>
-    !(receipt.includes(" status=queued")
-      && applicationActionIdentity(receipt) === expectedIdentity));
+  const queued = (receipt) => receipt.includes(" status=queued")
+    && applicationActionIdentity(receipt) === expectedIdentity;
+  // A managed open logs one queued receipt, then its terminal one.
+  if (observedActions.filter(queued).length > 1) {
+    fail(`adapter-smoke event ${triggerId} queued its action more than once; `
+      + `actions=${JSON.stringify(observedActions)}`);
+  }
+  const countedActions = observedActions.filter((receipt) => !queued(receipt));
   const expectedIndex = countedActions.indexOf(observedCommand);
   if (expectedIndex < 0) {
     fail(`adapter-smoke event ${triggerId} did not retain its application action receipt`);
@@ -407,6 +412,15 @@ export function assertAdapterSmokeObservation(value) {
   }
   if (observation.events.length !== Object.keys(ADAPTER_SMOKE_ROUTES).length) {
     fail("adapter-smoke observation contains unexpected event recipients");
+  }
+  // The Display Off row is the managed GID menu's own control, so its press
+  // routes to the identity the menu opened with, not to any window.
+  const opened = observation.events.find(({ trigger_id: id }) => id === "pointer-open");
+  const menu = opened.observed_command.match(/\bidentity=WindowId\((\d+)\)/)?.[1];
+  if (menu === undefined) fail("adapter-smoke pointer-open names no GID menu identity");
+  const selected = observation.events.find(({ trigger_id: id }) => id === "pointer-select");
+  if (selected.recipient !== `window:${menu}`) {
+    fail(`adapter-smoke pointer-select routed to ${selected.recipient}, not the GID menu window:${menu}`);
   }
   for (const [counter, expectedDelta] of [["gid_menu", 1], ["gid_selection", 2]]) {
     const before = observation.action_counters.before[counter];

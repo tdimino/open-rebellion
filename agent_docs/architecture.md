@@ -32,12 +32,10 @@ frame snapshot. Keyboard routing derives one snapshot per physical event and
 projects accepted lifecycle commands before routing the next event, preventing
 fall-through while allowing two Escapes in one frame to close two windows.
 Content lifecycle observations are distinct from paint observations.
-The historical r29 checkpoint and the separate final PR #46 review-candidate
-VPS regression checkpoint are recorded in the
+Its workspace and browser evidence, bound to artifact hashes, is in the
 [strategic-windowing reconciliation](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md);
-each applies only to its exact recorded source/artifact identities and neither
-promotes visual parity cells, original-runtime acceptance, or native-Windows
-parity.
+it promotes no visual parity cell, original-runtime acceptance, or
+native-Windows parity.
 
 rebellion-playtest (clap, rand_xoshiro, serde_json)  [headless play-test binary]
 ├── rebellion-data

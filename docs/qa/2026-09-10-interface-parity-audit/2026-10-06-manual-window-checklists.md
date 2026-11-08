@@ -6,7 +6,7 @@ broadly in the interface ledger. Each row has its own stable acceptance cell.
 port only. They do not accept a cell. Every listed cell remains pending until
 it passes the audit's A0, native, browser, input, and transition gates.
 
-The [SW-14 strategic-windowing reconciliation](evidence/2026-10-25-strategic-windowing-acceptance.md)
+The [strategic-windowing reconciliation](evidence/2026-10-25-strategic-windowing-acceptance.md)
 records backend and candidate-gate completion only; it changes no checklist
 row or strict cell status.
 

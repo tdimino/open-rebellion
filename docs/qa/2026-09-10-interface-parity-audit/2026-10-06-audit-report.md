@@ -20,9 +20,9 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 | Family status | 2 complete (OBJ-01, EVT-03), 15 partial, 26 fail |
 | Strictly accepted required cells | 28 of 627 |
 
-The 2026-10-25 SW-14 reconciliation records completion of the bounded
-strategic-windowing backend/evidence sequence at candidate r29. It does not
-change any strict family or cell status; see
+The strategic-windowing reconciliation records the window manager's backend
+and browser evidence. It does not change any strict family or cell status;
+see
 [the reconciliation record](evidence/2026-10-25-strategic-windowing-acceptance.md).
 
 The practical percentage measures scoped implementation work and guides the

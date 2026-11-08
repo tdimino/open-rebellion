@@ -536,22 +536,9 @@ API-shaping evidence until their call contexts are named.
     the same classes/routing and corroborated cross-family raise, Sector-close
     survival, and Status/Build/Mission/Move blocking and dismissal.
 
-## Historical Rust seams replaced by PR #46
+## Port seams
 
-Before PR #46, the port had useful feature boundaries but no single window
-authority:
-
-- `crates/rebellion-app/src/main.rs` defines `FrameKeyboardOwner` for only
-  Cockpit versus Encyclopedia, assembles `GalaxyMapState::pointer_blocked`
-  from a hand-maintained family list, and separately calculates
-  `strategic_input_enabled`.
-- `sector_window.rs`, `system_window.rs`, `fleet_window.rs`,
-  `defenses_window.rs`, and `missions_window.rs` each own private `Vec`s of
-  open instances and independently call `egui::Context::move_to_top`.
-- Finder, Message, Encyclopedia, Status, menus, and confirmations independently
-  choose foreground/tooltip ordering and input gates.
-
-The renderer-independent kernel now exposes:
+The renderer-independent kernel exposes:
 
 - semantic `WindowKind` plus opaque session `WindowId` and optional owner;
 - declared cardinality and existing-open policy (`NoOp`, `RaiseRestore`,
@@ -572,11 +559,7 @@ Those are adapters/evidence, not domain API. `rebellion-windowing` owns the
 semantic lifecycle, order, focus, modality, capture, and routing snapshot;
 `rebellion-render` adapts snapshots to egui and physical input; and
 `rebellion-app::StrategicWindowing` owns feature publication, scenes, and the
-commit boundary. Final Linux/VPS regression evidence and its exact source and
-artifact hashes are recorded in the
-[strategic-windowing acceptance record](../../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md).
-That checkpoint does not close the unresolved original-runtime or
-native-Windows items below.
+commit boundary.
 
 ## Unresolved and deliberately non-load-bearing details
 

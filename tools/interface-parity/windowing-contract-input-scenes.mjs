@@ -1006,10 +1006,8 @@ async function runJourneyD(context, setup, caseId = "journey-d") {
     routes: setup.monitor.routes,
     point: closePoint,
     label: "replacement owner close",
-    skipMoveReceipt: true,
     expectedDown: { recipient: `window:${ownerId}`, application: "none" },
     expectedRelease: { recipient: `window:${ownerId}`, application: "fleet_window" },
-    batchActions: true,
   });
   const ownerClosed = await setup.monitor.wait(
     "identity-history-state",

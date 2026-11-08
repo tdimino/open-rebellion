@@ -7,16 +7,14 @@ each case with audio muted. The fixture bridge exists only in the separate
 `interface-test-fixtures` WASM build. Production HTML and WASM are checked for
 fixture imports and markers.
 
-From this directory, install the pinned Node packages with `npm ci`. Build the
-fixture site on the current trusted host from the repository root; no remote
-build machine is required:
+From this directory, install the pinned Node packages with `npm ci`. The
+fixture build runs Cargo, which runs only on the Mac Mini, so build the
+fixture site there from the repository root:
 
 ```sh
-bash scripts/build-interface-test-wasm.sh
+scripts/mini-cargo.sh --run ./scripts/build-interface-test-wasm.sh \
+  --pull web/open-rebellion.wasm --pull .artifacts/interface-parity/site/
 ```
-
-An operator may choose a separately configured build host, but the harness
-does not initiate or require access to another machine.
 
 Then run the gates with `--no-build`, which reuses that verified build;
 without it a gate builds in place:
@@ -69,7 +67,7 @@ original-game acceptance. Explicit named journey selections are likewise
 reported as focused evidence, even when their declared groups happen to span
 A-E; only the validated default inventory reports complete A-E scope.
 
-Build once on the current host (above) and reuse that exact fixture artifact with:
+Build once on the Mini (above) and reuse that exact fixture artifact with:
 
 ```sh
 node windowing-contract.mjs --no-build --case adapter-smoke

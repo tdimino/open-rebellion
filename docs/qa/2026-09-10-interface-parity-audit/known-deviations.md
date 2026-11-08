@@ -6,7 +6,7 @@ waiver. Only rows marked **Approved extension** may remain outside the parity
 denominator, and only while they cannot replace, obscure, overlap, or change an
 original path.
 
-The 2026-10-25 [SW-14 reconciliation](evidence/2026-10-25-strategic-windowing-acceptance.md)
+The [strategic-windowing reconciliation](evidence/2026-10-25-strategic-windowing-acceptance.md)
 adds no deviation and changes no deviation ID, state, or affected-cell list.
 
 **Temporary** and **Unapproved** rows keep every affected original cell open.

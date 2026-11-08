@@ -44,25 +44,6 @@ test("Journey D Fleet minimize waits for owner route receipts", () => {
     "Fleet minimize release must identify the exact owner action");
 });
 
-test("Journey D replacement-owner close keeps press and release in one input batch", () => {
-  const source = readFileSync(new URL("./windowing-contract-input-scenes.mjs", import.meta.url), "utf8");
-  const start = source.indexOf("const ownerCloseStart = setup.monitor.states.length;");
-  const end = source.indexOf("const ownerClosed = await setup.monitor.wait(", start);
-  assert.ok(start >= 0 && end > start, "Journey D exposes its replacement-owner close");
-  const close = source.slice(start, end);
-
-  assert.match(close, /await pressWithRouteReceipts\(\{[\s\S]*?label: "replacement owner close"/,
-    "replacement-owner close must use the routed pointer helper");
-  assert.match(close, /skipMoveReceipt: true/,
-    "Fleet titlebar movement must not assume a pointer-ready receipt");
-  assert.match(close, /batchActions: true/,
-    "replacement-owner close must not schedule mouse-up in a later browser frame");
-  assert.match(close, /expectedDown: \{ recipient: `window:\$\{ownerId\}`, application: "none" \}/,
-    "replacement-owner press must identify the exact surviving owner");
-  assert.match(close, /expectedRelease: \{ recipient: `window:\$\{ownerId\}`, application: "fleet_window" \}/,
-    "replacement-owner release must identify the exact close action");
-});
-
 test("GID submenu arms its state barrier before an awaited hover can publish", async () => {
   const module = await import("./windowing-contract-input-scenes.mjs");
   const states = [{ status: "input-scenes-state", menu_rects: [[10, 20, 30, 40]] }];

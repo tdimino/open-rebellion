@@ -26,8 +26,8 @@ The current CMD-02 GID catalog has 38 scenarios (29 baseline cells and nine addi
 | Family status | 2 complete, 15 partial, 26 fail |
 | Strictly accepted required cells | 28 of 627 |
 
-The SW-14 strategic-windowing backend/evidence reconciliation at r29 does not
-promote strict interface parity; see its evidence record.
+The strategic-windowing backend and evidence reconciliation does not promote
+strict interface parity; see its evidence record.
 
 The practical percentage is an implementation-planning estimate. The strict
 cell count remains the release authority because each cell still needs its
@@ -140,7 +140,7 @@ navigation, animation, audio presentation, and the absence of invented UI.
 | [P66A Encyclopedia topic-source evidence](evidence/2026-10-01-encyclopedia-topic-source-bindings.md) | Strict extraction of 348 prose records and 191 artwork mappings, exact ordinary/system/faction lookup identities, and 346 complete visible topics per faction; P68 supersedes the former source-empty interpretation. |
 | [W2-W7 / E30 / E32 / E34 / E35 Encyclopedia implementation evidence](evidence/README.md#current-strategic-correction) | Immutable installation, pure presentation, authentic topic rendering, canonical native/browser publication and journeys, original-first HD selection, deterministic atomic native overlays, strict new-package content, production cockpit/contextual routing, exact returns, old-pack unavailable compatibility, and twelve passing original-executable-under-Wine comparisons. Gameplay-only/hidden-record exclusion is A0-not-applicable and passes functionally. By explicit user decision, all thirteen `OBJ-01` cells pass the current evidence gate without claiming native-Windows parity. |
 | [Strategic window routing/coordinator evidence](evidence/2026-10-12-strategic-window-routing-coordinator.md) | Immutable routes, fail-closed reconciliation, scene membership, stable render identities, one-event ownership, and the production commit boundary. Infrastructure only; no visual cell is promoted. |
-| [SW-14 strategic-windowing reconciliation](evidence/2026-10-25-strategic-windowing-acceptance.md) | Reconciles the accepted r29 candidate and browser/native evidence across SW-00–SW-14. Backend/evidence completion only; strict family and cell counts are unchanged, and original-runtime/native-Windows/A0/System Finder gaps remain open. |
+| [Strategic-windowing reconciliation](evidence/2026-10-25-strategic-windowing-acceptance.md) | Reconciles the window manager's browser and native evidence. Backend/evidence completion only; strict family and cell counts are unchanged, and original-runtime/native-Windows/A0/System Finder gaps remain open. |
 | [Evidence index](evidence/README.md) | Reports and artifact bundles, including a required `README.md` inventory for each new bundle. |
 | [JSON Schema](schemas/interface-parity.schema.json) | Validation contract for the audit summary and status vocabulary. |
 | [Ledger validator](../../../scripts/validate-interface-parity-ledgers.mjs) | Dependency-free generator and consistency gate for cell IDs and retrieval-package links. |

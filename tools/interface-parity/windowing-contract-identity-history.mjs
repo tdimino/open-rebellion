@@ -857,10 +857,16 @@ async function runJourneyA(context, setup) {
         target,
         "the exposed Defenses click did not establish explicit keyboard focus",
       );
-      assert.deepEqual(
-        detail(transition.after, defensesOpen.systemDatId, "defenses").selection,
-        detail(transition.before, defensesOpen.systemDatId, "defenses").selection,
-        "clicking the current Defenses tab changed its content",
+      // A fresh detail opens without the focus, so the press activates it;
+      // nothing else in the published state may move.
+      const unfocused = (state) => {
+        const { focused: _focused, ...snapshot } = state.snapshot;
+        return JSON.stringify(compact({ ...state, snapshot }));
+      };
+      assert.equal(
+        unfocused(transition.after),
+        unfocused(transition.before),
+        "clicking the current Defenses tab changed more than the keyboard focus",
       );
     }
     assert.equal(

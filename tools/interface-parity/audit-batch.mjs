@@ -356,6 +356,10 @@ async function inspect(server, source, faction, executable) {
     await key(page, "Escape");
     // A rail light: 0x136 opens Popular Support (0x7a).
     await click(page, faction.railLight);
+    // The rail light names itself on the queued receipt; the manager's
+    // terminal receipt names the category it opened.
+    checks.rail_opener_log = await logged("rail light 0x136 asks for Popular Support",
+      /command=0x136 destination=message_index category=0x7a status=queued_shared/);
     checks.rail_log = await logged("the rail light opens its category",
       /destination=message_index category=0x7a status=opened_managed/);
     await stableShot(page, directory, "message-index-rail");

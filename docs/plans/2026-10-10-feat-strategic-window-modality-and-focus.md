@@ -3,7 +3,7 @@ title: "Strategic Window Modality and Focus"
 description: "Design for recovering the original strategic-window contract, introducing a renderer-independent windowing crate, and migrating the existing strategic surfaces to one focus and input authority"
 type: feat
 status: active
-progress: "80%: shared authority, family migrations, and final-candidate VPS regression verification complete; native-Windows, original-runtime, System Finder, and A0 parity remain open"
+progress: "83% — workstreams 1-5 landed (shared authority and every family migration); workstream 6's native-Windows, original-runtime, System Finder and A0 acceptance remain open"
 updated: 2026-11-07
 created: 2026-10-10
 tags: [interface, parity, windowing, focus, modality, input, architecture]
@@ -412,13 +412,11 @@ No renderer integration belongs in this workstream.
 Integrate Sector, System, Fleet, Defenses, Missions, and any other recovered
 modeless strategic family. Preserve content and appearance. Remove private
 global-focus meaning and per-family layer raising as each family migrates.
-The earlier r29 checkpoint recorded the egui adapter, coordinator, modeless
-family migrations, shared history, capture and focus-loss cancellation, and
-frame-scoped routing. Its
+The egui adapter, coordinator, modeless family migrations, shared history,
+capture and focus-loss cancellation, and frame-scoped routing have landed; the
 [strategic-windowing reconciliation](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md)
-is evidence for that revision only. It does not establish acceptance of the
-current post-merge branch. Original-runtime/A0 comparisons and native-Windows
-evidence remain open.
+records their browser and native evidence. Original-runtime/A0 comparisons and
+native-Windows evidence remain open.
 
 ### Workstream 4: migrate strategic modals
 
@@ -426,9 +424,9 @@ Integrate Status, all Finder families, Message, and Encyclopedia. Replace the
 relevant handwritten application pointer and keyboard exceptions only after
 each reachable member of this proven manual set uses the shared authority. Add
 the outside-modal input barrier and preserve focused child-control behavior.
-The r29 reconciliation includes its bounded backend journeys, but the current
-post-merge candidate must rerun them. Missing System Finder content and
-original visual/runtime acceptance remain open.
+The reconciliation records the backend journeys on the reviewed source.
+Missing System Finder content and original visual/runtime acceptance remain
+open.
 
 ### Workstream 5: migrate owned children and Battle Summary
 
@@ -438,9 +436,9 @@ and pointer-scope questions for each reachable dialog. Both-faction runtime
 now establishes a whole-view boundary for Build Selection, Mission creation,
 and Move confirmation. Battle Alert and Battle Summary retain an explicit
 conservative whole-view port policy with their audit cells open. Do not
-classify a dialog by resemblance; use the research matrix. The bounded backend
-and production-package journeys are recorded at r29 without changing their
-manual-facing strict audit statuses.
+classify a dialog by resemblance; use the research matrix. The backend and
+production-package journeys are recorded without changing their manual-facing
+strict audit statuses.
 
 ### Workstream 6: remove duplicate authorities and accept the feature
 

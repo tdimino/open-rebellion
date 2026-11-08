@@ -2347,7 +2347,7 @@ mod tests {
     }
 
     /// The app's answer to the window: the checkmark stops the band
-    /// (`PanelAction::StopProduction`), the X leaves it.
+    /// (the app's `commit_stop_confirmation`), the X leaves it.
     fn answer(
         action: Option<StopConfirmationAction>,
         manufacturing: &mut rebellion_core::manufacturing::ManufacturingState,

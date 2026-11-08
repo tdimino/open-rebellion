@@ -17,7 +17,9 @@ export function cropPng(png, viewport, rect) {
   return out;
 }
 
-export function logicalCropDifference(actual, actualRect, expected, expectedRect, viewport) {
+export function logicalCropDifference(
+  actual, actualRect, expected, expectedRect, viewport, { threshold = 0.2 } = {},
+) {
   const actualPixels = cropPng(actual, viewport, actualRect);
   const expectedPixels = cropPng(expected, viewport, expectedRect);
   assert.equal(actualPixels.length, expectedPixels.length,
@@ -32,7 +34,7 @@ export function logicalCropDifference(actual, actualRect, expected, expectedRect
     null,
     width,
     height,
-    { threshold: 0.2, includeAA: false },
+    { threshold, includeAA: false },
   );
   return { differentPixels, differenceRatio: differentPixels / (width * height) };
 }
@@ -43,4 +45,10 @@ export function logicalCropDifference(actual, actualRect, expected, expectedRect
 export function movableWindowBody({ x, y, width, height }) {
   assert.ok(width > 4 && height > 24, "movable window must contain a client body");
   return { x: x + 2, y: y + 22, width: width - 4, height: height - 24 };
+}
+
+// The 20-pixel title strip above that body, inside the frame.
+export function movableWindowTitle({ x, y, width }) {
+  assert.ok(width > 4, "movable window must have a title strip");
+  return { x: x + 2, y: y + 2, width: width - 4, height: 20 };
 }

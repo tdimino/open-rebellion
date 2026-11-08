@@ -120,12 +120,6 @@ pub enum PanelAction {
     },
 
     // ── Manufacturing ─────────────────────────────────────────────────────────
-    /// Stop (`0x213`): `system`'s `area` drops every unit it was building
-    /// (`ManufacturingState::stop`).
-    StopProduction {
-        system: SystemKey,
-        area: rebellion_core::manufacturing::ProductionArea,
-    },
     /// Build Selection's Confirm (`FUN_00438980`): `count` units of `kind`
     /// replace what `system`'s `area` was building.
     BuildProduction {

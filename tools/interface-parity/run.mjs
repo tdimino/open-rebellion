@@ -13,7 +13,9 @@ import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { performCommand } from "./command-events.mjs";
 import { launchBrowser, summarizeBrowserAttempts } from "./browser-launch.mjs";
-import { cropPng, logicalCropDifference, movableWindowBody } from "./window-raster.mjs";
+import {
+  cropPng, logicalCropDifference, movableWindowBody, movableWindowTitle,
+} from "./window-raster.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -296,11 +298,17 @@ function decodeTacticalBmp(id) {
 const SYSTEM_FIXTURE_WINDOW = { x: 225, y: 76, width: 226, height: 304 };
 // Fractional 1.666x letterbox scaling changes the raster phase after a
 // logical drag. A correct move differs by at most 5.064%; an unmoved control
-// differs by 54.6% at the same pixelmatch threshold.
+// differs by 54.6% at the same pixelmatch threshold. At a whole scale the
+// moved pixels are the same pixels.
 const MAX_DRAG_RASTER_DIFFERENCE = 0.055;
-const windowContent = ({ x, y, width, height }) => ({
-  x: x + 2, y: y + 2, width: width - 4, height: height - 4,
-});
+function dragCropMatches(actual, actualRect, expected, expectedRect, viewport) {
+  const scale = Math.min(viewport.width / 640, viewport.height / 480);
+  const difference = logicalCropDifference(actual, actualRect, expected, expectedRect, viewport);
+  const matches = Number.isInteger(scale)
+    ? sha256(cropPng(actual, viewport, actualRect)) === sha256(cropPng(expected, viewport, expectedRect))
+    : difference.differenceRatio <= MAX_DRAG_RASTER_DIFFERENCE;
+  return { matches, exact: Number.isInteger(scale), ...difference };
+}
 
 // FUN_00422ce0 0x132 builds the GID menu with FUN_00451130 at (370,233) for
 // side 1 and (420,233) for side 2, 160 by 160.
@@ -527,11 +535,19 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     await performCommand(page, "destination=gid status=selected label=Display Off",
       () => page.mouse.click(displayOff.x, displayOff.y));
     const settled = await stableInteractionFrame(page, folder, "row-choice-restored");
+    // Display Off repaints the galaxy around the window. At a fractional
+    // letterbox scale the window's outermost pixel row blends with it (817 and
+    // 814 edge pixels at 1280x800, none inside), so only there the crop
+    // starts one logical pixel in.
+    const rowChoiceScale = Math.min(viewport.width / 640, viewport.height / 480);
+    const restoredWindow = Number.isInteger(rowChoiceScale)
+      ? SYSTEM_FIXTURE_WINDOW
+      : { x: SYSTEM_FIXTURE_WINDOW.x + 1, y: SYSTEM_FIXTURE_WINDOW.y + 1,
+        width: SYSTEM_FIXTURE_WINDOW.width - 2, height: SYSTEM_FIXTURE_WINDOW.height - 2 };
     assert.equal(
-      sha256(cropPng(PNG.sync.read(settled), viewport,
-        windowContent(SYSTEM_FIXTURE_WINDOW))),
+      sha256(cropPng(PNG.sync.read(settled), viewport, restoredWindow)),
       sha256(cropPng(PNG.sync.read(fs.readFileSync(path.join(folder, "actual.png"))),
-        viewport, windowContent(SYSTEM_FIXTURE_WINDOW))),
+        viewport, restoredWindow)),
       `${faction}: a row choice did not bring the System window back`,
     );
     probes.push({ type: "row-choice-restores-windows", window: SYSTEM_FIXTURE_WINDOW });
@@ -553,17 +569,30 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     const moved = { ...SYSTEM_FIXTURE_WINDOW, x: SYSTEM_FIXTURE_WINDOW.x - 40,
       y: SYSTEM_FIXTURE_WINDOW.y - 20 };
     const dragged = await stableInteractionFrame(page, folder, "title-dragged");
-    const titleDragDifference = logicalCropDifference(
+    const titleDragDifference = dragCropMatches(
       PNG.sync.read(dragged), movableWindowBody(moved),
       PNG.sync.read(settled), movableWindowBody(SYSTEM_FIXTURE_WINDOW),
       viewport,
     );
     assert.ok(
-      titleDragDifference.differenceRatio <= MAX_DRAG_RASTER_DIFFERENCE,
+      titleDragDifference.matches,
       `${faction}: a title drag did not carry the System window with the pointer`,
     );
+    // The press activates the window (FUN_004534f0 sends 0x467), so its
+    // title strip repaints from the settled one. Exact colours: the Alliance
+    // strips (179,4,4 inactive, 255,0,0 active) sit inside pixelmatch's
+    // default tolerance.
+    const activation = logicalCropDifference(
+      PNG.sync.read(dragged), movableWindowTitle(moved),
+      PNG.sync.read(settled), movableWindowTitle(SYSTEM_FIXTURE_WINDOW),
+      viewport, { threshold: 0 },
+    );
+    assert.ok(
+      activation.differenceRatio > MAX_DRAG_RASTER_DIFFERENCE,
+      `${faction}: the press that took hold of the System window left its title strip unchanged`,
+    );
     probes.push({ type: "title-drag-moves-window", from: SYSTEM_FIXTURE_WINDOW, to: moved,
-      ...titleDragDifference });
+      ...titleDragDifference, title_activation_ratio: activation.differenceRatio });
     // Any press on the window's bare surface takes hold too (FUN_004534f0
     // passes it to the base unless it lands on a band); here the margin
     // left of the facility list.
@@ -581,17 +610,25 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     await page.mouse.up();
     const bodyMoved = { ...moved, x: moved.x + 30, y: moved.y + 10 };
     const bodyDragged = await stableInteractionFrame(page, folder, "body-dragged");
-    const bodyDragDifference = logicalCropDifference(
+    const bodyDragDifference = dragCropMatches(
       PNG.sync.read(bodyDragged), movableWindowBody(bodyMoved),
       PNG.sync.read(settled), movableWindowBody(SYSTEM_FIXTURE_WINDOW),
       viewport,
     );
     assert.ok(
-      bodyDragDifference.differenceRatio <= MAX_DRAG_RASTER_DIFFERENCE,
+      bodyDragDifference.matches,
       `${faction}: a press on the bare surface did not carry the System window`,
     );
+    // Still the active window: the second drag's strip is the first's.
+    const activeTitle = dragCropMatches(
+      PNG.sync.read(bodyDragged), movableWindowTitle(bodyMoved),
+      PNG.sync.read(dragged), movableWindowTitle(moved),
+      viewport,
+    );
+    assert.ok(activeTitle.matches,
+      `${faction}: the System window's title strip changed between two drags`);
     probes.push({ type: "body-drag-moves-window", from: moved, to: bodyMoved,
-      ...bodyDragDifference });
+      ...bodyDragDifference, active_title_ratio: activeTitle.differenceRatio });
   } else if (scenario.slug === "display-off") {
     const displayOff = menuPoint(477, 372);
     await performCommand(page, "destination=gid status=selected label=Display Off",

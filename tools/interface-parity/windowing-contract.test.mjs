@@ -49,11 +49,11 @@ function observation(overrides = {}) {
         recipient: "root",
         application_recipient: "gid_menu",
         underlay_action_count: 0,
-        observed_command: "[interface] command=0x132 destination=gid_menu status=opened_managed",
+        observed_command: "[interface] command=0x132 destination=gid_menu status=opened_managed identity=WindowId(1)",
         observed_route: "[windowing-route] physical=41:2 kind=pointer router=root application=gid_menu underlay=0",
         observed_actions: [
           "[interface] command=0x132 destination=gid_menu status=queued",
-          "[interface] command=0x132 destination=gid_menu status=opened_managed",
+          "[interface] command=0x132 destination=gid_menu status=opened_managed identity=WindowId(1)",
         ],
       },
       {
@@ -678,6 +678,45 @@ test("adapter smoke counts a queued and terminal GID receipt as one application 
     ),
     /underlay.*zero/i,
   );
+  assert.throws(
+    () => smokeEventFromReceipts(
+      "pointer-open",
+      opened,
+      "[windowing-route] physical=25:0 kind=pointer router=root application=gid_menu underlay=0",
+      [queued, queued, opened],
+    ),
+    /queued its action more than once/i,
+    "a doubled GID open is two actions, not one",
+  );
+});
+
+test("adapter smoke routes the Display Off press to the GID menu's own identity", () => {
+  const routed = (recipient) => {
+    const value = observation();
+    const select = value.events[1];
+    value.events[1] = {
+      ...select,
+      recipient,
+      observed_route: select.observed_route.replace("router=window:1", `router=${recipient}`),
+    };
+    return value;
+  };
+  assert.ok(assertAdapterSmokeObservation(routed("window:1")) > 0);
+  assert.throws(
+    () => assertAdapterSmokeObservation(routed("window:4")),
+    /not the GID menu window:1/,
+    "a Display Off press that reached another window passed",
+  );
+  const unnamed = observation();
+  unnamed.events[0] = {
+    ...unnamed.events[0],
+    observed_command: "[interface] command=0x132 destination=gid_menu status=opened_managed",
+    observed_actions: [
+      "[interface] command=0x132 destination=gid_menu status=queued",
+      "[interface] command=0x132 destination=gid_menu status=opened_managed",
+    ],
+  };
+  assert.throws(() => assertAdapterSmokeObservation(unnamed), /names no GID menu identity/);
 });
 
 test("adapter smoke CLI and GID geometry are deterministic", () => {

@@ -1335,6 +1335,10 @@ async function inspect(server, source, faction, testCase, executable) {
     assert.deepEqual(coreRequests.map(({ url }) => url).sort(), [...expectedRequests].sort());
     assert.ok(coreRequests.every(({ status }) => status === 200), "startup has non-200 requests");
     assert.ok(movieRequests.every(({ status }) => status === 200), "a story movie failed to load");
+    // Each story movie is fetched once, for the one movie the game played.
+    const moviesPlayed = consoleLines.filter(({ text }) => text.startsWith("[movie] ended ")).length;
+    assert.equal(movieRequests.length, moviesPlayed,
+      `movie requests ${JSON.stringify(movieRequests.map(({ url }) => url))} for ${moviesPlayed} played movies`);
     assert.deepEqual(errors, [], `browser diagnostics: ${errors.join("; ")}`);
     result = {
       status: "pass",
