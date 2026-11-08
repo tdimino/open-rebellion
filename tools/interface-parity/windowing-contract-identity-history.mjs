@@ -1214,10 +1214,12 @@ async function runJourneyB(context, setup) {
     },
   );
   assert.equal(detail(restoredMiddle.after, minimizedFleet.systemDatId, "fleet").id, minimizedFleet.id);
-  assert.deepEqual(
-    restoredMiddle.after.snapshot.focused,
-    restoredMiddle.before.snapshot.focused,
-    "middle-history restore changed keyboard focus",
+  // A rail restore ends by sending 0x467 with the restored window
+  // (FUN_00429020), which focuses it (FUN_00422ce0 0x467).
+  assert.equal(
+    restoredMiddle.after.snapshot.focused?.window,
+    minimizedFleet.id,
+    "middle-history restore did not focus the restored Fleet",
   );
   assert.equal(
     JSON.stringify(detail(restoredMiddle.after, minimizedFleet.systemDatId, "fleet").selection),
@@ -1242,10 +1244,12 @@ async function runJourneyB(context, setup) {
     "pointer-B05-reopen-minimized-system",
   );
   assert.equal(detail(reopenedSystem.after, minimizedSystem.systemDatId, "system").id, minimizedSystem.id);
+  // FUN_0045aac0 reopens a minimized detail through FUN_00429020, which
+  // focuses it like a rail restore.
   assert.equal(
     reopenedSystem.after.snapshot.focused?.window,
-    systemByDatId(reopenedSystem.before, minimizedSystem.systemDatId).sector_id,
-    "normal-opener restore stole keyboard focus from its Sector",
+    minimizedSystem.id,
+    "normal-opener restore did not focus the restored System",
   );
   assert.ok(
     !reopenedSystem.after.snapshot.history.includes(minimizedSystem.id),
@@ -1360,10 +1364,10 @@ async function runJourneyB(context, setup) {
       firstFrame: true,
     },
   );
-  assert.deepEqual(
-    freshRestore.after.snapshot.focused,
-    freshRestore.before.snapshot.focused,
-    "fresh rail restore changed keyboard focus",
+  assert.equal(
+    freshRestore.after.snapshot.focused?.window,
+    restoreSlot.id,
+    "fresh rail restore did not focus the restored window (FUN_00429020)",
   );
   assert.equal(
     freshRestore.before.snapshot.history.length - freshRestore.after.snapshot.history.length,

@@ -1552,29 +1552,35 @@ fn draw_system_windows_with_snapshot(
             (Some(BandRenameOutcome::Typed(text)), Some(_)) => Some(text.clone()),
             _ => None,
         };
-        let rename_press_claimed = match (
+        // FUN_004534f0 0x201/0x204 finishes the edit (FUN_00458780) and then
+        // handles the same press: it selects the band under it or passes it
+        // on to FUN_004ac3a0, so the press is not consumed by the rename.
+        let rename_press = match (
             rename_press_text,
             result.rename_field,
             router.as_deref_mut(),
         ) {
             (Some(text), Some(field), Some(router)) => {
-                let claimed =
-                    claim_band_rename_press(router, pointer_events, window, layout, field)
-                        .is_some();
-                if claimed {
+                let press = claim_band_rename_press(router, pointer_events, window, layout, field);
+                if press.is_some() {
                     result.rename = Some(BandRenameOutcome::Commit(text));
                 }
-                claimed
+                press
             }
-            _ => false,
+            _ => None,
         };
-        if !rename_press_claimed {
-            if let Some(grab) = result.drag_grab {
-                state.title_drag = Some(TitleDrag {
-                    area: area_id(window.system),
-                    grab,
-                });
-            }
+        if let Some(grab) = result.drag_grab {
+            state.title_drag = Some(TitleDrag {
+                area: area_id(window.system),
+                grab,
+            });
+        }
+        // Escape goes to the focused window: the field passes it to its own
+        // System window (FUN_00605160 -> FUN_00458980) only while that window
+        // holds the keyboard focus (gid-legend.md, "Escape and the keyboard
+        // focus"), so an unfocused window's open edit ignores this frame's Escape.
+        if !focused && matches!(result.rename, Some(BandRenameOutcome::Escape)) {
+            result.rename = None;
         }
         match (result.rename.clone(), rename) {
             (Some(BandRenameOutcome::Typed(text)), Some(_)) => {
@@ -1638,6 +1644,9 @@ fn draw_system_windows_with_snapshot(
                             })
                             .flatten()
                     })
+                    // The rename already claimed this window's press; the
+                    // same press drives the rest (FUN_004534f0 0x201/0x204).
+                    .or(rename_press)
                     .is_some()
             }
             (Some(_), true, None) => false,
@@ -4292,6 +4301,211 @@ mod tests {
         };
         state.remove_content(&closed);
         assert!(!state.contains_window(id));
+    }
+
+    #[test]
+    fn the_press_that_ends_a_band_rename_also_selects_the_pressed_band_for_both_factions() {
+        // FUN_004534f0 0x201/0x204 first finishes the edit (FUN_00458780), posts
+        // 0x467, then hit-tests the bands with the same press and selects the
+        // band it hits (param_1[0x92]), else passes the press on to
+        // FUN_004ac3a0 (FUN_004534f0.c:57-100). The release comes in a later
+        // frame, as in an ordinary click.
+        for (faction, button, egui_button) in [
+            (
+                CockpitFaction::Alliance,
+                PointerButtonId::Primary,
+                egui::PointerButton::Primary,
+            ),
+            (
+                CockpitFaction::Empire,
+                PointerButtonId::Secondary,
+                egui::PointerButton::Secondary,
+            ),
+        ] {
+            let (mut world, systems) = fixture_world(1);
+            let system = systems[0];
+            world.systems[system].control = ControlKind::Controlled(cockpit_faction(faction));
+            let layout = layout(faction, 2.0);
+            let mut manager = WindowManager::new();
+            let mut state = SystemWindowState::default();
+            let prepared = state
+                .prepare_open(&world, system, ORIGIN, faction, layout)
+                .unwrap();
+            let (id, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+            manager.apply(WindowCommand::Activate(id)).unwrap();
+            assert!(state.begin_band_rename(system, ProductionArea::Shipyard, "Death Star 1"));
+            assert_ne!(BAND_AREAS[1], ProductionArea::Shipyard);
+
+            let ctx = egui::Context::default();
+            let mut router = FrameInputRouter::default();
+            let mut cache = BmpCache::new();
+            let movement = rebellion_core::movement::MovementState::default();
+            let fog = FogState::new(cockpit_faction(faction));
+            let missions = MissionState::new();
+            let manufacturing = ManufacturingState::new();
+            let deliveries = DeliveryState::new();
+            let mut actions = Vec::new();
+
+            let (bx, by, bw, bh) = BAND_RECTS[1];
+            let point = at(bx + bw / 2.0, by + bh / 2.0);
+            let mut frames = after_opening(vec![vec![egui::Event::Text("Tarkin".into())]]);
+            frames.push(vec![egui::Event::PointerMoved(point)]);
+            frames.push(vec![egui::Event::PointerButton {
+                pos: point,
+                button: egui_button,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            }]);
+            let press_frame = frames.len();
+            for (index, events) in frames.into_iter().enumerate() {
+                let frame = u64::try_from(index + 1).unwrap();
+                let snapshot = manager.begin_frame();
+                router.begin_frame(frame, &snapshot);
+                let routed = if index + 1 == press_frame {
+                    let press = InputEventId { frame, ordinal: 0 };
+                    let phase = PointerPhase::Press(button);
+                    assert_eq!(
+                        router.collect_pointer(press, &std::collections::BTreeSet::from([id]), phase),
+                        InputRecipient::Window(id)
+                    );
+                    vec![SystemWindowInputEvent {
+                        id: press,
+                        point: (point.x, point.y),
+                        phase,
+                    }]
+                } else {
+                    Vec::new()
+                };
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1400.0, 1000.0),
+                    )),
+                    events,
+                    ..egui::RawInput::default()
+                };
+                let _ = ctx.run(input, |ctx| {
+                    actions.extend(draw_managed_system_windows(
+                        ctx,
+                        &world,
+                        &movement,
+                        &fog,
+                        &missions,
+                        &manufacturing,
+                        &deliveries,
+                        &mut state,
+                        faction,
+                        layout,
+                        &mut cache,
+                        &snapshot,
+                        &routed,
+                        &mut router,
+                        true,
+                        &|_| true,
+                    ));
+                });
+            }
+
+            assert!(
+                actions.contains(&SystemWindowAction::RenameProduct {
+                    system,
+                    area: ProductionArea::Shipyard,
+                    name: "Tarkin".into(),
+                }),
+                "the press ends the edit for {faction:?}: {actions:?}"
+            );
+            assert!(!state.band_rename_open(), "{faction:?}");
+            assert_eq!(
+                state.selection(system).and_then(|(_, band)| band),
+                Some(BAND_AREAS[1]),
+                "FUN_004534f0 selects the pressed band with the same press for {faction:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn band_rename_escape_leaves_the_window_open_while_another_window_has_the_focus() {
+        // Escape goes to the focused window: the field passes it to its own
+        // System window (FUN_00605160 -> FUN_00458980) only while that window
+        // holds the keyboard focus (gid-legend.md, "Escape and the keyboard
+        // focus"). A click on another window moves the focus there first.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (mut world, systems) = fixture_world(2);
+            for system in &systems {
+                world.systems[*system].control =
+                    ControlKind::Controlled(cockpit_faction(faction));
+            }
+            let layout = layout(faction, 2.0);
+            let mut manager = WindowManager::new();
+            let mut state = SystemWindowState::default();
+            let prepared = state
+                .prepare_open(&world, systems[0], ORIGIN, faction, layout)
+                .unwrap();
+            let (renaming, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+            let prepared = state
+                .prepare_open(&world, systems[1], (ORIGIN.0 + 200, ORIGIN.1), faction, layout)
+                .unwrap();
+            let (other, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+            manager.apply(WindowCommand::Activate(renaming)).unwrap();
+            assert!(state.begin_band_rename(systems[0], ProductionArea::Shipyard, "Death Star 1"));
+
+            let ctx = egui::Context::default();
+            let mut router = FrameInputRouter::default();
+            let mut cache = BmpCache::new();
+            let movement = rebellion_core::movement::MovementState::default();
+            let fog = FogState::new(cockpit_faction(faction));
+            let missions = MissionState::new();
+            let manufacturing = ManufacturingState::new();
+            let deliveries = DeliveryState::new();
+            let mut actions = Vec::new();
+            let frames = after_opening(vec![
+                vec![egui::Event::Text("Tarkin".into())],
+                vec![key(egui::Key::Escape)],
+            ]);
+            let escape_frame = frames.len();
+            for (index, events) in frames.into_iter().enumerate() {
+                if index + 1 == escape_frame {
+                    manager.apply(WindowCommand::Activate(other)).unwrap();
+                }
+                let frame = u64::try_from(index + 1).unwrap();
+                let snapshot = manager.begin_frame();
+                router.begin_frame(frame, &snapshot);
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1400.0, 1000.0),
+                    )),
+                    events,
+                    ..egui::RawInput::default()
+                };
+                let _ = ctx.run(input, |ctx| {
+                    actions.extend(draw_managed_system_windows(
+                        ctx,
+                        &world,
+                        &movement,
+                        &fog,
+                        &missions,
+                        &manufacturing,
+                        &deliveries,
+                        &mut state,
+                        faction,
+                        layout,
+                        &mut cache,
+                        &snapshot,
+                        &[],
+                        &mut router,
+                        true,
+                        &|_| true,
+                    ));
+                });
+            }
+
+            assert!(
+                !actions.contains(&SystemWindowAction::Close(renaming)),
+                "an unfocused window's rename closed it on Escape for {faction:?}: {actions:?}"
+            );
+            assert!(state.contains_window(renaming), "{faction:?}");
+        }
     }
 
     #[test]

@@ -302,12 +302,6 @@ const windowContent = ({ x, y, width, height }) => ({
   x: x + 2, y: y + 2, width: width - 4, height: height - 4,
 });
 
-function sectorFixtureWindow(faction) {
-  return faction === "alliance"
-    ? { x: 60, y: 35, width: 235, height: 360 }
-    : { x: 120, y: 40, width: 235, height: 360 };
-}
-
 // FUN_00422ce0 0x132 builds the GID menu with FUN_00451130 at (370,233) for
 // side 1 and (420,233) for side 2, 160 by 160.
 function gidMenuOrigin(faction) {
@@ -607,37 +601,19 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     probes.push({ type: "root-selection", mode: "Display Off" });
   } else {
     // Escape never closes the menu: its procedure (FUN_004aab50) posts 0x405
-    // for its own key, which the view has not registered. When a child was
-    // hidden, the 0x467 focus walk reveals and raises it over the still-open
-    // menu (under Wine, alliance-day54-advice day 61 and
-    // empire-fleet-to-yaga-minor days 39-42).
+    // for its own key, which the view has not registered, then 0x467(0,0).
+    // With the view's current child empty that only focuses the view
+    // (FUN_00422ce0 0x467): the fixture's Sector opens as a galaxy
+    // double-click does (FUN_00429ce0, no 0x467), so it stays hidden. Under
+    // Wine, alliance-day54-advice day 61: the Corellian sector window, the
+    // first GID press, then Escape changed nothing.
     await page.mouse.move(galaxyPoint.x, galaxyPoint.y);
     const openCapture = await stableInteractionFrame(page, folder, "menu-open");
     await page.keyboard.press("Escape");
     const escaped = await stableInteractionFrame(page, folder, "menu-escape");
-    if (scenario.slug === "sector") {
-      const menuRect = { x: menu.x, y: menu.y, width: 160, height: 160 };
-      const sectorRect = windowContent(sectorFixtureWindow(faction));
-      assert.equal(
-        sha256(cropPng(PNG.sync.read(escaped), viewport, windowContent(menuRect))),
-        sha256(cropPng(PNG.sync.read(openCapture), viewport, windowContent(menuRect))),
-        `${faction}: Escape removed or changed the open GID menu`,
-      );
-      assert.equal(
-        sha256(cropPng(PNG.sync.read(escaped), viewport, sectorRect)),
-        sha256(cropPng(PNG.sync.read(fs.readFileSync(path.join(folder, "actual.png"))),
-          viewport, sectorRect)),
-        `${faction}: Escape did not reveal and raise the hidden Sector window`,
-      );
-      assert.notEqual(sha256(escaped), sha256(openCapture),
-        `${faction}: Escape left the hidden Sector window hidden`);
-      probes.push({ type: "menu-escape-reveals-window", window: sectorFixtureWindow(faction),
-        screenshot_sha256: sha256(escaped) });
-    } else {
-      assert.equal(sha256(escaped), sha256(openCapture),
-        `${faction} ${scenario.slug}: Escape changed the open GID menu`);
-      probes.push({ type: "menu-escape-stays-open", screenshot_sha256: sha256(escaped) });
-    }
+    assert.equal(sha256(escaped), sha256(openCapture),
+      `${faction} ${scenario.slug}: Escape changed the open GID menu or revealed a hidden window`);
+    probes.push({ type: "menu-escape-stays-open", screenshot_sha256: sha256(escaped) });
     // A rail light is a child window beside the menu (FUN_00427270, 0x13d):
     // it opens the Message Index, and once that closes the menu is still open
     // with the windows hidden (the original, alliance-day54-advice, day 61).
@@ -648,7 +624,7 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     await page.mouse.move(galaxyPoint.x, galaxyPoint.y);
     const afterIndex = await stableInteractionFrame(page, folder, "rail-under-menu-closed");
     assert.equal(sha256(afterIndex), sha256(escaped),
-      `${faction} ${scenario.slug}: a rail light changed the open GID menu or its revealed windows`);
+      `${faction} ${scenario.slug}: a rail light changed the open GID menu or showed a hidden window`);
     probes.push({ type: "rail-leaves-menu-open", observed: railObserved,
       screenshot_sha256: sha256(afterIndex) });
     if (scenario.slug === "galaxy") {

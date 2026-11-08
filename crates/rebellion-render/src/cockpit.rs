@@ -3024,7 +3024,7 @@ mod tests {
         // submenu a second presentation identity, lets root rows lose input.
         let mut manager = rebellion_windowing::WindowManager::new();
         let mut menu = crate::game_menu::ManagedMenuState::default();
-        let prepared = menu.prepare_gid_open();
+        let prepared = menu.prepare_gid_open(false);
         let opened = manager
             .apply(prepared.command())
             .expect("root-owned GID menu opens without a modal");
@@ -3149,7 +3149,7 @@ mod tests {
         assert!(!router.claim_root(trigger_press));
 
         let menu = crate::game_menu::ManagedMenuState::default();
-        assert!(manager.apply(menu.prepare_gid_open().command()).is_ok());
+        assert!(manager.apply(menu.prepare_gid_open(false).command()).is_ok());
         assert_eq!(
             manager.begin_frame().active_modal(),
             Some(frame.active_modal().unwrap())

@@ -292,6 +292,11 @@ pub struct WindowManager {
     focused: Option<crate::FocusTarget>,
     previous_eligible: Option<crate::FocusTarget>,
     saved_menu_focus: BTreeMap<WindowId, Option<crate::FocusTarget>>,
+    /// The strategic view's current child (`param_1[0x2e]`): the window the
+    /// last 0x467 made current, possibly since closed. Only 0x467 writes it
+    /// (`FUN_00422ce0.c:1160-1177`); a menu or modal that focuses itself on
+    /// open does not.
+    current_child: Option<WindowId>,
     capture_owner: Option<WindowId>,
     active_windows: BTreeSet<WindowId>,
     next_id: Option<NonZeroU64>,
@@ -327,6 +332,7 @@ impl WindowManager {
             focused: None,
             previous_eligible: None,
             saved_menu_focus: BTreeMap::new(),
+            current_child: None,
             capture_owner: None,
             active_windows: BTreeSet::new(),
             next_id: Some(NonZeroU64::MIN),
@@ -632,6 +638,7 @@ impl WindowManager {
         self.focused = None;
         self.previous_eligible = None;
         self.saved_menu_focus.clear();
+        self.current_child = None;
         self.active_windows.clear();
         if focused_before.is_some() {
             events.push(WindowEvent::FocusChanged {
@@ -1028,6 +1035,9 @@ impl WindowManager {
                 window: id,
                 control: None,
             }));
+            // port: no original galaxy child focuses itself on open; a
+            // modeless detail that does is treated as made current.
+            self.make_current_child(id);
         } else if self.focused.map_or_else(
             || self.active_modal().is_some(),
             |target| !self.is_focus_eligible(target.window),
@@ -1061,6 +1071,7 @@ impl WindowManager {
             focused: self.focused,
             previous_eligible: self.previous_eligible,
             saved_menu_focus: self.saved_menu_focus.clone(),
+            current_child: self.current_child,
             capture_owner: self.capture_owner,
             active_windows: self.active_windows.clone(),
             next_id: self.next_id,
@@ -1114,6 +1125,7 @@ impl WindowManager {
         self.validate_focus_target(target)?;
         let previous = self.focused;
         self.set_focus(Some(target));
+        self.make_current_child(target.window);
         Ok(WindowCommit {
             transition: WindowTransition::Focused {
                 previous,
@@ -1188,9 +1200,13 @@ impl WindowManager {
         })
     }
 
+    /// Strategic message 0x467 with no window (`FUN_00422ce0.c:1137-1190`),
+    /// posted by the GID menu's Escape. While the view's current child is
+    /// empty it focuses the view alone; otherwise it walks to the topmost
+    /// eligible child, which becomes the current child.
     fn restore_focus(&mut self) -> Result<WindowCommit, WindowError> {
         let previous = self.focused;
-        let current = self.topmost_eligible_restoration();
+        let current = self.current_child_walk();
         if let Some(target) = current {
             self.raise_visible(target.window)?;
         }
@@ -1213,6 +1229,7 @@ impl WindowManager {
         let previous = self.focused;
         self.raise_visible(id)?;
         self.set_focus(Some(target));
+        self.make_current_child(id);
         Ok(WindowCommit {
             transition: WindowTransition::Raised { id },
             events: (previous != Some(target))
@@ -1393,8 +1410,11 @@ impl WindowManager {
             focused_before
         } else if let Some(saved) = eligible_saved_menu_target {
             saved
-        } else {
+        } else if self.active_modal().is_some() {
             self.topmost_eligible_restoration()
+        } else {
+            // A keyed close posts 0x467(0,0) through the view's 0x405 handler.
+            self.current_child_walk()
         };
         self.focused = restored_focus;
         if focused_before != restored_focus {
@@ -1577,6 +1597,7 @@ impl WindowManager {
                 return Err(WindowError::InvalidPlacement);
             }
         }
+        let focused_before = self.focused;
         let insertion = self.proposed_insertion_index(spec);
         let mut proposed_order = self.visible_order.clone();
         proposed_order.insert(insertion, id);
@@ -1586,9 +1607,24 @@ impl WindowManager {
         self.presentation_history.retain(|entry| *entry != id);
         self.visible_order = proposed_order;
         self.serialized_order = serialized_order;
+        // FUN_00429020 ends by sending 0x467 with the restored window
+        // (FUN_00429020.c:85); FUN_00422ce0 0x467 shows, raises and focuses it.
+        if self.is_focus_eligible(id) {
+            self.set_focus(Some(crate::FocusTarget {
+                window: id,
+                control: None,
+            }));
+            self.make_current_child(id);
+        }
         Ok(WindowCommit {
             transition: WindowTransition::Restored { id },
-            events: Vec::new(),
+            events: (focused_before != self.focused)
+                .then_some(WindowEvent::FocusChanged {
+                    previous: focused_before,
+                    current: self.focused,
+                })
+                .into_iter()
+                .collect(),
         })
     }
 
@@ -1677,6 +1713,28 @@ impl WindowManager {
                 window,
                 control: None,
             })
+    }
+
+    /// Records `id` as the view's current child when it is a galaxy child:
+    /// 0x467 makes Sector and detail windows current, while a menu
+    /// (`FUN_004511e0`) or a strategic modal focuses itself.
+    fn make_current_child(&mut self, id: WindowId) {
+        let spec = self.registry[&id].spec;
+        if spec.key.kind != WindowKind::Menu && spec.policy.input != InputPolicy::StrategicModal {
+            self.current_child = Some(id);
+        }
+    }
+
+    /// 0x467 with no window: an empty current child focuses the view alone
+    /// (`FUN_00422ce0.c:1145-1148`, `:1181-1182`); otherwise the walk makes
+    /// the topmost eligible child current (`:1157-1173`).
+    fn current_child_walk(&mut self) -> Option<crate::FocusTarget> {
+        if self.current_child.is_none() {
+            return None;
+        }
+        let walked = self.topmost_eligible_restoration();
+        self.current_child = walked.map(|target| target.window);
+        walked
     }
 
     fn validate_new_spec(&self, spec: WindowSpec) -> Result<(), WindowError> {

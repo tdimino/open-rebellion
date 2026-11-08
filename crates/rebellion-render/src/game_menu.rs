@@ -83,9 +83,19 @@ impl ManagedMenuState {
     /// Prepares the command-center GID menu under its strategic-root
     /// invoker. Unlike other root menus, native `FUN_00427270` leaves this
     /// menu open while command-center controls and accelerators act.
+    ///
+    /// `built` is whether the galaxy view has built its menu already
+    /// ([`crate::cockpit::GidUiState::built`]). `FUN_00422ce0` 0x132 builds
+    /// it only when the view has none, and that build's `WM_CREATE` step
+    /// (`FUN_004511e0`) ends with `SetFocus` on the menu; a later press
+    /// reuses `+0x118` and only shows it, leaving the focus where it was
+    /// (gid-legend.md, "Escape and the keyboard focus").
     #[must_use]
-    pub fn prepare_gid_open(&self) -> PreparedMenuOpen {
+    pub fn prepare_gid_open(&self, built: bool) -> PreparedMenuOpen {
         let mut prepared = self.prepare_open_for(WindowOwner::StrategicRoot);
+        if built {
+            prepared.spec.policy.focus_on_open = rebellion_windowing::FocusOnOpen::Preserve;
+        }
         prepared.spec.policy.input = rebellion_windowing::InputPolicy::Modeless;
         // FUN_00427270 leaves the GID menu registered while Message Index and
         // other strategic modals open above it. Keep this root presentation
@@ -1638,7 +1648,7 @@ mod tests {
         let mut manager = rebellion_windowing::WindowManager::new();
         let detail = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
         let mut menu = ManagedMenuState::default();
-        let prepared = menu.prepare_gid_open();
+        let prepared = menu.prepare_gid_open(false);
         let opened = manager.apply(prepared.command()).unwrap();
         let menu_id = menu.commit_open(prepared, &opened.transition).unwrap();
         let modal_spec = crate::windowing_policy::singleton_spec(

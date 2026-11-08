@@ -3790,9 +3790,14 @@ pub(crate) mod tests {
         );
         assert!(state.window_is_visible(&manager.begin_frame(), system));
         assert!(state.window_mut(system).unwrap().rename.is_some());
-        // Publication restores the existing Fleet owner first. The renderer
-        // requests child focus only after the Rename widget is realized.
-        assert_eq!(state.keyboard_owner(&manager.begin_frame()), None);
+        // Publication restores the existing Fleet owner first: FUN_0045aac0
+        // reopens a minimized detail through FUN_00429020, whose 0x467 focuses
+        // it (FUN_00429020.c:85). The renderer requests child focus only
+        // after the Rename widget is realized.
+        assert_eq!(
+            state.keyboard_owner(&manager.begin_frame()),
+            Some((id, false))
+        );
     }
 
     #[test]

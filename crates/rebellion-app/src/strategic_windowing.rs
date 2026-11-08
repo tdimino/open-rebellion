@@ -316,9 +316,22 @@ impl PhysicalInputRoutingCursor {
     /// renderer to resolve. A press outside a dismiss-on-outside menu closes
     /// the blocker, while a strategic modal remains fail-closed. The returned
     /// command is queued at the ordinary production commit boundary.
+    ///
+    /// A press inside a menu activates nothing: only the GID menu's building
+    /// press focuses it (`FUN_004511e0` `SetFocus`), and the menu
+    /// (`FUN_004aab50`) takes no capture (gid-legend.md, "Presses while the
+    /// menu is open"). hyp: no recovered path focuses a menu on a press
+    /// inside it.
     pub fn project_pointer_press(&mut self, route: RouteTarget) -> Option<WindowCommand> {
         let snapshot = self.snapshot();
         let command = match route {
+            RouteTarget::Window(target)
+                if snapshot
+                    .key(target.window)
+                    .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Menu) =>
+            {
+                return None;
+            }
             RouteTarget::Window(target)
                 if snapshot
                     .focused()

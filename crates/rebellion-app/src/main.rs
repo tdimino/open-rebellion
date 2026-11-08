@@ -6566,7 +6566,7 @@ mod frame_input_tests {
         let mut manager = WindowManager::new();
         let mut managed = ManagedMenuState::default();
         let mut gid = GidUiState::default();
-        let prepared = managed.prepare_gid_open();
+        let prepared = managed.prepare_gid_open(gid.built);
         assert!(!gid.menu_open);
         let opened = manager.apply(prepared.command()).unwrap();
         let menu_id = super::commit_managed_gid_menu(
@@ -6648,9 +6648,17 @@ mod frame_input_tests {
             WindowTransition::Opened { id } => id,
             transition => panic!("detail did not open: {transition:?}"),
         };
+        // The load ends by focusing the top shown non-Sector window
+        // (`finish_interface_restore`), which makes Coruscant the view's
+        // current child for the GID Escape's 0x467 walk.
+        coordinator.enqueue(WindowCommand::Focus(rebellion_windowing::FocusTarget {
+            window: detail,
+            control: None,
+        }));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
         let mut managed = ManagedMenuState::default();
         let mut gid = GidUiState::default();
-        let prepared = managed.prepare_gid_open();
+        let prepared = managed.prepare_gid_open(gid.built);
         coordinator.enqueue(prepared.command());
         let opened = coordinator.apply_pending().remove(0).result.unwrap();
         let menu_id = super::commit_managed_gid_menu(
@@ -6735,6 +6743,172 @@ mod frame_input_tests {
         assert!(gid.menu_open);
         assert!(gid.windows_hidden);
         assert!(coordinator.begin_frame().key(menu_id).is_some());
+    }
+
+    #[test]
+    fn gid_escape_over_a_fresh_sector_reveals_nothing_and_leaves_the_view_focused() {
+        // Source: FUN_00422ce0 0x467 with no window only focuses the view
+        // while its current child is empty (FUN_00422ce0.c:1145-1148). A
+        // Sector opened by a galaxy double-click (FUN_00429ce0, HWND_BOTTOM,
+        // no 0x467) leaves it empty. Wine, alliance-day54-advice loaded at
+        // day 61: the Corellian sector window, the first GID press, then
+        // Escape changed nothing (gid-legend.md, "Escape and the keyboard
+        // focus").
+        use rebellion_render::cockpit::GidUiState;
+        use rebellion_render::game_menu::ManagedMenuState;
+        use rebellion_render::windowing_policy::contextual_spec;
+        use rebellion_windowing::{SubjectId, WindowCommand, WindowKind, WindowOwner};
+
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::Sector,
+            SubjectId::new(1, 60),
+            WindowOwner::StrategicRoot,
+        )));
+        let sector = match coordinator
+            .apply_pending()
+            .remove(0)
+            .result
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("sector did not open: {transition:?}"),
+        };
+        assert_eq!(coordinator.begin_frame().focused(), None);
+
+        let mut managed = ManagedMenuState::default();
+        let mut gid = GidUiState::default();
+        let prepared = managed.prepare_gid_open(gid.built);
+        coordinator.enqueue(prepared.command());
+        let opened = coordinator.apply_pending().remove(0).result.unwrap();
+        let menu_id = super::commit_managed_gid_menu(
+            &mut managed,
+            &mut gid,
+            prepared,
+            &opened.transition,
+            [],
+        )
+        .unwrap();
+
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(7, &coordinator.begin_frame());
+        let mut routing = coordinator.physical_input_routing_cursor();
+        let keys = StrategicRootKeyBatch::collect_from_indexed_raw_sequential(
+            7,
+            &mut router,
+            &[StrategicIndexedKeyEvent {
+                ordinal: 0,
+                event: StrategicRawKeyEvent {
+                    key: macroquad::prelude::KeyCode::Escape,
+                    alt: false,
+                    repeat: false,
+                },
+            }],
+            &mut routing,
+            Some(menu_id),
+        );
+        assert_eq!(
+            router.keyboard_recipient(keys.events[0].id),
+            InputRecipient::Window(menu_id),
+            "the first GID press gives the menu the focus (FUN_004511e0)"
+        );
+        assert_eq!(
+            keys.sequential_escape_commands(),
+            &[(keys.events[0].id, WindowCommand::RestoreFocus, None)],
+            "the Escape reveals no window"
+        );
+        for (_, command, _) in keys.sequential_escape_commands() {
+            coordinator.enqueue(*command);
+        }
+        assert!(coordinator
+            .apply_pending()
+            .iter()
+            .all(|applied| applied.result.is_ok()));
+        let frame = coordinator.begin_frame();
+        assert_eq!(frame.focused(), None, "the view keeps the focus");
+        assert!(frame.key(sector).is_some());
+        assert!(frame.key(menu_id).is_some(), "the GID menu stays open");
+        assert!(gid.menu_open);
+        assert!(gid.windows_hidden);
+    }
+
+    #[test]
+    fn a_reused_gid_menu_leaves_the_focus_where_it_was() {
+        // Source: FUN_00422ce0 0x132 builds the menu (FUN_00451130, whose
+        // WM_CREATE step FUN_004511e0 ends with SetFocus) only when the view
+        // has none; a later press reuses +0x118 and only shows it. Wine,
+        // empire-fleet-to-yaga-minor after day 45: the menu closed by a
+        // galaxy press and opened again, and Escapes did nothing
+        // (gid-legend.md, "Escape and the keyboard focus").
+        use rebellion_render::cockpit::GidUiState;
+        use rebellion_render::game_menu::ManagedMenuState;
+        use rebellion_render::windowing_policy::contextual_spec;
+        use rebellion_windowing::{SubjectId, WindowCommand, WindowKind, WindowOwner};
+
+        let mut coordinator = StrategicWindowing::new();
+        for (kind, namespace, subject) in [(WindowKind::Sector, 1, 60), (WindowKind::System, 2, 61)]
+        {
+            coordinator.enqueue(WindowCommand::Open(contextual_spec(
+                kind,
+                SubjectId::new(namespace, subject),
+                WindowOwner::StrategicRoot,
+            )));
+            assert!(coordinator.apply_pending()[0].result.is_ok());
+        }
+        assert_eq!(coordinator.begin_frame().focused(), None);
+
+        let mut managed = ManagedMenuState::default();
+        let mut gid = GidUiState::default();
+        let mut object_menu = None;
+        let mut witness = None;
+        let mut speed = rebellion_render::game_speed::GameSpeedUiState::default();
+        let mut agent = rebellion_render::agent_menu::AgentMenuState::default();
+        let open_gid = |coordinator: &mut StrategicWindowing,
+                        managed: &mut ManagedMenuState,
+                        gid: &mut GidUiState| {
+            let prepared = managed.prepare_gid_open(gid.built);
+            coordinator.enqueue(prepared.command());
+            let opened = coordinator.apply_pending().remove(0).result.unwrap();
+            super::commit_managed_gid_menu(managed, gid, prepared, &opened.transition, [])
+                .expect("GID menu publishes")
+        };
+
+        let first = open_gid(&mut coordinator, &mut managed, &mut gid);
+        assert_eq!(
+            coordinator.begin_frame().focused().map(|focus| focus.window),
+            Some(first),
+            "the building press focuses the menu"
+        );
+        assert!(gid.built);
+
+        // A galaxy release closes the menu (FUN_00422ce0 0x202).
+        coordinator.enqueue(WindowCommand::Close(first));
+        let removed = match coordinator
+            .apply_pending()
+            .remove(0)
+            .result
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Closed { closed, .. } => closed,
+            transition => panic!("expected close, got {transition:?}"),
+        };
+        super::remove_managed_menu_content(
+            &mut managed,
+            &mut object_menu,
+            &mut witness,
+            &mut gid,
+            &mut speed,
+            &mut agent,
+            &removed,
+        );
+        let before = coordinator.begin_frame().focused();
+
+        let second = open_gid(&mut coordinator, &mut managed, &mut gid);
+        let frame = coordinator.begin_frame();
+        assert!(frame.key(second).is_some(), "the reused menu shows");
+        assert_eq!(frame.focused(), before, "the reused menu leaves the focus");
     }
 
     #[test]
@@ -9977,6 +10151,100 @@ mod panel_toggle_tests {
         assert_eq!(applied.len(), 1, "the real commit queues one activation");
         assert!(applied[0].result.is_ok());
         assert_eq!(coordinator.begin_frame().focused().unwrap().window, fleet);
+    }
+
+    #[test]
+    fn a_press_inside_the_open_gid_menu_leaves_the_focus_on_the_system_window() {
+        // Source: gid-legend.md, "Presses while the menu is open" and "Escape and
+        // the keyboard focus": the menu (FUN_004aab50) takes no capture and only
+        // the building GID press focuses it (FUN_004511e0 SetFocus). After Escape
+        // #1 showed and focused Coruscant over the open menu, Escape #2 closed it
+        // (empire-fleet-to-yaga-minor, days 38-45). hyp: no recovered path
+        // focuses a menu on a press inside it.
+        use rebellion_render::cockpit::GidUiState;
+        use rebellion_render::game_menu::ManagedMenuState;
+        use rebellion_render::windowing_policy::contextual_spec;
+        use rebellion_windowing::{
+            SubjectId, WindowCommand, WindowKind, WindowOwner, WindowTransition,
+        };
+
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::System,
+            SubjectId::new(2, 101),
+            WindowOwner::StrategicRoot,
+        )));
+        let system = match coordinator
+            .apply_pending()
+            .remove(0)
+            .result
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected System open, got {transition:?}"),
+        };
+
+        let mut managed = ManagedMenuState::default();
+        let mut gid = GidUiState::default();
+        let prepared = managed.prepare_gid_open(gid.built);
+        coordinator.enqueue(prepared.command());
+        let opened = coordinator.apply_pending().remove(0).result.unwrap();
+        let menu = super::commit_managed_gid_menu(
+            &mut managed,
+            &mut gid,
+            prepared,
+            &opened.transition,
+            [],
+        )
+        .expect("GID menu publishes");
+
+        // Escape #1's walk (or a click on the System) has focused the System.
+        coordinator.enqueue(WindowCommand::Activate(system));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        let frame = coordinator.begin_frame();
+        assert_eq!(
+            frame.focused().map(|focus| focus.window),
+            Some(system),
+            "precondition: the System holds the focus with the GID menu open"
+        );
+
+        let mut collector = StrategicRawInputCollector::default();
+        collector.mouse_button_down_event(MouseButton::Left, 400.0, 300.0);
+        let raw = collector.take();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(61, &frame);
+        let mut routing = coordinator.physical_input_routing_cursor();
+        let (pointers, _) = super::collect_strategic_input_in_physical_order(
+            61,
+            &mut router,
+            &raw,
+            &mut routing,
+            Some(menu),
+            |_| std::iter::once(menu).collect(),
+        );
+        assert_eq!(
+            router.pointer_recipient(pointers.events[0].id),
+            InputRecipient::Window(menu),
+            "precondition: the press inside the GID menu routes to the menu"
+        );
+        assert!(
+            !pointers
+                .projected_lifecycle_commands()
+                .iter()
+                .any(|(_, command)| *command == WindowCommand::Activate(menu)),
+            "press on the GID menu projected Activate({menu:?}): {:?}",
+            pointers.projected_lifecycle_commands()
+        );
+        for (_, command) in pointers.projected_lifecycle_commands() {
+            coordinator.enqueue(*command);
+        }
+        let _ = coordinator.apply_pending();
+        assert_eq!(
+            coordinator.begin_frame().focused().map(|focus| focus.window),
+            Some(system),
+            "the System keeps the focus"
+        );
     }
 
     #[test]
@@ -17986,7 +18254,8 @@ async fn main() {
                                 )
                                 .command_id;
                                 if !cockpit_state.gid_ui.menu_open {
-                                    let prepared = managed_menu.prepare_gid_open();
+                                    let prepared = managed_menu
+                                        .prepare_gid_open(cockpit_state.gid_ui.built);
                                     strategic_windowing.enqueue(prepared.command());
                                     pending_gid_menu_publications.push(prepared);
                                     strategic_dispatch_restricted = true;
@@ -29740,7 +30009,6 @@ mod managed_interface_save_tests {
                 restore_manager_owned(&world, &order, faction);
             let fleet_id = fleets.window_id(fleet_system).unwrap();
             let current_position = fleets.window_logical_position(fleet_system).unwrap();
-            let focus_before = strategic.begin_frame().focused();
             assert!(systems.rail_holds_fleet(fleet_id), "{faction:?}");
             assert_ne!(current_position, STALE_RAIL_POSITION, "{faction:?}");
 
@@ -29787,7 +30055,13 @@ mod managed_interface_save_tests {
                 Some(&fleet_id),
                 "{faction:?}"
             );
-            assert_eq!(snapshot.focused(), focus_before, "{faction:?}");
+            // FUN_00429020.c:85: the restore sends 0x467 with the window,
+            // and FUN_00422ce0 0x467 gives it the focus.
+            assert_eq!(
+                snapshot.focused().map(|focus| focus.window),
+                Some(fleet_id),
+                "{faction:?}"
+            );
             assert_eq!(fleets.window_id(fleet_system), Some(fleet_id));
             assert_eq!(
                 fleets.window_logical_position(fleet_system),
@@ -29809,7 +30083,6 @@ mod managed_interface_save_tests {
                 restore_manager_owned(&world, &order, faction);
             let fleet_id = fleets.window_id(fleet_system).unwrap();
             let current_position = fleets.window_logical_position(fleet_system).unwrap();
-            let focus_before = strategic.begin_frame().focused();
             let action = click_first_reference_rail_slot(&world, &mut systems, &strategic, faction);
             assert_eq!(
                 action,
@@ -29847,7 +30120,13 @@ mod managed_interface_save_tests {
                 Some(&fleet_id),
                 "{faction:?}"
             );
-            assert_eq!(snapshot.focused(), focus_before, "{faction:?}");
+            // FUN_00429020.c:85: the restore sends 0x467 with the window,
+            // and FUN_00422ce0 0x467 gives it the focus.
+            assert_eq!(
+                snapshot.focused().map(|focus| focus.window),
+                Some(fleet_id),
+                "{faction:?}"
+            );
             assert_eq!(fleets.window_id(fleet_system), Some(fleet_id));
             assert_eq!(
                 fleets.window_logical_position(fleet_system),
@@ -30160,8 +30439,8 @@ mod managed_interface_save_tests {
             assert!(after_restore.is_visible(restored_minimized), "{faction:?}");
             assert_eq!(
                 after_restore.focused().unwrap().window,
-                expected_load_focus.unwrap(),
-                "{faction:?}; rail restore preserves the existing keyboard owner"
+                restored_minimized,
+                "{faction:?}; the rail restore focuses the restored window (FUN_00429020.c:85)"
             );
         }
     }

@@ -222,10 +222,21 @@ identity, z-order and focus. Fresh Sector and detail windows use
 changes only z-order. Close, minimize and scene transitions consult each
 family's `FocusRestoration` policy and otherwise walk manager order from the
 top to the first eligible window. `GidUiState::open_menu` hides galaxy
-children without minimizing them. Escape at the managed GID-menu identity
-keeps that menu open, applies `RestoreFocus`, and adds the revealed child to
-`GidUiState::shown`; controls, hotkeys and a strategic modal may still act
-over the modeless root menu. A load replays serialized order with
+children without minimizing them. The building GID press opens the menu
+with `FocusOnOpen::Window`; a reused menu (`GidUiState::built`) opens with
+`FocusOnOpen::Preserve`, and a press inside a menu activates nothing.
+The manager keeps the view's current child (`param_1[0x2e]`), which only
+0x467 writes: activation, `Focus`, a rail restore and each walk's result;
+a menu or modal that focuses itself on open leaves it unchanged. Escape at
+the managed GID-menu identity keeps that menu open and applies
+`RestoreFocus`, and a keyed close with no family restoration falls back the
+same way: with no current child the view alone takes the focus
+(`FUN_00422ce0.c:1145-1148`); otherwise the walk shows, raises and focuses
+the top eligible child, which becomes current, and adds it to
+`GidUiState::shown`. A rail restore or the reopen of a minimized detail
+focuses the restored window (`FUN_00429020.c:85`). Controls, hotkeys and a
+strategic modal may still act over the modeless root menu. A load replays
+serialized order with
 focus-preserving `Raise`, then focuses the top shown non-Sector identity.
 Keyboard routing snapshots are per physical event: an Escape retains one
 owner, but a later Escape in the same frame observes the projected close or
