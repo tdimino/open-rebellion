@@ -22893,10 +22893,17 @@ fn enqueue_operation_report_action(
 
     let destination = report_destination(action);
     match action {
+        // Close (FUN_0044df90 case 10) goes through FUN_00469d60, which posts
+        // the Index back while its return is set. An alert's own Close carries
+        // no category, so it keeps the return its Index replacement recorded,
+        // as the Escape path does.
         OperationReportAction::Closed { reopen_index } => {
-            *pending_reopen_index = *reopen_index;
+            *pending_reopen_index = reopen_index.or(*pending_reopen_index);
         }
+        // Go To (FUN_0044df90 cases 0xb/0xc) calls FUN_00469db0, which clears
+        // the Index return (DAT_006b2910 = 0).
         OperationReportAction::GotoSystem { .. } | OperationReportAction::GotoFleet { .. } => {
+            *pending_reopen_index = None;
             *prepared_destination = destination;
         }
     }
@@ -26214,18 +26221,29 @@ mod report_destination_tests {
     }
 
     #[test]
-    fn report_goto_precedes_a_choice_from_the_reopened_message_index() {
+    fn a_report_go_to_from_the_message_index_leaves_the_index_closed() {
+        // FUN_0044df90 cases 0xb/0xc (Goto System / Goto Fleet) call
+        // FUN_00469db0, which clears the Index return (DAT_006b2910 = 0);
+        // only case 10 (Close / Escape) calls FUN_00469d60, which posts the
+        // Message Index back (operation-report-window.md, Message Index route).
         const CATEGORY: u16 = 0x79;
         for faction in REPORT_FACTIONS {
             let (world, report_system, message) = report_fixture(0x6123, faction);
             let mut coordinator = StrategicWindowing::new();
             let (mut index, index_id) = open_message_index(&mut coordinator, CATEGORY);
             let mut report = ReportWindowHarness::default();
-            report.open(&world, &message, faction, Some(CATEGORY));
-            assert!(report.enqueue_publication(&mut coordinator, None, Some((index_id, CATEGORY)),));
+            assert!(report.open_from_index(
+                &mut coordinator,
+                &world,
+                &message,
+                faction,
+                CATEGORY,
+                Some(index_id),
+            ));
             let mut replaced = coordinator.apply_pending().remove(0);
             index.remove_content(&replaced.removed_content);
             report.commit(&mut coordinator, &mut replaced);
+            assert!(report.window_id.is_some(), "{faction:?}");
 
             let action = match faction {
                 CockpitFaction::Alliance => OperationReportAction::GotoSystem {
@@ -26246,40 +26264,67 @@ mod report_destination_tests {
             report.commit(&mut coordinator, &mut closed);
             assert!(report.state.message().is_none(), "{faction:?}");
             assert_eq!(report.destination, Some(expected), "{faction:?}");
+            assert!(
+                coordinator
+                    .apply_pending()
+                    .iter()
+                    .all(|receipt| receipt.message_index_content_id.is_none()),
+                "a report Go To reopened the Message Index over its destination for {faction:?}"
+            );
+        }
+    }
 
-            let mut reopened = coordinator.apply_pending().remove(0);
-            report.commit(&mut coordinator, &mut reopened);
-            let reopened_content = reopened
-                .message_index_content_id
-                .expect("the accepted report Close queues the Index publication");
+    #[test]
+    fn closing_an_alert_that_replaced_the_index_with_x_brings_the_index_back() {
+        // An alert over the open Index replaces it and records the Index
+        // category to return to; its own Close (FUN_0044df90 case 10 ->
+        // FUN_00469d60) carries none. X must keep that return, as Escape
+        // does, so both bring the Index back.
+        const CATEGORY: u16 = 0x79;
+        for faction in REPORT_FACTIONS {
+            let (world, _, alert) = report_fixture(0x7133, faction);
+            let mut coordinator = StrategicWindowing::new();
+            let (mut index, index_id) = open_message_index(&mut coordinator, CATEGORY);
+            let mut report = ReportWindowHarness::default();
+            report.open(&world, &alert, faction, None);
+            assert!(report.enqueue_publication(&mut coordinator, None, Some((index_id, CATEGORY))));
+            let mut replaced = coordinator.apply_pending().remove(0);
+            index.remove_content(&replaced.removed_content);
+            report.commit(&mut coordinator, &mut replaced);
+            assert!(report.window_id.is_some(), "{faction:?}");
+            assert_eq!(report.reopen_index, Some(CATEGORY), "{faction:?}");
+
+            // The X button: the draw returns Closed with the alert's own None.
+            report.action(
+                &mut coordinator,
+                &OperationReportAction::Closed { reopen_index: None },
+            );
+            let mut closed = coordinator.apply_pending().remove(0);
+            report.commit(&mut coordinator, &mut closed);
+            assert!(report.state.message().is_none(), "{faction:?}");
+            let mut reopened = coordinator.apply_pending();
+            assert_eq!(reopened.len(), 1, "{faction:?}");
+            let mut reopened = reopened.remove(0);
+            assert!(
+                reopened.message_index_content_id.is_some(),
+                "the Index the alert replaced did not come back after X for {faction:?}"
+            );
+            let prepared = reopened
+                .prepared_message_index
+                .take()
+                .expect("the reopened Index retains its category");
             let (reopened_id, _) = index
                 .commit_open(
-                    reopened
-                        .prepared_message_index
-                        .take()
-                        .expect("the reopened Index retains its category"),
+                    prepared,
                     &reopened
                         .result
                         .as_ref()
-                        .expect("the underlying Index reopens")
+                        .expect("the Index reopens")
                         .transition,
                 )
                 .expect("the Index accepts its exact reopen receipt");
-            assert_eq!(reopened_id, reopened_content, "{faction:?}");
+            assert_eq!(Some(reopened_id), reopened.message_index_content_id);
             assert_eq!(index.category(), CATEGORY, "{faction:?}");
-            assert!(
-                coordinator.acknowledge_message_index_publication(reopened_id),
-                "{faction:?}"
-            );
-
-            let (index_world, index_system, _) = report_fixture(0x6124, faction);
-            drop(index_world);
-            let index_choice = Some((index_system, FinderTarget::Defenses));
-            assert_eq!(
-                super::prefer_report_destination(report.destination.take(), index_choice),
-                Some(expected),
-                "{faction:?}"
-            );
         }
     }
 
