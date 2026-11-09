@@ -305,7 +305,7 @@ async function inspect(server, source, faction, executable) {
 
     // F4: FUN_00422ce0 case 0x73 -> FUN_0042a4d0, the Troop Finder.
     await key(page, "F4");
-    checks.troop_log = await logged("F4 opens the Troop Finder", /command=0x130 destination=troop_finder status=opened_original/);
+    checks.troop_log = await logged("F4 opens the Troop Finder", /command=0x130 destination=troop_finder status=opened_managed/);
     const troop = await stableShot(page, directory, "troop-finder");
     checks.troop_rail = compareRail(troop, origin, resource(source, faction.troopRail), "troop", directory,
       RAIL_BUTTONS[faction.name].slice(0, 2));
@@ -318,7 +318,7 @@ async function inspect(server, source, faction, executable) {
 
     // F5: case 0x74 -> FUN_0042a180, the Personnel Finder.
     await key(page, "F5");
-    checks.personnel_log = await logged("F5 opens the Personnel Finder", /command=0x12f destination=personnel_finder status=opened_original/);
+    checks.personnel_log = await logged("F5 opens the Personnel Finder", /command=0x12f destination=personnel_finder status=opened_managed/);
     const personnel = await stableShot(page, directory, "personnel-finder");
     checks.personnel_rail = compareRail(personnel, origin, resource(source, faction.personnelRail), "personnel", directory,
       RAIL_BUTTONS[faction.name]);
@@ -342,7 +342,7 @@ async function inspect(server, source, faction, executable) {
 
     // F6: case 0x75 -> FUN_0042a240(.., 0x79), All. A second F6 while it
     // is open does nothing; Close (0x28) closes it, and F6 opens it again.
-    const opens = /destination=message_index category=0x79 status=opened_original/;
+    const opens = /destination=message_index category=0x79 status=opened_managed/;
     await key(page, "F6");
     checks.index_log = await logged("F6 opens the Message Index on All", opens);
     await stableShot(page, directory, "message-index");
@@ -356,8 +356,12 @@ async function inspect(server, source, faction, executable) {
     await key(page, "Escape");
     // A rail light: 0x136 opens Popular Support (0x7a).
     await click(page, faction.railLight);
+    // The rail light names itself on the queued receipt; the manager's
+    // terminal receipt names the category it opened.
+    checks.rail_opener_log = await logged("rail light 0x136 asks for Popular Support",
+      /command=0x136 destination=message_index category=0x7a status=queued_shared/);
     checks.rail_log = await logged("the rail light opens its category",
-      /command=0x136 destination=message_index category=0x7a status=opened_original/);
+      /destination=message_index category=0x7a status=opened_managed/);
     await stableShot(page, directory, "message-index-rail");
     await key(page, "Escape");
 

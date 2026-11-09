@@ -7,7 +7,10 @@ use egui_macroquad::egui;
 
 use crate::bmp_cache::BmpCache;
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::game_menu::{draw_game_menu, GameMenuEntry, GameMenuPlacement, GameMenuResponse};
+use crate::game_menu::{
+    draw_game_menu, game_menu_rects, GameMenuEntry, GameMenuPlacement, GameMenuResponse,
+    OwnedMenuOutcome,
+};
 
 const AGENT_MENU_ID: &str = "original-agent-menu";
 
@@ -168,9 +171,24 @@ pub struct AgentMenuState {
     pub anchor: Option<(f32, f32)>,
 }
 
-/// Open the menu on a right-button release over the agent's panel
-/// (`FUN_00422ce0` `WM_RBUTTONUP` → `FUN_004420b0`), anchored at the
-/// release. A release over a window or menu does not reach the panel.
+/// Canvas anchor for a routed secondary release over the agent panel.
+#[must_use]
+pub fn agent_menu_anchor(
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+    point: (f32, f32),
+) -> Option<(f32, f32)> {
+    (layout.scale > 0.0).then_some(())?;
+    let logical = (
+        (point.0 - layout.canvas.x) / layout.scale,
+        (point.1 - layout.canvas.y) / layout.scale,
+    );
+    agent_panel_contains(faction, logical).then_some(logical)
+}
+
+/// Fixture-only direct-egui adapter. Production opens through the normalized
+/// strategic pointer batch and the manager-owned Menu singleton.
+#[cfg(test)]
 pub fn open_agent_menu_on_right_click(
     ctx: &egui::Context,
     state: &mut AgentMenuState,
@@ -191,28 +209,38 @@ pub fn open_agent_menu_on_right_click(
     let Some(pointer) = pointer.filter(|_| released) else {
         return false;
     };
-    let point = (
-        (pointer.x - layout.canvas.x) / layout.scale,
-        (pointer.y - layout.canvas.y) / layout.scale,
-    );
-    if !agent_panel_contains(faction, point) {
+    let Some(anchor) = agent_menu_anchor(layout, faction, (pointer.x, pointer.y)) else {
         return false;
-    }
-    state.anchor = Some(point);
+    };
+    state.anchor = Some(anchor);
     true
 }
 
-/// Draw the open Agent menu and return the command chosen.
-pub fn draw_agent_menu(
+/// Root and currently visible child rectangles of the open Agent menu.
+#[must_use]
+pub fn agent_menu_rects(ctx: &egui::Context) -> Vec<egui::Rect> {
+    game_menu_rects(ctx, egui::Id::new(AGENT_MENU_ID))
+}
+
+/// Root and visible-submenu layers of the managed Agent menu.
+#[must_use]
+pub fn agent_menu_layer_ids(ctx: &egui::Context) -> Vec<egui::LayerId> {
+    crate::game_menu::game_menu_layer_ids(ctx, egui::Id::new(AGENT_MENU_ID))
+}
+
+/// Draw manager-owned Agent-menu content without deleting its payload.
+pub fn draw_owned_agent_menu(
     ctx: &egui::Context,
-    state: &mut AgentMenuState,
+    state: &AgentMenuState,
     cache: &mut BmpCache,
     layout: CockpitLayout,
     faction: CockpitFaction,
     view: AgentMenuView,
     input_enabled: bool,
-) -> Option<AgentCommand> {
-    let anchor = state.anchor?;
+) -> OwnedMenuOutcome<AgentCommand> {
+    let Some(anchor) = state.anchor else {
+        return OwnedMenuOutcome::Open;
+    };
     let items = agent_menu_items(view);
     let entries: Vec<GameMenuEntry<'_>> = items
         .iter()
@@ -235,15 +263,36 @@ pub fn draw_agent_menu(
         &entries,
         input_enabled,
     ) {
-        GameMenuResponse::Open => None,
-        // No row of this menu has a submenu; a choice in one closes it.
+        GameMenuResponse::Open => OwnedMenuOutcome::Open,
         GameMenuResponse::Dismissed | GameMenuResponse::ChosenChild { .. } => {
+            OwnedMenuOutcome::Dismissed
+        }
+        GameMenuResponse::Chosen(index) => items[index]
+            .command
+            .map_or(OwnedMenuOutcome::Open, OwnedMenuOutcome::Chosen),
+    }
+}
+
+/// Fixture-only wrapper retaining the original direct content lifecycle.
+#[cfg(test)]
+pub fn draw_agent_menu(
+    ctx: &egui::Context,
+    state: &mut AgentMenuState,
+    cache: &mut BmpCache,
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+    view: AgentMenuView,
+    input_enabled: bool,
+) -> Option<AgentCommand> {
+    match draw_owned_agent_menu(ctx, state, cache, layout, faction, view, input_enabled) {
+        OwnedMenuOutcome::Open => None,
+        OwnedMenuOutcome::Dismissed => {
             state.anchor = None;
             None
         }
-        GameMenuResponse::Chosen(index) => {
+        OwnedMenuOutcome::Chosen(command) => {
             state.anchor = None;
-            items[index].command
+            Some(command)
         }
     }
 }

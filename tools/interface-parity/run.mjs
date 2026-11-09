@@ -13,6 +13,9 @@ import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { performCommand } from "./command-events.mjs";
 import { launchBrowser, summarizeBrowserAttempts } from "./browser-launch.mjs";
+import {
+  cropPng, logicalCropDifference, movableWindowBody, movableWindowTitle,
+} from "./window-raster.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -293,21 +296,18 @@ function decodeTacticalBmp(id) {
 
 // The System fixture's Manufacturing window, type 9, 226 by 304 at (225, 76).
 const SYSTEM_FIXTURE_WINDOW = { x: 225, y: 76, width: 226, height: 304 };
-
-// The pixels of a 640x480 logical rect in a screenshot of `viewport`.
-function cropPng(png, viewport, rect) {
+// Fractional 1.666x letterbox scaling changes the raster phase after a
+// logical drag. A correct move differs by at most 5.064%; an unmoved control
+// differs by 54.6% at the same pixelmatch threshold. At a whole scale the
+// moved pixels are the same pixels.
+const MAX_DRAG_RASTER_DIFFERENCE = 0.055;
+function dragCropMatches(actual, actualRect, expected, expectedRect, viewport) {
   const scale = Math.min(viewport.width / 640, viewport.height / 480);
-  const density = png.width / viewport.width;
-  const x0 = Math.round(((viewport.width - 640 * scale) / 2 + rect.x * scale) * density);
-  const y0 = Math.round(((viewport.height - 480 * scale) / 2 + rect.y * scale) * density);
-  const width = Math.round(rect.width * scale * density);
-  const height = Math.round(rect.height * scale * density);
-  const out = Buffer.alloc(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    const start = ((y0 + y) * png.width + x0) * 4;
-    png.data.copy(out, y * width * 4, start, start + width * 4);
-  }
-  return out;
+  const difference = logicalCropDifference(actual, actualRect, expected, expectedRect, viewport);
+  const matches = Number.isInteger(scale)
+    ? sha256(cropPng(actual, viewport, actualRect)) === sha256(cropPng(expected, viewport, expectedRect))
+    : difference.differenceRatio <= MAX_DRAG_RASTER_DIFFERENCE;
+  return { matches, exact: Number.isInteger(scale), ...difference };
 }
 
 // FUN_00422ce0 0x132 builds the GID menu with FUN_00451130 at (370,233) for
@@ -442,7 +442,7 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     requestAnimationFrame(() => requestAnimationFrame(resolve));
   }));
   await page.screenshot({ path: path.join(folder, "control-pressed.png"), animations: "disabled" });
-  const opened = "command=0x132 destination=gid_menu status=opened_original";
+  const opened = "command=0x132 destination=gid_menu status=opened_managed";
   await performCommand(page, opened, () => page.mouse.up());
   const rootCapture = await page.screenshot({ path: path.join(folder, "menu-root.png"), animations: "disabled" });
   // FUN_00422ce0 0x132 hides every child window (slot +8 on the +0x6c
@@ -535,10 +535,19 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     await performCommand(page, "destination=gid status=selected label=Display Off",
       () => page.mouse.click(displayOff.x, displayOff.y));
     const settled = await stableInteractionFrame(page, folder, "row-choice-restored");
+    // Display Off repaints the galaxy around the window. At a fractional
+    // letterbox scale the window's outermost pixel row blends with it (817 and
+    // 814 edge pixels at 1280x800, none inside), so only there the crop
+    // starts one logical pixel in.
+    const rowChoiceScale = Math.min(viewport.width / 640, viewport.height / 480);
+    const restoredWindow = Number.isInteger(rowChoiceScale)
+      ? SYSTEM_FIXTURE_WINDOW
+      : { x: SYSTEM_FIXTURE_WINDOW.x + 1, y: SYSTEM_FIXTURE_WINDOW.y + 1,
+        width: SYSTEM_FIXTURE_WINDOW.width - 2, height: SYSTEM_FIXTURE_WINDOW.height - 2 };
     assert.equal(
-      sha256(cropPng(PNG.sync.read(settled), viewport, SYSTEM_FIXTURE_WINDOW)),
+      sha256(cropPng(PNG.sync.read(settled), viewport, restoredWindow)),
       sha256(cropPng(PNG.sync.read(fs.readFileSync(path.join(folder, "actual.png"))),
-        viewport, SYSTEM_FIXTURE_WINDOW)),
+        viewport, restoredWindow)),
       `${faction}: a row choice did not bring the System window back`,
     );
     probes.push({ type: "row-choice-restores-windows", window: SYSTEM_FIXTURE_WINDOW });
@@ -560,12 +569,31 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     const moved = { ...SYSTEM_FIXTURE_WINDOW, x: SYSTEM_FIXTURE_WINDOW.x - 40,
       y: SYSTEM_FIXTURE_WINDOW.y - 20 };
     const dragged = await stableInteractionFrame(page, folder, "title-dragged");
-    assert.equal(
-      sha256(cropPng(PNG.sync.read(dragged), viewport, moved)),
-      sha256(cropPng(PNG.sync.read(settled), viewport, SYSTEM_FIXTURE_WINDOW)),
+    const titleDragDifference = dragCropMatches(
+      PNG.sync.read(dragged), movableWindowBody(moved),
+      PNG.sync.read(settled), movableWindowBody(SYSTEM_FIXTURE_WINDOW),
+      viewport,
+    );
+    assert.ok(
+      titleDragDifference.matches,
       `${faction}: a title drag did not carry the System window with the pointer`,
     );
-    probes.push({ type: "title-drag-moves-window", from: SYSTEM_FIXTURE_WINDOW, to: moved });
+    // The press activates the window (FUN_004534f0 sends 0x467), so its
+    // title strip repaints from the settled one. Exact colours: the Alliance
+    // strips (179,4,4 inactive, 255,0,0 active) sit inside pixelmatch's
+    // default tolerance. Only at a whole scale: a fractional one shifts the
+    // strip's raster phase by itself.
+    const activation = logicalCropDifference(
+      PNG.sync.read(dragged), movableWindowTitle(moved),
+      PNG.sync.read(settled), movableWindowTitle(SYSTEM_FIXTURE_WINDOW),
+      viewport, { threshold: 0 },
+    );
+    assert.ok(
+      !titleDragDifference.exact || activation.differenceRatio > MAX_DRAG_RASTER_DIFFERENCE,
+      `${faction}: the press that took hold of the System window left its title strip unchanged`,
+    );
+    probes.push({ type: "title-drag-moves-window", from: SYSTEM_FIXTURE_WINDOW, to: moved,
+      ...titleDragDifference, title_activation_ratio: activation.differenceRatio });
     // Any press on the window's bare surface takes hold too (FUN_004534f0
     // passes it to the base unless it lands on a band); here the margin
     // left of the facility list.
@@ -583,12 +611,25 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     await page.mouse.up();
     const bodyMoved = { ...moved, x: moved.x + 30, y: moved.y + 10 };
     const bodyDragged = await stableInteractionFrame(page, folder, "body-dragged");
-    assert.equal(
-      sha256(cropPng(PNG.sync.read(bodyDragged), viewport, bodyMoved)),
-      sha256(cropPng(PNG.sync.read(settled), viewport, SYSTEM_FIXTURE_WINDOW)),
+    const bodyDragDifference = dragCropMatches(
+      PNG.sync.read(bodyDragged), movableWindowBody(bodyMoved),
+      PNG.sync.read(settled), movableWindowBody(SYSTEM_FIXTURE_WINDOW),
+      viewport,
+    );
+    assert.ok(
+      bodyDragDifference.matches,
       `${faction}: a press on the bare surface did not carry the System window`,
     );
-    probes.push({ type: "body-drag-moves-window", from: moved, to: bodyMoved });
+    // Still the active window: the second drag's strip is the first's.
+    const activeTitle = dragCropMatches(
+      PNG.sync.read(bodyDragged), movableWindowTitle(bodyMoved),
+      PNG.sync.read(dragged), movableWindowTitle(moved),
+      viewport,
+    );
+    assert.ok(activeTitle.matches,
+      `${faction}: the System window's title strip changed between two drags`);
+    probes.push({ type: "body-drag-moves-window", from: moved, to: bodyMoved,
+      ...bodyDragDifference, active_title_ratio: activeTitle.differenceRatio });
   } else if (scenario.slug === "display-off") {
     const displayOff = menuPoint(477, 372);
     await performCommand(page, "destination=gid status=selected label=Display Off",
@@ -598,14 +639,18 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     probes.push({ type: "root-selection", mode: "Display Off" });
   } else {
     // Escape never closes the menu: its procedure (FUN_004aab50) posts 0x405
-    // for its own key, which the view has not registered (under Wine,
-    // alliance-day54-advice day 61 and empire-fleet-to-yaga-minor days 39-42).
+    // for its own key, which the view has not registered, then 0x467(0,0).
+    // With the view's current child empty that only focuses the view
+    // (FUN_00422ce0 0x467): the fixture's Sector opens as a galaxy
+    // double-click does (FUN_00429ce0, no 0x467), so it stays hidden. Under
+    // Wine, alliance-day54-advice day 61: the Corellian sector window, the
+    // first GID press, then Escape changed nothing.
     await page.mouse.move(galaxyPoint.x, galaxyPoint.y);
     const openCapture = await stableInteractionFrame(page, folder, "menu-open");
     await page.keyboard.press("Escape");
     const escaped = await stableInteractionFrame(page, folder, "menu-escape");
     assert.equal(sha256(escaped), sha256(openCapture),
-      `${faction} ${scenario.slug}: Escape changed the open GID menu`);
+      `${faction} ${scenario.slug}: Escape changed the open GID menu or revealed a hidden window`);
     probes.push({ type: "menu-escape-stays-open", screenshot_sha256: sha256(escaped) });
     // A rail light is a child window beside the menu (FUN_00427270, 0x13d):
     // it opens the Message Index, and once that closes the menu is still open
@@ -616,8 +661,8 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     await page.keyboard.press("Escape");
     await page.mouse.move(galaxyPoint.x, galaxyPoint.y);
     const afterIndex = await stableInteractionFrame(page, folder, "rail-under-menu-closed");
-    assert.equal(sha256(afterIndex), sha256(openCapture),
-      `${faction} ${scenario.slug}: a rail light closed the GID menu or showed its windows`);
+    assert.equal(sha256(afterIndex), sha256(escaped),
+      `${faction} ${scenario.slug}: a rail light changed the open GID menu or showed a hidden window`);
     probes.push({ type: "rail-leaves-menu-open", observed: railObserved,
       screenshot_sha256: sha256(afterIndex) });
     if (scenario.slug === "galaxy") {
@@ -634,7 +679,10 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
       probes.push({ type: "accelerators-under-menu", observed: [uprisings, support] });
     }
     // A press on the galaxy closes it (FUN_00422ce0 WM_LBUTTONUP).
-    await page.mouse.click(galaxyPoint.x, galaxyPoint.y);
+    const dismissPoint = scenario.slug === "sector" && faction === "empire"
+      ? point(360, 60)
+      : galaxyPoint;
+    await page.mouse.click(dismissPoint.x, dismissPoint.y);
     const dismissed = await stableInteractionFrame(page, folder, "menu-dismissed");
     assert.equal(sha256(dismissed), sha256(fs.readFileSync(path.join(folder, "actual.png"))),
       `${faction} ${scenario.slug}: a galaxy press left the original galaxy surface`);
@@ -647,13 +695,13 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
           { slug: "game-options", rect: { x: 3, y: 355, width: 27, height: 41 },
             expected: "command=0x133 destination=game_options status=opened_original" },
           { slug: "encyclopedia", rect: { x: 394, y: 405, width: 27, height: 16 },
-            expected: "command=0x131 destination=encyclopedia status=opened_original" },
+            expected: "command=0x131 destination=encyclopedia status=opened_managed" },
         ]
       : [
           { slug: "game-options", rect: { x: 79, y: 192, width: 35, height: 57 },
             expected: "command=0x133 destination=game_options status=opened_original" },
           { slug: "encyclopedia", rect: { x: 465, y: 434, width: 35, height: 24 },
-            expected: "command=0x131 destination=encyclopedia status=opened_original" },
+            expected: "command=0x131 destination=encyclopedia status=opened_managed" },
         ];
     for (const command of commandControls) {
       const center = point(command.rect.x + command.rect.width / 2,
@@ -712,7 +760,7 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
 
     for (const [key, expected] of [
       ["F1", "command=0x133 destination=game_options status=opened_original"],
-      ["F7", "command=0x131 destination=encyclopedia status=opened_original"],
+      ["F7", "command=0x131 destination=encyclopedia status=opened_managed"],
     ]) {
       const observed = await performCommand(page, expected, () => page.keyboard.press(key));
       probes.push({ type: "keyboard-command", key, expected, observed });

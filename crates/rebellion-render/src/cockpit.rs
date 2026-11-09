@@ -44,7 +44,7 @@ use macroquad::prelude::*;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
 use crate::message_log::MessageRail;
-use crate::window_focus::GalaxyChild;
+use crate::windowing::GalaxyChild;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -388,6 +388,7 @@ pub struct GidUiState {
     /// activation shows (`FUN_00422ce0` 0x467, `ShowWindow` 5) and any
     /// window opened since, which is created visible.
     pub shown: Vec<GalaxyChild>,
+    hidden: Vec<GalaxyChild>,
 }
 
 impl GidUiState {
@@ -402,15 +403,31 @@ impl GidUiState {
     /// (`+0x248`). True when this press built the menu, whose `WM_CREATE`
     /// step (`FUN_004511e0`) ends with `SetFocus` on it.
     pub fn open_menu(&mut self) -> bool {
+        self.open_menu_with_children(std::iter::empty())
+    }
+
+    /// Opens the GID menu and hides exactly the children that already exist.
+    /// A child registered later remains visible, as native window creation
+    /// does, and pressing the already-open GID control changes nothing.
+    pub fn open_menu_with_children(
+        &mut self,
+        children: impl IntoIterator<Item = GalaxyChild>,
+    ) -> bool {
         let built_now = !self.built;
         self.built = true;
         if !self.menu_open {
             self.menu_open = true;
             self.category = None;
+            self.windows_hidden = true;
+            self.shown.clear();
+            self.hidden.clear();
+            for child in children {
+                if !self.hidden.contains(&child) {
+                    self.hidden.push(child);
+                }
+            }
+            self.legend_open = false;
         }
-        self.windows_hidden = true;
-        self.shown.clear();
-        self.legend_open = false;
         built_now
     }
 
@@ -424,12 +441,13 @@ impl GidUiState {
         self.category = None;
         self.windows_hidden = false;
         self.shown.clear();
+        self.hidden.clear();
     }
 
     /// Whether the open menu keeps `child` hidden.
     #[must_use]
     pub fn hides(&self, child: GalaxyChild) -> bool {
-        self.windows_hidden && !self.shown.contains(&child)
+        self.windows_hidden && self.hidden.contains(&child) && !self.shown.contains(&child)
     }
 
     /// Show `child` again under the open menu; nothing while no window is
@@ -1104,12 +1122,16 @@ pub fn draw_cockpit_egui_layer(
         state.gid_ui.legend_open = true;
     }
 
-    let selected = draw_gid_menu(ctx, state, cache, layout, gid_menu_input_enabled);
+    let selected =
+        draw_gid_menu_with_dismissal(ctx, state, cache, layout, gid_menu_input_enabled, false);
     if let Some(mode) = selected {
-        state.gid_mode = mode;
-        state.gid_ui.close_menu();
+        apply_managed_gid_selection(state, mode);
     }
     selected
+}
+
+fn apply_managed_gid_selection(state: &mut CockpitState, mode: GidMode) {
+    state.gid_mode = mode;
 }
 
 /// Bitmap a rail control shows: illuminated while its category has unread
@@ -1622,6 +1644,66 @@ fn gid_menu_row(
     response
 }
 
+fn gid_root_menu_id() -> egui::Id {
+    egui::Id::new("original_gid_root_menu")
+}
+
+fn gid_submenu_id() -> egui::Id {
+    egui::Id::new("original_gid_submenu")
+}
+
+/// Current-frame root and visible-submenu hit regions for the one managed
+/// GID Menu presentation. Both areas retain the same manager identity.
+#[must_use]
+pub fn gid_menu_rects(ctx: &egui::Context, state: &GidUiState) -> Vec<egui::Rect> {
+    if !state.menu_open {
+        return Vec::new();
+    }
+    let mut rects = Vec::with_capacity(2);
+    if let Some(root) = ctx.memory(|memory| memory.area_rect(gid_root_menu_id())) {
+        rects.push(root);
+    }
+    if state.category.is_some() {
+        if let Some(submenu) = ctx.memory(|memory| memory.area_rect(gid_submenu_id())) {
+            rects.push(submenu);
+        }
+    }
+    rects
+}
+
+/// Root and visible-submenu layers of the managed GID menu.
+#[must_use]
+pub fn gid_menu_layer_ids(state: &GidUiState) -> Vec<egui::LayerId> {
+    if !state.menu_open {
+        return Vec::new();
+    }
+    let mut layers = vec![egui::LayerId::new(egui::Order::Middle, gid_root_menu_id())];
+    if state.category.is_some() {
+        layers.push(egui::LayerId::new(egui::Order::Middle, gid_submenu_id()));
+    }
+    layers
+}
+
+/// Whether a primary release belongs to the galaxy view while the GID menu
+/// is open. Native command-center controls and both menu rectangles keep the
+/// release; the remaining view closes the menu and reveals its hidden set.
+#[must_use]
+pub fn gid_menu_dismisses_at(
+    ctx: &egui::Context,
+    state: &CockpitState,
+    layout: CockpitLayout,
+    point: (f32, f32),
+) -> bool {
+    if !state.gid_ui.menu_open {
+        return false;
+    }
+    let point = egui::pos2(point.0, point.1);
+    let rects = gid_menu_rects(ctx, &state.gid_ui);
+    !rects.is_empty()
+        && !on_cockpit_control(state, layout, point)
+        && !rects.iter().any(|rect| rect.contains(point))
+}
+
 /// Where `FUN_00422ce0` 0x132 builds the menu (`FUN_00451130`): (370,233)
 /// for side 1 and (420,233) for side 2.
 const fn gid_menu_origin(faction: CockpitFaction) -> (f32, f32) {
@@ -1639,12 +1721,24 @@ const GID_MENU_SIZE: f32 = 160.0;
     clippy::cast_precision_loss,
     reason = "Preserve existing conversion of bitmap sizes and bounded UI indices into pixel coordinates. Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
+#[cfg(test)]
 fn draw_gid_menu(
     ctx: &egui::Context,
     state: &mut CockpitState,
     cache: &mut BmpCache,
     layout: CockpitLayout,
     input_enabled: bool,
+) -> Option<GidMode> {
+    draw_gid_menu_with_dismissal(ctx, state, cache, layout, input_enabled, true)
+}
+
+fn draw_gid_menu_with_dismissal(
+    ctx: &egui::Context,
+    state: &mut CockpitState,
+    cache: &mut BmpCache,
+    layout: CockpitLayout,
+    input_enabled: bool,
+    close_on_outside_press: bool,
 ) -> Option<GidMode> {
     if !state.gid_ui.menu_open {
         return None;
@@ -1657,8 +1751,11 @@ fn draw_gid_menu(
         layout.canvas.x + root_x * layout.scale,
         layout.canvas.y + root_y * layout.scale,
     );
-    let root = egui::Area::new(egui::Id::new("original_gid_root_menu"))
-        .order(egui::Order::Foreground)
+    let root = egui::Area::new(gid_root_menu_id())
+        // The GID menu is a manager-owned normal-band surface. Keeping it in
+        // the same egui order as strategic windows lets the manager's 0x467
+        // focus walk raise a revealed window above the still-open menu.
+        .order(egui::Order::Middle)
         .fade_in(false)
         .fixed_pos(root_pos)
         .show(ctx, |ui| {
@@ -1713,8 +1810,8 @@ fn draw_gid_menu(
                 - items.len() as f32 * 21.0 * scale,
         );
         let submenu_pos = egui::pos2(root_pos.x - 246.0 * scale, submenu_y);
-        let submenu = egui::Area::new(egui::Id::new("original_gid_submenu"))
-            .order(egui::Order::Foreground)
+        let submenu = egui::Area::new(gid_submenu_id())
+            .order(egui::Order::Middle)
             .fade_in(false)
             .fixed_pos(submenu_pos)
             .show(ctx, |ui| {
@@ -1752,7 +1849,7 @@ fn draw_gid_menu(
     // Escape never closes the menu (FUN_004aab50 posts 0x405 for a key the
     // view has not registered), and a press closes it only where the galaxy
     // view's left release can land.
-    if input_enabled && selected.is_none() {
+    if close_on_outside_press && input_enabled && selected.is_none() {
         let (pressed, pointer) = ctx.input(|input| {
             (
                 input.pointer.button_pressed(egui::PointerButton::Primary),
@@ -1826,15 +1923,13 @@ pub fn handle_cockpit_egui_input(
         })
     };
 
-    let clicked = update_control_capture(
+    update_control_capture(
         &mut state.pressed_control,
         primary_pressed,
         primary_down,
         primary_released,
         pointer_hit,
-    );
-
-    clicked
+    )
 }
 
 fn should_dismiss_gid_menu(
@@ -2061,6 +2156,61 @@ mod tests {
     }
 
     #[test]
+    fn the_open_gid_menu_paints_over_the_droid_advisors() {
+        // FUN_00422ce0 0x132 opens the GID menu as a pop-up over the cockpit,
+        // into whose apertures FUN_0042adb0 draws the droids. On the Empire's
+        // 640x480 cockpit the menu's frame (STRATEGY 10103) covers the
+        // advisor's aperture.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let mut state = CockpitState::new(faction);
+            let ctx = egui::Context::default();
+            let mut cache = BmpCache::new();
+            let layout = state.layout_for(640.0, 480.0);
+            let droid = egui::Color32::from_rgb(1, 2, 3);
+            let mut shapes = Vec::new();
+            for frame in 0..3 {
+                if frame == 1 {
+                    state.gid_ui.open_menu();
+                }
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(640.0, 480.0),
+                    )),
+                    ..Default::default()
+                };
+                shapes = ctx
+                    .run(input, |ctx| {
+                        crate::advisor::advisor_painter(ctx).rect_filled(
+                            ctx.screen_rect(),
+                            0.0,
+                            droid,
+                        );
+                        let _ = draw_gid_menu(ctx, &mut state, &mut cache, layout, true);
+                    })
+                    .shapes;
+            }
+            let root = ctx
+                .memory(|memory| memory.area_rect(gid_root_menu_id()))
+                .expect("the menu is laid out");
+            let droids = shapes
+                .iter()
+                .position(|clipped| {
+                    matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == droid)
+                })
+                .expect("the droids paint");
+            let menu = shapes
+                .iter()
+                .position(|clipped| {
+                    !matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == droid)
+                        && root.contains_rect(clipped.shape.visual_bounding_rect())
+                })
+                .expect("the menu paints");
+            assert!(droids < menu, "{faction:?}: the droids paint over the GID menu");
+        }
+    }
+
+    #[test]
     fn the_gid_menu_opens_where_the_original_builds_it_on_either_side() {
         // FUN_00422ce0 0x132 builds the menu with FUN_00451130 at (370,233)
         // for side 1 and (420,233) for side 2, 0xa0 by 0xa0; under Wine its
@@ -2260,6 +2410,12 @@ mod tests {
             );
             assert!(state.gid_ui.menu_open, "{faction:?}");
             assert!(state.gid_ui.windows_hidden, "{faction:?}");
+            assert!(
+                gid_menu_layer_ids(&state.gid_ui)
+                    .iter()
+                    .all(|layer| layer.order == egui::Order::Middle),
+                "the normal-band GID menu must share the managed strategic layer order"
+            );
         }
     }
 
@@ -2332,7 +2488,7 @@ mod tests {
     #[test]
     fn a_child_shown_under_the_open_menu_stays_shown_until_the_control_hides_all_again() {
         // FUN_00422ce0: 0x467 shows one child (ShowWindow 5) under the open
-        // menu; a press on the GID control (0x132) hides every child again.
+        // menu; a second GID-control press reuses the open menu unchanged.
         let mut world = rebellion_core::world::GameWorld::default();
         let first = GalaxyChild::System(
             world
@@ -2348,12 +2504,12 @@ mod tests {
             let mut gid = CockpitState::new(faction).gid_ui;
             gid.show_child(first);
             assert!(!gid.hides(first) && gid.shown.is_empty(), "{faction:?}");
-            gid.open_menu();
+            gid.open_menu_with_children([first, second]);
             assert!(gid.hides(first) && gid.hides(second));
             gid.show_child(first);
             assert!(!gid.hides(first) && gid.hides(second));
             gid.open_menu();
-            assert!(gid.hides(first), "{faction:?}");
+            assert!(!gid.hides(first), "{faction:?}");
             gid.show_child(second);
             gid.close_menu();
             assert!(!gid.hides(second) && gid.shown.is_empty());
@@ -2860,6 +3016,144 @@ mod tests {
             None
         );
         assert_eq!(captured, None);
+    }
+
+    #[test]
+    fn gid_submenu_multiple_rects_route_to_one_menu_identity() {
+        // Break caught: retaining only the last GID area, or assigning the
+        // submenu a second presentation identity, lets root rows lose input.
+        let mut manager = rebellion_windowing::WindowManager::new();
+        let mut menu = crate::game_menu::ManagedMenuState::default();
+        let prepared = menu.prepare_gid_open(false);
+        let opened = manager
+            .apply(prepared.command())
+            .expect("root-owned GID menu opens without a modal");
+        let menu_id = menu
+            .commit_open(prepared, &opened.transition)
+            .expect("accepted GID open publishes one Menu identity");
+        let frame = manager.begin_frame();
+        let ctx = egui::Context::default();
+        let mut cockpit = CockpitState::default();
+        cockpit.gid_ui.menu_open = true;
+        cockpit.gid_ui.category = Some(GidCategory::Loyalty);
+        let mut cache = BmpCache::new();
+        let layout = cockpit.layout_for(640.0, 480.0);
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 480.0),
+                )),
+                ..egui::RawInput::default()
+            },
+            |ctx| {
+                draw_gid_menu(ctx, &mut cockpit, &mut cache, layout, true);
+            },
+        );
+        let rects = gid_menu_rects(&ctx, &cockpit.gid_ui);
+        assert_eq!(rects.len(), 2);
+
+        assert_eq!(
+            menu.hit_window(&frame, &rects, (rects[0].center().x, rects[0].center().y),),
+            Some(menu_id)
+        );
+        assert_eq!(
+            menu.hit_window(&frame, &rects, (rects[1].center().x, rects[1].center().y),),
+            Some(menu_id)
+        );
+        assert_eq!(menu.hit_window(&frame, &rects, (10.0, 10.0)), None);
+    }
+
+    #[test]
+    fn gid_outside_press_waits_for_managed_close_receipt() {
+        // Break caught: the legacy popup mutates its own open flag before the
+        // manager can consume the press and quarantine the eventual release.
+        let ctx = egui::Context::default();
+        let mut cockpit = CockpitState::default();
+        cockpit.gid_ui.menu_open = true;
+        let mut cache = BmpCache::new();
+        let layout = cockpit.layout_for(640.0, 480.0);
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 480.0),
+                )),
+                events: vec![
+                    egui::Event::PointerMoved(egui::pos2(10.0, 10.0)),
+                    egui::Event::PointerButton {
+                        pos: egui::pos2(10.0, 10.0),
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                ],
+                ..egui::RawInput::default()
+            },
+            |ctx| {
+                draw_gid_menu_with_dismissal(ctx, &mut cockpit, &mut cache, layout, true, false);
+            },
+        );
+
+        assert!(cockpit.gid_ui.menu_open);
+    }
+
+    #[test]
+    fn gid_selection_waits_for_managed_close_receipt() {
+        // Break caught: choosing a mode drops the local payload before the
+        // shared Menu close has consumed the selecting gesture.
+        let mut cockpit = CockpitState::default();
+        cockpit.gid_ui.menu_open = true;
+        cockpit.gid_ui.category = Some(GidCategory::Loyalty);
+
+        apply_managed_gid_selection(&mut cockpit, GidMode::Uprisings);
+
+        assert_eq!(cockpit.gid_mode, GidMode::Uprisings);
+        assert!(cockpit.gid_ui.menu_open);
+        assert_eq!(cockpit.gid_ui.category, Some(GidCategory::Loyalty));
+    }
+
+    #[test]
+    fn gid_menu_root_actions_remain_blocked_by_unrelated_modal() {
+        // Break caught: treating the GID popup as a legacy root overlay can
+        // execute its trigger through an unrelated strategic modal.
+        use crate::windowing_input::{
+            FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+        };
+        use rebellion_windowing::{WindowCommand, WindowKind, WindowOwner};
+
+        let mut manager = rebellion_windowing::WindowManager::new();
+        manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::FleetFinder,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .expect("unrelated modal opens");
+        let frame = manager.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &frame);
+        let trigger_press = InputEventId {
+            frame: 1,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                trigger_press,
+                &std::collections::BTreeSet::new(),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            InputRecipient::Blocked
+        );
+        assert!(!router.claim_root(trigger_press));
+
+        let menu = crate::game_menu::ManagedMenuState::default();
+        assert!(manager.apply(menu.prepare_gid_open(false).command()).is_ok());
+        assert_eq!(
+            manager.begin_frame().active_modal(),
+            Some(frame.active_modal().unwrap())
+        );
     }
 
     #[test]

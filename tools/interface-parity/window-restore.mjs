@@ -20,9 +20,9 @@
 //   no System page (SavedWindowKind::System, FUN_00458ea0);
 // - the minimized System window on the rail's first slot
 //   (FUN_00440ea0.c:19-24, FUN_00428b40);
-// - the focus on the Fleet window saved on top (GalaxyFocusState::
-//   after_load): Escape closes it, a second Escape closes the System
-//   window, and a third leaves the rail as it is;
+// - the focus on the Fleet window saved on top (finish_interface_restore
+//   focuses the top shown non-Sector window): Escape closes it, a second
+//   Escape closes the System window, and a third leaves the rail as it is;
 // - the GID mode: with the sector window closed the galaxy shows the
 //   Uprisings map the campaign was saved with (view +0xc8, replayed as
 //   WM_COMMAND 0x140).

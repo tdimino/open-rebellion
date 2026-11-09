@@ -50,7 +50,6 @@ pub mod theme;
 pub mod tooltip;
 pub mod troop_finder;
 pub mod video_player;
-mod window_focus;
 pub mod windowing;
 pub mod windowing_input;
 pub mod windowing_policy;
@@ -70,10 +69,6 @@ use rebellion_core::world::{ControlKind, GameWorld, System};
 
 #[cfg(target_arch = "wasm32")]
 pub use advisor::set_advisor_asset_cache;
-pub use window_focus::{
-    apply_focus_step, galaxy_children, topmost, FocusStep, GalaxyChild, GalaxyFocus,
-    GalaxyFocusState,
-};
 pub use advisor::{
     draw_advisor, staged_wave, AdvisorFaction, AdvisorState, AdvisorVoice, CockpitStep,
 };
@@ -95,16 +90,17 @@ pub use defenses_window::{
 };
 #[cfg(target_arch = "wasm32")]
 pub use encyclopedia::set_encyclopedia_asset_cache;
-pub use encyclopedia::{
-    draw_encyclopedia_index_catalog, draw_encyclopedia_index_shell,
-    draw_encyclopedia_surface, EncyclopediaState, EncyclopediaSurfaceState, EncyclopediaTab,
-    OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry, ENCYCLOPEDIA_INDEX_HEIGHT,
-    ENCYCLOPEDIA_INDEX_WIDTH,
-};
 #[cfg(feature = "interface-test-fixtures")]
 pub use encyclopedia::{
     draw_encyclopedia_artwork_fixture, draw_encyclopedia_index_catalog_fixture,
     draw_encyclopedia_index_fixture,
+};
+pub use encyclopedia::{
+    draw_encyclopedia_index_catalog, draw_encyclopedia_index_shell, draw_encyclopedia_surface,
+    draw_encyclopedia_surface_focused, EncyclopediaState, EncyclopediaSurfaceState,
+    EncyclopediaTab, OriginalEncyclopediaCatalog, OriginalEncyclopediaEntry,
+    ENCYCLOPEDIA_INDEX_CONTROL, ENCYCLOPEDIA_INDEX_HEIGHT, ENCYCLOPEDIA_INDEX_WIDTH,
+    ENCYCLOPEDIA_SEARCH_CONTROL, ENCYCLOPEDIA_TOPIC_CONTROL,
 };
 pub use encyclopedia_surface::{
     encyclopedia_index_list_action, encyclopedia_keyboard_action, EncyclopediaArtworkView,
@@ -174,6 +170,7 @@ pub use tactical_view::{
     TacticalAction, TacticalState, TacticalTrenchRunOutcome,
 };
 pub use video_player::{VideoError, VideoPlayer};
+pub use windowing::GalaxyChild;
 
 #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
 pub use panels::command_palette::{
@@ -417,6 +414,9 @@ pub fn update_galaxy_map_input(
 ) -> CameraView {
     state.activated_system = None;
 
+    // Final raw backend adapter for the strategic map. The app derives
+    // `pointer_blocked` from the frozen router plus named root locks before
+    // calling, so this press sample cannot bypass window admission.
     let sw = screen_width();
     let sh = screen_height();
     let viewport = state.viewport.unwrap_or((0.0, 0.0, sw, sh));
@@ -1715,14 +1715,8 @@ mod interaction_tests {
                 (GidMode::HighlightEmpire, strategy::GID_EMPIRE_LARGEST),
                 (GidMode::HighlightAlliance, strategy::GID_ALLIANCE_LARGEST),
             ] {
-                let marker = gid_marker_for_system(
-                    &world,
-                    key,
-                    &world.systems[key],
-                    faction,
-                    mode,
-                    &listed,
-                );
+                let marker =
+                    gid_marker_for_system(&world, key, &world.systems[key], faction, mode, &listed);
                 assert_eq!(marker, expected, "{mode:?}");
             }
 

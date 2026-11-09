@@ -54,6 +54,7 @@
     "practical_scope_remaining": "approximately_75_percent_planning_estimate",
     "required_family_status": "2_complete_15_partial_26_fail",
     "strictly_accepted_required_cells": "28_of_627",
+    "strategic_windowing_contract_evidence": "window_manager_backend_and_browser_evidence_reconciled; no_interface_parity_promotion",
     "current_execution_plan": "docs/plans/2026-09-11-feat-batched-interface-parity-plan.md",
     "main_menu_surface": "partial_complete_state_matrix_open",
     "campaign_interface": "fail",
@@ -326,6 +327,7 @@
     }
   ],
   "evidence_files": {
+    "strategic_windowing_acceptance": "evidence/2026-10-25-strategic-windowing-acceptance.md",
     "surface_ledger": "2026-10-06-surface-ledger.json",
     "manual_window_checklists": "2026-10-06-manual-window-checklists.md",
     "known_interface_deviations": "known-deviations.md",

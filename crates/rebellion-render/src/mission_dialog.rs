@@ -13,6 +13,10 @@ use rebellion_core::ids::SystemKey;
 use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember, MissionTarget};
 use rebellion_core::research::TechType;
 use rebellion_core::world::GameWorld;
+use rebellion_windowing::{
+    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, SubjectId, WindowId, WindowKind,
+    WindowOwner, WindowSpec, WindowTransition,
+};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
@@ -78,6 +82,8 @@ pub enum MissionDialogPage {
 /// One open dialog: the order it edits and its controls' state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MissionDialog {
+    /// Exact manager identity, absent only for renderer fixtures and legacy calls.
+    window_id: Option<WindowId>,
     faction: MissionFaction,
     target: SystemKey,
     /// The object the release found (`+0x68`), standing in `target`.
@@ -174,9 +180,238 @@ pub struct MissionDialogState {
     dialog: Option<MissionDialog>,
 }
 
+/// Validated Mission content kept inert until the manager accepts its fresh
+/// command-context identity. A valid logical open replaces the exact prior
+/// dialog atomically; invalid preparation leaves published content untouched.
+#[derive(Debug, Clone)]
+pub struct PreparedMissionDialog {
+    dialog: MissionDialog,
+    replacing: Option<WindowId>,
+}
+
+impl PreparedMissionDialog {
+    #[must_use]
+    pub fn spec(&self, subject: SubjectId) -> WindowSpec {
+        crate::windowing_policy::contextual_spec(
+            WindowKind::MissionDialog,
+            subject,
+            WindowOwner::StrategicRoot,
+        )
+    }
+
+    #[must_use]
+    pub const fn replacing(&self) -> Option<WindowId> {
+        self.replacing
+    }
+}
+
+/// Exact Mission confirmation candidate paired with one manager close. It is
+/// gameplay-free and can be released only by the matching teardown receipt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedMissionDialogConfirm {
+    window: WindowId,
+    action: MissionDialogAction,
+}
+
+impl PreparedMissionDialogConfirm {
+    #[must_use]
+    pub const fn window_id(&self) -> WindowId {
+        self.window
+    }
+}
+
 impl MissionDialogState {
-    /// Open the dialog for an order's team and target (a system, or an
-    /// object standing in it) with the kinds the team may undertake. With no kind the order is dropped and nothing
+    /// Prepares publication of an existing legacy dialog that has no manager
+    /// identity yet. Its current page and member selection are retained.
+    #[must_use]
+    pub fn prepare_adoption(&self) -> Option<PreparedMissionDialog> {
+        let dialog = self.dialog.as_ref()?.clone();
+        dialog.window_id.is_none().then_some(PreparedMissionDialog {
+            dialog,
+            replacing: None,
+        })
+    }
+
+    /// Prepares a fresh logical Mission context without changing the currently
+    /// published dialog. Empty mission/team contexts reject before a manager
+    /// command can replace the old identity.
+    #[must_use]
+    pub fn prepare_open(
+        &self,
+        faction: MissionFaction,
+        target: SystemKey,
+        object: Option<MissionTarget>,
+        team: Vec<MissionMember>,
+        kinds: Vec<MissionKind>,
+    ) -> Option<PreparedMissionDialog> {
+        if kinds.is_empty() || team.is_empty() {
+            return None;
+        }
+        Some(PreparedMissionDialog {
+            dialog: MissionDialog {
+                window_id: None,
+                faction,
+                target,
+                kinds,
+                kind: 0,
+                page: MissionDialogPage::Mission,
+                list_open: false,
+                agents: team,
+                decoys: Vec::new(),
+                selected: Vec::new(),
+                agents_row: 0,
+                decoys_row: 0,
+                object,
+            },
+            replacing: self.window_id(),
+        })
+    }
+
+    /// Publishes prepared content only for the exact open/replacement receipt.
+    /// A duplicate semantic receipt preserves the existing content unchanged.
+    pub fn commit_open(
+        &mut self,
+        mut prepared: PreparedMissionDialog,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        match *transition {
+            WindowTransition::Opened { id }
+                if prepared.replacing.is_none()
+                    && (self.dialog.is_none()
+                        || self.dialog.as_ref().is_some_and(|dialog| {
+                            dialog.window_id.is_none() && dialog == &prepared.dialog
+                        })) =>
+            {
+                prepared.dialog.window_id = Some(id);
+                self.dialog = Some(prepared.dialog);
+                Some(id)
+            }
+            WindowTransition::Replaced { old, new }
+                if self.window_id() == Some(old) && prepared.replacing == Some(old) =>
+            {
+                prepared.dialog.window_id = Some(new);
+                self.dialog = Some(prepared.dialog);
+                Some(new)
+            }
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            } if self.window_id() == Some(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Exact manager identity owning the published Mission content.
+    #[must_use]
+    pub fn window_id(&self) -> Option<WindowId> {
+        self.dialog.as_ref().and_then(|dialog| dialog.window_id)
+    }
+
+    /// Egui layer attached to the exact manager-issued Mission Dialog.
+    #[must_use]
+    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+        (self.window_id() == Some(id)).then(|| {
+            egui::LayerId::new(
+                egui::Order::Tooltip,
+                egui::Id::new("original-mission-dialog"),
+            )
+        })
+    }
+
+    /// Manager-owned Mission hit for event-local pointer routing.
+    #[must_use]
+    pub fn hit_window(
+        &self,
+        frame: &RoutingSnapshot,
+        layout: CockpitLayout,
+        point: (f32, f32),
+    ) -> Option<WindowId> {
+        let id = self.window_id()?;
+        (frame
+            .key(id)
+            .is_some_and(|key| key.kind == WindowKind::MissionDialog)
+            && frame.allows_input(id)
+            && rect_contains(dialog_rect(layout), egui::pos2(point.0, point.1)))
+        .then_some(id)
+    }
+
+    /// Exact manager identity holding this frame's keyboard lease.
+    #[must_use]
+    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
+        let id = self.window_id()?;
+        matches!(
+            frame.keyboard_route().target,
+            rebellion_windowing::RouteTarget::Window(target) if target.window == id
+        )
+        .then_some(id)
+    }
+
+    /// Explicit content state for fail-closed manager reconciliation.
+    #[must_use]
+    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
+        frame
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|id| {
+                frame
+                    .key(*id)
+                    .is_some_and(|key| key.kind == WindowKind::MissionDialog)
+            })
+            .map(|id| ContentReport {
+                window: id,
+                status: if self.window_id() == Some(id) {
+                    ContentStatus::Ready
+                } else {
+                    ContentStatus::Unpaintable
+                },
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn request_close(&self) -> Option<WindowId> {
+        self.window_id()
+    }
+
+    /// Releases manager-owned content only from its exact teardown receipt.
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        if self.window_id().is_some_and(|id| removed.contains(&id)) {
+            self.dialog = None;
+        }
+    }
+
+    /// Snapshots the exact current order without performing gameplay.
+    #[must_use]
+    pub fn prepare_confirm(&self) -> Option<PreparedMissionDialogConfirm> {
+        let dialog = self.dialog.as_ref()?;
+        Some(PreparedMissionDialogConfirm {
+            window: dialog.window_id?,
+            action: dialog.begin_action(),
+        })
+    }
+
+    /// Consumes one confirmation only after the exact manager close and while
+    /// the published order still matches the prepared candidate.
+    pub fn commit_confirm(
+        &mut self,
+        prepared: PreparedMissionDialogConfirm,
+        removed: &[WindowId],
+    ) -> Option<MissionDialogAction> {
+        if !removed.contains(&prepared.window) {
+            return None;
+        }
+        let dialog = self.dialog.as_ref()?;
+        if dialog.window_id != Some(prepared.window) || dialog.begin_action() != prepared.action {
+            return None;
+        }
+        self.dialog = None;
+        Some(prepared.action)
+    }
+
+    /// Open the dialog for an order's team and target (a system, or an object
+    /// standing in it) with the kinds the team may undertake. With no kind the
+    /// order is dropped and nothing
     /// opens (`FUN_0042a320` -> `FUN_0041ce20(order, 0)`). The team starts as
     /// the agents and the decoys empty, as a fresh order `0x240` leaves them.
     pub fn open(
@@ -191,6 +426,7 @@ impl MissionDialogState {
             return false;
         }
         self.dialog = Some(MissionDialog {
+            window_id: None,
             faction,
             target,
             object,
@@ -222,12 +458,13 @@ impl MissionDialogState {
     }
 
     pub fn close(&mut self) {
-        self.dialog = None;
+        if self.window_id().is_none() {
+            self.dialog = None;
+        }
     }
 
-    /// Whether `point` falls on the open dialog, so the galaxy map under it
-    /// takes no input. The dialog is a child window (style `0x46000000`),
-    /// not modal.
+    /// Legacy hit testing for the ID-less compatibility path. Managed Mission
+    /// dialogs derive modal blocking from the frame routing snapshot instead.
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
         self.dialog.is_some() && rect_contains(dialog_rect(layout), egui::pos2(point.0, point.1))
@@ -237,15 +474,24 @@ impl MissionDialogState {
     /// kind and the order is submitted; the dialog closes whether or not the
     /// validator accepts it.
     pub fn begin(&mut self) -> Option<MissionDialogAction> {
+        if self.window_id().is_some() {
+            return None;
+        }
         let dialog = self.dialog.take()?;
-        Some(MissionDialogAction::Begin {
-            kind: dialog.kind(),
-            faction: dialog.faction,
-            team: dialog.agents,
-            decoys: dialog.decoys,
-            target: dialog.target,
-            object: dialog.object,
-        })
+        Some(dialog.begin_action())
+    }
+}
+
+impl MissionDialog {
+    fn begin_action(&self) -> MissionDialogAction {
+        MissionDialogAction::Begin {
+            kind: self.kind(),
+            faction: self.faction,
+            team: self.agents.clone(),
+            decoys: self.decoys.clone(),
+            target: self.target,
+            object: self.object,
+        }
     }
 }
 
@@ -260,6 +506,8 @@ pub enum MissionDialogAction {
         target: SystemKey,
         object: Option<MissionTarget>,
     },
+    /// Close or Cancel requests an exact manager close for migrated content.
+    Close,
     /// "Encylopedia" (`0x67` -> `FUN_00429f30`, window `0x19`). port: it opens
     /// the Encyclopedia; the entry for the selected kind is not bound yet
     /// (`encyclopedia-window.md`).
@@ -489,6 +737,7 @@ pub fn draw_mission_dialog(
     layout: CockpitLayout,
     cache: &mut BmpCache,
 ) -> Option<MissionDialogAction> {
+    let managed = state.window_id().is_some();
     let dialog = state.dialog.as_mut()?;
     let scale = layout.scale;
     let side = usize::from(dialog.faction == MissionFaction::Empire);
@@ -793,9 +1042,16 @@ pub fn draw_mission_dialog(
         });
 
     if begin {
-        return state.begin();
+        return if managed {
+            state.dialog.as_ref().map(MissionDialog::begin_action)
+        } else {
+            state.begin()
+        };
     }
     if close {
+        if managed {
+            return Some(MissionDialogAction::Close);
+        }
         state.close();
     }
     action
@@ -935,6 +1191,9 @@ fn draw_list(
 mod tests {
     use super::*;
     use rebellion_core::world::Character;
+    use rebellion_windowing::{
+        SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
+    };
 
     fn members(n: usize) -> Vec<MissionMember> {
         let mut world = GameWorld::default();
@@ -953,6 +1212,432 @@ mod tests {
             vec![MissionKind::Diplomacy, MissionKind::Espionage],
         ));
         state
+    }
+
+    fn managed_open(
+        state: &mut MissionDialogState,
+        team: Vec<MissionMember>,
+    ) -> (WindowManager, rebellion_windowing::WindowId) {
+        let prepared = state
+            .prepare_open(
+                MissionFaction::Alliance,
+                SystemKey::default(),
+                None,
+                team,
+                vec![MissionKind::Diplomacy, MissionKind::Espionage],
+            )
+            .expect("valid Mission context");
+        let mut manager = WindowManager::new();
+        let committed = manager
+            .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
+                crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                1,
+            ))))
+            .expect("manager accepts Mission dialog");
+        let WindowTransition::Opened { id } = committed.transition else {
+            panic!("expected new Mission identity");
+        };
+        assert_eq!(state.commit_open(prepared, &committed.transition), Some(id));
+        (manager, id)
+    }
+
+    #[test]
+    fn managed_mission_keeps_the_released_object_through_confirmation() {
+        // FUN_00422ce0 passes the release object's +0x68 identity to the
+        // Mission dialog; FUN_00521030 later reads the same order object.
+        for faction in [MissionFaction::Alliance, MissionFaction::Empire] {
+            let mut state = MissionDialogState::default();
+            let target = MissionTarget::Fleet(Default::default());
+            let prepared = state
+                .prepare_open(
+                    faction,
+                    SystemKey::default(),
+                    Some(target),
+                    members(1),
+                    vec![MissionKind::Sabotage],
+                )
+                .expect("the released object is a valid mission context");
+            let mut manager = WindowManager::new();
+            let opened = manager
+                .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
+                    crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                    1,
+                ))))
+                .unwrap();
+            let WindowTransition::Opened { id } = opened.transition else {
+                panic!("expected managed Mission identity")
+            };
+            assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+
+            let confirmed = state.prepare_confirm().unwrap();
+            let closed = manager.apply(WindowCommand::Close(id)).unwrap();
+            assert!(matches!(
+                state.commit_confirm(confirmed, &[id]),
+                Some(MissionDialogAction::Begin {
+                    object: Some(object),
+                    ..
+                }) if object == target
+            ));
+            assert!(matches!(
+                closed.transition,
+                WindowTransition::Closed { root, .. } if root == id
+            ));
+        }
+    }
+
+    #[test]
+    fn mission_dialog_windowing_failed_context_preserves_old() {
+        let team = members(2);
+        let mut state = MissionDialogState::default();
+        let (mut manager, id) = managed_open(&mut state, team.clone());
+        let dialog = state.dialog_mut().unwrap();
+        dialog.show_page(MissionDialogPage::Agents);
+        dialog.toggle(team[1]);
+        dialog.move_selected(true);
+        let before = state.dialog().unwrap().clone();
+
+        assert!(state
+            .prepare_open(
+                MissionFaction::Empire,
+                SystemKey::default(),
+                None,
+                team.clone(),
+                Vec::new(),
+            )
+            .is_none());
+        assert_eq!(state.dialog(), Some(&before));
+
+        let replacement = state
+            .prepare_open(
+                MissionFaction::Empire,
+                SystemKey::default(),
+                None,
+                team,
+                vec![MissionKind::Espionage],
+            )
+            .unwrap();
+        assert_eq!(replacement.replacing(), Some(id));
+        let stale_id = match manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap()
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            transition => panic!("expected unrelated open, got {transition:?}"),
+        };
+        assert_ne!(stale_id, id);
+        assert!(manager.apply(WindowCommand::Close(stale_id)).is_ok());
+        assert!(manager
+            .apply(WindowCommand::Replace {
+                old: stale_id,
+                new: replacement.spec(SubjectId::new(
+                    crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                    2,
+                )),
+            })
+            .is_err());
+        assert_eq!(state.dialog(), Some(&before));
+        assert_eq!(state.window_id(), Some(id));
+
+        let committed = manager
+            .apply(WindowCommand::Replace {
+                old: id,
+                new: replacement.spec(SubjectId::new(
+                    crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                    3,
+                )),
+            })
+            .expect("fresh valid context replaces atomically");
+        let WindowTransition::Replaced { new, .. } = committed.transition else {
+            panic!("expected Mission replacement");
+        };
+        assert_eq!(
+            state.commit_open(replacement, &committed.transition),
+            Some(new)
+        );
+        assert_ne!(new, id);
+        let dialog = state.dialog().unwrap();
+        assert_eq!(dialog.faction, MissionFaction::Empire);
+        assert_eq!(dialog.kind(), MissionKind::Espionage);
+        assert_eq!(dialog.page(), MissionDialogPage::Mission);
+        assert!(dialog.decoys().is_empty());
+    }
+
+    #[test]
+    fn mission_dialog_adoption_assigns_manager_identity_without_resetting_page_or_team() {
+        let team = members(2);
+        let mut state = open_with(team.clone());
+        state
+            .dialog_mut()
+            .expect("the legacy dialog is open")
+            .show_page(MissionDialogPage::Agents);
+        state
+            .dialog_mut()
+            .expect("the legacy dialog is open")
+            .toggle(team[0]);
+
+        let prepared = state
+            .prepare_adoption()
+            .expect("unmanaged content is adoptable");
+        let mut manager = WindowManager::new();
+        let committed = manager
+            .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
+                crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                1,
+            ))))
+            .expect("manager accepts Mission dialog");
+        let WindowTransition::Opened { id } = committed.transition else {
+            panic!("expected new Mission identity");
+        };
+
+        assert_eq!(
+            state.commit_open(prepared, &committed.transition),
+            Some(id),
+            "an existing identity-less fixture dialog must adopt the exact manager receipt"
+        );
+        let dialog = state.dialog().expect("adopted content remains open");
+        assert_eq!(dialog.page(), MissionDialogPage::Agents);
+        assert_eq!(dialog.agents(), team);
+        assert_eq!(state.window_id(), Some(id));
+        state
+            .dialog_mut()
+            .expect("adopted dialog remains open")
+            .move_selected(true);
+        let dialog = state.dialog().expect("adopted content remains open");
+        assert_eq!(dialog.agents(), &[team[1]]);
+        assert_eq!(dialog.decoys(), &[team[0]]);
+    }
+
+    #[test]
+    fn mission_dialog_windowing_confirm_is_once() {
+        let team = members(1);
+        let mut state = MissionDialogState::default();
+        let (mut manager, id) = managed_open(&mut state, team.clone());
+        let prepared = state.prepare_confirm().unwrap();
+        let before = state.dialog().unwrap().clone();
+        assert_eq!(state.commit_confirm(prepared.clone(), &[]), None);
+        assert_eq!(state.dialog(), Some(&before));
+
+        state.dialog_mut().unwrap().select_kind(1);
+        assert_eq!(
+            state.commit_confirm(prepared.clone(), &[id]),
+            None,
+            "an exact teardown identity cannot release a changed order"
+        );
+        state.dialog_mut().unwrap().select_kind(0);
+
+        let committed = manager
+            .apply(WindowCommand::Close(id))
+            .expect("exact close commits");
+        let WindowTransition::Closed { closed, .. } = committed.transition else {
+            panic!("expected close receipt");
+        };
+        assert_eq!(
+            state.commit_confirm(prepared.clone(), &closed),
+            Some(MissionDialogAction::Begin {
+                kind: MissionKind::Diplomacy,
+                faction: MissionFaction::Alliance,
+                team,
+                decoys: Vec::new(),
+                target: SystemKey::default(),
+                object: None,
+            })
+        );
+        assert_eq!(state.commit_confirm(prepared, &closed), None);
+    }
+
+    #[test]
+    fn mission_dialog_windowing_rejects_mismatched_publication_receipts() {
+        let team = members(1);
+        let mut empty = MissionDialogState::default();
+        let mut manager = WindowManager::new();
+        let unrelated = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::FleetFinder,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id: unrelated_id } = unrelated.transition else {
+            panic!("expected unrelated identity")
+        };
+        let opened = manager
+            .apply(WindowCommand::Open(
+                empty
+                    .prepare_open(
+                        MissionFaction::Alliance,
+                        SystemKey::default(),
+                        None,
+                        team.clone(),
+                        vec![MissionKind::Diplomacy],
+                    )
+                    .unwrap()
+                    .spec(SubjectId::new(
+                        crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
+                        7,
+                    )),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id } = opened.transition else {
+            panic!("expected Mission identity")
+        };
+
+        let mut forged_existing = empty
+            .prepare_open(
+                MissionFaction::Alliance,
+                SystemKey::default(),
+                None,
+                team.clone(),
+                vec![MissionKind::Diplomacy],
+            )
+            .unwrap();
+        forged_existing.replacing = Some(unrelated_id);
+        assert_eq!(
+            empty.commit_open(forged_existing, &WindowTransition::Opened { id }),
+            None
+        );
+        assert!(!empty.is_open());
+
+        let initial = empty
+            .prepare_open(
+                MissionFaction::Alliance,
+                SystemKey::default(),
+                None,
+                team.clone(),
+                vec![MissionKind::Diplomacy],
+            )
+            .unwrap();
+        assert_eq!(empty.commit_open(initial, &opened.transition), Some(id));
+        let before = empty.dialog().unwrap().clone();
+
+        let replacement = empty
+            .prepare_open(
+                MissionFaction::Empire,
+                SystemKey::default(),
+                None,
+                team,
+                vec![MissionKind::Espionage],
+            )
+            .unwrap();
+        let mut wrong_predecessor = replacement.clone();
+        wrong_predecessor.replacing = Some(unrelated_id);
+        assert_eq!(
+            empty.commit_open(
+                wrong_predecessor,
+                &WindowTransition::Replaced {
+                    old: id,
+                    new: unrelated_id,
+                },
+            ),
+            None
+        );
+        assert_eq!(empty.dialog(), Some(&before));
+
+        assert_eq!(
+            empty.commit_open(
+                replacement.clone(),
+                &WindowTransition::Replaced {
+                    old: unrelated_id,
+                    new: id,
+                },
+            ),
+            None
+        );
+        assert_eq!(empty.dialog(), Some(&before));
+        assert_eq!(
+            empty.commit_open(
+                replacement.clone(),
+                &WindowTransition::Opened { id: unrelated_id },
+            ),
+            None
+        );
+        assert_eq!(empty.dialog(), Some(&before));
+
+        assert_eq!(
+            empty.commit_open(
+                replacement.clone(),
+                &WindowTransition::Existing {
+                    id,
+                    effect: ExistingEffect::NoOp,
+                },
+            ),
+            Some(id)
+        );
+        assert_eq!(empty.dialog(), Some(&before));
+        assert_eq!(
+            empty.commit_open(
+                replacement,
+                &WindowTransition::Existing {
+                    id: unrelated_id,
+                    effect: ExistingEffect::NoOp,
+                },
+            ),
+            None
+        );
+        assert_eq!(empty.dialog(), Some(&before));
+    }
+
+    #[test]
+    fn mission_dialog_windowing_routes_and_releases_exact_content() {
+        let mut state = MissionDialogState::default();
+        let (mut manager, id) = managed_open(&mut state, members(1));
+        let layout = layout(1.0);
+        let inside = dialog_rect(layout).center();
+        let frame = manager.begin_frame();
+
+        assert_eq!(
+            state.hit_window(&frame, layout, (inside.x, inside.y)),
+            Some(id)
+        );
+        assert_eq!(state.keyboard_owner(&frame), Some(id));
+        assert_eq!(state.request_close(), Some(id));
+        assert_eq!(
+            state.hit_window(&frame, layout, (0.0, 0.0)),
+            None,
+            "points outside the exact dialog geometry do not hit"
+        );
+        assert_eq!(
+            state.content_reports(&frame),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Ready,
+            }]
+        );
+        assert_eq!(
+            MissionDialogState::default().content_reports(&frame),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Unpaintable,
+            }]
+        );
+
+        manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::FleetFinder,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let covered = manager.begin_frame();
+        assert_eq!(
+            state.hit_window(&covered, layout, (inside.x, inside.y)),
+            None,
+            "the higher modal owns the point"
+        );
+        assert_eq!(state.keyboard_owner(&covered), None);
+
+        state.remove_content(&[]);
+        assert_eq!(state.window_id(), Some(id));
+        state.remove_content(&[id]);
+        assert!(!state.is_open());
+        assert_eq!(state.request_close(), None);
     }
 
     #[test]

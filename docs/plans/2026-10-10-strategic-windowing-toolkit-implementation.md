@@ -2,30 +2,28 @@
 title: "Strategic Windowing Toolkit Implementation Plan"
 created: 2026-10-10
 status: active
-progress: "44% — tasks 0-5B merged (d174b9be); PR #45 (9533b516) migrated the Fleet family: its share of 7A-7C, capture cancellation including focus loss; task 6 Sector next"
-updated: 2026-10-15
+progress: "83% — Tasks 0-11 landed (15 of 18); Task 12's production proof without fixture bridges and Task 13's native-Windows and original-runtime acceptance remain open"
+updated: 2026-11-07
 ---
 
 # Strategic Windowing Toolkit Implementation Plan
 
 > **For future implementers:** Execute the reviewed plan task-by-task using the applicable implementation workflow. This document does not authorize implementation or delegation. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Active implementation. Tasks 0 through 5A are merged. The
-2026-10-12 combined routing/coordinator slice implements Task 4 and the shared
-coordinator, router, holds, and legacy gate from Task 5B in one review unit.
-Backend event normalization finishes alongside feature-family migration,
-beginning with Task 6 after that gate lands. PR #45 (`9533b516`) migrated the
-Fleet family ahead of Task 6: stable kind/system identity, manager-committed
-content, rail restore by `WindowId`, drag capture with cancellation on modal,
-hold and focus loss (browser blur and macOS `isActive`), and per-key Rename
-routing. Sector, System, Defenses and Missions remain retained legacy windows,
-muted under strategic modals. Task 6 is next.
+**Status:** Active, 83%: Tasks 0-11 have landed, 15 of 18. Task 12's
+automated workspace and browser gates pass on the reviewed source (the
+acceptance record binds them to its fixture WASM and runtime ORPK hashes); its
+production interaction without fixture bridges and its per-run browser,
+viewport, seed and revision record remain open. Task 13's native-Windows
+proof, original-runtime gaps, the System Finder, and A0 bitmap/layout/text
+acceptance remain open; this is not a claim of full original-interface
+parity.
 
 **Baseline:** Inspected worktree `/data/tmp/open-rebellion-strategic-window-modality-focus`, commit `f0648ef0e6b1f832a9f7643ccd6321e9f7ea5b52`. Revalidate before execution.
 
 **Goal:** Add a renderer- and platform-independent strategic-window kernel, migrate every existing strategic surface to it as the sole authority for identity, ordering, focus, modality, capture, and input routing, and prove the recovered original behavior without overstating unresolved runtime evidence.
 
-**Architecture:** A new std-only `rebellion-windowing` crate will hold semantic window records and produce immutable per-frame routing snapshots. `rebellion-render` will translate those decisions into current-frame hit regions, per-event input permits, egui focus requests, and a transparent modal input barrier while continuing to own all window contents. A prerequisite adapter experiment must prove exact paint and hit order on locked egui 0.31.1; repeatedly raising every Area is not an implementation of arbitrary stack order. `rebellion-app` will own the manager, combine its route with the existing non-window game-mode locks, and apply feature actions after the current snapshot has finished routing the frame.
+**Architecture:** A new std-only `rebellion-windowing` crate will hold semantic window records and produce immutable routing snapshots. `rebellion-render` will translate those decisions into current-frame hit regions, per-event input permits, egui focus requests, and a transparent modal input barrier while continuing to own all window contents. Pointer input uses a frozen frame snapshot; keyboard input derives an event-local snapshot and projects each accepted lifecycle command before the next physical key event. A prerequisite adapter experiment must prove exact paint and hit order on locked egui 0.31.1; repeatedly raising every Area is not an implementation of arbitrary stack order. `rebellion-app` will own the manager, combine its route with the existing non-window game-mode locks, and commit feature actions at the coordinator boundary.
 
 **Tech Stack:** Rust 2021 workspace, standard-library collections, egui through `egui-macroquad`, macroquad, existing Rust unit/integration tests, cargo-mutants, the existing WASM package path, and Playwright-based interface-parity scripts.
 
@@ -33,15 +31,23 @@ muted under strategic modals. Task 6 is next.
 
 **Latest evidence:**
 [`2026-10-12-strategic-window-routing-coordinator.md`](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-12-strategic-window-routing-coordinator.md)
-records immutable route/reconciliation behavior and the production
-coordinator boundary. It does not promote visual acceptance cells.
+records immutable route/reconciliation behavior and the production coordinator
+boundary; it does not promote visual acceptance cells. The final bounded
+reconciliation is
+
+[`2026-10-25-strategic-windowing-acceptance.md`](../qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md)
+(candidate manifest SHA-256
+`28ae5cc5e9b798d02e30a3bb6b0785bcb40781fd0e0e27d8f185808eb09b8221`), with
+the reviewed source's workspace and browser gates and their artifact hashes.
+Strict audit status remains 2 complete, 15 partial, 26 failing families and
+28/627 accepted cells.
 
 ## Global Constraints
 
 - `rebellion-windowing` is a std-only, ephemeral UI-state crate. It must not depend on `rebellion-core`, `rebellion-render`, `rebellion-app`, egui, macroquad, assets, serialization, the filesystem, audio, or platform APIs.
 - Public domain concepts are semantic window kinds, opaque session identities, ownership, visibility, order, focus, modality, and bounded pointer capture. Do not expose HWNDs, Win32 message numbers, intrusive tree nodes, or egui `Order` values.
 - Identity/existence, bottom-to-top order, twelve-entry presentation history, focused top-level/control, modal boundary, and pointer capture remain separate state. No collection may silently stand in for two of them.
-- Route one frame's keyboard and pointer events against one immutable `RoutingSnapshot`. Applying `Close` during that frame affects only the next snapshot, so the closing event never falls through.
+- Route pointer events against the immutable frame `RoutingSnapshot`. Route each physical keyboard event against an event-local snapshot, then project its accepted lifecycle command before the next physical event. The closing event never falls through, while a later Escape in the same frame can target the newly exposed window.
 - A visible strategic modal blocks all lower strategic input, including clicks outside its rectangle and cockpit hotkeys. Its own controls and eligible owned transients remain usable; its blocked owner may still paint. Modality is not lifetime pointer capture.
 - A registered window is not destroyed because it failed to paint. Reconciliation distinguishes explicitly absent feature state from temporarily unpaintable or off-scene content; a missing modal remains a fail-closed blocker until an explicit lifecycle action closes it.
 - Duplicate-open behavior is declared per family: Finder/Message/Encyclopedia singletons and duplicate Sector opens are no-ops; detail windows restore/raise; contextual dialogs use an explicit context key rather than a generic raise rule.
@@ -133,9 +139,11 @@ Evidence labels in code comments and records retain their established meanings:
 - `port:` for the chosen Rust mechanism or a safety boundary supported by visible behavior.
 - `unknown:` for bounded unresolved native detail.
 
-## Current Implementation and Exact Seams
+## Historical Pre-Migration Implementation and Exact Seams
 
-The code has useful feature boundaries but no shared window authority:
+This section records the baseline that motivated the migration; it does not
+describe the current branch. At that baseline the code had useful feature
+boundaries but no shared window authority:
 
 - `crates/rebellion-app/src/main.rs` creates all strategic states, snapshots the two-case `FrameKeyboardOwner`, dispatches global shortcuts, assembles `GalaxyMapState::pointer_blocked` from family-specific rectangle/open checks, computes `strategic_input_enabled`, invokes every renderer in a fixed sequence, and hand-codes Escape precedence.
 - `crates/rebellion-render/src/sector_window.rs` stores open sectors in a `Vec`; the last element is treated as focused. `open_for_system` currently calls `focus` on a duplicate, contrary to the newly recovered no-raise opener behavior.
@@ -358,7 +366,7 @@ pub enum WindowKind {
     MessageIndex, Encyclopedia, Status, BuildSelection, MissionDialog,
     MoveConfirmation, ScrapConfirmation, BattleAlert, BattleResults, Menu,
 }
-impl WindowKind { pub const ALL: [Self; 19]; }
+impl WindowKind { pub const ALL: [Self; 20]; }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WindowKey { pub kind: WindowKind, pub subject: Option<SubjectId> }
@@ -804,17 +812,21 @@ All scene switches retain the current event's lease until dispatch completes.
 
 1. Commit any explicitly scheduled pre-frame scene/hold changes; cancel old
    gestures if needed. Never use post-close state to reroute the old event.
-2. Build one immutable manager snapshot and restrict it to the active scene.
+2. Build the immutable frame snapshot, restrict it to the active scene, and
+   initialize an event-local keyboard cursor from the same manager state.
 3. Collect current geometry and freeze application holds/base-child hit regions.
-4. Normalize the input batch once; assign each event one route/propagation chain.
-5. Route owner/control input; retain `Handled` dispositions and gesture ownership.
+4. Normalize the input batch once. Route pointer events against the frame
+   snapshot; route physical key events in order against the keyboard cursor.
+5. Retain `Handled` dispositions and gesture ownership. Project each accepted
+   keyboard lifecycle command into the cursor before routing the next key.
 6. Dispatch root shortcuts only for explicitly unhandled, permitted events.
 7. Paint through the proven adapter in snapshot order; update content only with
    permits belonging to its window/control. Collect feature/window intents.
 8. Commit pending intents, deliver cancellation/teardown/focus receipts to all
    affected content stores, then reconcile explicit content reports.
-9. Assert manager/content agreement and emit changed-state diagnostics. New
-   windows and new focus become eligible through the next frame's snapshot.
+9. Assert manager/content agreement and emit changed-state diagnostics. Feature
+   opens and geometry become eligible through the next frame; only projected
+   keyboard close/focus restoration affects later physical keys in this frame.
 
 A restrictive hold that starts mid-frame may suppress remaining input; releasing
 one never makes that frame more permissive. An ordinary modal opened by input
@@ -1161,7 +1173,7 @@ references survive; a thirteenth minimized detail evicts the oldest through
 the same lifecycle teardown path; saved focus is used only by menus.
 
 - [ ] Add `closing_an_owner_removes_descendants_and_clears_focus_and_capture_before_restoration`.
-- [ ] Add `close_chooses_previous_eligible_survivor_outside_removed_subtree`.
+- [ ] Add `close_chooses_topmost_eligible_survivor_outside_removed_subtree`.
 - [ ] Add `menu_close_restores_saved_control_only_if_still_eligible`.
 - [ ] Add `ordinary_window_close_uses_global_eligible_order_not_a_private_focus_stack`.
 - [ ] Add `minimize_removes_visible_order_and_adds_history_once`.
@@ -1369,7 +1381,7 @@ surfaces respect an active common modal during intermediate commits.
 - [ ] Add `windowing_input_event_coordinates_not_final_cursor_choose_target`.
 - [ ] Add `windowing_input_cancelled_drag_quarantines_later_release`.
 - [ ] Add `windowing_input_hold_release_does_not_unlock_existing_frame`.
-- [ ] Add `windowing_policy_inventory_covers_all_nineteen_kinds`.
+- [ ] Add `windowing_policy_inventory_covers_all_twenty_kinds`.
 - [ ] Add `windowing_subject_fleet_detail_uses_system_dat_id`.
 - [ ] Add `windowing_legacy_bridge_blocks_raw_paths_under_migrated_modal`.
 
@@ -2101,7 +2113,7 @@ implementation satisfies its happy path but violates one of these shared cases.
 | Press on pause-alert rectangle | Existing base child | Its scoped handler | Uncovered map remains independently eligible |
 | Scene-transition trigger | Old scene recipient | Stop | No action in newly exposed scene |
 | App loses focus during drag | Cancellation path | None until fresh press | Drag payload/capture clear |
-| Two events in one frame | Independently identified events | Each frozen route/claim | No conflation by final cursor/key state |
+| Two events in one frame | Independently identified events | Each event-local route/claim | No conflation by final cursor/key state |
 
 For a key class not represented above, follow actual control disposition and
 the same propagation boundary. Do not add a permissive default branch that

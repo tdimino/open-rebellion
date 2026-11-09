@@ -1,4 +1,8 @@
 //! Original bitmap-driven unified Game Options surface.
+//!
+//! Its raw pointer readers are scene-local: the application suspends the
+//! Galaxy scene before drawing Game Options, so they are outside strategic
+//! window admission and cannot act as a strategic underlay.
 
 use macroquad::prelude::*;
 

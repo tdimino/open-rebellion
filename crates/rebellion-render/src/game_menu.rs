@@ -11,6 +11,10 @@
 //! `docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-24-game-speed-recovery.md`.
 
 use egui_macroquad::egui;
+use rebellion_windowing::{
+    ContentReport, ContentStatus, RoutingSnapshot, WindowCommand, WindowId, WindowKind,
+    WindowOwner, WindowSpec, WindowTransition,
+};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{
@@ -30,6 +34,166 @@ const NORMAL_COLOR: egui::Color32 = egui::Color32::WHITE;
 
 /// Disabled item color `0x2808080`.
 const DISABLED_COLOR: egui::Color32 = egui::Color32::from_rgb(0x80, 0x80, 0x80);
+
+/// Inert request to publish one Menu presentation after the manager accepts
+/// its exact registered invoker owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreparedMenuOpen {
+    spec: WindowSpec,
+    replacing: Option<WindowId>,
+}
+
+impl PreparedMenuOpen {
+    /// One atomic lifecycle command for this prepared presentation.
+    #[must_use]
+    pub const fn command(self) -> WindowCommand {
+        match self.replacing {
+            Some(old) => WindowCommand::Replace {
+                old,
+                new: self.spec,
+            },
+            None => WindowCommand::Open(self.spec),
+        }
+    }
+}
+
+/// Manager identity attached to the one active owned Menu presentation.
+///
+/// Presentation payload remains in its owning feature module. This adapter is
+/// deliberately only identity, ownership, hit routing, and teardown state so
+/// failed opens cannot mutate live menu content.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ManagedMenuState {
+    window: Option<WindowId>,
+}
+
+impl ManagedMenuState {
+    /// Prepares a first open or atomic replacement under the exact invoker.
+    #[must_use]
+    pub fn prepare_open(&self, owner: WindowId) -> PreparedMenuOpen {
+        self.prepare_open_for(WindowOwner::Window(owner))
+    }
+
+    /// Prepares a root-owned dismissible menu, such as Game Speed or Agent.
+    #[must_use]
+    pub fn prepare_root_open(&self) -> PreparedMenuOpen {
+        self.prepare_open_for(WindowOwner::StrategicRoot)
+    }
+
+    /// Prepares the command-center GID menu under its strategic-root
+    /// invoker. Unlike other root menus, native `FUN_00427270` leaves this
+    /// menu open while command-center controls and accelerators act.
+    ///
+    /// `built` is whether the galaxy view has built its menu already
+    /// ([`crate::cockpit::GidUiState::built`]). `FUN_00422ce0` 0x132 builds
+    /// it only when the view has none, and that build's `WM_CREATE` step
+    /// (`FUN_004511e0`) ends with `SetFocus` on the menu; a later press
+    /// reuses `+0x118` and only shows it, leaving the focus where it was
+    /// (gid-legend.md, "Escape and the keyboard focus").
+    #[must_use]
+    pub fn prepare_gid_open(&self, built: bool) -> PreparedMenuOpen {
+        let mut prepared = self.prepare_open_for(WindowOwner::StrategicRoot);
+        if built {
+            prepared.spec.policy.focus_on_open = rebellion_windowing::FocusOnOpen::Preserve;
+        }
+        prepared.spec.policy.input = rebellion_windowing::InputPolicy::Modeless;
+        // FUN_00427270 leaves the GID menu registered while Message Index and
+        // other strategic modals open above it. Keep this root presentation
+        // in the normal band; owner-attached object menus remain transient.
+        prepared.spec.policy.band = rebellion_windowing::StackBand::Normal;
+        prepared.spec.policy.placement = rebellion_windowing::OpenPlacement::TopOfBand;
+        prepared
+    }
+
+    fn prepare_open_for(&self, owner: WindowOwner) -> PreparedMenuOpen {
+        PreparedMenuOpen {
+            spec: crate::windowing_policy::singleton_spec(WindowKind::Menu, owner),
+            replacing: self.window,
+        }
+    }
+
+    /// Publishes identity only for the exact accepted open or replacement.
+    pub fn commit_open(
+        &mut self,
+        prepared: PreparedMenuOpen,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        match (transition, prepared.replacing, self.window) {
+            (WindowTransition::Opened { id }, None, None) => {
+                self.window = Some(*id);
+                Some(*id)
+            }
+            (WindowTransition::Replaced { old, new }, Some(expected_old), Some(current))
+                if *old == expected_old && current == expected_old =>
+            {
+                self.window = Some(*new);
+                Some(*new)
+            }
+            _ => None,
+        }
+    }
+
+    /// Exact manager identity owning the published presentation.
+    #[must_use]
+    pub const fn window_id(&self) -> Option<WindowId> {
+        self.window
+    }
+
+    /// Returns this menu when any prior-frame root or visible submenu
+    /// rectangle owns `point`.
+    #[must_use]
+    pub fn hit_window(
+        &self,
+        frame: &RoutingSnapshot,
+        rects: &[egui::Rect],
+        point: (f32, f32),
+    ) -> Option<WindowId> {
+        let id = self.window?;
+        let point = egui::pos2(point.0, point.1);
+        (frame
+            .key(id)
+            .is_some_and(|key| key.kind == WindowKind::Menu)
+            && frame.allows_input(id)
+            && rects.iter().any(|rect| rect.contains(point)))
+        .then_some(id)
+    }
+
+    /// Explicit Menu content state for conservative reconciliation.
+    #[must_use]
+    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
+        frame
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|id| {
+                frame
+                    .key(*id)
+                    .is_some_and(|key| key.kind == WindowKind::Menu)
+            })
+            .map(|id| ContentReport {
+                window: id,
+                status: if self.window == Some(id) {
+                    ContentStatus::Ready
+                } else {
+                    ContentStatus::Unpaintable
+                },
+            })
+            .collect()
+    }
+
+    /// Exact close target while content remains attached through this frame.
+    #[must_use]
+    pub const fn request_close(&self) -> Option<WindowId> {
+        self.window
+    }
+
+    /// Drops presentation identity only from an exact teardown receipt.
+    pub fn remove_content(&mut self, removed: &[WindowId]) {
+        if self.window.is_some_and(|id| removed.contains(&id)) {
+            self.window = None;
+        }
+    }
+}
 
 /// Faction text color: Alliance `0x20000ff` (red), Empire `0x200ff00` (green).
 /// The menus highlight an item in it, and the day readout is drawn in it.
@@ -185,9 +349,24 @@ pub enum GameMenuResponse {
     Chosen(usize),
     /// An enabled entry of the submenu under entry `row`; the whole menu
     /// closes (`FUN_004424c0` posts `0x409` to the view).
-    ChosenChild { row: usize, child: usize },
+    ChosenChild {
+        row: usize,
+        child: usize,
+    },
     /// A press outside the menu or Escape closed it.
     Dismissed,
+}
+
+/// Feature payload reported by an owned Menu draw without mutating its
+/// published lifecycle content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnedMenuOutcome<T> {
+    /// The menu remains open.
+    Open,
+    /// Escape or an outside press requested explicit manager close.
+    Dismissed,
+    /// One enabled row selected a feature-owned command payload.
+    Chosen(T),
 }
 
 /// Submenu arrows, highlighted and normal: 10117 and 10118 for side 1, else
@@ -243,6 +422,41 @@ struct MenuMemory {
     opened_at: f64,
     ticks: u64,
     last_pass: u64,
+}
+
+/// Root plus the currently visible submenu area, in paint order.
+///
+/// The rectangles come from the previous completed egui pass, matching the
+/// rest of strategic hit testing. A hidden or stale submenu area is excluded
+/// unless the live menu memory still names its parent row.
+fn game_menu_ids(ctx: &egui::Context, id: egui::Id) -> Vec<egui::Id> {
+    let mut ids = vec![id];
+    let pass = ctx.cumulative_pass_nr();
+    let shown = ctx
+        .data(|data| data.get_temp::<MenuMemory>(id.with("memory")))
+        .filter(|memory| memory.last_pass + 1 >= pass)
+        .and_then(|memory| memory.shown);
+    if let Some(row) = shown {
+        ids.push(id.with(("submenu", row)));
+    }
+    ids
+}
+
+#[must_use]
+pub fn game_menu_rects(ctx: &egui::Context, id: egui::Id) -> Vec<egui::Rect> {
+    game_menu_ids(ctx, id)
+        .into_iter()
+        .filter_map(|id| ctx.memory(|memory| memory.area_rect(id)))
+        .collect()
+}
+
+/// Root plus the currently visible submenu layer, in internal paint order.
+#[must_use]
+pub fn game_menu_layer_ids(ctx: &egui::Context, id: egui::Id) -> Vec<egui::LayerId> {
+    game_menu_ids(ctx, id)
+        .into_iter()
+        .map(|id| egui::LayerId::new(egui::Order::Tooltip, id))
+        .collect()
 }
 
 /// Text and icon sizes of `entries` and their layout.
@@ -352,11 +566,8 @@ fn paint_menu(
     let menu_size = egui::vec2(geometry.width * scale, geometry.height * scale);
     let (arrow_highlighted, arrow_normal) = submenu_arrows(faction);
 
-    // FUN_00442860 opens a pop-up over every child window. The modeless
-    // windows share Foreground and a focused one raises itself each frame
-    // (`system_window.rs`), so the menu takes the order above them, which
-    // it shares with the mission dialog, and raises itself there.
-    ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, id));
+    // FUN_00442860 opens a pop-up over every child window on Tooltip order.
+    // Cross-surface ordering remains the manager adapter's responsibility.
     let shown = egui::Area::new(id)
         .order(egui::Order::Tooltip)
         .fade_in(false)
@@ -395,7 +606,8 @@ fn paint_menu(
                 } else {
                     entry.icon
                 };
-                if let Some(texture) = icon.and_then(|icon| cache.get(ctx, DllSource::Strategy, icon))
+                if let Some(texture) =
+                    icon.and_then(|icon| cache.get(ctx, DllSource::Strategy, icon))
                 {
                     let size = texture.size_vec2() * scale;
                     ui.painter().image(
@@ -623,6 +835,19 @@ mod tests {
         let mut cache = BmpCache::new();
         let dialog = egui::Id::new("dialog_above_windows");
         let entries = [labelled("Mission", true)];
+        let mut manager = rebellion_windowing::WindowManager::new();
+        let menu_window = opened_id(
+            &manager
+                .apply(rebellion_windowing::WindowCommand::Open(
+                    crate::windowing_policy::singleton_spec(
+                        rebellion_windowing::WindowKind::Menu,
+                        rebellion_windowing::WindowOwner::StrategicRoot,
+                    ),
+                ))
+                .expect("menu opens"),
+        );
+        let frame = manager.begin_frame();
+        let mut order_projector = crate::windowing::ManagedOrderProjector::default();
         for _ in 0..3 {
             let _ = ctx.run(egui::RawInput::default(), |ctx| {
                 let _ = draw_game_menu(
@@ -641,6 +866,15 @@ mod tests {
                     .show(ctx, |ui| {
                         ui.allocate_response(egui::vec2(400.0, 400.0), egui::Sense::click());
                     });
+                crate::windowing::realize_managed_order(
+                    ctx,
+                    &frame,
+                    &mut order_projector,
+                    |window| {
+                        (window == menu_window)
+                            .then(|| game_menu_layer_ids(ctx, egui::Id::new(MENU_ID)))
+                    },
+                );
             });
         }
         let menu = ctx
@@ -1171,6 +1405,291 @@ mod tests {
         assert_eq!(
             game_menu_origin((120.0, 420.0), (83.0, 102.0), owner),
             (120.0, 318.0)
+        );
+    }
+
+    fn opened_id(commit: &rebellion_windowing::WindowCommit) -> rebellion_windowing::WindowId {
+        match commit.transition {
+            rebellion_windowing::WindowTransition::Opened { id } => id,
+            ref other => panic!("expected a new window, got {other:?}"),
+        }
+    }
+
+    fn detail(
+        manager: &mut rebellion_windowing::WindowManager,
+        kind: rebellion_windowing::WindowKind,
+        subject: u64,
+    ) -> rebellion_windowing::WindowId {
+        let spec = crate::windowing_policy::contextual_spec(
+            kind,
+            rebellion_windowing::SubjectId::new(crate::windowing_policy::SUBJECT_SYSTEM, subject),
+            rebellion_windowing::WindowOwner::StrategicRoot,
+        );
+        opened_id(
+            &manager
+                .apply(rebellion_windowing::WindowCommand::Open(spec))
+                .expect("detail opens"),
+        )
+    }
+
+    #[test]
+    fn menu_replacement_is_atomic_and_saves_eligible_invoker_focus() {
+        // FUN_00442380/FUN_00442430 save the invoker focus; port: changing
+        // presentation uses one manager Replace, never close then open.
+        // Break caught: publishing replacement content after a failed commit,
+        // reusing the old identity, or restoring the former invoker.
+        let mut manager = rebellion_windowing::WindowManager::new();
+        let first_owner = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
+        let first_focus = rebellion_windowing::FocusTarget {
+            window: first_owner,
+            control: Some(rebellion_windowing::ControlId(7)),
+        };
+        manager
+            .apply(rebellion_windowing::WindowCommand::Focus(first_focus))
+            .unwrap();
+        let mut menu = ManagedMenuState::default();
+        let first = menu.prepare_open(first_owner);
+        let opened = manager.apply(first.command()).unwrap();
+        let old = menu
+            .commit_open(first, &opened.transition)
+            .expect("accepted open publishes content");
+
+        let invalid = menu.prepare_open(old);
+        let before_order = manager.visible_order().to_vec();
+        let before_focus = manager.focused();
+        assert!(manager.apply(invalid.command()).is_err());
+        assert_eq!(menu.window_id(), Some(old));
+        assert_eq!(manager.visible_order(), before_order);
+        assert_eq!(manager.focused(), before_focus);
+
+        let second_owner = detail(&mut manager, rebellion_windowing::WindowKind::Fleet, 2);
+        let second_focus = rebellion_windowing::FocusTarget {
+            window: second_owner,
+            control: Some(rebellion_windowing::ControlId(11)),
+        };
+        manager
+            .apply(rebellion_windowing::WindowCommand::Focus(second_focus))
+            .unwrap();
+        let replacement = menu.prepare_open(second_owner);
+        let replaced = manager.apply(replacement.command()).unwrap();
+        let new = menu
+            .commit_open(replacement, &replaced.transition)
+            .expect("accepted replacement publishes content");
+        assert_ne!(new, old);
+
+        let closed = manager
+            .apply(rebellion_windowing::WindowCommand::Close(new))
+            .unwrap();
+        assert_eq!(manager.focused(), Some(second_focus));
+        let removed = match &closed.transition {
+            rebellion_windowing::WindowTransition::Closed { closed, .. } => closed,
+            other => panic!("expected close, got {other:?}"),
+        };
+        menu.remove_content(removed);
+
+        let removed_control = rebellion_windowing::FocusTarget {
+            window: second_owner,
+            control: Some(rebellion_windowing::ControlId(13)),
+        };
+        manager
+            .apply(rebellion_windowing::WindowCommand::Focus(removed_control))
+            .unwrap();
+        let reopened = menu.prepare_open(second_owner);
+        let committed = manager.apply(reopened.command()).unwrap();
+        let reopened_id = menu.commit_open(reopened, &committed.transition).unwrap();
+        manager
+            .apply(rebellion_windowing::WindowCommand::InvalidateControl(
+                removed_control,
+            ))
+            .unwrap();
+        manager
+            .apply(rebellion_windowing::WindowCommand::Close(reopened_id))
+            .unwrap();
+        assert_eq!(
+            manager.focused(),
+            Some(rebellion_windowing::FocusTarget {
+                window: second_owner,
+                control: None,
+            })
+        );
+    }
+
+    #[test]
+    fn menu_outside_press_dismisses_without_clicking_underlay() {
+        // FUN_00442b90 closes on the outside press. The frozen route consumes
+        // that press and keeps its physical release quarantined after close.
+        // Break caught: forwarding either gesture edge to the exposed root.
+        use crate::windowing_input::{
+            FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+        };
+
+        let mut manager = rebellion_windowing::WindowManager::new();
+        let owner = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
+        let mut menu = ManagedMenuState::default();
+        let prepared = menu.prepare_open(owner);
+        let opened = manager.apply(prepared.command()).unwrap();
+        let id = menu.commit_open(prepared, &opened.transition).unwrap();
+        let frame = manager.begin_frame();
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(1, &frame);
+        let press = InputEventId {
+            frame: 1,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                press,
+                &std::collections::BTreeSet::new(),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            InputRecipient::Blocked
+        );
+        assert!(!router.claim_root(press));
+
+        let closed = manager
+            .apply(rebellion_windowing::WindowCommand::Close(id))
+            .unwrap();
+        let removed = match &closed.transition {
+            rebellion_windowing::WindowTransition::Closed { closed, .. } => closed,
+            other => panic!("expected close, got {other:?}"),
+        };
+        menu.remove_content(removed);
+        assert_eq!(menu.window_id(), None);
+
+        router.begin_frame(2, &manager.begin_frame());
+        let release = InputEventId {
+            frame: 2,
+            ordinal: 0,
+        };
+        assert_eq!(
+            router.collect_pointer(
+                release,
+                &std::collections::BTreeSet::new(),
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+            InputRecipient::Blocked
+        );
+        assert!(!router.claim_root(release));
+    }
+
+    #[test]
+    fn menu_owner_close_removes_menu_before_restoring_focus() {
+        // FUN_004ac5c0 supplies the invoking detail as owner. Closing that
+        // real owner tears down its menu child before the final focus receipt.
+        // Break caught: orphaning Menu content or focusing through live teardown.
+        let mut manager = rebellion_windowing::WindowManager::new();
+        let owner = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
+        let mut menu = ManagedMenuState::default();
+        let prepared = menu.prepare_open(owner);
+        let opened = manager.apply(prepared.command()).unwrap();
+        let menu_id = menu.commit_open(prepared, &opened.transition).unwrap();
+
+        let closed = manager
+            .apply(rebellion_windowing::WindowCommand::Close(owner))
+            .unwrap();
+        assert!(matches!(
+            closed.events.as_slice(),
+            [
+                rebellion_windowing::WindowEvent::Closed { window, .. },
+                rebellion_windowing::WindowEvent::Closed {
+                    window: closed_owner,
+                    ..
+                },
+                rebellion_windowing::WindowEvent::FocusChanged { .. }
+            ] if *window == menu_id && *closed_owner == owner
+        ));
+        let removed = match &closed.transition {
+            rebellion_windowing::WindowTransition::Closed { closed, .. } => closed,
+            other => panic!("expected close, got {other:?}"),
+        };
+        menu.remove_content(removed);
+        assert_eq!(menu.window_id(), None);
+    }
+
+    #[test]
+    fn menu_inside_active_modal_remains_eligible() {
+        // A Menu may cross the modal boundary only as that modal's actual
+        // descendant. A background-owned transient is rejected, not promoted
+        // into speculative owner-local modality.
+        // Break caught: band-only ordering that lets unrelated transients pierce.
+        let mut manager = rebellion_windowing::WindowManager::new();
+        let background = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
+        let modal_spec = crate::windowing_policy::singleton_spec(
+            rebellion_windowing::WindowKind::SystemFinder,
+            rebellion_windowing::WindowOwner::StrategicRoot,
+        );
+        let modal = opened_id(
+            &manager
+                .apply(rebellion_windowing::WindowCommand::Open(modal_spec))
+                .unwrap(),
+        );
+        let mut menu = ManagedMenuState::default();
+        let prepared = menu.prepare_open(modal);
+        let opened = manager.apply(prepared.command()).unwrap();
+        let id = menu.commit_open(prepared, &opened.transition).unwrap();
+        assert!(manager.begin_frame().allows_input(id));
+
+        manager
+            .apply(rebellion_windowing::WindowCommand::Close(id))
+            .unwrap();
+        menu.remove_content(&[id]);
+        let unrelated = menu.prepare_open(background);
+        assert_eq!(
+            manager.apply(unrelated.command()),
+            Err(rebellion_windowing::WindowError::InvalidPlacement)
+        );
+    }
+
+    #[test]
+    fn strategic_modal_opens_above_the_still_registered_gid_menu() {
+        // Source: FUN_00427270 and gid-legend.md, "Presses while the menu is
+        // open": Message Index opens above the GID menu and closing it leaves
+        // the menu open with its galaxy children still hidden.
+        let mut manager = rebellion_windowing::WindowManager::new();
+        let detail = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
+        let mut menu = ManagedMenuState::default();
+        let prepared = menu.prepare_gid_open(false);
+        let opened = manager.apply(prepared.command()).unwrap();
+        let menu_id = menu.commit_open(prepared, &opened.transition).unwrap();
+        let modal_spec = crate::windowing_policy::singleton_spec(
+            rebellion_windowing::WindowKind::MessageIndex,
+            rebellion_windowing::WindowOwner::StrategicRoot,
+        );
+        let modal = opened_id(
+            &manager
+                .apply(rebellion_windowing::WindowCommand::Open(modal_spec))
+                .unwrap(),
+        );
+
+        let modal_frame = manager.begin_frame();
+        assert_eq!(modal_frame.paint_order(), &[detail, menu_id, modal]);
+        assert!(!modal_frame.allows_input(menu_id));
+        assert_eq!(menu.window_id(), Some(menu_id));
+
+        manager
+            .apply(rebellion_windowing::WindowCommand::Close(modal))
+            .unwrap();
+        let restored = manager.begin_frame();
+        assert_eq!(restored.paint_order(), &[detail, menu_id]);
+        assert!(restored.allows_input(menu_id));
+        assert_eq!(menu.window_id(), Some(menu_id));
+    }
+
+    #[test]
+    fn menu_detail_invoker_has_registered_owner() {
+        // Detail lifetime remains under StrategicRoot; the Menu
+        // itself must name the exact routed detail identity, not a guessed
+        // sector or an unregistered renderer key.
+        // Break caught: registering Menu under a surrogate/root owner.
+        let mut manager = rebellion_windowing::WindowManager::new();
+        let owner = detail(&mut manager, rebellion_windowing::WindowKind::Defenses, 17);
+        let mut menu = ManagedMenuState::default();
+        let prepared = menu.prepare_open(owner);
+        let opened = manager.apply(prepared.command()).unwrap();
+        let id = menu.commit_open(prepared, &opened.transition).unwrap();
+        assert_eq!(
+            manager.begin_frame().owner(id),
+            Some(rebellion_windowing::WindowOwner::Window(owner))
         );
     }
 }

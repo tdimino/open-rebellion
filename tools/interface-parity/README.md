@@ -54,7 +54,7 @@ journeys. Its default selection comes from the reviewed
 `windowing-contract-manifest.json` inventory (A01 through E10) and exits nonzero
 until the five named journey modules cover every required faction and viewport.
 Self-declared group labels do not establish completeness. The explicit
-`--case adapter-smoke` selection is the early SW-12H gate: it runs both factions
+`--case adapter-smoke` selection is the early shared-adapter gate: it runs both factions
 at 640x480 and 1280x800, clicks the real GID control, selects the real Display
 Off child row to release the menu boundary, sends a real Alt+2 input, and
 retains each backend-assigned physical event ID, the recipient observed from

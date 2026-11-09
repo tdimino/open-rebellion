@@ -660,19 +660,17 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
-                        true,
                     );
                     let _ = draw_defenses_windows(
                         ctx,
                         world,
                         &fog,
                         &rebellion_core::missions::MissionState::new(),
+                        &rebellion_core::economy::EconomyState::default(),
                         defenses,
                         faction,
                         layout,
                         &mut cache,
-                        true,
-                        &|_| true,
                     );
                     let _ = draw_missions_windows(
                         ctx,
@@ -683,8 +681,6 @@ mod tests {
                         faction,
                         layout,
                         &mut cache,
-                        true,
-                        &|_| true,
                     );
                     capture_pointer(ctx);
                 });

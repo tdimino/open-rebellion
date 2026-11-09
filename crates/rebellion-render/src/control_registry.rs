@@ -11,7 +11,8 @@
 //! A frame's registrations are complete only once the frame is drawn, so the
 //! app calls [`begin_frame`] first: it makes the frame just drawn the
 //! snapshot the dev commands read and starts a new one. A name filed twice in
-//! a frame keeps its last rect (the focused window draws last).
+//! a frame keeps its last rect; managed surfaces register in the manager's
+//! bottom-to-top order, so the topmost window wins independently of focus.
 
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};

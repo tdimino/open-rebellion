@@ -10,6 +10,11 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
+import {
+  chooseMissionTargetMenuRow,
+  waitForMissionTargetMenuClosed,
+  waitForMissionTargetMenuReady,
+} from "./mission-dialog-input.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -233,6 +238,9 @@ async function target(page, faction, directory) {
   const windowLeft = faction.galaxy.x + faction.galaxy.width - 235 - 5;
   const agent = { x: windowLeft + 42, y: faction.galaxy.y + 5 + 116 };
   await click(page, agent, "right");
+  // MissionTargeting deliberately has no generic pointer-route receipts. Wait
+  // for the manager's lifecycle publication before reading menu geometry.
+  await waitForMissionTargetMenuReady(page);
   await page.waitForFunction(() => window.__openRebellionInterfaceObjectMenu?.status === "object-menu",
     null, { timeout: 10_000 });
   const menu = await page.evaluate(() => window.__openRebellionInterfaceObjectMenu);
@@ -240,7 +248,12 @@ async function target(page, faction, directory) {
   fs.writeFileSync(path.join(directory, "menu-screen.png"), await page.screenshot({ animations: "disabled" }));
   // Rows below a 2-pixel border share one height: the character records carry no icon.
   const row = (menu.height - 2) / menu.rows;
-  await click(page, { x: menu.left + menu.width / 2, y: menu.top + 2 + row * (menu.mission_row + 0.5) });
+  await chooseMissionTargetMenuRow({
+    point: { x: menu.left + menu.width / 2, y: menu.top + 2 + row * (menu.mission_row + 0.5) },
+    click: (point) => click(page, point),
+    waitForMenuReady: () => waitForMissionTargetMenuReady(page),
+    waitForMenuClosed: () => waitForMissionTargetMenuClosed(page),
+  });
 
   const pointer = { x: Math.round(menu.target_screen_x), y: Math.round(menu.target_screen_y) };
   await page.mouse.move(pointer.x, pointer.y);

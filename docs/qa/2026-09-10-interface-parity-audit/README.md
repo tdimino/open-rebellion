@@ -29,6 +29,9 @@ and passes the complete comparison contract.
 
 ## Start here
 
+- Read the [strategic-windowing reconciliation](evidence/2026-10-25-strategic-windowing-acceptance.md)
+  for the window manager's backend evidence and its explicit non-parity
+  boundary.
 - Read the [audit overview](index.md) for the current result and definition of
   100% interface parity.
 - Follow the current
@@ -331,7 +334,9 @@ The practical implementation estimate is approximately 25% tackled and 75%
 remaining. Formally, the ledger has 43 required families: 2 complete (OBJ-01, EVT-03),
 15 partial, and 26 failing; 28 of the 627 required cells are accepted, and the
 rest stay pending until their complete evidence and execution matrices pass. The practical estimate guides
-bundle planning; it does not replace strict acceptance.
+bundle planning; it does not replace strict acceptance. The
+strategic-windowing reconciliation records the window manager's backend
+evidence without promoting any strict interface family or cell.
 
 The manual cross-check added 63 previously absent or compound requirements
 without accepting any of them. Research leads came from the original manual

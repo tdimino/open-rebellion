@@ -3,6 +3,22 @@
 //! This module is compiled for the dedicated WASM acceptance artifact and
 //! native unit tests. Production builds contain no fixture bridge.
 
+#[path = "interface_test_fixture_identity_history.rs"]
+mod identity_history;
+#[path = "interface_test_fixture_input_scenes.rs"]
+mod input_scenes;
+#[path = "interface_test_fixture_modal_boundaries.rs"]
+mod modal_boundaries;
+
+#[cfg(target_arch = "wasm32")]
+pub use identity_history::{IdentityHistoryWatch, IdentityHistoryWindows};
+#[cfg(target_arch = "wasm32")]
+pub(crate) use input_scenes::InputScenesCommand;
+#[cfg(target_arch = "wasm32")]
+pub use input_scenes::{InputScenesFixture, InputScenesWindows};
+#[cfg(target_arch = "wasm32")]
+pub use modal_boundaries::{ModalBoundaryWatch, ModalBoundaryWindows};
+
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::carriage::ProductRoom;
 use rebellion_core::dat::{ExplorationStatus, Faction};
@@ -29,11 +45,13 @@ use rebellion_render::game_speed::day_readout_rect;
 use rebellion_render::mission_dialog::{MissionDialogPage, MissionDialogState};
 use rebellion_render::object_menu::{ObjectMenuCommand, ObjectMenuState};
 use rebellion_render::quadrant_icons::Quadrant;
+use rebellion_render::system_window::reference_rail_slots;
 use rebellion_render::{
     strategic_primary_controls, CockpitButton, CockpitFaction, CockpitState, GalaxyMapState,
     GameMessage, GidMode, SectorWindowState, SystemWindowState,
 };
 use rebellion_render::{DefensesPage, DefensesWindowState, MissionsTab, MissionsWindowState};
+use rebellion_windowing::{RoutingSnapshot, WindowKind};
 use serde::Serialize;
 
 use crate::encyclopedia_surface::{CanonicalFixtureStart, FixtureStart};
@@ -246,6 +264,17 @@ impl Scenario {
             || self.canonical_encyclopedia_fixture_start().is_some()
     }
 
+    pub(crate) fn emits_unhandled_windowing_route_receipts(self) -> bool {
+        matches!(
+            self,
+            Self::Quadrants | Self::WindowingContract | Self::FleetFinder
+        ) || self.uses_the_fleet_window()
+    }
+
+    pub(crate) fn emits_windowing_pointer_ready_receipts(self) -> bool {
+        matches!(self, Self::Quadrants | Self::FleetFinder) || self.uses_the_fleet_window()
+    }
+
     fn moves_a_fleet(self) -> bool {
         matches!(
             self,
@@ -268,7 +297,7 @@ impl Scenario {
     }
 
     /// The scenarios whose gate works the primary system's Fleet window.
-    fn uses_the_fleet_window(self) -> bool {
+    pub(crate) fn uses_the_fleet_window(self) -> bool {
         matches!(
             self,
             Self::FleetLoad
@@ -285,6 +314,7 @@ impl Scenario {
     fn reports_object_menu(self) -> bool {
         self == Self::MissionTargeting
             || self == Self::BuildSelection
+            || self == Self::WindowingContract
             || self.moves_a_fleet()
             || self.uses_the_fleet_window()
     }
@@ -509,7 +539,10 @@ pub fn apply(
     // The Build Selection gate: a shipyard, a training facility and a
     // construction yard of the player's at the primary system, whose
     // Manufacturing window opens on its overview.
-    if request.scenario == Scenario::BuildSelection {
+    if matches!(
+        request.scenario,
+        Scenario::BuildSelection | Scenario::WindowingContract
+    ) {
         for class in [0x2800_0001, 0x2900_0002, 0x2a00_0003] {
             let yard = world.manufacturing_facilities.insert(
                 rebellion_core::world::ManufacturingFacilityInstance {
@@ -551,16 +584,7 @@ pub fn apply(
         );
     }
     if request.scenario.uses_the_fleet_window() {
-        place_loading_fleet(
-            request,
-            world,
-            cockpit,
-            movement,
-            sectors,
-            defenses,
-            troop_transport,
-            primary,
-        );
+        place_loading_fleet(request, world, movement, sectors, troop_transport, primary);
     }
     if request.scenario == Scenario::Quadrants {
         place_quadrant_contents(request, world, movement, missions, sectors, primary);
@@ -571,24 +595,21 @@ pub fn apply(
         sectors.open_for_system(world, primary, request.faction);
     }
     if request.scenario == Scenario::MissionTargeting {
-        // The primary system's Defenses window at the galaxy view's right
-        // edge holds the agent first on its personnel page; the second
-        // system's planet in its sector window, in the first column on the
-        // left, is the target (FUN_0045c830).
-        let layout = cockpit.layout_for(640.0, 480.0);
-        let galaxy = layout.galaxy;
-        defenses.open(
-            world,
-            primary,
-            (
-                (galaxy.x + galaxy.width - DEFENSES_WINDOW_WIDTH) as i16 - 5,
-                galaxy.y as i16 + 5,
-            ),
-            request.faction,
-            layout,
-        );
         sectors.open_for_system(world, secondary, request.faction);
     }
+    if let Some(open) = defenses_window_open(request, world, cockpit) {
+        defenses.open(
+            world,
+            open.system,
+            open.logical_position,
+            request.faction,
+            cockpit.layout_for(640.0, 480.0),
+        );
+        defenses.show_page(open.system, open.page);
+    }
+
+    identity_history::prepare(request, world, movement, missions);
+    modal_boundaries::prepare(request, world);
 
     let _ = manufacturing;
 }
@@ -680,7 +701,13 @@ fn place_moving_fleet(
     world.fleets[player].location = primary;
     world.fleets[player].is_alliance = player_is_alliance;
     if request.scenario.stages_a_strike() {
-        stage_strike(request, world, troop_transport, player, (primary, elsewhere));
+        stage_strike(
+            request,
+            world,
+            troop_transport,
+            player,
+            (primary, elsewhere),
+        );
     }
     reconcile_fleet_orbits(movement, world);
     if matches!(
@@ -702,7 +729,7 @@ fn place_moving_fleet(
         primary,
         (
             (galaxy.x + galaxy.width - FLEET_WINDOW_WIDTH) as i16 - 5,
-            galaxy.y as i16 + 5,
+            galaxy.y as i16,
         ),
         request.faction,
         layout,
@@ -964,6 +991,42 @@ fn defenses_window_subject(
     }
 }
 
+/// Exact Defenses content pre-seeded by a deterministic browser fixture.
+/// The app republishes this same record through the strategic manager before
+/// accepting pointer actions, while fixture setup retains authority over its
+/// subject, placement, and initial page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FixtureDefensesOpen {
+    pub system: SystemKey,
+    pub logical_position: (i16, i16),
+    pub page: DefensesPage,
+}
+
+pub(crate) fn defenses_window_open(
+    request: FixtureRequest,
+    world: &GameWorld,
+    cockpit: &CockpitState,
+) -> Option<FixtureDefensesOpen> {
+    let primary = world.systems.keys().next()?;
+    let layout = cockpit.layout_for(640.0, 480.0);
+    let galaxy = layout.galaxy;
+    if request.scenario.uses_the_fleet_window() {
+        return Some(FixtureDefensesOpen {
+            system: defenses_window_subject(request, world, primary)?,
+            logical_position: (galaxy.x as i16 + 5, galaxy.y as i16 + 5),
+            page: DefensesPage::Regiments,
+        });
+    }
+    (request.scenario == Scenario::MissionTargeting).then_some(FixtureDefensesOpen {
+        system: primary,
+        logical_position: (
+            (galaxy.x + galaxy.width - DEFENSES_WINDOW_WIDTH) as i16 - 5,
+            galaxy.y as i16 + 5,
+        ),
+        page: DefensesPage::Personnel,
+    })
+}
+
 /// The joining scenario's second fleet: the world's second, or a copy of
 /// the first when the world has one.
 fn joining_fleet(
@@ -1003,10 +1066,8 @@ fn loading_regiment(world: &GameWorld, primary: SystemKey) -> Option<TroopKey> {
 fn place_loading_fleet(
     request: FixtureRequest,
     world: &mut GameWorld,
-    cockpit: &CockpitState,
     movement: &mut MovementState,
     sectors: &mut SectorWindowState,
-    defenses: &mut DefensesWindowState,
     troop_transport: &mut TroopTransportState,
     primary: SystemKey,
 ) {
@@ -1031,6 +1092,12 @@ fn place_loading_fleet(
     for system in [primary, target] {
         world.systems[system].control = ControlKind::Controlled(player);
         world.systems[system].exploration_status = ExplorationStatus::Explored;
+        // Keep the deterministic interaction fixture from changing holder
+        // while a browser journey boards or unloads its only regiment. The
+        // generic fixture baseline otherwise gives the first system strong
+        // Alliance support even for an Empire scenario.
+        world.systems[system].popularity_alliance = if player_is_alliance { 0.9 } else { 0.1 };
+        world.systems[system].popularity_empire = if player_is_alliance { 0.1 } else { 0.9 };
     }
     for (key, value) in &mut world.fleets {
         if key != fleet
@@ -1164,17 +1231,6 @@ fn place_loading_fleet(
         let _ = troop_transport.load(world, &ProductRoom::default(), fleet, &aboard);
     }
 
-    let layout = cockpit.layout_for(640.0, 480.0);
-    let galaxy = layout.galaxy;
-    let subject = defenses_window_subject(request, world, primary).unwrap_or(primary);
-    defenses.open(
-        world,
-        subject,
-        (galaxy.x as i16 + 5, galaxy.y as i16 + 5),
-        request.faction,
-        layout,
-    );
-    defenses.show_page(subject, DefensesPage::Regiments);
     sectors.open_for_system(world, elsewhere, request.faction);
     sectors.open_for_system(world, primary, request.faction);
 }
@@ -1412,6 +1468,7 @@ fn screen_point(system: &rebellion_core::world::System, faction: CockpitFaction)
 struct FixtureObjectMenu<'a> {
     status: &'static str,
     code: u32,
+    input_ready: bool,
     left: f32,
     top: f32,
     width: f32,
@@ -1426,6 +1483,7 @@ struct FixtureObjectMenu<'a> {
     status_window_row: Option<usize>,
     build_row: Option<usize>,
     stop_row: Option<usize>,
+    scrap_row: Option<usize>,
     bombardment_row: Option<usize>,
     assault_row: Option<usize>,
     target_dat_id: u32,
@@ -1434,12 +1492,35 @@ struct FixtureObjectMenu<'a> {
     target_screen_y: f32,
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+struct FixtureMenuLifecycle {
+    status: &'static str,
+    code: u32,
+    open: bool,
+    input_ready: bool,
+}
+
+fn menu_lifecycle_report(
+    request: FixtureRequest,
+    open: bool,
+    input_ready: bool,
+) -> Option<FixtureMenuLifecycle> {
+    (request.scenario == Scenario::MissionTargeting || request.scenario.uses_the_fleet_window())
+        .then_some(FixtureMenuLifecycle {
+            status: "menu-lifecycle",
+            code: request.code,
+            open,
+            input_ready,
+        })
+}
+
 fn object_menu_report<'a>(
     request: FixtureRequest,
     rect: egui_macroquad::egui::Rect,
     menu: &ObjectMenuState,
     world: &'a GameWorld,
     sectors: &SectorWindowState,
+    input_ready: bool,
 ) -> Option<FixtureObjectMenu<'a>> {
     let key = if request.scenario.uses_the_fleet_window() {
         loading_target(world, world.systems.keys().next()?)?
@@ -1452,12 +1533,17 @@ fn object_menu_report<'a>(
     let planet = match sectors.planet_screen_rect(world, layout, key) {
         Some(rect) => rect.center(),
         None if request.scenario == Scenario::BuildSelection => egui_macroquad::egui::Pos2::ZERO,
+        None if request.scenario == Scenario::WindowingContract => {
+            let (x, y) = screen_point(target, request.faction);
+            egui_macroquad::egui::pos2(x, y)
+        }
         None => return None,
     };
     let (target_screen_x, target_screen_y) = (planet.x, planet.y);
     Some(FixtureObjectMenu {
         status: "object-menu",
         code: request.code,
+        input_ready,
         left: rect.min.x,
         top: rect.min.y,
         width: rect.width(),
@@ -1472,6 +1558,7 @@ fn object_menu_report<'a>(
         status_window_row: menu.row_of(ObjectMenuCommand::Status),
         build_row: menu.row_of(ObjectMenuCommand::Build),
         stop_row: menu.row_of(ObjectMenuCommand::Stop),
+        scrap_row: menu.row_of(ObjectMenuCommand::Scrap),
         bombardment_row: menu.row_of(ObjectMenuCommand::Bombardment),
         assault_row: menu.row_of(ObjectMenuCommand::Assault),
         target_dat_id: target.dat_id.raw(),
@@ -1487,14 +1574,23 @@ pub fn emit_object_menu(
     menu: &ObjectMenuState,
     world: &GameWorld,
     sectors: &SectorWindowState,
+    input_ready: bool,
 ) {
     if !request.scenario.reports_object_menu() {
         return;
     }
-    let Some(report) = object_menu_report(request, rect, menu, world, sectors) else {
+    let Some(report) = object_menu_report(request, rect, menu, world, sectors, input_ready) else {
         return;
     };
     let bytes = serde_json::to_vec(&report).expect("serialize the object menu report");
+    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+}
+
+pub fn emit_menu_lifecycle(request: FixtureRequest, open: bool, input_ready: bool) {
+    let Some(report) = menu_lifecycle_report(request, open, input_ready) else {
+        return;
+    };
+    let bytes = serde_json::to_vec(&report).expect("serialize the menu lifecycle report");
     unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
 }
 
@@ -1571,7 +1667,10 @@ pub fn emit_production(
     systems: &SystemWindowState,
     build_selection: &rebellion_render::build_selection::BuildSelectionState,
 ) {
-    if request.scenario != Scenario::BuildSelection {
+    if !matches!(
+        request.scenario,
+        Scenario::BuildSelection | Scenario::WindowingContract
+    ) {
         return;
     }
     let Some(report) = production_report(request, world, manufacturing, systems, build_selection)
@@ -1852,12 +1951,12 @@ struct QuadrantObservation {
 
 /// The windows and pages the quadrant observation reads.
 pub struct QuadrantWindows<'a> {
+    pub snapshot: &'a RoutingSnapshot,
     pub systems: &'a SystemWindowState,
     pub defenses: &'a DefensesWindowState,
     pub missions_windows: &'a MissionsWindowState,
     pub fog: &'a FogState,
     pub missions: &'a MissionState,
-    pub economy: &'a EconomyState,
 }
 
 fn defenses_page_name(page: DefensesPage) -> &'static str {
@@ -1874,6 +1973,16 @@ fn missions_tab_name(tab: MissionsTab) -> &'static str {
     match tab {
         MissionsTab::Agents => "agents",
         MissionsTab::Decoys => "decoys",
+    }
+}
+
+fn reference_kind_name(kind: WindowKind) -> Option<&'static str> {
+    match kind {
+        WindowKind::System => Some("system"),
+        WindowKind::Fleet => Some("fleet"),
+        WindowKind::Defenses => Some("defenses"),
+        WindowKind::Missions => Some("missions"),
+        _ => None,
     }
 }
 
@@ -1975,16 +2084,13 @@ impl QuadrantWatch {
                 .collect(),
             defenses_windows,
             missions_windows,
-            rail: windows
-                .systems
-                .rail_entries()
-                .enumerate()
-                .filter_map(|(index, (system, kind))| {
-                    let rect = windows.systems.rail_slot_screen_rect(layout, index)?;
+            rail: reference_rail_slots(windows.snapshot, world, request.faction, layout)
+                .into_iter()
+                .filter_map(|slot| {
                     Some((
-                        world.systems.get(system)?.dat_id.raw(),
-                        kind,
-                        rect_array(rect),
+                        world.systems.get(slot.system())?.dat_id.raw(),
+                        reference_kind_name(slot.kind())?,
+                        rect_array(slot.rect()),
                     ))
                 })
                 .collect(),
@@ -2137,13 +2243,18 @@ fn fleet_load_observation(
     movement: &MovementState,
     transport: &TroopTransportState,
     fleets: &FleetWindowState,
+    snapshot: &RoutingSnapshot,
     confirmation_open: bool,
     messages: &[GameMessage],
 ) -> Option<FleetLoadObservation> {
     let layout = CockpitState::new(request.faction).layout_for(640.0, 480.0);
     let primary = world.systems.keys().next()?;
     let fleet = world.fleets.keys().next()?;
-    let report = fleets.report(world, movement, fog, transport, primary);
+    let report = fleets
+        .window_id(primary)
+        .is_none_or(|id| snapshot.is_visible(id))
+        .then(|| fleets.report(world, movement, fog, transport, primary))
+        .flatten();
     Some(FleetLoadObservation {
         status: "fleet-load",
         code: request.code,
@@ -2164,9 +2275,11 @@ fn fleet_load_observation(
             .map(|report| report.items.clone())
             .unwrap_or_default(),
         counts: report.as_ref().and_then(|report| report.counts),
-        fleet_entry: fleets
-            .entry_screen_rect(layout, primary, 0)
-            .map(screen_center),
+        fleet_entry: report.as_ref().and_then(|_| {
+            fleets
+                .entry_screen_rect(layout, primary, 0)
+                .map(screen_center)
+        }),
         fleets: report
             .as_ref()
             .map(|report| {
@@ -2188,12 +2301,16 @@ fn fleet_load_observation(
                     .collect()
             })
             .unwrap_or_default(),
-        troops_tab: fleets
-            .tab_screen_rect(layout, primary, FleetWindowTab::Troops)
-            .map(screen_center),
-        first_item: fleets
-            .item_screen_rect(layout, primary, 0)
-            .map(screen_center),
+        troops_tab: report.as_ref().and_then(|_| {
+            fleets
+                .tab_screen_rect(layout, primary, FleetWindowTab::Troops)
+                .map(screen_center)
+        }),
+        first_item: report.as_ref().and_then(|_| {
+            fleets
+                .item_screen_rect(layout, primary, 0)
+                .map(screen_center)
+        }),
         aboard: transport.cargo(fleet).contains(&regiment),
         cargo: transport.carried_count(fleet),
         troop_system_dat_id: regiment_system(world, regiment)
@@ -2237,6 +2354,7 @@ impl FleetLoadWatch {
         movement: &MovementState,
         transport: &TroopTransportState,
         fleets: &FleetWindowState,
+        snapshot: &RoutingSnapshot,
         confirmation_open: bool,
         messages: &[GameMessage],
     ) -> Option<FleetLoadObservation> {
@@ -2262,6 +2380,7 @@ impl FleetLoadWatch {
             movement,
             transport,
             fleets,
+            snapshot,
             confirmation_open,
             messages,
         );
@@ -2281,6 +2400,7 @@ impl FleetLoadWatch {
         movement: &MovementState,
         transport: &TroopTransportState,
         fleets: &FleetWindowState,
+        snapshot: &RoutingSnapshot,
         confirmation_open: bool,
         messages: &[GameMessage],
     ) {
@@ -2291,6 +2411,7 @@ impl FleetLoadWatch {
             movement,
             transport,
             fleets,
+            snapshot,
             confirmation_open,
             messages,
         ) else {
@@ -2763,7 +2884,10 @@ impl OperationReportWatch {
                 .collect::<Vec<_>>()
         };
         if let Some((system, fleet)) = windows.chosen {
-            let name = world.systems.get(system).map_or("", |value| value.name.as_str());
+            let name = world
+                .systems
+                .get(system)
+                .map_or("", |value| value.name.as_str());
             self.destination = Some(format!("{}:{name}", if fleet { "fleet" } else { "sector" }));
         }
         let system = self.live_system;
@@ -2778,26 +2902,21 @@ impl OperationReportWatch {
             body: shown.map_or_else(String::new, |(_, _, body)| body.to_owned()),
             picture: shown.map_or(0, |(report, _, _)| report.picture()),
             assault: shown.is_some_and(|(report, _, _)| report.assault),
-            fleet_operational: shown.map_or_else(Vec::new, |(report, _, _)| {
-                cells(&report.fleet_operational)
-            }),
-            fleet_destroyed: shown.map_or_else(Vec::new, |(report, _, _)| {
-                cells(&report.fleet_destroyed)
-            }),
-            system_operational: shown.map_or_else(Vec::new, |(report, _, _)| {
-                cells(&report.system_operational)
-            }),
-            system_destroyed: shown.map_or_else(Vec::new, |(report, _, _)| {
-                cells(&report.system_destroyed)
-            }),
+            fleet_operational: shown
+                .map_or_else(Vec::new, |(report, _, _)| cells(&report.fleet_operational)),
+            fleet_destroyed: shown
+                .map_or_else(Vec::new, |(report, _, _)| cells(&report.fleet_destroyed)),
+            system_operational: shown
+                .map_or_else(Vec::new, |(report, _, _)| cells(&report.system_operational)),
+            system_destroyed: shown
+                .map_or_else(Vec::new, |(report, _, _)| cells(&report.system_destroyed)),
             destination: self.destination.clone(),
             sector_open: system
                 .and_then(|system| world.systems.get(system))
                 .is_some_and(|value| {
-                    windows
-                        .sectors
-                        .children()
-                        .any(|(_, child)| child == rebellion_render::GalaxyChild::Sector(value.sector))
+                    windows.sectors.children().any(|(_, child)| {
+                        child == rebellion_render::GalaxyChild::Sector(value.sector)
+                    })
                 }),
             fleet_window_open: system.is_some_and(|system| windows.fleets.is_open(system)),
         };
@@ -2856,6 +2975,7 @@ fn report_cell(
 struct FixtureSpeedMenu {
     status: &'static str,
     code: u32,
+    input_ready: bool,
     left: f32,
     top: f32,
     width: f32,
@@ -2866,7 +2986,7 @@ struct FixtureSpeedMenu {
 /// Emits the speed menu's rect each time it opens or moves.
 #[derive(Debug, Default)]
 pub struct SpeedMenuWatch {
-    last: Option<egui_macroquad::egui::Rect>,
+    last: Option<(egui_macroquad::egui::Rect, bool)>,
 }
 
 impl SpeedMenuWatch {
@@ -2875,15 +2995,18 @@ impl SpeedMenuWatch {
         &mut self,
         request: FixtureRequest,
         rect: Option<egui_macroquad::egui::Rect>,
+        input_ready: bool,
     ) -> Option<FixtureSpeedMenu> {
-        if !request.scenario.uses_the_fleet_window() || rect == self.last {
+        let state = rect.map(|rect| (rect, input_ready));
+        if !request.scenario.uses_the_fleet_window() || state == self.last {
             return None;
         }
-        self.last = rect;
-        let rect = rect?;
+        self.last = state;
+        let (rect, input_ready) = state?;
         Some(FixtureSpeedMenu {
             status: "speed-menu",
             code: request.code,
+            input_ready,
             left: rect.min.x,
             top: rect.min.y,
             width: rect.width(),
@@ -2892,8 +3015,13 @@ impl SpeedMenuWatch {
         })
     }
 
-    pub fn observe(&mut self, request: FixtureRequest, rect: Option<egui_macroquad::egui::Rect>) {
-        let Some(report) = self.next(request, rect) else {
+    pub fn observe(
+        &mut self,
+        request: FixtureRequest,
+        rect: Option<egui_macroquad::egui::Rect>,
+        input_ready: bool,
+    ) {
+        let Some(report) = self.next(request, rect, input_ready) else {
             return;
         };
         let bytes = serde_json::to_vec(&report).expect("serialize the speed menu report");
@@ -2984,8 +3112,49 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use super::input_scenes::{InputScenesCommand, InputScenesFixture};
     use super::*;
     use rebellion_render::object_menu::{MenuObject, OrderGates};
+    use rebellion_render::windowing_policy::{contextual_spec, system_subject};
+    use rebellion_windowing::{WindowCommand, WindowManager, WindowOwner, WindowTransition};
+
+    #[test]
+    fn input_scenes_commands_fail_closed_and_keep_failure_states_distinct() {
+        assert_eq!(InputScenesCommand::decode(0), None);
+        assert_eq!(
+            InputScenesCommand::decode(1),
+            Some(InputScenesCommand::ModalUnpaintable)
+        );
+        assert_eq!(
+            InputScenesCommand::decode(3),
+            Some(InputScenesCommand::ModelessUnpaintable)
+        );
+        assert_eq!(
+            InputScenesCommand::decode(4),
+            Some(InputScenesCommand::ModelessAbsent)
+        );
+        assert_eq!(
+            InputScenesCommand::decode(13),
+            Some(InputScenesCommand::CancelCaptureForFocusLoss)
+        );
+        assert_eq!(
+            InputScenesCommand::decode(14),
+            Some(InputScenesCommand::ReplaceActiveMenu)
+        );
+        assert_eq!(InputScenesCommand::decode(15), None);
+
+        let mut fixture = InputScenesFixture::default();
+        fixture.apply_failure_for_test(InputScenesCommand::ModelessUnpaintable);
+        assert_eq!(
+            fixture.forced_status_for_test(),
+            Some(rebellion_windowing::ContentStatus::Unpaintable)
+        );
+        fixture.apply_failure_for_test(InputScenesCommand::ModelessAbsent);
+        assert_eq!(
+            fixture.forced_status_for_test(),
+            Some(rebellion_windowing::ContentStatus::Absent)
+        );
+    }
 
     #[test]
     fn scenario_table_is_stable_and_complete() {
@@ -2993,6 +3162,27 @@ mod tests {
             assert_eq!(Scenario::decode(value).unwrap() as u8, value);
         }
         assert!(Scenario::decode(SCENARIO_COUNT).is_none());
+    }
+
+    #[test]
+    fn route_receipt_policy_covers_every_browser_synchronized_fixture() {
+        for value in 0..SCENARIO_COUNT {
+            let scenario = Scenario::decode(value).expect("known fixture scenario");
+            assert_eq!(
+                scenario.emits_unhandled_windowing_route_receipts(),
+                matches!(
+                    scenario,
+                    Scenario::Quadrants | Scenario::WindowingContract | Scenario::FleetFinder
+                ) || scenario.uses_the_fleet_window(),
+                "unexpected raw receipt policy for {scenario:?}",
+            );
+            assert_eq!(
+                scenario.emits_windowing_pointer_ready_receipts(),
+                matches!(scenario, Scenario::Quadrants | Scenario::FleetFinder)
+                    || scenario.uses_the_fleet_window(),
+                "unexpected pointer-ready receipt policy for {scenario:?}",
+            );
+        }
     }
 
     #[test]
@@ -3293,11 +3483,12 @@ mod tests {
             egui_macroquad::egui::pos2(100.0, 150.0),
             egui_macroquad::egui::vec2(120.0, 142.0),
         );
-        let report = object_menu_report(request, rect, &menu, &world, &sectors).unwrap();
+        let report = object_menu_report(request, rect, &menu, &world, &sectors, true).unwrap();
         assert_eq!(
             (report.left, report.top, report.width, report.height),
             (100.0, 150.0, 120.0, 142.0)
         );
+        assert!(report.input_ready);
         assert_eq!((report.rows, report.mission_row), (7, Some(2)));
         assert_eq!(
             (report.target_dat_id, report.target_name),
@@ -3309,6 +3500,60 @@ mod tests {
         assert_eq!(target, (60.0 + 77.0 + 18.5, 35.0 + 70.0 + 18.5));
         assert!(sectors.contains_screen_point(layout, target));
         assert!(!defenses.contains_screen_point(layout, target));
+    }
+
+    #[test]
+    fn fleet_fixture_reports_the_managed_menu_lifecycle_boundary() {
+        let fleet_request = request(Scenario::FleetLoad, CockpitFaction::Alliance);
+        assert_eq!(
+            menu_lifecycle_report(fleet_request, true, false),
+            Some(FixtureMenuLifecycle {
+                status: "menu-lifecycle",
+                code: fleet_request.code,
+                open: true,
+                input_ready: false,
+            })
+        );
+        assert_eq!(
+            menu_lifecycle_report(fleet_request, false, false),
+            Some(FixtureMenuLifecycle {
+                status: "menu-lifecycle",
+                code: fleet_request.code,
+                open: false,
+                input_ready: false,
+            })
+        );
+        assert_eq!(
+            menu_lifecycle_report(
+                request(Scenario::WindowingContract, CockpitFaction::Alliance),
+                true,
+                true,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn mission_targeting_fixture_reports_the_managed_menu_lifecycle_boundary() {
+        let mission_request = request(Scenario::MissionTargeting, CockpitFaction::Alliance);
+        assert_eq!(
+            menu_lifecycle_report(mission_request, true, true),
+            Some(FixtureMenuLifecycle {
+                status: "menu-lifecycle",
+                code: mission_request.code,
+                open: true,
+                input_ready: true,
+            })
+        );
+        assert_eq!(
+            menu_lifecycle_report(mission_request, false, false),
+            Some(FixtureMenuLifecycle {
+                status: "menu-lifecycle",
+                code: mission_request.code,
+                open: false,
+                input_ready: false,
+            })
+        );
     }
 
     /// Three systems in one sector, the second the target in the targeting
@@ -3663,6 +3908,7 @@ mod tests {
                 &applied.movement,
                 &applied.transport,
                 &fleets,
+                &WindowManager::new().begin_frame(),
                 confirmation_open,
                 &[],
             )
@@ -3688,6 +3934,95 @@ mod tests {
         assert_ne!(row(0), row(1));
         assert!(!observed.confirmation_open);
         assert!(observe(true).confirmation_open);
+    }
+
+    #[test]
+    fn the_fleet_load_watch_hides_minimized_fleet_surface_until_restore() {
+        let request = request(Scenario::FleetLoad, CockpitFaction::Alliance);
+        let applied = apply_to_loading_world(request);
+        let primary = applied.world.systems.keys().next().unwrap();
+        let regiment = loading_regiment(&applied.world, primary).unwrap();
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(primary);
+        let layout = CockpitState::new(request.faction).layout_for(640.0, 480.0);
+        let mut fleets = FleetWindowState::default();
+        let mut manager = WindowManager::new();
+        let prepared = fleets
+            .prepare_open(
+                &applied.world,
+                primary,
+                (300, 80),
+                request.faction,
+                layout,
+                None,
+            )
+            .unwrap();
+        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
+        let id = fleets.commit_open(prepared, &opened.transition).unwrap();
+        let mut watch = FleetLoadWatch {
+            regiment: Some(regiment),
+            ..FleetLoadWatch::default()
+        };
+
+        let visible = watch
+            .next(
+                request,
+                &applied.world,
+                &fog,
+                &applied.movement,
+                &applied.transport,
+                &fleets,
+                &manager.begin_frame(),
+                false,
+                &[],
+            )
+            .unwrap();
+        assert!(visible.window_open);
+        assert_eq!(visible.origin, Some((300, 80)));
+        assert!(visible.fleet_entry.is_some());
+
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        let hidden = watch
+            .next(
+                request,
+                &applied.world,
+                &fog,
+                &applied.movement,
+                &applied.transport,
+                &fleets,
+                &manager.begin_frame(),
+                false,
+                &[],
+            )
+            .unwrap();
+        assert!(!hidden.window_open);
+        assert_eq!(hidden.origin, None);
+        assert_eq!(hidden.entries, 0);
+        assert_eq!((hidden.selected, hidden.tab), (None, None));
+        assert_eq!(hidden.enabled, [false; 4]);
+        assert!(hidden.items.is_empty() && hidden.fleets.is_empty());
+        assert_eq!(hidden.counts, None);
+        assert_eq!(hidden.fleet_entry, None);
+        assert_eq!(hidden.troops_tab, None);
+        assert_eq!(hidden.first_item, None);
+
+        manager.apply(WindowCommand::Restore(id)).unwrap();
+        let restored = watch
+            .next(
+                request,
+                &applied.world,
+                &fog,
+                &applied.movement,
+                &applied.transport,
+                &fleets,
+                &manager.begin_frame(),
+                false,
+                &[],
+            )
+            .unwrap();
+        assert!(restored.window_open);
+        assert_eq!(restored.origin, visible.origin);
+        assert_eq!(restored.fleet_entry, visible.fleet_entry);
     }
 
     #[test]
@@ -3789,6 +4124,7 @@ mod tests {
                     &applied.movement,
                     &applied.transport,
                     &FleetWindowState::default(),
+                    &WindowManager::new().begin_frame(),
                     false,
                     &[],
                 )
@@ -3843,6 +4179,35 @@ mod tests {
     }
 
     #[test]
+    fn the_fleet_load_scenarios_keep_both_interaction_systems_loyal_to_the_player() {
+        // port: deterministic fixture isolation. Loading the only regiment
+        // must not let an unrelated daily support shift change the drop target.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let applied = apply_to_loading_world(request(Scenario::FleetLoad, faction));
+            let player = match faction {
+                CockpitFaction::Alliance => Faction::Alliance,
+                CockpitFaction::Empire => Faction::Empire,
+            };
+            for system in applied.world.systems.values().take(2) {
+                assert_eq!(
+                    system.control,
+                    ControlKind::Controlled(player),
+                    "{faction:?}"
+                );
+                let (player_support, enemy_support) = match faction {
+                    CockpitFaction::Alliance => {
+                        (system.popularity_alliance, system.popularity_empire)
+                    }
+                    CockpitFaction::Empire => {
+                        (system.popularity_empire, system.popularity_alliance)
+                    }
+                };
+                assert!(player_support > enemy_support, "{faction:?}");
+            }
+        }
+    }
+
+    #[test]
     fn the_fleet_load_scenarios_defenses_window_sits_five_pixels_into_the_galaxy_view() {
         // port: the fixture's own placement.
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
@@ -3881,6 +4246,7 @@ mod tests {
                 &applied.movement,
                 &applied.transport,
                 &fleets,
+                &WindowManager::new().begin_frame(),
                 false,
                 &[],
             )
@@ -3933,6 +4299,7 @@ mod tests {
             &applied.movement,
             &applied.transport,
             &fleets,
+            &WindowManager::new().begin_frame(),
             false,
             &messages,
         )
@@ -3964,6 +4331,7 @@ mod tests {
                 &applied.movement,
                 &applied.transport,
                 fleets,
+                &WindowManager::new().begin_frame(),
                 false,
                 &[],
             )
@@ -4022,6 +4390,7 @@ mod tests {
                 &applied.movement,
                 &applied.transport,
                 &fleets,
+                &WindowManager::new().begin_frame(),
                 false,
                 &[],
             ),
@@ -4038,9 +4407,9 @@ mod tests {
         let rect = egui::Rect::from_min_size(egui::pos2(100.0, 30.0), egui::vec2(90.0, 72.0));
         let mut watch = SpeedMenuWatch::default();
 
-        assert_eq!(watch.next(request, None), None);
+        assert_eq!(watch.next(request, None, false), None);
         assert_eq!(
-            watch.next(request, Some(rect)),
+            watch.next(request, Some(rect), false),
             Some(FixtureSpeedMenu {
                 status: "speed-menu",
                 code: request.code,
@@ -4049,16 +4418,22 @@ mod tests {
                 width: 90.0,
                 height: 72.0,
                 rows: 5,
+                input_ready: false,
             })
         );
-        assert_eq!(watch.next(request, Some(rect)), None);
-        assert_eq!(watch.next(request, None), None);
-        assert!(watch.next(request, Some(rect)).is_some());
+        assert_eq!(watch.next(request, Some(rect), false), None);
+        assert!(watch.next(request, Some(rect), true).is_some());
+        assert_eq!(watch.next(request, Some(rect), true), None);
+        assert_eq!(watch.next(request, None, false), None);
+        assert!(watch.next(request, Some(rect), true).is_some());
         let moving = FixtureRequest {
             scenario: Scenario::FleetMove,
             ..request
         };
-        assert_eq!(SpeedMenuWatch::default().next(moving, Some(rect)), None);
+        assert_eq!(
+            SpeedMenuWatch::default().next(moving, Some(rect), true),
+            None
+        );
     }
 
     #[test]
@@ -4146,13 +4521,10 @@ mod tests {
             ));
 
             let layout = CockpitState::new(faction).layout_for(640.0, 480.0);
-            // The Fleet window's top-left corner, 5 pixels in from the
-            // galaxy view's top-right.
+            // The Fleet window's top-left corner, 5 pixels left of the
+            // galaxy view's top-right and aligned with its top edge.
             let galaxy = layout.galaxy;
-            let corner = (
-                galaxy.x + galaxy.width - FLEET_WINDOW_WIDTH - 5.0,
-                galaxy.y + 5.0,
-            );
+            let corner = (galaxy.x + galaxy.width - FLEET_WINDOW_WIDTH - 5.0, galaxy.y);
             assert!(applied.fleets.contains_screen_point(layout, corner));
             assert!(!applied
                 .fleets
@@ -4498,25 +4870,26 @@ mod tests {
         let primary = applied.world.systems.keys().next().unwrap();
         let mut fog = FogState::new(Faction::Alliance);
         fog.reveal(primary);
-        let economy = EconomyState::default();
         let mut defenses = DefensesWindowState::default();
         let mut missions_windows = MissionsWindowState::default();
+        let mut manager = WindowManager::new();
         let mut watch = QuadrantWatch::default();
         macro_rules! next {
-            ($watch:expr) => {
+            ($watch:expr) => {{
+                let snapshot = manager.begin_frame();
                 $watch.next(
                     request,
                     &applied.world,
                     &QuadrantWindows {
+                        snapshot: &snapshot,
                         systems: &applied.systems,
                         defenses: &defenses,
                         missions_windows: &missions_windows,
                         fog: &fog,
                         missions: &applied.missions,
-                        economy: &economy,
                     },
                 )
-            };
+            }};
         }
         let first = next!(watch).unwrap();
         assert_eq!(first.status, "quadrant-observation");
@@ -4577,9 +4950,26 @@ mod tests {
         );
         assert_eq!(window.tabs.len(), 5);
 
-        applied.systems.minimize_defenses_window(primary, (200, 60));
+        let open_managed = |manager: &mut WindowManager, kind| {
+            let opened = manager
+                .apply(WindowCommand::Open(contextual_spec(
+                    kind,
+                    system_subject(&applied.world, primary).unwrap(),
+                    WindowOwner::StrategicRoot,
+                )))
+                .unwrap();
+            let WindowTransition::Opened { id } = opened.transition else {
+                panic!("expected managed detail open")
+            };
+            id
+        };
+        let defenses_id = open_managed(&mut manager, WindowKind::Defenses);
+        manager.apply(WindowCommand::Minimize(defenses_id)).unwrap();
         let railed = next!(watch).unwrap();
-        let slot = applied.systems.rail_slot_screen_rect(layout, 0).unwrap();
+        let snapshot = manager.begin_frame();
+        let slot =
+            reference_rail_slots(&snapshot, &applied.world, CockpitFaction::Alliance, layout)[0]
+                .rect();
         assert_eq!(railed.rail, [(dat, "defenses", super::rect_array(slot))]);
 
         // The primary system's Missions window: the player's Diplomacy
@@ -4627,7 +5017,8 @@ mod tests {
         );
         assert_eq!(window.tabs.len(), 2);
 
-        applied.systems.minimize_missions_window(primary, (150, 40));
+        let missions_id = open_managed(&mut manager, WindowKind::Missions);
+        manager.apply(WindowCommand::Minimize(missions_id)).unwrap();
         let railed = next!(watch).unwrap();
         assert_eq!(railed.rail.last().map(|entry| entry.1), Some("missions"));
 
@@ -4637,12 +5028,12 @@ mod tests {
                 other,
                 &applied.world,
                 &QuadrantWindows {
+                    snapshot: &manager.begin_frame(),
                     systems: &applied.systems,
                     defenses: &defenses,
                     missions_windows: &missions_windows,
                     fog: &fog,
                     missions: &applied.missions,
-                    economy: &economy,
                 },
             )
             .is_none());
@@ -4667,6 +5058,7 @@ mod tests {
                 Scenario::FleetJoin,
                 Scenario::ProductionDestination,
                 Scenario::BuildSelection,
+                Scenario::WindowingContract,
                 Scenario::StrikeDeathStar,
                 Scenario::UnfinishedShip,
                 Scenario::ShipBesideUnfinished,
@@ -4674,7 +5066,7 @@ mod tests {
                 Scenario::AssaultCaptures,
                 Scenario::AssaultRepelled,
                 Scenario::StrikeDamagedSurvivor,
-                Scenario::StrikeDamagedLoss
+                Scenario::StrikeDamagedLoss,
             ]
         );
     }
@@ -4749,7 +5141,10 @@ mod tests {
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
             let request = request(Scenario::StrikeDamagedSurvivor, faction);
             let mut applied = apply_to_fleet_world(request);
-            let run = strike(&mut applied, rebellion_core::bombardment::BombardKind::General);
+            let run = strike(
+                &mut applied,
+                rebellion_core::bombardment::BombardKind::General,
+            );
             let operation = std::sync::Arc::new(run.operation.expect("the report"));
             let primary = operation.system;
             let message = rebellion_render::GameMessage::at_system(
@@ -4782,7 +5177,10 @@ mod tests {
 
             let closed = observe(&mut watch, &state, &applied, None).expect("the first frame");
             assert_eq!(closed["open"], false, "{faction:?}");
-            assert!(observe(&mut watch, &state, &applied, None).is_none(), "{faction:?}");
+            assert!(
+                observe(&mut watch, &state, &applied, None).is_none(),
+                "{faction:?}"
+            );
 
             assert!(state.open(&applied.world, &message, faction, None));
             let shown = observe(&mut watch, &state, &applied, None).expect("the report opens");
@@ -4817,7 +5215,10 @@ mod tests {
     #[test]
     fn a_report_cell_names_its_damage_art_under_its_portrait() {
         use rebellion_core::operation_report::{ReportObject, ReportUnit};
-        let applied = apply_to_fleet_world(request(Scenario::StrikeDamagedLoss, CockpitFaction::Alliance));
+        let applied = apply_to_fleet_world(request(
+            Scenario::StrikeDamagedLoss,
+            CockpitFaction::Alliance,
+        ));
         let corvette = |damaged| ReportUnit {
             dat_id: rebellion_core::ids::DatId::new(0x1400_0045),
             name: "Corellian Corvette 1".into(),
@@ -4829,7 +5230,10 @@ mod tests {
         assert_eq!(cell.family, 0x14);
         assert_eq!(
             cell.layers,
-            [("Gokres".to_owned(), 1861 + 0x2000), ("Gokres".to_owned(), 1861)]
+            [
+                ("Gokres".to_owned(), 1861 + 0x2000),
+                ("Gokres".to_owned(), 1861)
+            ]
         );
         let cell = report_cell(&applied.world, &applied.movement, &corvette(false));
         assert_eq!(cell.layers, [("Gokres".to_owned(), 1861)]);
@@ -4848,17 +5252,30 @@ mod tests {
         };
         // A Death Star, a ship that cannot bomb and one with no hyperdrive
         // come first and are passed over.
-        world.capital_ship_classes.insert(class(false, 0x18, 80, 15));
+        world
+            .capital_ship_classes
+            .insert(class(false, 0x18, 80, 15));
         let empire = world.capital_ship_classes.insert(class(false, 0x14, 80, 2));
         world.capital_ship_classes.insert(class(true, 0x14, 80, 0));
         world.capital_ship_classes.insert(class(true, 0x14, 0, 2));
         let alliance = world.capital_ship_classes.insert(class(true, 0x14, 80, 2));
         let bombs = |class: &CapitalShipClass| class.bombardment_modifier > 0;
         let template = || class(false, 0x14, 80, 9);
-        assert_eq!(fixture_ship_class(&mut world, false, bombs, template()), empire);
-        assert_eq!(fixture_ship_class(&mut world, true, bombs, template()), alliance);
+        assert_eq!(
+            fixture_ship_class(&mut world, false, bombs, template()),
+            empire
+        );
+        assert_eq!(
+            fixture_ship_class(&mut world, true, bombs, template()),
+            alliance
+        );
 
-        let added = fixture_ship_class(&mut world, true, |class| class.troop_capacity > 0, template());
+        let added = fixture_ship_class(
+            &mut world,
+            true,
+            |class| class.troop_capacity > 0,
+            template(),
+        );
         assert_eq!(world.capital_ship_classes.len(), 6);
         assert!(world.capital_ship_classes[added].is_alliance);
         assert_eq!(world.capital_ship_classes[added].bombardment_modifier, 9);
@@ -4978,16 +5395,24 @@ mod tests {
             assert_eq!(Some(ships[0].class), bomber, "{faction:?}");
             let garrison = &applied.world.systems[primary].ground_units;
             assert_eq!(garrison.len(), 1, "{faction:?}");
-            assert_eq!(applied.world.troops[garrison[0]].is_alliance, !alliance, "{faction:?}");
+            assert_eq!(
+                applied.world.troops[garrison[0]].is_alliance, !alliance,
+                "{faction:?}"
+            );
             let generators = &applied.world.systems[primary].defense_facilities;
             assert!(!generators.is_empty(), "{faction:?}");
             assert!(
                 generators
                     .iter()
-                    .all(|&key| applied.world.defense_facilities[key].class_dat_id.family() == 0x24),
+                    .all(
+                        |&key| applied.world.defense_facilities[key].class_dat_id.family() == 0x24
+                    ),
                 "{faction:?}"
             );
-            let run = strike(&mut applied, rebellion_core::bombardment::BombardKind::Military);
+            let run = strike(
+                &mut applied,
+                rebellion_core::bombardment::BombardKind::Military,
+            );
             let report = run.report.expect("a run");
             assert!(
                 rebellion_core::bombardment::fleet_strength(
@@ -5028,9 +5453,9 @@ mod tests {
                 (7761, 60),
                 (7762, -10),
             ]
-                .into_iter()
-                .map(|(id, value)| entry(id, value))
-                .collect(),
+            .into_iter()
+            .map(|(id, value)| entry(id, value))
+            .collect(),
         );
     }
 
@@ -5041,13 +5466,20 @@ mod tests {
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
             let player = Faction::of_alliance(faction == CockpitFaction::Alliance);
             let holder = Faction::of_alliance(faction != CockpitFaction::Alliance);
-            let mut applied =
-                apply_to_fleet_world_with(request(Scenario::AssaultCaptures, faction), assault_gnprtb);
+            let mut applied = apply_to_fleet_world_with(
+                request(Scenario::AssaultCaptures, faction),
+                assault_gnprtb,
+            );
             let fleet = applied.world.fleets.keys().next().unwrap();
             let class = &applied.world.capital_ship_classes
                 [applied.world.fleets[fleet].capital_ships[0].class];
             assert_eq!(
-                (class.name.as_str(), class.hull, class.hyperdrive, class.troop_capacity),
+                (
+                    class.name.as_str(),
+                    class.hull,
+                    class.hyperdrive,
+                    class.troop_capacity
+                ),
                 ("Transport", 100, 80, 2),
                 "{faction:?}"
             );
@@ -5057,8 +5489,10 @@ mod tests {
             assert_eq!(report.landed.len(), 2, "{faction:?}");
             assert_eq!(report.holder_after, Some(player), "{faction:?}");
 
-            let mut applied =
-                apply_to_fleet_world_with(request(Scenario::AssaultRepelled, faction), assault_gnprtb);
+            let mut applied = apply_to_fleet_world_with(
+                request(Scenario::AssaultRepelled, faction),
+                assault_gnprtb,
+            );
             let report = assault(&mut applied, faction).report.expect("a run");
             assert_eq!((report.attackers, report.defenders), (1, 6), "{faction:?}");
             assert_eq!(report.holder_after, Some(holder), "{faction:?}");
@@ -5079,17 +5513,27 @@ mod tests {
             let ship = &applied.world.fleets[fleet].capital_ships[0];
             let class = &applied.world.capital_ship_classes[ship.class];
             assert_eq!(
-                (class.name.as_str(), class.hull, class.hyperdrive, ship.hull_current),
+                (
+                    class.name.as_str(),
+                    class.hull,
+                    class.hyperdrive,
+                    ship.hull_current
+                ),
                 ("Bomber", 1000, 80, 500),
                 "{faction:?}"
             );
-            let run = strike(&mut applied, rebellion_core::bombardment::BombardKind::General);
+            let run = strike(
+                &mut applied,
+                rebellion_core::bombardment::BombardKind::General,
+            );
             let operation = run.operation.expect("the report");
             assert_eq!(run.report.expect("a run").ships_destroyed, 0, "{faction:?}");
             let ship = operation
                 .fleet_operational
                 .iter()
-                .find(|unit| matches!(unit.object, Some(ReportObject::Ship { tag, .. }) if tag != 0))
+                .find(
+                    |unit| matches!(unit.object, Some(ReportObject::Ship { tag, .. }) if tag != 0),
+                )
                 .expect("the ship is listed operational");
             assert!(
                 cell_status(&applied.world, &applied.movement, ship).damaged,
@@ -5097,7 +5541,10 @@ mod tests {
             );
 
             let mut applied = apply_to_fleet_world(request(Scenario::StrikeDamagedLoss, faction));
-            let run = strike(&mut applied, rebellion_core::bombardment::BombardKind::Military);
+            let run = strike(
+                &mut applied,
+                rebellion_core::bombardment::BombardKind::Military,
+            );
             assert_eq!(run.report.expect("a run").ships_destroyed, 1, "{faction:?}");
             let operation = run.operation.expect("the report");
             // The ship's squadron dies with it and is listed beside it with

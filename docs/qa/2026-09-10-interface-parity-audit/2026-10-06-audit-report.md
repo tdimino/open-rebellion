@@ -3,7 +3,7 @@ title: "Original Interface Parity Audit Report"
 description: "Current evidence-backed diagnosis and execution plan for complete bitmap-driven UI parity"
 category: qa
 created: 2026-09-10
-updated: 2026-10-20
+updated: 2026-10-25
 tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 ---
 
@@ -19,6 +19,11 @@ tags: [qa, interface, parity, bitmap, strategy, tactical, multiplayer]
 | Required surface families | 43 |
 | Family status | 2 complete (OBJ-01, EVT-03), 15 partial, 26 fail |
 | Strictly accepted required cells | 28 of 627 |
+
+The strategic-windowing reconciliation records the window manager's backend
+and browser evidence. It does not change any strict family or cell status;
+see
+[the reconciliation record](evidence/2026-10-25-strategic-windowing-acceptance.md).
 
 The practical percentage measures scoped implementation work and guides the
 [current batched plan](../../plans/2026-09-11-feat-batched-interface-parity-plan.md).

@@ -17,6 +17,7 @@ const fixturePlugin = `    <script>
             const fixtureCode = values.length === 1 && /^\\d+$/.test(values[0])
                 ? Number(values[0])
                 : 0;
+            window.__openRebellionWindowingFixtureCommand = 0;
             function register(imports) {
                 imports.env.open_rebellion_interface_fixture_code = function () {
                     return fixtureCode;
@@ -43,6 +44,8 @@ const fixturePlugin = `    <script>
                             (window.__openRebellionInterfaceFleetLoads ||= []).push(message);
                         } else if (message.status === "speed-menu") {
                             window.__openRebellionInterfaceSpeedMenu = message;
+                        } else if (message.status === "menu-lifecycle") {
+                            window.__openRebellionInterfaceMenuLifecycle = message;
                         } else if (message.status === "quadrant-setup") {
                             window.__openRebellionInterfaceQuadrantSetup = message;
                         } else if (message.status === "quadrant-observation") {
@@ -69,6 +72,11 @@ const fixturePlugin = `    <script>
                         "open-rebellion-interface-ready",
                         { detail: window.__openRebellionInterfaceReady },
                     ));
+                };
+                imports.env.open_rebellion_windowing_fixture_command = function () {
+                    const value = window.__openRebellionWindowingFixtureCommand;
+                    window.__openRebellionWindowingFixtureCommand = 0;
+                    return Number.isSafeInteger(value) && value > 0 ? value : 0;
                 };
             }
             miniquad_add_plugin({

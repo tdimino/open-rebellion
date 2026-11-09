@@ -103,7 +103,7 @@ fn replaced_id(transition: WindowTransition, expected_old: WindowId) -> WindowId
 
 #[test]
 fn replacement_cleans_history_capture_and_focus_atomically() {
-    // port: SW-02R atomic publication; lifecycle sources FUN_00600f90,
+    // port: atomic publication; lifecycle sources FUN_00600f90,
     // FUN_005ffb60 (owner cascade), FUN_00428b40 (history), FUN_00422ce0 (focus).
     // Break caught: bypassing close cleanup or exposing intermediate focus receipts.
     let mut manager = WindowManager::new();
@@ -200,7 +200,7 @@ fn replacement_cleans_history_capture_and_focus_atomically() {
 
 #[test]
 fn replacement_checks_capacity_after_removing_the_old_subtree() {
-    // Source: FUN_00429ce0, max two Sectors; port: SW-02R post-removal validation.
+    // Source: FUN_00429ce0, max two Sectors; port: post-removal validation.
     // Break caught: validating capacity against the original registry or keeping a third Sector.
     let mut manager = WindowManager::new();
     let old_spec = sector_spec(1);
@@ -266,7 +266,7 @@ fn replacement_checks_capacity_after_removing_the_old_subtree() {
 
 #[test]
 fn invalid_replacement_preserves_old_id_content_links_and_allocator() {
-    // port: SW-02R complete rollback; no failed preparation can discard feature content.
+    // port: complete rollback; no failed preparation can discard feature content.
     // Break caught: mutating cleanup/index/order/focus/capture or allocating before validation.
     let mut manager = WindowManager::new();
     let old_spec = modeless_subject_spec(WindowKind::System, 1);
@@ -315,7 +315,7 @@ fn invalid_replacement_preserves_old_id_content_links_and_allocator() {
 
 #[test]
 fn replacement_rejects_an_owner_inside_the_replaced_subtree() {
-    // port: SW-02R rejects new ownership into any removed record, including hidden descendants.
+    // port: reject new ownership into any removed record, including hidden descendants.
     // Break caught: leaving an orphan or accepting the root as the replacement's owner.
     let mut manager = WindowManager::new();
     let old = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 1));
@@ -356,7 +356,7 @@ fn replacement_rejects_an_owner_inside_the_replaced_subtree() {
 
 #[test]
 fn replacement_rejects_surviving_keys_and_invalid_specs_without_mutation() {
-    // port: SW-02R rejects instead of turning replacement into an existing-key reopen.
+    // port: reject instead of turning replacement into an existing-key reopen.
     // Break caught: committing teardown before key, shape, capacity, policy or placement checks.
     let mut manager = WindowManager::new();
     let old = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 1));
@@ -416,7 +416,7 @@ fn replacement_rejects_surviving_keys_and_invalid_specs_without_mutation() {
 #[test]
 fn replacement_cancels_newly_blocked_surviving_capture_before_teardown() {
     // Source: FUN_00601340 and strategic FUN_00422ce0 capture draining;
-    // port: one SW-02R commit orders cancellation before content teardown and final focus.
+    // port: one atomic commit orders cancellation before content teardown and final focus.
     // Break caught: concatenating close/open receipts exposes late cancellation or intermediate focus.
     let mut manager = WindowManager::new();
     let old_spec = modeless_subject_spec(WindowKind::System, 1);
@@ -541,7 +541,7 @@ fn menu_replacement_retains_saved_control_focus_and_fresh_identity() {
 
 #[test]
 fn replacement_validates_modal_placement_against_the_post_removal_state() {
-    // port: SW-02R consumes ordinary modal placement validation after old descendants are gone.
+    // port: replacement uses ordinary modal placement validation after old descendants are gone.
     // Break caught: checking the pre-removal menu, or skipping placement checks on surviving menus.
     let mut manager = WindowManager::new();
     let owner = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 1));
@@ -1401,6 +1401,7 @@ fn all_window_kinds_are_unique_and_cover_the_public_inventory() {
         WindowKind::BuildSelection,
         WindowKind::MissionDialog,
         WindowKind::MoveConfirmation,
+        WindowKind::StopConfirmation,
         WindowKind::ScrapConfirmation,
         WindowKind::BattleAlert,
         WindowKind::BattleResults,
@@ -1408,7 +1409,7 @@ fn all_window_kinds_are_unique_and_cover_the_public_inventory() {
     ];
 
     assert_eq!(WindowKind::ALL, expected);
-    assert_eq!(BTreeSet::from(expected).len(), 19);
+    assert_eq!(BTreeSet::from(expected).len(), 20);
 }
 
 #[test]

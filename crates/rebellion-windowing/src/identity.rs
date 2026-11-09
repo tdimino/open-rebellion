@@ -80,6 +80,8 @@ pub enum WindowKind {
     MissionDialog,
     /// Confirmed Move dialog.
     MoveConfirmation,
+    /// Manufacturing Stop confirmation dialog.
+    StopConfirmation,
     /// Scrap confirmation dialog.
     ScrapConfirmation,
     /// Tactical Battle Alert dialog.
@@ -93,7 +95,7 @@ pub enum WindowKind {
 
 impl WindowKind {
     /// Complete public top-level inventory in stable declaration order.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::Sector,
         Self::System,
         Self::Fleet,
@@ -109,6 +111,7 @@ impl WindowKind {
         Self::BuildSelection,
         Self::MissionDialog,
         Self::MoveConfirmation,
+        Self::StopConfirmation,
         Self::ScrapConfirmation,
         Self::BattleAlert,
         Self::BattleResults,

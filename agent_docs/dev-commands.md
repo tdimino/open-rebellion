@@ -200,7 +200,9 @@ in `rebellion_render::control_registry`, in the same 640×480 logical space as
 `Click`. The registry holds the frame just drawn, so a name is findable once
 its window has drawn a frame. Off a dev run `set_enabled` stays off and each
 registration is one atomic load; nothing reads game state. A name filed twice
-in a frame keeps its last rect (the focused window draws last).
+in a frame keeps its last rect. Managed surfaces draw in the manager's
+bottom-to-top order, so the topmost window wins; keyboard focus alone does not
+change that order.
 
 | Window | Controls |
 |---|---|
@@ -210,13 +212,13 @@ in a frame keeps its last rect (the focused window draws last).
 | `MissionDialog` | `Close`, `MissionTab`, `AgentsTab`, `KindDropdown`, `KindList` (open drop-down), `AgentList`, `DecoyList`, `Agent <name>`, `Decoy <name>`, `ToDecoys`, `ToAgents`, `Cancel`, `Confirm`, `Encyclopedia` |
 | `ContextMenu` | each row by its label (`Mission`, `Move` …), the object menu and its open submenu |
 | `AgentMenu`, `SpeedMenu` | each row by its label |
-| `Defenses` | `Sector`, `Minimize`, `Close`, and each tab by its name, for every open window (the focused one wins a clash) |
+| `Defenses` | `Sector`, `Minimize`, `Close`, and each tab by its name, for every open window (the topmost manager window wins a clash) |
 | `Personnel` | each character row of an open Defenses window, by name |
 | `MessageIndex` | the categories by name (`All`, `Popular Support` …), `Close`, `DisplayMessage`, `Silently`, `Display`, `ComposeChat`, `SelectAll`, `Delete` |
 | `OperationReport` | `Close`; the rail's `Summary`, `FleetForces`, `SystemForces`, `Display`; over a forces view the tabs `CapitalShips`, `FighterSquadrons`, `Manufacturing`, `DefenseFacilities`, `TrooperRegiments`, `Personnel`; on Display `GotoSystem`, `GotoFleet` |
 
 Not yet registered: the sector, system, fleet, manufacturing, missions and
-status windows, the finders, the build-selection and move/scrap confirmations,
+status windows, the finders, the build-selection and move/scrap/stop confirmations,
 the cockpit's buttons, the main menu, the tactical battle HUD, and the
 Message Index's list rows.
 
@@ -275,7 +277,10 @@ original (`ghidra/notes/gid-legend.md`, "Escape and the keyboard focus"). A
 window a command or a double-click opens does not take the focus: click it
 before `Press escape` to close it. After the first GID press of a game the
 menu holds the focus, and its Escape shows the top window rather than
-closing one.
+closing one. Each physical key event gets its own projected manager snapshot,
+so `Press escape; Press escape` in one batch first closes the focused detail
+and then routes the second Escape to the newly exposed eligible window. One
+physical Escape still has only one owner and cannot fall through to the root.
 
 ### Batches and telemetry
 

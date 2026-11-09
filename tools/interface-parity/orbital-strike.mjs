@@ -429,6 +429,7 @@ async function click(page, point, button = "left") {
 // Two presses a frame apart, each seen by egui, inside its double-click
 // time.
 async function doubleClick(page, point) {
+  await page.waitForTimeout(500);
   await page.mouse.move(point.x, point.y);
   await frames(page);
   for (let press = 1; press <= 2; press += 1) {
@@ -816,10 +817,15 @@ const cases = [
       checks.conflict_light_after = compare(crop(shot.png, faction.conflict), resource(source, faction.conflict.lit), {}, directory, "conflict-lit");
       soft(checks.conflict_light_after.different_pixels === 0, `the Conflict light is not lit: ${JSON.stringify(checks.conflict_light_after)}`);
       await click(page, centre(faction.conflict));
-      const pattern = /command=0x13c destination=message_index category=0x80 status=opened_original/;
+      // Rail light 0x13c names itself on the queued receipt; the manager's
+      // terminal receipt names the category it opened.
+      const opener = /command=0x13c destination=message_index category=0x80 status=queued_shared/;
+      const pattern = /destination=message_index category=0x80 status=opened_managed/;
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline && !consoleLines.some(({ text }) => pattern.test(text))) await page.waitForTimeout(50);
+      checks.index_opener_log = consoleLines.find(({ text }) => opener.test(text))?.text ?? null;
       checks.index_log = consoleLines.find(({ text }) => pattern.test(text))?.text ?? null;
+      assert.ok(checks.index_opener_log, "the Index on Conflict was not opened by rail light 0x13c");
       assert.ok(checks.index_log, "the Conflict light did not open the Index on Conflict");
       await page.mouse.move(2, 2);
       shot = await stableShot(page, directory, "index-conflict");
@@ -1074,6 +1080,10 @@ async function inspect(server, source, faction, testCase, executable) {
     assert.equal(ready.status, "ready", JSON.stringify(ready));
     assert.equal(ready.code, fixtureCode);
     await page.evaluate(() => document.fonts.ready);
+    // The fixture publishes its legacy Fleet geometry before the application
+    // adopts that Fleet into the manager. Let the manager commit and paint the
+    // identity before the first context-menu press, as fleet-move.mjs does.
+    await frames(page, 2);
     failures = [];
     const checks = await testCase.run(page, faction, source, directory, consoleLines);
     checks.pixel_failures = failures;

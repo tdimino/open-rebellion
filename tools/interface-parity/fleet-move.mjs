@@ -38,8 +38,8 @@ const FLEET_MOVE_BLOCKADE = 47;
 const confirmation = { width: 424, height: 331 };
 const checkmark = { x: 355 + 25.5, y: 244 + 17.5 };
 const cross = { x: 355 + 25.5, y: 281 + 17.5 };
-// The Fleet window the fixture opens 5 pixels in from the galaxy view's
-// top-right corner.
+// The Fleet window the fixture opens 5 pixels left of the galaxy view's
+// top-right corner and aligned with its top edge.
 const fleetWindow = { width: 235, height: 304 };
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 const runDir = path.join(root, ".artifacts/interface-parity", `fleet-move-${runId}`);
@@ -183,7 +183,7 @@ function bare(faction, point, area) {
   const sector = grown({ ...faction.sector, ...sectorWindow }, PICK_RADIUS);
   const fleets = grown({
     x: faction.galaxy.x + faction.galaxy.width - fleetWindow.width - 5,
-    y: faction.galaxy.y + 5,
+    y: faction.galaxy.y,
     ...fleetWindow,
   }, PICK_RADIUS);
   // Keep clear of the cockpit frame at the view's edges.
@@ -417,6 +417,7 @@ async function inspect(server, faction, testCase, executable) {
   let context;
   let page;
   let result;
+  let setup;
   try {
     browser = await launchBrowser(chromium, {
       executablePath: executable,
@@ -459,7 +460,7 @@ async function inspect(server, faction, testCase, executable) {
     assert.equal(ready.code, fixtureCode);
     await page.waitForFunction(() => window.__openRebellionInterfaceFleetMoveSetup
       && (window.__openRebellionInterfaceFleetMoves || []).length > 0, null, { timeout: 10_000 });
-    const setup = await page.evaluate(() => window.__openRebellionInterfaceFleetMoveSetup);
+    setup = await page.evaluate(() => window.__openRebellionInterfaceFleetMoveSetup);
     assert.equal(setup.code, fixtureCode);
     const start = await latest(page);
     assert.deepEqual([start.in_transit, start.confirmation_open], [false, false], JSON.stringify(start));
@@ -495,6 +496,7 @@ async function inspect(server, faction, testCase, executable) {
       faction: faction.name,
       case: testCase.name,
       error: String(error.stack || error),
+      setup,
       observations: page ? await observations(page).catch(() => []) : [],
       requests,
       errors,

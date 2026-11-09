@@ -3,7 +3,7 @@ title: "Architecture"
 description: "Crate dependency graph and module structure for the Open Rebellion codebase"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-20
+updated: 2026-11-07
 tags: [architecture, crate-graph, entity-identity, simulation]
 ---
 
@@ -21,6 +21,21 @@ rebellion-app (quad-snd, rand_xoshiro)
 │   ├── rebellion-core
 │   └── dat-dumper (library mode)
 └── rebellion-core (slotmap 1.0, serde 1)
+
+The strategic-windowing boundary is split by authority: `rebellion-windowing`
+owns semantic IDs, lifecycle/order/focus/history/modality/capture, and immutable
+`RoutingSnapshot`s; `rebellion-render` maps feature families to those IDs and
+translates snapshots into layout, focus requests, paint, and normalized input
+routing; `rebellion-app::StrategicWindowing` owns the manager, pending content
+publication, scene transitions, and commits. Pointer routing uses the frozen
+frame snapshot. Keyboard routing derives one snapshot per physical event and
+projects accepted lifecycle commands before routing the next event, preventing
+fall-through while allowing two Escapes in one frame to close two windows.
+Content lifecycle observations are distinct from paint observations.
+Its workspace and browser evidence, bound to artifact hashes, is in the
+[strategic-windowing reconciliation](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md);
+it promotes no visual parity cell, original-runtime acceptance, or
+native-Windows parity.
 
 rebellion-playtest (clap, rand_xoshiro, serde_json)  [headless play-test binary]
 ├── rebellion-data
@@ -140,7 +155,6 @@ crates/rebellion-render/src/
 ├── scroll_bar.rs       — The original scroll bar (FUN_0060aa70)
 ├── sector_hover.rs     — The galaxy view's sector name under the pointer
 ├── tooltip.rs          — The original's help balloons over command-center controls
-├── window_focus.rs     — One focus across the galaxy view's child windows
 ├── windowing.rs / windowing_input.rs / windowing_policy.rs / windowing_adapter_probe.rs — Strategic windows over rebellion-windowing: snapshots to egui, input admission, policy, a test-only adapter probe
 ├── encyclopedia_surface.rs / encyclopedia_textures.rs — The Encyclopedia's surface data and interactions, and its selected-topic textures
 ├── tactical_assets.rs / tactical_asset_cache.rs — Decoding and rendering the original tactical type-301/303 assets, and their decoded store

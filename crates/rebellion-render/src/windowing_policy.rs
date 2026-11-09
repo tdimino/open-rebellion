@@ -20,6 +20,19 @@ pub const SUBJECT_SYSTEM: u32 = 2;
 pub const SUBJECT_COMMAND_CONTEXT: u32 = 3;
 /// Subject namespace for coordinator-allocated battle sessions.
 pub const SUBJECT_BATTLE: u32 = 4;
+/// Subject namespace for Galaxy Operation Reports keyed by stable message id.
+/// It is intentionally distinct from the tactical battle-session namespace.
+pub const SUBJECT_OPERATION_REPORT: u32 = 5;
+
+/// Builds the manager identity for one contextual Galaxy Operation Report.
+#[must_use]
+pub const fn operation_report_spec(message_id: u64) -> WindowSpec {
+    contextual_spec(
+        WindowKind::BattleResults,
+        SubjectId::new(SUBJECT_OPERATION_REPORT, message_id),
+        WindowOwner::StrategicRoot,
+    )
+}
 
 /// Resolves a runtime system handle to its stable original DAT identity.
 ///
@@ -52,7 +65,7 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
     match kind {
         // fact: FUN_00429ce0 creates at most two low-band Sector windows and
         // returns an existing subject without raising it.
-        WindowKind::Sector => policy(
+        WindowKind::Sector => preserve_focus_policy(
             Cardinality::Subject { max_open: Some(2) },
             StackBand::Low,
             OpenPlacement::BottomOfBand,
@@ -65,7 +78,7 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
         // fact: FUN_0045aac0 restores/raises system-keyed modeless details;
         // FUN_00428b40/FUN_00429020 supply their shared presentation history.
         WindowKind::System | WindowKind::Fleet | WindowKind::Defenses | WindowKind::Missions => {
-            policy(
+            preserve_focus_policy(
                 Cardinality::Subject { max_open: None },
                 StackBand::Normal,
                 OpenPlacement::TopOfBand,
@@ -98,7 +111,10 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
         // fact: the 2026-10-12 retained original-runtime closeout confirms the
         // blocking boundary for Status, Mission, and Move on both factions.
         // Their per-open logical context remains app-owned.
-        WindowKind::Status | WindowKind::MissionDialog | WindowKind::MoveConfirmation => policy(
+        WindowKind::Status
+        | WindowKind::MissionDialog
+        | WindowKind::MoveConfirmation
+        | WindowKind::StopConfirmation => policy(
             Cardinality::Subject { max_open: None },
             StackBand::Normal,
             OpenPlacement::TopOfBand,
@@ -205,6 +221,50 @@ const fn policy(
     presentation: PresentationPolicy,
     restoration: FocusRestoration,
 ) -> WindowPolicy {
+    policy_with_focus(
+        cardinality,
+        band,
+        placement,
+        existing,
+        input,
+        presentation,
+        FocusOnOpen::Window,
+        restoration,
+    )
+}
+
+const fn preserve_focus_policy(
+    cardinality: Cardinality,
+    band: StackBand,
+    placement: OpenPlacement,
+    existing: ExistingOpenPolicy,
+    input: InputPolicy,
+    presentation: PresentationPolicy,
+    restoration: FocusRestoration,
+) -> WindowPolicy {
+    policy_with_focus(
+        cardinality,
+        band,
+        placement,
+        existing,
+        input,
+        presentation,
+        FocusOnOpen::Preserve,
+        restoration,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+const fn policy_with_focus(
+    cardinality: Cardinality,
+    band: StackBand,
+    placement: OpenPlacement,
+    existing: ExistingOpenPolicy,
+    input: InputPolicy,
+    presentation: PresentationPolicy,
+    focus_on_open: FocusOnOpen,
+    restoration: FocusRestoration,
+) -> WindowPolicy {
     WindowPolicy {
         cardinality,
         band,
@@ -212,7 +272,7 @@ const fn policy(
         existing,
         input,
         presentation,
-        focus_on_open: FocusOnOpen::Window,
+        focus_on_open,
         restoration,
     }
 }
@@ -230,8 +290,8 @@ mod tests {
     };
 
     use super::{
-        contextual_spec, policy_for, sector_subject, singleton_spec, system_subject,
-        SUBJECT_SECTOR, SUBJECT_SYSTEM,
+        contextual_spec, operation_report_spec, policy_for, sector_subject, singleton_spec,
+        system_subject, SUBJECT_BATTLE, SUBJECT_OPERATION_REPORT, SUBJECT_SECTOR, SUBJECT_SYSTEM,
     };
 
     const fn policy(
@@ -255,18 +315,61 @@ mod tests {
         }
     }
 
+    const fn preserve_focus_policy(
+        cardinality: Cardinality,
+        band: StackBand,
+        placement: OpenPlacement,
+        existing: ExistingOpenPolicy,
+        input: InputPolicy,
+        presentation: PresentationPolicy,
+        restoration: FocusRestoration,
+    ) -> WindowPolicy {
+        WindowPolicy {
+            focus_on_open: FocusOnOpen::Preserve,
+            ..policy(
+                cardinality,
+                band,
+                placement,
+                existing,
+                input,
+                presentation,
+                restoration,
+            )
+        }
+    }
+
     const SUBJECT: Cardinality = Cardinality::Subject { max_open: None };
     const SINGLETON: Cardinality = Cardinality::Singleton;
 
     #[test]
-    fn windowing_policy_inventory_covers_all_nineteen_kinds() {
+    fn operation_reports_use_a_distinct_galaxy_battle_results_identity() {
+        let report = operation_report_spec(42);
+        let tactical = contextual_spec(
+            WindowKind::BattleResults,
+            SubjectId::new(SUBJECT_BATTLE, 42),
+            WindowOwner::StrategicRoot,
+        );
+
+        assert_eq!(report.key.kind, WindowKind::BattleResults);
+        assert_eq!(
+            report.key.subject,
+            Some(SubjectId::new(SUBJECT_OPERATION_REPORT, 42))
+        );
+        assert_ne!(report.key, tactical.key);
+        assert_eq!(report.owner, WindowOwner::StrategicRoot);
+        assert_eq!(SUBJECT_OPERATION_REPORT, SUBJECT_BATTLE + 1);
+        assert_eq!(report.policy.input, InputPolicy::StrategicModal);
+    }
+
+    #[test]
+    fn windowing_policy_inventory_covers_all_twenty_kinds() {
         // `ghidra/notes/strategic-windowing-toolkit.md`, "Window-family
         // matrix", supplies the recovered family axes. Scrap modality and
         // outside-press Menu dismissal are explicitly labeled port policy.
         let cases = [
             (
                 WindowKind::Sector,
-                policy(
+                preserve_focus_policy(
                     Cardinality::Subject { max_open: Some(2) },
                     StackBand::Low,
                     OpenPlacement::BottomOfBand,
@@ -279,7 +382,7 @@ mod tests {
             ),
             (
                 WindowKind::System,
-                policy(
+                preserve_focus_policy(
                     SUBJECT,
                     StackBand::Normal,
                     OpenPlacement::TopOfBand,
@@ -292,7 +395,7 @@ mod tests {
             ),
             (
                 WindowKind::Fleet,
-                policy(
+                preserve_focus_policy(
                     SUBJECT,
                     StackBand::Normal,
                     OpenPlacement::TopOfBand,
@@ -305,7 +408,7 @@ mod tests {
             ),
             (
                 WindowKind::Defenses,
-                policy(
+                preserve_focus_policy(
                     SUBJECT,
                     StackBand::Normal,
                     OpenPlacement::TopOfBand,
@@ -318,7 +421,7 @@ mod tests {
             ),
             (
                 WindowKind::Missions,
-                policy(
+                preserve_focus_policy(
                     SUBJECT,
                     StackBand::Normal,
                     OpenPlacement::TopOfBand,
@@ -448,6 +551,19 @@ mod tests {
             ),
             (
                 WindowKind::MoveConfirmation,
+                policy(
+                    SUBJECT,
+                    StackBand::Normal,
+                    OpenPlacement::TopOfBand,
+                    ExistingOpenPolicy::NoOp,
+                    InputPolicy::StrategicModal,
+                    PresentationPolicy::None,
+                    FocusRestoration::PreviousEligible,
+                ),
+                false,
+            ),
+            (
+                WindowKind::StopConfirmation,
                 policy(
                     SUBJECT,
                     StackBand::Normal,

@@ -3,7 +3,7 @@ title: "Save/Load System"
 description: "Native and browser save v63, canonical fingerprints, campaign setup, continuation state, troop cargo, embarked tracking, deliveries, and the no-migration rule"
 category: "agent-docs"
 created: 2026-03-15
-updated: 2026-10-20
+updated: 2026-11-05
 tags: [save-load, bincode, migration, serialization, wasm, determinism]
 ---
 
@@ -138,9 +138,12 @@ original's ending code and its "Battle in Progress..." overlay window, which
 the port keeps elsewhere or lacks. `compute_state_fingerprint` reads only
 `SaveState`, so two saves of one campaign with different windows open share
 a fingerprint; the decoder refuses any bytes after the interface. A load
-gives the focus to the top restored window that is shown and not a sector
-window (`GalaxyFocusState::after_load`); a Fleet window there also takes the
-keyboard (`FUN_00440f80.c:31-35`).
+replays the serialized bottom-to-top order with manager `Raise` commands,
+which do not focus or accidentally reorder Sector windows, then focuses the
+top restored window that is shown and is not a Sector. A Fleet window there
+therefore takes the keyboard. This matches `FUN_00440f80.c:31-35`; activating
+a hidden rail entry later uses manager `Restore`, which raises and focuses
+that exact identity.
 
 ## Deterministic fingerprints
 

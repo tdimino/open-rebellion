@@ -229,7 +229,9 @@ fn thirteenth_minimized_detail_evicts_oldest_with_teardown_events() {
 
 #[test]
 fn restore_removes_history_and_raises_without_reallocating_identity() {
-    // Source: FUN_00429020 removes the selected rail entry and restores its presentation.
+    // Source: FUN_00429020 removes the selected rail entry and restores its
+    // presentation; its last act sends 0x467 with the restored window
+    // (FUN_00429020.c:85), and FUN_00422ce0 0x467 shows, raises and focuses it.
     let mut manager = WindowManager::new();
     let spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
     let id = open(&mut manager, spec);
@@ -301,6 +303,46 @@ fn reopening_minimized_detail_restores_and_raises() {
             control: None
         })
     );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn reopening_a_minimized_detail_focuses_it_like_a_rail_restore() {
+    // Source: FUN_0045aac0 reopens a minimized detail through FUN_00429020
+    // (FUN_0045aac0.c:157), which sends 0x467 with it (FUN_00429020.c:85):
+    // FUN_00422ce0 0x467 shows, raises and focuses the window.
+    let mut manager = WindowManager::new();
+    let spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
+    let id = open(&mut manager, spec);
+    manager.apply(WindowCommand::Minimize(id)).unwrap();
+    let other = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
+    );
+    let commit = manager.apply(WindowCommand::Open(spec)).unwrap();
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Existing {
+            id,
+            effect: rebellion_windowing::ExistingEffect::RestoredAndRaised
+        }
+    );
+    let restored = FocusTarget {
+        window: id,
+        control: None,
+    };
+    assert_eq!(
+        commit.events,
+        vec![WindowEvent::FocusChanged {
+            previous: Some(FocusTarget {
+                window: other,
+                control: None,
+            }),
+            current: Some(restored),
+        }]
+    );
+    assert_eq!(manager.visible_order(), &[other, id]);
+    assert_eq!(manager.focused(), Some(restored));
     assert_eq!(manager.validate(), Ok(()));
 }
 
@@ -625,6 +667,7 @@ fn restoring_and_reminimizing_a_middle_entry_updates_only_its_age() {
         ids.push(id);
     }
     let commit = manager.apply(WindowCommand::Restore(ids[1])).unwrap();
+    // FUN_00429020.c:85: the rail restore focuses the restored window.
     assert_eq!(
         commit.events,
         vec![WindowEvent::FocusChanged {
@@ -729,10 +772,10 @@ fn raise_restore_reopen_rejects_now_ineligible_transient_placement_atomically() 
 }
 
 #[test]
-fn background_minimize_preserves_the_previous_focus_candidate_ahead_of_topmost_fallback() {
-    // Port shared focus contract: hiding an unrelated detail preserves the eligible
-    // previous window, so a later close restores it before the topmost fallback.
-    // Break caught: clearing an eligible previous candidate during minimization.
+fn close_after_background_minimize_uses_the_topmost_eligible_focus_walk() {
+    // Source: FUN_00422ce0 message 0x467 and gid-legend.md, "Escape and the
+    // keyboard focus": restoration walks current z-order from the top.
+    // Break caught: preferring historical `previous_eligible` over z-order.
     let mut manager = WindowManager::new();
     let previous = open(
         &mut manager,
@@ -755,7 +798,7 @@ fn background_minimize_preserves_the_previous_focus_candidate_ahead_of_topmost_f
         .events
         .is_empty());
     let target = Some(FocusTarget {
-        window: previous,
+        window: top,
         control: None,
     });
     assert_eq!(
@@ -1005,9 +1048,9 @@ fn activate_changes_order_and_focus_but_focus_alone_does_not() {
 }
 
 #[test]
-fn raise_already_top_still_repairs_different_focus() {
-    // Source: implementation plan, public kernel interface contract for `Raise`.
-    // Break caught: returning early on already-top order before repairing focus.
+fn serialized_raise_keeps_focus_while_replaying_z_order() {
+    // FUN_00440ea0 serializes the shared z walk independently of keyboard
+    // focus. Break caught: load-order replay focusing every raised window.
     let mut manager = WindowManager::new();
     let first = open(
         &mut manager,
@@ -1028,7 +1071,7 @@ fn raise_already_top_still_repairs_different_focus() {
     assert_eq!(
         manager
             .apply(WindowCommand::Raise(top))
-            .expect("already-top raise repairs focus")
+            .expect("already-top serialized raise")
             .transition,
         WindowTransition::Raised { id: top }
     );
@@ -1036,17 +1079,17 @@ fn raise_already_top_still_repairs_different_focus() {
     assert_eq!(
         manager.focused(),
         Some(FocusTarget {
-            window: top,
-            control: None,
+            window: first,
+            control: Some(ControlId(8)),
         })
     );
     assert_eq!(manager.validate(), Ok(()));
 }
 
 #[test]
-fn duplicate_raise_restore_repairs_focus_without_reallocating() {
-    // Source: strategic-windowing-toolkit.md, "Existing-window policy".
-    // Break caught: moving an existing detail to the top while leaving keyboard focus elsewhere.
+fn duplicate_raise_restore_preserves_focus_without_reallocating() {
+    // Source: FUN_0045aac0 raises an existing detail presentation without
+    // assigning keyboard focus to it.
     let mut manager = WindowManager::new();
     let detail_spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
     let detail = open(&mut manager, detail_spec);
@@ -1073,24 +1116,12 @@ fn duplicate_raise_restore_repairs_focus_without_reallocating() {
             effect: rebellion_windowing::ExistingEffect::Raised,
         }
     );
-    assert_eq!(
-        commit.events,
-        vec![WindowEvent::FocusChanged {
-            previous: Some(FocusTarget {
-                window: other,
-                control: None,
-            }),
-            current: Some(FocusTarget {
-                window: detail,
-                control: None,
-            }),
-        }]
-    );
+    assert!(commit.events.is_empty());
     assert_eq!(manager.visible_order(), &[other, detail]);
     assert_eq!(
         manager.focused(),
         Some(FocusTarget {
-            window: detail,
+            window: other,
             control: None,
         })
     );
@@ -1098,9 +1129,10 @@ fn duplicate_raise_restore_repairs_focus_without_reallocating() {
 }
 
 #[test]
-fn close_chooses_previous_eligible_survivor_outside_removed_subtree() {
-    // Source: implementation plan, "Lifecycle, focus, and history".
-    // Break caught: restoring an owned descendant or ignoring the one global previous candidate.
+fn close_chooses_topmost_eligible_survivor_outside_removed_subtree() {
+    // Source: FUN_00422ce0 message 0x467 and gid-legend.md, "Escape and the
+    // keyboard focus": restoration walks current z-order from the top.
+    // Break caught: restoring an owned descendant or a historical focus target.
     let mut manager = WindowManager::new();
     let owner = open(
         &mut manager,
@@ -1136,8 +1168,8 @@ fn close_chooses_previous_eligible_survivor_outside_removed_subtree() {
         .expect("owner subtree closes");
 
     let restored = FocusTarget {
-        window: previous,
-        control: Some(ControlId(12)),
+        window: topmost,
+        control: None,
     };
     assert_eq!(
         commit.transition,
@@ -1188,10 +1220,10 @@ fn close_preserves_surviving_root_focus() {
 }
 
 #[test]
-fn close_retains_a_previous_candidate_while_a_modal_temporarily_blocks_it() {
-    // Source: implementation plan, one global previous-eligible survivor is
-    // revalidated when restoration is attempted, not discarded while blocked.
-    // Break caught: an unrelated close under a modal erasing the later restore target.
+fn closing_a_modal_uses_current_topmost_order_after_unrelated_close() {
+    // Source: FUN_00422ce0 message 0x467 and gid-legend.md, "Escape and the
+    // keyboard focus": closing a modal starts a fresh top-down focus walk.
+    // Break caught: restoring a historical focus target instead of current z-order.
     let mut manager = WindowManager::new();
     let previous = open(
         &mut manager,
@@ -1221,8 +1253,8 @@ fn close_retains_a_previous_candidate_while_a_modal_temporarily_blocks_it() {
         .expect("modal closes");
 
     let restored = FocusTarget {
-        window: previous,
-        control: Some(ControlId(23)),
+        window: fallback,
+        control: None,
     };
     assert_eq!(
         commit.transition,
@@ -1283,6 +1315,157 @@ fn ordinary_window_close_uses_global_eligible_order_not_a_private_focus_stack() 
         manager.focused().map(|target| target.window),
         Some(old_focus)
     );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn gid_escape_with_no_current_child_focuses_only_the_view() {
+    // Source: FUN_00422ce0 0x467 with no window focuses the view alone while
+    // its current child (param_1[0x2e]) is empty (FUN_00422ce0.c:1145-1148).
+    // A Sector opened by a galaxy double-click (FUN_00429ce0, HWND_BOTTOM, no
+    // 0x467) and the GID menu's own SetFocus (FUN_004511e0) leave it empty.
+    // Wine, alliance-day54-advice day 61: Corellian sector, first GID press,
+    // Escape changes nothing (gid-legend.md, "Escape and the keyboard focus").
+    let mut manager = WindowManager::new();
+    let mut sector_spec = modeless_spec(WindowKind::Sector, 1, WindowOwner::StrategicRoot);
+    sector_spec.policy.focus_on_open = FocusOnOpen::Preserve;
+    let sector = open(&mut manager, sector_spec);
+    assert_eq!(manager.focused(), None);
+    let mut gid_spec = menu_spec(sector);
+    gid_spec.owner = WindowOwner::StrategicRoot;
+    gid_spec.policy.input = InputPolicy::Modeless;
+    gid_spec.policy.band = StackBand::Normal;
+    gid_spec.policy.placement = OpenPlacement::TopOfBand;
+    let menu = open(&mut manager, gid_spec);
+    let order_before = manager.visible_order().to_vec();
+
+    let commit = manager
+        .apply(WindowCommand::RestoreFocus)
+        .expect("GID Escape focus walk succeeds");
+
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Focused {
+            previous: Some(FocusTarget {
+                window: menu,
+                control: None,
+            }),
+            current: None,
+        }
+    );
+    assert_eq!(manager.focused(), None);
+    assert_eq!(manager.visible_order(), order_before);
+    assert_eq!(
+        manager.id_for(WindowKey::singleton(WindowKind::Menu)),
+        Some(menu)
+    );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn closing_a_modal_over_the_gid_menu_with_no_current_child_focuses_only_the_view() {
+    // Source: a keyed close posts 0x467(0,0) through the view's 0x405
+    // handler, and 0x467 with an empty current child only focuses the view
+    // (FUN_00422ce0.c:1145-1148); a modal focuses itself on open and is not
+    // made current. Wine, alliance-day54-advice day 61: with the GID menu
+    // open over a double-clicked Sector, a rail light opened the Message
+    // Index, and once it closed the menu was still open with the windows
+    // hidden (gid-legend.md, "Escape and the keyboard focus").
+    let mut manager = WindowManager::new();
+    let mut sector_spec = modeless_spec(WindowKind::Sector, 1, WindowOwner::StrategicRoot);
+    sector_spec.policy.focus_on_open = FocusOnOpen::Preserve;
+    let sector = open(&mut manager, sector_spec);
+    let mut gid_spec = menu_spec(sector);
+    gid_spec.owner = WindowOwner::StrategicRoot;
+    gid_spec.policy.input = InputPolicy::Modeless;
+    gid_spec.policy.band = StackBand::Normal;
+    gid_spec.policy.placement = OpenPlacement::TopOfBand;
+    let menu = open(&mut manager, gid_spec);
+    let index = open(&mut manager, modal_spec(WindowKind::MessageIndex));
+
+    let commit = manager.apply(WindowCommand::Close(index)).unwrap();
+
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Closed {
+            root: index,
+            closed: vec![index],
+            restored_focus: None,
+        }
+    );
+    assert_eq!(manager.focused(), None);
+    assert_eq!(manager.visible_order(), &[sector, menu]);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn closing_the_current_child_walks_to_the_topmost_window() {
+    // Source: the view's 0x405 handler posts 0x467(0,0) after a keyed
+    // close; with the closed window still the current child, 0x467 walks
+    // from the top of the z-order and shows and focuses the first eligible
+    // child (FUN_00422ce0.c:1150-1188). Wine, empire-fleet-to-yaga-minor
+    // day 38: Escape closed Coruscant and the next Escape reached Sesswenna.
+    let mut manager = WindowManager::new();
+    let mut sector_spec = modeless_spec(WindowKind::Sector, 1, WindowOwner::StrategicRoot);
+    sector_spec.policy.focus_on_open = FocusOnOpen::Preserve;
+    let sector = open(&mut manager, sector_spec);
+    let mut detail_spec = modeless_spec(WindowKind::System, 2, WindowOwner::StrategicRoot);
+    detail_spec.policy.focus_on_open = FocusOnOpen::Preserve;
+    let detail = open(&mut manager, detail_spec);
+    manager.apply(WindowCommand::Activate(detail)).unwrap();
+
+    manager.apply(WindowCommand::Close(detail)).unwrap();
+
+    assert_eq!(
+        manager.focused(),
+        Some(FocusTarget {
+            window: sector,
+            control: None,
+        })
+    );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn gid_escape_focus_walk_keeps_menu_registered_and_preserves_z_order() {
+    // Source: FUN_00422ce0 message 0x467 and FUN_004aab50; gid-legend.md,
+    // "Escape and the keyboard focus". Menu Escape restores the top child
+    // without destroying or reordering the still-open GID menu.
+    let mut manager = WindowManager::new();
+    let lower = open(
+        &mut manager,
+        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
+    );
+    let top = open(
+        &mut manager,
+        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
+    );
+    let menu = open(&mut manager, menu_spec(top));
+    let order_before = manager.visible_order().to_vec();
+
+    let commit = manager
+        .apply(WindowCommand::RestoreFocus)
+        .expect("GID Escape focus walk succeeds");
+
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Focused {
+            previous: Some(FocusTarget {
+                window: menu,
+                control: None,
+            }),
+            current: Some(FocusTarget {
+                window: top,
+                control: None,
+            }),
+        }
+    );
+    assert_eq!(manager.visible_order(), order_before);
+    assert_eq!(
+        manager.id_for(WindowKey::singleton(WindowKind::Menu)),
+        Some(menu)
+    );
+    assert_eq!(manager.visible_order(), &[lower, top, menu]);
     assert_eq!(manager.validate(), Ok(()));
 }
 

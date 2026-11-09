@@ -75,7 +75,7 @@ pub enum Cardinality {
 /// Focus-selection rule after a window leaves the eligible set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusRestoration {
-    /// Select the previous eligible target using shared window order.
+    /// Select the topmost eligible target using shared window order.
     PreviousEligible,
     /// Restore the menu's saved invoker target when it remains eligible.
     SavedMenuTarget,

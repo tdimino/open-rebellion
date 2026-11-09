@@ -119,7 +119,9 @@ export function validateObservation(value) {
         || typeof event.application_recipient !== "string" || event.application_recipient.length === 0
         || event.underlay_action_count !== 0
         || typeof event.observed_route !== "string" || event.observed_route.length === 0
-        || !Array.isArray(event.observed_actions) || event.observed_actions.length !== 1
+        // A managed open logs its queued and its terminal receipt, so an
+        // event may carry two; smokeEventFromReceipts counts one action.
+        || !Array.isArray(event.observed_actions) || event.observed_actions.length === 0
         || event.observed_actions.some((receipt) => typeof receipt !== "string" || receipt.length === 0)) {
       fail("malformed event recipient");
     }
@@ -309,11 +311,11 @@ const ADAPTER_SMOKE_ROUTES = Object.freeze({
     kind: "pointer",
     recipient: "root",
     applicationRecipient: "gid_menu",
-    tokens: Object.freeze(["command=0x132", "destination=gid_menu", "status=opened_original"]),
+    tokens: Object.freeze(["command=0x132", "destination=gid_menu", "status=opened_managed"]),
   }),
   "pointer-select": Object.freeze({
     kind: "pointer",
-    recipient: "blocked",
+    recipient: "window:*",
     applicationRecipient: "gid",
     tokens: Object.freeze(["destination=gid", "status=selected", "label=Display Off"]),
   }),
@@ -324,6 +326,13 @@ const ADAPTER_SMOKE_ROUTES = Object.freeze({
     tokens: Object.freeze(["destination=gid", "status=selected", "source=accelerator"]),
   }),
 });
+
+function applicationActionIdentity(receipt) {
+  if (typeof receipt !== "string" || !receipt.startsWith("[interface] command=")) return null;
+  const command = receipt.match(/\bcommand=([^ ]+)/)?.[1];
+  const destination = receipt.match(/\bdestination=([^ ]+)/)?.[1];
+  return command && destination ? `${command}/${destination}` : null;
+}
 
 export function smokeEventFromReceipts(triggerId, observedCommand, observedRoute, observedActions) {
   const route = ADAPTER_SMOKE_ROUTES[triggerId];
@@ -339,20 +348,37 @@ export function smokeEventFromReceipts(triggerId, observedCommand, observedRoute
   );
   if (match === null) fail(`adapter-smoke event ${triggerId} has a malformed route receipt`);
   const [, eventId, kind, recipient, applicationRecipient, observedUnderlay] = match;
-  if (kind !== route.kind || recipient !== route.recipient
+  const recipientMatches = route.recipient === "window:*"
+    ? /^window:\d+$/.test(recipient)
+    : recipient === route.recipient;
+  if (kind !== route.kind || !recipientMatches
       || applicationRecipient !== route.applicationRecipient) {
-    fail(`adapter-smoke event ${triggerId} has the wrong observed route`);
+    fail(`adapter-smoke event ${triggerId} has the wrong observed route; `
+      + `expected=${route.kind}/${route.recipient}/${route.applicationRecipient}; `
+      + `observed=${kind}/${recipient}/${applicationRecipient}; route=${observedRoute}`);
   }
   if (!Array.isArray(observedActions)
       || observedActions.some((receipt) => typeof receipt !== "string")) {
     fail(`adapter-smoke event ${triggerId} has malformed application action receipts`);
   }
-  const expectedIndex = observedActions.indexOf(observedCommand);
+  const expectedIdentity = applicationActionIdentity(observedCommand);
+  const queued = (receipt) => receipt.includes(" status=queued")
+    && applicationActionIdentity(receipt) === expectedIdentity;
+  // A managed open logs one queued receipt, then its terminal one.
+  if (observedActions.filter(queued).length > 1) {
+    fail(`adapter-smoke event ${triggerId} queued its action more than once; `
+      + `actions=${JSON.stringify(observedActions)}`);
+  }
+  const countedActions = observedActions.filter((receipt) => !queued(receipt));
+  const expectedIndex = countedActions.indexOf(observedCommand);
   if (expectedIndex < 0) {
     fail(`adapter-smoke event ${triggerId} did not retain its application action receipt`);
   }
-  const underlayActionCount = Number(observedUnderlay) + observedActions.length - 1;
-  if (underlayActionCount !== 0) fail(`adapter-smoke event ${triggerId} underlay actions must be zero`);
+  const underlayActionCount = Number(observedUnderlay) + countedActions.length - 1;
+  if (underlayActionCount !== 0) {
+    fail(`adapter-smoke event ${triggerId} underlay actions must be zero; `
+      + `route=${observedRoute}; actions=${JSON.stringify(observedActions)}`);
+  }
   return {
     trigger_id: triggerId,
     event_id: eventId,
@@ -388,6 +414,15 @@ export function assertAdapterSmokeObservation(value) {
   }
   if (observation.events.length !== Object.keys(ADAPTER_SMOKE_ROUTES).length) {
     fail("adapter-smoke observation contains unexpected event recipients");
+  }
+  // The Display Off row is the managed GID menu's own control, so its press
+  // routes to the identity the menu opened with, not to any window.
+  const opened = observation.events.find(({ trigger_id: id }) => id === "pointer-open");
+  const menu = opened.observed_command.match(/\bidentity=WindowId\((\d+)\)/)?.[1];
+  if (menu === undefined) fail("adapter-smoke pointer-open names no GID menu identity");
+  const selected = observation.events.find(({ trigger_id: id }) => id === "pointer-select");
+  if (selected.recipient !== `window:${menu}`) {
+    fail(`adapter-smoke pointer-select routed to ${selected.recipient}, not the GID menu window:${menu}`);
   }
   for (const [counter, expectedDelta] of [["gid_menu", 1], ["gid_selection", 2]]) {
     const before = observation.action_counters.before[counter];
@@ -681,7 +716,8 @@ export function strategicGidDisplayOffPoint(viewport) {
 
 export function smokeActionCounters(lines) {
   return {
-    gid_menu: lines.filter((line) => line.includes("destination=gid_menu status=")).length,
+    gid_menu: lines.filter((line) => line.includes("destination=gid_menu status=")
+      && !line.includes(" status=queued")).length,
     gid_selection: lines.filter((line) => line.includes("destination=gid status=selected")).length,
   };
 }
@@ -890,7 +926,7 @@ export async function createBrowserRuntime(runDirectory, dependencies = {}) {
             await frames(page);
             const opened = await performCommand(
               page,
-              "command=0x132 destination=gid_menu status=opened_original",
+              "command=0x132 destination=gid_menu status=opened_managed",
               () => page.mouse.up(),
             );
             await frames(page);

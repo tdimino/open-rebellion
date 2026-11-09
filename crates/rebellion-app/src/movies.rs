@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 use egui_macroquad::egui;
 use rebellion_core::dat::Faction;
 use rebellion_core::victory::{AW, EW};
-use rebellion_render::message_index::{MessageIndexAction, MessageIndexState};
+use rebellion_render::message_index::MessageIndexState;
 use rebellion_render::status_window::StatusWindowState;
 
 use crate::encyclopedia_surface::EncyclopediaSurfaceController;
@@ -251,19 +251,22 @@ impl MovieQueue {
 /// `+0x30`); every other window ignores it, the Operation Report
 /// (`FUN_00606650`) among them, so the movie waits until the player closes
 /// that one. The capture is cancelled as the movie's scene starts. Returns
-/// the closing Index's actions (`FUN_0046a6a0`).
+/// manager-owned window identities for the caller to close (`FUN_0046a6a0`).
 pub fn clear_for_movie(
     queue: &MovieQueue,
-    status: &mut StatusWindowState,
-    encyclopedia: &mut EncyclopediaSurfaceController,
-    index: &mut Option<MessageIndexState>,
-) -> Vec<MessageIndexAction> {
+    status: &StatusWindowState,
+    encyclopedia: &EncyclopediaSurfaceController,
+    index: &MessageIndexState,
+) -> Vec<rebellion_windowing::WindowId> {
     if !queue.waiting() {
         return Vec::new();
     }
-    *status = StatusWindowState::default();
-    encyclopedia.close();
-    index.take().map(|index| index.close()).unwrap_or_default()
+    status
+        .window_id()
+        .into_iter()
+        .chain(encyclopedia.window_id())
+        .chain(index.request_close())
+        .collect()
 }
 
 /// The movie window's caption field (`FUN_00421790`, `WM_CREATE`): a
@@ -319,7 +322,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_waiting_movie_closes_the_status_window_the_encyclopedia_and_the_index() {
+    fn a_waiting_movie_requests_manager_close_for_open_surfaces() {
         // FUN_00422ce0.c:1192-1232 loops FUN_00601340 (0x40d to the modal
         // top) before a movie; FUN_0044b250, FUN_0045d8f0 and FUN_00467e80
         // close on it, and nothing closes while no movie waits.
@@ -327,34 +330,47 @@ mod tests {
             let mut status = StatusWindowState::default();
             status.open_character(rebellion_core::ids::CharacterKey::default());
             let mut encyclopedia = EncyclopediaSurfaceController::new();
+            let mut manager = rebellion_windowing::WindowManager::new();
             encyclopedia
                 .open(
                     &crate::encyclopedia_surface::tests::session(),
                     rebellion_data::encyclopedia_presenter::EncyclopediaEntryIntent::Cockpit {
                         audience: rebellion_data::encyclopedia_topics::EncyclopediaAudience::Empire,
                     },
+                    &mut manager,
                 )
                 .unwrap();
-            (status, encyclopedia, Some(MessageIndexState::new()))
+            let mut manager = rebellion_windowing::WindowManager::new();
+            let mut index = MessageIndexState::new();
+            let prepared = MessageIndexState::prepare_open(0x79).unwrap();
+            let committed = manager
+                .apply(rebellion_windowing::WindowCommand::Open(prepared.spec()))
+                .unwrap();
+            index
+                .commit_open(prepared, &committed.transition)
+                .expect("manager receipt publishes Message Index content");
+            (status, encyclopedia, index, manager)
         };
 
         let mut queue = MovieQueue::default();
-        let (mut status, mut encyclopedia, mut index) = open();
-        let actions = clear_for_movie(&queue, &mut status, &mut encyclopedia, &mut index);
-        assert!(actions.is_empty());
-        assert!(status.is_open() && encyclopedia.is_open() && index.is_some());
+        let (status, encyclopedia, index, _manager) = open();
+        let close = clear_for_movie(&queue, &status, &encyclopedia, &index);
+        assert!(close.is_empty());
+        assert!(status.is_open() && encyclopedia.is_open() && index.is_open());
 
         queue.file([MessageMovie {
             movie: CORUSCANT_CAPTURED,
             caption: String::new(),
         }]);
         assert!(queue.waiting());
-        let expected = MessageIndexState::new().close();
-        let actions = clear_for_movie(&queue, &mut status, &mut encyclopedia, &mut index);
-        assert_eq!(actions, expected);
-        assert!(!status.is_open());
-        assert!(!encyclopedia.is_open());
-        assert!(index.is_none());
+        let close = clear_for_movie(&queue, &status, &encyclopedia, &index);
+        assert!(close.contains(&index.window_id().unwrap()));
+        assert!(close.contains(&encyclopedia.window_id().unwrap()));
+        assert!(
+            index.is_open() && encyclopedia.is_open(),
+            "content remains until manager removal receipt"
+        );
+        assert!(index.is_open() && encyclopedia.is_open() && status.is_open());
     }
 
     #[test]

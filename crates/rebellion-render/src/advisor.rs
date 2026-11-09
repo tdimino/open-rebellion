@@ -1058,6 +1058,25 @@ fn scaled_advisor_apertures(
         )
     })
 }
+/// The droids' layer. It is a non-interactive area in the strategic
+/// windows' `Middle` order, so it takes a place in egui's area order: the
+/// GID menu and every window raised after it paint above the droids, as the
+/// original's pop-up menu covers the cockpit (`FUN_00422ce0` 0x132). A bare
+/// layer painter would draw after every `Middle` area instead.
+pub(crate) fn advisor_painter(ctx: &egui::Context) -> egui::Painter {
+    let id = egui::Id::new("authentic_droid_advisors");
+    egui::Area::new(id)
+        .order(egui::Order::Middle)
+        .interactable(false)
+        .fixed_pos(ctx.screen_rect().min)
+        .show(ctx, |_| {});
+    egui::Painter::new(
+        ctx.clone(),
+        egui::LayerId::new(egui::Order::Middle, id),
+        ctx.screen_rect(),
+    )
+}
+
 /// Draw both droids into their apertures (`FUN_0042adb0`), each frame at
 /// its own size from the aperture's corner and clipped to the aperture.
 pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
@@ -1068,10 +1087,7 @@ pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
     let screen = ctx.screen_rect();
     let apertures = scaled_advisor_apertures(state.faction, screen.width(), screen.height());
     let native = advisor_apertures(state.faction);
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Middle,
-        egui::Id::new("authentic_droid_advisors"),
-    ));
+    let painter = advisor_painter(ctx);
     let frames = [state.agent_droid.frame(), state.partner_droid.frame()];
     for (index, frame) in frames.into_iter().enumerate() {
         let Some(texture) = state.texture(ctx, frame) else {

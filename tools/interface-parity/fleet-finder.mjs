@@ -10,15 +10,22 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
+import { sectorDoubleClick } from "./sector-double-click.mjs";
+import { clickWithRouteBarrier } from "./fleet-window.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
-const site = path.join(root, ".artifacts/interface-parity/site");
+const site = process.env.OPEN_REBELLION_INTERFACE_SITE
+  ? path.resolve(process.env.OPEN_REBELLION_INTERFACE_SITE)
+  : path.join(root, ".artifacts/interface-parity/site");
 const browserManifest = JSON.parse(fs.readFileSync(path.join(here, "browser.json"), "utf8"));
 const noBuild = process.argv.includes("--no-build");
 // `--only=alliance/chrome` runs the named cases alone.
 const only = process.argv.filter((arg) => arg.startsWith("--only=")).map((arg) => arg.slice(7));
 const expectedRequests = ["/", "/data/runtime.orpk", "/gl.js", "/open-rebellion-test.wasm"];
+const ROUTE_MARKER = "[windowing-route] ";
+const pageRoutes = new WeakMap();
+const pageRouteCursors = new WeakMap();
 // Fixture codes are the Scenario index plus one (interface_test_fixture.rs).
 const FLEET_FINDER = 53;
 // FUN_0042a0c0: the Fleet Finder, 470 by 330 (FUN_00461750).
@@ -236,26 +243,19 @@ async function frames(page, count = 1) {
   }
 }
 
-async function click(page, point) {
-  // egui resolves a click across frames: hover, press, then release.
-  await page.mouse.move(point.x, point.y);
-  await frames(page);
-  await page.mouse.down();
-  await frames(page);
-  await page.mouse.up();
-  await frames(page);
-}
-
-// Two clicks inside egui's double-click time.
-async function doubleClick(page, point) {
-  await page.mouse.move(point.x, point.y);
-  await frames(page);
-  for (let index = 0; index < 2; index += 1) {
-    await page.mouse.down();
-    await frames(page);
-    await page.mouse.up();
-    await frames(page);
-  }
+async function click(page, point, label = "Fleet Finder click") {
+  const routes = pageRoutes.get(page);
+  const cursor = pageRouteCursors.get(page);
+  assert.ok(routes, `${label} has no route receipt stream`);
+  assert.ok(cursor, `${label} has no route receipt cursor`);
+  return clickWithRouteBarrier({
+    page,
+    routes,
+    cursor,
+    point,
+    label,
+    advanceFrame: () => frames(page, 1),
+  });
 }
 
 async function key(page, name) {
@@ -452,24 +452,43 @@ const cases = [
       const other = await until(page, `the ${otherTab.name} tab shows`, (o, a) => o.tab === a, otherTab.name);
       assert.ok(other.rows.length > 0 && other.rows.every((row) => row.is_alliance !== other.player_is_alliance),
         JSON.stringify(other.rows));
-      const firstEmptyRowY = origin.y + 138 + other.rows.length * 20 + 2;
+      // Prefer the opposite-side tab to prove the covered enemy fleet remains
+      // untouched. If that list fills the Finder, use the shorter tab to find
+      // a genuinely empty row while preserving the same occlusion assertion.
+      const tabs = [
+        { tab: "alliance", index: 1, count: opened.rows.filter((row) => row.is_alliance).length },
+        { tab: "imperial", index: 2, count: opened.rows.filter((row) => !row.is_alliance).length },
+      ].sort((left, right) => left.count - right.count);
+      let filtered = other;
       const listBottom = origin.y + 303;
-      const target = opened.sector_planets.find((planet) => {
-        const [x, y] = planet.center;
-        return planet.system_dat_id !== opened.selected_system_dat_id
-          && x >= origin.x + 36 && x < origin.x + 386
-          && y >= firstEmptyRowY && y < listBottom;
-      });
-      assert.ok(target, `no covered sector planet lies under empty Finder space: ${JSON.stringify(other)}`);
+      const findTarget = (state) => {
+        const firstEmptyRowY = origin.y + 138 + state.rows.length * 20 + 2;
+        return state.sector_planets.find((planet) => {
+          const [x, y] = planet.center;
+          return planet.system_dat_id !== state.selected_system_dat_id
+            && x >= origin.x + 36 && x < origin.x + 386
+            && y >= firstEmptyRowY && y < listBottom;
+        });
+      };
+      let target = findTarget(filtered);
+      if (!target) {
+        const fallback = tabs[0];
+        if (fallback.tab !== otherTab.name) {
+          await click(page, point(opened.controls.tabs[fallback.index]));
+          filtered = await until(page, `the ${fallback.tab} tab is shown`, (o, a) => o.tab === a, fallback.tab);
+          target = findTarget(filtered);
+        }
+      }
+      assert.ok(target, `no covered sector planet lies under empty Finder space: ${JSON.stringify(filtered)}`);
 
-      await doubleClick(page, point(target.center));
+      await sectorDoubleClick(page, point(target.center), () => frames(page));
       await key(page, "Escape");
       const closed = await until(page, "Escape closes the Finder", (o) => !o.open);
-      assert.equal(closed.selected_system_dat_id, opened.selected_system_dat_id,
+      assert.equal(closed.selected_system_dat_id, filtered.selected_system_dat_id,
         "an empty Finder double click changed the covered sector selection");
-      assert.deepEqual(closed.sector_open, opened.sector_open,
+      assert.deepEqual(closed.sector_open, filtered.sector_open,
         "an empty Finder double click changed the covered sector windows");
-      return { opened, other, target, closed };
+      return { opened, other, filtered, target, closed };
     },
   },
   {
@@ -520,7 +539,12 @@ const cases = [
     // name chooses the row it best begins (FUN_00462a50 0x408) and Enter
     // opens it (0x407).
     async run(page) {
-      await key(page, "F3");
+      // F3 is handled by the game canvas; focus it explicitly rather than
+      // relying on a coordinate click or the browser's page-level focus.
+      await page.locator("#glcanvas").focus();
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "glcanvas");
+      await page.keyboard.press("F3");
+      await frames(page, 3);
       const opened = await until(page, "F3 opens the Fleet Finder", (o) => o.open);
       const text = "fleet 2";
       await page.keyboard.type(text, { delay: 40 });
@@ -530,7 +554,8 @@ const cases = [
       assert.equal(typed.chosen, expected);
       assert.equal(typed.left_panel_open, false, "typed letters reach the name box, not the galaxy view's keys");
       const row = typed.rows[typed.chosen];
-      await key(page, "Enter");
+      await page.keyboard.press("Enter");
+      await frames(page, 3);
       const done = await until(page, "Enter opens the chosen fleet", (o) => !o.open);
       assertOpened(done, row);
       return { opened, typed, done };
@@ -564,7 +589,7 @@ const cases = [
     async run(page) {
       const opened = await openFinder(page);
       const index = opened.rows.findIndex((row) => row.is_alliance === opened.player_is_alliance);
-      await doubleClick(page, point(opened.controls.rows[index]));
+      await sectorDoubleClick(page, point(opened.controls.rows[index]), () => frames(page));
       const done = await until(page, "the double click opens the fleet", (o) => !o.open);
       assertOpened(done, opened.rows[index]);
       return { opened, done };
@@ -611,6 +636,8 @@ async function inspect(server, source, faction, testCase, executable) {
   const requests = [];
   const errors = [];
   const consoleLines = [];
+  const routes = [];
+  const routeCursor = { physical: null };
   const launchAttempts = [];
   let browser;
   let context;
@@ -633,6 +660,8 @@ async function inspect(server, source, faction, testCase, executable) {
       serviceWorkers: "block",
     });
     page = await context.newPage();
+    pageRoutes.set(page, routes);
+    pageRouteCursors.set(page, routeCursor);
     const serverOrigin = `http://127.0.0.1:${server.address().port}`;
     page.on("response", (response) => {
       if (new URL(response.url()).origin === serverOrigin) {
@@ -644,7 +673,9 @@ async function inspect(server, source, faction, testCase, executable) {
     });
     page.on("pageerror", (error) => errors.push(`pageerror:${error.stack || error.message}`));
     page.on("console", (message) => {
-      consoleLines.push({ type: message.type(), text: message.text() });
+      const line = message.text();
+      consoleLines.push({ type: message.type(), text: line });
+      if (line.startsWith(ROUTE_MARKER)) routes.push(line);
       if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(message.text())) {
         errors.push(`console:${message.type()}:${message.text()}`);
       }
@@ -679,6 +710,7 @@ async function inspect(server, source, faction, testCase, executable) {
       ready,
       checks,
       observations: await observations(page),
+      route_receipts: routes,
       screenshots: [before, after],
       requests,
       errors,
@@ -693,6 +725,7 @@ async function inspect(server, source, faction, testCase, executable) {
       case: testCase.name,
       error: String(error.stack || error),
       observations: page ? await observations(page).catch(() => []) : [],
+      route_receipts: routes,
       requests,
       errors,
       console: consoleLines,

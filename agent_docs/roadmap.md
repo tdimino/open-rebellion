@@ -3,7 +3,7 @@ title: "Roadmap"
 description: "Audit-driven milestones M0-M5 and the v1.0 release, addons, and known technical debt"
 category: "agent-docs"
 created: 2026-03-11
-updated: 2026-10-19
+updated: 2026-11-05
 tags: [roadmap, planning, milestones, parity]
 ---
 
@@ -209,7 +209,7 @@ leaves open belong to the family named.
 - [x] P46A / `RE-STR-01` strategic shell canvas: checkpoint; `UIP-T01` open ([evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-shell-canvas.md)).
 - [x] P46B / `RE-STR-02` cockpit command bitmaps and input: checkpoint; A0 and `UIP-T01` open ([evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-command-controls.md)).
 - [x] `UIP-B01` sector and detailed-system shells and the rail: checkpoint; `CMD-03` and `CMD-04` open ([evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-strategic-window-navigation.md)).
-- [x] Strategic-window routing boundary and app coordinator: infrastructure; each window family still migrates onto it ([evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-12-strategic-window-routing-coordinator.md)).
+- [x] Strategic-window routing boundary and app coordinator: all current strategic families use manager-owned identity, order, focus and input routing; the workspace and browser gates pass on the reviewed source; original-runtime, native-Windows, System Finder and A0 acceptance remain open ([evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-10-25-strategic-windowing-acceptance.md)).
 - [x] P46D detailed-system tab items: checkpoint; nested compositions, drag, intelligence and A0 open ([evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-detailed-system-tab-items.md)).
 - [x] P47A / `UIP-B02` STRATEGY 902 galaxy backdrop (the Display Off resource): pass ([evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-authored-galaxy-backdrop.md)).
 - [x] P47B default Popular Support GID view: checkpoint; `CMD-02` open ([evidence](../docs/qa/2026-09-10-interface-parity-audit/evidence/2026-09-11-popular-support-gid.md)).

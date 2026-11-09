@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     FocusTarget, InputPolicy, WindowEvent, WindowId, WindowKey, WindowOwner, WindowPolicy,
+    WindowSpec,
 };
 
 /// One semantic recipient selected for an input event.
@@ -104,6 +105,7 @@ impl RoutingSnapshot {
         focused: Option<FocusTarget>,
         capture_owner: Option<WindowId>,
     ) -> Self {
+        let members = records.keys().copied().collect();
         let paint_order = visible_order
             .iter()
             .copied()
@@ -119,7 +121,7 @@ impl RoutingSnapshot {
         Self {
             manager_id,
             records,
-            members: active.clone(),
+            members,
             paint_order,
             presentation_history,
             focused,
@@ -317,10 +319,8 @@ impl RoutingSnapshot {
             .copied()
             .filter(|id| retained.contains(id))
             .collect();
-        let focused = self
-            .focused
-            .filter(|target| retained.contains(&target.window));
-        let capture_owner = self.capture_owner.filter(|id| retained.contains(id));
+        let focused = self.focused;
+        let capture_owner = self.capture_owner;
         let mut restricted = Self {
             manager_id: self.manager_id,
             records: self.records.clone(),
@@ -330,20 +330,36 @@ impl RoutingSnapshot {
             focused,
             capture_owner,
         };
-        if restricted
-            .focused
-            .is_some_and(|target| !restricted.allows_input(target.window))
-        {
-            restricted.focused = None;
+        restricted.capture_owner = restricted
+            .capture_owner
+            .filter(|id| restricted.allows_input(*id));
+        if restricted.focused.map_or_else(
+            || restricted.active_modal().is_some(),
+            |target| !restricted.allows_input(target.window),
+        ) {
+            restricted.focused = restricted
+                .paint_order
+                .iter()
+                .rev()
+                .copied()
+                .find(|id| restricted.allows_input(*id))
+                .map(|window| FocusTarget {
+                    window,
+                    control: None,
+                });
         }
         restricted
     }
 
-    pub(crate) fn input_policy(&self, id: WindowId) -> Option<InputPolicy> {
-        self.members
-            .contains(&id)
-            .then(|| self.records.get(&id).map(|record| record.policy.input))
-            .flatten()
+    pub(crate) fn spec(&self, id: WindowId) -> Option<WindowSpec> {
+        if !self.members.contains(&id) {
+            return None;
+        }
+        self.records.get(&id).map(|record| WindowSpec {
+            key: record.key,
+            owner: record.owner,
+            policy: record.policy,
+        })
     }
 
     pub(crate) fn member_ids(&self) -> impl Iterator<Item = WindowId> + '_ {

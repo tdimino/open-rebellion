@@ -19,6 +19,8 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 import { launchBrowser } from "./browser-launch.mjs";
+import { sectorDoubleClick } from "./sector-double-click.mjs";
+import { appendStatusConsoleLine, clickStatusClose, clickStatusDirect, clickStatusWithRouteBarrier, waitForStatusCloseCommit, waitForStatusMenuCommit } from "./status-window-input.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../..");
@@ -200,36 +202,46 @@ async function frames(page) {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
-async function click(page, point, button = "left") {
-  // egui resolves a click across frames: hover, press, then release.
-  await page.mouse.move(point.x, point.y);
-  await frames(page);
-  await page.mouse.down({ button });
-  await frames(page);
-  await page.mouse.up({ button });
-  await frames(page);
+async function click(page, point, routes, cursor, {
+  button = "left",
+  label = "Status action",
+  expectedDown,
+  expectedRelease,
+  routeBarrier = false,
+} = {}) {
+  const advanceFrame = () => frames(page, 1);
+  if (!routeBarrier) return clickStatusDirect({ page, point, button, advanceFrame });
+  return clickStatusWithRouteBarrier({
+    page, routes, cursor, point, button, label, expectedDown, expectedRelease, advanceFrame,
+  });
 }
 
 // Right-click `at`, wait for the pop-up menu and choose its Status row.
 // Rows below a 2-pixel border share one height (object_menu.rs).
-async function chooseStatus(page, at) {
+async function chooseStatus(page, at, routes, cursor) {
   await page.evaluate(() => { window.__openRebellionInterfaceObjectMenu = undefined; });
-  await click(page, at, "right");
-  await page.waitForFunction(() => window.__openRebellionInterfaceObjectMenu?.status === "object-menu", null, { timeout: 10_000 });
-  const menu = await page.evaluate(() => window.__openRebellionInterfaceObjectMenu);
+  await click(page, at, routes, cursor, { button: "right", label: "open Status object menu" });
+  const menu = await waitForStatusMenuCommit({
+    waitForMenu: () => page.waitForFunction(() => window.__openRebellionInterfaceObjectMenu?.status === "object-menu", null, { timeout: 10_000 }),
+    readMenu: () => page.evaluate(() => window.__openRebellionInterfaceObjectMenu),
+    advanceFrame: () => frames(page, 1),
+  });
   assert.notEqual(menu.status_window_row, null, "the menu lists Status");
   const row = (menu.height - 2) / menu.rows;
-  await click(page, { x: menu.left + menu.width / 2, y: menu.top + 2 + row * (menu.status_window_row + 0.5) });
+  await click(
+    page,
+    { x: menu.left + menu.width / 2, y: menu.top + 2 + row * (menu.status_window_row + 0.5) },
+    routes,
+    cursor,
+    { label: "choose Status menu row" },
+  );
   return menu;
 }
 
 const point = ([x, y]) => ({ x: Math.round(x), y: Math.round(y) });
 
 async function doubleClick(page, at) {
-  await page.mouse.move(at.x, at.y);
-  await frames(page);
-  await page.mouse.dblclick(at.x, at.y);
-  await frames(page);
+  await sectorDoubleClick(page, at, () => frames(page));
 }
 
 async function fleetLoadSetup(page) {
@@ -285,9 +297,14 @@ const cases = [
     name: "capital-ship",
     code: FLEET_LOAD,
     family: "Ship",
-    target: async (page) => {
+    target: async (page, _faction, { routes, cursor }) => {
       const opened = await openFleetWindow(page);
-      await click(page, point(opened.fleet_entry));
+      await click(page, point(opened.fleet_entry), routes, cursor, {
+        label: "select Fleet before capital-ship Status",
+        routeBarrier: true,
+        expectedDown: { application: "none" },
+        expectedRelease: { application: "fleet_window" },
+      });
       return point((await fleetLoad(page, (o) => o.selected === "fleet" && o.first_item)).first_item);
     },
   },
@@ -308,6 +325,8 @@ async function inspect(server, source, faction, testCase, executable) {
   fs.mkdirSync(directory, { recursive: true });
   const errors = [];
   const consoleLines = [];
+  const routeReceipts = [];
+  const routeCursor = { physical: null };
   const launchAttempts = [];
   let browser;
   let context;
@@ -328,8 +347,9 @@ async function inspect(server, source, faction, testCase, executable) {
     page = await context.newPage();
     page.on("pageerror", (error) => errors.push(`pageerror:${error.stack || error.message}`));
     page.on("console", (message) => {
-      consoleLines.push(message.text());
-      if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(message.text())) errors.push(`console:${message.type()}:${message.text()}`);
+      const line = message.text();
+      appendStatusConsoleLine({ consoleLines, routes: routeReceipts, line });
+      if (message.type() === "error" || /\[bmp_cache\] asset unavailable/i.test(line)) errors.push(`console:${message.type()}:${line}`);
     });
     const fixtureCode = testCase.code | (faction.byte << 8);
     await page.goto(`http://127.0.0.1:${server.address().port}/?fixture-code=${fixtureCode}`, { waitUntil: "load", timeout: 30_000 });
@@ -338,8 +358,9 @@ async function inspect(server, source, faction, testCase, executable) {
     assert.equal(ready.status, "ready", JSON.stringify(ready));
     await page.evaluate(() => document.fonts.ready);
 
-    const target = await testCase.target(page, faction);
-    const openStatus = () => chooseStatus(page, target);
+    const routeContext = { routes: routeReceipts, cursor: routeCursor };
+    const target = await testCase.target(page, faction, routeContext);
+    const openStatus = () => chooseStatus(page, target, routeContext.routes, routeContext.cursor);
     const opened = new RegExp(`command=0x103 destination=status_window status=opened object=${testCase.family}[ (].+ rect=(\\d+),(\\d+),(\\d+),(\\d+)`);
     const closed = /destination=status_window status=closed action=(\w+)/;
 
@@ -365,18 +386,32 @@ async function inspect(server, source, faction, testCase, executable) {
 
     const closes = {};
     // 0x65 closes.
-    await click(page, { x: rect.x + buttons.close.x + 16, y: rect.y + buttons.close.y + 15 });
-    closes.close = (await logged("Close closes it", closed, 1)).match(closed)[1];
+    const closeLine = await clickStatusClose({
+      page,
+      point: { x: rect.x + buttons.close.x + 16, y: rect.y + buttons.close.y + 15 },
+      waitForClose: () => logged("Close closes it", closed, 1),
+      advanceFrame: () => frames(page, 1),
+    });
+    closes.close = closeLine.match(closed)[1];
     if (testCase.closes) {
       // Escape closes (port: no key slot is traced).
       await openStatus();
       await logged("Status opens it again", opened, 2);
       await page.keyboard.press("Escape");
-      closes.escape = (await logged("Escape closes it", closed, 2)).match(closed)[1];
+      closes.escape = (await waitForStatusCloseCommit({
+        waitForClose: () => logged("Escape closes it", closed, 2),
+        advanceFrame: () => frames(page, 1),
+      })).match(closed)[1];
       // 0x66 closes and opens the Encyclopedia.
       await openStatus();
       await logged("Status opens it a third time", opened, 3);
-      await click(page, { x: rect.x + buttons.encyclopedia.x + 16, y: rect.y + buttons.encyclopedia.y + 15 });
+      await click(
+        page,
+        { x: rect.x + buttons.encyclopedia.x + 16, y: rect.y + buttons.encyclopedia.y + 15 },
+        routeContext.routes,
+        routeContext.cursor,
+        { label: "open encyclopedia from Status window" },
+      );
       closes.encyclopedia = (await logged("Encyclopedia closes it", closed, 3)).match(closed)[1];
       assert.deepEqual(closes, { close: "close", escape: "close", encyclopedia: "encyclopedia" });
       await page.waitForTimeout(200);

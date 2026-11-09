@@ -255,7 +255,8 @@ otherwise; ship, troop and facility bands share it. The checkmark submits
 the Stop, the X destroys it, Enter and Escape press them.
 
 Port: `move_confirmation::StopConfirmation`, opened by the band menu's Stop
-(`rebellion-app`); the checkmark sends `PanelAction::StopProduction`. Seen
+(`rebellion-app`); the checkmark stops the band on the window's Close
+receipt, before the next day runs (`commit_stop_confirmation`). Seen
 in both sides' native runs against the original's Wine frame: same picture,
 window, line and font. The question wraps after "the" in both (the text
 field's font: `move-order.md`, "The confirmation window").
