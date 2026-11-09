@@ -1027,6 +1027,14 @@ impl SystemWindowState {
         self.band_rename.is_some()
     }
 
+    /// The manager window whose band name is being edited, if any.
+    #[must_use]
+    pub fn band_rename_window(&self) -> Option<WindowId> {
+        self.band_rename
+            .as_ref()
+            .and_then(|edit| self.window_id(edit.system))
+    }
+
     #[cfg(test)]
     fn minimize(&mut self, system: SystemKey) -> bool {
         self.minimize_with_eviction(system).0
@@ -4420,6 +4428,35 @@ mod tests {
                 Some(BAND_AREAS[1]),
                 "FUN_004534f0 selects the pressed band with the same press for {faction:?}"
             );
+        }
+    }
+
+    #[test]
+    fn a_band_rename_names_the_window_it_edits() {
+        // The rename field belongs to its own System window (window +0x170,
+        // FUN_00458b50): the app routes that window's Escape to it, and only
+        // that window's.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (mut world, systems) = fixture_world(2);
+            for system in &systems {
+                world.systems[*system].control =
+                    ControlKind::Controlled(cockpit_faction(faction));
+            }
+            let layout = layout(faction, 2.0);
+            let mut manager = WindowManager::new();
+            let mut state = SystemWindowState::default();
+            let prepared = state
+                .prepare_open(&world, systems[0], ORIGIN, faction, layout)
+                .unwrap();
+            let (first, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+            let prepared = state
+                .prepare_open(&world, systems[1], (ORIGIN.0 + 200, ORIGIN.1), faction, layout)
+                .unwrap();
+            let (second, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+            assert_eq!(state.band_rename_window(), None, "{faction:?}");
+            assert!(state.begin_band_rename(systems[1], ProductionArea::Shipyard, "Death Star 1"));
+            assert_eq!(state.band_rename_window(), Some(second), "{faction:?}");
+            assert_ne!(state.band_rename_window(), Some(first), "{faction:?}");
         }
     }
 

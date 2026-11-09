@@ -91,16 +91,18 @@ The reviewed source was built and tested on the Mac Mini through
 
 | Object | SHA-256 |
 |---|---|
-| Fixture WASM used by the browser gates | `1562146ffb9ef8376b625b641fdc1fa54b51df7433a37fd6c65e35ab84f9921a` |
+| Fixture WASM, final source: unit tests, `windowing-contract.mjs` (journeys A-E, adapter-smoke, identity-history), `build-selection.mjs`, `run.mjs --all` | `05324007fae45253df9089dcead127a00c2d23d50f45f935d58ae18f5c2c3c81` |
+| Fixture WASM one commit earlier, before the rename Escape and focus-walk fixes: every other fixture gate below | `1562146ffb9ef8376b625b641fdc1fa54b51df7433a37fd6c65e35ab84f9921a` |
+| Production WASM, final source: `window-restore.mjs` | `fc1bba9547efb73c5e3c9a163e35c217cf1bfe323a7b6a6ec36a41f91d8d5375` |
 | Runtime ORPK | `40eb0b3ed914c719179fc3225f9d3f7ea8edab64a785c7e1f9804e375ee02236` |
 
-- `scripts/gates.sh`: workspace tests with and without the fixture feature (6,438 passed, 0 failed, 93 ignored in all), the replay golden, telemetry coverage, provenance, WASM and both leak greps pass; the beads gate fails on this branch because its `tasks/INDEX.md` lacks the review plan's epic row, which `main` regenerates.
+- `scripts/gates.sh`: workspace tests with and without the fixture feature (6,438 passed, 0 failed, 93 ignored in all), the replay golden, telemetry coverage, provenance, WASM and both leak greps pass; the beads gate fails because the tracked `tasks/INDEX.md` lacks the review plan's epic row, the same on `main`.
 - `cargo mutants` on the review fixes' diff: every mutant in the new helpers is caught; the nine missed sit in `main` and `apply_panel_action`, the frame loop no unit test reaches.
 
 | Gate | Result |
 |---|---|
 | `node --test *.test.mjs` | 109 passed, 0 failed |
-| `windowing-contract.mjs` (journeys A-E) | pass; 4,600 assertions |
+| `windowing-contract.mjs` (journeys A-E) | pass in three of four runs; 4,600 assertions. One run missed the first frame after the Journey B double-click that opens a Missions window; the next three passed unchanged |
 | `windowing-contract.mjs --case adapter-smoke` | pass; 20 assertions |
 | `windowing-contract.mjs --case identity-history` | pass; 576 assertions |
 | `windowing-contract.mjs --case input-scenes` | pass; 504 assertions |
@@ -113,12 +115,13 @@ The reviewed source was built and tested on the Mac Mini through
 | `status-window.mjs` | pass |
 | `mission-dialog.mjs` | pass |
 | `build-selection.mjs` | pass |
+| `window-restore.mjs` (production build, one Alliance and one Empire save) | 2 of 2 |
 | `sector-quadrants.mjs` | pass |
 | `audit-batch.mjs` | pass |
 | `message-index-shell.mjs` | pass |
 | `encyclopedia-index-shell.mjs` | fail, both factions: about 3,000 differing pixels per selected or held category against its reference; `main` fails it the same way |
 
-Not run: `encyclopedia-publication.mjs`, `encyclopedia-surface.mjs`, `encyclopedia-canonical-surface.mjs`, `encyclopedia-art.mjs`, `window-restore.mjs`, `endings.mjs`, `game-options-smoke.mjs`, `fleet-registry.mjs` and `replay-browser.mjs`. None of these rows is original-game or native-Windows
+Not run: `encyclopedia-publication.mjs`, `encyclopedia-surface.mjs`, `encyclopedia-canonical-surface.mjs`, `encyclopedia-art.mjs`, `endings.mjs`, `game-options-smoke.mjs`, `fleet-registry.mjs` and `replay-browser.mjs`. None of these rows is original-game or native-Windows
 acceptance.
 
 ## Audit boundary and open work

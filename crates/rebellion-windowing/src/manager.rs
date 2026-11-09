@@ -1206,9 +1206,15 @@ impl WindowManager {
     /// eligible child, which becomes the current child.
     fn restore_focus(&mut self) -> Result<WindowCommit, WindowError> {
         let previous = self.focused;
-        let current = self.current_child_walk();
+        // The walk's result becomes the current child only once the raise
+        // has succeeded, so a refused command leaves the manager unchanged.
+        let walks = self.current_child.is_some();
+        let current = walks.then(|| self.topmost_eligible_restoration()).flatten();
         if let Some(target) = current {
             self.raise_visible(target.window)?;
+        }
+        if walks {
+            self.current_child = current.map(|target| target.window);
         }
         self.set_focus(current);
         Ok(WindowCommit {

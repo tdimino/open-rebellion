@@ -3651,14 +3651,18 @@ const fn managed_confirmation_escape_requested(
     !close_queued && has_keyboard_owner && escape_pressed
 }
 
-const fn managed_detail_escape_requested(
+/// Whether Escape closes the focused System, Defenses or Missions window
+/// (FUN_00458980, FUN_004aa2b0, FUN_004a0e00). A band rename's field takes
+/// the Escape of the window it edits (`rename_window`); a rename open in
+/// another window leaves the focused window's Escape to it.
+fn managed_detail_escape_requested(
     stop_confirmation_open: bool,
     close_queued: bool,
-    system_rename_open: bool,
-    is_system: bool,
+    rename_window: Option<rebellion_windowing::WindowId>,
+    window: rebellion_windowing::WindowId,
     escape_pressed: bool,
 ) -> bool {
-    !stop_confirmation_open && !close_queued && !(is_system && system_rename_open) && escape_pressed
+    !stop_confirmation_open && !close_queued && rename_window != Some(window) && escape_pressed
 }
 
 /// Releases a confirmed Stop only after the manager accepted the exact Close
@@ -9663,12 +9667,26 @@ mod panel_toggle_tests {
     fn stop_escape_cannot_fall_through_to_the_focused_detail() {
         // FUN_0044f5e0 consumes Escape in the Stop confirmation. The
         // underlying System's FUN_00458980 close must not see that key.
-        assert!(!managed_detail_escape_requested(
-            true, false, false, true, true
-        ));
-        assert!(managed_detail_escape_requested(
-            false, false, false, true, true
-        ));
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let window = opened_fleet(&mut coordinator);
+        assert!(!managed_detail_escape_requested(true, false, None, window, true));
+        assert!(managed_detail_escape_requested(false, false, None, window, true));
+    }
+
+    #[test]
+    fn escape_closes_the_focused_system_window_while_another_holds_a_band_rename() {
+        // FUN_004ac3a0 sends Escape to the focused window: FUN_00458980
+        // closes it. A band rename open in another System window keeps its
+        // own field's Escape and leaves this window's to it. Any two manager
+        // identities stand for the two System windows here.
+        let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
+        let editing = opened_fleet(&mut coordinator);
+        let focused = opened_encyclopedia(&mut coordinator);
+        assert!(
+            managed_detail_escape_requested(false, false, Some(editing), focused, true),
+            "a rename in another window swallowed the focused window's Escape"
+        );
+        assert!(!managed_detail_escape_requested(false, false, Some(editing), editing, true));
     }
 
     #[test]
@@ -14289,12 +14307,13 @@ async fn main() {
                         .map(|key| (focus.window, key.kind))
                 });
         let system_rename_open_at_frame_start = system_window_state.band_rename_open();
+        let system_rename_window_at_frame_start = system_window_state.band_rename_window();
         let stop_confirmation_open_at_frame_start = stop_confirmation_state.is_open();
         let detail_keyboard_owner = fleet_keyboard_owner.or_else(|| {
             system_rename_open_at_frame_start
                 .then(|| {
                     focused_detail_escape_owner
-                        .filter(|(_, kind)| *kind == rebellion_windowing::WindowKind::System)
+                        .filter(|(window, _)| system_rename_window_at_frame_start == Some(*window))
                         .map(|(window, _)| (window, true))
                 })
                 .flatten()
@@ -14820,6 +14839,7 @@ async fn main() {
                                     troop_finder_state = TroopFinderState::default();
                                     personnel_finder_state = PersonnelFinderState::default();
                                     operation_report_state = OperationReportState::default();
+                                    pending_report_reopen_index = None;
                                     pending_personnel_finder_open = None;
                                     message_index.reset();
                                     advice_saved_speed = None;
@@ -18196,12 +18216,12 @@ async fn main() {
                         }
                     }
                     if let Some((window, _)) =
-                        focused_detail_escape_owner.filter(|(window, kind)| {
+                        focused_detail_escape_owner.filter(|(window, _)| {
                             managed_detail_escape_requested(
                                 stop_confirmation_open_at_frame_start,
                                 detail_close_queued.contains(window),
-                                system_rename_open_at_frame_start,
-                                *kind == rebellion_windowing::WindowKind::System,
+                                system_rename_window_at_frame_start,
+                                *window,
                                 strategic_root_keys.routed_press(&strategic_input_router, KeyCode::Escape, *window),
                             )
                         })
@@ -19535,6 +19555,7 @@ async fn main() {
                             pending_personnel_finder_open = None;
                             message_index.reset();
                             operation_report_state = OperationReportState::default();
+                            pending_report_reopen_index = None;
                             advice_saved_speed = None;
                             encyclopedia_surface.reset();
                             show_fleets = false;

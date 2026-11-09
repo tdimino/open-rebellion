@@ -581,14 +581,15 @@ async function probeGid(page, faction, scenario, viewport, folder, consoleLines,
     // The press activates the window (FUN_004534f0 sends 0x467), so its
     // title strip repaints from the settled one. Exact colours: the Alliance
     // strips (179,4,4 inactive, 255,0,0 active) sit inside pixelmatch's
-    // default tolerance.
+    // default tolerance. Only at a whole scale: a fractional one shifts the
+    // strip's raster phase by itself.
     const activation = logicalCropDifference(
       PNG.sync.read(dragged), movableWindowTitle(moved),
       PNG.sync.read(settled), movableWindowTitle(SYSTEM_FIXTURE_WINDOW),
       viewport, { threshold: 0 },
     );
     assert.ok(
-      activation.differenceRatio > MAX_DRAG_RASTER_DIFFERENCE,
+      !titleDragDifference.exact || activation.differenceRatio > MAX_DRAG_RASTER_DIFFERENCE,
       `${faction}: the press that took hold of the System window left its title strip unchanged`,
     );
     probes.push({ type: "title-drag-moves-window", from: SYSTEM_FIXTURE_WINDOW, to: moved,

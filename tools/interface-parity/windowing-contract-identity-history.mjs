@@ -857,16 +857,12 @@ async function runJourneyA(context, setup) {
         target,
         "the exposed Defenses click did not establish explicit keyboard focus",
       );
-      // A fresh detail opens without the focus, so the press activates it;
-      // nothing else in the published state may move.
-      const unfocused = (state) => {
-        const { focused: _focused, ...snapshot } = state.snapshot;
-        return JSON.stringify(compact({ ...state, snapshot }));
-      };
+      // Defenses already holds the focus here, so a press on its current tab
+      // publishes nothing at all.
       assert.equal(
-        unfocused(transition.after),
-        unfocused(transition.before),
-        "clicking the current Defenses tab changed more than the keyboard focus",
+        JSON.stringify(compact(transition.after)),
+        JSON.stringify(compact(transition.before)),
+        "clicking the already-focused Defenses tab changed its content",
       );
     }
     assert.equal(

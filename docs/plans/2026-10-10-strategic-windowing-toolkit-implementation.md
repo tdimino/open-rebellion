@@ -2,7 +2,7 @@
 title: "Strategic Windowing Toolkit Implementation Plan"
 created: 2026-10-10
 status: active
-progress: "89% — Tasks 0-11 landed (16 of 18); Task 12's production proof without fixture bridges and Task 13's native-Windows and original-runtime acceptance remain open"
+progress: "83% — Tasks 0-11 landed (15 of 18); Task 12's production proof without fixture bridges and Task 13's native-Windows and original-runtime acceptance remain open"
 updated: 2026-11-07
 ---
 
@@ -10,7 +10,7 @@ updated: 2026-11-07
 
 > **For future implementers:** Execute the reviewed plan task-by-task using the applicable implementation workflow. This document does not authorize implementation or delegation. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Active, 89%: Tasks 0-11 have landed, 16 of 18. Task 12's
+**Status:** Active, 83%: Tasks 0-11 have landed, 15 of 18. Task 12's
 automated workspace and browser gates pass on the reviewed source (the
 acceptance record binds them to its fixture WASM and runtime ORPK hashes); its
 production interaction without fixture bridges and its per-run browser,

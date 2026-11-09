@@ -119,6 +119,8 @@ export function validateObservation(value) {
         || typeof event.application_recipient !== "string" || event.application_recipient.length === 0
         || event.underlay_action_count !== 0
         || typeof event.observed_route !== "string" || event.observed_route.length === 0
+        // A managed open logs its queued and its terminal receipt, so an
+        // event may carry two; smokeEventFromReceipts counts one action.
         || !Array.isArray(event.observed_actions) || event.observed_actions.length === 0
         || event.observed_actions.some((receipt) => typeof receipt !== "string" || receipt.length === 0)) {
       fail("malformed event recipient");
