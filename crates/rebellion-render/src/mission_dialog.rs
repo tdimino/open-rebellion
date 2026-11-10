@@ -675,9 +675,9 @@ macro_rules! paint_resource_fn {
 
 paint_resource_fn!(paint, false);
 
-/// A CoolStrobeButton's bitmap (`FUN_00602150`), keyed on its first stored
-/// pixel as `FUN_00602d30` blits it over the window behind
-/// ([`BmpCache::get_button`]), at native size clipped to the control.
+// A CoolStrobeButton's bitmap (`FUN_00602150`), keyed on its first stored
+// pixel as `FUN_00602d30` blits it over the window behind
+// ([`BmpCache::get_button`]), at native size clipped to the control.
 paint_resource_fn!(paint_button, true);
 
 /// A two-state bitmap button (`FUN_00602150`): the second bitmap shows while

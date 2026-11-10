@@ -396,9 +396,7 @@ fn run_prepared_candidate(
     (output, realized.expect("the egui pass ran"))
 }
 
-fn markers(
-    output: &egui::FullOutput,
-) -> impl Iterator<Item = (ProbeWindow, egui::Rect)> + '_ {
+fn markers(output: &egui::FullOutput) -> impl Iterator<Item = (ProbeWindow, egui::Rect)> + '_ {
     output.shapes.iter().filter_map(|clipped| {
         let egui::Shape::Rect(rect) = &clipped.shape else {
             return None;
@@ -424,13 +422,7 @@ fn run_over_overlap(
     windows: &[ProbeWindow],
     events: Vec<egui::Event>,
 ) -> (egui::FullOutput, RealizedFrame) {
-    run_candidate(
-        ctx,
-        state,
-        &specs(windows),
-        Some(OVERLAP.center()),
-        events,
-    )
+    run_candidate(ctx, state, &specs(windows), Some(OVERLAP.center()), events)
 }
 
 fn render_repeated_raise(ctx: &egui::Context, requested_bottom_to_top: &[ProbeWindow]) {

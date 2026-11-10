@@ -46,16 +46,12 @@ fn steps(session: &mut BattleSession, milliseconds: f32) {
     }
 }
 
+/// port: shared test fixture values, not rules.
 fn hyperdrive_withdrawal_session(is_alliance: bool, ship_hyperdrive: bool) -> BattleSession {
     let mut squadron = test_fighter(0x1c00_0001, is_alliance);
     squadron.source_position.z = line(is_alliance);
     battle(
-        vec![ship(
-            is_alliance,
-            0,
-            ship_hyperdrive,
-            line(is_alliance),
-        )],
+        vec![ship(is_alliance, 0, ship_hyperdrive, line(is_alliance))],
         vec![squadron],
     )
 }
@@ -586,7 +582,10 @@ fn a_retreat_takes_only_its_own_sides_operational_imperial_station_away() {
     let mut unfinished = test_death_star(false);
     unfinished.not_completed = true;
     assert!(!retreat(unfinished), "an unfinished station departed");
-    assert!(!retreat(test_death_star(true)), "the other side's station departed");
+    assert!(
+        !retreat(test_death_star(true)),
+        "the other side's station departed"
+    );
     let mut rebel = test_death_star(false);
     rebel.is_alliance = true;
     assert!(!retreat(rebel), "an Alliance station departed");
@@ -649,14 +648,16 @@ fn a_side_withdrawal_counts_down_its_transit_to_the_retreat_system() {
         // other side's (stage 7, FUN_005552e0), so both countdowns start.
         let expected = [100.0 * 0.4 * 1000.0; 2];
         assert_eq!(
-            session.morale.withdrawal.map(|withdrawal| withdrawal.countdown_milliseconds),
+            session
+                .morale
+                .withdrawal
+                .map(|withdrawal| withdrawal.countdown_milliseconds),
             expected,
             "{refuge_side:?}"
         );
         session.begin_side_withdrawal(refuge_is_alliance);
         assert_eq!(
-            session.morale.withdrawal[refuge_side_index].countdown_milliseconds,
-            40_000.0,
+            session.morale.withdrawal[refuge_side_index].countdown_milliseconds, 40_000.0,
             "the transit outlasts the 30 s floor"
         );
     }
@@ -698,12 +699,18 @@ fn the_retreat_search_asks_room_for_the_first_mobile_fleets_death_stars_only() {
             hyperdrive,
             ..CapitalShipClass::default()
         };
-        let plain = world.capital_ship_classes.insert(class(0x14, is_alliance, 0));
-        let station = world.capital_ship_classes.insert(class(0x18, is_alliance, 0));
+        let plain = world
+            .capital_ship_classes
+            .insert(class(0x14, is_alliance, 0));
+        let station = world
+            .capital_ship_classes
+            .insert(class(0x18, is_alliance, 0));
         // A ship whose only drive is knocked out cannot travel.
         let stuck_class = class(0x14, is_alliance, 1);
         let stuck = world.capital_ship_classes.insert(stuck_class.clone());
-        let enemy_class = world.capital_ship_classes.insert(class(0x14, !is_alliance, 0));
+        let enemy_class = world
+            .capital_ship_classes
+            .insert(class(0x14, !is_alliance, 0));
         let mut grounded = ShipInstance::new(stuck, 100, is_alliance);
         grounded.set_hyperdrive_damage_hits(&stuck_class, 1);
         let on_a_leg = |class| {
@@ -731,9 +738,21 @@ fn the_retreat_search_asks_room_for_the_first_mobile_fleets_death_stars_only() {
         // then a Death Star fleet it never asks.
         fleet(battle, vec![on_a_leg(station)], is_alliance);
         fleet(battle, vec![grounded, on_a_leg(station)], is_alliance);
-        let plain_fleet = fleet(battle, vec![ShipInstance::new(plain, 100, is_alliance)], is_alliance);
-        fleet(battle, vec![ShipInstance::new(station, 100, is_alliance)], is_alliance);
-        let enemy = fleet(battle, vec![ShipInstance::new(enemy_class, 100, !is_alliance)], !is_alliance);
+        let plain_fleet = fleet(
+            battle,
+            vec![ShipInstance::new(plain, 100, is_alliance)],
+            is_alliance,
+        );
+        fleet(
+            battle,
+            vec![ShipInstance::new(station, 100, is_alliance)],
+            is_alliance,
+        );
+        let enemy = fleet(
+            battle,
+            vec![ShipInstance::new(enemy_class, 100, !is_alliance)],
+            !is_alliance,
+        );
         let holder = ShipInstance::new(station, 100, is_alliance);
         fleet(full, vec![holder], is_alliance);
         let (attacker, defender) = if is_alliance {
@@ -803,7 +822,9 @@ fn the_human_side_keeps_a_zero_threshold_and_a_computer_side_the_evaluators() {
         let transport = crate::troop_transport::TroopTransportState::default();
         let movement = crate::movement::MovementState::new();
         let evaluator = |faction| {
-            crate::ai_records::battle_withdraw_threshold(&world, &movement, &transport, battle, faction)
+            crate::ai_records::battle_withdraw_threshold(
+                &world, &movement, &transport, battle, faction,
+            )
         };
         assert!(evaluator(crate::dat::Faction::Alliance) > 0.0);
         let seat = |human| {
@@ -853,8 +874,16 @@ fn a_jump_sounds_once_as_it_begins() {
                 .map(|cue| cue.resource_id)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(played(TacticalAudioEvent::SquadronJump), [13_063], "{is_alliance}");
-        assert_eq!(played(TacticalAudioEvent::CapitalShipJump), [13_065], "{is_alliance}");
+        assert_eq!(
+            played(TacticalAudioEvent::SquadronJump),
+            [13_063],
+            "{is_alliance}"
+        );
+        assert_eq!(
+            played(TacticalAudioEvent::CapitalShipJump),
+            [13_065],
+            "{is_alliance}"
+        );
     }
 }
 
@@ -886,7 +915,10 @@ fn a_jumping_unit_is_drawn_flying_out_behind_its_side() {
         // The side's units take ids 1, 2 (Empire 1000001, 1000002) as they
         // are created, the ship before the squadron.
         let ship_ordinal = session.ships[0].tactical_resource.unwrap().tactical_ordinal;
-        let squadron_ordinal = session.fighters[0].tactical_resource.unwrap().tactical_ordinal;
+        let squadron_ordinal = session.fighters[0]
+            .tactical_resource
+            .unwrap()
+            .tactical_ordinal;
         let ship_rate = rate[usize::from(ship_ordinal.wrapping_add(1) & 3)];
         let squadron_rate = rate[usize::from(squadron_ordinal.wrapping_add(2) & 3)];
 
@@ -896,7 +928,10 @@ fn a_jumping_unit_is_drawn_flying_out_behind_its_side() {
         session.morale.squadron_jumps = vec![(0, 2_000.0)];
         let ship_z = session.ship_display_position(0).z;
         let squadron_z = session.fighter_display_position(0).z;
-        assert!((ship_z - (5.0 - facing * ship_rate * 1.5 * 1.5)).abs() < 1e-3, "{ship_z}");
+        assert!(
+            (ship_z - (5.0 - facing * ship_rate * 1.5 * 1.5)).abs() < 1e-3,
+            "{ship_z}"
+        );
         assert!(
             (squadron_z - (7.0 - facing * squadron_rate * 2.0 * 2.0)).abs() < 1e-3,
             "{squadron_z}"
@@ -904,7 +939,10 @@ fn a_jumping_unit_is_drawn_flying_out_behind_its_side() {
         assert_eq!(session.ships[0].source_position.z, 5.0);
         session.ships[0].retreat_progress = 4_000.0;
         let held = session.ship_display_position(0).z;
-        assert!((held - (5.0 - facing * ship_rate * 16.0)).abs() < 1e-3, "{held}");
+        assert!(
+            (held - (5.0 - facing * ship_rate * 16.0)).abs() < 1e-3,
+            "{held}"
+        );
     }
 }
 
@@ -948,7 +986,10 @@ fn a_withdrawal_breaks_off_its_trench_run_and_restores_the_runners() {
         let snapshot = session.fighters[0].hull_max;
         if rolled {
             assert!(session.fighters[0].off_field);
-            assert!(session.fighters[0].hull_current < snapshot, "the roll took craft");
+            assert!(
+                session.fighters[0].hull_current < snapshot,
+                "the roll took craft"
+            );
         }
         session.begin_side_withdrawal(true);
         let squadron = &session.fighters[0];
@@ -1063,7 +1104,11 @@ fn the_computer_side_stays_while_it_may_not_or_need_not_withdraw() {
 fn the_computer_alliance_without_squadrons_withdraws_from_an_operational_station() {
     let mut session = outgunned_computer(false);
     // Armed, with no threshold, so only the station rule applies.
-    let alliance_ship = session.ships.iter().position(|ship| ship.identity.is_alliance).unwrap();
+    let alliance_ship = session
+        .ships
+        .iter()
+        .position(|ship| ship.identity.is_alliance)
+        .unwrap();
     session.ships[alliance_ship].weapon_arcs[0] = TacticalWeaponArc::new(0, 0, 30);
     session.ships[alliance_ship].weapon_recharge_rate = 8.0;
     session.morale.threshold = [0.0, 0.0];
@@ -1091,7 +1136,10 @@ fn the_computer_alliance_without_squadrons_withdraws_from_an_operational_station
 #[test]
 fn a_jump_logs_its_start_and_its_units_departure() {
     for is_alliance in [true, false] {
-        let mut session = battle(vec![ship(is_alliance, 0, true, line(is_alliance))], Vec::new());
+        let mut session = battle(
+            vec![ship(is_alliance, 0, true, line(is_alliance))],
+            Vec::new(),
+        );
         session.begin_side_withdrawal(is_alliance);
         steps(&mut session, 34_250.0);
         let id = if is_alliance { 1 } else { 1_000_001 };
@@ -1105,7 +1153,14 @@ fn a_jump_logs_its_start_and_its_units_departure() {
         assert!(lines[0].contains("status=jumping"), "{lines:?}");
         assert!(lines[1].contains("status=jumped"), "{lines:?}");
         let at = |line: &str| -> f32 {
-            line.split("t_ms=").nth(1).unwrap().split(' ').next().unwrap().parse().unwrap()
+            line.split("t_ms=")
+                .nth(1)
+                .unwrap()
+                .split(' ')
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap()
         };
         assert_eq!((at(&lines[0]), at(&lines[1])), (0.0, 4_000.0), "{lines:?}");
     }
@@ -1262,7 +1317,10 @@ fn an_empire_whose_station_departed_has_withdrawn() {
     assert!(session.side_withdrew(false));
     session.ships[0].alive = false;
     session.ships[0].hull_current = 0;
-    assert!(!session.side_withdrew(true), "the Alliance's ship had no hyperdrive");
+    assert!(
+        !session.side_withdrew(true),
+        "the Alliance's ship had no hyperdrive"
+    );
 }
 
 // FUN_005a9ec0.c:245-273 asks only that no unit of the side is alive or in
@@ -1280,7 +1338,10 @@ fn a_side_whose_ship_died_while_its_squadrons_jumped_has_withdrawn() {
             squadrons.push(squadron);
         }
         let mut session = battle(
-            vec![ship(is_alliance, 0, false, 0.0), ship(!is_alliance, 1, false, 0.0)],
+            vec![
+                ship(is_alliance, 0, false, 0.0),
+                ship(!is_alliance, 1, false, 0.0),
+            ],
             squadrons,
         );
         session.morale.hyperdrive_squadrons = vec![0, 1];
@@ -1288,7 +1349,10 @@ fn a_side_whose_ship_died_while_its_squadrons_jumped_has_withdrawn() {
         session.ships[0].alive = false;
         session.ships[0].hull_current = 0;
         steps(&mut session, 34_250.0);
-        assert!(session.fighters.iter().all(|fighter| !fighter.alive), "both jumped");
+        assert!(
+            session.fighters.iter().all(|fighter| !fighter.alive),
+            "both jumped"
+        );
         assert!(session.side_withdrew(is_alliance), "{is_alliance}");
         assert!(session.finish_if_decided());
         assert_eq!(session.winner, Some(win(!is_alliance)));
@@ -1305,7 +1369,10 @@ fn a_side_whose_ship_died_while_its_squadrons_jumped_has_withdrawn() {
 fn a_departed_station_leaves_its_sides_ships_to_jump() {
     for is_alliance in [true, false] {
         let mut session = battle(
-            vec![ship(is_alliance, 0, true, line(is_alliance)), ship(!is_alliance, 1, false, 0.0)],
+            vec![
+                ship(is_alliance, 0, true, line(is_alliance)),
+                ship(!is_alliance, 1, false, 0.0),
+            ],
             Vec::new(),
         );
         session.death_star = Some(test_death_star(false));
@@ -1331,7 +1398,10 @@ fn both_jumped(
     player_is_alliance: bool,
     attacker_is_alliance: bool,
 ) -> (BattleSession, [Option<FleetKey>; 2]) {
-    let mut ships = vec![ship(true, 0, true, line(true)), ship(false, 1, true, line(false))];
+    let mut ships = vec![
+        ship(true, 0, true, line(true)),
+        ship(false, 1, true, line(false)),
+    ];
     for ship in &mut ships {
         ship.is_attacker = ship.identity.is_alliance == attacker_is_alliance;
     }
@@ -1350,7 +1420,10 @@ fn both_jumped(
     session.begin_side_withdrawal(true);
     session.begin_side_withdrawal(false);
     steps(&mut session, 34_250.0);
-    assert!(session.ships.iter().all(|ship| ship.retreated), "both have left");
+    assert!(
+        session.ships.iter().all(|ship| ship.retreated),
+        "both have left"
+    );
     (session, fleets)
 }
 
@@ -1373,7 +1446,8 @@ fn faction(is_alliance: bool) -> TacticalVoiceFaction {
 fn when_both_sides_withdraw_the_side_that_did_not_arrive_last_wins() {
     for attacker_is_alliance in [true, false] {
         for player_is_alliance in [true, false] {
-            for (holder, alliance_wins) in [(Some(true), false), (Some(false), true), (None, true)] {
+            for (holder, alliance_wins) in [(Some(true), false), (Some(false), true), (None, true)]
+            {
                 let (mut session, fleets) = both_jumped(player_is_alliance, attacker_is_alliance);
                 session.arrival_holder_is_alliance = holder;
                 let case = format!("{attacker_is_alliance} {player_is_alliance} {holder:?}");
@@ -1382,11 +1456,17 @@ fn when_both_sides_withdraw_the_side_that_did_not_arrive_last_wins() {
                 assert_eq!(session.winner_is_alliance(), Some(alliance_wins), "{case}");
                 assert_eq!(
                     session.take_pending_voice_cues(),
-                    vec![TacticalVoiceCue::withdrawal_complete(faction(player_is_alliance))],
+                    vec![TacticalVoiceCue::withdrawal_complete(faction(
+                        player_is_alliance
+                    ))],
                     "{case}"
                 );
                 let fleet = fleets[usize::from(!alliance_wins)];
-                assert_eq!(apply::summarize_results(&session).winner_fleet, fleet, "{case}");
+                assert_eq!(
+                    apply::summarize_results(&session).winner_fleet,
+                    fleet,
+                    "{case}"
+                );
             }
         }
     }
@@ -1409,7 +1489,9 @@ fn when_both_sides_reach_zero_only_a_local_withdrawal_is_voiced() {
             assert!(session.finish_if_decided());
             assert_eq!(session.winner, Some(win(jumper)));
             let expected = if local_jumped {
-                vec![TacticalVoiceCue::withdrawal_complete(faction(player_is_alliance))]
+                vec![TacticalVoiceCue::withdrawal_complete(faction(
+                    player_is_alliance,
+                ))]
             } else {
                 Vec::new()
             };
@@ -1439,7 +1521,10 @@ fn squadrons_only(alliance: usize, empire: usize) -> BattleSession {
 /// step still undecided.
 fn quiet(session: &mut BattleSession, seconds: usize) {
     for second in 0..seconds {
-        assert!(!session.advance_stalemate_watch(1.0), "decided at step {second}");
+        assert!(
+            !session.advance_stalemate_watch(1.0),
+            "decided at step {second}"
+        );
     }
 }
 
@@ -1455,7 +1540,11 @@ fn a_stalemate_ends_after_1200_quiet_seconds_with_the_weaker_side_gone() {
         let mut session = squadrons_only(alliance, empire);
         quiet(&mut session, 1200);
         assert!(session.advance_stalemate_watch(1.0));
-        assert_eq!(session.winner, Some(win(alliance_stronger)), "{alliance_stronger}");
+        assert_eq!(
+            session.winner,
+            Some(win(alliance_stronger)),
+            "{alliance_stronger}"
+        );
         for fighter in &session.fighters {
             assert_eq!(
                 fighter.squad_count == 0,
@@ -1482,7 +1571,11 @@ fn a_new_low_in_a_sides_strength_restarts_its_stalemate_count() {
         session.fighters[lost].destroy();
         quiet(&mut session, 1200);
         assert!(session.advance_stalemate_watch(1.0));
-        assert_eq!(session.winner, Some(win(alliance_stronger)), "{alliance_stronger}");
+        assert_eq!(
+            session.winner,
+            Some(win(alliance_stronger)),
+            "{alliance_stronger}"
+        );
     }
 }
 
@@ -1497,7 +1590,10 @@ fn an_even_stalemate_takes_both_sides_away() {
         quiet(&mut session, 1200);
         assert!(session.advance_stalemate_watch(1.0));
         assert_eq!(session.winner, Some(CombatWinner::Draw));
-        assert!(session.fighters.iter().all(|fighter| fighter.squad_count == 0));
+        assert!(session
+            .fighters
+            .iter()
+            .all(|fighter| fighter.squad_count == 0));
     }
 }
 

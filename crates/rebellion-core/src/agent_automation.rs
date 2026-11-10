@@ -396,9 +396,7 @@ impl PlayerAgent {
             AutomationModule::Production => {
                 self.run_production(world, mfg, economy, player_is_alliance)
             }
-            AutomationModule::Garrisons => {
-                self.run_garrisons(world, mfg, player_is_alliance)
-            }
+            AutomationModule::Garrisons => self.run_garrisons(world, mfg, player_is_alliance),
         };
         if order.is_some() {
             self.orders_issued += 1;
@@ -803,7 +801,8 @@ fn find_most_undergarrisoned(
         }
 
         // The system's garrison requirement (+0x80, FUN_0050b5a0).
-        let requirement = crate::economy::stored_support_values(world, sys_key).garrison_requirement;
+        let requirement =
+            crate::economy::stored_support_values(world, sys_key).garrison_requirement;
 
         if requirement == 0 {
             continue;
@@ -1112,8 +1111,7 @@ mod tests {
         (world, system, economy, manufacturing)
     }
 
-    fn constrained_production_world(
-    ) -> (GameWorld, SystemKey, EconomyState, ManufacturingState) {
+    fn constrained_production_world() -> (GameWorld, SystemKey, EconomyState, ManufacturingState) {
         let (mut world, system, economy, manufacturing) = minimal_world(true);
         add_training_facility(&mut world, system, true);
         add_production_facility(&mut world, system, true, true);

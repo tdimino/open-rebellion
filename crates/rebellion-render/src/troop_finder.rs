@@ -1036,8 +1036,8 @@ mod tests {
         CapitalShipClass, ControlKind, Fleet, Sector, ShipInstance, System, TroopUnit,
     };
     use rebellion_windowing::{
-        ContentStatus, ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowManager,
-        WindowId, WindowTransition,
+        ContentStatus, ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowId,
+        WindowManager, WindowTransition,
     };
 
     fn layout() -> CockpitLayout {
@@ -1150,9 +1150,7 @@ mod tests {
         vec![vec![key_state(key, true)], vec![key_state(key, false)]]
     }
 
-    fn open_managed_troop(
-        faction: CockpitFaction,
-    ) -> (WindowManager, TroopFinderState, WindowId) {
+    fn open_managed_troop(faction: CockpitFaction) -> (WindowManager, TroopFinderState, WindowId) {
         let mut manager = WindowManager::new();
         let mut state = TroopFinderState::default();
         let prepared = TroopFinderState::prepare_open(faction);
@@ -1268,6 +1266,31 @@ mod tests {
     ) {
         drive_tap_without_action(ctx, galaxy, state, focus, key);
         assert_eq!(state.window.as_ref().unwrap().tab, expected);
+    }
+
+    fn drive_tab_round_trip(
+        ctx: &egui::Context,
+        galaxy: &Galaxy,
+        state: &mut TroopFinderState,
+        focus: FocusTarget,
+    ) {
+        drive_tab(
+            ctx,
+            galaxy,
+            state,
+            focus,
+            egui::Key::ArrowRight,
+            TroopTab::Imperial,
+        );
+        assert_eq!(state.window.as_ref().unwrap().chosen, None);
+        drive_tab(
+            ctx,
+            galaxy,
+            state,
+            focus,
+            egui::Key::ArrowLeft,
+            TroopTab::Alliance,
+        );
     }
 
     struct Galaxy {
@@ -1935,10 +1958,16 @@ mod tests {
         assert_eq!(state.window.as_ref().unwrap().chosen, Some(0));
         assert_eq!(state.take_focus_request(), Some(name_focus));
 
-        drive_tab(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowRight, TroopTab::Imperial);
+        drive_tab(
+            &ctx,
+            &galaxy,
+            &mut state,
+            list_focus,
+            egui::Key::ArrowRight,
+            TroopTab::Imperial,
+        );
         assert_eq!(state.window.as_ref().unwrap().chosen, None);
-        drive_tab(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowRight, TroopTab::Imperial);
-        drive_tab(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowLeft, TroopTab::Alliance);
+        drive_tab_round_trip(&ctx, &galaxy, &mut state, list_focus);
     }
 
     #[test]
@@ -1958,10 +1987,7 @@ mod tests {
 
         let (_manager, mut state, _id, _name_focus, list_focus, ctx) = managed_navigation();
 
-        drive_tab(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowRight, TroopTab::Imperial);
-        assert_eq!(state.window.as_ref().unwrap().chosen, None);
-
-        drive_tab(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowLeft, TroopTab::Alliance);
+        drive_tab_round_trip(&ctx, &galaxy, &mut state, list_focus);
     }
 
     #[test]

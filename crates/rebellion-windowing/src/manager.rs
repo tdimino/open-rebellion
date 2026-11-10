@@ -2639,10 +2639,12 @@ mod tests {
         assert_eq!(manager.focused, None);
         assert_eq!(manager.previous_eligible, Some(owner_focus));
 
-        assert!(manager
-            .set_active_windows(&BTreeSet::from([owner, child]))
-            .unwrap()
-            .is_empty());
+        assert_eq!(
+            manager
+                .set_active_windows(&BTreeSet::from([owner, child]))
+                .unwrap(),
+            Vec::<WindowEvent>::new()
+        );
         assert_eq!(manager.focused, None);
 
         assert_eq!(

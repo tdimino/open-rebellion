@@ -653,8 +653,8 @@ fn loss(world: &GameWorld, troop: TroopKey) -> Option<UnitLoss> {
 
 #[cfg(test)]
 mod tests {
-    use crate::carriage::ProductRoom;
     use super::*;
+    use crate::carriage::ProductRoom;
     use crate::ids::{CapitalShipKey, DatId};
     use crate::tick::TickEvent;
     use crate::world::{
@@ -1325,8 +1325,7 @@ mod tests {
         // FUN_0058ba10 walks the fleet's live ships (FUN_00502e30, mode 1)
         // and the regiments aboard each (FUN_00504cc0).
         for (side, holder) in BOTH {
-            let (mut world, system, fleet, transport, attackers) =
-                loaded_cargo(side, holder, 2, 2);
+            let (mut world, system, fleet, transport, attackers) = loaded_cargo(side, holder, 2, 2);
             let lost = transport.carrier(attackers[0]);
             for ship in &mut world.fleets[fleet].capital_ships {
                 ship.alive = ship.tag != lost;
@@ -1538,8 +1537,7 @@ mod tests {
         unusable: fn(&mut ShipInstance, SystemKey),
         second: bool,
     ) -> (Scene, TroopKey) {
-        let (mut world, system, fleet, mut transport, attackers) =
-            loaded_cargo(side, holder, 2, 1);
+        let (mut world, system, fleet, mut transport, attackers) = loaded_cargo(side, holder, 2, 1);
         let class = world.troops[attackers[0]].class_dat_id;
         let stranded = attackers[0];
         let tag = transport.carrier(stranded);

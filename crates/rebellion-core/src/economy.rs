@@ -622,9 +622,14 @@ fn count_military_presence(world: &GameWorld, sys: &crate::world::System) -> Mil
                     .iter()
                     .any(|ship| ship.usable() && ship.tag == tag)
             };
-            let capship_count =
-                u32::try_from(fleet.capital_ships.iter().filter(|ship| ship.usable()).count())
-                    .unwrap_or(u32::MAX);
+            let capship_count = u32::try_from(
+                fleet
+                    .capital_ships
+                    .iter()
+                    .filter(|ship| ship.usable())
+                    .count(),
+            )
+            .unwrap_or(u32::MAX);
             let fighter_count: u32 = fleet
                 .fighters
                 .iter()
@@ -1450,13 +1455,13 @@ mod tests {
     ) -> Vec<crate::ids::ManufacturingFacilityKey> {
         ids.iter()
             .map(|id| {
-                world.manufacturing_facilities.insert(
-                    crate::world::ManufacturingFacilityInstance {
+                world
+                    .manufacturing_facilities
+                    .insert(crate::world::ManufacturingFacilityInstance {
                         class_dat_id: DatId(*id),
                         side: crate::dat::Faction::Alliance,
                         is_shipyard: false,
-                    },
-                )
+                    })
             })
             .collect()
     }
@@ -1470,7 +1475,7 @@ mod tests {
 
     fn test_fleet(
         world: &mut GameWorld,
-        capships: usize,
+        capships: u32,
         fighters: u32,
         is_alliance: bool,
     ) -> crate::ids::FleetKey {
@@ -1544,8 +1549,14 @@ mod tests {
         };
         let (a_delta, e_delta) = calculate_support_drift(&sys, &presence, &gnprtb, 2, true);
         // A friendly fleet with no ship counted: support 10 drifts by 7737.
-        assert!((a_delta + 0.75).abs() < 1e-6, "a fleet does not stop it: {a_delta}");
-        assert!((e_delta - 0.75).abs() < 1e-6, "a fleet does not stop it: {e_delta}");
+        assert!(
+            (a_delta + 0.75).abs() < 1e-6,
+            "a fleet does not stop it: {a_delta}"
+        );
+        assert!(
+            (e_delta - 0.75).abs() < 1e-6,
+            "a fleet does not stop it: {e_delta}"
+        );
         let presence = MilitaryPresence {
             alliance_death_stars: 1,
             ..presence
@@ -1653,7 +1664,8 @@ mod tests {
         // +0x80), FUN_0050b230 (drift, +0x6c) and FUN_0050b2c0 (collection
         // rate, +0x70) before the setter returns, with no economy pass.
         for side in [crate::dat::Faction::Alliance, crate::dat::Faction::Empire] {
-            let (mut world, sys) = make_singleton_world(0.5, 0.5, ControlKind::Controlled(side), true);
+            let (mut world, sys) =
+                make_singleton_world(0.5, 0.5, ControlKind::Controlled(side), true);
             let unit = world.troops.insert(crate::world::TroopUnit {
                 class_dat_id: DatId(0x1000_0001),
                 is_alliance: side == crate::dat::Faction::Alliance,
@@ -1663,7 +1675,10 @@ mod tests {
             crate::uprising::apply_support_change(&mut world, sys, side, -20);
             // Support 30: ceil((60 - 30) / 10) = 3 (FUN_0055a050).
             assert_eq!(
-                world.support_values.get(&sys).map(|v| v.garrison_requirement),
+                world
+                    .support_values
+                    .get(&sys)
+                    .map(|v| v.garrison_requirement),
                 Some(3),
                 "{side:?}"
             );
@@ -1761,8 +1776,11 @@ mod tests {
     fn a_ship_unfinished_or_on_its_own_leg_adds_no_military_presence_for_either_side() {
         for is_alliance in [true, false] {
             let (mut world, sys) = side_world(is_alliance);
-            let mut ship =
-                crate::world::ShipInstance::new(crate::ids::CapitalShipKey::default(), 100, is_alliance);
+            let mut ship = crate::world::ShipInstance::new(
+                crate::ids::CapitalShipKey::default(),
+                100,
+                is_alliance,
+            );
             ship.tag = 7;
             ship.transit = Some(crate::world::ShipTransit {
                 from: sys,
@@ -1800,7 +1818,9 @@ mod tests {
             world.fleets[fleet].capital_ships[0].completed = false;
             let presence = count_military_presence(&world, &world.systems[sys]);
             assert_eq!(
-                presence.alliance_fleets + presence.empire_fleets + presence.alliance_capships
+                presence.alliance_fleets
+                    + presence.empire_fleets
+                    + presence.alliance_capships
                     + presence.empire_capships,
                 0,
                 "{is_alliance}"
@@ -1810,9 +1830,17 @@ mod tests {
             let presence = count_military_presence(&world, &world.systems[sys]);
             let own = |presence: &MilitaryPresence| {
                 if is_alliance {
-                    (presence.alliance_fleets, presence.alliance_capships, presence.alliance_fighters)
+                    (
+                        presence.alliance_fleets,
+                        presence.alliance_capships,
+                        presence.alliance_fighters,
+                    )
                 } else {
-                    (presence.empire_fleets, presence.empire_capships, presence.empire_fighters)
+                    (
+                        presence.empire_fleets,
+                        presence.empire_capships,
+                        presence.empire_fighters,
+                    )
                 }
             };
             assert_eq!(own(&presence), (1, 1, 2), "{is_alliance}");
@@ -1820,8 +1848,11 @@ mod tests {
             // Beside the usable ship, a second on its own leg: its 5
             // squadrons stay out; 3 riding the fleet (port: no carrier) and
             // the system's own 4 count.
-            let mut second =
-                crate::world::ShipInstance::new(crate::ids::CapitalShipKey::default(), 100, is_alliance);
+            let mut second = crate::world::ShipInstance::new(
+                crate::ids::CapitalShipKey::default(),
+                100,
+                is_alliance,
+            );
             second.tag = 8;
             second.transit = Some(crate::world::ShipTransit {
                 from: sys,
@@ -1860,7 +1891,11 @@ mod tests {
                 });
             let fleet = world.fleets.insert(crate::world::Fleet {
                 location: sys,
-                capital_ships: vec![crate::world::ShipInstance::new(death_star, 100, is_alliance)],
+                capital_ships: vec![crate::world::ShipInstance::new(
+                    death_star,
+                    100,
+                    is_alliance,
+                )],
                 fighters: vec![crate::world::FighterEntry {
                     class: crate::ids::FighterKey::default(),
                     count: 2,
@@ -1873,7 +1908,10 @@ mod tests {
             world.systems[sys].add_squadrons(crate::ids::FighterKey::default(), 4, is_alliance);
             let own = |presence: &MilitaryPresence| {
                 if is_alliance {
-                    (presence.alliance_death_stars, presence.alliance_system_fighters)
+                    (
+                        presence.alliance_death_stars,
+                        presence.alliance_system_fighters,
+                    )
                 } else {
                     (presence.empire_death_stars, presence.empire_system_fighters)
                 }
@@ -1969,11 +2007,7 @@ mod tests {
         let mut world = test_world();
         let sector_key = test_sector(&mut world);
         // System with total_energy=10 and only 3 production facilities
-        let facilities = production_facilities(
-            &mut world,
-            &[0x1800_0001, 0x1800_0002],
-            false,
-        );
+        let facilities = production_facilities(&mut world, &[0x1800_0001, 0x1800_0002], false);
         world.systems.insert(crate::world::System {
             production_facilities: facilities,
             ..alliance_system("Normal", sector_key, 0.5, 0.5)
@@ -1995,15 +2029,10 @@ mod tests {
         let mut world = test_world();
         let sector_key = test_sector(&mut world);
         // System with raw_materials=1 but 3 manufacturing facilities
-        let factories = manufacturing_facilities(
-            &mut world,
-            &[0x1600_0001, 0x1600_0002, 0x1600_0003],
-        );
-        let mines = production_facilities(
-            &mut world,
-            &[0x2D00_0001, 0x2D00_0002, 0x2D00_0003],
-            true,
-        );
+        let factories =
+            manufacturing_facilities(&mut world, &[0x1600_0001, 0x1600_0002, 0x1600_0003]);
+        let mines =
+            production_facilities(&mut world, &[0x2D00_0001, 0x2D00_0002, 0x2D00_0003], true);
         world.systems.insert(crate::world::System {
             raw_materials: 1,
             manufacturing_facilities: factories,
@@ -2034,7 +2063,9 @@ mod tests {
         let mut world = test_world();
         let sector_key = test_sector(&mut world);
         // System with low support (garrison > 0) but no troops (deficit)
-        world.systems.insert(alliance_system("Undermanned", sector_key, 0.4, 0.6));
+        world
+            .systems
+            .insert(alliance_system("Undermanned", sector_key, 0.4, 0.6));
 
         let (_, events) = advance_once(&mut world);
         assert!(

@@ -2,9 +2,9 @@ use std::collections::BTreeSet;
 
 use rebellion_windowing::{
     BubblePolicy, Cardinality, ContentReport, ContentStatus, ExistingOpenPolicy, FocusOnOpen,
-    FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy, RouteTarget,
-    StackBand, SubjectId, WindowCommand, WindowError, WindowKind, WindowManager, WindowOwner,
-    WindowPolicy, WindowSpec, WindowTransition, ReconcileReport, RoutingSnapshot, WindowId,
+    FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy, ReconcileReport,
+    RouteTarget, RoutingSnapshot, StackBand, SubjectId, WindowCommand, WindowError, WindowId,
+    WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
 };
 
 fn policy(input: InputPolicy) -> WindowPolicy {
@@ -99,7 +99,7 @@ fn reconcile_single(
 
 #[test]
 fn topmost_eligible_hit_wins_independent_of_hit_registration_order() {
-    let (mut manager, lower, upper) = modeless_pair();
+    let (manager, lower, upper) = modeless_pair();
     let frame = manager.begin_frame();
     for registered in [hits([lower, upper]), hits([upper, lower])] {
         assert_eq!(
@@ -114,7 +114,7 @@ fn topmost_eligible_hit_wins_independent_of_hit_registration_order() {
 
 #[test]
 fn modeless_eligibility_does_not_grant_all_windows_the_same_event() {
-    let (mut manager, lower, upper) = modeless_pair();
+    let (manager, lower, upper) = modeless_pair();
     let frame = manager.begin_frame();
     assert!(frame.allows_input(lower));
     assert!(frame.allows_input(upper));
@@ -129,7 +129,7 @@ fn modeless_eligibility_does_not_grant_all_windows_the_same_event() {
 
 #[test]
 fn modal_blocks_root_inside_and_outside_its_hit_regions() {
-    let (mut manager, background, modal) = open_pair(
+    let (manager, background, modal) = open_pair(
         (WindowKind::System, 1, InputPolicy::Modeless),
         (WindowKind::Status, 2, InputPolicy::StrategicModal),
     );
@@ -260,7 +260,7 @@ fn dismissible_menu_blocks_outside_press_until_explicit_close() {
 
 #[test]
 fn dismissible_menu_blocks_press_on_its_underlying_owner() {
-    let (mut manager, owner, menu) = owner_menu();
+    let (manager, owner, menu) = owner_menu();
     assert_eq!(
         manager.begin_frame().pointer_route(&hits([owner])).target,
         RouteTarget::BlockedBy(menu)
@@ -484,7 +484,7 @@ fn foreign_snapshot_cannot_reconcile_an_aliasing_window_id() {
 
 #[test]
 fn scene_restriction_removes_inactive_modal_and_focus_from_route() {
-    let (mut manager, background, modal) = open_pair(
+    let (manager, background, modal) = open_pair(
         (WindowKind::System, 1, InputPolicy::Modeless),
         (WindowKind::Status, 2, InputPolicy::StrategicModal),
     );
@@ -499,7 +499,7 @@ fn scene_restriction_removes_inactive_modal_and_focus_from_route() {
 
 #[test]
 fn scene_restriction_fails_closed_on_child_without_active_owner() {
-    let (mut manager, _owner, menu) = owner_menu();
+    let (manager, _owner, menu) = owner_menu();
     let restricted = manager.begin_frame().restrict_to(&hits([menu]));
     assert!(!restricted.is_visible(menu));
     assert!(restricted.pointer_allows_root());

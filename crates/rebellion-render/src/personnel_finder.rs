@@ -1410,6 +1410,19 @@ mod tests {
         assert_eq!(drive_key(ctx, world, fog, state, focus, key), None);
     }
 
+    fn drive_tab(
+        ctx: &egui::Context,
+        world: &GameWorld,
+        fog: &FogState,
+        state: &mut PersonnelFinderState,
+        focus: FocusTarget,
+        key: egui::Key,
+        expected: PersonnelTab,
+    ) {
+        drive_key_without_action(ctx, world, fog, state, focus, key);
+        assert_eq!(state.window.as_ref().unwrap().tab, expected);
+    }
+
     fn drive_text_without_action(
         ctx: &egui::Context,
         world: &GameWorld,
@@ -1702,16 +1715,51 @@ mod tests {
         assert_eq!(state.take_focus_request(), Some(list_focus));
         assert_eq!(state.window.as_ref().unwrap().chosen, Some(1));
 
-        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowDown);
+        drive_key_without_action(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            list_focus,
+            egui::Key::ArrowDown,
+        );
         assert_selection(&state, 2, "Zulu");
-        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowDown);
+        drive_key_without_action(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            list_focus,
+            egui::Key::ArrowDown,
+        );
         assert_eq!(state.window.as_ref().unwrap().chosen, Some(2));
 
-        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowUp);
+        drive_key_without_action(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            list_focus,
+            egui::Key::ArrowUp,
+        );
         assert_selection(&state, 1, "Yavin");
-        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowUp);
+        drive_key_without_action(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            list_focus,
+            egui::Key::ArrowUp,
+        );
         assert_selection(&state, 0, "Alpha");
-        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowUp);
+        drive_key_without_action(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            list_focus,
+            egui::Key::ArrowUp,
+        );
         assert_eq!(state.take_focus_request(), Some(name_focus));
         state.window.as_mut().unwrap().name.clear();
         drive_text_without_action(&ctx, &world, &fog, &mut state, name_focus, "Y");
@@ -1734,12 +1782,13 @@ mod tests {
         assert!(state.is_open(), "managed content waits for close receipt");
 
         assert_eq!(state.window.as_ref().unwrap().tab, PersonnelTab::Alliance);
-        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowRight);
-        assert_eq!(state.window.as_ref().unwrap().tab, PersonnelTab::Imperial);
-        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowRight);
-        assert_eq!(state.window.as_ref().unwrap().tab, PersonnelTab::Imperial);
-        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowLeft);
-        assert_eq!(state.window.as_ref().unwrap().tab, PersonnelTab::Alliance);
+        for (key, expected) in [
+            (egui::Key::ArrowRight, PersonnelTab::Imperial),
+            (egui::Key::ArrowRight, PersonnelTab::Imperial),
+            (egui::Key::ArrowLeft, PersonnelTab::Alliance),
+        ] {
+            drive_tab(&ctx, &world, &fog, &mut state, list_focus, key, expected);
+        }
 
         assert_eq!(
             drive_focused_in_context(
@@ -1836,7 +1885,14 @@ mod tests {
         assert_selection(&state, 2, "Zulu");
 
         state.window.as_mut().unwrap().chosen = Some(usize::MAX);
-        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowUp);
+        drive_key_without_action(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            list_focus,
+            egui::Key::ArrowUp,
+        );
         assert_selection(&state, 1, "Yavin");
     }
 
@@ -1850,12 +1906,28 @@ mod tests {
         let layout = layout();
         let mut cache = BmpCache::new();
         let screen_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(700.0, 520.0));
-        draw_fixture_frame(&ctx, &world, &fog, &mut state, layout, &mut cache, screen_rect);
+        draw_fixture_frame(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            layout,
+            &mut cache,
+            screen_rect,
+        );
         state.window.as_mut().unwrap().focus_name = true;
         ctx.memory_mut(|memory| {
             memory.surrender_focus(egui::Id::new("original-personnel-finder-name"));
         });
-        draw_fixture_frame(&ctx, &world, &fog, &mut state, layout, &mut cache, screen_rect);
+        draw_fixture_frame(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            layout,
+            &mut cache,
+            screen_rect,
+        );
 
         assert_eq!(state.window.as_ref().unwrap().pending_focus, None);
     }
@@ -1985,8 +2057,8 @@ mod tests {
             Faction::Alliance,
             PersonnelTab::Alliance,
         )[0]
-            .display_name()
-            .to_owned()
+        .display_name()
+        .to_owned()
     }
 
     fn add_sf(

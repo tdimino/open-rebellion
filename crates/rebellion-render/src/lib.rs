@@ -872,14 +872,15 @@ fn gid_metric(
             defense_facility_count(world, system, player_faction, |index| index == 4)
         }
         GidMode::PlanetaryShieldGenerators => {
-            defense_facility_count(world, system, player_faction, |index| matches!(index, 3 | 6))
+            defense_facility_count(world, system, player_faction, |index| {
+                matches!(index, 3 | 6)
+            })
         }
-        GidMode::PlanetaryDefenseBatteries => defense_facility_count(
-            world,
-            system,
-            player_faction,
-            |index| matches!(index, 1 | 2 | 5),
-        ),
+        GidMode::PlanetaryDefenseBatteries => {
+            defense_facility_count(world, system, player_faction, |index| {
+                matches!(index, 1 | 2 | 5)
+            })
+        }
     }
 }
 
@@ -893,12 +894,9 @@ fn defense_facility_count(
         .defense_facilities
         .iter()
         .filter(|key| {
-            world
-                .defense_facilities
-                .get(**key)
-                .is_some_and(|facility| {
-                    facility.side == faction && matches_index(facility.class_dat_id.index())
-                })
+            world.defense_facilities.get(**key).is_some_and(|facility| {
+                facility.side == faction && matches_index(facility.class_dat_id.index())
+            })
         })
         .count() as u32
 }

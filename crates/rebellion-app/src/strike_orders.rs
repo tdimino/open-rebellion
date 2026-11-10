@@ -417,10 +417,10 @@ pub fn sabotage_movies(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::missions::MissionTarget;
     use rebellion_core::bombardment::StrikeReport;
     use rebellion_core::ids::{CapitalShipKey, SystemKey};
     use rebellion_core::manufacturing::ManufacturingState;
+    use rebellion_core::missions::MissionTarget;
     use rebellion_core::world::{
         CapitalShipClass, Character, ControlKind, Fleet, ShipInstance, System,
     };
@@ -818,8 +818,7 @@ mod tests {
         };
         let coruscant = MessageMovie {
             movie: 0x74,
-            caption: "The Alliance has seized the Imperial capital system of Coruscant."
-                .to_owned(),
+            caption: "The Alliance has seized the Imperial capital system of Coruscant.".to_owned(),
         };
         // Both game types: AD alone (Standard, no win) and with EW
         // (Headquarters Only) file the same movie.

@@ -405,7 +405,9 @@ pub fn load_game_data_with_options(
     for dat in &major_file.characters {
         let name = lookup(dat.text_stra_dll_id, "Character");
         let ranked = ranked_names(dat.text_stra_dll_id);
-        world.characters.insert(convert_character(dat, true, name, ranked));
+        world
+            .characters
+            .insert(convert_character(dat, true, name, ranked));
     }
 
     // ── 6. Minor characters ──────────────────────────────────────────────────
@@ -414,7 +416,9 @@ pub fn load_game_data_with_options(
     for dat in &minor_file.characters {
         let name = lookup(dat.text_stra_dll_id, "Character");
         let ranked = ranked_names(dat.text_stra_dll_id);
-        world.characters.insert(convert_character(dat, false, name, ranked));
+        world
+            .characters
+            .insert(convert_character(dat, false, name, ranked));
     }
 
     // ── 7. GNPRTB / SDPRTB seeding parameters ───────────────────────────────

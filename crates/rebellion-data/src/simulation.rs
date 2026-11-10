@@ -229,9 +229,11 @@ pub fn ai_step(
                 step,
             };
             let mut roll = || rolls(1).first().copied().unwrap_or(0.0);
-            let side = state.faction.map_or(rebellion_core::dat::Faction::Empire, |faction| {
-                faction.as_mission_faction().into()
-            });
+            let side = state
+                .faction
+                .map_or(rebellion_core::dat::Faction::Empire, |faction| {
+                    faction.as_mission_faction().into()
+                });
             if matches!(issued.action, AIAction::Assault { .. }) {
                 let (outcome, effects) =
                     resolve_ai_assault(&issued.action, side, ctx.world, &mut states, &mut roll);
@@ -623,11 +625,7 @@ pub fn run_simulation_tick(
         &states.movement,
         &mfg_advance.finished_ships,
     );
-    integrator.apply_build_completions(
-        world,
-        &mut states.manufacturing,
-        &mfg_advance.completions,
-    );
+    integrator.apply_build_completions(world, &mut states.manufacturing, &mfg_advance.completions);
     serve_holder_requests(world, states);
     integrator.apply_manufacturing_idle(world, &mfg_advance.newly_idle);
     // Remote products travel, then complete at their destination (F-030);
@@ -635,11 +633,7 @@ pub fn run_simulation_tick(
     let travelling = crate::integrator::travelling_products(&mfg_advance.departures);
     states.deliveries.depart(world, &travelling);
     let delivered = states.deliveries.advance(world, tick_events);
-    integrator.apply_build_completions(
-        world,
-        &mut states.manufacturing,
-        &delivered.arrivals,
-    );
+    integrator.apply_build_completions(world, &mut states.manufacturing, &delivered.arrivals);
     serve_holder_requests(world, states);
     integrator.apply_boarded(
         world,
@@ -923,7 +917,11 @@ pub fn run_simulation_tick(
                 *character,
                 current_tick,
             );
-            if let Some(system) = world.characters.get(*character).and_then(|c| c.current_system) {
+            if let Some(system) = world
+                .characters
+                .get(*character)
+                .and_then(|c| c.current_system)
+            {
                 integrator.emit_adrift_trips(world, &states.missions, system, &started);
             }
         }
@@ -1061,7 +1059,11 @@ pub fn run_simulation_tick(
     integrator.emit_victory_check(&states.victory);
     let word = (!tick_events.is_empty() && !states.victory.resolved)
         .then(|| {
-            VictorySystem::word(&states.victory, world, states.campaign_config.victory_conditions)
+            VictorySystem::word(
+                &states.victory,
+                world,
+                states.campaign_config.victory_conditions,
+            )
         })
         .flatten();
     if let Some(outcome) = VictorySystem::check(
@@ -1325,7 +1327,11 @@ mod tests {
                     usize::from(refuge_is_own),
                     "{case}"
                 );
-                assert_eq!(world.special_forces.len(), usize::from(refuge_is_own), "{case}");
+                assert_eq!(
+                    world.special_forces.len(),
+                    usize::from(refuge_is_own),
+                    "{case}"
+                );
             }
         }
     }
@@ -1654,14 +1660,7 @@ mod tests {
             false,
             0.1,
         );
-        let (fleet, troop) = add_assault_force(
-            &mut world,
-            origin,
-            64,
-            "Troop Transport",
-            true,
-            0,
-        );
+        let (fleet, troop) = add_assault_force(&mut world, origin, 64, "Troop Transport", true, 0);
         let officer = world.characters.insert(Character {
             dat_id: DatId::new(4),
             name: "Imperial Leader".into(),
@@ -1780,7 +1779,11 @@ mod tests {
             for (key, favoured) in [(yard, other), (target, own)] {
                 let held = &mut world.systems[key];
                 held.control = ControlKind::Controlled(other);
-                held.popularity_alliance = if favoured == Faction::Alliance { 0.9 } else { 0.1 };
+                held.popularity_alliance = if favoured == Faction::Alliance {
+                    0.9
+                } else {
+                    0.1
+                };
                 held.popularity_empire = 1.0 - held.popularity_alliance;
             }
             let garrison = world.troops.insert(TroopUnit {

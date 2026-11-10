@@ -1443,7 +1443,8 @@ mod tests {
         menu: &mut ManagedMenuState,
         commit: &rebellion_windowing::WindowCommit,
     ) {
-        let rebellion_windowing::WindowTransition::Closed { closed, .. } = &commit.transition else {
+        let rebellion_windowing::WindowTransition::Closed { closed, .. } = &commit.transition
+        else {
             panic!("expected close, got {:?}", commit.transition);
         };
         menu.remove_content(closed);

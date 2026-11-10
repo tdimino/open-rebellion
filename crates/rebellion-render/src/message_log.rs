@@ -969,14 +969,24 @@ mod tests {
     fn delete_by_ids_removes_matching_messages() {
         // FUN_005f54a0: delete a single message by key from the manager's list.
         let mut log = MessageLog::new(10);
-        let a = log.push(rail_message(1, "fleet", MessageCategory::Mission, MessageRail::Fleet));
+        let a = log.push(rail_message(
+            1,
+            "fleet",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
         let _b = log.push(rail_message(
             2,
             "built",
             MessageCategory::Manufacturing,
             MessageRail::Manufacturing,
         ));
-        let c = log.push(rail_message(3, "arrived", MessageCategory::Mission, MessageRail::Fleet));
+        let c = log.push(rail_message(
+            3,
+            "arrived",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
 
         log.delete_by_ids(&[a, c]);
 
@@ -989,7 +999,12 @@ mod tests {
         // FUN_0048a2a0: after deletion the unread mask drops categories
         // that no longer have unread messages.
         let mut log = MessageLog::new(10);
-        let a = log.push(rail_message(1, "fleet", MessageCategory::Mission, MessageRail::Fleet));
+        let a = log.push(rail_message(
+            1,
+            "fleet",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
         log.push(rail_message(
             2,
             "built",
@@ -1008,7 +1023,12 @@ mod tests {
     fn mark_all_read_clears_every_message() {
         // FUN_0048a530 with param 0: clears all unread bits.
         let mut log = MessageLog::new(10);
-        log.push(rail_message(1, "fleet", MessageCategory::Mission, MessageRail::Fleet));
+        log.push(rail_message(
+            1,
+            "fleet",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
         log.push(rail_message(
             2,
             "built",
@@ -1027,8 +1047,18 @@ mod tests {
         // port: the original only changes the list item's font; the port
         // sets the message's unread field.
         let mut log = MessageLog::new(10);
-        let a = log.push(rail_message(1, "fleet", MessageCategory::Mission, MessageRail::Fleet));
-        log.push(rail_message(2, "arrived", MessageCategory::Mission, MessageRail::Fleet));
+        let a = log.push(rail_message(
+            1,
+            "fleet",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
+        log.push(rail_message(
+            2,
+            "arrived",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
 
         log.mark_message_read(a);
 

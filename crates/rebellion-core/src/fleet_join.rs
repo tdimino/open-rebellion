@@ -389,19 +389,13 @@ pub fn create_fleet(
     chosen: u64,
     expected_is_alliance: bool,
 ) -> Result<FleetKey, FleetOrderError> {
-    let ships = selected_ships(
-        world,
-        movement,
-        fleet,
-        ships,
-        chosen,
-        expected_is_alliance,
-    )?;
+    let ships =
+        validated_selected_ships(world, movement, fleet, ships, chosen, expected_is_alliance)?;
     refuse_unfinished(world, fleet, &ships)?;
     Ok(split_off(world, troop_transport, fleet, &ships))
 }
 
-fn selected_ships(
+fn validated_selected_ships(
     world: &GameWorld,
     movement: &MovementState,
     fleet: FleetKey,
@@ -603,14 +597,8 @@ pub fn validate_ships_to_system(
     system: SystemKey,
     expected_is_alliance: bool,
 ) -> Result<Vec<usize>, FleetOrderError> {
-    let ships = selected_ships(
-        world,
-        movement,
-        fleet,
-        ships,
-        chosen,
-        expected_is_alliance,
-    )?;
+    let ships =
+        validated_selected_ships(world, movement, fleet, ships, chosen, expected_is_alliance)?;
     if world.fleets[fleet].location == system {
         // In their own system the ships form a fleet: Create Fleet.
         refuse_unfinished(world, fleet, &ships)?;
@@ -1114,11 +1102,7 @@ mod tests {
             "{is_alliance}"
         );
         assert!(!setup.world.fleets.contains_key(mover), "{is_alliance}");
-        assert_eq!(
-            hulls(&setup.world, target),
-            expected_hulls,
-            "{is_alliance}"
-        );
+        assert_eq!(hulls(&setup.world, target), expected_hulls, "{is_alliance}");
     }
 
     // FUN_004ffc90 → FUN_004feca0: a fleet moved onto a fleet hands it every
@@ -1221,8 +1205,7 @@ mod tests {
 
     #[test]
     fn ships_moved_onto_another_fleet_leave_the_rest_of_their_fleet_behind() {
-        let (mut setup, mover, target, mut transport, troop) =
-            embarked_pair(&[10, 20, 30], &[40]);
+        let (mut setup, mover, target, mut transport, troop) = embarked_pair(&[10, 20, 30], &[40]);
 
         let chosen = roster(&setup.world, mover).unwrap();
         let outcome = join_mover(
@@ -1252,8 +1235,7 @@ mod tests {
     // ship moves the fleet's contents with them.
     #[test]
     fn moving_every_ship_of_a_fleet_onto_another_disbands_it() {
-        let (mut setup, mover, target, mut transport, troop) =
-            embarked_pair(&[10, 20], &[40]);
+        let (mut setup, mover, target, mut transport, troop) = embarked_pair(&[10, 20], &[40]);
 
         let chosen = roster(&setup.world, mover).unwrap();
         join_mover(
@@ -1462,8 +1444,7 @@ mod tests {
     #[test]
     fn a_fleet_moved_onto_a_fleet_elsewhere_hands_it_each_ship_at_once_for_either_side() {
         for is_alliance in [true, false] {
-            let (mut setup, mover, target) =
-                pair_fixture(&[10, 20], &[30], is_alliance, true);
+            let (mut setup, mover, target) = pair_fixture(&[10, 20], &[30], is_alliance, true);
             setup.world.fleets[mover].capital_ships[1].completed = false;
             let (movement, outcome) = join_whole(&mut setup, mover, target, is_alliance, 100);
 
@@ -1495,9 +1476,8 @@ mod tests {
     #[test]
     fn ships_moved_onto_a_fleet_elsewhere_join_it_at_once_on_their_own_legs_for_either_side() {
         for is_alliance in [true, false] {
-            let (mut setup, mover, target) =
-                pair_fixture(&[10, 20], &[30], is_alliance, true);
-            let (here, there) = (setup.here, setup.there);
+            let (mut setup, mover, target) = pair_fixture(&[10, 20], &[30], is_alliance, true);
+            let here = setup.here;
             let mut movement = MovementState::new();
             let mut transport = TroopTransportState::default();
             let troop = setup.world.troops.insert(TroopUnit {
@@ -1600,8 +1580,7 @@ mod tests {
         transport
             .load(&mut setup.world, &ProductRoom::default(), source, &troops)
             .unwrap();
-        let created =
-            create_selected(&mut setup, &mut transport, source, &[1, 2], true).unwrap();
+        let created = create_selected(&mut setup, &mut transport, source, &[1, 2], true).unwrap();
 
         assert_eq!(hulls(&setup.world, source), [10]);
         assert!(transport.cargo(source).is_empty());
@@ -2543,8 +2522,7 @@ mod tests {
     #[test]
     fn a_join_carries_an_unfinished_ship_and_disbands_the_emptied_fleet_for_either_side() {
         for is_alliance in [true, false] {
-            let (mut setup, mover, target) =
-                pair_fixture(&[10, 20], &[30], is_alliance, false);
+            let (mut setup, mover, target) = pair_fixture(&[10, 20], &[30], is_alliance, false);
             let here = setup.here;
             setup.world.fleets[mover].capital_ships[1].completed = false;
             let mut movement = MovementState::new();
@@ -2560,14 +2538,7 @@ mod tests {
                 0,
             );
 
-            assert_joined(
-                &setup,
-                outcome,
-                mover,
-                target,
-                &[30, 10, 20],
-                is_alliance,
-            );
+            assert_joined(&setup, outcome, mover, target, &[30, 10, 20], is_alliance);
             assert!(
                 !setup.world.fleets[target].capital_ships[2].completed,
                 "{is_alliance}"

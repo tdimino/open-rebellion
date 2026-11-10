@@ -352,11 +352,7 @@ pub(crate) struct MissionEvaluation<'a> {
 }
 
 impl<'a> MissionEvaluation<'a> {
-    pub(crate) fn new(
-        faction: AiFaction,
-        limit: usize,
-        actions: &'a mut Vec<AIAction>,
-    ) -> Self {
+    pub(crate) fn new(faction: AiFaction, limit: usize, actions: &'a mut Vec<AIAction>) -> Self {
         Self {
             faction,
             limit,
@@ -366,7 +362,7 @@ impl<'a> MissionEvaluation<'a> {
 
     fn start<'r>(
         self,
-        round: &'r Round<'_>,
+        round: &Round<'r>,
     ) -> (AiFaction, &'r GameWorld, usize, &'a mut Vec<AIAction>) {
         let stop = self.actions.len().saturating_add(self.limit);
         (self.faction, round.inputs.world, stop, self.actions)
@@ -713,7 +709,14 @@ impl AISystem {
             let Some(target) = target else {
                 continue;
             };
-            if !Self::admits(round, faction, MissionKind::Sabotage, target_sys, None, Some(target)) {
+            if !Self::admits(
+                round,
+                faction,
+                MissionKind::Sabotage,
+                target_sys,
+                None,
+                Some(target),
+            ) {
                 continue;
             }
             let stack = round.records.get(&target_sys).map_or(0, |r| r.stack);
@@ -1391,13 +1394,14 @@ mod tests {
         system: SystemKey,
         side: crate::dat::Faction,
     ) {
-        let facility = world.manufacturing_facilities.insert(
-            crate::world::ManufacturingFacilityInstance {
-                class_dat_id: DatId(1),
-                side,
-                is_shipyard: false,
-            },
-        );
+        let facility =
+            world
+                .manufacturing_facilities
+                .insert(crate::world::ManufacturingFacilityInstance {
+                    class_dat_id: DatId(1),
+                    side,
+                    is_shipyard: false,
+                });
         world.systems[system]
             .manufacturing_facilities
             .push(facility);
@@ -1689,12 +1693,11 @@ mod tests {
                 let mut world = empty_world();
                 let sector = add_sector(&mut world);
                 let (system, yards) = enemy_yards(&mut world, sector, enemy, &[0x28], 0);
-                let spy =
-                    add_commando(&mut world, side == AiFaction::Alliance, espionage, combat);
-                let target =
-                    Some(crate::missions::MissionTarget::ManufacturingFacility(yards[0]));
-                sabotage_orders(&world, side, &[(sector, 1)])
-                    == vec![(vec![spy], system, target)]
+                let spy = add_commando(&mut world, side == AiFaction::Alliance, espionage, combat);
+                let target = Some(crate::missions::MissionTarget::ManufacturingFacility(
+                    yards[0],
+                ));
+                sabotage_orders(&world, side, &[(sector, 1)]) == vec![(vec![spy], system, target)]
             };
 
             assert!(dispatched(51, 51), "{side:?}");
@@ -1770,7 +1773,9 @@ mod tests {
 
             let orders = sabotage_orders(&world, side, &[(sector, 1)]);
 
-            let target = Some(crate::missions::MissionTarget::ManufacturingFacility(yards[0]));
+            let target = Some(crate::missions::MissionTarget::ManufacturingFacility(
+                yards[0],
+            ));
             assert_eq!(orders, vec![(vec![spy], weakest, target)], "{side:?}");
         }
     }
@@ -1830,8 +1835,10 @@ mod tests {
             ] {
                 round.ctx = ctx;
                 let mut oracle = round.rng.clone();
-                let index =
-                    crate::uprising::Draws::draw(&mut oracle, i32::try_from(list.len()).unwrap() - 1);
+                let index = crate::uprising::Draws::draw(
+                    &mut oracle,
+                    i32::try_from(list.len()).unwrap() - 1,
+                );
                 let expected = named(list[usize::try_from(index).unwrap()]);
 
                 let drawn = crate::ai_regions::sabotage_object(round, system, 0x2_0000);
@@ -1857,10 +1864,13 @@ mod tests {
             world.systems[system].is_headquarters = true;
             let defences: Vec<_> = [0x22u32, 0x25, 0x23, 0x24]
                 .map(|family| {
-                    let key = world.defense_facilities.insert(crate::world::DefenseFacilityInstance {
-                        class_dat_id: DatId((family << 24) | 1),
-                        side: enemy,
-                    });
+                    let key =
+                        world
+                            .defense_facilities
+                            .insert(crate::world::DefenseFacilityInstance {
+                                class_dat_id: DatId((family << 24) | 1),
+                                side: enemy,
+                            });
                     world.systems[system].defense_facilities.push(key);
                     Some(MissionTarget::DefenseFacility(key))
                 })
@@ -1879,16 +1889,20 @@ mod tests {
                 })
                 .to_vec();
             for count in [2, 1] {
-                world.systems[system].fighters.push(crate::world::SystemSquadrons {
-                    class: crate::ids::FighterKey::default(),
-                    count,
-                    is_alliance: enemy == crate::dat::Faction::Alliance,
-                });
+                world.systems[system]
+                    .fighters
+                    .push(crate::world::SystemSquadrons {
+                        class: crate::ids::FighterKey::default(),
+                        count,
+                        is_alliance: enemy == crate::dat::Faction::Alliance,
+                    });
             }
-            let station = world.capital_ship_classes.insert(crate::world::CapitalShipClass {
-                family: 0x18,
-                ..Default::default()
-            });
+            let station = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    family: 0x18,
+                    ..Default::default()
+                });
             let cruiser = world
                 .capital_ship_classes
                 .insert(crate::world::CapitalShipClass::default());
@@ -1931,8 +1945,14 @@ mod tests {
                 (0x10_0000, vec![defences[2], defences[0]]),
                 (0x20_0000, regiments),
                 (0x40_0000, vec![None; 3]),
-                (0x80_0000, vec![Some(MissionTarget::CapitalShip(station_tag)), None]),
-                (0x2_0000, vec![made(yards[2]), made(yards[1]), made(yards[0])]),
+                (
+                    0x80_0000,
+                    vec![Some(MissionTarget::CapitalShip(station_tag)), None],
+                ),
+                (
+                    0x2_0000,
+                    vec![made(yards[2]), made(yards[1]), made(yards[0])],
+                ),
                 (0x1_0000, vec![products[1], products[3], products[0]]),
             ];
 
@@ -1943,11 +1963,16 @@ mod tests {
                 }
                 let all = kinds.iter().fold(0, |all, (mask, _)| all | mask);
                 let every: Vec<_> = kinds.iter().flat_map(|(_, list)| list.clone()).collect();
-                assert_eq!(crate::ai_regions::sabotage_candidates(round, system, all), every);
+                assert_eq!(
+                    crate::ai_regions::sabotage_candidates(round, system, all),
+                    every
+                );
             });
             world.systems[system].is_headquarters = false;
             with_round(&world, side, |round| {
-                assert!(crate::ai_regions::sabotage_candidates(round, system, 0x200_0000).is_empty());
+                assert!(
+                    crate::ai_regions::sabotage_candidates(round, system, 0x200_0000).is_empty()
+                );
             });
         }
     }
@@ -2017,7 +2042,10 @@ mod tests {
         with_round(&world, AiFaction::Empire, |round| {
             let mut oracle = round.rng.clone();
 
-            assert_eq!(crate::ai_regions::sabotage_object(round, system, 0x2_0000), None);
+            assert_eq!(
+                crate::ai_regions::sabotage_object(round, system, 0x2_0000),
+                None
+            );
             assert_eq!(
                 crate::uprising::Draws::draw(&mut round.rng, 99),
                 crate::uprising::Draws::draw(&mut oracle, 99)
@@ -2045,7 +2073,13 @@ mod tests {
         // recommends 0x69 starts a Sabotage planner (FUN_004bda60).
         let mut world = empty_world();
         let sector = add_sector(&mut world);
-        let _ = enemy_yards(&mut world, sector, crate::dat::Faction::Alliance, &[0x28], 0);
+        let _ = enemy_yards(
+            &mut world,
+            sector,
+            crate::dat::Faction::Alliance,
+            &[0x28],
+            0,
+        );
         let _ = add_commando(&mut world, false, 90, 90);
 
         assert!(sabotage_orders(&world, AiFaction::Empire, &[]).is_empty());
@@ -2058,7 +2092,13 @@ mod tests {
         // a system of its sector.
         let mut world = empty_world();
         let sector = add_sector(&mut world);
-        let (system, _) = enemy_yards(&mut world, sector, crate::dat::Faction::Alliance, &[0x28], 0);
+        let (system, _) = enemy_yards(
+            &mut world,
+            sector,
+            crate::dat::Faction::Alliance,
+            &[0x28],
+            0,
+        );
         let spy = add_commando(&mut world, false, 90, 90);
         let mut regions = crate::ai_regions::Regions::default();
         regions.records.push(crate::ai_regions::RegionalRecord {
@@ -2090,7 +2130,9 @@ mod tests {
             tick: 0,
         });
 
-        assert!(regions.sabotage_requests(&world, &missions, empire).is_empty());
+        assert!(regions
+            .sabotage_requests(&world, &missions, empire)
+            .is_empty());
         assert_eq!(regions.records[0].missions[3], 1);
         assert!(regions
             .sabotage_requests(&world, &missions, crate::dat::Faction::Alliance)
@@ -2246,7 +2288,7 @@ mod tests {
 
         let system = add_system(&mut world, sector, 0.8, 0.1);
         add_manufacturing_facility(&mut world, system, crate::dat::Faction::Alliance);
-        world.system_families.remove(system);
+        world.system_families.remove(&system);
         let system = &mut world.systems[system];
         system.name = "Enemy Shipyard".into();
         system.x = 10;
@@ -2320,13 +2362,11 @@ mod tests {
                 },
             );
             let system = add_system(&mut world, sector, 0.7, 0.1);
-            world.system_families.remove(system);
+            world.system_families.remove(&system);
             world.systems[system].dat_id = DatId(i);
             world.systems[system].name = format!("Enemy System {i}");
             world.systems[system].x = (i * 10) as u16;
-            world.systems[system]
-                .manufacturing_facilities
-                .push(mfg_key);
+            world.systems[system].manufacturing_facilities.push(mfg_key);
         }
 
         // 10 Empire special forces — all highly skilled.

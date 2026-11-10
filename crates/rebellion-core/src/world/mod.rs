@@ -2323,13 +2323,17 @@ impl GameWorld {
     /// Move had made there).
     #[must_use]
     pub fn spare_fleet(&self, system: SystemKey, is_alliance: bool) -> Option<FleetKey> {
-        self.systems.get(system)?.fleets.iter().copied().find(|&fleet| {
-            self.spare_fleets.contains_key(fleet)
-                && self
-                    .fleets
-                    .get(fleet)
-                    .is_some_and(|value| value.is_alliance == is_alliance && value.location == system)
-        })
+        self.systems
+            .get(system)?
+            .fleets
+            .iter()
+            .copied()
+            .find(|&fleet| {
+                self.spare_fleets.contains_key(fleet)
+                    && self.fleets.get(fleet).is_some_and(|value| {
+                        value.is_alliance == is_alliance && value.location == system
+                    })
+            })
     }
 
     /// [`Self::spare_fleet`], else a new empty fleet of the side at

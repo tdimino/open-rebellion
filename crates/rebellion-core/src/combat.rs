@@ -30,7 +30,11 @@ pub fn side_present(world: &GameWorld, system: SystemKey, is_alliance: bool) -> 
 
 /// [`side_present`] for a system already in hand.
 #[must_use]
-pub fn side_present_in(world: &GameWorld, system: &crate::world::System, is_alliance: bool) -> bool {
+pub fn side_present_in(
+    world: &GameWorld,
+    system: &crate::world::System,
+    is_alliance: bool,
+) -> bool {
     system.squadron_count(is_alliance) > 0
         || system.fleets.iter().any(|&fleet| {
             world
@@ -355,9 +359,7 @@ mod tests {
     // never stand in for a ship (FUN_004fe160 admits only capital ships).
     #[test]
     fn a_fleet_without_a_usable_capital_ship_is_not_present_for_either_side() {
-        use crate::world::{
-            FighterClass, FighterEntry,
-        };
+        use crate::world::{FighterClass, FighterEntry};
         for is_alliance in [true, false] {
             let mut world = GameWorld::default();
             let system = battle_system(&mut world, is_alliance);

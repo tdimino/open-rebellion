@@ -1741,7 +1741,11 @@ impl BmpCache {
     }
 
     /// [`Self::get_button`] as a Macroquad texture.
-    pub fn get_macroquad_button(&mut self, source: DllSource, resource_id: u32) -> Option<&Texture2D> {
+    pub fn get_macroquad_button(
+        &mut self,
+        source: DllSource,
+        resource_id: u32,
+    ) -> Option<&Texture2D> {
         let key = (source, resource_id);
         if !self.macroquad_button_textures.contains_key(&key) {
             let texture = self
@@ -2157,7 +2161,11 @@ fn button_color_image(
     Ok(color_image(&rgba))
 }
 
-fn button_macroquad_texture(bytes: &[u8], source: DllSource, resource_id: u32) -> Option<Texture2D> {
+fn button_macroquad_texture(
+    bytes: &[u8],
+    source: DllSource,
+    resource_id: u32,
+) -> Option<Texture2D> {
     let rgba = button_rgba_image(bytes, source, resource_id).ok()?;
     macroquad_texture(&rgba)
 }
@@ -2173,10 +2181,7 @@ fn decode_color_image(
 
 fn color_image(rgba: &image::RgbaImage) -> egui::ColorImage {
     let (w, h) = rgba.dimensions();
-    egui::ColorImage::from_rgba_unmultiplied(
-        [w as usize, h as usize],
-        rgba.as_raw(),
-    )
+    egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw())
 }
 
 /// The tactical window's realized palette (`FUN_0059ae70`) takes entries
@@ -2342,12 +2347,7 @@ mod tests {
             .collect()
     }
 
-    fn assert_alpha(
-        encoded: &[u8],
-        source: DllSource,
-        resource_ids: &[u32],
-        expected: &[u8],
-    ) {
+    fn assert_alpha(encoded: &[u8], source: DllSource, resource_ids: &[u32], expected: &[u8]) {
         for &resource_id in resource_ids {
             assert_eq!(
                 decoded_alpha(encoded, source, resource_id),
@@ -2671,7 +2671,10 @@ mod tests {
         for (name, offset, value) in spoils {
             let mut bytes = button_bmp();
             bytes[offset..offset + value.len()].copy_from_slice(value);
-            assert!(BitmapHitMask::from_bytes(&bytes).is_none(), "{name} gave a mask");
+            assert!(
+                BitmapHitMask::from_bytes(&bytes).is_none(),
+                "{name} gave a mask"
+            );
         }
         let mut truncated = button_bmp();
         truncated.pop();
@@ -2725,20 +2728,11 @@ mod tests {
         // control matte. The enabled arrow fill and dark drop shadow are
         // authored pixels and must remain opaque.
         let encoded = encoded_row(
-            &[
-                [0, 0, 255, 255],
-                [30, 62, 166, 255],
-                [0, 0, 0, 255],
-            ],
+            &[[0, 0, 255, 255], [30, 62, 166, 255], [0, 0, 0, 255]],
             image::ImageFormat::Png,
         );
         let resource_ids: Vec<_> = (10_382..=10_387).collect();
-        assert_alpha(
-            &encoded,
-            DllSource::Strategy,
-            &resource_ids,
-            &[0, 255, 255],
-        );
+        assert_alpha(&encoded, DllSource::Strategy, &resource_ids, &[0, 255, 255]);
     }
 
     #[test]
@@ -2811,11 +2805,7 @@ mod tests {
     fn gokres_miniature_blue_screen_becomes_transparent() {
         // Source: GOKRES.DLL mini-icon resources 16000-19999 with palette-blue matte.
         let encoded = encoded_row(
-            &[
-                [0, 0, 255, 255],
-                [20, 20, 220, 255],
-                [90, 100, 180, 255],
-            ],
+            &[[0, 0, 255, 255], [20, 20, 220, 255], [90, 100, 180, 255]],
             image::ImageFormat::Png,
         );
         assert_alpha(
@@ -2972,8 +2962,8 @@ mod tests {
         assert_blue_keying(
             DllSource::Gokres,
             &[
-                1_600, 1_935, 2_112, 2_715, 5_696, 6_031, 20_480, 21_569, 22_336, 22_527,
-                23_552, 23_568, 23_807,
+                1_600, 1_935, 2_112, 2_715, 5_696, 6_031, 20_480, 21_569, 22_336, 22_527, 23_552,
+                23_568, 23_807,
             ],
             &[
                 1_599, 1_936, 2_111, 2_716, 5_695, 6_032, 22_528, 23_551, 23_808,

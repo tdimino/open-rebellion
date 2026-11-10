@@ -1748,9 +1748,17 @@ mod tests {
 
     fn training_fixture(
         regiments: Vec<BuildableKind>,
-    ) -> (GameWorld, BuildSelectionState, Vec<BuildableKind>, Vec<String>) {
+    ) -> (
+        GameWorld,
+        BuildSelectionState,
+        Vec<BuildableKind>,
+        Vec<String>,
+    ) {
         let (world, system) = galaxy(true);
-        let names = regiments.iter().map(|&kind| product(&world, kind).0).collect();
+        let names = regiments
+            .iter()
+            .map(|&kind| product(&world, kind).0)
+            .collect();
         let mut state = BuildSelectionState::default();
         assert!(state.open(
             system,

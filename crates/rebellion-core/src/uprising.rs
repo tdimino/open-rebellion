@@ -1110,9 +1110,7 @@ fn remove_facility(world: &mut GameWorld, system: SystemKey, facility: FacilityR
 mod tests {
     use super::*;
     use crate::dat::{ExplorationStatus, SectorGroup};
-    use crate::ids::{
-        DatId, DefenseFacilityKey, ManufacturingFacilityKey, ProductionFacilityKey,
-    };
+    use crate::ids::{DatId, DefenseFacilityKey, ManufacturingFacilityKey, ProductionFacilityKey};
     use crate::missions::MissionFaction;
     use crate::missions::MissionRequest;
     use crate::world::{
@@ -1338,7 +1336,7 @@ mod tests {
         )
     }
 
-    fn leadership_character(world: &mut GameWorld, base: i32) -> CharacterKey {
+    fn leadership_character(world: &mut GameWorld, base: u32) -> CharacterKey {
         world.characters.insert(Character {
             leadership: SkillPair { base, variance: 0 },
             ..Character::default()
@@ -1603,6 +1601,7 @@ mod tests {
         // 2 + 6 - 2 - 1 = 5, below every UPRIS1TB row that acts.
         let (mut world, system) = world_with(Faction::Empire, 0.0);
         add_regiment(&mut world, system, STORMTROOPER_REGIMENT, false);
+        let mut state = in_revolt(system, 5);
         let run = |world: &GameWorld, state: &mut UprisingState| {
             UprisingSystem::advance(
                 state,
@@ -2243,12 +2242,7 @@ mod tests {
         let (mut world, system) = world_with(Faction::Alliance, 0.5);
         with_death_star(&mut world, system);
         add_regiment(&mut world, system, 0x1000_0002, true);
-        let events = advance_incident(
-            &world,
-            system,
-            &MissionState::new(),
-            &[0.45, 0.45, 0.0],
-        );
+        let events = advance_incident(&world, system, &MissionState::new(), &[0.45, 0.45, 0.0]);
         assert_eq!(incident(&events).0, &[2, 3]);
     }
 
@@ -2264,12 +2258,7 @@ mod tests {
                 with_death_star(&mut world, system);
             }
             add_regiment(&mut world, system, 0x1000_0008, false);
-            let events = advance_incident(
-                &world,
-                system,
-                &MissionState::new(),
-                &[0.45, 0.45, 0.0],
-            );
+            let events = advance_incident(&world, system, &MissionState::new(), &[0.45, 0.45, 0.0]);
             assert_eq!(incident(&events).0, &codes, "death star {death_star}");
         }
     }
@@ -2447,12 +2436,7 @@ mod tests {
         };
         let _first = prisoner(&mut world);
         let second = prisoner(&mut world);
-        let events = advance_incident(
-            &world,
-            system,
-            &MissionState::new(),
-            &[0.0, 0.35, 0.999],
-        );
+        let events = advance_incident(&world, system, &MissionState::new(), &[0.0, 0.35, 0.999]);
         let (codes, losses, _) = incident(&events);
         assert_eq!(codes, &[2, 4]);
         assert_eq!(losses, &[IncidentLoss::PrisonerFreed(second)]);

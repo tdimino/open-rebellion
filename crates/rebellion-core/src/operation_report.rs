@@ -42,14 +42,19 @@ pub enum ReportObject {
     Aboard(FleetKey),
     /// A capital ship by its world-unique tag (`ShipInstance::tag`), and
     /// the fleet it was listed in for a ship not yet tagged.
-    Ship { fleet: FleetKey, tag: u32 },
+    Ship {
+        fleet: FleetKey,
+        tag: u32,
+    },
     Character(CharacterKey),
     SpecialForce(SpecialForceKey),
     /// An object destroyed and gone from the world, with the damaged bit
     /// (`+0x50` bit 9) its view kept: the destroy slot `+0xac`
     /// (`FUN_004f71d0`) writes only the cause `+0x40`, so a ship the hull
     /// loss killed keeps the bit `FUN_00501ae0` set first.
-    Destroyed { damaged: bool },
+    Destroyed {
+        damaged: bool,
+    },
 }
 
 impl ReportUnit {
@@ -211,7 +216,10 @@ enum Child {
     Regiment(Faction),
     /// A character (Personnel), its captive bit (`+0xac` bit 0) and its
     /// own side.
-    Character { captive: bool, side: Faction },
+    Character {
+        captive: bool,
+        side: Faction,
+    },
     Other,
 }
 
@@ -484,8 +492,8 @@ fn system_units(world: &GameWorld, system: SystemKey) -> Vec<(ReportUnit, Child)
 
 #[cfg(test)]
 mod tests {
-    use crate::carriage::ProductRoom;
     use super::*;
+    use crate::carriage::ProductRoom;
     use crate::world::{
         BuildableClass, CapitalShipClass, Character, FighterClass, FighterEntry, Fleet,
         ShipInstance, SpecialForceUnit, System, TroopUnit,
@@ -513,8 +521,7 @@ mod tests {
         }
     }
 
-    fn fleet_world(
-    ) -> (
+    fn fleet_world() -> (
         GameWorld,
         SystemKey,
         crate::ids::CapitalShipKey,
@@ -640,7 +647,15 @@ mod tests {
                 .collect();
             assert_eq!(
                 names,
-                ["Cruiser", "Regiment", "Officer", "Cruiser 2", "Wing", "Wing", "Wing"]
+                [
+                    "Cruiser",
+                    "Regiment",
+                    "Officer",
+                    "Cruiser 2",
+                    "Wing",
+                    "Wing",
+                    "Wing"
+                ]
             );
             assert!(report.fleet_operational[2].major);
             // Each entry names the object its status marks read
@@ -786,7 +801,10 @@ mod tests {
                 ..unit(raw, name)
             };
             let mut captives = Vec::new();
-            for (raw, name, is_alliance) in [(0x3800_0341, "Rebel", true), (0x3800_0342, "Imperial", false)] {
+            for (raw, name, is_alliance) in [
+                (0x3800_0341, "Rebel", true),
+                (0x3800_0342, "Imperial", false),
+            ] {
                 let key = world.characters.insert(Character {
                     dat_id: DatId::new(raw),
                     name: name.into(),
@@ -811,9 +829,15 @@ mod tests {
             let mut report = OperationReport::new(system, true, holder, attacker);
             report.fill_assaulted_system(&world);
             let (own, other) = if holder == Faction::Alliance {
-                (unit(0x1000_0005, "Mon Calamari Regiment"), unit(0x1000_0006, "Stormtrooper Regiment"))
+                (
+                    unit(0x1000_0005, "Mon Calamari Regiment"),
+                    unit(0x1000_0006, "Stormtrooper Regiment"),
+                )
             } else {
-                (unit(0x1000_0006, "Stormtrooper Regiment"), unit(0x1000_0005, "Mon Calamari Regiment"))
+                (
+                    unit(0x1000_0006, "Stormtrooper Regiment"),
+                    unit(0x1000_0005, "Mon Calamari Regiment"),
+                )
             };
             let (own_captive, other_captive) = if holder == Faction::Alliance {
                 (captives[0].clone(), captives[1].clone())

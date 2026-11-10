@@ -930,8 +930,15 @@ mod tests {
             });
             let products = ProductRoom::default();
             let transport = TroopTransportState::default();
-            assert_eq!(ship_for_squadron(&world, &products, fleet), Some(1), "{is_alliance}");
-            assert_eq!(ship_for_regiment(&world, &transport, &products, fleet), Some(1));
+            assert_eq!(
+                ship_for_squadron(&world, &products, fleet),
+                Some(1),
+                "{is_alliance}"
+            );
+            assert_eq!(
+                ship_for_regiment(&world, &transport, &products, fleet),
+                Some(1)
+            );
             assert_eq!(
                 ships_for(&world, &transport, &products, fleet, Cargo::Squadron, 2),
                 None,

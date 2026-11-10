@@ -457,8 +457,7 @@ impl MissionsWindowState {
     pub fn has_visible_content(&self, snapshot: &RoutingSnapshot, world: &GameWorld) -> bool {
         self.windows.iter().any(|window| match window.id {
             Some(id) => {
-                snapshot.is_visible(id)
-                    && committed_window_matches(snapshot, world, window, id)
+                snapshot.is_visible(id) && committed_window_matches(snapshot, world, window, id)
             }
             None => world.systems.contains_key(window.system),
         })
@@ -496,8 +495,7 @@ impl MissionsWindowState {
             })
             .map(|id| {
                 let ready = self.windows.iter().any(|window| {
-                    window.id == Some(id)
-                        && committed_window_matches(snapshot, world, window, id)
+                    window.id == Some(id) && committed_window_matches(snapshot, world, window, id)
                 });
                 ContentReport {
                     window: id,
@@ -597,11 +595,7 @@ impl MissionsWindowState {
         index: usize,
     ) -> Option<egui::Rect> {
         let window = self.screen_rect(layout, system)?;
-        Some(mission_row_rect(
-            window,
-            layout.scale,
-            index,
-        ))
+        Some(mission_row_rect(window, layout.scale, index))
     }
 
     /// The screen rect of `tab`'s button in `system`'s window.
@@ -613,11 +607,7 @@ impl MissionsWindowState {
         tab: MissionsTab,
     ) -> Option<egui::Rect> {
         let window = self.screen_rect(layout, system)?;
-        Some(tab_rect(
-            window,
-            layout.scale,
-            tab,
-        ))
+        Some(tab_rect(window, layout.scale, tab))
     }
 
     /// The screen rect of the `index`th member row of `system`'s window.
@@ -629,11 +619,7 @@ impl MissionsWindowState {
         index: usize,
     ) -> Option<egui::Rect> {
         let window = self.screen_rect(layout, system)?;
-        Some(member_row_rect(
-            window,
-            layout.scale,
-            index,
-        ))
+        Some(member_row_rect(window, layout.scale, index))
     }
 
     /// What `system`'s window shows, for the interface fixture.
@@ -697,8 +683,7 @@ impl MissionsWindowState {
         for window in &mut self.windows {
             window.release_target_visible = match window.id {
                 Some(id) => {
-                    snapshot.is_visible(id)
-                        && committed_window_matches(snapshot, world, window, id)
+                    snapshot.is_visible(id) && committed_window_matches(snapshot, world, window, id)
                 }
                 None => world.systems.contains_key(window.system),
             };
@@ -973,9 +958,10 @@ fn committed_window_matches(
     window: &OpenMissionsWindow,
     id: WindowId,
 ) -> bool {
-    snapshot.key(id).is_some_and(|key| {
-        key.kind == WindowKind::Missions && key.subject == window.subject
-    }) && world.systems.contains_key(window.system)
+    snapshot
+        .key(id)
+        .is_some_and(|key| key.kind == WindowKind::Missions && key.subject == window.subject)
+        && world.systems.contains_key(window.system)
         && system_subject(world, window.system) == window.subject
 }
 
@@ -2977,7 +2963,7 @@ mod tests {
     fn missions_window_stale_subject_does_not_retarget() {
         let (mut world, system, missions, _) = busy();
         let fog = unseen();
-        let (mut manager, mut state, id) = managed_test_window(&world, &fog, &missions, system);
+        let (manager, mut state, id) = managed_test_window(&world, &fog, &missions, system);
         let layer = egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
         state.refresh_release_targets(&manager.begin_frame(), &world);
         assert_eq!(state.release_target(layer), Some(system));
@@ -3015,7 +3001,7 @@ mod tests {
 
     #[test]
     fn missions_release_requires_the_exact_manager_subject_not_only_the_kind() {
-        let (world, system, fog, missions, mut manager, mut state, original) =
+        let (world, system, _fog, _missions, mut manager, mut state, original) =
             empty_managed_test_window();
         let mismatched = manager
             .apply(WindowCommand::Open(contextual_spec(
@@ -3058,8 +3044,7 @@ mod tests {
 
     #[test]
     fn missions_content_report_requires_the_exact_committed_identity() {
-        let (world, system, fog, missions, mut manager, mut state, id) =
-            empty_managed_test_window();
+        let (world, _system, _fog, _missions, manager, mut state, id) = empty_managed_test_window();
         state.windows[0].id = None;
 
         assert_eq!(
@@ -3073,8 +3058,7 @@ mod tests {
 
     #[test]
     fn direct_draw_entry_cannot_arm_manager_owned_release_content() {
-        let (world, system, fog, missions, mut manager, mut state, _) =
-            empty_managed_test_window();
+        let (world, system, fog, missions, _manager, mut state, _) = empty_managed_test_window();
         let layer = egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
@@ -3146,8 +3130,7 @@ mod tests {
         let (world, systems) = two_system_world();
         let fog = unseen();
         let missions = MissionState::new();
-        let (mut manager, state, ids) =
-            managed_test_windows(&world, &fog, &missions, &systems);
+        let (mut manager, state, ids) = managed_test_windows(&world, &fog, &missions, &systems);
         assert_eq!(
             state
                 .windows
@@ -3176,7 +3159,7 @@ mod tests {
         let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
         let fog = unseen();
         let missions = MissionState::new();
-        let (mut manager, mut state, id) = managed_test_window(&world, &fog, &missions, system);
+        let (mut manager, state, id) = managed_test_window(&world, &fog, &missions, system);
         assert!(state.has_visible_content(&manager.begin_frame(), &world));
 
         manager.apply(WindowCommand::Minimize(id)).unwrap();
@@ -3202,8 +3185,7 @@ mod tests {
 
     #[test]
     fn missions_pointer_hits_only_its_visible_topmost_manager_layer() {
-        let (world, system, fog, missions, mut manager, mut state, id) =
-            empty_managed_test_window();
+        let (_world, system, _fog, _missions, manager, state, id) = empty_managed_test_window();
         let snapshot = manager.begin_frame();
         let rect = state.screen_rect(scaled(), system).unwrap();
         let inside = (rect.center().x, rect.center().y);
@@ -3229,10 +3211,10 @@ mod tests {
     #[test]
     fn overlapping_missions_raw_click_routes_only_to_manager_top_layer() {
         let (world, systems) = two_system_world();
+        let first_system = systems[0];
         let fog = unseen();
         let missions = MissionState::new();
-        let (mut manager, mut state, ids) =
-            managed_test_windows(&world, &fog, &missions, &systems);
+        let (mut manager, mut state, ids) = managed_test_windows(&world, &fog, &missions, &systems);
         manager.apply(WindowCommand::Activate(ids[0])).unwrap();
         assert_eq!(manager.begin_frame().paint_order(), &[ids[1], ids[0]]);
 
@@ -3565,8 +3547,7 @@ mod tests {
 
     #[test]
     fn missions_pointer_claim_requires_the_recorded_phase_as_well_as_the_recipient() {
-        let (world, system, fog, missions, mut manager, mut state, id) =
-            empty_managed_test_window();
+        let (_world, _system, _fog, _missions, manager, _state, id) = empty_managed_test_window();
         let snapshot = manager.begin_frame();
         let event = InputEventId {
             frame: 1,
@@ -3638,8 +3619,7 @@ mod tests {
 
     #[test]
     fn managed_missions_mutation_fails_closed_without_a_router() {
-        let (world, system, fog, missions, mut manager, mut state, _) =
-            empty_managed_test_window();
+        let (world, _system, fog, missions, manager, mut state, _) = empty_managed_test_window();
         let snapshot = manager.begin_frame();
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
@@ -3677,8 +3657,7 @@ mod tests {
 
     #[test]
     fn non_front_missions_does_not_reassert_over_a_raised_surface() {
-        let (world, system, fog, missions, mut manager, mut state, _) =
-            empty_managed_test_window();
+        let (world, system, fog, missions, manager, mut state, _) = empty_managed_test_window();
         let snapshot = manager.begin_frame();
         let rect = state.screen_rect(scaled(), system).unwrap();
         let ctx = egui::Context::default();
@@ -3730,7 +3709,7 @@ mod tests {
     fn managed_missions_mutations_require_the_exact_routed_release() {
         let (world, system, missions, _) = busy();
         let fog = unseen();
-        let (mut manager, mut state, id) = managed_test_window(&world, &fog, &missions, system);
+        let (manager, mut state, id) = managed_test_window(&world, &fog, &missions, system);
         let point = at(170.0, 132.0);
         let unrouted = vec![
             (vec![egui::Event::PointerMoved(point)], vec![]),

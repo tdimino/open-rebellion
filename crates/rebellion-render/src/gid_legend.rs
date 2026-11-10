@@ -40,13 +40,7 @@ const fn bitmap(x: u16, y: u16, id: u32) -> LegendItem {
     Bitmap { x, y, id }
 }
 
-const fn white_text(
-    x: u16,
-    y: u16,
-    id: u32,
-    text: &'static str,
-    font: u8,
-) -> LegendItem {
+const fn white_text(x: u16, y: u16, id: u32, text: &'static str, font: u8) -> LegendItem {
     Text {
         x,
         y,
@@ -341,47 +335,47 @@ macro_rules! legend {
     };
 }
 
-/// STRATEGY `RT_RCDATA` 10183.
+// STRATEGY `RT_RCDATA` 10183.
 legend!(POPULAR_SUPPORT_ALLIANCE, 135, 105, white_text(21, 1, 5717, "Loyalty to the Alliance", 4); (20, 10181, 5719, "Loyal"), (40, 10180, 5720, "Obedient"), (60, 10170, 5721, "Disloyal"), (80, 10169, 5728, "Hostile"));
-/// STRATEGY `RT_RCDATA` 10184.
+// STRATEGY `RT_RCDATA` 10184.
 legend!(POPULAR_SUPPORT_EMPIRE, 135, 105, white_text(21, 1, 5718, "Loyalty to the Empire", 4); (20, 10181, 5719, "Loyal"), (40, 10180, 5720, "Obedient"), (60, 10170, 5721, "Disloyal"), (80, 10169, 5728, "Hostile"));
-/// STRATEGY `RT_RCDATA` 11600.
+// STRATEGY `RT_RCDATA` 11600.
 legend!(UPRISINGS, 95, 65, white_text(31, 1, 5722, "Worlds in Uprising", 4); (20, 10181, 5723, "Currently in Uprising"), (40, 10169, 5724, "Not in Uprising"));
-/// STRATEGY `RT_RCDATA` 11601.
+// STRATEGY `RT_RCDATA` 11601.
 legend!(IDLE_FLEETS, 155, 125, white_text(58, 1, 5738, "Idle Fleets", 4); (20, 10181, 5730, "3+ fleets"), (40, 10180, 5731, "2  fleets"), (60, 10170, 5732, "1  fleet"), (80, 10169, 5733, "No fleets"), (100, 10160, 12582, "Conflict"));
-/// STRATEGY `RT_RCDATA` 11602.
+// STRATEGY `RT_RCDATA` 11602.
 legend!(FLEETS_EN_ROUTE, 155, 125, white_text(45, 1, 5739, "Fleets Enroute", 4); (20, 10181, 5730, "3+ fleets"), (40, 10180, 5731, "2  fleets"), (60, 10170, 5732, "1  fleet"), (80, 10169, 5733, "No fleets"), (100, 10160, 12582, "Conflict"));
-/// STRATEGY `RT_RCDATA` 11603.
+// STRATEGY `RT_RCDATA` 11603.
 legend!(IDLE_PERSONNEL, 95, 65, white_text(47, 1, 5754, "Idle Personnel", 4); (20, 10181, 5755, "Idle"), (40, 10169, 5756, "None"));
-/// STRATEGY `RT_RCDATA` 11604.
+// STRATEGY `RT_RCDATA` 11604.
 legend!(ACTIVE_PERSONNEL, 95, 65, white_text(40, 1, 5757, "Active Personnel", 4); (20, 10181, 5758, "Active"), (40, 10169, 5759, "None"));
-/// STRATEGY `RT_RCDATA` 10188.
+// STRATEGY `RT_RCDATA` 10188.
 legend!(AVAILABLE_ENERGY, 135, 105, white_text(38, 1, 5749, "Available Energy", 4); (20, 10181, 5750, "6+  Points Available"), (40, 10180, 5751, "3-5 Points Available"), (60, 10170, 5752, "1-2 Points Available"), (80, 10169, 5753, "0   Points Available"));
-/// STRATEGY `RT_RCDATA` 10189.
+// STRATEGY `RT_RCDATA` 10189.
 legend!(AVAILABLE_RAW_MATERIAL, 135, 105, white_text(18, 1, 5760, "Available Raw Materials", 4); (20, 10181, 5761, "3+ Points Available"), (40, 10180, 5762, "2  Points Available"), (60, 10170, 5763, "1  Points Available"), (80, 10169, 5764, "0  Points Available"));
-/// STRATEGY `RT_RCDATA` 10190.
+// STRATEGY `RT_RCDATA` 10190.
 legend!(MINES, 135, 105, white_text(69, 1, 5765, "Mines", 4); (20, 10181, 5766, "6+  Mines"), (40, 10180, 5767, "3-5 Mines"), (60, 10170, 5768, "1-2 Mines"), (80, 10169, 5769, "No  Mines"));
-/// STRATEGY `RT_RCDATA` 10191.
+// STRATEGY `RT_RCDATA` 10191.
 legend!(REFINERIES, 135, 105, white_text(58, 1, 5776, "Refineries", 4); (20, 10181, 5777, "6+  Refineries"), (40, 10180, 5778, "3-5 Refineries"), (60, 10170, 5779, "1-2 Refineries"), (80, 10169, 5780, "No  Refineries"));
-/// STRATEGY `RT_RCDATA` 10193.
+// STRATEGY `RT_RCDATA` 10193.
 legend!(SHIPYARDS, 135, 105, white_text(58, 1, 5784, "Shipyards", 4); (20, 10181, 5785, "5+  Shipyards"), (40, 10180, 5889, "2-4 Shipyards"), (60, 10170, 5890, "1   Shipyards"), (80, 10169, 5891, "No  Shipyards"));
-/// STRATEGY `RT_RCDATA` 10194.
+// STRATEGY `RT_RCDATA` 10194.
 legend!(TRAINING_FACILITIES, 135, 105, white_text(35, 1, 5892, "Training Facilities", 4); (20, 10181, 5893, "5+  Training Facilities"), (40, 10180, 5894, "2-4 Training Facilities"), (60, 10170, 5895, "1   Training Facilities"), (80, 10169, 5896, "No  Training Facilities"));
-/// STRATEGY `RT_RCDATA` 10195.
+// STRATEGY `RT_RCDATA` 10195.
 legend!(CONSTRUCTION_YARDS, 135, 105, white_text(29, 1, 5897, "Construction Yards", 4); (20, 10181, 5904, "5+  Construction Yards"), (40, 10180, 5905, "2-4 Construction Yards"), (60, 10170, 5906, "1   Construction Yards"), (80, 10169, 5907, "No  Construction Yards"));
-/// STRATEGY `RT_RCDATA` 11605.
+// STRATEGY `RT_RCDATA` 11605.
 legend!(IDLE_SHIPYARDS, 95, 65, white_text(47, 1, 5786, "Idle Shipyards", 4); (20, 10181, 5755, "Idle"), (40, 10169, 5758, "Active"));
-/// STRATEGY `RT_RCDATA` 11606.
+// STRATEGY `RT_RCDATA` 11606.
 legend!(IDLE_TRAINING_FACILITIES, 95, 65, white_text(23, 1, 5899, "Idle Training Facilities", 4); (20, 10181, 5755, "Idle"), (40, 10169, 5758, "Active"));
-/// STRATEGY `RT_RCDATA` 11607.
+// STRATEGY `RT_RCDATA` 11607.
 legend!(IDLE_CONSTRUCTION_YARDS, 95, 65, white_text(19, 1, 5898, "Idle Construction Yards", 4); (20, 10181, 5755, "Idle"), (40, 10169, 5758, "Active"));
-/// STRATEGY `RT_RCDATA` 10196.
+// STRATEGY `RT_RCDATA` 10196.
 legend!(TROOPERS, 135, 105, white_text(31, 1, 5908, "Trooper Regiments", 4); (20, 10181, 5909, "6+  Trooper Regiments"), (40, 10180, 5910, "3-5 Trooper Regiments"), (60, 10170, 5911, "1-2 Trooper Regiments"), (80, 10169, 5912, "No  Trooper Regiments"));
-/// STRATEGY `RT_RCDATA` 10197.
+// STRATEGY `RT_RCDATA` 10197.
 legend!(FIGHTER_SQUADRONS, 135, 105, white_text(34, 1, 5913, "Fighter Squadrons", 4); (20, 10181, 5920, "6+  Fighter Squadrons"), (40, 10180, 5921, "3-5 Fighter Squadrons"), (60, 10170, 5922, "1-2 Fighter Squadrons"), (80, 10169, 5923, "No  Fighter Squadrons"));
-/// STRATEGY `RT_RCDATA` 10198.
+// STRATEGY `RT_RCDATA` 10198.
 legend!(DEATH_STAR_SHIELDS, 95, 65, white_text(30, 1, 5924, "Death Star Shields", 4); (20, 10181, 5925, "Death Star Shield"), (40, 10169, 5926, "No Death Star Shield"));
-/// STRATEGY `RT_RCDATA` 10199.
+// STRATEGY `RT_RCDATA` 10199.
 legend!(PLANETARY_SHIELD_GENERATORS, 135, 105, white_text(35, 1, 5927, "Shield Generators", 4); (20, 10181, 5928, "6+  Generators"), (40, 10180, 5929, "3-5 Generators"), (60, 10170, 5936, "1-2 Generators"), (80, 10169, 5937, "No  Generators"));
-/// STRATEGY `RT_RCDATA` 10200.
+// STRATEGY `RT_RCDATA` 10200.
 legend!(PLANETARY_DEFENSE_BATTERIES, 135, 105, white_text(35, 1, 5938, "Defense Batteries", 4); (20, 10181, 5939, "6+  Batteries"), (40, 10180, 5940, "3-5 Batteries"), (60, 10170, 5941, "1-2 Batteries"), (80, 10169, 5942, "No  Batteries"));

@@ -2108,7 +2108,7 @@ mod tests {
     use crate::fleet_window::tests::PAINTED;
     use rebellion_core::dat::SectorGroup;
     use rebellion_core::economy::SupportValues;
-    use rebellion_core::ids::{DatId, FighterClassKey};
+    use rebellion_core::ids::{DatId, FighterKey};
     use rebellion_core::missions::{MissionFaction, MissionKind, MissionRequest};
     use rebellion_core::world::{
         Character, ControlKind, DefenseFacilityInstance, Sector, SpecialForceUnit, System,
@@ -2162,7 +2162,7 @@ mod tests {
 
     fn fighter_drag_fixture(
         faction: CockpitFaction,
-    ) -> (GameWorld, SystemKey, FighterClassKey, MissionState) {
+    ) -> (GameWorld, SystemKey, FighterKey, MissionState) {
         let is_alliance = faction == CockpitFaction::Alliance;
         let (mut world, system) = world(ControlKind::Controlled(if is_alliance {
             Faction::Alliance
@@ -2472,7 +2472,7 @@ mod tests {
         system: SystemKey,
     ) -> (WindowManager, DefensesWindowState, PreparedDefensesWindow) {
         let manager = WindowManager::new();
-        let mut state = DefensesWindowState::default();
+        let state = DefensesWindowState::default();
         let prepared = state
             .prepare_open(world, system, ORIGIN, CockpitFaction::Alliance, scaled())
             .expect("live system has a stable DAT subject");
@@ -2786,7 +2786,7 @@ mod tests {
     #[test]
     fn defenses_pointer_hits_only_its_visible_topmost_manager_layer() {
         let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
-        let (mut manager, state) = opened_managed_window(&world, system);
+        let (manager, state) = opened_managed_window(&world, system);
         let id = state.window_id(system).unwrap();
         let snapshot = manager.begin_frame();
         let rect = state.screen_rect(scaled(), system).unwrap();

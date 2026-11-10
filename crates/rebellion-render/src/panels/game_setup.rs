@@ -279,7 +279,7 @@ fn choice_button(ui: &mut egui::Ui, text: RichText, selected: bool, size: [f32; 
         Color32::from_rgb(20, 22, 36)
     };
     let stroke = egui::Stroke::new(
-        if selected { 1.5 } else { 0.5 },
+        if selected { 1.5_f32 } else { 0.5_f32 },
         if selected {
             theme::GOLD
         } else {
@@ -298,14 +298,13 @@ fn galaxy_size_button(
     current: &mut GalaxySize,
 ) {
     let selected = *current == value;
-    let text =
-        RichText::new(format!("{label}\n{description}"))
-            .color(if selected {
-                theme::GOLD_BRIGHT
-            } else {
-                theme::TEXT_PRIMARY
-            })
-            .size(12.0);
+    let text = RichText::new(format!("{label}\n{description}"))
+        .color(if selected {
+            theme::GOLD_BRIGHT
+        } else {
+            theme::TEXT_PRIMARY
+        })
+        .size(12.0);
 
     if choice_button(ui, text, selected, [140.0, 56.0]) {
         *current = value;
@@ -314,15 +313,14 @@ fn galaxy_size_button(
 
 fn difficulty_button(ui: &mut egui::Ui, value: Difficulty, current: &mut Difficulty) {
     let selected = *current == value;
-    let text =
-        RichText::new(value.label())
-            .color(if selected {
-                theme::GOLD_BRIGHT
-            } else {
-                theme::TEXT_PRIMARY
-            })
-            .size(14.0)
-            .strong();
+    let text = RichText::new(value.label())
+        .color(if selected {
+            theme::GOLD_BRIGHT
+        } else {
+            theme::TEXT_PRIMARY
+        })
+        .size(14.0)
+        .strong();
 
     if choice_button(ui, text, selected, [120.0, 40.0]) {
         *current = value;

@@ -1139,8 +1139,8 @@ mod tests {
         sector: rebellion_core::ids::SectorKey,
         dat_id: u32,
         name: &str,
-        x: i32,
-        y: i32,
+        x: u16,
+        y: u16,
         side: Faction,
     ) -> System {
         let alliance = side == Faction::Alliance;
@@ -1160,10 +1160,7 @@ mod tests {
         }
     }
 
-    fn replay_environment(
-        data: &SimulationDataManifest,
-        seed: u64,
-    ) -> ReplayEnvironment<'_> {
+    fn replay_environment(data: &SimulationDataManifest, seed: u64) -> ReplayEnvironment<'_> {
         ReplayEnvironment {
             engine_version: "0.1.0-test",
             seed,

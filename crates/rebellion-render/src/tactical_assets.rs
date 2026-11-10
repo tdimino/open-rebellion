@@ -1063,11 +1063,9 @@ fn cached_effect_asset(
     resource_id: u32,
     palette_resource_id: u32,
 ) -> Result<TacticalEffectAsset, String> {
-    let (texture_payload, palette_payload) =
-        cached_texture_pair(resource_id, palette_resource_id)?;
+    let (texture_payload, palette_payload) = cached_texture_pair(resource_id, palette_resource_id)?;
     let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
-    let (texture, transparent_index) =
-        decode_indexed_effect_texture(&texture_payload, &palette)?;
+    let (texture, transparent_index) = decode_indexed_effect_texture(&texture_payload, &palette)?;
     Ok(TacticalEffectAsset {
         texture,
         transparent_index,
@@ -2232,13 +2230,10 @@ impl TacticalAssetRenderer {
             let resource_id = 2560 + index as u32;
             let mut decoded = decode_mesh_object(mesh_bytes)?;
             scale_capital_mesh(&mut decoded);
-            let (asset, diagnostic) = build_lod_asset(
-                resource_id,
-                decoded,
-                &textures,
-                &white,
-                |name| format!("{}/1033", name.to_ascii_uppercase()),
-            );
+            let (asset, diagnostic) =
+                build_lod_asset(resource_id, decoded, &textures, &white, |name| {
+                    format!("{}/1033", name.to_ascii_uppercase())
+                });
             assets.push(asset);
             diagnostics.push(diagnostic);
         }
@@ -2512,8 +2507,7 @@ fn decal_screen_rect(
     // The camera the participant passes draw with.
     let camera_matrix = scene_camera(pose, aperture, false).matrix;
     let centre = project_world_position(camera_matrix, decal.position, aperture)?;
-    let pixels =
-        decal.size * aperture.3 / (2.0 * depth * (scene_fovy(pose, aperture) * 0.5).tan());
+    let pixels = decal.size * aperture.3 / (2.0 * depth * (scene_fovy(pose, aperture) * 0.5).tan());
     let size = vec2(pixels, pixels);
     Some((centre - decal.origin / texture_size * size, size))
 }
@@ -3329,7 +3323,10 @@ mod tests {
     // Our own layout: the 3D window's rectangle in OpenGL's bottom-up rows.
     #[test]
     fn the_scene_viewport_counts_its_rows_from_the_screens_bottom() {
-        assert_eq!(scene_gl_viewport((17.0, 30.0, 439.0, 437.0), 480.0), (17, 13, 439, 437));
+        assert_eq!(
+            scene_gl_viewport((17.0, 30.0, 439.0, 437.0), 480.0),
+            (17, 13, 439, 437)
+        );
         assert_eq!(
             scene_gl_viewport((114.3, 90.0, 731.7, 728.3), 800.0),
             (114, -18, 732, 728)
@@ -3373,7 +3370,10 @@ mod tests {
             source_bounds: [-1.0, -2.0, -0.5, 1.0, 2.0, 0.5],
         };
         scale_capital_mesh(&mut decoded);
-        assert_eq!(decoded.chunks[0].mesh.vertices[0].position, vec3(3.0, -6.0, 1.5));
+        assert_eq!(
+            decoded.chunks[0].mesh.vertices[0].position,
+            vec3(3.0, -6.0, 1.5)
+        );
         let envelope = tactical_collision_envelope(decoded.source_bounds);
         assert_near(envelope.vertical_radius, 6.0);
         assert_near(envelope.planar_diameter, 6.0_f32.hypot(3.0));
@@ -3729,7 +3729,10 @@ mod tests {
                 select_original_tactical_lod(OriginalTacticalLod::Far, view),
                 OriginalTacticalLod::Medium
             );
-            assert_near(original_fighter_view_span(pose, 150.0), 150.0 * 0.1_f32.tan());
+            assert_near(
+                original_fighter_view_span(pose, 150.0),
+                150.0 * 0.1_f32.tan(),
+            );
         }
     }
 
@@ -3739,10 +3742,13 @@ mod tests {
     // squadrons on their lane about 450 units from the camera.
     #[test]
     fn a_fighter_decal_spans_three_tenths_of_a_unit_at_its_depth() {
-        assert_pixel(original_fighter_decal_pixels(100.0, 437.0, 0.2), 0.3 * 218.5 / 20.0);
+        assert_pixel(
+            original_fighter_decal_pixels(100.0, 437.0, 0.2),
+            0.3 * 218.5 / 20.0,
+        );
         assert_pixel(
             original_fighter_decal_pixels(50.0, 437.0, 0.2),
-            2.0 * original_fighter_decal_pixels(100.0, 437.0, 0.2)
+            2.0 * original_fighter_decal_pixels(100.0, 437.0, 0.2),
         );
         assert!(original_fighter_decal_pixels(450.0, 437.0, 0.2) < 1.0);
     }

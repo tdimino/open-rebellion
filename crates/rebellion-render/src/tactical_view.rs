@@ -364,11 +364,9 @@ fn tactical_logical_pointer_events(
         TacticalWindowEvent::PrimaryPress(screen) => Some(
             TacticalLogicalPointerEvent::PrimaryPress(canvas.logical_pointer(screen.0, screen.1)),
         ),
-        TacticalWindowEvent::PrimaryRelease(screen) => {
-            Some(TacticalLogicalPointerEvent::PrimaryRelease(
-                canvas.logical_pointer(screen.0, screen.1),
-            ))
-        }
+        TacticalWindowEvent::PrimaryRelease(screen) => Some(
+            TacticalLogicalPointerEvent::PrimaryRelease(canvas.logical_pointer(screen.0, screen.1)),
+        ),
         TacticalWindowEvent::Wheel { .. } => None,
     })
 }
@@ -2003,11 +2001,7 @@ fn first_live_player_ship(session: &BattleSession) -> Option<usize> {
 }
 
 #[cfg(feature = "interface-test-fixtures")]
-fn live_player_ships(
-    session: &BattleSession,
-    require_engines: bool,
-    limit: usize,
-) -> Vec<usize> {
+fn live_player_ships(session: &BattleSession, require_engines: bool, limit: usize) -> Vec<usize> {
     session
         .ships
         .iter()
@@ -2028,9 +2022,7 @@ fn live_player_fighters(session: &BattleSession, limit: usize) -> Vec<usize> {
         .fighters
         .iter()
         .enumerate()
-        .filter(|(_, fighter)| {
-            fighter.alive && fighter.is_attacker == session.player_is_attacker
-        })
+        .filter(|(_, fighter)| fighter.alive && fighter.is_attacker == session.player_is_attacker)
         .map(|(index, _)| index)
         .take(limit)
         .collect()
@@ -2844,11 +2836,7 @@ fn available_tactical_command_controls(
         .copied()
         .filter(move |control| {
             has_selection
-                && tactical_command_available(
-                    *control,
-                    selected_fighter,
-                    attack_death_star_enabled,
-                )
+                && tactical_command_available(*control, selected_fighter, attack_death_star_enabled)
         })
 }
 
@@ -2877,18 +2865,18 @@ fn tactical_command_control_at(
         selected_fighter,
         attack_death_star_enabled,
     )
-        .find(|control| {
-            let (rect, resource) = tactical_command_spec(*control, player_is_alliance);
-            if !rect.contains(x, y) {
-                return false;
-            }
-            cache.is_resource_hit(
-                DllSource::Tactical,
-                resource,
-                (x - rect.x).floor() as usize,
-                (y - rect.y).floor() as usize,
-            )
-        })
+    .find(|control| {
+        let (rect, resource) = tactical_command_spec(*control, player_is_alliance);
+        if !rect.contains(x, y) {
+            return false;
+        }
+        cache.is_resource_hit(
+            DllSource::Tactical,
+            resource,
+            (x - rect.x).floor() as usize,
+            (y - rect.y).floor() as usize,
+        )
+    })
 }
 
 #[cfg(test)]
@@ -2906,9 +2894,7 @@ fn tactical_command_rect_control_at(
         selected_fighter,
         attack_death_star_enabled,
     )
-        .find(|control| {
-            tactical_command_spec(*control, true).0.contains(x, y)
-        })
+    .find(|control| tactical_command_spec(*control, true).0.contains(x, y))
 }
 
 #[expect(
@@ -8775,10 +8761,11 @@ fn draw_tactical_attack_target_spec(
                 offset_x,
                 offset_y,
             );
-            let radius = ship_projections.get(&index).map_or(
-                DEFAULT_SHIP_SIZE * scale * 0.4,
-                |projection| (projection.max - projection.min).max_element() * 0.6 + 3.0,
-            );
+            let radius = ship_projections
+                .get(&index)
+                .map_or(DEFAULT_SHIP_SIZE * scale * 0.4, |projection| {
+                    (projection.max - projection.min).max_element() * 0.6 + 3.0
+                });
             (target, radius)
         }
         TacticalAttackTarget::FighterGroup(index) => {
@@ -8793,10 +8780,11 @@ fn draw_tactical_attack_target_spec(
                 offset_x,
                 offset_y,
             );
-            let radius = fighter_projections.get(&index).map_or(
-                FIGHTER_SIZE * scale * 0.75,
-                |projection| (projection.max - projection.min).max_element() * 0.6 + 3.0,
-            );
+            let radius = fighter_projections
+                .get(&index)
+                .map_or(FIGHTER_SIZE * scale * 0.75, |projection| {
+                    (projection.max - projection.min).max_element() * 0.6 + 3.0
+                });
             (target, radius)
         }
     };
@@ -9058,11 +9046,7 @@ fn handle_combat_input(
             projected_hit_radius,
             (arena_pointer_x, arena_pointer_y),
             hit_radius,
-            |ship| {
-                ship.alive
-                    && !ship.retreating
-                    && ship.is_attacker == session.player_is_attacker
-            },
+            |ship| ship.alive && !ship.retreating && ship.is_attacker == session.player_is_attacker,
         );
 
         if let Some(idx) = hit {
@@ -10088,22 +10072,12 @@ mod tests {
             };
             let canvas = TacticalCanvas::new(640.0, 480.0);
             assert_eq!(
-                apply_battle_result_input(
-                    &mut state,
-                    skin,
-                    canvas,
-                    &primary_input(point, true),
-                ),
+                apply_battle_result_input(&mut state, skin, canvas, &primary_input(point, true),),
                 TacticalAction::None
             );
             assert_eq!(state.battle_result_scroll, 3);
             assert_eq!(
-                apply_battle_result_input(
-                    &mut state,
-                    skin,
-                    canvas,
-                    &primary_input(point, false),
-                ),
+                apply_battle_result_input(&mut state, skin, canvas, &primary_input(point, false),),
                 TacticalAction::None
             );
             assert_eq!(state.battle_result_tab, BattleResultTab::AllianceForces);
@@ -11827,13 +11801,7 @@ mod tests {
         second.task_force = 4;
         second.escort_target = Some(0);
         let mut session = test_session(vec![hostile, first, second], Vec::new(), false);
-        assert_mixed_task_force_rejected(
-            &mut session,
-            1..3,
-            0,
-            true,
-            TacticalVoiceFaction::Empire,
-        );
+        assert_mixed_task_force_rejected(&mut session, 1..3, 0, true, TacticalVoiceFaction::Empire);
     }
 
     // Source: FUN_005a24d0 focus target constraint.

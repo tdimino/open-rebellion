@@ -1041,8 +1041,7 @@ mod tests {
     fn a_ship_band_destination_on_a_fleet_seats_the_ordered_ship_in_that_fleet_unfinished_for_either_side(
     ) {
         for is_alliance in [true, false] {
-            let (mut world, at, fleet, mut mfg, queued) =
-                ordered_carrier_fixture(is_alliance);
+            let (mut world, at, fleet, mut mfg, queued) = ordered_carrier_fixture(is_alliance);
             let order = |world: &mut GameWorld, mfg: &mut ManufacturingState| {
                 order_destination(
                     world,
@@ -1290,9 +1289,9 @@ mod tests {
             let death_star = insert_death_star(
                 &mut world,
                 CapitalShipClass {
-                maintenance_cost: 600,
-                refined_material_cost: 584,
-                ..CapitalShipClass::default()
+                    maintenance_cost: 600,
+                    refined_material_cost: 584,
+                    ..CapitalShipClass::default()
                 },
             );
             let order = BuildableKind::CapitalShip(death_star);
@@ -1505,15 +1504,7 @@ mod tests {
                 let order = BuildableKind::CapitalShip(death_star);
                 let mfg = ManufacturingState::new();
                 assert_eq!(
-                    shipyard_order_refusal(
-                        &world,
-                        &mfg,
-                        here,
-                        order,
-                        1,
-                        is_alliance,
-                        &movement,
-                    ),
+                    shipyard_order_refusal(&world, &mfg, here, order, 1, is_alliance, &movement,),
                     refused,
                     "Build {side:?} coming {coming}"
                 );
@@ -1522,13 +1513,7 @@ mod tests {
                 let mut mfg = ManufacturingState::new();
                 mfg.enqueue(there, QueueItem::new(order, 584));
                 assert_eq!(
-                    shipyard_destination_refusal(
-                        &world,
-                        &mfg,
-                        there,
-                        here,
-                        &movement,
-                    ),
+                    shipyard_destination_refusal(&world, &mfg, there, here, &movement,),
                     refused,
                     "Destination {side:?} coming {coming}"
                 );

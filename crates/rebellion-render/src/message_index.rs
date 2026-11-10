@@ -476,50 +476,49 @@ fn draw_window_buttons(
     look: RailLook,
 ) -> Option<u16> {
     let mut clicked = None;
-    message_index_area("original-message-index-buttons", origin)
-        .show(ctx, |ui| {
-            let window_rect = message_index_window_rect(origin, scale);
-            let (pointer, primary_down) = ctx.input(|input| {
-                (
-                    input.pointer.interact_pos(),
-                    input.pointer.button_down(egui::PointerButton::Primary),
-                )
-            });
-            for button in window_button_specs(faction, mode, look) {
-                let rect = message_index_rect(
-                    window_rect,
-                    scale,
-                    f32::from(button.x),
-                    f32::from(button.y),
-                    f32::from(button.width),
-                    f32::from(button.height),
-                );
-                if crate::control_registry::enabled() {
-                    crate::control_registry::register_screen(
-                        "MessageIndex",
-                        &window_button_name(button.command_id),
-                        rect,
-                    );
-                }
-                let response = ui.interact(
-                    rect,
-                    ui.id().with(("message-index-button", button.command_id)),
-                    egui::Sense::click(),
-                );
-                let pressed = button.enabled
-                    && primary_down
-                    && pointer.is_some_and(|point| message_index_rect_contains(rect, point));
-                let resource = match (button.enabled, button.disabled_resource) {
-                    (false, Some(disabled)) => disabled,
-                    _ if pressed => button.pressed_resource,
-                    _ => button.normal_resource,
-                };
-                paint_strategy_resource(ui.painter(), ctx, cache, resource, rect);
-                if button.enabled && response.clicked() {
-                    clicked = Some(button.command_id);
-                }
-            }
+    message_index_area("original-message-index-buttons", origin).show(ctx, |ui| {
+        let window_rect = message_index_window_rect(origin, scale);
+        let (pointer, primary_down) = ctx.input(|input| {
+            (
+                input.pointer.interact_pos(),
+                input.pointer.button_down(egui::PointerButton::Primary),
+            )
         });
+        for button in window_button_specs(faction, mode, look) {
+            let rect = message_index_rect(
+                window_rect,
+                scale,
+                f32::from(button.x),
+                f32::from(button.y),
+                f32::from(button.width),
+                f32::from(button.height),
+            );
+            if crate::control_registry::enabled() {
+                crate::control_registry::register_screen(
+                    "MessageIndex",
+                    &window_button_name(button.command_id),
+                    rect,
+                );
+            }
+            let response = ui.interact(
+                rect,
+                ui.id().with(("message-index-button", button.command_id)),
+                egui::Sense::click(),
+            );
+            let pressed = button.enabled
+                && primary_down
+                && pointer.is_some_and(|point| message_index_rect_contains(rect, point));
+            let resource = match (button.enabled, button.disabled_resource) {
+                (false, Some(disabled)) => disabled,
+                _ if pressed => button.pressed_resource,
+                _ => button.normal_resource,
+            };
+            paint_strategy_resource(ui.painter(), ctx, cache, resource, rect);
+            if button.enabled && response.clicked() {
+                clicked = Some(button.command_id);
+            }
+        }
+    });
     clicked
 }
 
@@ -1755,218 +1754,217 @@ fn draw_single_message(
         });
 
     let mut clicked = None;
-    message_index_area("message-index-single-text", origin)
-        .show(ctx, |ui| {
-            let window_rect = message_index_window_rect(origin, scale);
-            let at = |x: f32, y: f32, width: f32, height: f32| {
-                message_index_rect(window_rect, scale, x, y, width, height)
-            };
-            let painter = ui.painter();
+    message_index_area("message-index-single-text", origin).show(ctx, |ui| {
+        let window_rect = message_index_window_rect(origin, scale);
+        let at = |x: f32, y: f32, width: f32, height: f32| {
+            message_index_rect(window_rect, scale, x, y, width, height)
+        };
+        let painter = ui.painter();
 
-            // FUN_0046a320: the background with the overlay keyed over its
-            // centre, blitted at (12, 33). port: a message without an
-            // original class shows the black field.
-            let picture = at(PICTURE_X, PICTURE_Y, INDEX_CONTENT_WIDTH, PICTURE_HEIGHT);
-            painter.rect_filled(picture, 0.0, Color32::BLACK);
-            if let Some(display) = &msg.display {
-                if display.background != 0 {
-                    paint_message_picture(
-                        painter,
-                        ctx,
-                        cache,
-                        &mut state.pictures,
-                        encyclopedia_picture,
-                        display.background,
-                        |_| picture,
-                    );
-                }
-                if display.overlay != 0 {
-                    paint_message_picture(
-                        painter,
-                        ctx,
-                        cache,
-                        &mut state.pictures,
-                        encyclopedia_picture,
-                        display.overlay,
-                        |[width, height]| {
-                            let size = egui::vec2(width as f32, height as f32) * scale;
-                            egui::Rect::from_center_size(picture.center(), size)
-                        },
-                    );
-                }
-            }
-
-            // FUN_004665f0: the title strip and the bottom text frame.
-            paint_strategy_resource(
-                painter,
-                ctx,
-                cache,
-                TITLE_STRIP,
-                at(
-                    INDEX_CONTENT_X,
-                    TITLE_STRIP_Y,
-                    INDEX_CONTENT_WIDTH,
-                    TITLE_STRIP_HEIGHT,
-                ),
-            );
-            paint_strategy_resource(
-                painter,
-                ctx,
-                cache,
-                TEXT_FRAME,
-                at(
-                    INDEX_CONTENT_X,
-                    TEXT_FRAME_Y,
-                    INDEX_CONTENT_WIDTH,
-                    TEXT_FRAME_HEIGHT,
-                ),
-            );
-
-            // hyp: the title bar carries the category icon and the title
-            // (Wine capture of "Drall Joins Enemy"); positions measured from
-            // that capture.
-            if let Some(rail) = msg.rail {
-                let icon = row_icon(rail, faction);
-                let size = icon_size(cache, icon);
-                paint_strategy_resource(
+        // FUN_0046a320: the background with the overlay keyed over its
+        // centre, blitted at (12, 33). port: a message without an
+        // original class shows the black field.
+        let picture = at(PICTURE_X, PICTURE_Y, INDEX_CONTENT_WIDTH, PICTURE_HEIGHT);
+        painter.rect_filled(picture, 0.0, Color32::BLACK);
+        if let Some(display) = &msg.display {
+            if display.background != 0 {
+                paint_message_picture(
                     painter,
                     ctx,
                     cache,
-                    icon,
-                    at(TITLE_ICON_X, TITLE_ICON_Y, size.x, size.y),
+                    &mut state.pictures,
+                    encyclopedia_picture,
+                    display.background,
+                    |_| picture,
                 );
             }
-            // hyp: measured, not traced. The text widget is built with font
-            // 4 (a 16-pixel cell), but the Wine captures' body line "An
-            // uprising has begun on the Imperial controlled system
-            // Bothawui." spans 385 logical pixels and its title 165, which
-            // Arial's metrics give at a 14-pixel cell (entry 10's) and not
-            // at 16 (422).
-            let font = crate::theme::game_font_on(ctx, 10, scale);
-            let title_rect = at(
-                TITLE_TEXT_X,
-                TITLE_STRIP_Y,
-                ARROW_UP_X - TITLE_TEXT_X,
-                TITLE_STRIP_HEIGHT,
-            );
-            painter.with_clip_rect(title_rect).text(
-                egui::pos2(title_rect.min.x, title_rect.center().y),
-                egui::Align2::LEFT_CENTER,
-                title,
-                font.clone(),
-                Color32::WHITE,
-            );
+            if display.overlay != 0 {
+                paint_message_picture(
+                    painter,
+                    ctx,
+                    cache,
+                    &mut state.pictures,
+                    encyclopedia_picture,
+                    display.overlay,
+                    |[width, height]| {
+                        let size = egui::vec2(width as f32, height as f32) * scale;
+                        egui::Rect::from_center_size(picture.center(), size)
+                    },
+                );
+            }
+        }
 
-            // The body, a TextScrollField (FUN_0041ecf0) at (17, 234), 395
-            // by 80, font 4. FUN_0041fd00 wraps the text to the field; when
-            // it overflows, it shows the bar (RCDATA 0x299d) at the field's
-            // right and wraps again, narrower by the bar's width. The bar
-            // steps a line (FUN_00420a90) and pages the field's height
-            // (FUN_00420a10).
-            let text_rect = at(TEXT_AREA_X, TEXT_AREA_Y, TEXT_AREA_WIDTH, TEXT_AREA_HEIGHT);
-            let bar = ScrollBar::new(
-                TEXT_BAR_299D,
-                TEXT_AREA_X,
-                TEXT_AREA_Y,
-                TEXT_AREA_WIDTH,
-                TEXT_AREA_HEIGHT,
-            );
-            // hyp: measured, not traced. The Wine capture of "Maintenance
-            // Points" sets its lines 16 pixels apart, font 4's cell, though
-            // the glyphs measure at entry 10's size (above).
-            let layout = |width: f32| {
-                let mut job = egui::text::LayoutJob::simple(
-                    body.to_owned(),
-                    font.clone(),
-                    Color32::WHITE,
-                    width - 4.0 * scale,
-                );
-                for section in &mut job.sections {
-                    section.format.line_height = Some(BODY_LINE_HEIGHT * scale);
-                }
-                painter.layout_job(job)
-            };
-            let mut galley = layout(text_rect.width());
-            let overflows = galley.size().y > text_rect.height();
-            if overflows {
-                galley = layout(text_rect.width() - bar.width() * scale);
-            }
-            let lines = galley.rows.len().max(1);
-            let line_height = BODY_LINE_HEIGHT;
-            if state.body_scroll.0 != Some(id) {
-                state.body_scroll = (Some(id), 0);
-                state.body_drag = ScrollDrag::default();
-            }
-            let range = ScrollRange {
-                first: state.body_scroll.1,
-                visible: TEXT_AREA_HEIGHT / line_height,
-                total: if overflows { lines } else { 0 },
-            };
-            let pointer = crate::scroll_bar::egui_pointer(ctx, window_rect, scale);
-            let first = bar.update(
-                &mut state.body_drag,
-                range,
-                range.visible.floor() as usize,
-                pointer,
-            );
-            state.body_scroll.1 = first;
-            painter.with_clip_rect(text_rect).galley(
-                text_rect.min
-                    + egui::vec2(
-                        2.0 * scale,
-                        2.0 * scale - first as f32 * line_height * scale,
-                    ),
-                galley,
-                Color32::WHITE,
-            );
-            crate::scroll_bar::paint_egui(
+        // FUN_004665f0: the title strip and the bottom text frame.
+        paint_strategy_resource(
+            painter,
+            ctx,
+            cache,
+            TITLE_STRIP,
+            at(
+                INDEX_CONTENT_X,
+                TITLE_STRIP_Y,
+                INDEX_CONTENT_WIDTH,
+                TITLE_STRIP_HEIGHT,
+            ),
+        );
+        paint_strategy_resource(
+            painter,
+            ctx,
+            cache,
+            TEXT_FRAME,
+            at(
+                INDEX_CONTENT_X,
+                TEXT_FRAME_Y,
+                INDEX_CONTENT_WIDTH,
+                TEXT_FRAME_HEIGHT,
+            ),
+        );
+
+        // hyp: the title bar carries the category icon and the title
+        // (Wine capture of "Drall Joins Enemy"); positions measured from
+        // that capture.
+        if let Some(rail) = msg.rail {
+            let icon = row_icon(rail, faction);
+            let size = icon_size(cache, icon);
+            paint_strategy_resource(
                 painter,
                 ctx,
                 cache,
-                window_rect,
-                scale,
-                &bar.blits(ScrollRange { first, ..range }, &state.body_drag, pointer),
+                icon,
+                at(TITLE_ICON_X, TITLE_ICON_Y, size.x, size.y),
             );
+        }
+        // hyp: measured, not traced. The text widget is built with font
+        // 4 (a 16-pixel cell), but the Wine captures' body line "An
+        // uprising has begun on the Imperial controlled system
+        // Bothawui." spans 385 logical pixels and its title 165, which
+        // Arial's metrics give at a 14-pixel cell (entry 10's) and not
+        // at 16 (422).
+        let font = crate::theme::game_font_on(ctx, 10, scale);
+        let title_rect = at(
+            TITLE_TEXT_X,
+            TITLE_STRIP_Y,
+            ARROW_UP_X - TITLE_TEXT_X,
+            TITLE_STRIP_HEIGHT,
+        );
+        painter.with_clip_rect(title_rect).text(
+            egui::pos2(title_rect.min.x, title_rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            title,
+            font.clone(),
+            Color32::WHITE,
+        );
 
-            // The arrows FUN_00468fb0 shows in mode 2.
-            let (pointer, primary_down) = ctx.input(|input| {
-                (
-                    input.pointer.interact_pos(),
-                    input.pointer.button_down(egui::PointerButton::Primary),
-                )
-            });
-            // FUN_0046a200: each arrow is enabled while the list holds a
-            // message that way; FUN_004665f0 gives each a disabled frame,
-            // 0x2ac6 (up) and 0x2aa9 (down).
-            let at_row = rows.iter().position(|row| row.id == id);
-            let has_previous = at_row.is_some_and(|at| at > 0);
-            let has_next = at_row.is_some_and(|at| at + 1 < rows.len());
-            for (command, x, normal, disabled, enabled) in [
-                (0x9a_u16, ARROW_UP_X, 0x2ac4_u32, 0x2ac6_u32, has_previous),
-                (0x96, ARROW_DOWN_X, 0x2aa7, 0x2aa9, has_next),
-            ] {
-                let rect = at(x, ARROW_Y, ARROW_WIDTH, ARROW_HEIGHT);
-                let response = ui.interact(
-                    rect,
-                    ui.id().with(("message-index-arrow", command)),
-                    egui::Sense::click(),
-                );
-                let pressed = enabled
-                    && primary_down
-                    && pointer.is_some_and(|point| message_index_rect_contains(rect, point));
-                let resource = if !enabled {
-                    disabled
-                } else if pressed {
-                    normal + 1
-                } else {
-                    normal
-                };
-                paint_strategy_resource(ui.painter(), ctx, cache, resource, rect);
-                if enabled && response.clicked() {
-                    clicked = Some(command);
-                }
+        // The body, a TextScrollField (FUN_0041ecf0) at (17, 234), 395
+        // by 80, font 4. FUN_0041fd00 wraps the text to the field; when
+        // it overflows, it shows the bar (RCDATA 0x299d) at the field's
+        // right and wraps again, narrower by the bar's width. The bar
+        // steps a line (FUN_00420a90) and pages the field's height
+        // (FUN_00420a10).
+        let text_rect = at(TEXT_AREA_X, TEXT_AREA_Y, TEXT_AREA_WIDTH, TEXT_AREA_HEIGHT);
+        let bar = ScrollBar::new(
+            TEXT_BAR_299D,
+            TEXT_AREA_X,
+            TEXT_AREA_Y,
+            TEXT_AREA_WIDTH,
+            TEXT_AREA_HEIGHT,
+        );
+        // hyp: measured, not traced. The Wine capture of "Maintenance
+        // Points" sets its lines 16 pixels apart, font 4's cell, though
+        // the glyphs measure at entry 10's size (above).
+        let layout = |width: f32| {
+            let mut job = egui::text::LayoutJob::simple(
+                body.to_owned(),
+                font.clone(),
+                Color32::WHITE,
+                width - 4.0 * scale,
+            );
+            for section in &mut job.sections {
+                section.format.line_height = Some(BODY_LINE_HEIGHT * scale);
             }
+            painter.layout_job(job)
+        };
+        let mut galley = layout(text_rect.width());
+        let overflows = galley.size().y > text_rect.height();
+        if overflows {
+            galley = layout(text_rect.width() - bar.width() * scale);
+        }
+        let lines = galley.rows.len().max(1);
+        let line_height = BODY_LINE_HEIGHT;
+        if state.body_scroll.0 != Some(id) {
+            state.body_scroll = (Some(id), 0);
+            state.body_drag = ScrollDrag::default();
+        }
+        let range = ScrollRange {
+            first: state.body_scroll.1,
+            visible: TEXT_AREA_HEIGHT / line_height,
+            total: if overflows { lines } else { 0 },
+        };
+        let pointer = crate::scroll_bar::egui_pointer(ctx, window_rect, scale);
+        let first = bar.update(
+            &mut state.body_drag,
+            range,
+            range.visible.floor() as usize,
+            pointer,
+        );
+        state.body_scroll.1 = first;
+        painter.with_clip_rect(text_rect).galley(
+            text_rect.min
+                + egui::vec2(
+                    2.0 * scale,
+                    2.0 * scale - first as f32 * line_height * scale,
+                ),
+            galley,
+            Color32::WHITE,
+        );
+        crate::scroll_bar::paint_egui(
+            painter,
+            ctx,
+            cache,
+            window_rect,
+            scale,
+            &bar.blits(ScrollRange { first, ..range }, &state.body_drag, pointer),
+        );
+
+        // The arrows FUN_00468fb0 shows in mode 2.
+        let (pointer, primary_down) = ctx.input(|input| {
+            (
+                input.pointer.interact_pos(),
+                input.pointer.button_down(egui::PointerButton::Primary),
+            )
         });
+        // FUN_0046a200: each arrow is enabled while the list holds a
+        // message that way; FUN_004665f0 gives each a disabled frame,
+        // 0x2ac6 (up) and 0x2aa9 (down).
+        let at_row = rows.iter().position(|row| row.id == id);
+        let has_previous = at_row.is_some_and(|at| at > 0);
+        let has_next = at_row.is_some_and(|at| at + 1 < rows.len());
+        for (command, x, normal, disabled, enabled) in [
+            (0x9a_u16, ARROW_UP_X, 0x2ac4_u32, 0x2ac6_u32, has_previous),
+            (0x96, ARROW_DOWN_X, 0x2aa7, 0x2aa9, has_next),
+        ] {
+            let rect = at(x, ARROW_Y, ARROW_WIDTH, ARROW_HEIGHT);
+            let response = ui.interact(
+                rect,
+                ui.id().with(("message-index-arrow", command)),
+                egui::Sense::click(),
+            );
+            let pressed = enabled
+                && primary_down
+                && pointer.is_some_and(|point| message_index_rect_contains(rect, point));
+            let resource = if !enabled {
+                disabled
+            } else if pressed {
+                normal + 1
+            } else {
+                normal
+            };
+            paint_strategy_resource(ui.painter(), ctx, cache, resource, rect);
+            if enabled && response.clicked() {
+                clicked = Some(command);
+            }
+        }
+    });
     clicked
 }
 
@@ -2175,7 +2173,7 @@ mod tests {
 
     #[test]
     fn message_index_windowing_blocks_underlay() {
-        let (_manager, state, id, frame) = managed_index();
+        let (mut manager, state, id, frame) = managed_index();
         let inside = window_rect(managed_layout()).center();
         let hits = state
             .hit_window(&frame, managed_layout(), (inside.x, inside.y))
@@ -3060,11 +3058,7 @@ mod tests {
         actions: Vec<MessageIndexAction>,
     }
 
-    fn assert_message_displayed(
-        result: &DriveResult,
-        state: &MessageIndexState,
-        id: MessageId,
-    ) {
+    fn assert_message_displayed(result: &DriveResult, state: &MessageIndexState, id: MessageId) {
         assert_eq!(state.mode, IndexMode::SingleMessage);
         assert_eq!(state.viewing, Some(id));
         assert!(result

@@ -2926,10 +2926,7 @@ mod tests {
         FacilityItem::Production(key)
     }
 
-    fn capital_ship_build(
-        name: &str,
-        count: u32,
-    ) -> (GameWorld, SystemKey, ManufacturingState) {
+    fn capital_ship_build(name: &str, count: u32) -> (GameWorld, SystemKey, ManufacturingState) {
         let (mut world, systems) = fixture_world(1);
         let system = systems[0];
         let class = world.capital_ship_classes.insert(CapitalShipClass {
@@ -3306,7 +3303,7 @@ mod tests {
             }
         }
 
-        fn open(&mut self, world: &GameWorld, system: SystemKey, position: (i32, i32)) -> WindowId {
+        fn open(&mut self, world: &GameWorld, system: SystemKey, position: (i16, i16)) -> WindowId {
             let prepared = self
                 .state
                 .prepare_open(world, system, position, self.faction, self.layout)
@@ -3317,11 +3314,9 @@ mod tests {
         fn open_active_rename(&mut self, world: &GameWorld, system: SystemKey) -> WindowId {
             let id = self.open(world, system, ORIGIN);
             self.manager.apply(WindowCommand::Activate(id)).unwrap();
-            assert!(self.state.begin_band_rename(
-                system,
-                ProductionArea::Shipyard,
-                "Death Star 1",
-            ));
+            assert!(self
+                .state
+                .begin_band_rename(system, ProductionArea::Shipyard, "Death Star 1",));
             id
         }
 
@@ -3712,14 +3707,14 @@ mod tests {
                 |ctx| {
                     assert!(rail
                         .draw(
-                        ctx,
-                        &world,
-                        CockpitFaction::Alliance,
-                        layout,
-                        &snapshot,
-                        &[],
-                    )
-                    .is_empty());
+                            ctx,
+                            &world,
+                            CockpitFaction::Alliance,
+                            layout,
+                            &snapshot,
+                            &[],
+                        )
+                        .is_empty());
                 },
             );
         }
@@ -3737,11 +3732,9 @@ mod tests {
             ),
             InputRecipient::Root
         );
-        let _ = ctx.run(
-            frame_input(vec![pointer_button(rail_point, true)]),
-            |ctx| {
-                assert!(rail
-                    .draw(
+        let _ = ctx.run(frame_input(vec![pointer_button(rail_point, true)]), |ctx| {
+            assert!(rail
+                .draw(
                     ctx,
                     &world,
                     CockpitFaction::Alliance,
@@ -3754,8 +3747,7 @@ mod tests {
                     }],
                 )
                 .is_empty());
-            },
-        );
+        });
 
         let causal_release = InputEventId {
             frame: 4,
@@ -4062,13 +4054,7 @@ mod tests {
         faction: CockpitFaction,
     ) -> SystemWindowState {
         let mut state = SystemWindowState::default();
-        assert!(state.open(
-            world,
-            system,
-            ORIGIN,
-            faction,
-            layout(faction, 2.0)
-        ));
+        assert!(state.open(world, system, ORIGIN, faction, layout(faction, 2.0)));
         state
     }
 
@@ -4405,8 +4391,8 @@ mod tests {
         let actions = fixture.draw_frames(
             &world,
             after_opening(vec![
-            vec![egui::Event::Text("Tarkin".into())],
-            vec![key(egui::Key::Escape)],
+                vec![egui::Event::Text("Tarkin".into())],
+                vec![key(egui::Key::Escape)],
             ]),
         );
 
@@ -4632,10 +4618,10 @@ mod tests {
                 &snapshot,
                 input,
                 &[SystemWindowInputEvent {
-                        id: press,
-                        point: (point.x, point.y),
-                        phase,
-                    }],
+                    id: press,
+                    point: (point.x, point.y),
+                    phase,
+                }],
             ));
 
             assert_eq!(

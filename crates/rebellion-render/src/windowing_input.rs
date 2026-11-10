@@ -531,10 +531,7 @@ mod tests {
         phase: PointerPhase,
         expected: InputRecipient,
     ) {
-        assert_eq!(
-            router.collect_pointer(id, &hit_windows, phase),
-            expected
-        );
+        assert_eq!(router.collect_pointer(id, &hit_windows, phase), expected);
     }
 
     fn assert_primary_release_blocked(router: &mut FrameInputRouter) {

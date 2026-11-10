@@ -463,8 +463,7 @@ fn finish_work(
     draws: &mut impl Draws,
     events: &mut Vec<StockpileEvent>,
 ) {
-    let due =
-        |cycle: &FacilityCycle| cycle.stage == CycleStage::Working && cycle.ready_tick <= day;
+    let due = |cycle: &FacilityCycle| cycle.stage == CycleStage::Working && cycle.ready_tick <= day;
     let finished: Vec<ProductionFacilityKey> = world
         .production_facilities
         .keys()
@@ -512,7 +511,7 @@ fn finish_work(
         }
         let yard = &world.manufacturing_facilities[key];
         if let Some(area) = yard_area(yard.class_dat_id.family()) {
-        manufacturing.add_progress(system, area);
+            manufacturing.add_progress(system, area);
         }
         if let Some(cycle) = state.yards.get_mut(&key) {
             cycle.stage = CycleStage::Waiting;
@@ -1249,15 +1248,7 @@ mod tests {
             let stage = |run: &Run, key| run.state.production_cycle(key).unwrap().stage;
             assert_eq!(stage(&run, first), CycleStage::Working, "{side:?}");
             let second = production(&mut world, system, false);
-            assert_fifo_cycle(
-                &mut run,
-                &world,
-                side,
-                first,
-                second,
-                Supply::Raw,
-                stage,
-            );
+            assert_fifo_cycle(&mut run, &world, side, first, second, Supply::Raw, stage);
         }
     }
 

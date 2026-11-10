@@ -272,23 +272,12 @@ mod tests {
             .push(ShipInstance::new(class, 100, is_alliance));
     }
 
-    fn assert_entry_rejected(
-        world: &GameWorld,
-        entry: BattleEntry,
-        expected: BattleEntryError,
-    ) {
+    fn assert_entry_rejected(world: &GameWorld, entry: BattleEntry, expected: BattleEntryError) {
         let mut tactical = TacticalState::default();
         let mut messages = MessageLog::default();
         let mut mode = GameMode::Galaxy;
         assert_eq!(
-            begin_player_battle(
-                world,
-                None,
-                entry,
-                &mut tactical,
-                &mut messages,
-                &mut mode,
-            ),
+            begin_player_battle(world, None, entry, &mut tactical, &mut messages, &mut mode,),
             Err(expected)
         );
         assert_eq!(mode, GameMode::Galaxy);

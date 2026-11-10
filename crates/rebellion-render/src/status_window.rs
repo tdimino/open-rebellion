@@ -1113,7 +1113,7 @@ mod tests {
             world,
             empty,
             mut manager,
-            mut state,
+            state,
             id,
             ..
         } = opened_luke(42);
@@ -1357,9 +1357,7 @@ mod tests {
 
     #[test]
     fn status_window_outside_press_and_f_keys_do_not_reach_cockpit() {
-        let OpenedCharacter {
-            manager, id, ..
-        } = opened_luke(46);
+        let OpenedCharacter { manager, id, .. } = opened_luke(46);
         let frame = manager.begin_frame();
         let mut router = FrameInputRouter::default();
         router.begin_frame(8, &frame);
@@ -1589,7 +1587,7 @@ mod tests {
             character: luke,
             empty,
             mut manager,
-            state,
+            mut state,
             id,
         } = opened_luke(49);
         world.characters.remove(luke);

@@ -1156,13 +1156,7 @@ pub fn draw_managed_sector_windows(
     pointer_events: &[SectorWindowInputEvent],
     router: &mut FrameInputRouter,
 ) -> Vec<SectorWindowAction> {
-    draw_managed_sector_windows_shown(
-        draw,
-        snapshot,
-        pointer_events,
-        router,
-        &|_| true,
-    )
+    draw_managed_sector_windows_shown(draw, snapshot, pointer_events, router, &|_| true)
 }
 
 /// [`draw_managed_sector_windows`] with command-center GID visibility.
@@ -1173,13 +1167,7 @@ pub fn draw_managed_sector_windows_shown(
     router: &mut FrameInputRouter,
     shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<SectorWindowAction> {
-    draw_sector_windows_with_snapshot(
-        draw,
-        Some(snapshot),
-        pointer_events,
-        Some(router),
-        shown,
-    )
+    draw_sector_windows_with_snapshot(draw, Some(snapshot), pointer_events, Some(router), shown)
 }
 
 fn claim_sector_pointer_event(
@@ -2927,17 +2915,6 @@ mod tests {
         }
     }
 
-    fn pointer_input(
-        pos: egui::Pos2,
-        button: egui::PointerButton,
-        pressed: bool,
-    ) -> Vec<egui::Event> {
-        vec![
-            egui::Event::PointerMoved(pos),
-            pointer_button_event(pos, button, pressed),
-        ]
-    }
-
     fn pointer_click_input(pos: egui::Pos2, button: egui::PointerButton) -> Vec<egui::Event> {
         vec![
             egui::Event::PointerMoved(pos),
@@ -2959,19 +2936,6 @@ mod tests {
         ]
     }
 
-    fn collect_test_pointer(
-        router: &mut FrameInputRouter,
-        frame: u64,
-        ordinal: u32,
-        hits: &std::collections::BTreeSet<WindowId>,
-        window: WindowId,
-        phase: PointerPhase,
-    ) -> InputEventId {
-        let id = input_event(frame, ordinal);
-        assert_test_pointer(router, id, hits, window, phase);
-        id
-    }
-
     fn assert_test_pointer(
         router: &mut FrameInputRouter,
         id: InputEventId,
@@ -2983,6 +2947,17 @@ mod tests {
             router.collect_pointer(id, hits, phase),
             InputRecipient::Window(window)
         );
+    }
+
+    fn assert_test_pointers(
+        router: &mut FrameInputRouter,
+        hits: &std::collections::BTreeSet<WindowId>,
+        window: WindowId,
+        events: &[(InputEventId, PointerPhase)],
+    ) {
+        for &(id, phase) in events {
+            assert_test_pointer(router, id, hits, window, phase);
+        }
     }
 
     fn collect_test_click(
@@ -3044,11 +3019,7 @@ mod tests {
     ) -> [(u32, egui::Pos2, PointerPhase); 2] {
         [
             (0, press, PointerPhase::Press(PointerButtonId::Primary)),
-            (
-                1,
-                release,
-                PointerPhase::Release(PointerButtonId::Primary),
-            ),
+            (1, release, PointerPhase::Release(PointerButtonId::Primary)),
         ]
     }
 
@@ -3062,17 +3033,9 @@ mod tests {
                 first_press,
                 PointerPhase::Press(PointerButtonId::Primary),
             ),
-            (
-                1,
-                control,
-                PointerPhase::Release(PointerButtonId::Primary),
-            ),
+            (1, control, PointerPhase::Release(PointerButtonId::Primary)),
             (2, control, PointerPhase::Press(PointerButtonId::Primary)),
-            (
-                3,
-                control,
-                PointerPhase::Release(PointerButtonId::Primary),
-            ),
+            (3, control, PointerPhase::Release(PointerButtonId::Primary)),
         ]
     }
 
@@ -3165,7 +3128,8 @@ mod tests {
 
     macro_rules! route_test {
         ($event:expr => $managed:ident, $world:expr, $fog:expr, $missions:expr, $movement:expr, $state:ident, $layout:expr, $router:ident, $actions:ident, $last:expr, $confirmed:expr) => {
-            route_test_event!($event, $managed, $world, $fog, $missions, $movement, $state, $layout, $router,
+            route_test_event!(
+                $event, $managed, $world, $fog, $missions, $movement, $state, $layout, $router,
                 $actions, $last, $confirmed
             )
         };
@@ -3201,17 +3165,14 @@ mod tests {
         egui_events: Vec<egui::Event>,
     ) -> Vec<SectorWindowAction> {
         let mut actions = Vec::new();
-        let _ = ctx.run(
-            test_raw_input(egui_events),
-            |ctx| {
-                actions = draw_managed_sector_windows(
-                    test_sector_draw!(ctx, world, fog, state, cache),
-                    snapshot,
-                    pointer_events,
-                    router,
-                );
-            },
-        );
+        let _ = ctx.run(test_raw_input(egui_events), |ctx| {
+            actions = draw_managed_sector_windows(
+                test_sector_draw!(ctx, world, fog, state, cache),
+                snapshot,
+                pointer_events,
+                router,
+            );
+        });
         actions
     }
 
@@ -3311,12 +3272,7 @@ mod tests {
         }
     }
 
-    fn managed_paint_tools() -> (
-        egui::Context,
-        FogState,
-        BmpCache,
-        FrameInputRouter,
-    ) {
+    fn managed_paint_tools() -> (egui::Context, FogState, BmpCache, FrameInputRouter) {
         (
             egui::Context::default(),
             FogState::new(Faction::Alliance),
@@ -3334,30 +3290,35 @@ mod tests {
         for (frame, events) in [
             vec![egui::Event::PointerMoved(point)],
             vec![egui::Event::PointerMoved(point)],
-            vec![pointer_button_event(point, egui::PointerButton::Secondary, true)],
-            vec![pointer_button_event(point, egui::PointerButton::Secondary, false)],
+            vec![pointer_button_event(
+                point,
+                egui::PointerButton::Secondary,
+                true,
+            )],
+            vec![pointer_button_event(
+                point,
+                egui::PointerButton::Secondary,
+                false,
+            )],
         ]
         .into_iter()
         .enumerate()
         {
-            let _ = ctx.run(
-                timed_test_raw_input(frame, events),
-                |ctx| {
-                    egui::Area::new(egui::Id::new("secondary_exact_click_witness"))
-                        .fixed_pos(rect.min)
-                        .show(ctx, |ui| {
-                            let response =
-                                ui.interact(rect, ui.id().with("control"), egui::Sense::click());
-                            if frame == 3 {
-                                observed = Some((
-                                    response.clicked(),
-                                    response.interact_pointer_pos(),
-                                    exact_clicked(&response, rect),
-                                ));
-                            }
-                        });
-                },
-            );
+            let _ = ctx.run(timed_test_raw_input(frame, events), |ctx| {
+                egui::Area::new(egui::Id::new("secondary_exact_click_witness"))
+                    .fixed_pos(rect.min)
+                    .show(ctx, |ui| {
+                        let response =
+                            ui.interact(rect, ui.id().with("control"), egui::Sense::click());
+                        if frame == 3 {
+                            observed = Some((
+                                response.clicked(),
+                                response.interact_pointer_pos(),
+                                exact_clicked(&response, rect),
+                            ));
+                        }
+                    });
+            });
         }
         assert_eq!(observed, Some((false, Some(point), false)));
     }
@@ -3367,7 +3328,7 @@ mod tests {
         let (mut world, first, second) = fixture_world();
         add_fleet(&mut world, first);
         add_fleet(&mut world, second);
-        let (mut manager, mut state, first_id, second_id) =
+        let (manager, mut state, first_id, second_id) =
             managed_sector_pair_fixture(&world, first, second);
         let (fog, missions, movement) = route_resources(&[first, second]);
         for (id, system) in [(first_id, first), (second_id, second)] {
@@ -3428,7 +3389,7 @@ mod tests {
     #[test]
     fn managed_sector_focus_raises_the_manager_owned_layer_over_an_overlap() {
         let (world, first, _) = fixture_world();
-        let (mut manager, mut state, id, snapshot) = managed_sector_fixture(&world, first);
+        let (_manager, mut state, id, snapshot) = managed_sector_fixture(&world, first);
         assert_eq!(snapshot.focused(), None);
         let open = state
             .windows
@@ -3443,40 +3404,34 @@ mod tests {
         let sentinel_layer = egui::LayerId::new(egui::Order::Middle, sentinel);
         let (ctx, fog, mut cache, mut router) = managed_paint_tools();
         router.begin_frame(92, &snapshot);
-        let _ = ctx.run(
-            test_raw_input(Vec::new()),
-            |ctx| {
-                draw_managed_sector_windows(
-                    test_sector_draw!(ctx, &world, &fog, &mut state, &mut cache),
-                    &snapshot,
-                    &[],
-                    &mut router,
-                );
-                show_test_area(ctx, sentinel, rect);
-            },
-        );
+        let _ = ctx.run(test_raw_input(Vec::new()), |ctx| {
+            draw_managed_sector_windows(
+                test_sector_draw!(ctx, &world, &fog, &mut state, &mut cache),
+                &snapshot,
+                &[],
+                &mut router,
+            );
+            show_test_area(ctx, sentinel, rect);
+        });
         assert_eq!(ctx.layer_id_at(point), Some(sentinel_layer));
         router.begin_frame(93, &snapshot);
         let mut actions = Vec::new();
         let mut order_projector = crate::windowing::ManagedOrderProjector::default();
-        let _ = ctx.run(
-            test_raw_input(Vec::new()),
-            |ctx| {
-                show_test_area(ctx, sentinel, rect);
-                actions = draw_managed_sector_windows(
-                    test_sector_draw!(ctx, &world, &fog, &mut state, &mut cache),
-                    &snapshot,
-                    &[],
-                    &mut router,
-                );
-                crate::windowing::realize_managed_order(
-                    ctx,
-                    &snapshot,
-                    &mut order_projector,
-                    |window| state.managed_layer_id(window).map(|layer| vec![layer]),
-                );
-            },
-        );
+        let _ = ctx.run(test_raw_input(Vec::new()), |ctx| {
+            show_test_area(ctx, sentinel, rect);
+            actions = draw_managed_sector_windows(
+                test_sector_draw!(ctx, &world, &fog, &mut state, &mut cache),
+                &snapshot,
+                &[],
+                &mut router,
+            );
+            crate::windowing::realize_managed_order(
+                ctx,
+                &snapshot,
+                &mut order_projector,
+                |window| state.managed_layer_id(window).map(|layer| vec![layer]),
+            );
+        });
         assert!(actions.is_empty());
         assert_eq!(ctx.layer_id_at(point), Some(sector_layer));
     }
@@ -3492,13 +3447,27 @@ mod tests {
             let mut cache = BmpCache::new();
             let fog = FogState::new(Faction::Alliance);
             warm_managed_frames(
-                (&ctx, &world, &fog, &mut state, &mut cache, &snapshot, &mut router),
+                (
+                    &ctx,
+                    &world,
+                    &fog,
+                    &mut state,
+                    &mut cache,
+                    &snapshot,
+                    &mut router,
+                ),
                 [92, 93],
                 close,
             );
             router.begin_frame(94, &snapshot);
             let press = input_event(94, 0);
-            assert_test_pointer(&mut router, press, &hits, window, PointerPhase::Press(PointerButtonId::Primary));
+            assert_test_pointer(
+                &mut router,
+                press,
+                &hits,
+                window,
+                PointerPhase::Press(PointerButtonId::Primary),
+            );
             let press_point = if press_on_close { close } else { rect.center() };
             let press_events = vec![
                 egui::Event::PointerMoved(press_point),
@@ -3522,7 +3491,13 @@ mod tests {
 
             router.begin_frame(95, &snapshot);
             let release = input_event(95, 0);
-            assert_test_pointer(&mut router, release, &hits, window, PointerPhase::Release(PointerButtonId::Primary));
+            assert_test_pointer(
+                &mut router,
+                release,
+                &hits,
+                window,
+                PointerPhase::Release(PointerButtonId::Primary),
+            );
             let mut raw_releases = vec![primary_release_event(release, close)];
             let mut egui_releases = vec![
                 egui::Event::PointerMoved(close),
@@ -3532,8 +3507,15 @@ mod tests {
                 let blank = rect.center();
                 let later_press = input_event(95, 1);
                 let later = input_event(95, 2);
-                assert_test_pointer(&mut router, later_press, &hits, window, PointerPhase::Press(PointerButtonId::Primary));
-                assert_test_pointer(&mut router, later, &hits, window, PointerPhase::Release(PointerButtonId::Primary));
+                assert_test_pointers(
+                    &mut router,
+                    &hits,
+                    window,
+                    &[
+                        (later_press, PointerPhase::Press(PointerButtonId::Primary)),
+                        (later, PointerPhase::Release(PointerButtonId::Primary)),
+                    ],
+                );
                 raw_releases.push(primary_press_event(later_press, blank));
                 raw_releases.push(primary_release_event(later, blank));
                 egui_releases.extend([
@@ -3549,7 +3531,13 @@ mod tests {
                 1
             };
             let next_press = input_event(95, next_ordinal);
-            assert_test_pointer(&mut router, next_press, &hits, window, PointerPhase::Press(PointerButtonId::Primary));
+            assert_test_pointer(
+                &mut router,
+                next_press,
+                &hits,
+                window,
+                PointerPhase::Press(PointerButtonId::Primary),
+            );
             raw_releases.push(primary_press_event(next_press, close));
             egui_releases.extend([
                 egui::Event::PointerMoved(close),
@@ -3588,13 +3576,27 @@ mod tests {
         let mut router = FrameInputRouter::default();
         let hits = std::collections::BTreeSet::from([window]);
         warm_managed_frames(
-            (&ctx, &world, &fog, &mut state, &mut cache, &snapshot, &mut router),
+            (
+                &ctx,
+                &world,
+                &fog,
+                &mut state,
+                &mut cache,
+                &snapshot,
+                &mut router,
+            ),
             [97, 98],
             switch,
         );
         router.begin_frame(99, &snapshot);
         let press = input_event(99, 0);
-        assert_test_pointer(&mut router, press, &hits, window, PointerPhase::Press(PointerButtonId::Primary));
+        assert_test_pointer(
+            &mut router,
+            press,
+            &hits,
+            window,
+            PointerPhase::Press(PointerButtonId::Primary),
+        );
         paint_managed_frame_for_test(
             &ctx,
             &world,
@@ -3614,10 +3616,17 @@ mod tests {
         let later_press = input_event(100, 1);
         let later = input_event(100, 2);
         let next_press = input_event(100, 3);
-        assert_test_pointer(&mut router, release, &hits, window, PointerPhase::Release(PointerButtonId::Primary));
-        assert_test_pointer(&mut router, later_press, &hits, window, PointerPhase::Press(PointerButtonId::Primary));
-        assert_test_pointer(&mut router, later, &hits, window, PointerPhase::Release(PointerButtonId::Primary));
-        assert_test_pointer(&mut router, next_press, &hits, window, PointerPhase::Press(PointerButtonId::Primary));
+        assert_test_pointers(
+            &mut router,
+            &hits,
+            window,
+            &[
+                (release, PointerPhase::Release(PointerButtonId::Primary)),
+                (later_press, PointerPhase::Press(PointerButtonId::Primary)),
+                (later, PointerPhase::Release(PointerButtonId::Primary)),
+                (next_press, PointerPhase::Press(PointerButtonId::Primary)),
+            ],
+        );
         let actions = paint_managed_frame_for_test(
             &ctx,
             &world,
@@ -3655,8 +3664,20 @@ mod tests {
         let hits = std::collections::BTreeSet::from([second_id]);
         let press = input_event(96, 0);
         let release = input_event(96, 1);
-        assert_test_pointer(&mut router, press, &hits, second_id, PointerPhase::Press(PointerButtonId::Primary));
-        assert_test_pointer(&mut router, release, &hits, second_id, PointerPhase::Release(PointerButtonId::Primary));
+        assert_test_pointer(
+            &mut router,
+            press,
+            &hits,
+            second_id,
+            PointerPhase::Press(PointerButtonId::Primary),
+        );
+        assert_test_pointer(
+            &mut router,
+            release,
+            &hits,
+            second_id,
+            PointerPhase::Release(PointerButtonId::Primary),
+        );
         let actions = paint_managed_frame_for_test(
             &egui::Context::default(),
             &world,
@@ -3698,7 +3719,13 @@ mod tests {
         let second_hits = std::collections::BTreeSet::from([second_id]);
         router.begin_frame(103, &snapshot);
         let press = input_event(103, 0);
-        assert_test_pointer(&mut router, press, &first_hits, first_id, PointerPhase::Press(PointerButtonId::Primary));
+        assert_test_pointer(
+            &mut router,
+            press,
+            &first_hits,
+            first_id,
+            PointerPhase::Press(PointerButtonId::Primary),
+        );
         paint_managed_frame_for_test(
             &ctx,
             &world,
@@ -3717,11 +3744,29 @@ mod tests {
         let release = input_event(104, 0);
         let foreign_press = input_event(104, 1);
         let foreign_release = input_event(104, 2);
-        assert_test_pointer(&mut router, release, &first_hits, first_id, PointerPhase::Release(PointerButtonId::Primary));
+        assert_test_pointer(
+            &mut router,
+            release,
+            &first_hits,
+            first_id,
+            PointerPhase::Release(PointerButtonId::Primary),
+        );
         // A drag begun over B retains B as its router recipient when it ends
         // over A's Close control. A's aggregate click belongs to A alone.
-        assert_test_pointer(&mut router, foreign_press, &second_hits, second_id, PointerPhase::Press(PointerButtonId::Primary));
-        assert_test_pointer(&mut router, foreign_release, &second_hits, second_id, PointerPhase::Release(PointerButtonId::Primary));
+        assert_test_pointer(
+            &mut router,
+            foreign_press,
+            &second_hits,
+            second_id,
+            PointerPhase::Press(PointerButtonId::Primary),
+        );
+        assert_test_pointer(
+            &mut router,
+            foreign_release,
+            &second_hits,
+            second_id,
+            PointerPhase::Release(PointerButtonId::Primary),
+        );
         let actions = paint_managed_frame_for_test(
             &ctx,
             &world,
@@ -3957,12 +4002,7 @@ mod tests {
     fn managed_sector_fixture(
         world: &GameWorld,
         system: SystemKey,
-    ) -> (
-        WindowManager,
-        SectorWindowState,
-        WindowId,
-        RoutingSnapshot,
-    ) {
+    ) -> (WindowManager, SectorWindowState, WindowId, RoutingSnapshot) {
         let mut manager = WindowManager::new();
         let mut state = SectorWindowState::default();
         let (window, _) = commit_sector_open(&mut manager, &mut state, world, system);
@@ -3979,8 +4019,7 @@ mod tests {
     ) {
         let (world, first, _) = fixture_world();
         let (_, state, window, snapshot) = managed_sector_fixture(&world, first);
-        let rect =
-            window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout(1.0));
+        let rect = window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout(1.0));
         (world, state, window, snapshot, rect)
     }
 
@@ -4035,12 +4074,7 @@ mod tests {
         world: &GameWorld,
         first: SystemKey,
         second: SystemKey,
-    ) -> (
-        WindowManager,
-        SectorWindowState,
-        WindowId,
-        WindowId,
-    ) {
+    ) -> (WindowManager, SectorWindowState, WindowId, WindowId) {
         let mut manager = WindowManager::new();
         let mut state = SectorWindowState::default();
         let (first_id, _) = commit_sector_open(&mut manager, &mut state, world, first);
@@ -4136,7 +4170,7 @@ mod tests {
     fn prepared_open_fixture() -> (WindowManager, SectorWindowState, PreparedSectorWindow) {
         let (world, first, _) = fixture_world();
         let manager = WindowManager::new();
-        let mut state = SectorWindowState::default();
+        let state = SectorWindowState::default();
         let prepared = state
             .prepare_open(&world, first, CockpitFaction::Alliance)
             .unwrap();
@@ -4186,8 +4220,7 @@ mod tests {
     ) {
         let (mut world, left, right) = fixture_world();
         let replacement = add_sector(&mut world, 100);
-        let (manager, mut state, left_id, right_id) =
-            managed_sector_pair_fixture(&world, left, right);
+        let (manager, state, left_id, right_id) = managed_sector_pair_fixture(&world, left, right);
         let prepared = state
             .prepare_open(&world, replacement, CockpitFaction::Alliance)
             .unwrap();
@@ -4414,7 +4447,12 @@ mod tests {
             },
         ] {
             state.windows[0] = altered;
-            assert_commit_rejected_without_mutation(&mut state, prepared, &receipt.transition, &snapshot);
+            assert_commit_rejected_without_mutation(
+                &mut state,
+                prepared,
+                &receipt.transition,
+                &snapshot,
+            );
         }
     }
 
@@ -4487,7 +4525,12 @@ mod tests {
         ] {
             state.windows = original.clone();
             state.windows[old_index] = altered;
-            assert_commit_rejected_without_mutation(&mut state, prepared, &receipt.transition, &snapshot);
+            assert_commit_rejected_without_mutation(
+                &mut state,
+                prepared,
+                &receipt.transition,
+                &snapshot,
+            );
         }
         for altered in [
             OpenSectorWindow {
@@ -4505,7 +4548,12 @@ mod tests {
         ] {
             state.windows = original.clone();
             state.windows[other_index] = altered;
-            assert_commit_rejected_without_mutation(&mut state, prepared, &receipt.transition, &snapshot);
+            assert_commit_rejected_without_mutation(
+                &mut state,
+                prepared,
+                &receipt.transition,
+                &snapshot,
+            );
         }
     }
 
@@ -4658,7 +4706,7 @@ mod tests {
         let colliding = add_sector(&mut world, 100);
         let right_subject = world.sectors[world.systems[right].sector].dat_id;
         world.sectors[world.systems[colliding].sector].dat_id = right_subject;
-        let (mut manager, mut state, left_id, right_id) =
+        let (mut manager, state, left_id, right_id) =
             managed_sector_pair_fixture(&world, left, right);
         let before_content = state.windows.clone();
         let before_order = manager.begin_frame().paint_order().to_vec();
@@ -4682,8 +4730,7 @@ mod tests {
     #[test]
     fn sector_window_duplicate_noop_differs_from_click_activation() {
         let (world, first, second) = fixture_world();
-        let (mut manager, mut state, first_id, _) =
-            managed_sector_pair_fixture(&world, first, second);
+        let (mut manager, state, first_id, _) = managed_sector_pair_fixture(&world, first, second);
         let (before_order, before_focus) = order_and_focus(&manager);
 
         let duplicate = state
@@ -4717,7 +4764,7 @@ mod tests {
     #[test]
     fn sector_window_hit_blocks_only_covered_map_region_without_modal() {
         let (world, first, _) = fixture_world();
-        let (mut manager, mut state, id, snapshot) = managed_sector_fixture(&world, first);
+        let (_manager, state, id, snapshot) = managed_sector_fixture(&world, first);
         assert_eq!(snapshot.active_modal(), None);
         let own_window = *state
             .windows
@@ -4964,7 +5011,7 @@ mod tests {
     #[test]
     fn sector_window_content_report_rejects_changed_live_dat_subject() {
         let (mut world, first, _) = fixture_world();
-        let (mut manager, mut state, id, snapshot) = managed_sector_fixture(&world, first);
+        let (_manager, state, id, snapshot) = managed_sector_fixture(&world, first);
         assert_eq!(
             state.content_reports(&snapshot, &world),
             [ContentReport {
@@ -4986,8 +5033,7 @@ mod tests {
     #[test]
     fn managed_sector_draw_closes_a_stale_dat_subject_without_painting_it() {
         let (mut world, first, _) = fixture_world();
-        let (mut manager, mut state, window, snapshot) =
-            managed_sector_fixture(&world, first);
+        let (_manager, mut state, window, snapshot) = managed_sector_fixture(&world, first);
         let mut cache = BmpCache::new();
         let fog = FogState::new(Faction::Alliance);
         let missions = rebellion_core::missions::MissionState::new();
@@ -4998,28 +5044,25 @@ mod tests {
         let mut draw = |state: &mut SectorWindowState, world: &GameWorld| {
             let ctx = egui::Context::default();
             let mut actions = Vec::new();
-            let _ = ctx.run(
-            test_raw_input(Vec::new()),
-                |ctx| {
-                    actions = draw_managed_sector_windows(
-                        SectorWindowDraw {
-                            ctx,
-                            world,
-                            movement: &movement,
-                            fog: &fog,
-                            state,
-                            faction: CockpitFaction::Alliance,
-                            layout: layout(1.0),
-                            cache: &mut cache,
-                            missions: &missions,
-                            uprisings: &uprisings,
-                        },
-                        &snapshot,
-                        &[],
-                        &mut router,
-                    );
-                },
-            );
+            let _ = ctx.run(test_raw_input(Vec::new()), |ctx| {
+                actions = draw_managed_sector_windows(
+                    SectorWindowDraw {
+                        ctx,
+                        world,
+                        movement: &movement,
+                        fog: &fog,
+                        state,
+                        faction: CockpitFaction::Alliance,
+                        layout: layout(1.0),
+                        cache: &mut cache,
+                        missions: &missions,
+                        uprisings: &uprisings,
+                    },
+                    &snapshot,
+                    &[],
+                    &mut router,
+                );
+            });
             actions
         };
         assert!(!draw(&mut state, &world).contains(&SectorWindowAction::Close(window)));
@@ -5163,8 +5206,7 @@ mod tests {
     #[test]
     fn managed_sector_close_requires_exact_routed_release_and_emits_once() {
         let (world, first, _) = fixture_world();
-        let (mut manager, mut state, window, snapshot) =
-            managed_sector_fixture(&world, first);
+        let (_manager, mut state, window, snapshot) = managed_sector_fixture(&world, first);
         let layout = layout(1.0);
         let window_rect =
             window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout);
@@ -5212,7 +5254,7 @@ mod tests {
     #[test]
     fn managed_sector_switch_requires_its_control_and_routed_release() {
         let (world, first, _) = fixture_world();
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, first);
+        let (manager, mut state, window, _) = managed_sector_fixture(&world, first);
         let layout = layout(1.0);
         let window_rect =
             window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout);
@@ -5230,7 +5272,8 @@ mod tests {
             (4, switch_point, true),
         ] {
             managed.result.switch_side = switch_enabled;
-            let release = collect_test_click(&mut router, 54, ordinal, &hits, PointerButtonId::Primary);
+            let release =
+                collect_test_click(&mut router, 54, ordinal, &hits, PointerButtonId::Primary);
             route_test!(primary_release_event(release, point) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
             if ordinal < 4 {
                 assert!(actions.is_empty());
@@ -5245,7 +5288,7 @@ mod tests {
     #[test]
     fn managed_sector_plain_focus_and_menu_require_their_exact_release() {
         let (world, first, _) = fixture_world();
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, first);
+        let (manager, mut state, window, _) = managed_sector_fixture(&world, first);
         let layout = layout(1.0);
         let inside =
             window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout).center();
@@ -5261,11 +5304,7 @@ mod tests {
             (2, PointerButtonId::Secondary, outside),
             (4, PointerButtonId::Secondary, inside),
         ] {
-            router.collect_pointer(
-                input_event(55, ordinal),
-                &hits,
-                PointerPhase::Press(button),
-            );
+            router.collect_pointer(input_event(55, ordinal), &hits, PointerPhase::Press(button));
             let release = input_event(55, ordinal + 1);
             assert_eq!(
                 router.collect_pointer(
@@ -5306,7 +5345,7 @@ mod tests {
             (52, 0.0, 4.0, false),
             (53, 0.0, 10.0, true),
         ] {
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, first);
+            let (manager, mut state, window, _) = managed_sector_fixture(&world, first);
             state.windows[0].selection = Some(SelectedIcon {
                 system: first,
                 quadrant: Quadrant::System,
@@ -5318,11 +5357,11 @@ mod tests {
             router.begin_frame(frame, &manager.begin_frame());
             let hits = std::collections::BTreeSet::from([window]);
             router.collect_pointer(
-                input_event(frame, 0 ),
+                input_event(frame, 0),
                 &hits,
                 PointerPhase::Press(PointerButtonId::Primary),
             );
-            let release = input_event(frame, 1 );
+            let release = input_event(frame, 1);
             router.collect_pointer(
                 release,
                 &hits,
@@ -5362,7 +5401,7 @@ mod tests {
             ControlKind::Controlled(Faction::Alliance),
         );
         add_fleet(&mut world, neighbour);
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, first);
+        let (manager, mut state, window, _) = managed_sector_fixture(&world, first);
         let layout = layout(1.0);
         let icon = state
             .quadrant_screen_rect(&world, layout, first, Quadrant::Fleets)
@@ -5405,7 +5444,8 @@ mod tests {
             (6, icon),
             (8, icon),
         ] {
-            let release = collect_test_click(&mut router, 48, ordinal, &hits, PointerButtonId::Primary);
+            let release =
+                collect_test_click(&mut router, 48, ordinal, &hits, PointerButtonId::Primary);
             route_test!(primary_release_event(release, point) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
             if ordinal <= 4 {
                 assert!(actions.is_empty());
@@ -5431,7 +5471,7 @@ mod tests {
         let (world, first, _) = fixture_world();
         let layout = layout(1.0);
         for (frame, open_system) in [(50, true), (51, false)] {
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, first);
+            let (manager, mut state, window, _) = managed_sector_fixture(&world, first);
             let planet = state
                 .quadrant_screen_rect(&world, layout, first, Quadrant::System)
                 .unwrap()
@@ -5459,8 +5499,14 @@ mod tests {
             let hits = std::collections::BTreeSet::from([window]);
             let (fog, missions, movement, mut actions, mut last_activated) = route_test_state();
             for (ordinal, point) in [(0, blank), (2, planet), (4, planet)] {
-                let release = collect_test_click(&mut router, frame, ordinal, &hits, PointerButtonId::Primary);
-            route_test!(primary_release_event(release, point) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
+                let release = collect_test_click(
+                    &mut router,
+                    frame,
+                    ordinal,
+                    &hits,
+                    PointerButtonId::Primary,
+                );
+                route_test!(primary_release_event(release, point) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
                 if ordinal == 0 {
                     assert!(actions.is_empty());
                 } else {
@@ -5483,7 +5529,7 @@ mod tests {
     #[test]
     fn managed_sector_preserves_two_same_window_planet_gestures_in_raw_order() {
         let (world, first, second) = same_sector_world();
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, first);
+        let (manager, mut state, window, _) = managed_sector_fixture(&world, first);
         let layout = layout(1.0);
         let mut managed = managed_draw_for_test(state.windows[0]);
         managed.result.selected = Some(second);
@@ -5532,8 +5578,7 @@ mod tests {
     #[test]
     fn managed_sector_draw_routes_two_same_window_raw_clicks_in_ordinal_order() {
         let (world, first, second) = same_sector_world();
-        let (mut manager, mut state, window, snapshot) =
-            managed_sector_fixture(&world, first);
+        let (_manager, mut state, window, snapshot) = managed_sector_fixture(&world, first);
         let layout = layout(1.0);
         let first_point = state
             .planet_screen_rect(&world, layout, first)
@@ -5559,7 +5604,11 @@ mod tests {
                 let id = input_event(60, ordinal + offset);
                 assert_test_pointer(&mut router, id, &hits, window, phase);
                 pointer_events.push(sector_input_event(id, point, phase));
-                egui_events.push(pointer_button_event(point, egui::PointerButton::Primary, pressed));
+                egui_events.push(pointer_button_event(
+                    point,
+                    egui::PointerButton::Primary,
+                    pressed,
+                ));
             }
         }
         let ctx = egui::Context::default();
@@ -5567,28 +5616,25 @@ mod tests {
         let fog = FogState::new(Faction::Alliance);
         let missions = rebellion_core::missions::MissionState::new();
         let mut actions = Vec::new();
-        let _ = ctx.run(
-            test_raw_input(egui_events),
-            |ctx| {
-                actions = draw_managed_sector_windows(
-                    SectorWindowDraw {
-                        ctx,
-                        world: &world,
-                        movement: &rebellion_core::movement::MovementState::default(),
-                        fog: &fog,
-                        state: &mut state,
-                        faction: CockpitFaction::Alliance,
-                        layout,
-                        cache: &mut cache,
-                        missions: &missions,
-                        uprisings: &rebellion_core::uprising::UprisingState::default(),
-                    },
-                    &snapshot,
-                    &pointer_events,
-                    &mut router,
-                );
-            },
-        );
+        let _ = ctx.run(test_raw_input(egui_events), |ctx| {
+            actions = draw_managed_sector_windows(
+                SectorWindowDraw {
+                    ctx,
+                    world: &world,
+                    movement: &rebellion_core::movement::MovementState::default(),
+                    fog: &fog,
+                    state: &mut state,
+                    faction: CockpitFaction::Alliance,
+                    layout,
+                    cache: &mut cache,
+                    missions: &missions,
+                    uprisings: &rebellion_core::uprising::UprisingState::default(),
+                },
+                &snapshot,
+                &pointer_events,
+                &mut router,
+            );
+        });
         assert_eq!(
             actions,
             [
@@ -5611,7 +5657,7 @@ mod tests {
             ControlKind::Controlled(Faction::Alliance),
         );
         add_fleet(&mut world, second);
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, first);
+        let (manager, mut state, window, _) = managed_sector_fixture(&world, first);
         let layout = layout(1.0);
         let first_point = state
             .quadrant_screen_rect(&world, layout, first, Quadrant::Fleets)
@@ -5642,7 +5688,7 @@ mod tests {
             ] {
                 let id = input_event(62, ordinal + offset);
                 assert_test_pointer(&mut router, id, &hits, window, phase);
-            route_test!(sector_input_event(id, point, phase) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
+                route_test!(sector_input_event(id, point, phase) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
             }
         }
         let opened: Vec<_> = actions
@@ -5659,7 +5705,7 @@ mod tests {
     fn managed_sector_system_quadrant_double_click_opens_system() {
         let (mut world, system, _) = fixture_world();
         add_mine(&mut world, system);
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, system);
+        let (manager, mut state, window, _) = managed_sector_fixture(&world, system);
         let layout = layout(1.0);
         let point = state
             .quadrant_screen_rect(&world, layout, system, Quadrant::System)
@@ -5706,7 +5752,7 @@ mod tests {
             let (mut world, system, _) = fixture_world();
             add_mine(&mut world, system);
             add_fleet(&mut world, system);
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, system);
+            let (manager, mut state, window, _) = managed_sector_fixture(&world, system);
             let layout = layout(1.0);
             let point = match case {
                 "system icon" => state
@@ -5749,7 +5795,7 @@ mod tests {
                     InputRecipient::Window(window),
                     "{case}"
                 );
-            route_test!(primary_release_event(release, point) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
+                route_test!(primary_release_event(release, point) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
                 let opens = actions
                     .iter()
                     .filter(|action| match case {
@@ -5856,7 +5902,7 @@ mod tests {
             for (ordinal, point, phase) in primary_gesture(press_point, release_point) {
                 let id = input_event(85, ordinal);
                 assert_test_pointer(&mut router, id, &hits, window, phase);
-            route_test!(sector_input_event(id, point, phase) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
+                route_test!(sector_input_event(id, point, phase) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
             }
             assert_eq!(managed.close_queued, should_close, "{case}");
             assert_eq!(
@@ -5888,7 +5934,7 @@ mod tests {
             for (ordinal, point, phase) in primary_gesture(press_point, release_point) {
                 let id = input_event(86, ordinal);
                 assert_test_pointer(&mut router, id, &hits, window, phase);
-            route_test!(sector_input_event(id, point, phase) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
+                route_test!(sector_input_event(id, point, phase) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
             }
             assert_eq!(
                 actions.contains(&SectorWindowAction::SelectSystem(system)),
@@ -5930,7 +5976,7 @@ mod tests {
             for (ordinal, point, phase) in primary_gesture(press_point, release_point) {
                 let id = input_event(87, ordinal);
                 assert_test_pointer(&mut router, id, &hits, window, phase);
-            route_test!(sector_input_event(id, point, phase) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
+                route_test!(sector_input_event(id, point, phase) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
             }
             assert!(!managed.close_queued, "{case}");
             assert!(
@@ -5954,7 +6000,7 @@ mod tests {
     fn managed_sector_short_drift_from_icon_to_bare_planet_keeps_target_identity() {
         let (mut world, system, _) = fixture_world();
         add_fleet(&mut world, system);
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, system);
+        let (manager, mut state, window, _) = managed_sector_fixture(&world, system);
         let layout = layout(0.5);
         let planet = state.planet_screen_rect(&world, layout, system).unwrap();
         let press_point = planet.min + egui::vec2(19.25, 10.0) * layout.scale;
@@ -6024,7 +6070,7 @@ mod tests {
 
     #[test]
     fn managed_sector_draw_does_not_select_on_drag_release_before_later_click() {
-        let (world, system, mut state, window, snapshot, layout, icon, planet) =
+        let (world, system, mut state, window, snapshot, _layout, icon, planet) =
             managed_fleet_fixture();
         let mut router = FrameInputRouter::default();
         let (hits, mut raw_events, mut egui_events) =
@@ -6083,7 +6129,15 @@ mod tests {
             push_test_pointer_event(&mut raw_events, &mut egui_events, id, point, phase, pressed);
         }
         let fog = FogState::new(Faction::Alliance);
-        let actions = paint_managed_events_for_test(&world, &fog, &mut state, &snapshot, &mut router, &raw_events, egui_events);
+        let actions = paint_managed_events_for_test(
+            &world,
+            &fog,
+            &mut state,
+            &snapshot,
+            &mut router,
+            &raw_events,
+            egui_events,
+        );
         let select = actions
             .iter()
             .position(|action| *action == SectorWindowAction::SelectSystem(system));
@@ -6319,7 +6373,7 @@ mod tests {
     #[test]
     fn managed_switch_side_activates_before_swapping_columns() {
         let (world, system, _) = fixture_world();
-        let (mut manager, mut state, window, _) = managed_sector_fixture(&world, system);
+        let (_manager, mut state, window, _) = managed_sector_fixture(&world, system);
         let mut actions = Vec::new();
         let mut last_activated = None;
         activate_and_switch_sector(
@@ -6609,7 +6663,12 @@ mod tests {
             vec![button(false)],
             vec![],
         ];
-        let inputs = test_inputs(frames, 0.05, egui::vec2(700.0, 520.0), egui::Modifiers::default());
+        let inputs = test_inputs(
+            frames,
+            0.05,
+            egui::vec2(700.0, 520.0),
+            egui::Modifiers::default(),
+        );
         run_sector_test_frames(
             world,
             &mut state,
@@ -6639,7 +6698,12 @@ mod tests {
             frames.push(vec![event(false)]);
             frames.push(vec![]);
         }
-        let inputs = test_inputs(frames, 0.5, egui::vec2(700.0, 520.0), egui::Modifiers::default());
+        let inputs = test_inputs(
+            frames,
+            0.5,
+            egui::vec2(700.0, 520.0),
+            egui::Modifiers::default(),
+        );
         run_sector_test_frames(
             world,
             &mut state,
@@ -6989,25 +7053,22 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            let _ = ctx.run(
-                timed_test_raw_input(frame, events),
-                |ctx| {
-                    actions = draw_sector_windows(
-                        test_sector_draw!(
-                            ctx,
-                            &world,
-                            &fog,
-                            &mut state,
-                            &mut cache,
-                            layout,
-                            &rebellion_core::movement::MovementState::default(),
-                            &rebellion_core::missions::MissionState::new(),
-                            &rebellion_core::uprising::UprisingState::default()
-                        ),
-                        &|_| true,
-                    );
-                },
-            );
+            let _ = ctx.run(timed_test_raw_input(frame, events), |ctx| {
+                actions = draw_sector_windows(
+                    test_sector_draw!(
+                        ctx,
+                        &world,
+                        &fog,
+                        &mut state,
+                        &mut cache,
+                        layout,
+                        &rebellion_core::movement::MovementState::default(),
+                        &rebellion_core::missions::MissionState::new(),
+                        &rebellion_core::uprising::UprisingState::default()
+                    ),
+                    &|_| true,
+                );
+            });
         }
         assert!(actions.iter().any(|action| matches!(
             action,
@@ -7353,17 +7414,16 @@ mod tests {
             frames.push(vec![event(false)]);
         }
         frames.push(vec![]);
-        let inputs = test_inputs(frames, 0.5, egui::vec2(700.0, 520.0), egui::Modifiers::default());
-        let _ = run_sector_test_frames(
-            world,
-            state,
-            owner,
-            layout,
-            &fog,
-            &missions,
-            inputs,
-            || crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear()),
+        let inputs = test_inputs(
+            frames,
+            0.5,
+            egui::vec2(700.0, 520.0),
+            egui::Modifiers::default(),
         );
+        let _ =
+            run_sector_test_frames(world, state, owner, layout, &fog, &missions, inputs, || {
+                crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear())
+            });
         take_painted_bitmaps()
             .into_iter()
             .map(|(id, _)| id)

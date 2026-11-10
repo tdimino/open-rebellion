@@ -1037,7 +1037,7 @@ mod tests {
 
     fn filled_system_record(
         side: Faction,
-        family: u32,
+        family: u8,
         system: System,
     ) -> crate::ai_production::SystemRecord {
         let mut world = GameWorld::default();
@@ -1101,8 +1101,8 @@ mod tests {
                     side,
                     family,
                     System {
-                    dat_id: DatId::new(0x64),
-                    ..System::default()
+                        dat_id: DatId::new(0x64),
+                        ..System::default()
                     },
                 );
                 // Unmarked, unheld and unexplored: S is the rim bit and

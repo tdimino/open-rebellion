@@ -84,7 +84,9 @@ impl FogState {
     /// `system`.
     #[must_use]
     pub fn known_facilities(&self, system: SystemKey) -> &[FacilityRef] {
-        self.known_facilities.get(&system).map_or(&[], Vec::as_slice)
+        self.known_facilities
+            .get(&system)
+            .map_or(&[], Vec::as_slice)
     }
 
     /// Record `system`'s manufacturing and production facilities as they are
@@ -384,11 +386,7 @@ mod tests {
         })
     }
 
-    fn sensor_fleet(
-        world: &mut GameWorld,
-        location: SystemKey,
-        class: CapitalShipKey,
-    ) -> FleetKey {
+    fn sensor_fleet(world: &mut GameWorld, location: SystemKey, class: CapitalShipKey) -> FleetKey {
         world.fleets.insert(Fleet {
             location,
             capital_ships: vec![ShipInstance::new(class, 100, true)],

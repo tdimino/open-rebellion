@@ -393,10 +393,14 @@ impl RoutingSnapshot {
     }
 
     pub(crate) fn is_descendant_of(&self, candidate: WindowId, ancestor: WindowId) -> bool {
-        self.walk_owner_chain(candidate, false, |owner| (owner == ancestor).then_some(true))
+        self.walk_owner_chain(candidate, false, |owner| {
+            (owner == ancestor).then_some(true)
+        })
     }
 
     fn owner_chain_is_within(&self, id: WindowId, active: &BTreeSet<WindowId>) -> bool {
-        self.walk_owner_chain(id, true, |owner| (!active.contains(&owner)).then_some(false))
+        self.walk_owner_chain(id, true, |owner| {
+            (!active.contains(&owner)).then_some(false)
+        })
     }
 }

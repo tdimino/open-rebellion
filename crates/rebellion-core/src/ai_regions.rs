@@ -505,6 +505,9 @@ fn fleet_records<'a>(round: &'a Round<'_>) -> impl Iterator<Item = &'a FleetReco
         .filter_map(|key| round.fleets.get(&key))
 }
 
+/// The primary own-system pick shared by `FUN_00479220` and the posture-slot-21
+/// routines `FUN_004bb630`, `FUN_004ba0d0`, `FUN_004b4a20`, `FUN_004b8ca0`,
+/// `FUN_004b3400`, and `FUN_004b6b70`.
 fn primary_owned_system(round: &mut Round<'_>, sector: SectorKey) -> Option<SystemKey> {
     pick_system(
         round,
@@ -1365,6 +1368,9 @@ impl RegionalRecord {
     }
 }
 
+/// Shared posture-slot-20 requirement tail from `FUN_004bb510`,
+/// `FUN_004b9fe0`, `FUN_004b4920`, `FUN_004b8b70`, `FUN_004b3300`, and
+/// `FUN_004b6a60`.
 fn set_space_requirement(
     requirement: &mut [i64; 10],
     attack: i64,
@@ -2447,7 +2453,7 @@ impl RegionalRecord {
     fn assault_target(&self, p: &Posture, round: &mut Round<'_>, marks: &mut Marks) -> bool {
         let Some((f, key, r)) = self.regiment_fleet(p, round) else {
             return false;
-        }
+        };
         let best = round_best(round);
         let accepts = |round: &Round<'_>, t: &SystemKey| {
             round
@@ -2498,7 +2504,7 @@ impl RegionalRecord {
     fn drop_target(&self, p: &Posture, round: &mut Round<'_>, marks: &mut Marks) -> bool {
         let Some((f, key, r)) = self.regiment_fleet(p, round) else {
             return false;
-        }
+        };
         let w = Words::new(0, 0, sys::NEUTRAL, 0, 0, 0x10_0208);
         let Some(t) = first_passing(round, key, w, 0xf, Dir::Largest, |s| can_drop(&r, s)) else {
             return false;

@@ -732,7 +732,9 @@ pub fn serve_manager_sides(
         let mut emptied = Vec::new();
         for (key, fleet) in &mut world.fleets {
             let before = fleet.capital_ships.len();
-            fleet.capital_ships.retain(|ship| !ships.contains(&ship.tag));
+            fleet
+                .capital_ships
+                .retain(|ship| !ships.contains(&ship.tag));
             if fleet.capital_ships.len() != before {
                 emptied.push(key);
             }
@@ -1473,8 +1475,7 @@ mod tests {
     #[test]
     fn a_ship_finished_for_a_fleet_elsewhere_starts_its_own_leg_from_the_yard_for_either_side() {
         for is_alliance in [true, false] {
-            let (mut world, systems, class, _state, fleet) =
-                ships_bound_for_target(2, is_alliance);
+            let (mut world, systems, class, _state, fleet) = ships_bound_for_target(2, is_alliance);
             let (yard, target) = (systems[0], systems[1]);
             let second = world.fleets[fleet].capital_ships[1].tag;
 
@@ -2127,8 +2128,7 @@ mod tests {
     // child walk (FUN_004fae40) leaves it, and its own manager keeps its
     // side: it stays listed, unfinished, of the side that ordered it.
     #[test]
-    fn a_ship_another_systems_yard_builds_for_a_captured_system_stays_unfinished_for_either_side()
-    {
+    fn a_ship_another_systems_yard_builds_for_a_captured_system_stays_unfinished_for_either_side() {
         for is_alliance in [true, false] {
             let [own, enemy] = controls(is_alliance);
             let (mut world, systems, class) = yard_world(2, is_alliance);
@@ -2184,7 +2184,11 @@ mod tests {
                 );
             }
             seat_ordered_ships(&mut world, &mut state);
-            let kept = state.queue(other, ProductionArea::Shipyard).unwrap().items()[0].ship;
+            let kept = state
+                .queue(other, ProductionArea::Shipyard)
+                .unwrap()
+                .items()[0]
+                .ship;
             // A ship still bearing its class's name, which a numbering pass
             // would rename.
             world.fleets[fleet]

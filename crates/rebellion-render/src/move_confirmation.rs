@@ -69,8 +69,7 @@ fn managed_layer_id(
     id: WindowId,
     name: &'static str,
 ) -> Option<egui::LayerId> {
-    (window_id == Some(id))
-        .then(|| egui::LayerId::new(egui::Order::Tooltip, egui::Id::new(name)))
+    (window_id == Some(id)).then(|| egui::LayerId::new(egui::Order::Tooltip, egui::Id::new(name)))
 }
 
 fn managed_hit(
@@ -150,11 +149,7 @@ fn commit_managed_confirm<T, A: PartialEq>(
     Some(prepared_action)
 }
 
-fn contains_confirmation<T>(
-    window: &Option<T>,
-    layout: CockpitLayout,
-    point: (f32, f32),
-) -> bool {
+fn contains_confirmation<T>(window: &Option<T>, layout: CockpitLayout, point: (f32, f32)) -> bool {
     window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
 }
 
@@ -1134,12 +1129,7 @@ mod tests {
         mut cache: BmpCache,
         state: &mut S,
         frames: impl IntoIterator<Item = Vec<egui::Event>>,
-        mut draw: impl FnMut(
-            &egui::Context,
-            &mut S,
-            CockpitLayout,
-            &mut BmpCache,
-        ) -> Option<A>,
+        mut draw: impl FnMut(&egui::Context, &mut S, CockpitLayout, &mut BmpCache) -> Option<A>,
     ) -> Option<A> {
         let ctx = egui::Context::default();
         let mut emitted = None;
@@ -1376,7 +1366,13 @@ mod tests {
             vec![egui::Event::PointerMoved(to)],
             vec![egui::Event::PointerMoved(to), press(to, false)],
         ];
-        run_confirmation_frames(layout, keyed_buttons(), state, frames, draw_move_confirmation)
+        run_confirmation_frames(
+            layout,
+            keyed_buttons(),
+            state,
+            frames,
+            draw_move_confirmation,
+        )
     }
 
     fn add_test_fleet(world: &mut rebellion_core::world::GameWorld) -> FleetKey {
@@ -1751,7 +1747,11 @@ mod tests {
         set_id: fn(&mut S, WindowId),
     ) {
         assert_eq!(
-            commit(state, replacement.clone(), &WindowTransition::Opened { id: blocker }),
+            commit(
+                state,
+                replacement.clone(),
+                &WindowTransition::Opened { id: blocker }
+            ),
             None
         );
         assert_eq!(

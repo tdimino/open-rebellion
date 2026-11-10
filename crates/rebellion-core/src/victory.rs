@@ -243,10 +243,9 @@ impl VictorySystem {
 
         let all = |bits: u32| word & bits == bits;
         let (empire, alliance) = match victory_conditions {
-            VictoryConditions::Standard => (
-                all(AD | LC | MC),
-                all(DC | EC) && word & (CA | CD) != 0,
-            ),
+            VictoryConditions::Standard => {
+                (all(AD | LC | MC), all(DC | EC) && word & (CA | CD) != 0)
+            }
             VictoryConditions::HeadquartersOnly => (all(AD), word & (CA | CD) != 0),
         };
         word |= match (empire, alliance) {
@@ -290,7 +289,7 @@ mod tests {
         sector: crate::ids::SectorKey,
         dat_id: u32,
         name: &str,
-        position: (i32, i32),
+        position: (u16, u16),
         popularity: (f32, f32),
         side: Faction,
     ) -> System {
@@ -504,11 +503,15 @@ mod tests {
             world.systems[e].is_destroyed = true;
             assert_eq!(
                 VictorySystem::word(&state, &world, conditions),
-                Some(LC | DC | CD | if conditions == VictoryConditions::Standard {
-                    0
-                } else {
-                    AW | GO
-                })
+                Some(
+                    LC | DC
+                        | CD
+                        | if conditions == VictoryConditions::Standard {
+                            0
+                        } else {
+                            AW | GO
+                        }
+                )
             );
         }
     }
@@ -611,10 +614,7 @@ mod tests {
             ] {
                 let (mut world, a, e) = make_world();
                 world.systems[a].is_headquarters = false;
-                for (id, captor) in [
-                    (LUKE, Faction::Empire),
-                    (MON_MOTHMA, Faction::Empire),
-                ] {
+                for (id, captor) in [(LUKE, Faction::Empire), (MON_MOTHMA, Faction::Empire)] {
                     capture_leader(&mut world, id, captor);
                 }
                 if missing == CORUSCANT {

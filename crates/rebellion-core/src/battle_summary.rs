@@ -484,7 +484,7 @@ fn death_star_survives(hull: f32) -> bool {
 mod tests {
     use super::*;
     use crate::carriage::ProductRoom;
-    use crate::ids::DatId;
+    use crate::ids::{DatId, SystemKey};
     use crate::tactical::test_support::{test_death_star, test_fighter, test_session, test_ship};
     use crate::tactical::{CombatWinner, TacticalDock};
     use crate::world::{
@@ -563,8 +563,11 @@ mod tests {
         battle: &Battle,
         alliance: bool,
     ) -> BattleSummarySide {
-        BattleRecord::record(session, &battle.world, &battle.transport)
-            .side(session, &battle.world, alliance)
+        BattleRecord::record(session, &battle.world, &battle.transport).side(
+            session,
+            &battle.world,
+            alliance,
+        )
     }
 
     fn install_death_star(battle: &mut Battle, index: usize, troop_capacity: u32) {
@@ -602,9 +605,7 @@ mod tests {
             .expect("room aboard");
     }
 
-    fn crew_battle(
-        alliance: bool,
-    ) -> (Battle, [CharacterKey; 3], SystemKey, BattleSession) {
+    fn crew_battle(alliance: bool) -> (Battle, [CharacterKey; 3], SystemKey, BattleSession) {
         let mut battle = battle(alliance, &[0]);
         let crew = crew_aboard(&mut battle, alliance);
         let system = battle.world.fleets[battle.fleet].location;

@@ -2206,7 +2206,10 @@ mod tests {
                         && root.contains_rect(clipped.shape.visual_bounding_rect())
                 })
                 .expect("the menu paints");
-            assert!(droids < menu, "{faction:?}: the droids paint over the GID menu");
+            assert!(
+                droids < menu,
+                "{faction:?}: the droids paint over the GID menu"
+            );
         }
     }
 
@@ -3035,8 +3038,7 @@ mod tests {
             .commit_open(prepared, &opened.transition)
             .expect("accepted GID open publishes one Menu identity");
         let frame = manager.begin_frame();
-        let (ctx, mut cockpit, mut cache, layout) =
-            gid_draw_state(Some(GidCategory::Loyalty));
+        let (ctx, mut cockpit, mut cache, layout) = gid_draw_state(Some(GidCategory::Loyalty));
         let _ = ctx.run(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -3144,7 +3146,9 @@ mod tests {
         assert!(!router.claim_root(trigger_press));
 
         let menu = crate::game_menu::ManagedMenuState::default();
-        assert!(manager.apply(menu.prepare_gid_open(false).command()).is_ok());
+        assert!(manager
+            .apply(menu.prepare_gid_open(false).command())
+            .is_ok());
         assert_eq!(
             manager.begin_frame().active_modal(),
             Some(frame.active_modal().unwrap())

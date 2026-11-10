@@ -425,7 +425,12 @@ mod tests {
         entries
     }
 
-    fn native_dirs() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+    fn native_dirs() -> (
+        tempfile::TempDir,
+        std::path::PathBuf,
+        std::path::PathBuf,
+        std::path::PathBuf,
+    ) {
         let root = tempdir().unwrap();
         let gdata = root.path().join("GData");
         let source_dir = gdata.join("encyclopedia");

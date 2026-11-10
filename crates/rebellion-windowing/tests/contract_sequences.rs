@@ -504,7 +504,7 @@ fn contract_transient_restore_rejects_a_dormant_owner_atomically() {
     spec.owner = WindowOwner::Window(owner);
     spec.policy.band = rebellion_windowing::StackBand::Transient;
     spec.policy.placement = rebellion_windowing::OpenPlacement::AboveOwner;
-    let (child, peer) = suspend_owned_child(&mut manager, spec);
+    let (child, _peer) = suspend_owned_child(&mut manager, spec);
     let before = format!("{manager:?}");
     assert_eq!(
         manager.apply(WindowCommand::Restore(child)),

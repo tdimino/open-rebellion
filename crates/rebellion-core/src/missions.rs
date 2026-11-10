@@ -519,8 +519,7 @@ impl MissionTarget {
         let Self::CapitalShip(tag) = self else {
             return false;
         };
-        mission_capital_ship(world, tag)
-            .is_some_and(|ship| !ship.completed)
+        mission_capital_ship(world, tag).is_some_and(|ship| !ship.completed)
     }
 
     /// The side holding the object and where it stands, or `None` once it
@@ -2002,7 +2001,11 @@ impl MissionState {
         let (target_system, target_object) = match destination {
             MoveDestination::System(system) => (system, None),
             MoveDestination::Fleet(fleet) => (
-                world.fleets.get(fleet).map(|f| f.location).unwrap_or_default(),
+                world
+                    .fleets
+                    .get(fleet)
+                    .map(|f| f.location)
+                    .unwrap_or_default(),
                 Some(MissionTarget::Fleet(fleet)),
             ),
         };
@@ -2292,10 +2295,7 @@ fn skill_raise(world: &GameWorld, id: u16) -> i32 {
 /// `FUN_0053eae0`: with chance GNPRTB 2574 a wound of
 /// `rand(G2574) + rand(G2576) + G2575`; a miss wounds nothing, which
 /// `FUN_004ef6d0` ignores (it needs a positive amount).
-fn assassination_wound(
-    world: &GameWorld,
-    draws: &mut impl crate::uprising::Draws,
-) -> Option<i32> {
+fn assassination_wound(world: &GameWorld, draws: &mut impl crate::uprising::Draws) -> Option<i32> {
     let param = |id, shipped| {
         i32::try_from(crate::movement::gnprtb_or_shipped(world, id, shipped)).unwrap_or(0)
     };
@@ -2402,7 +2402,10 @@ fn character_location(world: &GameWorld, character: &Character) -> Option<System
 /// The side of the object holding `member` (`FUN_004f6b50`, `+0x1c`): its
 /// fleet's, else its system's holder's (a stalemate keeps its earlier
 /// holder, `FUN_0050b610`); `None` with no container.
-pub(crate) fn container_side(world: &GameWorld, member: MissionMember) -> Option<crate::dat::Faction> {
+pub(crate) fn container_side(
+    world: &GameWorld,
+    member: MissionMember,
+) -> Option<crate::dat::Faction> {
     match member_state(world, member)?.location {
         MemberLocation::Fleet(fleet) => world
             .fleets
@@ -3066,7 +3069,12 @@ impl MissionSystem {
                         tick: now,
                         ordered_tick: mission.ordered_tick,
                         rolls: mission.rolls,
-                        team: mission.team.iter().chain(&mission.decoys).copied().collect(),
+                        team: mission
+                            .team
+                            .iter()
+                            .chain(&mission.decoys)
+                            .copied()
+                            .collect(),
                         captured: mission.captured.clone(),
                         origin: mission.origin,
                         set_out_from: mission.set_out_from,
@@ -3573,7 +3581,8 @@ impl MissionSystem {
                     if let Some(character) = mission.target_character {
                         let major = world.characters.get(character).is_some_and(|c| c.is_major);
                         let wound = assassination_wound(world, stream);
-                        let dies = wound.is_some() && !major && stream.chance(minor_death_chance(world));
+                        let dies =
+                            wound.is_some() && !major && stream.chance(minor_death_chance(world));
                         if !target_taken {
                             if let Some(injury) = wound {
                                 effects.push(MissionEffect::CharacterInjured { character, injury });
@@ -3876,11 +3885,20 @@ fn escape_input(world: &GameWorld, key: CharacterKey) -> i32 {
         Ok(count) if count > 0 => guards.iter().sum::<i32>() / count,
         _ => 0,
     };
-    let regiments = match (prisoner.held_abode(), prisoner.current_fleet, prisoner.current_system) {
+    let regiments = match (
+        prisoner.held_abode(),
+        prisoner.current_fleet,
+        prisoner.current_system,
+    ) {
         (None, None, Some(system)) => world.systems.get(system).map_or(0, |sys| {
             sys.ground_units
                 .iter()
-                .filter(|&&troop| world.troops.get(troop).is_some_and(|t| t.is_alliance == captor))
+                .filter(|&&troop| {
+                    world
+                        .troops
+                        .get(troop)
+                        .is_some_and(|t| t.is_alliance == captor)
+                })
                 .count()
         }),
         _ => 0,
@@ -3936,7 +3954,13 @@ mod tests {
         systems.insert(())
     }
 
-    fn lead_and_prisoner() -> (GameWorld, SystemKey, CharacterKey, CharacterKey, MissionState) {
+    fn lead_and_prisoner() -> (
+        GameWorld,
+        SystemKey,
+        CharacterKey,
+        CharacterKey,
+        MissionState,
+    ) {
         let mut world = minimal_world();
         let (here, _) = two_systems();
         let lead = agent_at(&mut world, here, true);
@@ -3945,7 +3969,11 @@ mod tests {
         (world, here, lead, prisoner, MissionState::new())
     }
 
-    fn test_system(name: &str, x: u16, special_forces: Vec<SpecialForceKey>) -> crate::world::System {
+    fn test_system(
+        name: &str,
+        x: u16,
+        special_forces: Vec<SpecialForceKey>,
+    ) -> crate::world::System {
         crate::world::System {
             dat_id: crate::ids::DatId::new(0x9000_0001),
             name: name.into(),
@@ -4337,7 +4365,17 @@ mod tests {
     /// ESCAPETB as shipped (threshold: percent).
     fn escape_table(world: &mut GameWorld) {
         use crate::world::{MstbEntry, MstbTable};
-        let rows = [(-50, 1), (-49, 2), (-31, 3), (-11, 5), (10, 10), (20, 15), (30, 20), (40, 25), (50, 30)];
+        let rows = [
+            (-50, 1),
+            (-49, 2),
+            (-31, 3),
+            (-11, 5),
+            (10, 10),
+            (20, 15),
+            (30, 20),
+            (40, 25),
+            (50, 30),
+        ];
         world.mission_tables.insert(
             "ESCAPETB".to_string(),
             MstbTable::new(
@@ -4483,7 +4521,10 @@ mod tests {
             });
 
             assert_eq!(escape_input(&world, key), 55, "{is_alliance}");
-            assert_eq!(escape_step_with(&mut world, 5, &mut queue(&[0, 0])).len(), 1);
+            assert_eq!(
+                escape_step_with(&mut world, 5, &mut queue(&[0, 0])).len(),
+                1
+            );
         }
     }
 
@@ -4912,7 +4953,7 @@ mod tests {
                 here,
             ),
         )
-            .expect("one lead");
+        .expect("one lead");
         let mission = &state.missions()[0];
         assert_eq!(mission.team, vec![me]);
         assert_eq!(mission.decoys, vec![decoy]);
@@ -5007,9 +5048,7 @@ mod tests {
             en_route: false,
             on_hidden_mission: false,
         });
-        let at = world
-            .systems
-            .insert(test_system("Base", 0, vec![unit]));
+        let at = world.systems.insert(test_system("Base", 0, vec![unit]));
         (unit, at)
     }
 
@@ -5026,11 +5065,7 @@ mod tests {
         let member = MissionMember::Character(dead);
 
         assert_eq!(
-            validate_request(
-                &mut state,
-                &mut world,
-                request(vec![member], vec![], here),
-            ),
+            validate_request(&mut state, &mut world, request(vec![member], vec![], here),),
             Err(MissionRefusal::MemberUnavailable(member))
         );
         assert!(state.is_empty());
@@ -5128,7 +5163,7 @@ mod tests {
                 here,
             ),
         )
-            .expect("dispatch");
+        .expect("dispatch");
         let mission = &state.missions()[0];
         assert!(mission.decoys.is_empty());
         assert_eq!(mission.captured, vec![MissionMember::Character(prisoner)]);
@@ -5513,7 +5548,10 @@ mod tests {
         // rand(G2574) + rand(G2576) + G2575; FUN_004ef6d0 applies only a
         // positive one.
         let mut world = minimal_world();
-        assert_eq!(assassination_wound(&world, &mut queue(&[0, 40, 7])), Some(48));
+        assert_eq!(
+            assassination_wound(&world, &mut queue(&[0, 40, 7])),
+            Some(48)
+        );
         world.gnprtb = crate::world::GnprtbParams::uniform(&[(2575, -1)]);
         assert_eq!(assassination_wound(&world, &mut queue(&[0, 0, 1])), None);
     }
@@ -5572,7 +5610,7 @@ mod tests {
         };
 
         let open = phase_ten(&world, MissionKind::InciteUprising, team(), here, None);
-        let troop = troop_at(&mut world, here, 0x1000_0007, false);
+        let _troop = troop_at(&mut world, here, 0x1000_0007, false);
         let garrisoned = phase_ten(&world, MissionKind::InciteUprising, team(), here, None);
 
         assert_eq!(open.outcome, MissionOutcome::Success);
@@ -6576,14 +6614,7 @@ mod tests {
             .dispatch_validated(
                 MissionRequest {
                     target_object: Some(MissionTarget::ManufacturingFacility(yard)),
-                    ..MissionRequest::single(
-                        MissionKind::Sabotage,
-                        faction,
-                        agent,
-                        here,
-                        None,
-                        0,
-                    )
+                    ..MissionRequest::single(MissionKind::Sabotage, faction, agent, here, None, 0)
                 },
                 world,
                 &UprisingState::default(),
@@ -6712,7 +6743,11 @@ mod tests {
                 Some(TargetRefusal::TargetNotDeathStar),
             ),
             (MissionKind::DeathStarSabotage, Some(death_star), None),
-            (MissionKind::Sabotage, Some(fleet), Some(TargetRefusal::TargetFamily)),
+            (
+                MissionKind::Sabotage,
+                Some(fleet),
+                Some(TargetRefusal::TargetFamily),
+            ),
             (
                 MissionKind::DeathStarSabotage,
                 Some(fleet),
@@ -6737,7 +6772,8 @@ mod tests {
     }
 
     #[test]
-    fn a_move_to_a_fleet_whose_only_ship_is_unfinished_or_on_its_own_leg_is_refused_for_either_side() {
+    fn a_move_to_a_fleet_whose_only_ship_is_unfinished_or_on_its_own_leg_is_refused_for_either_side(
+    ) {
         // FUN_00552300.c:108 seats the members on the fleet's ships in mode 1
         // (FUN_00502e30(fleet, 1)); a ship on its own leg from its yard (bit
         // 5, FUN_00556430) is not usable (0x004f7b80), so none accepts:
@@ -6808,8 +6844,9 @@ mod tests {
             let side = crate::dat::Faction::of_alliance(is_alliance);
             world.systems[here].control = crate::world::ControlKind::Controlled(side);
             assert_eq!(to_system(&world), None, "{is_alliance}");
-            world.systems[here].control =
-                crate::world::ControlKind::Controlled(crate::dat::Faction::of_alliance(!is_alliance));
+            world.systems[here].control = crate::world::ControlKind::Controlled(
+                crate::dat::Faction::of_alliance(!is_alliance),
+            );
             assert_eq!(
                 to_system(&world),
                 Some(MissionRefusal::DestinationRefused(0x28)),
@@ -6825,7 +6862,14 @@ mod tests {
     /// cruiser. port: test fixture values, not rules.
     fn p4_target(
         is_alliance: bool,
-    ) -> (GameWorld, SystemKey, CharacterKey, crate::ids::FleetKey, MissionTarget, MissionKind) {
+    ) -> (
+        GameWorld,
+        SystemKey,
+        CharacterKey,
+        crate::ids::FleetKey,
+        MissionTarget,
+        MissionKind,
+    ) {
         let mut world = minimal_world();
         world.mission_records = vec![
             sabotage_record(),
@@ -6905,7 +6949,9 @@ mod tests {
 
             assert_eq!(
                 p4_dispatch(&mut world, here, agent, target, kind, is_alliance),
-                Err(MissionRefusal::TargetRefused(TargetRefusal::TargetIncomplete)),
+                Err(MissionRefusal::TargetRefused(
+                    TargetRefusal::TargetIncomplete
+                )),
                 "{is_alliance}"
             );
             assert_eq!(TargetRefusal::TargetIncomplete.status(), (0x40, 0x34));
@@ -6928,10 +6974,9 @@ mod tests {
             let fleet = death_star_fleet(&mut world, here);
             world.fleets[fleet].is_alliance = is_alliance;
             let second = world.fleets[fleet].capital_ships[1].clone();
-            world.fleets[fleet].capital_ships.push(crate::world::ShipInstance {
-                tag: 0,
-                ..second
-            });
+            world.fleets[fleet]
+                .capital_ships
+                .push(crate::world::ShipInstance { tag: 0, ..second });
             crate::carriage::tag_all(&mut world);
             let tags: Vec<u32> = world.fleets[fleet]
                 .capital_ships
@@ -6956,8 +7001,8 @@ mod tests {
     // container's (FUN_004f8240.c:17-31): a ship in a fleet moving through
     // hyperspace is en route.
     #[test]
-    fn a_sabotage_target_on_its_own_leg_or_in_a_moving_fleet_is_refused_with_0x40_0x22_for_either_side()
-    {
+    fn a_sabotage_target_on_its_own_leg_or_in_a_moving_fleet_is_refused_with_0x40_0x22_for_either_side(
+    ) {
         for is_alliance in [true, false] {
             let (mut world, here, agent, fleet, target, kind) = p4_target(is_alliance);
             world.fleets[fleet].capital_ships[0].transit = Some(crate::world::ShipTransit {
@@ -7016,7 +7061,14 @@ mod tests {
             let target = death_star_of(&world, fleet);
             let request = |agent| MissionRequest {
                 target_object: Some(target),
-                ..MissionRequest::single(MissionKind::DeathStarSabotage, faction, agent, here, None, 0)
+                ..MissionRequest::single(
+                    MissionKind::DeathStarSabotage,
+                    faction,
+                    agent,
+                    here,
+                    None,
+                    0,
+                )
             };
             let mut state = MissionState::new();
             assert_eq!(
@@ -7079,12 +7131,7 @@ mod tests {
         always(&mut world, MissionKind::Sabotage, 0);
         let yard = enemy_yard(&mut world, here);
         let agent = agent_at(&mut world, here, true);
-        let result = sabotage_result(
-            &world,
-            here,
-            yard,
-            vec![MissionMember::Character(agent)],
-        );
+        let result = sabotage_result(&world, here, yard, vec![MissionMember::Character(agent)]);
 
         assert!(!result
             .effects
@@ -7200,11 +7247,7 @@ mod tests {
     ) {
         let here = system_at(world, 0);
         let yard = enemy_yard(world, here);
-        let state = waiting_sabotage(
-            world,
-            here,
-            MissionTarget::ManufacturingFacility(yard),
-        );
+        let state = waiting_sabotage(world, here, MissionTarget::ManufacturingFacility(yard));
         (state, here, yard)
     }
 
@@ -8243,8 +8286,11 @@ mod tests {
             dat_id: crate::ids::DatId::new(0x6a00_0041),
             ..sabotage_record()
         };
-        let (mut world, here, envoy) =
-            dialog_world(vec![diplomacy_record(), sabotage_record(), death_star_sabotage]);
+        let (mut world, here, envoy) = dialog_world(vec![
+            diplomacy_record(),
+            sabotage_record(),
+            death_star_sabotage,
+        ]);
         world.systems[here].control =
             crate::world::ControlKind::Controlled(crate::dat::Faction::Empire);
         let yard = MissionTarget::ManufacturingFacility(enemy_yard(&mut world, here));
@@ -8265,7 +8311,10 @@ mod tests {
         };
 
         assert_eq!(kinds(Some(yard)), vec![MissionKind::Sabotage]);
-        assert_eq!(kinds(Some(death_star)), vec![MissionKind::DeathStarSabotage]);
+        assert_eq!(
+            kinds(Some(death_star)),
+            vec![MissionKind::DeathStarSabotage]
+        );
         assert!(!kinds(None).contains(&MissionKind::Sabotage));
     }
 

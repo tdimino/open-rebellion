@@ -473,8 +473,7 @@ mod tests {
 
     #[test]
     fn detection_triggers_on_low_roll() {
-        let (world, _, mut state) =
-            training_fixture(100, XP_TO_TRAINING, ForceTier::Training);
+        let (world, _, mut state) = training_fixture(100, XP_TO_TRAINING, ForceTier::Training);
 
         // Advance DETECTION_CHECK_INTERVAL ticks so detection triggers.
         // Low roll (0.0) < DETECT_PROB_TRAINING = 0.15 → detection fires.
@@ -490,8 +489,7 @@ mod tests {
 
     #[test]
     fn detection_does_not_trigger_on_high_roll() {
-        let (world, _, mut state) =
-            training_fixture(100, XP_TO_TRAINING, ForceTier::Training);
+        let (world, _, mut state) = training_fixture(100, XP_TO_TRAINING, ForceTier::Training);
 
         // High roll (0.99) > DETECT_PROB_TRAINING = 0.15 → no detection.
         let events = JediSystem::advance(

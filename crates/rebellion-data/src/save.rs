@@ -1024,8 +1024,7 @@ pub mod wasm_impl {
         let bytes = b64_decode(&b64)?;
         let browser_meta = parse_meta(&meta_encoded)?;
         let expected = browser_meta.state_fingerprint.to_fingerprint()?;
-        let (state, interface, state_fingerprint) =
-            super::decode_verified_body(&bytes, expected)?;
+        let (state, interface, state_fingerprint) = super::decode_verified_body(&bytes, expected)?;
 
         let meta = SaveMeta {
             slot,
@@ -1095,7 +1094,7 @@ mod tests {
         sector: rebellion_core::ids::SectorKey,
         dat_id: u32,
         name: &str,
-        position: (i32, i32),
+        position: (u16, u16),
         side: Faction,
     ) -> rebellion_core::world::System {
         rebellion_core::world::System {
@@ -1224,22 +1223,27 @@ mod tests {
     fn round_trip_state(directory: &str, label: &str, state: &SaveState) -> SaveState {
         let saves_dir = tmp_dir(directory);
         save_slot(&saves_dir, 0, label, state, &[]).unwrap();
-        load_slot(&saves_dir, 0)
-            .expect("the save should load")
-            .1
+        load_slot(&saves_dir, 0).expect("the save should load").1
     }
 
-    fn diplomacy_mission_state(
-    ) -> (SaveState, SystemKey, SystemKey, rebellion_core::ids::CharacterKey) {
+    fn diplomacy_mission_state() -> (
+        SaveState,
+        SystemKey,
+        SystemKey,
+        rebellion_core::ids::CharacterKey,
+    ) {
         use rebellion_core::missions::{MissionFaction, MissionKind, MissionRequest};
         let mut state = minimal_save_state();
         let mut systems = state.world.systems.keys();
         let (from, to) = (systems.next().unwrap(), systems.next().unwrap());
-        let envoy = state.world.characters.insert(rebellion_core::world::Character {
-            is_alliance: true,
-            current_system: Some(from),
-            ..Default::default()
-        });
+        let envoy = state
+            .world
+            .characters
+            .insert(rebellion_core::world::Character {
+                is_alliance: true,
+                current_system: Some(from),
+                ..Default::default()
+            });
         state
             .missions
             .dispatch_validated(
@@ -2124,9 +2128,7 @@ mod tests {
 
     #[test]
     fn a_round_trip_keeps_a_mission_s_armed_timer_and_its_seen_loss() {
-        use rebellion_core::missions::{
-            apply_advance_effects, MissionSystem, PHASE_TIMER,
-        };
+        use rebellion_core::missions::{apply_advance_effects, MissionSystem, PHASE_TIMER};
         use rebellion_core::tick::TickEvent;
         let (mut state, _from, to, _envoy) = diplomacy_mission_state();
         let step = |state: &mut SaveState, tick: u64| {

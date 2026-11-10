@@ -735,7 +735,8 @@ impl Plan {
         Holder::new(lists, &mut round.rng).pick()
     }
 
-    /// The mode-3/mode-6 fallback: expand into the strongest eligible sector.
+    /// The mode-3/mode-6 fallback from `FUN_004e8940` and `FUN_004ead50`:
+    /// expand into the strongest eligible sector.
     fn expansion_pick(&self, round: &mut Round<'_>) -> Option<SectorKey> {
         let filter = Filter::b(0, 2);
         let lists = self.lists(

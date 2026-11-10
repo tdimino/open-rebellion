@@ -143,6 +143,7 @@ fn open_gid_menu(manager: &mut WindowManager) -> (WindowId, WindowId) {
     let mut sector_spec = modeless_spec(WindowKind::Sector, 1, WindowOwner::StrategicRoot);
     sector_spec.policy.focus_on_open = FocusOnOpen::Preserve;
     let sector = open(manager, sector_spec);
+    assert_eq!(manager.focused(), None);
     let mut gid_spec = menu_spec(sector);
     gid_spec.owner = WindowOwner::StrategicRoot;
     gid_spec.policy.input = InputPolicy::Modeless;
@@ -167,11 +168,7 @@ fn restore_focus(manager: &mut WindowManager) -> rebellion_windowing::WindowComm
         .expect("focus walk succeeds")
 }
 
-fn assert_focus_walk(
-    manager: &mut WindowManager,
-    menu: WindowId,
-    current: Option<FocusTarget>,
-) {
+fn assert_focus_walk(manager: &mut WindowManager, menu: WindowId, current: Option<FocusTarget>) {
     let order_before = manager.visible_order().to_vec();
     let commit = restore_focus(manager);
     assert_eq!(
@@ -1363,7 +1360,6 @@ fn gid_escape_with_no_current_child_focuses_only_the_view() {
     // Escape changes nothing (gid-legend.md, "Escape and the keyboard focus").
     let mut manager = WindowManager::new();
     let (_sector, menu) = open_gid_menu(&mut manager);
-    assert_eq!(manager.focused(), None);
     assert_focus_walk(&mut manager, menu, None);
 }
 

@@ -322,8 +322,6 @@ pub fn apply_seeds_with_rng<R: Rng + ?Sized>(
         world,
     );
 
-
-
     // ── Empire Coruscant garrison (CMUNCRTB) → Coruscant ────────────────────
     apply_garrison_seed(
         load_seed(gdata_path, "CMUNCRTB.DAT")?.as_ref(),
@@ -1450,10 +1448,12 @@ fn deploy_bundle_to_system(
         return;
     }
     let existing = world.systems.get(system_key).and_then(|sys| {
-        sys.fleets
-            .iter()
-            .copied()
-            .find(|&fleet| world.fleets.get(fleet).is_some_and(|f| f.is_alliance == is_alliance))
+        sys.fleets.iter().copied().find(|&fleet| {
+            world
+                .fleets
+                .get(fleet)
+                .is_some_and(|f| f.is_alliance == is_alliance)
+        })
     });
     if let Some(fleet) = existing {
         let ships = &mut world.fleets[fleet].capital_ships;
@@ -1484,7 +1484,10 @@ const fn maintenance_budget_param(size: rebellion_core::dat::GalaxySize) -> u16 
 /// The group a roll of 1..=100 picks (`FUN_00595090`): the last whose key
 /// (`entry_bis`, the in-memory `+0x20`) is at most the roll, or the first
 /// when the roll is below every key.
-fn rolled_group(table: &SeedTableFile, roll: u32) -> Option<&dat_dumper::types::seed_table::SeedGroup> {
+fn rolled_group(
+    table: &SeedTableFile,
+    roll: u32,
+) -> Option<&dat_dumper::types::seed_table::SeedGroup> {
     table
         .groups
         .iter()

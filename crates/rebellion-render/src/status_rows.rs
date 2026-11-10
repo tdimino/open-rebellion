@@ -296,7 +296,9 @@ pub fn fleet_rows(sources: StatusSources<'_>, key: FleetKey) -> Option<Vec<Statu
         ),
         row(
             "Hyperdrive Rating:",
-            yes_no(rebellion_core::movement::fleet_speed(fleet, world).is_some_and(|speed| speed != 0)),
+            yes_no(
+                rebellion_core::movement::fleet_speed(fleet, world).is_some_and(|speed| speed != 0),
+            ),
         ),
     ]);
     Some(rows)
@@ -1236,7 +1238,10 @@ mod tests {
     fn assert_fleet_hyperdrive(world: &GameWorld, fleet: FleetKey, expected: &str) {
         let states = States::new();
         let rows = fleet_rows(states.sources(world), fleet).unwrap();
-        assert_eq!(super::tests::rows(&rows).last(), Some(&("Hyperdrive Rating:", expected)));
+        assert_eq!(
+            super::tests::rows(&rows).last(),
+            Some(&("Hyperdrive Rating:", expected))
+        );
     }
 
     #[test]
@@ -1335,11 +1340,12 @@ mod tests {
         for is_alliance in [true, false] {
             let (mut world, here, fleet) = carrier_fixture(is_alliance);
             world.fleets[fleet].capital_ships[0].completed = false;
-            world.fleets[fleet].capital_ships[1].transit = Some(rebellion_core::world::ShipTransit {
-                from: here,
-                to: here,
-                arrival_tick: 9,
-            });
+            world.fleets[fleet].capital_ships[1].transit =
+                Some(rebellion_core::world::ShipTransit {
+                    from: here,
+                    to: here,
+                    arrival_tick: 9,
+                });
             assert_fleet_hyperdrive(&world, fleet, "No");
         }
     }
@@ -1351,11 +1357,12 @@ mod tests {
         // day +0x44 (FUN_004fd2b0, set by FUN_00556430).
         for is_alliance in [true, false] {
             let (mut world, here, fleet) = carrier_fixture(is_alliance);
-            world.fleets[fleet].capital_ships[1].transit = Some(rebellion_core::world::ShipTransit {
-                from: here,
-                to: here,
-                arrival_tick: 15,
-            });
+            world.fleets[fleet].capital_ships[1].transit =
+                Some(rebellion_core::world::ShipTransit {
+                    from: here,
+                    to: here,
+                    arrival_tick: 15,
+                });
             let states = States::new();
             let sources = states.sources(&world);
             let status = |index| {

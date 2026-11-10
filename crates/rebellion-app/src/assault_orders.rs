@@ -81,9 +81,17 @@ pub fn assault_messages(
     tick: u64,
     assault: &AssaultEffects,
 ) -> Vec<GameMessage> {
-    let mut messages = assault.operation.as_ref().map_or_else(Vec::new, |operation| {
-        crate::strike_orders::report_messages(world, templates, tick, &Arc::new(operation.clone()))
-    });
+    let mut messages = assault
+        .operation
+        .as_ref()
+        .map_or_else(Vec::new, |operation| {
+            crate::strike_orders::report_messages(
+                world,
+                templates,
+                tick,
+                &Arc::new(operation.clone()),
+            )
+        });
     for (event, _) in &assault.blockade {
         messages.extend(crate::blockade_transition_messages(world, templates, event));
     }
@@ -98,11 +106,11 @@ pub fn assault_messages(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::carriage::ProductRoom;
     use rebellion_core::assault::AssaultReport;
-    use rebellion_core::operation_report::OperationReport;
+    use rebellion_core::carriage::ProductRoom;
     use rebellion_core::ids::{DatId, SystemKey};
     use rebellion_core::manufacturing::ManufacturingState;
+    use rebellion_core::operation_report::OperationReport;
     use rebellion_core::world::{
         CapitalShipClass, ControlKind, Fleet, ShipInstance, System, TroopUnit,
     };
@@ -568,13 +576,8 @@ mod tests {
             let (mut world, system) = world(Some(holder));
             shield_limit(&mut world);
             let (mut transport, fleet, mut blockade) = blockaded_fleet(&mut world, system, side);
-            let (runs, log) = issue_test_order(
-                &mut world,
-                &[fleet],
-                side,
-                &mut transport,
-                &mut blockade,
-            );
+            let (runs, log) =
+                issue_test_order(&mut world, &[fleet], side, &mut transport, &mut blockade);
             assert_eq!(runs.len(), 1, "{side:?}");
             assert_eq!(world.systems[system].control, ControlKind::Controlled(side));
             let titles: Vec<&str> = log
@@ -684,7 +687,13 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base");
         let templates = TextTemplates::load(&path).unwrap();
         let (mut world, system) = world(Some(Faction::Alliance));
-        let run = assault(&mut world, system, Faction::Empire, Faction::Alliance, Faction::Empire);
+        let run = assault(
+            &mut world,
+            system,
+            Faction::Empire,
+            Faction::Alliance,
+            Faction::Empire,
+        );
         let run = assault_messages(&world, &templates, 7, &run);
         assert_eq!(
             run[0].display.as_ref().unwrap().body,

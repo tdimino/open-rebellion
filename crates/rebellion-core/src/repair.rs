@@ -617,7 +617,10 @@ mod tests {
             assert_eq!(armed, vec![1], "{is_alliance}");
             assert!(events.iter().any(|event| matches!(
                 event,
-                RepairEvent::RepairCheckPerformed { ships_checked: 1, .. }
+                RepairEvent::RepairCheckPerformed {
+                    ships_checked: 1,
+                    ..
+                }
             )));
         }
     }

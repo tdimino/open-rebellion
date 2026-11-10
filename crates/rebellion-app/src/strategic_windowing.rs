@@ -26,9 +26,9 @@ use rebellion_render::{
     windowing_policy::{contextual_spec, SUBJECT_BATTLE, SUBJECT_COMMAND_CONTEXT},
 };
 use rebellion_windowing::{
-    BubblePolicy, ContentReport, ContentStatus, ExistingEffect, FocusTarget, ReconcileReport,
-    RouteTarget, RoutingSnapshot, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent,
-    WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
+    BubblePolicy, ContentReport, ContentStatus, ControlId, ExistingEffect, FocusTarget,
+    ReconcileReport, RouteTarget, RoutingSnapshot, SubjectId, WindowCommand, WindowCommit,
+    WindowError, WindowEvent, WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
 };
 
 use crate::encyclopedia_surface::{EncyclopediaSurfaceController, EncyclopediaWindowOpenError};
@@ -605,9 +605,8 @@ impl StrategicWindowing {
     ) -> Result<(), WindowError> {
         let subject = self.next_context_subject()?;
         let command = open_or_replace(prepared.replacing(), prepared.spec(subject));
-        self.pending.push(
-            QueuedWindowCommand::new(command).with_payload(|queued| prepared.attach(queued)),
-        );
+        self.pending
+            .push(QueuedWindowCommand::new(command).with_payload(|queued| prepared.attach(queued)));
         Ok(())
     }
 
@@ -695,10 +694,10 @@ impl StrategicWindowing {
         prepared: PreparedScrapConfirmationConfirm,
     ) {
         let command = WindowCommand::Close(prepared.window_id());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_scrap_confirmation_confirm = Some(prepared)),
-        );
+        self.pending
+            .push(QueuedWindowCommand::new(command).with_payload(|queued| {
+                queued.prepared_scrap_confirmation_confirm = Some(prepared)
+            }));
     }
 
     /// Queues validated System content beside its semantic detail open.
@@ -983,10 +982,7 @@ impl StrategicWindowing {
         }
     }
 
-    fn opened_or_attached_noop_existing(
-        &self,
-        transition: &WindowTransition,
-    ) -> Option<WindowId> {
+    fn opened_or_attached_noop_existing(&self, transition: &WindowTransition) -> Option<WindowId> {
         match transition {
             WindowTransition::Opened { id } => Some(*id),
             WindowTransition::Existing {
@@ -1009,7 +1005,7 @@ impl StrategicWindowing {
         ) && removed_content.contains(&window)
     }
 
-    fn focus_opened_control(&mut self, transition: &WindowTransition, control: &'static str) {
+    fn focus_opened_control(&mut self, transition: &WindowTransition, control: ControlId) {
         let WindowTransition::Opened { id } = transition else {
             return;
         };
@@ -1168,8 +1164,7 @@ impl StrategicWindowing {
                 self.focus_opened_control(&commit.transition, FLEET_FINDER_NAME_CONTROL);
             }
             if prepared_troop_finder.is_some() {
-                troop_finder_content_id =
-                    self.opened_or_attached_noop_existing(&commit.transition);
+                troop_finder_content_id = self.opened_or_attached_noop_existing(&commit.transition);
                 self.focus_opened_control(&commit.transition, TROOP_FINDER_NAME_CONTROL);
             }
             if prepared_personnel_finder.is_some() {
@@ -1181,8 +1176,7 @@ impl StrategicWindowing {
                 message_index_content_id = self.opened_or_attached_existing(&commit.transition);
             }
             if prepared_status.is_some() {
-                status_content_id =
-                    self.opened_replaced_or_attached_existing(&commit.transition);
+                status_content_id = self.opened_replaced_or_attached_existing(&commit.transition);
             }
             if prepared_sector.is_some() {
                 sector_content_id = match &commit.transition {
@@ -1796,7 +1790,6 @@ mod tests {
     use rebellion_core::delivery::DeliveryState;
     use rebellion_core::economy::EconomyState;
     use rebellion_core::fog::FogState;
-    #[cfg(feature = "interface-test-fixtures")]
     use rebellion_core::ids::FleetKey;
     use rebellion_core::ids::{DatId, SystemKey};
     use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, ProductionArea};
@@ -2025,10 +2018,7 @@ mod tests {
         assert!(!coordinator.begin_frame().is_visible(id));
     }
 
-    fn restore_content(
-        coordinator: &mut StrategicWindowing,
-        id: WindowId,
-    ) -> AppliedWindowCommand {
+    fn restore_content(coordinator: &mut StrategicWindowing, id: WindowId) -> AppliedWindowCommand {
         coordinator.enqueue(WindowCommand::Restore(id));
         let applied = coordinator.apply_pending().remove(0);
         assert_restored(&applied, id);
@@ -2795,10 +2785,7 @@ mod tests {
         let mut coordinator = StrategicWindowing::new();
         let mut state = ScrapConfirmationState::default();
         coordinator
-            .enqueue_scrap_confirmation_open(
-                state.prepare_open(scrap_confirmation())
-                    .unwrap(),
-            )
+            .enqueue_scrap_confirmation_open(state.prepare_open(scrap_confirmation()).unwrap())
             .unwrap();
         let mut opened = coordinator.apply_pending().remove(0);
         let id = opened.scrap_confirmation_content_id.unwrap();
@@ -2829,19 +2816,18 @@ mod tests {
 
     #[test]
     fn confirmation_close_requires_attached_content_receipt() {
-        use rebellion_render::move_confirmation::{
-            MoveConfirmationState, ScrapConfirmationState,
-        };
+        use rebellion_render::move_confirmation::{MoveConfirmationState, ScrapConfirmationState};
 
         let mut move_coordinator = StrategicWindowing::new();
         let mut move_state = MoveConfirmationState::default();
         move_coordinator
             .enqueue_move_confirmation_open(
-                move_state.prepare_open(move_confirmation(
-                    FleetKey::default(),
-                    SystemKey::default(),
-                    2,
-                ))
+                move_state
+                    .prepare_open(move_confirmation(
+                        FleetKey::default(),
+                        SystemKey::default(),
+                        2,
+                    ))
                     .unwrap(),
             )
             .unwrap();
@@ -2864,8 +2850,7 @@ mod tests {
         let mut scrap_state = ScrapConfirmationState::default();
         scrap_coordinator
             .enqueue_scrap_confirmation_open(
-                scrap_state.prepare_open(scrap_confirmation())
-                    .unwrap(),
+                scrap_state.prepare_open(scrap_confirmation()).unwrap(),
             )
             .unwrap();
         let mut opened = scrap_coordinator.apply_pending().remove(0);
@@ -2887,9 +2872,7 @@ mod tests {
 
     #[test]
     fn confirmation_publication_rollbacks_close_exact_identity() {
-        use rebellion_render::move_confirmation::{
-            MoveConfirmationState, ScrapConfirmationState,
-        };
+        use rebellion_render::move_confirmation::{MoveConfirmationState, ScrapConfirmationState};
 
         let open_sentinel = |coordinator: &mut StrategicWindowing, value| {
             coordinator.enqueue(WindowCommand::Open(contextual_spec(
@@ -2912,11 +2895,12 @@ mod tests {
         let mut move_coordinator = StrategicWindowing::new();
         move_coordinator
             .enqueue_move_confirmation_open(
-                MoveConfirmationState::default().prepare_open(move_confirmation(
-                    FleetKey::default(),
-                    SystemKey::default(),
-                    2,
-                ))
+                MoveConfirmationState::default()
+                    .prepare_open(move_confirmation(
+                        FleetKey::default(),
+                        SystemKey::default(),
+                        2,
+                    ))
                     .unwrap(),
             )
             .unwrap();
@@ -2941,7 +2925,8 @@ mod tests {
         let mut scrap_coordinator = StrategicWindowing::new();
         scrap_coordinator
             .enqueue_scrap_confirmation_open(
-                ScrapConfirmationState::default().prepare_open(scrap_confirmation())
+                ScrapConfirmationState::default()
+                    .prepare_open(scrap_confirmation())
                     .unwrap(),
             )
             .unwrap();
@@ -3837,7 +3822,11 @@ mod tests {
         assert!(coordinator.acknowledge_system_publication(id));
         assert_eq!(state.window_id(system), Some(id));
 
-        minimize_content(&mut coordinator, id, StrategicWindowing::enqueue_system_minimize);
+        minimize_content(
+            &mut coordinator,
+            id,
+            StrategicWindowing::enqueue_system_minimize,
+        );
         assert_eq!(coordinator.begin_frame().presentation_history(), [id]);
         assert_eq!(coordinator.saved_galaxy_order(), [(id, false)]);
 
@@ -3868,35 +3857,36 @@ mod tests {
         assert!(coordinator.begin_frame().is_visible(id));
         assert!(coordinator.begin_frame().presentation_history().is_empty());
 
-        close_detail_content(&mut coordinator, id, |removed| state.remove_content(removed));
+        close_detail_content(&mut coordinator, id, |removed| {
+            state.remove_content(removed)
+        });
         assert!(!state.contains_window(id));
     }
 
     #[test]
     fn fleet_commit_publishes_content_and_history_only_after_manager_transition() {
-        let (world, system, mut state, mut coordinator) =
-            detail_test_context::<FleetWindowState>();
+        let (world, system, mut state, mut coordinator) = detail_test_context::<FleetWindowState>();
         assert!(coordinator.begin_frame().paint_order().is_empty());
-        let (id, _) = commit_fleet_open(
-            &world,
-            system,
-            (40, 50),
-            &mut state,
-            &mut coordinator,
-        );
+        let (id, _) = commit_fleet_open(&world, system, (40, 50), &mut state, &mut coordinator);
         assert!(!coordinator.has_content(id));
         assert!(coordinator.acknowledge_fleet_publication(id));
         assert!(coordinator.has_content(id));
         assert_eq!(state.window_id(system), Some(id));
 
-        minimize_content(&mut coordinator, id, StrategicWindowing::enqueue_fleet_minimize);
+        minimize_content(
+            &mut coordinator,
+            id,
+            StrategicWindowing::enqueue_fleet_minimize,
+        );
         assert_eq!(coordinator.begin_frame().presentation_history(), [id]);
 
         let restored = restore_content(&mut coordinator, id);
         assert_eq!(restored.fleet_content_id, None);
         assert!(coordinator.begin_frame().presentation_history().is_empty());
 
-        close_detail_content(&mut coordinator, id, |removed| state.remove_content(removed));
+        close_detail_content(&mut coordinator, id, |removed| {
+            state.remove_content(removed)
+        });
         assert_eq!(state.window_count(), 0);
 
         coordinator.enqueue_fleet_minimize(id);
@@ -3906,15 +3896,8 @@ mod tests {
 
     #[test]
     fn ordinary_fleet_reopen_reports_the_restored_rail_identity() {
-        let (world, system, mut state, mut coordinator) =
-            detail_test_context::<FleetWindowState>();
-        let (id, _) = commit_fleet_open(
-            &world,
-            system,
-            (40, 50),
-            &mut state,
-            &mut coordinator,
-        );
+        let (world, system, mut state, mut coordinator) = detail_test_context::<FleetWindowState>();
+        let (id, _) = commit_fleet_open(&world, system, (40, 50), &mut state, &mut coordinator);
         assert!(coordinator.acknowledge_fleet_publication(id));
 
         coordinator.enqueue_fleet_minimize_with_rail(id, system, (40, 50));

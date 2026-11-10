@@ -1259,13 +1259,7 @@ mod tests {
     #[test]
     fn bounty_hunters_require_active_gate() {
         let mut world = make_world_with_characters();
-        let mut state = EventState::new();
-
-        // Need 50+ Empire systems for the gate
-        add_empire_systems(&mut world, 60);
-
-        assign_han_to_fleet(&mut world);
-        define_story_events(&mut state, &world);
+        let mut state = define_bounty_story(&mut world);
 
         // Bounty Attack should NOT fire at tick 100 without gate (gate fires at 80)
         // First, tick 79 — gate should not fire yet

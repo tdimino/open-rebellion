@@ -888,7 +888,7 @@ mod tests {
         TickEvent { tick: n }
     }
 
-    fn system(dat_id: u32, name: &str, sector: crate::ids::SectorKey, x: i32, y: i32) -> System {
+    fn system(dat_id: u32, name: &str, sector: crate::ids::SectorKey, x: u16, y: u16) -> System {
         System {
             dat_id: DatId::new(dat_id),
             name: name.into(),

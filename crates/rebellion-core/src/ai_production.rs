@@ -1784,6 +1784,8 @@ impl<'a> Round<'a> {
         self.nearest_sector_filtered(from, flags, None)
     }
 
+    /// hyp: shared form of `FUN_00419b80`; distance remains the inferred
+    /// sector-position distance recovered around `FUN_0041b7b0`.
     fn nearest_sector_filtered(
         &mut self,
         from: SystemKey,
@@ -3206,10 +3208,12 @@ fn cut_to_budget(count: i64, maintenance: i64, budget: i64) -> i64 {
 }
 
 impl ProductionState {
+    /// Shared `0x3ec` facility-pass toggle from `FUN_004cca20`,
+    /// `FUN_004d3170`, `FUN_004cfed0`, and `FUN_004dd7a0`.
     fn facility_phase(
         &mut self,
         module: Module,
-        work_phase: u32,
+        work_phase: u16,
         kind: YardKind,
         round: &mut Round<'_>,
     ) -> Option<Vec<Order>> {
@@ -3228,7 +3232,10 @@ impl ProductionState {
         count: u32,
         target: Option<SystemKey>,
     ) -> Vec<Order> {
-        round.build(producer, kind, count, target).into_iter().collect()
+        round
+            .build(producer, kind, count, target)
+            .into_iter()
+            .collect()
     }
 
     fn optional_order(order: Option<Order>) -> Vec<Order> {
@@ -4134,11 +4141,17 @@ impl ProductionState {
 
 #[cfg(test)]
 mod tests {
-    use crate::carriage::ProductRoom;
     use super::*;
+    use crate::carriage::ProductRoom;
 
     macro_rules! test_round {
         ($round:ident, $state:expr, $world:expr, $manufacturing:expr, $marks:expr, $side:expr) => {
+            test_round!(@bind [] $round, $state, $world, $manufacturing, $marks, $side);
+        };
+        (mut $round:ident, $state:expr, $world:expr, $manufacturing:expr, $marks:expr, $side:expr) => {
+            test_round!(@bind [mut] $round, $state, $world, $manufacturing, $marks, $side);
+        };
+        (@bind [$($mutable:tt)*] $round:ident, $state:expr, $world:expr, $manufacturing:expr, $marks:expr, $side:expr) => {
             let transport = TroopTransportState::new();
             let uprisings = crate::uprising::UprisingState::new();
             let research = crate::research::ResearchState::new();
@@ -4155,7 +4168,7 @@ mod tests {
                 tick: 7,
                 round_in_day: 0,
             };
-            let mut $round = Round::new($state, &inputs);
+            let $($mutable)* $round = Round::new($state, &inputs);
         };
     }
     use crate::world::{CapitalShipClass, Fleet, ShipInstance};
@@ -4433,11 +4446,13 @@ mod tests {
         let death_star = class(&mut world, 0x18, 600);
         let frigate = class(&mut world, 0x14, queued);
         for is_mine in std::iter::repeat_n([true, false], 45).flatten() {
-            world.production_facilities.insert(ProductionFacilityInstance {
-                class_dat_id: crate::ids::DatId::new(0x2c00_0001),
-                side,
-                is_mine,
-            });
+            world
+                .production_facilities
+                .insert(ProductionFacilityInstance {
+                    class_dat_id: crate::ids::DatId::new(0x2c00_0001),
+                    side,
+                    is_mine,
+                });
         }
         let mut systems = Vec::new();
         for _ in 0..2 {
@@ -4466,9 +4481,13 @@ mod tests {
         }
         state.module(Module::CapitalShips).list = systems.clone();
         let marks = crate::ai_records::Marks::default();
-        test_round!(round, &state, &world, &manufacturing, &marks, side);
+        test_round!(mut round, &state, &world, &manufacturing, &marks, side);
         let orders = state.capital_ships(&mut round);
-        (orders, state.module(Module::CapitalShips).blockers, death_star)
+        (
+            orders,
+            state.module(Module::CapitalShips).blockers,
+            death_star,
+        )
     }
 
     // FUN_004ca5e0 (module 11's request, U5): with no regional shortfall,
@@ -4558,7 +4577,7 @@ mod tests {
         let mut state = ProductionState::default();
         let manufacturing = ManufacturingState::new();
         let marks = crate::ai_records::Marks::default();
-        test_round!(round, &state, world, &manufacturing, &marks, side);
+        test_round!(mut round, &state, world, &manufacturing, &marks, side);
         state.repair_move(&mut round)
     }
 
@@ -4627,8 +4646,18 @@ mod tests {
             let damaged = || ShipInstance::new(class, 50, is_alliance);
             let mut drives_out = damaged();
             drives_out.set_damage_counter(4, 1);
-            let fleet = repair_fleet(&mut world, system, side, vec![damaged(), sound(), drives_out]);
-            repair_fleet(&mut world, system, side, vec![sound(), sound(), sound(), sound()]);
+            let fleet = repair_fleet(
+                &mut world,
+                system,
+                side,
+                vec![damaged(), sound(), drives_out],
+            );
+            repair_fleet(
+                &mut world,
+                system,
+                side,
+                vec![sound(), sound(), sound(), sound()],
+            );
             let mut travelling = sound();
             travelling.transit = Some(crate::world::ShipTransit {
                 from: system,
@@ -4696,11 +4725,13 @@ mod tests {
                 ..Default::default()
             });
             for (owner, is_mine) in [(side, true), (side, true), (side, false), (other, true)] {
-                world.production_facilities.insert(ProductionFacilityInstance {
-                    class_dat_id: DatId::new(0x2c00_0001),
-                    side: owner,
-                    is_mine,
-                });
+                world
+                    .production_facilities
+                    .insert(ProductionFacilityInstance {
+                        class_dat_id: DatId::new(0x2c00_0001),
+                        side: owner,
+                        is_mine,
+                    });
             }
             let defence = |world: &mut GameWorld, id, side| {
                 world.defense_facilities.insert(DefenseFacilityInstance {
@@ -4713,11 +4744,13 @@ mod tests {
                 defence(&mut world, 0x2200_0002, other),
             ];
             let yard = |world: &mut GameWorld, id, side| {
-                world.manufacturing_facilities.insert(ManufacturingFacilityInstance {
-                    class_dat_id: DatId::new(id),
-                    side,
-                    is_shipyard: false,
-                })
+                world
+                    .manufacturing_facilities
+                    .insert(ManufacturingFacilityInstance {
+                        class_dat_id: DatId::new(id),
+                        side,
+                        is_shipyard: false,
+                    })
             };
             let yards = vec![
                 yard(&mut world, 0x2800_0001, side),
@@ -4795,7 +4828,11 @@ mod tests {
             assert_eq!(census.system_regiments, 3, "{side:?}");
             assert_eq!(census.system_fighters, 15, "{side:?}");
             assert_eq!(census.system_defences, 13, "{side:?}");
-            assert_eq!(census.yards, HashMap::from([(own, [17, 19, 23])]), "{side:?}");
+            assert_eq!(
+                census.yards,
+                HashMap::from([(own, [17, 19, 23])]),
+                "{side:?}"
+            );
             assert_eq!(census.special_forces, 11, "{side:?}");
         }
     }
@@ -4811,7 +4848,7 @@ mod tests {
     ) -> Option<Order> {
         let manufacturing = ManufacturingState::new();
         let state = ProductionState::default();
-        test_round!(round, &state, world, &manufacturing, marks, side);
+        test_round!(mut round, &state, world, &manufacturing, marks, side);
         edit(&mut round);
         ProductionState::default().scrap_ship(&mut round)
     }
@@ -4822,7 +4859,8 @@ mod tests {
     // unfinished 0x400, a ship en route 0x800, the fleet en route 2), the
     // fewest free hangar slots first (key slot 0x17).
     #[test]
-    fn the_hangar_target_skips_fleets_holding_an_unfinished_or_travelling_ship_or_adopted_for_either_side() {
+    fn the_hangar_target_skips_fleets_holding_an_unfinished_or_travelling_ship_or_adopted_for_either_side(
+    ) {
         use crate::ai_records::{FleetMark, Marks};
         for side in [Faction::Empire, Faction::Alliance] {
             let is_alliance = side == Faction::Alliance;
@@ -4895,7 +4933,7 @@ mod tests {
             );
             let state = ProductionState::default();
             let manufacturing = ManufacturingState::new();
-            test_round!(round, &state, &world, &manufacturing, &marks, side);
+            test_round!(mut round, &state, &world, &manufacturing, &marks, side);
             // A fleet in hyperspace carries the en-route bit in its record.
             round
                 .fleets
@@ -5030,7 +5068,8 @@ mod tests {
     // Coruscant (DatId 0x109), which takes the HQ bit with no headquarters
     // there; FUN_004321e0 records a sector's position and its plan mark.
     #[test]
-    fn the_round_records_a_system_s_sector_energy_and_coruscant_and_a_sector_s_place_and_mark_for_either_side() {
+    fn the_round_records_a_system_s_sector_energy_and_coruscant_and_a_sector_s_place_and_mark_for_either_side(
+    ) {
         use crate::ids::DatId;
         use crate::world::{ControlKind, Sector, System};
         for side in [Faction::Empire, Faction::Alliance] {
@@ -5061,10 +5100,17 @@ mod tests {
             let (records, sectors) = round_records(&world, side, &marks);
 
             let r = &records[&coruscant];
-            assert_eq!((r.sector, r.energy, r.coruscant), (sector, 11, true), "{side:?}");
+            assert_eq!(
+                (r.sector, r.energy, r.coruscant),
+                (sector, 11, true),
+                "{side:?}"
+            );
             assert_ne!(r.a & bit::HQ, 0, "{side:?}");
             assert_eq!(records[&other].a & bit::HQ, 0, "{side:?}");
-            let rec = sectors.iter().find(|s| s.key == sector).expect("the sector's record");
+            let rec = sectors
+                .iter()
+                .find(|s| s.key == sector)
+                .expect("the sector's record");
             assert_eq!((rec.x, rec.y, rec.mark), (30, 40, mark), "{side:?}");
         }
     }
@@ -5080,8 +5126,11 @@ mod tests {
             ..Default::default()
         });
 
-        let node = ClassNode::of(&world, crate::manufacturing::BuildableKind::CapitalShip(class))
-            .expect("a node for the class");
+        let node = ClassNode::of(
+            &world,
+            crate::manufacturing::BuildableKind::CapitalShip(class),
+        )
+        .expect("a node for the class");
 
         assert_eq!((node.key(1), node.key(4)), (3, 7));
     }
@@ -5121,9 +5170,13 @@ mod tests {
         let marks = crate::ai_records::Marks::default();
         let state = ProductionState::default();
         let manufacturing = ManufacturingState::new();
-        test_round!(round, &state, &world, &manufacturing, &marks, side);
+        test_round!(mut round, &state, &world, &manufacturing, &marks, side);
         edit(&mut round, ours, theirs);
-        (run(&mut round), crate::scrap::ScrapTarget::Defense(shield), ours)
+        (
+            run(&mut round),
+            crate::scrap::ScrapTarget::Defense(shield),
+            ours,
+        )
     }
 
     /// The sector holds a surplus (`0x1_0000`); `theirs` has the larger
@@ -5134,7 +5187,11 @@ mod tests {
         }
         let r = round.records.get_mut(&ours).expect("our record");
         (r.defence_balance, r.shields, r.shield_target) = (1, 1, 0);
-        round.records.get_mut(&theirs).expect("their record").defence_balance = 50;
+        round
+            .records
+            .get_mut(&theirs)
+            .expect("their record")
+            .defence_balance = 50;
     }
 
     // FUN_004d71e0 picks the side's own system (`sys+0x30 & 1`) with the
@@ -5143,8 +5200,9 @@ mod tests {
     #[test]
     fn the_defence_surplus_pass_scraps_only_at_the_side_s_own_system_for_either_side() {
         for side in [Faction::Empire, Faction::Alliance] {
-            let (orders, shield, _) =
-                two_system_round(side, surplus, |round| ProductionState::default().defences(round));
+            let (orders, shield, _) = two_system_round(side, surplus, |round| {
+                ProductionState::default().defences(round)
+            });
 
             assert_eq!(orders, vec![Order::Scrap(vec![shield])], "{side:?}");
         }
@@ -5221,7 +5279,12 @@ mod tests {
             }
             records.insert(key, r);
         }
-        SectorRecord::build(&world, sector, &records, &crate::ai_records::Marks::default())
+        SectorRecord::build(
+            &world,
+            sector,
+            &records,
+            &crate::ai_records::Marks::default(),
+        )
     }
 
     // FUN_004321e0 after the folds: the weakest shield stays only with an

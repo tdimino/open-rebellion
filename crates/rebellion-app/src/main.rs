@@ -94,9 +94,7 @@ use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
 use rebellion_render::build_selection::{
     draw_build_selection, BuildSelectionAction, BuildSelectionState, PreparedBuildSelectionConfirm,
 };
-use rebellion_render::defenses_window::{
-    ManagedDefensesDraw, draw_managed_defenses_windows_shown,
-};
+use rebellion_render::defenses_window::{draw_managed_defenses_windows_shown, ManagedDefensesDraw};
 use rebellion_render::fleet_finder::{
     draw_fleet_finder_focused, FleetFinderAction, FleetFinderState,
 };
@@ -1607,7 +1605,8 @@ impl StrategicRootKeyBatch {
         window: rebellion_windowing::WindowId,
     ) -> bool {
         self.presses().any(|event| {
-            event.key == key && router.keyboard_recipient(event.id) == InputRecipient::Window(window)
+            event.key == key
+                && router.keyboard_recipient(event.id) == InputRecipient::Window(window)
         })
     }
 
@@ -3722,7 +3721,10 @@ fn stop_production(
     macroquad::logging::info!(
         "[interface] command=0x213 destination=production_stop status=stopped area={:?} system={}",
         area,
-        world.systems.get(system).map_or("", |value| value.name.as_str())
+        world
+            .systems
+            .get(system)
+            .map_or("", |value| value.name.as_str())
     );
 }
 
@@ -6948,7 +6950,10 @@ mod frame_input_tests {
 
         let first = open_gid(&mut coordinator, &mut managed, &mut gid);
         assert_eq!(
-            coordinator.begin_frame().focused().map(|focus| focus.window),
+            coordinator
+                .begin_frame()
+                .focused()
+                .map(|focus| focus.window),
             Some(first),
             "the building press focuses the menu"
         );
@@ -9673,8 +9678,12 @@ mod panel_toggle_tests {
         // underlying System's FUN_00458980 close must not see that key.
         let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
         let window = opened_fleet(&mut coordinator);
-        assert!(!managed_detail_escape_requested(true, false, None, window, true));
-        assert!(managed_detail_escape_requested(false, false, None, window, true));
+        assert!(!managed_detail_escape_requested(
+            true, false, None, window, true
+        ));
+        assert!(managed_detail_escape_requested(
+            false, false, None, window, true
+        ));
     }
 
     #[test]
@@ -9690,7 +9699,13 @@ mod panel_toggle_tests {
             managed_detail_escape_requested(false, false, Some(editing), focused, true),
             "a rename in another window swallowed the focused window's Escape"
         );
-        assert!(!managed_detail_escape_requested(false, false, Some(editing), editing, true));
+        assert!(!managed_detail_escape_requested(
+            false,
+            false,
+            Some(editing),
+            editing,
+            true
+        ));
     }
 
     #[test]
@@ -9756,7 +9771,11 @@ mod panel_toggle_tests {
         router.begin_frame(9, &frame);
         let event = |ordinal| super::InputEventId { frame: 9, ordinal };
 
-        assert!(super::cockpit_button_passes_fence(&router, false, Some(event(3))));
+        assert!(super::cockpit_button_passes_fence(
+            &router,
+            false,
+            Some(event(3))
+        ));
         router.set_application_hold_after(event(2));
         assert!(
             super::cockpit_button_passes_fence(&router, true, Some(event(1))),
@@ -9767,7 +9786,11 @@ mod panel_toggle_tests {
             "a press after the restriction still dispatched its button"
         );
         router.set_application_hold(true);
-        assert!(!super::cockpit_button_passes_fence(&router, true, Some(event(1))));
+        assert!(!super::cockpit_button_passes_fence(
+            &router,
+            true,
+            Some(event(1))
+        ));
         assert!(!super::cockpit_button_passes_fence(&router, true, None));
     }
 
@@ -9794,7 +9817,10 @@ mod panel_toggle_tests {
         let mut mfg_state = ManufacturingState::new();
         mfg_state.enqueue(
             system,
-            QueueItem::new(BuildableKind::Troop(rebellion_core::ids::DatId::new(0x10)), 10),
+            QueueItem::new(
+                BuildableKind::Troop(rebellion_core::ids::DatId::new(0x10)),
+                10,
+            ),
         );
         let mut pending = Some(StopConfirmationAction::Confirm {
             system,
@@ -10099,7 +10125,12 @@ mod panel_toggle_tests {
             SubjectId::new(1, 7),
             WindowOwner::StrategicRoot,
         )));
-        let system = match coordinator.apply_pending()[0].result.as_ref().unwrap().transition {
+        let system = match coordinator.apply_pending()[0]
+            .result
+            .as_ref()
+            .unwrap()
+            .transition
+        {
             WindowTransition::Opened { id } => id,
             ref transition => panic!("expected System open, got {transition:?}"),
         };
@@ -10132,7 +10163,10 @@ mod panel_toggle_tests {
         assert!(!batch.routed_press(&router, KeyCode::Escape, fleet));
 
         let (router, batch) = collect(&coordinator, 8, true);
-        assert!(batch.contains(KeyCode::Escape), "the raw batch keeps the key");
+        assert!(
+            batch.contains(KeyCode::Escape),
+            "the raw batch keeps the key"
+        );
         assert!(
             !batch.routed_press(&router, KeyCode::Escape, system),
             "the palette's Escape also closed the focused System window"
@@ -10459,7 +10493,10 @@ mod panel_toggle_tests {
         }
         let _ = coordinator.apply_pending();
         assert_eq!(
-            coordinator.begin_frame().focused().map(|focus| focus.window),
+            coordinator
+                .begin_frame()
+                .focused()
+                .map(|focus| focus.window),
             Some(system),
             "the System keeps the focus"
         );
@@ -18225,17 +18262,19 @@ async fn main() {
                                 .enqueue(rebellion_windowing::WindowCommand::Close(window));
                         }
                     }
-                    if let Some((window, _)) =
-                        focused_detail_escape_owner.filter(|(window, _)| {
-                            managed_detail_escape_requested(
-                                stop_confirmation_open_at_frame_start,
-                                detail_close_queued.contains(window),
-                                system_rename_window_at_frame_start,
+                    if let Some((window, _)) = focused_detail_escape_owner.filter(|(window, _)| {
+                        managed_detail_escape_requested(
+                            stop_confirmation_open_at_frame_start,
+                            detail_close_queued.contains(window),
+                            system_rename_window_at_frame_start,
+                            *window,
+                            strategic_root_keys.routed_press(
+                                &strategic_input_router,
+                                KeyCode::Escape,
                                 *window,
-                                strategic_root_keys.routed_press(&strategic_input_router, KeyCode::Escape, *window),
-                            )
-                        })
-                    {
+                            ),
+                        )
+                    }) {
                         // FUN_00458980/FUN_004aa2b0/FUN_004a0e00: Escape
                         // closes the focused System, Defenses, or Missions
                         // identity before the bare galaxy gets the key.
@@ -18256,7 +18295,11 @@ async fn main() {
                     }
                     if !encyclopedia_close_queued
                         && encyclopedia_keyboard_owner.is_some_and(|window| {
-                            strategic_root_keys.routed_press(&strategic_input_router, KeyCode::Escape, window)
+                            strategic_root_keys.routed_press(
+                                &strategic_input_router,
+                                KeyCode::Escape,
+                                window,
+                            )
                         })
                     {
                         if let Some((window, route)) = encyclopedia_surface.request_close() {
@@ -18268,7 +18311,11 @@ async fn main() {
                     }
                     if !message_index_close_queued
                         && message_index_keyboard_owner.is_some_and(|window| {
-                            strategic_root_keys.routed_press(&strategic_input_router, KeyCode::Escape, window)
+                            strategic_root_keys.routed_press(
+                                &strategic_input_router,
+                                KeyCode::Escape,
+                                window,
+                            )
                         })
                     {
                         if let Some(window) = message_index.request_close() {
@@ -18279,7 +18326,11 @@ async fn main() {
                     }
                     if pending_status_close.is_none()
                         && status_keyboard_owner.is_some_and(|window| {
-                            strategic_root_keys.routed_press(&strategic_input_router, KeyCode::Escape, window)
+                            strategic_root_keys.routed_press(
+                                &strategic_input_router,
+                                KeyCode::Escape,
+                                window,
+                            )
                         })
                     {
                         if let Some(window) = status_window_state.request_close() {
@@ -18293,7 +18344,11 @@ async fn main() {
                         mission_dialog_close_queued,
                         mission_dialog_keyboard_owner.is_some(),
                         mission_dialog_keyboard_owner.is_some_and(|window| {
-                            strategic_root_keys.routed_press(&strategic_input_router, KeyCode::Escape, window)
+                            strategic_root_keys.routed_press(
+                                &strategic_input_router,
+                                KeyCode::Escape,
+                                window,
+                            )
                         }),
                     ) {
                         if let Some(window) = mission_dialog_state.request_close() {
@@ -18306,7 +18361,11 @@ async fn main() {
                         move_confirmation_close_queued,
                         move_confirmation_keyboard_owner.is_some(),
                         move_confirmation_keyboard_owner.is_some_and(|window| {
-                            strategic_root_keys.routed_press(&strategic_input_router, KeyCode::Escape, window)
+                            strategic_root_keys.routed_press(
+                                &strategic_input_router,
+                                KeyCode::Escape,
+                                window,
+                            )
                         }),
                     ) {
                         if let Some(window) = move_confirmation_state.request_close() {
@@ -18319,7 +18378,11 @@ async fn main() {
                         scrap_confirmation_close_queued,
                         scrap_confirmation_keyboard_owner.is_some(),
                         scrap_confirmation_keyboard_owner.is_some_and(|window| {
-                            strategic_root_keys.routed_press(&strategic_input_router, KeyCode::Escape, window)
+                            strategic_root_keys.routed_press(
+                                &strategic_input_router,
+                                KeyCode::Escape,
+                                window,
+                            )
                         }),
                     ) {
                         if let Some(window) = scrap_confirmation_state.request_close() {

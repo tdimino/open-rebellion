@@ -5,8 +5,8 @@ use std::hash::Hash;
 use rebellion_windowing::{
     CaptureCancelReason, Cardinality, CloseReason, ControlId, ExistingEffect, ExistingOpenPolicy,
     FocusOnOpen, FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy,
-    StackBand, SubjectId, WindowCommand, WindowError, WindowEvent, WindowId, WindowKey, WindowKind,
-    WindowCommit, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
+    StackBand, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId,
+    WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
 };
 
 fn assert_opaque_id_traits<T: Copy + Debug + Eq + Hash + Ord>() {}
@@ -106,9 +106,7 @@ fn replace_window(
     old: WindowId,
     new: WindowSpec,
 ) -> (WindowCommit, WindowId) {
-    let commit = manager
-        .apply(WindowCommand::Replace { old, new })
-        .unwrap();
+    let commit = manager.apply(WindowCommand::Replace { old, new }).unwrap();
     let new = replaced_id(commit.transition.clone(), old);
     (commit, new)
 }
@@ -518,7 +516,7 @@ fn menu_replacement_retains_saved_control_focus_and_fresh_identity() {
     let spec = transient_menu_spec(owner);
     let old = open_window(&mut manager, spec);
     manager.apply(WindowCommand::CapturePointer(old)).unwrap();
-    let (commit, new) = replace_window(&mut manager, old, spec);
+    let (_commit, new) = replace_window(&mut manager, old, spec);
     assert_eq!(new.get(), 3);
     assert_eq!(manager.id_for(spec.key), Some(new));
     assert_eq!(manager.visible_order(), &[owner, new]);

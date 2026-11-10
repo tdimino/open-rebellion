@@ -139,8 +139,7 @@ fn stationary_position(
     camera
         .contains_with_margin(x, y, camera.scale_pixels(20.0))
         .then(|| {
-            let radius =
-                (FLEET_ICON_RADIUS * camera.logical_zoom).max(2.5) * camera.display_scale;
+            let radius = (FLEET_ICON_RADIUS * camera.logical_zoom).max(2.5) * camera.display_scale;
             (x, y, radius)
         })
 }

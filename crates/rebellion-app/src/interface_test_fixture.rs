@@ -3372,7 +3372,10 @@ mod tests {
 
     fn fixture_sector(
         world: &mut GameWorld,
-    ) -> (rebellion_core::ids::SectorKey, rebellion_core::ids::SystemKey) {
+    ) -> (
+        rebellion_core::ids::SectorKey,
+        rebellion_core::ids::SystemKey,
+    ) {
         let sector = world.sectors.insert(rebellion_core::world::Sector {
             dat_id: rebellion_core::ids::DatId::new(0x8000_0001),
             name: "Sector".into(),
@@ -3713,13 +3716,8 @@ mod tests {
         FixtureFleetLoadSetup,
     ) {
         let layout = CockpitState::new(request.faction).layout_for(640.0, 480.0);
-        let setup = fleet_load_setup(
-            request,
-            &applied.world,
-            &applied.sectors,
-            &applied.defenses,
-        )
-        .unwrap();
+        let setup =
+            fleet_load_setup(request, &applied.world, &applied.sectors, &applied.defenses).unwrap();
         (layout, setup)
     }
 
@@ -3951,17 +3949,13 @@ mod tests {
             layout,
         );
         let observe = |confirmation_open| {
+            let snapshot = WindowManager::new().begin_frame();
             fleet_load_observation(
-                request,
                 regiment,
-                &applied.world,
-                &fog,
-                &applied.movement,
-                &applied.transport,
-                &fleets,
-                &WindowManager::new().begin_frame(),
-                confirmation_open,
-                &[],
+                FleetLoadSources {
+                    confirmation_open,
+                    ..fleet_load_sources(request, &applied, &fog, &fleets, &snapshot)
+                },
             )
             .unwrap()
         };
@@ -4272,17 +4266,10 @@ mod tests {
         let fog = FogState::new(Faction::Alliance);
         let fleets = FleetWindowState::default();
         let observe = |applied: &Applied| {
+            let snapshot = WindowManager::new().begin_frame();
             fleet_load_observation(
-                request,
                 regiment,
-                &applied.world,
-                &fog,
-                &applied.movement,
-                &applied.transport,
-                &fleets,
-                &WindowManager::new().begin_frame(),
-                false,
-                &[],
+                fleet_load_sources(request, applied, &fog, &fleets, &snapshot),
             )
             .unwrap()
         };
@@ -4325,17 +4312,13 @@ mod tests {
             line("Regiment arrived at Cathar"),
             line("Luke Skywalker has reached Jedi Knight tier"),
         ];
+        let snapshot = WindowManager::new().begin_frame();
         let later = fleet_load_observation(
-            request,
             regiment,
-            &applied.world,
-            &fog,
-            &applied.movement,
-            &applied.transport,
-            &fleets,
-            &WindowManager::new().begin_frame(),
-            false,
-            &messages,
+            FleetLoadSources {
+                messages: &messages,
+                ..fleet_load_sources(request, &applied, &fog, &fleets, &snapshot)
+            },
         )
         .unwrap();
         assert_eq!(
@@ -4416,18 +4399,11 @@ mod tests {
             scenario: Scenario::FleetMove,
             ..request
         };
+        let snapshot = WindowManager::new().begin_frame();
         assert_eq!(
-            FleetLoadWatch::default().next(FleetLoadSources {
-                request: moving,
-                world: &applied.world,
-                fog: &fog,
-                movement: &applied.movement,
-                transport: &applied.transport,
-                fleets: &fleets,
-                snapshot: &WindowManager::new().begin_frame(),
-                confirmation_open: false,
-                messages: &[],
-            }),
+            FleetLoadWatch::default().next(fleet_load_sources(
+                moving, &applied, &fog, &fleets, &snapshot,
+            )),
             None
         );
     }
@@ -5129,9 +5105,9 @@ mod tests {
             step: 0,
         };
         run(&mut applied.world, fleet, &mut states)
-        .into_iter()
-        .next()
-        .expect("one run")
+            .into_iter()
+            .next()
+            .expect("one run")
     }
 
     /// The player's fleet's strike in `applied`, through the integrator the
@@ -5141,14 +5117,8 @@ mod tests {
         kind: rebellion_core::bombardment::BombardKind,
     ) -> rebellion_data::integrator::StrikeEffects {
         with_strike_states(applied, |world, fleet, states| {
-            rebellion_data::integrator::order_strike(
-                world,
-                &[fleet],
-                kind,
-                states,
-                &mut || 0.5,
-            )
-            .expect("the fixture's strike runs")
+            rebellion_data::integrator::order_strike(world, &[fleet], kind, states, &mut || 0.5)
+                .expect("the fixture's strike runs")
         })
     }
 

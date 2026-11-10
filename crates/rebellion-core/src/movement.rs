@@ -1461,11 +1461,7 @@ mod tests {
         (class(world, 60), class(world, 140))
     }
 
-    fn assert_fast_ship_is_only_carrier(
-        world: &GameWorld,
-        fleet: &mut Fleet,
-        is_alliance: bool,
-    ) {
+    fn assert_fast_ship_is_only_carrier(world: &GameWorld, fleet: &mut Fleet, is_alliance: bool) {
         assert_eq!(fleet_speed(fleet, world), Some(60), "{is_alliance}");
         fleet.capital_ships.remove(0);
         assert_eq!(fleet_speed(fleet, world), None, "{is_alliance}");
@@ -1603,8 +1599,7 @@ mod tests {
     // meet; only a move onto a fleet joins it.
     #[test]
     fn fleets_of_one_side_meeting_on_arrival_stay_apart() {
-        let (mut world, origin, destination, stationed, arriving) =
-            two_fleet_transit_world();
+        let (mut world, origin, destination, stationed, arriving) = two_fleet_transit_world();
         let arrival = ArrivalEvent {
             fleet: arriving,
             tick: 5,
@@ -1734,8 +1729,7 @@ mod tests {
 
     #[test]
     fn character_task_force_remains_separate_on_arrival() {
-        let (mut world, origin, destination, stationed, arriving) =
-            two_fleet_transit_world();
+        let (mut world, origin, destination, stationed, arriving) = two_fleet_transit_world();
         let character = world.characters.insert(test_character("Commander", 0));
         world.fleets[arriving].characters.push(character);
         let arrival = ArrivalEvent {
@@ -1765,7 +1759,7 @@ mod tests {
     fn a_fleet_may_take_a_move_on_its_own_side_outside_hyperspace() {
         // FUN_00578c00 → FUN_004fdc70 → FUN_004f9860: the order's side, and
         // not en route (ghidra/notes/move-order.md, "The move command").
-        let (mut world, origin, destination, fleet) = single_fleet_transit_world();
+        let (mut world, _origin, destination, fleet) = single_fleet_transit_world();
         let mut movement = MovementState::new();
 
         assert!(fleet_move_enabled(&movement, &world, fleet, true));

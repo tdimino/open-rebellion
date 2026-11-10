@@ -445,7 +445,7 @@ pub fn page_cells(
         let Some((class, owner)) = pending_class(kind) else {
             continue;
         };
-        if wanted(class, owner) {
+        if class.family() == family && owner == side {
             if let Some(picture) = facility_picture(class, owner, state) {
                 cells.push(FacilityCell {
                     item: FacilityItem::Pending(index),

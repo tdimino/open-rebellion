@@ -544,7 +544,12 @@ impl<'a> Planner<'a> {
 
     /// [`Self::select`], with the nearness query to `staging` joining the
     /// lists when the planner has one (`FUN_00403750`).
-    fn select_near(&mut self, queries: &[Query], staging: Option<SystemKey>, size: usize) -> Vec<usize> {
+    fn select_near(
+        &mut self,
+        queries: &[Query],
+        staging: Option<SystemKey>,
+        size: usize,
+    ) -> Vec<usize> {
         let near = match (staging, queries.first()) {
             (Some(staging), Some(&q)) => Some(self.nearness(q, staging)),
             _ => None,
@@ -559,7 +564,12 @@ impl<'a> Planner<'a> {
         self.select_lists(queries, None, size)
     }
 
-    fn select_lists(&mut self, queries: &[Query], near: Option<Vec<usize>>, size: usize) -> Vec<usize> {
+    fn select_lists(
+        &mut self,
+        queries: &[Query],
+        near: Option<Vec<usize>>,
+        size: usize,
+    ) -> Vec<usize> {
         let mut lists: Vec<Vec<usize>> = queries
             .iter()
             .map(|q| ranked(&self.records, *q, &mut self.rng))

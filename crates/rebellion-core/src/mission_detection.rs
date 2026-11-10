@@ -1108,7 +1108,13 @@ mod tests {
         decoy_chance: u32,
         evasion: u32,
         can_resign: bool,
-    ) -> (GameWorld, SystemKey, MissionMember, MissionMember, ActiveMission) {
+    ) -> (
+        GameWorld,
+        SystemKey,
+        MissionMember,
+        MissionMember,
+        ActiveMission,
+    ) {
         let (mut world, here) = world_with(imperial());
         world.mission_records = vec![sabotage_record(can_resign)];
         for _ in 0..defenders {
@@ -1255,8 +1261,7 @@ mod tests {
     #[test]
     fn a_decoy_that_fails_is_exposed_and_resigns_while_the_team_runs_on() {
         // FUN_00589620: a failed decoy roll exposes the decoy (FUN_005888f0).
-        let (world, _here, _lead, decoy, mut mission) =
-            character_decoy_fixture(1, 0, 0, 100, true);
+        let (world, _here, _lead, decoy, mut mission) = character_decoy_fixture(1, 0, 0, 100, true);
 
         run_once(&mut mission, &world);
 
@@ -1514,7 +1519,8 @@ mod tests {
         for is_alliance in [true, false] {
             let (mut world, here) = world_with(imperial());
             let ship = |tag, completed, travelling| {
-                let mut ship = ShipInstance::new(crate::ids::CapitalShipKey::default(), 1, is_alliance);
+                let mut ship =
+                    ShipInstance::new(crate::ids::CapitalShipKey::default(), 1, is_alliance);
                 ship.tag = tag;
                 ship.completed = completed;
                 if travelling {
@@ -1533,7 +1539,11 @@ mod tests {
             };
             let standing = world.fleets.insert(Fleet {
                 location: here,
-                capital_ships: vec![ship(1, true, false), ship(2, false, false), ship(3, true, true)],
+                capital_ships: vec![
+                    ship(1, true, false),
+                    ship(2, false, false),
+                    ship(3, true, true),
+                ],
                 fighters: vec![entry(1), entry(2), entry(0)],
                 characters: vec![],
                 is_alliance,
@@ -1735,8 +1745,7 @@ mod tests {
     fn a_captured_decoy_is_not_drawn_again() {
         // Slot +0x20c takes the decoy prisoner; port: the run marks it gone,
         // so without a resign request the next defender finds no decoy.
-        let (world, _here, _lead, _decoy, mut mission) =
-            character_decoy_fixture(2, 0, 0, 0, false);
+        let (world, _here, _lead, _decoy, mut mission) = character_decoy_fixture(2, 0, 0, 0, false);
 
         let out = run_once(&mut mission, &world);
 

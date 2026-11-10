@@ -260,12 +260,7 @@ pub fn draw_fleets(
                                         });
                                     ui.horizontal(|ui| {
                                         // GOKRES.DLL 61x25 mini-icon for this fighter class.
-                                        draw_mini_icon(
-                                            ui,
-                                            ctx,
-                                            bmp_cache,
-                                            fighter_mini_id(dat_id),
-                                        );
+                                        draw_mini_icon(ui, ctx, bmp_cache, fighter_mini_id(dat_id));
                                         ui.label(
                                             RichText::new(format!(
                                                 "{} ×{}",
