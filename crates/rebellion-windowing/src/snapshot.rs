@@ -370,37 +370,33 @@ impl RoutingSnapshot {
         self.manager_id == manager_id
     }
 
-    pub(crate) fn is_descendant_of(&self, candidate: WindowId, ancestor: WindowId) -> bool {
-        let mut current = candidate;
-        for _ in 0..self.records.len() {
-            let Some(record) = self.records.get(&current) else {
-                return false;
-            };
-            let WindowOwner::Window(owner) = record.owner else {
-                return false;
-            };
-            if owner == ancestor {
-                return true;
-            }
-            current = owner;
-        }
-        false
-    }
-
-    fn owner_chain_is_within(&self, id: WindowId, active: &BTreeSet<WindowId>) -> bool {
+    fn walk_owner_chain(
+        &self,
+        id: WindowId,
+        root_result: bool,
+        mut inspect: impl FnMut(WindowId) -> Option<bool>,
+    ) -> bool {
         let mut current = id;
         for _ in 0..self.records.len() {
             let Some(record) = self.records.get(&current) else {
                 return false;
             };
             let WindowOwner::Window(owner) = record.owner else {
-                return true;
+                return root_result;
             };
-            if !active.contains(&owner) {
-                return false;
+            if let Some(result) = inspect(owner) {
+                return result;
             }
             current = owner;
         }
         false
+    }
+
+    pub(crate) fn is_descendant_of(&self, candidate: WindowId, ancestor: WindowId) -> bool {
+        self.walk_owner_chain(candidate, false, |owner| (owner == ancestor).then_some(true))
+    }
+
+    fn owner_chain_is_within(&self, id: WindowId, active: &BTreeSet<WindowId>) -> bool {
+        self.walk_owner_chain(id, true, |owner| (!active.contains(&owner)).then_some(false))
     }
 }

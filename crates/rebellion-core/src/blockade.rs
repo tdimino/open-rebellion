@@ -888,22 +888,13 @@ mod tests {
         TickEvent { tick: n }
     }
 
-    fn make_world() -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(0x9200_0000),
-            name: "Sector".into(),
-            group: SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let sys = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0000),
-            name: "Bespin".into(),
+    fn system(dat_id: u32, name: &str, sector: crate::ids::SectorKey, x: i32, y: i32) -> System {
+        System {
+            dat_id: DatId::new(dat_id),
+            name: name.into(),
             sector,
-            x: 10,
-            y: 20,
+            x,
+            y,
             exploration_status: ExplorationStatus::Explored,
             popularity_alliance: 0.5,
             popularity_empire: 0.5,
@@ -921,7 +912,22 @@ mod tests {
             is_headquarters: false,
             is_destroyed: false,
             control: ControlKind::Controlled(Faction::Alliance),
+        }
+    }
+
+    fn make_world() -> (GameWorld, SystemKey) {
+        let mut world = GameWorld::default();
+        let sector = world.sectors.insert(Sector {
+            dat_id: DatId::new(0x9200_0000),
+            name: "Sector".into(),
+            group: SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
         });
+        let sys = world
+            .systems
+            .insert(system(0x9000_0000, "Bespin", sector, 10, 20));
         (world, sys)
     }
 
@@ -992,30 +998,9 @@ mod tests {
     fn blockade_transitions_use_stable_system_key_order() {
         let (mut world, system_a) = make_world();
         let sector = world.systems[system_a].sector;
-        let system_b = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: "Hoth".into(),
-            sector,
-            x: 30,
-            y: 40,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
-        });
+        let system_b = world
+            .systems
+            .insert(system(0x9000_0001, "Hoth", sector, 30, 40));
         add_fleet(&mut world, system_b, false);
         add_fleet(&mut world, system_a, false);
 
@@ -1636,19 +1621,28 @@ mod tests {
         }
     }
 
-    /// `FUN_0050cb20.c:15-21` adds 7693 when the blockader holds the
-    /// majority, and `FUN_005862a0.c:25-30` fires again 7694 days on.
-    #[test]
-    fn a_blockader_with_the_majority_gains_one_point_every_30_days() {
-        for (blockader, alliance) in [(Faction::Empire, 0.3), (Faction::Alliance, 0.7)] {
+    fn assert_periodic_shifts(empire_alliance_support: f32, delta: i32) {
+        for blockader in [Faction::Empire, Faction::Alliance] {
+            let alliance = if blockader == Faction::Empire {
+                empire_alliance_support
+            } else {
+                1.0 - empire_alliance_support
+            };
             let (world, _) = shift_world(blockader, alliance, 1.0 - alliance);
             let mut state = BlockadeState::new();
             assert_eq!(
                 shifts(&mut state, &world, 1..=61),
-                vec![(31, blockader, 1), (61, blockader, 1)],
+                vec![(31, blockader, delta), (61, blockader, delta)],
                 "{blockader:?}"
             );
         }
+    }
+
+    /// `FUN_0050cb20.c:15-21` adds 7693 when the blockader holds the
+    /// majority, and `FUN_005862a0.c:25-30` fires again 7694 days on.
+    #[test]
+    fn a_blockader_with_the_majority_gains_one_point_every_30_days() {
+        assert_periodic_shifts(0.3, 1);
     }
 
     /// `FUN_005109f0.c:36-48` rewrites the minimum to 7696 when the blockader
@@ -1720,15 +1714,7 @@ mod tests {
     /// (`FUN_005109f0.c:37-47`).
     #[test]
     fn a_blockader_without_the_majority_loses_one_point_every_30_days() {
-        for (blockader, alliance) in [(Faction::Empire, 0.7), (Faction::Alliance, 0.3)] {
-            let (world, _) = shift_world(blockader, alliance, 1.0 - alliance);
-            let mut state = BlockadeState::new();
-            assert_eq!(
-                shifts(&mut state, &world, 1..=61),
-                vec![(31, blockader, -1), (61, blockader, -1)],
-                "{blockader:?}"
-            );
-        }
+        assert_periodic_shifts(0.7, -1);
     }
 
     /// `FUN_00509930` returns 3 on a tie, which matches neither blockader.

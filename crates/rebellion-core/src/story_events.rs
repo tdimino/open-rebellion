@@ -843,13 +843,32 @@ mod tests {
     use crate::events::EVT_SABOTEUR_DETECTED;
     use crate::events::EVT_SUPPORT_CHANGE;
     use crate::events::EVT_TRAITOR_REVEALED;
-    use crate::events::{EventState, EventSystem};
+    use crate::events::{EventState, EventSystem, FiredEvent};
     use crate::tick::TickEvent;
     use crate::world::ControlKind;
     use crate::world::{Character, Fleet, ForceTier};
 
     fn tick(n: u64) -> Vec<TickEvent> {
         vec![TickEvent { tick: n }]
+    }
+
+    fn test_event(id: u32, name: &str, conditions: Vec<EventCondition>) -> GameEvent {
+        GameEvent {
+            id,
+            name: name.into(),
+            conditions,
+            actions: vec![],
+            is_repeatable: false,
+            enabled: true,
+            system_tag: SystemTag::Story,
+        }
+    }
+
+    fn fired_debug(events: &[FiredEvent]) -> Vec<(u32, &str)> {
+        events
+            .iter()
+            .map(|event| (event.event_id, event.event_name.as_str()))
+            .collect()
     }
 
     fn make_character(name: &str, force_tier: ForceTier, is_alliance: bool) -> Character {
@@ -937,6 +956,43 @@ mod tests {
             bombarding: false,
         });
         world.characters.get_mut(han_key).unwrap().current_fleet = Some(fleet_key);
+    }
+
+    fn add_empire_systems(world: &mut GameWorld, count: u32) {
+        let sector_key = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: "Sector".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
+        for i in 0..count {
+            world.systems.insert(crate::world::System {
+                dat_id: crate::ids::DatId::new(i),
+                name: format!("System_{i}"),
+                sector: sector_key,
+                exploration_status: crate::dat::ExplorationStatus::Explored,
+                popularity_alliance: 0.3,
+                popularity_empire: 0.7,
+                is_populated: true,
+                control: ControlKind::Controlled(crate::dat::Faction::Empire),
+                ..Default::default()
+            });
+        }
+    }
+
+    fn define_bounty_story(world: &mut GameWorld) -> EventState {
+        add_empire_systems(world, 60);
+        assign_han_to_fleet(world);
+        let mut state = EventState::new();
+        define_story_events(&mut state, world);
+        state
+    }
+
+    fn advance_bounty_attack(state: &mut EventState, world: &GameWorld) {
+        EventSystem::advance(state, world, &tick(80), &[]);
+        EventSystem::advance(state, world, &tick(100), &[0.05]);
     }
 
     #[test]
@@ -1036,36 +1092,28 @@ mod tests {
         world.characters.get_mut(luke).unwrap().force_experience = 25;
 
         let mut state = EventState::new();
-        state.define(GameEvent {
-            id: 1,
-            name: "xp_test".into(),
-            conditions: vec![EventCondition::CharacterForceExperience {
+        state.define(test_event(
+            1,
+            "xp_test",
+            vec![EventCondition::CharacterForceExperience {
                 character: luke,
                 min_xp: 20,
             }],
-            actions: vec![],
-            is_repeatable: false,
-            enabled: true,
-            system_tag: SystemTag::Story,
-        });
+        ));
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert_eq!(fired.len(), 1, "25 >= 20 should fire");
 
         // Reset with higher threshold
         let mut state2 = EventState::new();
-        state2.define(GameEvent {
-            id: 2,
-            name: "xp_test_fail".into(),
-            conditions: vec![EventCondition::CharacterForceExperience {
+        state2.define(test_event(
+            2,
+            "xp_test_fail",
+            vec![EventCondition::CharacterForceExperience {
                 character: luke,
                 min_xp: 30,
             }],
-            actions: vec![],
-            is_repeatable: false,
-            enabled: true,
-            system_tag: SystemTag::Story,
-        });
+        ));
 
         let fired2 = EventSystem::advance(&mut state2, &world, &tick(1), &[]);
         assert!(fired2.is_empty(), "25 < 30 should not fire");
@@ -1079,15 +1127,11 @@ mod tests {
             .insert(make_character("Han Solo", ForceTier::None, true));
 
         let mut state = EventState::new();
-        state.define(GameEvent {
-            id: 1,
-            name: "captive_test".into(),
-            conditions: vec![EventCondition::CharacterIsCaptive { character: han }],
-            actions: vec![],
-            is_repeatable: false,
-            enabled: true,
-            system_tag: SystemTag::Story,
-        });
+        state.define(test_event(
+            1,
+            "captive_test",
+            vec![EventCondition::CharacterIsCaptive { character: han }],
+        ));
 
         // Han not captive — should not fire
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
@@ -1096,15 +1140,11 @@ mod tests {
         // Make Han captive
         world.characters.get_mut(han).unwrap().is_captive = true;
         let mut state2 = EventState::new();
-        state2.define(GameEvent {
-            id: 2,
-            name: "captive_test_true".into(),
-            conditions: vec![EventCondition::CharacterIsCaptive { character: han }],
-            actions: vec![],
-            is_repeatable: false,
-            enabled: true,
-            system_tag: SystemTag::Story,
-        });
+        state2.define(test_event(
+            2,
+            "captive_test_true",
+            vec![EventCondition::CharacterIsCaptive { character: han }],
+        ));
 
         let fired2 = EventSystem::advance(&mut state2, &world, &tick(1), &[]);
         assert_eq!(fired2.len(), 1, "Han is captive, should fire");
@@ -1116,15 +1156,11 @@ mod tests {
         let mut state = EventState::new();
 
         // Event 1: fires immediately. Event 2: requires event 99 NOT fired.
-        state.define(GameEvent {
-            id: 2,
-            name: "not_fired_test".into(),
-            conditions: vec![EventCondition::EventNotFired { id: 99 }],
-            actions: vec![],
-            is_repeatable: false,
-            enabled: true,
-            system_tag: SystemTag::Story,
-        });
+        state.define(test_event(
+            2,
+            "not_fired_test",
+            vec![EventCondition::EventNotFired { id: 99 }],
+        ));
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert_eq!(
@@ -1135,24 +1171,12 @@ mod tests {
 
         // Now define and fire event 99, then check EventNotFired again
         let mut state2 = EventState::new();
-        state2.define(GameEvent {
-            id: 99,
-            name: "prereq".into(),
-            conditions: vec![],
-            actions: vec![],
-            is_repeatable: false,
-            enabled: true,
-            system_tag: SystemTag::Story,
-        });
-        state2.define(GameEvent {
-            id: 3,
-            name: "not_fired_should_fail".into(),
-            conditions: vec![EventCondition::EventNotFired { id: 99 }],
-            actions: vec![],
-            is_repeatable: false,
-            enabled: true,
-            system_tag: SystemTag::Story,
-        });
+        state2.define(test_event(99, "prereq", vec![]));
+        state2.define(test_event(
+            3,
+            "not_fired_should_fail",
+            vec![EventCondition::EventNotFired { id: 99 }],
+        ));
 
         let fired2 = EventSystem::advance(&mut state2, &world, &tick(1), &[]);
         // Event 99 fires first, then event 3 checks EventNotFired(99) — should fail
@@ -1238,40 +1262,7 @@ mod tests {
         let mut state = EventState::new();
 
         // Need 50+ Empire systems for the gate
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        for i in 0..60 {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{i}"),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3,
-                popularity_empire: 0.7,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(crate::dat::Faction::Empire),
-            });
-        }
+        add_empire_systems(&mut world, 60);
 
         assign_han_to_fleet(&mut world);
         define_story_events(&mut state, &world);
@@ -1305,40 +1296,7 @@ mod tests {
         let mut state = EventState::new();
 
         // Need Empire systems for bounty hunter gate
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        for i in 0..60 {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{i}"),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3,
-                popularity_empire: 0.7,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(crate::dat::Faction::Empire),
-            });
-        }
+        add_empire_systems(&mut world, 60);
 
         assign_han_to_fleet(&mut world);
         define_story_events(&mut state, &world);
@@ -1425,47 +1383,13 @@ mod tests {
         let mut state = EventState::new();
 
         // Need Empire systems for bounty hunter gate
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        for i in 0..60 {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{i}"),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3,
-                popularity_empire: 0.7,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(crate::dat::Faction::Empire),
-            });
-        }
+        add_empire_systems(&mut world, 60);
 
         assign_han_to_fleet(&mut world);
         define_story_events(&mut state, &world);
 
         // Fire bounty gate + attack
-        EventSystem::advance(&mut state, &world, &tick(80), &[]);
-        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]); // bounty attack fires
+        advance_bounty_attack(&mut state, &world);
 
         // Self-escape (0x384) needs tick >= 135, no rescue, no capture, random < 0.10
         let fired = EventSystem::advance(
@@ -1477,10 +1401,7 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == 0x384),
             "Han self-escape should fire at tick 135 with low roll. Events: {:?}",
-            fired
-                .iter()
-                .map(|f| (f.event_id, &f.event_name))
-                .collect::<Vec<_>>()
+            fired_debug(&fired)
         );
     }
 
@@ -1490,46 +1411,12 @@ mod tests {
         let mut state = EventState::new();
 
         // 60 Empire systems for bounty hunter gate
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        for i in 0..60 {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{i}"),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3,
-                popularity_empire: 0.7,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(crate::dat::Faction::Empire),
-            });
-        }
+        add_empire_systems(&mut world, 60);
         assign_han_to_fleet(&mut world);
         define_story_events(&mut state, &world);
 
         // Fire bounty gate (80) + attack (100)
-        EventSystem::advance(&mut state, &world, &tick(80), &[]);
-        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+        advance_bounty_attack(&mut state, &world);
 
         // Skip tick 101 (so 0x380 hasn't fired yet), jump to 115.
         // At tick 115: 0x380 fires, then 0x399 (before 0x383 in source order)
@@ -1540,10 +1427,7 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == 0x399),
             "Luke should be captured at tick 115. Fired: {:?}",
-            fired
-                .iter()
-                .map(|f| (f.event_id, &f.event_name))
-                .collect::<Vec<_>>()
+            fired_debug(&fired)
         );
         assert!(
             fired.iter().any(|f| f.event_id == EVT_JABBA_PRISONERS),
@@ -1582,47 +1466,13 @@ mod tests {
             .characters
             .insert(make_character("Princess Leia", ForceTier::None, true));
 
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        for i in 0..60 {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{i}"),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3,
-                popularity_empire: 0.7,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(crate::dat::Faction::Empire),
-            });
-        }
+        add_empire_systems(&mut world, 60);
         assign_han_to_fleet(&mut world);
         let mut state = EventState::new();
         define_story_events(&mut state, &world);
 
         // Fire bounty gate (80) + attack (100)
-        EventSystem::advance(&mut state, &world, &tick(80), &[]);
-        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+        advance_bounty_attack(&mut state, &world);
 
         // At tick 108: Leia captured (0x385, roll 0.05 < 0.15).
         // No Luke → no 0x380/0x383 rescue chain.
@@ -1630,10 +1480,7 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == 0x385),
             "Leia should be captured. Events: {:?}",
-            fired
-                .iter()
-                .map(|f| (f.event_id, &f.event_name))
-                .collect::<Vec<_>>()
+            fired_debug(&fired)
         );
         assert!(
             fired.iter().any(|f| f.event_id == EVT_JABBA_PRISONERS),
@@ -1650,45 +1497,11 @@ mod tests {
         let mut world = make_world_with_characters();
         let mut state = EventState::new();
 
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        for i in 0..60 {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{i}"),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3,
-                popularity_empire: 0.7,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(crate::dat::Faction::Empire),
-            });
-        }
+        add_empire_systems(&mut world, 60);
         assign_han_to_fleet(&mut world);
         define_story_events(&mut state, &world);
 
-        EventSystem::advance(&mut state, &world, &tick(80), &[]);
-        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+        advance_bounty_attack(&mut state, &world);
 
         // rolls: 0x399 passes (0.05 < 0.20), 0x385 passes (0.05 < 0.15),
         // 0x387 fails (0.99 > 0.12)
@@ -1701,10 +1514,7 @@ mod tests {
         assert!(
             captures.len() >= 2,
             "Both Luke (0x399) and Leia (0x385) should be captured. Fired: {:?}",
-            fired
-                .iter()
-                .map(|f| (f.event_id, &f.event_name))
-                .collect::<Vec<_>>()
+            fired_debug(&fired)
         );
         assert_eq!(
             fired
@@ -1738,47 +1548,13 @@ mod tests {
                 .characters
                 .insert(make_character("Chewbacca", ForceTier::None, true));
         }
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        for i in 0..60 {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{i}"),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3,
-                popularity_empire: 0.7,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(crate::dat::Faction::Empire),
-            });
-        }
+        add_empire_systems(&mut world, 60);
         assign_han_to_fleet(&mut world);
         let mut state = EventState::new();
         define_story_events(&mut state, &world);
 
         // Fire bounty gate (80) + attack (100) → 0x398 carbonite chains
-        EventSystem::advance(&mut state, &world, &tick(80), &[]);
-        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+        advance_bounty_attack(&mut state, &world);
 
         // Simulate integrator: mark Han as captive (SetCarboniteState sets is_captive)
         let han_key = find_character(&world, "Han").unwrap();
@@ -1799,10 +1575,7 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == EVT_HAN_CARBONITE_FAIL_1),
             "FAIL_1 should fire. Events: {:?}",
-            fired
-                .iter()
-                .map(|f| (f.event_id, &f.event_name))
-                .collect::<Vec<_>>()
+            fired_debug(&fired)
         );
         assert!(
             fired.iter().any(|f| f.event_id == EVT_HAN_CARBONITE_FAIL_5),
@@ -1834,47 +1607,13 @@ mod tests {
         world
             .characters
             .insert(make_character("Luke Skywalker", ForceTier::Aware, true));
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        for i in 0..60 {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{i}"),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3,
-                popularity_empire: 0.7,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(crate::dat::Faction::Empire),
-            });
-        }
+        add_empire_systems(&mut world, 60);
         assign_han_to_fleet(&mut world);
         let mut state = EventState::new();
         define_story_events(&mut state, &world);
 
         // Fire bounty gate + attack
-        EventSystem::advance(&mut state, &world, &tick(80), &[]);
-        EventSystem::advance(&mut state, &world, &tick(100), &[0.05]);
+        advance_bounty_attack(&mut state, &world);
 
         // At tick 135: 0x380 fires first, then 0x384 (self-escape, roll 0.01 < 0.10).
         // 0x399 also evaluable but its Random(0.20) gets roll 0.99 → fails.
@@ -1882,10 +1621,7 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == 0x384),
             "Han self-escape should fire. Events: {:?}",
-            fired
-                .iter()
-                .map(|f| (f.event_id, &f.event_name))
-                .collect::<Vec<_>>()
+            fired_debug(&fired)
         );
 
         // At tick 205: fail chain should NOT fire (self-escape already fired)
@@ -1909,10 +1645,7 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == 0x383),
             "Rescue should fire. Events: {:?}",
-            fired
-                .iter()
-                .map(|f| (f.event_id, &f.event_name))
-                .collect::<Vec<_>>()
+            fired_debug(&fired)
         );
 
         // At tick 205: fail chain should NOT fire (rescue already fired)
@@ -1947,10 +1680,7 @@ mod tests {
         assert!(
             fired.iter().any(|f| f.event_id == EVT_LEIA_FORCE),
             "Leia Force discovery should fire after Dagobah completion. Events: {:?}",
-            fired
-                .iter()
-                .map(|f| (f.event_id, &f.event_name))
-                .collect::<Vec<_>>()
+            fired_debug(&fired)
         );
     }
 
@@ -2014,40 +1744,7 @@ mod tests {
         ));
 
         // Need 100+ Empire systems
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        for i in 0..110 {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(i),
-                name: format!("System_{i}"),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.3,
-                popularity_empire: 0.7,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(crate::dat::Faction::Empire),
-            });
-        }
+        add_empire_systems(&mut world, 110);
 
         let mut state = EventState::new();
         define_story_events(&mut state, &world);

@@ -285,34 +285,28 @@ impl AISystem {
                                 planner,
                                 round,
                                 missions,
-                                faction,
-                                1,
-                                &mut actions,
+                                crate::ai::MissionEvaluation::new(faction, 1, &mut actions),
                             ),
                             Pseudo::Espionage => AISystem::evaluate_espionage(
                                 planner,
                                 round,
-                                faction,
-                                1,
-                                &mut actions,
+                                crate::ai::MissionEvaluation::new(faction, 1, &mut actions),
                             ),
-                            Pseudo::Rescue => {
-                                AISystem::evaluate_rescue(planner, round, faction, 1, &mut actions);
-                            }
+                            Pseudo::Rescue => AISystem::evaluate_rescue(
+                                planner,
+                                round,
+                                crate::ai::MissionEvaluation::new(faction, 1, &mut actions),
+                            ),
                             Pseudo::Reconnaissance => AISystem::evaluate_reconnaissance(
                                 planner,
                                 round,
-                                faction,
-                                1,
-                                &mut actions,
+                                crate::ai::MissionEvaluation::new(faction, 1, &mut actions),
                             ),
                             Pseudo::UprisingPrevention => AISystem::evaluate_uprising_prevention(
                                 planner,
                                 round,
                                 missions,
-                                faction,
-                                1,
-                                &mut actions,
+                                crate::ai::MissionEvaluation::new(faction, 1, &mut actions),
                             ),
                         }
                         actions.into_iter().next()

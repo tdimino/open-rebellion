@@ -39,6 +39,162 @@ const CONFIRM_RECT: (f32, f32, f32, f32) = (355.0, 244.0, 51.0, 35.0);
 const CANCEL_RECT: (f32, f32, f32, f32) = (355.0, 281.0, 51.0, 35.0);
 const PICTURE_AT: (f32, f32) = (12.0, 30.0);
 
+fn commit_replacing<T>(
+    state: (&mut Option<T>, &mut Option<WindowId>),
+    prepared: (T, Option<WindowId>),
+    transition: &WindowTransition,
+) -> Option<WindowId> {
+    let (window, window_id) = state;
+    let (confirmation, replacing) = prepared;
+    let id = match *transition {
+        WindowTransition::Opened { id }
+            if window.is_none() && window_id.is_none() && replacing.is_none() =>
+        {
+            id
+        }
+        WindowTransition::Replaced { old, new }
+            if *window_id == Some(old) && replacing == Some(old) =>
+        {
+            new
+        }
+        _ => return None,
+    };
+    *window = Some(confirmation);
+    *window_id = Some(id);
+    Some(id)
+}
+
+fn managed_layer_id(
+    window_id: Option<WindowId>,
+    id: WindowId,
+    name: &'static str,
+) -> Option<egui::LayerId> {
+    (window_id == Some(id))
+        .then(|| egui::LayerId::new(egui::Order::Tooltip, egui::Id::new(name)))
+}
+
+fn managed_hit(
+    window_id: Option<WindowId>,
+    kind: WindowKind,
+    frame: &RoutingSnapshot,
+    layout: CockpitLayout,
+    point: (f32, f32),
+) -> Option<WindowId> {
+    let id = window_id?;
+    (frame.key(id).is_some_and(|key| key.kind == kind)
+        && frame.allows_input(id)
+        && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
+    .then_some(id)
+}
+
+fn managed_keyboard_owner(
+    window_id: Option<WindowId>,
+    frame: &RoutingSnapshot,
+) -> Option<WindowId> {
+    let id = window_id?;
+    matches!(
+        frame.keyboard_route().target,
+        rebellion_windowing::RouteTarget::Window(target) if target.window == id
+    )
+    .then_some(id)
+}
+
+fn managed_content_reports(
+    window_id: Option<WindowId>,
+    kind: WindowKind,
+    frame: &RoutingSnapshot,
+) -> Vec<ContentReport> {
+    frame
+        .paint_order()
+        .iter()
+        .copied()
+        .filter(|id| frame.key(*id).is_some_and(|key| key.kind == kind))
+        .map(|id| ContentReport {
+            window: id,
+            status: if window_id == Some(id) {
+                ContentStatus::Ready
+            } else {
+                ContentStatus::Unpaintable
+            },
+        })
+        .collect()
+}
+
+fn remove_managed_content<T>(
+    window: &mut Option<T>,
+    window_id: &mut Option<WindowId>,
+    removed: &[WindowId],
+) {
+    if window_id.is_some_and(|id| removed.contains(&id)) {
+        *window = None;
+        *window_id = None;
+    }
+}
+
+fn commit_managed_confirm<T, A: PartialEq>(
+    window: &mut Option<T>,
+    window_id: &mut Option<WindowId>,
+    prepared_window: WindowId,
+    prepared_action: A,
+    removed: &[WindowId],
+    current_action: impl FnOnce(&T) -> A,
+) -> Option<A> {
+    if !removed.contains(&prepared_window)
+        || *window_id != Some(prepared_window)
+        || current_action(window.as_ref()?) != prepared_action
+    {
+        return None;
+    }
+    *window = None;
+    *window_id = None;
+    Some(prepared_action)
+}
+
+fn contains_confirmation<T>(
+    window: &Option<T>,
+    layout: CockpitLayout,
+    point: (f32, f32),
+) -> bool {
+    window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
+}
+
+macro_rules! managed_commit_open {
+    ($prepared:ty) => {
+        /// Publishes prepared content only for the matching manager receipt.
+        pub fn commit_open(
+            &mut self,
+            prepared: $prepared,
+            transition: &WindowTransition,
+        ) -> Option<WindowId> {
+            commit_replacing(
+                (&mut self.window, &mut self.window_id),
+                (prepared.confirmation, prepared.replacing),
+                transition,
+            )
+        }
+    };
+}
+
+macro_rules! managed_hit_window {
+    ($kind:expr) => {
+        /// Manager-owned hit for event-local pointer routing.
+        #[must_use]
+        pub fn hit_window(
+            &self,
+            frame: &RoutingSnapshot,
+            layout: CockpitLayout,
+            point: (f32, f32),
+        ) -> Option<WindowId> {
+            managed_hit(self.window_id, $kind, frame, layout, point)
+        }
+
+        #[must_use]
+        pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
+            managed_keyboard_owner(self.window_id, frame)
+        }
+    };
+}
+
 /// TEXTSTRA `RT_RCDATA` 0x7057.
 const TRANSIT_TIME: &str = "Transit time in days";
 /// TEXTSTRA `RT_RCDATA` 0x7056.
@@ -214,33 +370,7 @@ impl MoveConfirmationState {
         })
     }
 
-    /// Publishes prepared content only for the exact manager open or
-    /// replacement receipt. A duplicate receipt preserves current content.
-    pub fn commit_open(
-        &mut self,
-        prepared: PreparedMoveConfirmation,
-        transition: &WindowTransition,
-    ) -> Option<WindowId> {
-        match *transition {
-            WindowTransition::Opened { id }
-                if self.window.is_none()
-                    && self.window_id.is_none()
-                    && prepared.replacing.is_none() =>
-            {
-                self.window = Some(prepared.confirmation);
-                self.window_id = Some(id);
-                Some(id)
-            }
-            WindowTransition::Replaced { old, new }
-                if self.window_id == Some(old) && prepared.replacing == Some(old) =>
-            {
-                self.window = Some(prepared.confirmation);
-                self.window_id = Some(new);
-                Some(new)
-            }
-            _ => None,
-        }
-    }
+    managed_commit_open!(PreparedMoveConfirmation);
 
     #[must_use]
     pub fn is_open(&self) -> bool {
@@ -262,63 +392,15 @@ impl MoveConfirmationState {
     /// Egui layer attached to the exact manager-issued Move confirmation.
     #[must_use]
     pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id == Some(id)).then(|| {
-            egui::LayerId::new(
-                egui::Order::Tooltip,
-                egui::Id::new("original-move-confirmation"),
-            )
-        })
+        managed_layer_id(self.window_id, id, "original-move-confirmation")
     }
 
-    /// Manager-owned hit for event-local pointer routing.
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::MoveConfirmation)
-            && frame.allows_input(id)
-            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    /// Exact manager identity holding this frame's keyboard lease.
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
+    managed_hit_window!(WindowKind::MoveConfirmation);
 
     /// Explicit content state for fail-closed manager reconciliation.
     #[must_use]
     pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::MoveConfirmation)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
+        managed_content_reports(self.window_id, WindowKind::MoveConfirmation, frame)
     }
 
     #[must_use]
@@ -328,10 +410,7 @@ impl MoveConfirmationState {
 
     /// Releases manager-owned content only from its exact teardown receipt.
     pub fn remove_content(&mut self, removed: &[WindowId]) {
-        if self.window_id.is_some_and(|id| removed.contains(&id)) {
-            self.window = None;
-            self.window_id = None;
-        }
+        remove_managed_content(&mut self.window, &mut self.window_id, removed);
     }
 
     /// Snapshots the exact current Move order without performing gameplay.
@@ -350,22 +429,21 @@ impl MoveConfirmationState {
         prepared: PreparedMoveConfirmationConfirm,
         removed: &[WindowId],
     ) -> Option<MoveConfirmationAction> {
-        if !removed.contains(&prepared.window)
-            || self.window_id != Some(prepared.window)
-            || self.window.as_ref()?.confirm_action() != prepared.action
-        {
-            return None;
-        }
-        self.window = None;
-        self.window_id = None;
-        Some(prepared.action)
+        commit_managed_confirm(
+            &mut self.window,
+            &mut self.window_id,
+            prepared.window,
+            prepared.action,
+            removed,
+            MoveConfirmation::confirm_action,
+        )
     }
 
     /// Whether `point` falls on the open window, so the galaxy map under it
     /// takes no input.
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
+        contains_confirmation(&self.window, layout, point)
     }
 
     /// Either control closes the window (`+0x30`) after acting.
@@ -695,31 +773,7 @@ impl ScrapConfirmationState {
         })
     }
 
-    pub fn commit_open(
-        &mut self,
-        prepared: PreparedScrapConfirmation,
-        transition: &WindowTransition,
-    ) -> Option<WindowId> {
-        match *transition {
-            WindowTransition::Opened { id }
-                if self.window.is_none()
-                    && self.window_id.is_none()
-                    && prepared.replacing.is_none() =>
-            {
-                self.window = Some(prepared.confirmation);
-                self.window_id = Some(id);
-                Some(id)
-            }
-            WindowTransition::Replaced { old, new }
-                if self.window_id == Some(old) && prepared.replacing == Some(old) =>
-            {
-                self.window = Some(prepared.confirmation);
-                self.window_id = Some(new);
-                Some(new)
-            }
-            _ => None,
-        }
-    }
+    managed_commit_open!(PreparedScrapConfirmation);
 
     #[must_use]
     pub fn is_open(&self) -> bool {
@@ -739,60 +793,14 @@ impl ScrapConfirmationState {
     /// Egui layer attached to the exact manager-issued Scrap confirmation.
     #[must_use]
     pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id == Some(id)).then(|| {
-            egui::LayerId::new(
-                egui::Order::Tooltip,
-                egui::Id::new("original-scrap-confirmation"),
-            )
-        })
+        managed_layer_id(self.window_id, id, "original-scrap-confirmation")
     }
 
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::ScrapConfirmation)
-            && frame.allows_input(id)
-            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
+    managed_hit_window!(WindowKind::ScrapConfirmation);
 
     #[must_use]
     pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::ScrapConfirmation)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
+        managed_content_reports(self.window_id, WindowKind::ScrapConfirmation, frame)
     }
 
     #[must_use]
@@ -801,10 +809,7 @@ impl ScrapConfirmationState {
     }
 
     pub fn remove_content(&mut self, removed: &[WindowId]) {
-        if self.window_id.is_some_and(|id| removed.contains(&id)) {
-            self.window = None;
-            self.window_id = None;
-        }
+        remove_managed_content(&mut self.window, &mut self.window_id, removed);
     }
 
     #[must_use]
@@ -820,21 +825,20 @@ impl ScrapConfirmationState {
         prepared: PreparedScrapConfirmationConfirm,
         removed: &[WindowId],
     ) -> Option<ScrapConfirmationAction> {
-        if !removed.contains(&prepared.window)
-            || self.window_id != Some(prepared.window)
-            || self.window.as_ref()?.confirm_action() != prepared.action
-        {
-            return None;
-        }
-        self.window = None;
-        self.window_id = None;
-        Some(prepared.action)
+        commit_managed_confirm(
+            &mut self.window,
+            &mut self.window_id,
+            prepared.window,
+            prepared.action,
+            removed,
+            ScrapConfirmation::confirm_action,
+        )
     }
 
     /// Whether `point` falls on the open window.
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
+        contains_confirmation(&self.window, layout, point)
     }
 }
 
@@ -999,39 +1003,10 @@ impl StopConfirmationState {
     /// Egui layer attached to the exact manager-issued Stop confirmation.
     #[must_use]
     pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id == Some(id)).then(|| {
-            egui::LayerId::new(
-                egui::Order::Tooltip,
-                egui::Id::new("original-stop-confirmation"),
-            )
-        })
+        managed_layer_id(self.window_id, id, "original-stop-confirmation")
     }
 
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::StopConfirmation)
-            && frame.allows_input(id)
-            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
+    managed_hit_window!(WindowKind::StopConfirmation);
 
     #[must_use]
     pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
@@ -1046,16 +1021,13 @@ impl StopConfirmationState {
     }
 
     pub fn remove_content(&mut self, removed: &[WindowId]) {
-        if self.window_id.is_some_and(|id| removed.contains(&id)) {
-            self.window = None;
-            self.window_id = None;
-        }
+        remove_managed_content(&mut self.window, &mut self.window_id, removed);
     }
 
     /// Whether `point` falls on the open window.
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
+        contains_confirmation(&self.window, layout, point)
     }
 }
 
@@ -1157,6 +1129,58 @@ mod tests {
         }
     }
 
+    fn run_confirmation_frames<S, A>(
+        layout: CockpitLayout,
+        mut cache: BmpCache,
+        state: &mut S,
+        frames: impl IntoIterator<Item = Vec<egui::Event>>,
+        mut draw: impl FnMut(
+            &egui::Context,
+            &mut S,
+            CockpitLayout,
+            &mut BmpCache,
+        ) -> Option<A>,
+    ) -> Option<A> {
+        let ctx = egui::Context::default();
+        let mut emitted = None;
+        for events in frames {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0) * layout.scale,
+                )),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                if let Some(action) = draw(ctx, state, layout, &mut cache) {
+                    emitted = Some(action);
+                }
+            });
+        }
+        emitted
+    }
+
+    fn drive_confirmation<S, A>(
+        layout: CockpitLayout,
+        cache: BmpCache,
+        state: &mut S,
+        (x, y): (f32, f32),
+        frames: Vec<Vec<egui::Event>>,
+        draw: impl FnMut(&egui::Context, &mut S, CockpitLayout, &mut BmpCache) -> Option<A>,
+    ) -> Option<A> {
+        let pos = window_rect(layout).min + egui::vec2(x, y) * layout.scale;
+        let frames = [vec![], vec![]].into_iter().chain(frames).map(|extra| {
+            let mut events = vec![egui::Event::PointerMoved(pos)];
+            events.extend(extra.into_iter().map(|event| match event {
+                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
+                other => other,
+            }));
+            events
+        });
+        run_confirmation_frames(layout, cache, state, frames, draw)
+    }
+
     /// Run two idle frames, then one frame per entry of `frames`, with the
     /// pointer at window pixel `(x, y)`.
     fn drive(
@@ -1180,35 +1204,12 @@ mod tests {
     /// the layout's scale enlarges.
     fn drive_in(
         layout: CockpitLayout,
-        mut cache: BmpCache,
+        cache: BmpCache,
         state: &mut MoveConfirmationState,
-        (x, y): (f32, f32),
+        point: (f32, f32),
         frames: Vec<Vec<egui::Event>>,
     ) -> Option<MoveConfirmationAction> {
-        let pos = window_rect(layout).min + egui::vec2(x, y) * layout.scale;
-        let ctx = egui::Context::default();
-        let mut emitted = None;
-        for extra in [vec![], vec![]].into_iter().chain(frames) {
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0) * layout.scale,
-                )),
-                events,
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
-                if let Some(action) = draw_move_confirmation(ctx, state, layout, &mut cache) {
-                    emitted = Some(action);
-                }
-            });
-        }
-        emitted
+        drive_confirmation(layout, cache, state, point, frames, draw_move_confirmation)
     }
 
     fn click(
@@ -1368,9 +1369,6 @@ mod tests {
         let layout = layout();
         let point = |(x, y): (f32, f32)| window_rect(layout).min + egui::vec2(x, y);
         let (from, to) = (point(from), point(to));
-        let ctx = egui::Context::default();
-        let mut cache = keyed_buttons();
-        let mut emitted = None;
         let frames = [
             vec![egui::Event::PointerMoved(from)],
             vec![egui::Event::PointerMoved(from)],
@@ -1378,22 +1376,18 @@ mod tests {
             vec![egui::Event::PointerMoved(to)],
             vec![egui::Event::PointerMoved(to), press(to, false)],
         ];
-        for events in frames {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
-                if let Some(action) = draw_move_confirmation(ctx, state, layout, &mut cache) {
-                    emitted = Some(action);
-                }
-            });
-        }
-        emitted
+        run_confirmation_frames(layout, keyed_buttons(), state, frames, draw_move_confirmation)
+    }
+
+    fn add_test_fleet(world: &mut rebellion_core::world::GameWorld) -> FleetKey {
+        world.fleets.insert(rebellion_core::world::Fleet {
+            location: SystemKey::default(),
+            capital_ships: Vec::new(),
+            fighters: Vec::new(),
+            characters: Vec::new(),
+            is_alliance: true,
+            bombarding: false,
+        })
     }
 
     #[test]
@@ -1443,14 +1437,7 @@ mod tests {
         // FUN_0044f5e0 resubmits the same order, so a move onto a fleet
         // still joins it (ghidra/notes/fleet-join-split.md).
         let mut world = rebellion_core::world::GameWorld::default();
-        let target = world.fleets.insert(rebellion_core::world::Fleet {
-            location: SystemKey::default(),
-            capital_ships: Vec::new(),
-            fighters: Vec::new(),
-            characters: Vec::new(),
-            is_alliance: true,
-            bombarding: false,
-        });
+        let target = add_test_fleet(&mut world);
         let mut state = MoveConfirmationState::default();
         state.open(MoveConfirmation {
             join: Some(target),
@@ -1470,17 +1457,7 @@ mod tests {
         // FUN_0044f5e0 resubmits the same order, whose team is the icon's
         // fleets (FUN_00512700, kind 0x10); FUN_0053c2e0 lists one line each.
         let mut world = rebellion_core::world::GameWorld::default();
-        let mut fleet = || {
-            world.fleets.insert(rebellion_core::world::Fleet {
-                location: SystemKey::default(),
-                capital_ships: Vec::new(),
-                fighters: Vec::new(),
-                characters: Vec::new(),
-                is_alliance: true,
-                bombarding: false,
-            })
-        };
-        let team = vec![fleet(), fleet()];
+        let team = vec![add_test_fleet(&mut world), add_test_fleet(&mut world)];
         let mut state = MoveConfirmationState::default();
         state.open(MoveConfirmation {
             fleets: team.clone(),
@@ -1632,6 +1609,27 @@ mod tests {
         state
     }
 
+    fn managed_open<S, P>(
+        state: &mut S,
+        prepared: P,
+        spec: impl FnOnce(&P) -> WindowSpec,
+        commit: impl FnOnce(&mut S, P, &WindowTransition) -> Option<WindowId>,
+    ) -> (WindowManager, WindowId) {
+        let mut manager = WindowManager::new();
+        let committed = manager
+            .apply(WindowCommand::Open(spec(&prepared)))
+            .expect("manager accepts confirmation");
+        let WindowTransition::Opened { id } = committed.transition else {
+            panic!("expected new confirmation identity");
+        };
+        assert_eq!(commit(state, prepared, &committed.transition), Some(id));
+        (manager, id)
+    }
+
+    fn command_subject() -> SubjectId {
+        SubjectId::new(crate::windowing_policy::SUBJECT_COMMAND_CONTEXT, 1)
+    }
+
     fn managed_move_open(
         state: &mut MoveConfirmationState,
         confirmation: MoveConfirmation,
@@ -1639,18 +1637,12 @@ mod tests {
         let prepared = state
             .prepare_open(confirmation)
             .expect("valid Move confirmation context");
-        let mut manager = WindowManager::new();
-        let committed = manager
-            .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
-                crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
-                1,
-            ))))
-            .expect("manager accepts Move confirmation");
-        let WindowTransition::Opened { id } = committed.transition else {
-            panic!("expected new Move confirmation identity");
-        };
-        assert_eq!(state.commit_open(prepared, &committed.transition), Some(id));
-        (manager, id)
+        managed_open(
+            state,
+            prepared,
+            |prepared| prepared.spec(command_subject()),
+            MoveConfirmationState::commit_open,
+        )
     }
 
     fn scrap_confirmation(faction: MissionFaction) -> ScrapConfirmation {
@@ -1669,18 +1661,156 @@ mod tests {
         let prepared = state
             .prepare_open(confirmation)
             .expect("valid Scrap confirmation context");
+        managed_open(
+            state,
+            prepared,
+            |prepared| prepared.spec(command_subject()),
+            ScrapConfirmationState::commit_open,
+        )
+    }
+
+    fn unrelated_transition() -> (WindowTransition, WindowId) {
         let mut manager = WindowManager::new();
         let committed = manager
-            .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
-                crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
-                1,
-            ))))
-            .expect("manager accepts Scrap confirmation");
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
         let WindowTransition::Opened { id } = committed.transition else {
-            panic!("expected new Scrap confirmation identity");
+            panic!("expected unrelated identity");
         };
-        assert_eq!(state.commit_open(prepared, &committed.transition), Some(id));
-        (manager, id)
+        (committed.transition, id)
+    }
+
+    fn assert_legacy_preserved<S, P>(
+        state: &mut S,
+        prepared: P,
+        commit: fn(&mut S, P, &WindowTransition) -> Option<WindowId>,
+        faction: impl FnOnce(&S) -> Option<MissionFaction>,
+    ) -> WindowId {
+        let (transition, unrelated_id) = unrelated_transition();
+        assert_eq!(commit(state, prepared, &transition), None);
+        assert_eq!(faction(state), Some(MissionFaction::Alliance));
+        unrelated_id
+    }
+
+    fn assert_managed_routes<S>(
+        state: &S,
+        manager: &mut WindowManager,
+        id: WindowId,
+        hit: fn(&S, &RoutingSnapshot, CockpitLayout, (f32, f32)) -> Option<WindowId>,
+        keyboard: fn(&S, &RoutingSnapshot) -> Option<WindowId>,
+        reports: fn(&S, &RoutingSnapshot) -> Vec<ContentReport>,
+        request_close: fn(&S) -> Option<WindowId>,
+    ) -> WindowId {
+        let rect = window_rect(layout());
+        let center = (rect.center().x, rect.center().y);
+        let frame = manager.begin_frame();
+        assert_eq!(hit(state, &frame, layout(), center), Some(id));
+        assert_eq!(
+            hit(state, &frame, layout(), (rect.min.x - 1.0, rect.min.y)),
+            None
+        );
+        assert_eq!(keyboard(state, &frame), Some(id));
+        assert_eq!(
+            reports(state, &frame),
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Ready,
+            }]
+        );
+        assert_eq!(request_close(state), Some(id));
+
+        let blocker = manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        let WindowTransition::Opened { id: blocker } = blocker.transition else {
+            panic!("expected blocker identity");
+        };
+        let blocked = manager.begin_frame();
+        assert_eq!(hit(state, &blocked, layout(), center), None);
+        assert_eq!(keyboard(state, &blocked), None);
+        blocker
+    }
+
+    fn assert_replacement_rejections<S, P: Clone>(
+        state: &mut S,
+        replacement: P,
+        id: WindowId,
+        blocker: WindowId,
+        unrelated: WindowId,
+        commit: fn(&mut S, P, &WindowTransition) -> Option<WindowId>,
+        set_id: fn(&mut S, WindowId),
+    ) {
+        assert_eq!(
+            commit(state, replacement.clone(), &WindowTransition::Opened { id: blocker }),
+            None
+        );
+        assert_eq!(
+            commit(
+                state,
+                replacement.clone(),
+                &WindowTransition::Replaced {
+                    old: blocker,
+                    new: unrelated,
+                },
+            ),
+            None
+        );
+        set_id(state, blocker);
+        assert_eq!(
+            commit(
+                state,
+                replacement,
+                &WindowTransition::Replaced {
+                    old: id,
+                    new: unrelated,
+                },
+            ),
+            None
+        );
+        set_id(state, id);
+    }
+
+    fn assert_confirm_guards<S, P: Clone, A: std::fmt::Debug + PartialEq, R>(
+        state: &mut S,
+        id: WindowId,
+        wrong: WindowId,
+        prepare: fn(&S) -> Option<P>,
+        commit: fn(&mut S, P, &[WindowId]) -> Option<A>,
+        mutate: impl FnOnce(&mut S) -> R,
+        restore: impl FnOnce(&mut S, R),
+        accepted: impl FnOnce(Option<A>) -> bool,
+    ) {
+        let prepared = prepare(state).unwrap();
+        assert_eq!(commit(state, prepared.clone(), &[wrong]), None);
+        let original = mutate(state);
+        assert_eq!(commit(state, prepared.clone(), &[id]), None);
+        restore(state, original);
+        assert!(accepted(commit(state, prepared.clone(), &[id])));
+        assert_eq!(commit(state, prepared, &[id]), None);
+    }
+
+    fn assert_removal<S>(
+        state: &mut S,
+        blocker: WindowId,
+        id: WindowId,
+        remove: fn(&mut S, &[WindowId]),
+        window_id: fn(&S) -> Option<WindowId>,
+        is_open: fn(&S) -> bool,
+    ) {
+        remove(state, &[blocker]);
+        assert_eq!(window_id(state), Some(id));
+        remove(state, &[id]);
+        assert!(!is_open(state));
     }
 
     #[test]
@@ -1744,118 +1874,65 @@ mod tests {
         let inert = legacy
             .prepare_open(confirmation(MissionFaction::Empire))
             .unwrap();
-        let mut unrelated = WindowManager::new();
-        let unrelated = unrelated
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let WindowTransition::Opened { id: unrelated_id } = unrelated.transition else {
-            panic!("expected unrelated identity");
-        };
-        assert_eq!(legacy.commit_open(inert, &unrelated.transition), None);
-        assert_eq!(
-            legacy.confirmation().map(|value| value.faction),
-            Some(MissionFaction::Alliance)
+        let unrelated_id = assert_legacy_preserved(
+            &mut legacy,
+            inert,
+            MoveConfirmationState::commit_open,
+            |state| state.confirmation().map(|value| value.faction),
         );
 
         let mut state = MoveConfirmationState::default();
         let (mut manager, id) =
             managed_move_open(&mut state, confirmation(MissionFaction::Alliance));
-        let frame = manager.begin_frame();
-        let rect = window_rect(layout());
-        assert_eq!(
-            state.hit_window(&frame, layout(), (rect.center().x, rect.center().y)),
-            Some(id)
+        let blocker = assert_managed_routes(
+            &state,
+            &mut manager,
+            id,
+            MoveConfirmationState::hit_window,
+            MoveConfirmationState::keyboard_owner,
+            MoveConfirmationState::content_reports,
+            MoveConfirmationState::request_close,
         );
-        assert_eq!(
-            state.hit_window(&frame, layout(), (rect.min.x - 1.0, rect.min.y)),
-            None
-        );
-        assert_eq!(state.keyboard_owner(&frame), Some(id));
-        assert_eq!(
-            state.content_reports(&frame),
-            [ContentReport {
-                window: id,
-                status: ContentStatus::Ready,
-            }]
-        );
-        assert_eq!(state.request_close(), Some(id));
-
-        let blocker = manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let WindowTransition::Opened { id: blocker } = blocker.transition else {
-            panic!("expected blocker identity");
-        };
-        let blocked = manager.begin_frame();
-        assert_eq!(
-            state.hit_window(&blocked, layout(), (rect.center().x, rect.center().y)),
-            None
-        );
-        assert_eq!(state.keyboard_owner(&blocked), None);
 
         let replacement = state
             .prepare_open(confirmation(MissionFaction::Empire))
             .unwrap();
         assert_eq!(replacement.replacing(), Some(id));
-        assert_eq!(
-            state.commit_open(
-                replacement.clone(),
-                &WindowTransition::Opened { id: blocker }
-            ),
-            None
+        assert_replacement_rejections(
+            &mut state,
+            replacement,
+            id,
+            blocker,
+            unrelated_id,
+            MoveConfirmationState::commit_open,
+            |state, id| state.window_id = Some(id),
         );
-        assert_eq!(
-            state.commit_open(
-                replacement.clone(),
-                &WindowTransition::Replaced {
-                    old: blocker,
-                    new: unrelated_id,
-                }
-            ),
-            None
+        assert_confirm_guards(
+            &mut state,
+            id,
+            blocker,
+            MoveConfirmationState::prepare_confirm,
+            MoveConfirmationState::commit_confirm,
+            |state| {
+                let original = state.window.clone();
+                state.window.as_mut().unwrap().join = Some(FleetKey::default());
+                original
+            },
+            |state, original| state.window = original,
+            |result| matches!(result, Some(MoveConfirmationAction::Confirm { .. })),
         );
-        state.window_id = Some(blocker);
-        assert_eq!(
-            state.commit_open(
-                replacement.clone(),
-                &WindowTransition::Replaced {
-                    old: id,
-                    new: unrelated_id,
-                }
-            ),
-            None
-        );
-        state.window_id = Some(id);
-
-        let prepared = state.prepare_confirm().unwrap();
-        assert_eq!(state.commit_confirm(prepared.clone(), &[blocker]), None);
-        let original = state.window.clone();
-        state.window.as_mut().unwrap().join = Some(FleetKey::default());
-        assert_eq!(state.commit_confirm(prepared.clone(), &[id]), None);
-        state.window = original;
-        assert!(matches!(
-            state.commit_confirm(prepared.clone(), &[id]),
-            Some(MoveConfirmationAction::Confirm { .. })
-        ));
-        assert_eq!(state.commit_confirm(prepared, &[id]), None);
 
         let mut removable = MoveConfirmationState::default();
         let (_, removable_id) =
             managed_move_open(&mut removable, confirmation(MissionFaction::Alliance));
-        removable.remove_content(&[blocker]);
-        assert_eq!(removable.window_id(), Some(removable_id));
-        removable.remove_content(&[removable_id]);
-        assert!(!removable.is_open());
+        assert_removal(
+            &mut removable,
+            blocker,
+            removable_id,
+            MoveConfirmationState::remove_content,
+            MoveConfirmationState::window_id,
+            MoveConfirmationState::is_open,
+        );
     }
 
     #[test]
@@ -1896,99 +1973,40 @@ mod tests {
         let inert = legacy
             .prepare_open(scrap_confirmation(MissionFaction::Empire))
             .unwrap();
-        let mut unrelated = WindowManager::new();
-        let unrelated = unrelated
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let WindowTransition::Opened { id: unrelated_id } = unrelated.transition else {
-            panic!("expected unrelated identity");
-        };
-        assert_eq!(legacy.commit_open(inert, &unrelated.transition), None);
-        assert_eq!(
-            legacy.confirmation().map(|value| value.faction),
-            Some(MissionFaction::Alliance)
+        let unrelated_id = assert_legacy_preserved(
+            &mut legacy,
+            inert,
+            ScrapConfirmationState::commit_open,
+            |state| state.confirmation().map(|value| value.faction),
         );
 
         let mut state = ScrapConfirmationState::default();
         let (mut manager, id) =
             managed_scrap_open(&mut state, scrap_confirmation(MissionFaction::Alliance));
         assert_eq!(state.window_id(), Some(id));
-        let frame = manager.begin_frame();
-        let rect = window_rect(layout());
-        assert_eq!(
-            state.hit_window(&frame, layout(), (rect.center().x, rect.center().y)),
-            Some(id)
+        let blocker = assert_managed_routes(
+            &state,
+            &mut manager,
+            id,
+            ScrapConfirmationState::hit_window,
+            ScrapConfirmationState::keyboard_owner,
+            ScrapConfirmationState::content_reports,
+            ScrapConfirmationState::request_close,
         );
-        assert_eq!(
-            state.hit_window(&frame, layout(), (rect.min.x - 1.0, rect.min.y)),
-            None
-        );
-        assert_eq!(state.keyboard_owner(&frame), Some(id));
-        assert_eq!(
-            state.content_reports(&frame),
-            [ContentReport {
-                window: id,
-                status: ContentStatus::Ready,
-            }]
-        );
-        assert_eq!(state.request_close(), Some(id));
-
-        let blocker = manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let WindowTransition::Opened { id: blocker } = blocker.transition else {
-            panic!("expected blocker identity");
-        };
-        let blocked = manager.begin_frame();
-        assert_eq!(
-            state.hit_window(&blocked, layout(), (rect.center().x, rect.center().y)),
-            None
-        );
-        assert_eq!(state.keyboard_owner(&blocked), None);
 
         let replacement = state
             .prepare_open(scrap_confirmation(MissionFaction::Empire))
             .unwrap();
         assert_eq!(replacement.replacing(), Some(id));
-        assert_eq!(
-            state.commit_open(
-                replacement.clone(),
-                &WindowTransition::Opened { id: blocker }
-            ),
-            None
+        assert_replacement_rejections(
+            &mut state,
+            replacement.clone(),
+            id,
+            blocker,
+            unrelated_id,
+            ScrapConfirmationState::commit_open,
+            |state, id| state.window_id = Some(id),
         );
-        assert_eq!(
-            state.commit_open(
-                replacement.clone(),
-                &WindowTransition::Replaced {
-                    old: blocker,
-                    new: unrelated_id,
-                }
-            ),
-            None
-        );
-        state.window_id = Some(blocker);
-        assert_eq!(
-            state.commit_open(
-                replacement.clone(),
-                &WindowTransition::Replaced {
-                    old: id,
-                    new: unrelated_id,
-                }
-            ),
-            None
-        );
-        state.window_id = Some(id);
         let previous_id = id;
         assert_eq!(
             state.commit_open(
@@ -2006,26 +2024,32 @@ mod tests {
             Some(MissionFaction::Empire)
         );
         let id = blocker;
-
-        let prepared = state.prepare_confirm().unwrap();
-        assert_eq!(state.commit_confirm(prepared.clone(), &[previous_id]), None);
-        let original = state.window.clone();
-        state.window.as_mut().unwrap().faction = MissionFaction::Alliance;
-        assert_eq!(state.commit_confirm(prepared.clone(), &[id]), None);
-        state.window = original;
-        assert!(matches!(
-            state.commit_confirm(prepared.clone(), &[id]),
-            Some(ScrapConfirmationAction::Confirm { .. })
-        ));
-        assert_eq!(state.commit_confirm(prepared, &[id]), None);
+        assert_confirm_guards(
+            &mut state,
+            id,
+            previous_id,
+            ScrapConfirmationState::prepare_confirm,
+            ScrapConfirmationState::commit_confirm,
+            |state| {
+                let original = state.window.clone();
+                state.window.as_mut().unwrap().faction = MissionFaction::Alliance;
+                original
+            },
+            |state, original| state.window = original,
+            |result| matches!(result, Some(ScrapConfirmationAction::Confirm { .. })),
+        );
 
         let mut removable = ScrapConfirmationState::default();
         let (_, removable_id) =
             managed_scrap_open(&mut removable, scrap_confirmation(MissionFaction::Alliance));
-        removable.remove_content(&[blocker]);
-        assert_eq!(removable.window_id(), Some(removable_id));
-        removable.remove_content(&[removable_id]);
-        assert!(!removable.is_open());
+        assert_removal(
+            &mut removable,
+            blocker,
+            removable_id,
+            ScrapConfirmationState::remove_content,
+            ScrapConfirmationState::window_id,
+            ScrapConfirmationState::is_open,
+        );
     }
 
     #[test]
@@ -2194,35 +2218,17 @@ mod tests {
 
     fn drive_scrap(
         state: &mut ScrapConfirmationState,
-        (x, y): (f32, f32),
+        point: (f32, f32),
         frames: Vec<Vec<egui::Event>>,
     ) -> Option<ScrapConfirmationAction> {
-        let layout = layout();
-        let pos = window_rect(layout).min + egui::vec2(x, y);
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let mut emitted = None;
-        for extra in [vec![], vec![]].into_iter().chain(frames) {
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
-                if let Some(action) = draw_scrap_confirmation(ctx, state, layout, &mut cache) {
-                    emitted = Some(action);
-                }
-            });
-        }
-        emitted
+        drive_confirmation(
+            layout(),
+            BmpCache::new(),
+            state,
+            point,
+            frames,
+            draw_scrap_confirmation,
+        )
     }
 
     #[test]
@@ -2315,35 +2321,17 @@ mod tests {
 
     fn drive_stop(
         state: &mut StopConfirmationState,
-        (x, y): (f32, f32),
+        point: (f32, f32),
         frames: Vec<Vec<egui::Event>>,
     ) -> Option<StopConfirmationAction> {
-        let layout = layout();
-        let pos = window_rect(layout).min + egui::vec2(x, y);
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let mut emitted = None;
-        for extra in [vec![], vec![]].into_iter().chain(frames) {
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
-                if let Some(action) = draw_stop_confirmation(ctx, state, layout, &mut cache) {
-                    emitted = Some(action);
-                }
-            });
-        }
-        emitted
+        drive_confirmation(
+            layout(),
+            BmpCache::new(),
+            state,
+            point,
+            frames,
+            draw_stop_confirmation,
+        )
     }
 
     /// The app's answer to the window: the checkmark stops the band

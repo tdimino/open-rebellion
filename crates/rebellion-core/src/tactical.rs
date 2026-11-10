@@ -2897,29 +2897,58 @@ pub fn queue_original_tactical_projectile(
     let (Some(source_ship), Some(target_ship)) = (ships.get(source), ships.get(target)) else {
         return false;
     };
-    let profile = original_projectile_profile(
+    push_original_projectile(
+        effects,
+        source,
+        target,
         weapon,
         event_strength,
         source_ship
             .tactical_resource
             .map(|resource| resource.tactical_ordinal),
         source_ship.identity.is_alliance,
+        source_ship.source_position,
+        [source_ship.x, source_ship.y],
+        target_ship.source_position,
+        [target_ship.x, target_ship.y],
+    );
+    true
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_original_projectile(
+    effects: &mut Vec<WeaponEffect>,
+    source: usize,
+    target: usize,
+    weapon: WeaponKind,
+    event_strength: f32,
+    tactical_ordinal: Option<u16>,
+    is_alliance: bool,
+    source_position: TacticalWorldPosition,
+    fallback_source: [f32; 2],
+    target_position: TacticalWorldPosition,
+    fallback_target: [f32; 2],
+) {
+    let profile = original_projectile_profile(
+        weapon,
+        event_strength,
+        tactical_ordinal,
+        is_alliance,
     );
     effects.push(WeaponEffect {
         source,
         target,
         kind: weapon,
-        source_position: source_ship.source_position,
-        fallback_source: [source_ship.x, source_ship.y],
-        target_position: target_ship.source_position,
-        fallback_target: [target_ship.x, target_ship.y],
+        source_position,
+        fallback_source,
+        target_position,
+        fallback_target,
         longitudinal_scale: profile.longitudinal_scale,
         shape_variant: profile.shape_variant,
         color_selector: profile.color_selector,
         elapsed: 0.0,
         duration: profile.duration,
     });
-    true
 }
 
 fn queue_original_fighter_projectile(
@@ -2941,28 +2970,21 @@ fn queue_original_fighter_projectile(
     } else {
         return false;
     };
-    let profile = original_projectile_profile(
+    push_original_projectile(
+        effects,
+        usize::MAX,
+        target,
         weapon,
         event_strength,
         source_fighter
             .tactical_resource
             .map(|resource| resource.tactical_ordinal),
         source_fighter.identity.is_alliance,
-    );
-    effects.push(WeaponEffect {
-        source: usize::MAX,
-        target,
-        kind: weapon,
-        source_position: source_fighter.source_position,
-        fallback_source: [source_fighter.x, source_fighter.y],
+        source_fighter.source_position,
+        [source_fighter.x, source_fighter.y],
         target_position,
         fallback_target,
-        longitudinal_scale: profile.longitudinal_scale,
-        shape_variant: profile.shape_variant,
-        color_selector: profile.color_selector,
-        elapsed: 0.0,
-        duration: profile.duration,
-    });
+    );
     true
 }
 
@@ -2980,28 +3002,21 @@ fn queue_original_fighter_to_death_star_projectile(
     let Some(source_fighter) = fighters.get(source) else {
         return false;
     };
-    let profile = original_projectile_profile(
+    push_original_projectile(
+        effects,
+        usize::MAX,
+        usize::MAX,
         weapon,
         event_strength,
         source_fighter
             .tactical_resource
             .map(|resource| resource.tactical_ordinal),
         source_fighter.identity.is_alliance,
+        source_fighter.source_position,
+        [source_fighter.x, source_fighter.y],
+        death_star.source_position,
+        [ARENA_WIDTH * 0.5, ARENA_HEIGHT * 0.5],
     );
-    effects.push(WeaponEffect {
-        source: usize::MAX,
-        target: usize::MAX,
-        kind: weapon,
-        source_position: source_fighter.source_position,
-        fallback_source: [source_fighter.x, source_fighter.y],
-        target_position: death_star.source_position,
-        fallback_target: [ARENA_WIDTH * 0.5, ARENA_HEIGHT * 0.5],
-        longitudinal_scale: profile.longitudinal_scale,
-        shape_variant: profile.shape_variant,
-        color_selector: profile.color_selector,
-        elapsed: 0.0,
-        duration: profile.duration,
-    });
     true
 }
 
@@ -3677,20 +3692,7 @@ fn original_fighter_weapon_strength(
     kind: WeaponKind,
     target_is_fighter: bool,
 ) -> f32 {
-    let target_modifier = if target_is_fighter {
-        match kind {
-            WeaponKind::IonCannon => ORIGINAL_ION_VS_FIGHTER,
-            WeaponKind::LaserCannon => ORIGINAL_LASER_VS_FIGHTER,
-            WeaponKind::Turbolaser => ORIGINAL_TURBOLASER_VS_FIGHTER,
-            WeaponKind::FighterAttack => 0.0,
-        }
-    } else {
-        match kind {
-            WeaponKind::LaserCannon => ORIGINAL_LASER_VS_CAPITAL,
-            WeaponKind::IonCannon | WeaponKind::Turbolaser => 1.0,
-            WeaponKind::FighterAttack => 0.0,
-        }
-    };
+    let target_modifier = engagement_family_modifier(kind, target_is_fighter);
     count as f32 * fighter.weapon_hull_factor() * ORIGINAL_CAPITAL_WEAPON_STRENGTH * target_modifier
 }
 
@@ -3753,29 +3755,79 @@ fn queue_original_capital_to_fighter_projectile(
     else {
         return false;
     };
-    let profile = original_projectile_profile(
+    push_original_projectile(
+        effects,
+        source,
+        usize::MAX,
         weapon,
         event_strength,
         source_ship
             .tactical_resource
             .map(|resource| resource.tactical_ordinal),
         source_ship.identity.is_alliance,
+        source_ship.source_position,
+        [source_ship.x, source_ship.y],
+        target_fighter.source_position,
+        [target_fighter.x, target_fighter.y],
     );
-    effects.push(WeaponEffect {
-        source,
-        target: usize::MAX,
-        kind: weapon,
-        source_position: source_ship.source_position,
-        fallback_source: [source_ship.x, source_ship.y],
-        target_position: target_fighter.source_position,
-        fallback_target: [target_fighter.x, target_fighter.y],
-        longitudinal_scale: profile.longitudinal_scale,
-        shape_variant: profile.shape_variant,
-        color_selector: profile.color_selector,
-        elapsed: 0.0,
-        duration: profile.duration,
-    });
     true
+}
+
+fn integrate_source_motion(ship: &mut TacticalShip, seconds: f32) {
+    ship.source_position.x += ship.source_velocity.x * seconds;
+    ship.source_position.y += ship.source_velocity.y * seconds;
+    ship.source_position.z += ship.source_velocity.z * seconds;
+}
+
+fn ranked_ship_indices(
+    ships: &[TacticalShip],
+    include: impl Fn(&TacticalShip) -> bool,
+) -> Vec<usize> {
+    let mut members = ships
+        .iter()
+        .enumerate()
+        .filter(|(_, ship)| include(ship))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    members.sort_by(|left, right| {
+        original_formation_capability_score(&ships[*right])
+            .total_cmp(&original_formation_capability_score(&ships[*left]))
+    });
+    members
+}
+
+fn flying_fighter_indices(fighters: &[TacticalFighter], is_attacker: bool) -> Vec<usize> {
+    (0..fighters.len())
+        .filter(|&index| {
+            let fighter = &fighters[index];
+            fighter.is_attacker == is_attacker && fighter.alive && fighter.docked.is_none()
+        })
+        .collect()
+}
+
+fn live_listed_fighter(fighter: &TacticalFighter) -> bool {
+    fighter.alive
+        && fighter.squad_count > 0
+        && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
+        && fighter.listed()
+}
+
+fn move_fighter_toward(
+    fighter: &mut TacticalFighter,
+    target: TacticalWorldPosition,
+    travel_limit: f32,
+    standoff: f32,
+) {
+    let delta = source_delta(target, fighter.source_position);
+    let distance = delta.x.hypot(delta.y).hypot(delta.z);
+    if distance <= standoff {
+        return;
+    }
+    let travel = travel_limit.min(distance - standoff);
+    let direction = delta.normalized();
+    fighter.source_position.x += direction.x * travel;
+    fighter.source_position.y += direction.y * travel;
+    fighter.source_position.z += direction.z * travel;
 }
 
 impl BattleSession {
@@ -3996,16 +4048,19 @@ impl BattleSession {
         }
     }
 
+    fn live_field_pair(&self, source: usize, target: usize) -> bool {
+        source < self.ships.len()
+            && target < self.ships.len()
+            && source != target
+            && self.ships[source].alive
+            && self.ships[target].alive
+    }
+
     /// Start or stop one source's tractor-field contribution on a live target.
     /// One tractor source can hold one target while a target can retain several
     /// exact sources, matching `FUN_005b23e0` through `FUN_005b25d0`.
     pub fn set_tractor_field(&mut self, source: usize, target: usize, active: bool) -> bool {
-        if source >= self.ships.len()
-            || target >= self.ships.len()
-            || source == target
-            || !self.ships[source].alive
-            || !self.ships[target].alive
-        {
+        if !self.live_field_pair(source, target) {
             return false;
         }
         let changed = set_original_tactical_field(
@@ -4026,12 +4081,7 @@ impl BattleSession {
     /// in each target's shared visual slot, matching `FUN_005b24d0` through
     /// `FUN_005b2550`.
     pub fn set_gravity_field(&mut self, source: usize, target: usize, active: bool) -> bool {
-        if source >= self.ships.len()
-            || target >= self.ships.len()
-            || source == target
-            || !self.ships[source].alive
-            || !self.ships[target].alive
-        {
+        if !self.live_field_pair(source, target) {
             return false;
         }
         set_original_tactical_field(
@@ -4148,14 +4198,10 @@ impl BattleSession {
                             }
                         }
                     } else {
-                        ship.source_position.x += ship.source_velocity.x * seconds;
-                        ship.source_position.y += ship.source_velocity.y * seconds;
-                        ship.source_position.z += ship.source_velocity.z * seconds;
+                        integrate_source_motion(ship, seconds);
                     }
                 } else {
-                    ship.source_position.x += ship.source_velocity.x * seconds;
-                    ship.source_position.y += ship.source_velocity.y * seconds;
-                    ship.source_position.z += ship.source_velocity.z * seconds;
+                    integrate_source_motion(ship, seconds);
                 }
             }
 
@@ -4880,23 +4926,14 @@ impl BattleSession {
     pub fn refresh_original_task_force_geometry(ships: &mut [TacticalShip]) {
         for is_alliance in [true, false] {
             for task_force in 0_u8..8 {
-                let mut members = ships
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, ship)| {
+                let members = ranked_ship_indices(ships, |ship| {
                         ship.alive
                             && ship.identity.is_alliance == is_alliance
                             && ship.task_force == task_force
-                    })
-                    .map(|(index, _)| index)
-                    .collect::<Vec<_>>();
+                    });
                 if members.is_empty() {
                     continue;
                 }
-                members.sort_by(|left, right| {
-                    original_formation_capability_score(&ships[*right])
-                        .total_cmp(&original_formation_capability_score(&ships[*left]))
-                });
                 let leader = members[0];
                 let anchor = ships[leader].source_position;
                 let forward = ships[leader].source_forward.normalized();
@@ -5043,20 +5080,22 @@ impl BattleSession {
 
     /// Returns true if the player controls this side of the battle.
     pub fn player_ships(&self) -> impl Iterator<Item = (usize, &TacticalShip)> {
-        let player_is_atk = self.player_is_attacker;
-        self.ships
-            .iter()
-            .enumerate()
-            .filter(move |(_, s)| s.is_attacker == player_is_atk)
+        self.ships_on_side(self.player_is_attacker)
     }
 
     /// Returns true if this side is controlled by the AI.
     pub fn ai_ships(&self) -> impl Iterator<Item = (usize, &TacticalShip)> {
-        let player_is_atk = self.player_is_attacker;
+        self.ships_on_side(!self.player_is_attacker)
+    }
+
+    fn ships_on_side(
+        &self,
+        is_attacker: bool,
+    ) -> impl Iterator<Item = (usize, &TacticalShip)> {
         self.ships
             .iter()
             .enumerate()
-            .filter(move |(_, s)| s.is_attacker != player_is_atk)
+            .filter(move |(_, ship)| ship.is_attacker == is_attacker)
     }
 
     // -------------------------------------------------------------------
@@ -5904,14 +5943,9 @@ impl BattleSession {
         }
         let mut recovering = Vec::new();
         for group in 0..=4_u8 {
-            let members: Vec<usize> = (0..self.fighters.len())
-                .filter(|&index| {
-                    let fighter = &self.fighters[index];
-                    fighter.is_attacker == is_attacker
-                        && fighter.alive
-                        && fighter.docked.is_none()
-                        && fighter.fighter_group == group
-                })
+            let members: Vec<usize> = flying_fighter_indices(&self.fighters, is_attacker)
+                .into_iter()
+                .filter(|&index| self.fighters[index].fighter_group == group)
                 .collect();
             let Some(&first) = members.first() else {
                 continue;
@@ -6498,12 +6532,7 @@ impl BattleSession {
         let side = usize::from(!is_attacker);
         let escapes = ship_hyperdrive_works;
         let can_retreat = self.side_has_working_hyperdrive(is_attacker);
-        let flying: Vec<usize> = (0..self.fighters.len())
-            .filter(|&index| {
-                let fighter = &self.fighters[index];
-                fighter.is_attacker == is_attacker && fighter.alive && fighter.docked.is_none()
-            })
-            .collect();
+        let flying = flying_fighter_indices(&self.fighters, is_attacker);
         for index in flying {
             if self.morale.hyperdrive_squadrons.contains(&index) {
                 self.morale.jumped[side] = true;
@@ -6853,6 +6882,21 @@ impl BattleSession {
     /// `FUN_005d2490`, then queues the arc for recharge (`FUN_005b64e0`).
     /// port: the gate on the Attack Fighters order; the source weapon loop's
     /// fighter path is not traced.
+    fn queue_weapon_audio(&mut self, kind: WeaponKind) {
+        for event in [
+            TacticalAudioEvent::fire_for(kind),
+            TacticalAudioEvent::impact_for(kind),
+        ] {
+            let variant = u8::try_from(
+                self.tactical_rng
+                    .inclusive(0, u32::from(event.variant_count() - 1)),
+            )
+            .unwrap_or(0);
+            self.pending_audio_cues
+                .push(TacticalAudioCue::from_variant(event, variant));
+        }
+    }
+
     fn fire_capitals_at_fighters(&mut self, effects: &mut Vec<WeaponEffect>) {
         let player_is_attacker = self.player_is_attacker;
         let player_faction = self.player_voice_faction();
@@ -6928,24 +6972,7 @@ impl BattleSession {
                     kind,
                     strength,
                 );
-                let fire_event = TacticalAudioEvent::fire_for(kind);
-                let impact_event = TacticalAudioEvent::impact_for(kind);
-                self.pending_audio_cues.push(TacticalAudioCue::from_variant(
-                    fire_event,
-                    u8::try_from(
-                        self.tactical_rng
-                            .inclusive(0, u32::from(fire_event.variant_count() - 1)),
-                    )
-                    .unwrap_or(0),
-                ));
-                self.pending_audio_cues.push(TacticalAudioCue::from_variant(
-                    impact_event,
-                    u8::try_from(
-                        self.tactical_rng
-                            .inclusive(0, u32::from(impact_event.variant_count() - 1)),
-                    )
-                    .unwrap_or(0),
-                ));
+                self.queue_weapon_audio(kind);
                 fired = true;
             }
             if fired {
@@ -7099,6 +7126,79 @@ impl BattleSession {
         strength
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn apply_fighter_hit_to_capital(
+        &mut self,
+        effects: &mut Vec<WeaponEffect>,
+        source: usize,
+        source_snapshot: &TacticalFighter,
+        target: usize,
+        kind: WeaponKind,
+        strength: f32,
+        player_faction: TacticalVoiceFaction,
+        player_is_attacker: bool,
+    ) {
+        let target_is_attacker = self.ships[target].is_attacker;
+        let target_group = self.ships[target].task_force;
+        let damage = original_tactical_integer_damage(strength);
+        let rolls = original_windowed_damage_rolls(
+            &self.ships,
+            target,
+            damage,
+            &mut self.tactical_rng,
+            player_is_attacker,
+        );
+        let stage = apply_original_capital_damage(
+            &mut self.ships,
+            &mut self.field_effects,
+            target,
+            damage,
+            rolls,
+        );
+        queue_original_destruction_voice(
+            &mut self.pending_voice_cues,
+            player_faction,
+            player_is_attacker,
+            source_snapshot.is_attacker,
+            TacticalVoiceGroup::Fighter(source_snapshot.fighter_group),
+            target_is_attacker,
+            TacticalVoiceGroup::Capital(target_group),
+            stage,
+        );
+        queue_original_tactical_impact(&mut self.impact_effects, target, kind, stage);
+        queue_original_fighter_projectile(
+            effects,
+            &self.fighters,
+            source,
+            Some((target, &self.ships[target])),
+            None,
+            kind,
+            strength,
+        );
+    }
+
+    fn apply_fighter_hit_to_death_star(
+        &mut self,
+        effects: &mut Vec<WeaponEffect>,
+        source: usize,
+        kind: WeaponKind,
+        strength: f32,
+    ) -> bool {
+        let Some(death_star) = self.death_star.as_mut() else {
+            return false;
+        };
+        death_star.hull = (death_star.hull - strength).max(0.0);
+        queue_original_fighter_to_death_star_projectile(
+            effects,
+            &self.fighters,
+            source,
+            *death_star,
+            kind,
+            strength,
+        );
+        true
+    }
+
     /// Fire each live fighter group through the source fore battery record.
     fn fighter_step(&mut self) {
         let mut effects = Vec::new();
@@ -7150,46 +7250,15 @@ impl BattleSession {
                 }
                 match target {
                     OriginalFighterTarget::Capital(index) => {
-                        let target_is_attacker = self.ships[index].is_attacker;
-                        let target_group = self.ships[index].task_force;
-                        let rolls = original_windowed_damage_rolls(
-                            &self.ships,
-                            index,
-                            original_tactical_integer_damage(strength),
-                            &mut self.tactical_rng,
-                            player_is_attacker,
-                        );
-                        let stage = apply_original_capital_damage(
-                            &mut self.ships,
-                            &mut self.field_effects,
-                            index,
-                            original_tactical_integer_damage(strength),
-                            rolls,
-                        );
-                        queue_original_destruction_voice(
-                            &mut self.pending_voice_cues,
-                            player_faction,
-                            player_is_attacker,
-                            source_snapshot.is_attacker,
-                            TacticalVoiceGroup::Fighter(source_snapshot.fighter_group),
-                            target_is_attacker,
-                            TacticalVoiceGroup::Capital(target_group),
-                            stage,
-                        );
-                        queue_original_tactical_impact(
-                            &mut self.impact_effects,
-                            index,
-                            kind,
-                            stage,
-                        );
-                        queue_original_fighter_projectile(
+                        self.apply_fighter_hit_to_capital(
                             &mut effects,
-                            &self.fighters,
                             source,
-                            Some((index, &self.ships[index])),
-                            None,
+                            &source_snapshot,
+                            index,
                             kind,
                             strength,
+                            player_faction,
+                            player_is_attacker,
                         );
                     }
                     OriginalFighterTarget::Fighter(index) => {
@@ -7222,39 +7291,17 @@ impl BattleSession {
                         );
                     }
                     OriginalFighterTarget::DeathStar => {
-                        let Some(death_star) = self.death_star.as_mut() else {
-                            continue;
-                        };
-                        death_star.hull = (death_star.hull - strength).max(0.0);
-                        let snapshot = *death_star;
-                        queue_original_fighter_to_death_star_projectile(
+                        if !self.apply_fighter_hit_to_death_star(
                             &mut effects,
-                            &self.fighters,
                             source,
-                            snapshot,
                             kind,
                             strength,
-                        );
+                        ) {
+                            continue;
+                        }
                     }
                 }
-                let fire_event = TacticalAudioEvent::fire_for(kind);
-                let impact_event = TacticalAudioEvent::impact_for(kind);
-                self.pending_audio_cues.push(TacticalAudioCue::from_variant(
-                    fire_event,
-                    u8::try_from(
-                        self.tactical_rng
-                            .inclusive(0, u32::from(fire_event.variant_count() - 1)),
-                    )
-                    .unwrap_or(0),
-                ));
-                self.pending_audio_cues.push(TacticalAudioCue::from_variant(
-                    impact_event,
-                    u8::try_from(
-                        self.tactical_rng
-                            .inclusive(0, u32::from(impact_event.variant_count() - 1)),
-                    )
-                    .unwrap_or(0),
-                ));
+                self.queue_weapon_audio(kind);
                 fired = true;
             }
 
@@ -7267,62 +7314,26 @@ impl BattleSession {
             {
                 let strength = source_snapshot.torpedo_term();
                 if let OriginalFighterTarget::Capital(index) = target {
-                    let target_is_attacker = self.ships[index].is_attacker;
-                    let target_group = self.ships[index].task_force;
-                    let rolls = original_windowed_damage_rolls(
-                        &self.ships,
-                        index,
-                        original_tactical_integer_damage(strength),
-                        &mut self.tactical_rng,
-                        player_is_attacker,
-                    );
-                    let stage = apply_original_capital_damage(
-                        &mut self.ships,
-                        &mut self.field_effects,
-                        index,
-                        original_tactical_integer_damage(strength),
-                        rolls,
-                    );
-                    queue_original_destruction_voice(
-                        &mut self.pending_voice_cues,
-                        player_faction,
-                        player_is_attacker,
-                        source_snapshot.is_attacker,
-                        TacticalVoiceGroup::Fighter(source_snapshot.fighter_group),
-                        target_is_attacker,
-                        TacticalVoiceGroup::Capital(target_group),
-                        stage,
-                    );
-                    queue_original_tactical_impact(
-                        &mut self.impact_effects,
-                        index,
-                        WeaponKind::FighterAttack,
-                        stage,
-                    );
-                    queue_original_fighter_projectile(
+                    self.apply_fighter_hit_to_capital(
                         &mut effects,
-                        &self.fighters,
                         source,
-                        Some((index, &self.ships[index])),
-                        None,
+                        &source_snapshot,
+                        index,
                         WeaponKind::FighterAttack,
                         strength,
+                        player_faction,
+                        player_is_attacker,
                     );
                     fired = true;
                 } else if target == OriginalFighterTarget::DeathStar {
-                    let Some(death_star) = self.death_star.as_mut() else {
-                        continue;
-                    };
-                    death_star.hull = (death_star.hull - strength).max(0.0);
-                    let snapshot = *death_star;
-                    queue_original_fighter_to_death_star_projectile(
+                    if !self.apply_fighter_hit_to_death_star(
                         &mut effects,
-                        &self.fighters,
                         source,
-                        snapshot,
                         WeaponKind::FighterAttack,
                         strength,
-                    );
+                    ) {
+                        continue;
+                    }
                     fired = true;
                 }
                 self.pending_audio_cues.push(TacticalAudioCue::from_variant(
@@ -7763,14 +7774,10 @@ impl BattleSession {
             if distance <= ORIGINAL_TRENCH_RUN_ARRIVAL_DISTANCE {
                 continue;
             }
-            let travel = (fighter.sublight_engine_power.max(0.0)
+            let travel_limit = fighter.sublight_engine_power.max(0.0)
                 * ORIGINAL_TRENCH_RUN_SPEED_SCALE
-                * seconds)
-                .min(distance);
-            let direction = delta.normalized();
-            fighter.source_position.x += direction.x * travel;
-            fighter.source_position.y += direction.y * travel;
-            fighter.source_position.z += direction.z * travel;
+                * seconds;
+            move_fighter_toward(fighter, target, travel_limit, 0.0);
         }
         let delta = source_delta(target, self.fighters[leader].source_position);
         if delta.x.hypot(delta.y).hypot(delta.z) > ORIGINAL_TRENCH_RUN_ARRIVAL_DISTANCE {
@@ -8410,15 +8417,8 @@ fn advance_original_escort_movement(session: &mut BattleSession, delta_milliseco
         let Some(target_position) = target_positions.get(target).copied() else {
             continue;
         };
-        let delta = source_delta(target_position, fighter.source_position);
-        let distance = delta.x.hypot(delta.y).hypot(delta.z);
-        if distance > 10.0 {
-            let travel = (fighter.sublight_engine_power.max(0.0) * seconds).min(distance - 10.0);
-            let direction = delta.normalized();
-            fighter.source_position.x += direction.x * travel;
-            fighter.source_position.y += direction.y * travel;
-            fighter.source_position.z += direction.z * travel;
-        }
+        let travel_limit = fighter.sublight_engine_power.max(0.0) * seconds;
+        move_fighter_toward(fighter, target_position, travel_limit, 10.0);
     }
 }
 
@@ -8436,10 +8436,7 @@ fn tactical_attack_target_is_eligible(
         }
         (TacticalOrder::AttackFighters, TacticalAttackTarget::FighterGroup(index)) => {
             session.fighters.get(index).is_some_and(|fighter| {
-                fighter.alive
-                    && fighter.squad_count > 0
-                    && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
-                    && fighter.listed()
+                live_listed_fighter(fighter)
                     && fighter.is_attacker != source_is_attacker
             })
         }
@@ -8458,10 +8455,7 @@ fn manual_attack_target_is_eligible(
         }),
         TacticalAttackTarget::FighterGroup(index) => {
             session.fighters.get(index).is_some_and(|fighter| {
-                fighter.alive
-                    && fighter.squad_count > 0
-                    && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
-                    && fighter.listed()
+                live_listed_fighter(fighter)
                     && fighter.is_attacker != source_is_attacker
             })
         }
@@ -8667,12 +8661,10 @@ fn engagement_unit_live(session: &BattleSession, unit: EngagementUnit) -> bool {
             .ships
             .get(index)
             .is_some_and(|ship| ship.alive && !ship.retreating),
-        EngagementUnit::Fighter(index) => session.fighters.get(index).is_some_and(|fighter| {
-            fighter.alive
-                && fighter.squad_count > 0
-                && fighter.recovery_state != TacticalFighterRecoveryState::Recovered
-                && fighter.listed()
-        }),
+        EngagementUnit::Fighter(index) => session
+            .fighters
+            .get(index)
+            .is_some_and(live_listed_fighter),
     }
 }
 
@@ -9026,25 +9018,15 @@ fn engagement_groups(session: &BattleSession) -> Vec<EngagementGroup> {
     for is_attacker in [true, false] {
         let side = usize::from(!is_attacker);
         for task_force in 0_u8..8 {
-            let mut members = session
-                .ships
-                .iter()
-                .enumerate()
-                .filter(|(_, ship)| {
+            let members = ranked_ship_indices(&session.ships, |ship| {
                     ship.alive
                         && !ship.retreating
                         && ship.is_attacker == is_attacker
                         && ship.task_force == task_force
-                })
-                .map(|(index, _)| index)
-                .collect::<Vec<_>>();
+                });
             if members.is_empty() {
                 continue;
             }
-            members.sort_by(|left, right| {
-                original_formation_capability_score(&session.ships[*right])
-                    .total_cmp(&original_formation_capability_score(&session.ships[*left]))
-            });
             let slot = usize::from(task_force);
             let goal = session.engagement.steering_goals[side][slot];
             let commanded = members.iter().any(|index| {

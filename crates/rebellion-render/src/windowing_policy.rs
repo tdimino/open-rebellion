@@ -212,47 +212,33 @@ pub const fn contextual_spec(
     }
 }
 
-const fn policy(
-    cardinality: Cardinality,
-    band: StackBand,
-    placement: OpenPlacement,
-    existing: ExistingOpenPolicy,
-    input: InputPolicy,
-    presentation: PresentationPolicy,
-    restoration: FocusRestoration,
-) -> WindowPolicy {
-    policy_with_focus(
-        cardinality,
-        band,
-        placement,
-        existing,
-        input,
-        presentation,
-        FocusOnOpen::Window,
-        restoration,
-    )
+macro_rules! policy_constructor {
+    ($name:ident, $focus:expr) => {
+        const fn $name(
+            cardinality: Cardinality,
+            band: StackBand,
+            placement: OpenPlacement,
+            existing: ExistingOpenPolicy,
+            input: InputPolicy,
+            presentation: PresentationPolicy,
+            restoration: FocusRestoration,
+        ) -> WindowPolicy {
+            policy_with_focus(
+                cardinality,
+                band,
+                placement,
+                existing,
+                input,
+                presentation,
+                $focus,
+                restoration,
+            )
+        }
+    };
 }
 
-const fn preserve_focus_policy(
-    cardinality: Cardinality,
-    band: StackBand,
-    placement: OpenPlacement,
-    existing: ExistingOpenPolicy,
-    input: InputPolicy,
-    presentation: PresentationPolicy,
-    restoration: FocusRestoration,
-) -> WindowPolicy {
-    policy_with_focus(
-        cardinality,
-        band,
-        placement,
-        existing,
-        input,
-        presentation,
-        FocusOnOpen::Preserve,
-        restoration,
-    )
-}
+policy_constructor!(policy, FocusOnOpen::Window);
+policy_constructor!(preserve_focus_policy, FocusOnOpen::Preserve);
 
 #[allow(clippy::too_many_arguments)]
 const fn policy_with_focus(

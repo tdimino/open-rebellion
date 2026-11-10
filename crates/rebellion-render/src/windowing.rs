@@ -210,15 +210,42 @@ mod tests {
         }
     }
 
-    #[test]
-    fn surface_geometry_unions_regions_and_uses_event_local_coordinates() {
-        let mut manager = WindowManager::new();
-        let window = open(&mut manager, 1);
+    fn surfaces_with_hit_rect(window: WindowId) -> EguiWindowSurfaces {
         let mut surfaces = EguiWindowSurfaces::default();
         surfaces.register_hit_rect(
             window,
             egui::Rect::from_min_max(egui::pos2(10.0, 10.0), egui::pos2(20.0, 20.0)),
         );
+        surfaces
+    }
+
+    fn surface_fixture() -> (WindowManager, WindowId, EguiWindowSurfaces) {
+        let mut manager = WindowManager::new();
+        let window = open(&mut manager, 1);
+        let surfaces = surfaces_with_hit_rect(window);
+        (manager, window, surfaces)
+    }
+
+    fn assert_layers(
+        ctx: &egui::Context,
+        ids: &[(WindowId, egui::Id, egui::Vec2); 3],
+        outer: usize,
+        inner: usize,
+    ) {
+        let layer = |id| egui::LayerId::new(egui::Order::Foreground, id);
+        assert_eq!(
+            ctx.layer_id_at(egui::pos2(20.0, 20.0)),
+            Some(layer(ids[outer].1))
+        );
+        assert_eq!(
+            ctx.layer_id_at(egui::pos2(50.0, 50.0)),
+            Some(layer(ids[inner].1))
+        );
+    }
+
+    #[test]
+    fn surface_geometry_unions_regions_and_uses_event_local_coordinates() {
+        let (_, window, mut surfaces) = surface_fixture();
         surfaces.register_hit_rect(
             window,
             egui::Rect::from_min_max(egui::pos2(30.0, 30.0), egui::pos2(40.0, 40.0)),
@@ -255,13 +282,7 @@ mod tests {
 
     #[test]
     fn invalid_geometry_quarantines_all_hit_regions_for_that_window() {
-        let mut manager = WindowManager::new();
-        let window = open(&mut manager, 1);
-        let mut surfaces = EguiWindowSurfaces::default();
-        surfaces.register_hit_rect(
-            window,
-            egui::Rect::from_min_max(egui::pos2(10.0, 10.0), egui::pos2(20.0, 20.0)),
-        );
+        let (manager, window, mut surfaces) = surface_fixture();
         surfaces.register_hit_rect(
             window,
             egui::Rect::from_min_max(egui::pos2(f32::NAN, 0.0), egui::pos2(1.0, 1.0)),
@@ -331,6 +352,13 @@ mod tests {
                     });
             }
         };
+        let realize = |ctx: &egui::Context, projector: &mut ManagedOrderProjector| {
+            draw_reverse(ctx);
+            realize_managed_order(ctx, &frame, projector, |window| {
+                ids.iter()
+                    .find_map(|(candidate, id, _)| (*candidate == window).then(|| vec![layer(*id)]))
+            });
+        };
 
         let _ = ctx.run(input(), |ctx| draw_reverse(ctx));
         assert_eq!(
@@ -339,35 +367,13 @@ mod tests {
         );
 
         let _ = ctx.run(input(), |ctx| {
-            draw_reverse(ctx);
-            realize_managed_order(ctx, &frame, &mut projector, |window| {
-                ids.iter()
-                    .find_map(|(candidate, id, _)| (*candidate == window).then(|| vec![layer(*id)]))
-            });
+            realize(ctx, &mut projector);
         });
-        assert_eq!(
-            ctx.layer_id_at(egui::pos2(20.0, 20.0)),
-            Some(layer(ids[2].1))
-        );
-        assert_eq!(
-            ctx.layer_id_at(egui::pos2(50.0, 50.0)),
-            Some(layer(ids[0].1))
-        );
+        assert_layers(&ctx, &ids, 2, 0);
 
         let _ = ctx.run(input(), |ctx| {
-            draw_reverse(ctx);
-            realize_managed_order(ctx, &frame, &mut projector, |window| {
-                ids.iter()
-                    .find_map(|(candidate, id, _)| (*candidate == window).then(|| vec![layer(*id)]))
-            });
+            realize(ctx, &mut projector);
         });
-        assert_eq!(
-            ctx.layer_id_at(egui::pos2(20.0, 20.0)),
-            Some(layer(ids[2].1))
-        );
-        assert_eq!(
-            ctx.layer_id_at(egui::pos2(50.0, 50.0)),
-            Some(layer(ids[1].1))
-        );
+        assert_layers(&ctx, &ids, 2, 1);
     }
 }

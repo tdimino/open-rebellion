@@ -505,7 +505,7 @@ mod tests {
         use crate::defenses_window::draw_defenses_windows;
         use crate::fleet_window::draw_fleet_windows;
         use crate::missions_window::draw_missions_windows;
-        use crate::sector_window::draw_sector_windows;
+        use crate::sector_window::{draw_sector_windows, SectorWindowDraw};
         use crate::system_window::draw_system_windows;
         use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
         use rebellion_core::ids::DatId;
@@ -623,16 +623,18 @@ mod tests {
                 let _ = ctx.run(input, |ctx| {
                     let faction = CockpitFaction::Alliance;
                     let _ = draw_sector_windows(
-                        ctx,
-                        world,
-                        &rebellion_core::movement::MovementState::default(),
-                        &fog,
-                        sectors,
-                        faction,
-                        layout,
-                        &mut cache,
-                        missions,
-                        &rebellion_core::uprising::UprisingState::default(),
+                        SectorWindowDraw {
+                            ctx,
+                            world,
+                            movement: &rebellion_core::movement::MovementState::default(),
+                            fog: &fog,
+                            state: sectors,
+                            faction,
+                            layout,
+                            cache: &mut cache,
+                            missions,
+                            uprisings: &rebellion_core::uprising::UprisingState::default(),
+                        },
                         &|_| true,
                     );
                     let _ = draw_system_windows(
@@ -809,6 +811,21 @@ mod tests {
             fleet
         }
 
+        fn release_on_fleet_window(
+            world: &GameWorld,
+            fleets: &mut FleetWindowState,
+            at: (f32, f32),
+        ) -> Option<ReleaseTarget> {
+            release_on(
+                world,
+                &mut SectorWindowState::default(),
+                &mut SystemWindowState::default(),
+                fleets,
+                &mut DefensesWindowState::default(),
+                at,
+            )
+        }
+
         #[test]
         fn a_release_on_a_fleet_windows_fleet_targets_that_fleet() {
             // FUN_004a3130: in the left list, the entry under the point.
@@ -827,14 +844,7 @@ mod tests {
             // The first entry spans (4, 29) to (95, 79) in the window.
             let at = (70.0 + 40.0, 90.0 + 50.0);
             assert_eq!(
-                release_on(
-                    &world,
-                    &mut SectorWindowState::default(),
-                    &mut SystemWindowState::default(),
-                    &mut fleets,
-                    &mut DefensesWindowState::default(),
-                    at,
-                ),
+                release_on_fleet_window(&world, &mut fleets, at),
                 Some(ReleaseTarget::Fleet {
                     fleet,
                     system: first
@@ -843,14 +853,7 @@ mod tests {
             // Below the last entry, the list gives the subject.
             let at = (70.0 + 40.0, 90.0 + 150.0);
             assert_eq!(
-                release_on(
-                    &world,
-                    &mut SectorWindowState::default(),
-                    &mut SystemWindowState::default(),
-                    &mut fleets,
-                    &mut DefensesWindowState::default(),
-                    at,
-                ),
+                release_on_fleet_window(&world, &mut fleets, at),
                 Some(ReleaseTarget::System(first))
             );
         }

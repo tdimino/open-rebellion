@@ -2264,6 +2264,45 @@ mod tests {
         (chosen, ctx)
     }
 
+    fn click_gid_menu(
+        state: &mut CockpitState,
+        point: egui::Pos2,
+        input_enabled: bool,
+    ) -> Option<GidMode> {
+        run_gid_menu_frames(
+            state,
+            1.0,
+            input_enabled,
+            vec![
+                Vec::new(),
+                vec![egui::Event::PointerMoved(point)],
+                primary_press(point),
+                primary_release(point),
+            ],
+        )
+        .0
+    }
+
+    fn gid_draw_state(
+        category: Option<GidCategory>,
+    ) -> (egui::Context, CockpitState, BmpCache, CockpitLayout) {
+        let ctx = egui::Context::default();
+        let mut cockpit = CockpitState::default();
+        cockpit.gid_ui.menu_open = true;
+        cockpit.gid_ui.category = category;
+        let cache = BmpCache::new();
+        let layout = cockpit.layout_for(640.0, 480.0);
+        (ctx, cockpit, cache, layout)
+    }
+
+    fn opened_gid_menu(faction: CockpitFaction) -> (CockpitState, f32, f32, egui::Pos2) {
+        let (x, y) = gid_menu_origin(faction);
+        let mut state = CockpitState::new(faction);
+        state.gid_ui.open_menu();
+        let display_off = egui::pos2(x + 50.0, y + 6.0 + 21.0 * 6.0 + 10.0);
+        (state, x, y, display_off)
+    }
+
     fn primary_release(point: egui::Pos2) -> Vec<egui::Event> {
         vec![egui::Event::PointerButton {
             pos: point,
@@ -2326,37 +2365,14 @@ mod tests {
         // Our own gating: under a modal window neither the root's Display
         // Off nor a submenu row takes a click.
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
-            let (x, y) = gid_menu_origin(faction);
-            let display_off = egui::pos2(x + 50.0, y + 6.0 + 21.0 * 6.0 + 10.0);
-            let mut state = CockpitState::new(faction);
-            state.gid_ui.open_menu();
-            let (chosen, _) = run_gid_menu_frames(
-                &mut state,
-                1.0,
-                false,
-                vec![
-                    Vec::new(),
-                    vec![egui::Event::PointerMoved(display_off)],
-                    primary_press(display_off),
-                    primary_release(display_off),
-                ],
-            );
+            let (mut state, x, y, display_off) = opened_gid_menu(faction);
+            let chosen = click_gid_menu(&mut state, display_off, false);
             assert_eq!(chosen, None, "{faction:?}");
             assert_eq!(state.gid_mode, GidMode::PopularSupport);
 
             state.gid_ui.category = Some(GidCategory::Loyalty);
             let leaf = egui::pos2(x - 246.0 + 40.0, y + 6.0 + 10.0);
-            let (chosen, _) = run_gid_menu_frames(
-                &mut state,
-                1.0,
-                false,
-                vec![
-                    Vec::new(),
-                    vec![egui::Event::PointerMoved(leaf)],
-                    primary_press(leaf),
-                    primary_release(leaf),
-                ],
-            );
+            let chosen = click_gid_menu(&mut state, leaf, false);
             assert_eq!(chosen, None, "{faction:?}");
             assert!(state.gid_ui.menu_open);
         }
@@ -2367,21 +2383,8 @@ mod tests {
         // FUN_004aab50: a release on a row posts its command (0x140) to the
         // view; the counterpart of the modal case above.
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
-            let (x, y) = gid_menu_origin(faction);
-            let display_off = egui::pos2(x + 50.0, y + 6.0 + 21.0 * 6.0 + 10.0);
-            let mut state = CockpitState::new(faction);
-            state.gid_ui.open_menu();
-            let (chosen, _) = run_gid_menu_frames(
-                &mut state,
-                1.0,
-                true,
-                vec![
-                    Vec::new(),
-                    vec![egui::Event::PointerMoved(display_off)],
-                    primary_press(display_off),
-                    primary_release(display_off),
-                ],
-            );
+            let (mut state, _, _, display_off) = opened_gid_menu(faction);
+            let chosen = click_gid_menu(&mut state, display_off, true);
             assert_eq!(chosen, Some(GidMode::DisplayOff), "{faction:?}");
         }
     }
@@ -3032,12 +3035,8 @@ mod tests {
             .commit_open(prepared, &opened.transition)
             .expect("accepted GID open publishes one Menu identity");
         let frame = manager.begin_frame();
-        let ctx = egui::Context::default();
-        let mut cockpit = CockpitState::default();
-        cockpit.gid_ui.menu_open = true;
-        cockpit.gid_ui.category = Some(GidCategory::Loyalty);
-        let mut cache = BmpCache::new();
-        let layout = cockpit.layout_for(640.0, 480.0);
+        let (ctx, mut cockpit, mut cache, layout) =
+            gid_draw_state(Some(GidCategory::Loyalty));
         let _ = ctx.run(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -3068,11 +3067,7 @@ mod tests {
     fn gid_outside_press_waits_for_managed_close_receipt() {
         // Break caught: the legacy popup mutates its own open flag before the
         // manager can consume the press and quarantine the eventual release.
-        let ctx = egui::Context::default();
-        let mut cockpit = CockpitState::default();
-        cockpit.gid_ui.menu_open = true;
-        let mut cache = BmpCache::new();
-        let layout = cockpit.layout_for(640.0, 480.0);
+        let (ctx, mut cockpit, mut cache, layout) = gid_draw_state(None);
         let _ = ctx.run(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(

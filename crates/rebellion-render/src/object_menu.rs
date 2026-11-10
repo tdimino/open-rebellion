@@ -532,11 +532,7 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
             enabled: match item.command {
                 ObjectMenuCommand::Mission => gates.mission,
                 ObjectMenuCommand::Move => {
-                    (fleet && gates.fleet_move)
-                        || (troop && gates.troop_move)
-                        || (squadron && gates.squadron_move)
-                        || (ship && gates.ship_move)
-                        || (member && gates.member_move)
+                    gates.movement_enabled(fleet, troop, squadron, ship, member)
                 }
                 ObjectMenuCommand::CreateFleet => ship && gates.create_fleet,
                 ObjectMenuCommand::Rename => (fleet_entry || ship || producer) && gates.rename,
@@ -544,11 +540,7 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
                 ObjectMenuCommand::Stop => producer && gates.stop,
                 ObjectMenuCommand::Build => producer && gates.build,
                 ObjectMenuCommand::ConfirmedMove => {
-                    (fleet && gates.fleet_move)
-                        || (troop && gates.troop_move)
-                        || (squadron && gates.squadron_move)
-                        || (ship && gates.ship_move)
-                        || (member && gates.member_move)
+                    gates.movement_enabled(fleet, troop, squadron, ship, member)
                 }
                 ObjectMenuCommand::Scrap => gates.scrap,
                 ObjectMenuCommand::Assault => fleet && gates.assault,
@@ -647,6 +639,23 @@ pub struct OrderGates {
     /// order's enable slot `FUN_005814d0`
     /// (`rebellion_core::assault::order_enabled`).
     pub assault: bool,
+}
+
+impl OrderGates {
+    fn movement_enabled(
+        self,
+        fleet: bool,
+        troop: bool,
+        squadron: bool,
+        ship: bool,
+        member: bool,
+    ) -> bool {
+        (fleet && self.fleet_move)
+            || (troop && self.troop_move)
+            || (squadron && self.squadron_move)
+            || (ship && self.ship_move)
+            || (member && self.member_move)
+    }
 }
 
 /// Whether each Planetary Bombardment order passes its enable slot
@@ -890,6 +899,22 @@ mod tests {
             .collect()
     }
 
+    fn kinds(rows: &[ObjectMenuRow]) -> Vec<u16> {
+        rows.iter().map(|row| row.item.kind).collect()
+    }
+
+    fn frame_input(events: Vec<egui::Event>, time: Option<f64>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1280.0, 960.0),
+            )),
+            time,
+            events,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn a_characters_menu_matches_the_manual_and_the_strategy_records() {
         // Manual p. 99 and Fig. 3.45; STRATEGY RT_RCDATA words 2 and 5;
@@ -911,7 +936,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            rows.iter().map(|row| row.item.kind).collect::<Vec<_>>(),
+            kinds(&rows),
             [0x201, 0x202, 0x240, 0x160, 0x100, 0x103, 0x242]
         );
         assert_eq!(
@@ -973,7 +998,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            rows.iter().map(|row| row.item.kind).collect::<Vec<_>>(),
+            kinds(&rows),
             [0x201, 0x202, 0x120, 0x234, 0x203, 0x100, 0x103, 0x200]
         );
         assert_eq!(
@@ -1838,14 +1863,7 @@ mod tests {
                     modifiers: egui::Modifiers::default(),
                 });
             }
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1280.0, 960.0),
-                )),
-                events,
-                ..Default::default()
-            };
+            let input = frame_input(events, None);
             let _ = ctx.run(input, |ctx| {
                 if let Some(choice) = draw_object_menu(
                     ctx,
@@ -1965,14 +1983,7 @@ mod tests {
             } else {
                 Vec::new()
             };
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1280.0, 960.0),
-                )),
-                events,
-                ..Default::default()
-            };
+            let input = frame_input(events, None);
             let _ = ctx.run(input, |ctx| {
                 outcome = draw_owned_object_menu(
                     ctx,
@@ -2030,19 +2041,14 @@ mod tests {
                 egui::Pos2::ZERO
             };
             let _ = ctx.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(1280.0, 960.0),
-                    )),
-                    time: Some(time),
-                    events: if hover_command {
+                frame_input(
+                    if hover_command {
                         vec![egui::Event::PointerMoved(pointer)]
                     } else {
                         Vec::new()
                     },
-                    ..Default::default()
-                },
+                    Some(time),
+                ),
                 |ctx| {
                     assert_eq!(
                         draw_owned_object_menu(
@@ -2117,13 +2123,8 @@ mod tests {
         let mut outcome = OwnedMenuOutcome::Open;
         for (time, pressed) in [(0.8, None), (0.9, Some(true)), (1.0, Some(false))] {
             let _ = ctx.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(1280.0, 960.0),
-                    )),
-                    time: Some(time),
-                    events: std::iter::once(egui::Event::PointerMoved(rank))
+                frame_input(
+                    std::iter::once(egui::Event::PointerMoved(rank))
                         .chain(pressed.map(|pressed| egui::Event::PointerButton {
                             pos: rank,
                             button: egui::PointerButton::Primary,
@@ -2131,8 +2132,8 @@ mod tests {
                             modifiers: egui::Modifiers::default(),
                         }))
                         .collect(),
-                    ..Default::default()
-                },
+                    Some(time),
+                ),
                 |ctx| {
                     outcome = draw_owned_object_menu(
                         ctx,

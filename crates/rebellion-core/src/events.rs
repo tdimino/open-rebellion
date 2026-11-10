@@ -855,13 +855,109 @@ mod tests {
         }
     }
 
+    fn state_with(game_event: GameEvent) -> EventState {
+        let mut state = EventState::new();
+        state.define(game_event);
+        state
+    }
+
+    fn condition_state(id: u32, condition: EventCondition) -> EventState {
+        state_with(event(id, vec![condition], vec![]))
+    }
+
+    fn test_sector(world: &mut GameWorld, name: &str) -> crate::ids::SectorKey {
+        world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId::new(0),
+            name: name.into(),
+            group: crate::dat::SectorGroup::Core,
+            ..Default::default()
+        })
+    }
+
+    fn test_system(
+        world: &mut GameWorld,
+        sector: crate::ids::SectorKey,
+        name: &str,
+        control: ControlKind,
+    ) -> SystemKey {
+        world.systems.insert(crate::world::System {
+            dat_id: crate::ids::DatId::new(0),
+            name: name.into(),
+            sector,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            control,
+            ..Default::default()
+        })
+    }
+
+    fn test_character(world: &mut GameWorld, name: &str, tier: ForceTier) -> CharacterKey {
+        world.characters.insert(make_character(name, tier))
+    }
+
+    fn test_fleet(
+        world: &mut GameWorld,
+        system: SystemKey,
+        characters: Vec<CharacterKey>,
+        is_alliance: bool,
+    ) -> crate::ids::FleetKey {
+        world.fleets.insert(crate::world::Fleet {
+            location: system,
+            characters,
+            is_alliance,
+            ..Default::default()
+        })
+    }
+
+    fn co_located_state(id: u32, characters: Vec<CharacterKey>) -> EventState {
+        condition_state(id, EventCondition::CharactersCoLocated { characters })
+    }
+
+    fn co_location_fires(world: &GameWorld, characters: Vec<CharacterKey>) -> bool {
+        let mut state = co_located_state(1, characters);
+        !EventSystem::advance(&mut state, world, &tick(1), &[]).is_empty()
+    }
+
+    fn endor_world() -> (GameWorld, SystemKey) {
+        let mut world = make_world();
+        let sector = test_sector(&mut world, "Test");
+        let system = test_system(
+            &mut world,
+            sector,
+            "Endor",
+            ControlKind::Controlled(crate::dat::Faction::Empire),
+        );
+        (world, system)
+    }
+
+    fn experienced_pair(world: &mut GameWorld) -> (CharacterKey, CharacterKey) {
+        (
+            test_character(world, "Luke", ForceTier::Experienced),
+            test_character(world, "Vader", ForceTier::Experienced),
+        )
+    }
+
+    fn force_level_fires(name: &str, tier: ForceTier) -> bool {
+        let mut world = make_world();
+        let character = test_character(&mut world, name, tier);
+        let mut state = condition_state(
+            1,
+            EventCondition::CharacterHasForceLevel {
+                character,
+                min_tier: ForceTier::Aware,
+            },
+        );
+        !EventSystem::advance(&mut state, &world, &tick(1), &[]).is_empty()
+    }
+
     // --- Basic firing ---
 
     #[test]
     fn empty_conditions_always_fires() {
         let world = make_world();
-        let mut state = EventState::new();
-        state.define(event(1, vec![], vec![]));
+        let mut state = state_with(event(1, vec![], vec![]));
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert_eq!(fired.len(), 1);
@@ -871,8 +967,7 @@ mod tests {
     #[test]
     fn no_ticks_no_fires() {
         let world = make_world();
-        let mut state = EventState::new();
-        state.define(event(1, vec![], vec![]));
+        let mut state = state_with(event(1, vec![], vec![]));
 
         let fired = EventSystem::advance(&mut state, &world, &[], &[]);
         assert!(fired.is_empty());
@@ -883,12 +978,7 @@ mod tests {
     #[test]
     fn tick_reached_fires_exactly_on_target() {
         let world = make_world();
-        let mut state = EventState::new();
-        state.define(event(
-            1,
-            vec![EventCondition::TickReached { tick: 5 }],
-            vec![],
-        ));
+        let mut state = condition_state(1, EventCondition::TickReached { tick: 5 });
 
         assert!(EventSystem::advance(&mut state, &world, &tick(4), &[]).is_empty());
         let fired = EventSystem::advance(&mut state, &world, &tick(5), &[]);
@@ -900,12 +990,7 @@ mod tests {
     #[test]
     fn tick_reached_does_not_fire_after_target() {
         let world = make_world();
-        let mut state = EventState::new();
-        state.define(event(
-            1,
-            vec![EventCondition::TickReached { tick: 5 }],
-            vec![],
-        ));
+        let mut state = condition_state(1, EventCondition::TickReached { tick: 5 });
 
         // Jump directly to tick 6 — already past target, never fires.
         let fired = EventSystem::advance(&mut state, &world, &tick(6), &[]);
@@ -934,8 +1019,7 @@ mod tests {
     #[test]
     fn one_shot_fires_only_once() {
         let world = make_world();
-        let mut state = EventState::new();
-        state.define(event(1, vec![], vec![]));
+        let mut state = state_with(event(1, vec![], vec![]));
 
         EventSystem::advance(&mut state, &world, &tick(1), &[]);
         let second = EventSystem::advance(&mut state, &world, &tick(2), &[]);
@@ -1109,83 +1193,32 @@ mod tests {
 
     #[test]
     fn character_has_force_level_true_when_tier_matches() {
-        let mut world = make_world();
-        let key = world
-            .characters
-            .insert(make_character("Luke", ForceTier::Training));
-
-        let mut state = EventState::new();
-        state.define(event(
-            1,
-            vec![EventCondition::CharacterHasForceLevel {
-                character: key,
-                min_tier: ForceTier::Aware,
-            }],
-            vec![],
-        ));
-
-        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
-        assert_eq!(fired.len(), 1, "Training >= Aware should fire");
+        assert!(
+            force_level_fires("Luke", ForceTier::Training),
+            "Training >= Aware should fire"
+        );
     }
 
     #[test]
     fn character_has_force_level_false_when_tier_too_low() {
-        let mut world = make_world();
-        let key = world
-            .characters
-            .insert(make_character("Han", ForceTier::None));
-
-        let mut state = EventState::new();
-        state.define(event(
-            1,
-            vec![EventCondition::CharacterHasForceLevel {
-                character: key,
-                min_tier: ForceTier::Aware,
-            }],
-            vec![],
-        ));
-
-        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
-        assert!(fired.is_empty(), "None < Aware should not fire");
+        assert!(
+            !force_level_fires("Han", ForceTier::None),
+            "None < Aware should not fire"
+        );
     }
 
     #[test]
     fn faction_controls_system_evaluates_correctly() {
-        use crate::dat::{ExplorationStatus, Faction};
+        use crate::dat::Faction;
 
         let mut world = make_world();
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Test Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let sys_key = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Coruscant".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.3,
-            popularity_empire: 0.7,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Empire),
-        });
+        let sector_key = test_sector(&mut world, "Test Sector");
+        let sys_key = test_system(
+            &mut world,
+            sector_key,
+            "Coruscant",
+            ControlKind::Controlled(Faction::Empire),
+        );
 
         let mut state = EventState::new();
         state.define(event(
@@ -1224,43 +1257,18 @@ mod tests {
 
     #[test]
     fn faction_controls_n_systems_counts_correctly() {
-        use crate::dat::{ExplorationStatus, Faction};
+        use crate::dat::Faction;
 
         let mut world = make_world();
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
+        let sector_key = test_sector(&mut world, "Sector");
 
         let make_sys = |world: &mut GameWorld, name: &str, faction: Option<Faction>| {
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(0),
-                name: name.into(),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: ExplorationStatus::Explored,
-                popularity_alliance: 0.5,
-                popularity_empire: 0.5,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: faction.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
-            })
+            test_system(
+                world,
+                sector_key,
+                name,
+                faction.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
+            )
         };
 
         make_sys(&mut world, "Sys1", Some(Faction::Alliance));
@@ -1325,71 +1333,15 @@ mod tests {
 
     #[test]
     fn characters_co_located_true_when_at_same_system() {
-        use crate::dat::{ExplorationStatus, Faction};
-
-        let mut world = make_world();
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Test".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let sys_key = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Endor".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Empire),
-        });
-
-        let luke = world
-            .characters
-            .insert(make_character("Luke", ForceTier::Experienced));
-        let vader = world
-            .characters
-            .insert(make_character("Vader", ForceTier::Experienced));
-        let emperor = world
-            .characters
-            .insert(make_character("Emperor", ForceTier::Experienced));
+        let (mut world, sys_key) = endor_world();
+        let (luke, vader) = experienced_pair(&mut world);
+        let emperor = test_character(&mut world, "Emperor", ForceTier::Experienced);
 
         // Put all three in a fleet at the same system
-        let fleet = world.fleets.insert(crate::world::Fleet {
-            location: sys_key,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![luke, vader, emperor],
-            is_alliance: false,
-            bombarding: false,
-        });
+        let fleet = test_fleet(&mut world, sys_key, vec![luke, vader, emperor], false);
         world.systems[sys_key].fleets.push(fleet);
 
-        let mut state = EventState::new();
-        state.define(event(
-            1,
-            vec![EventCondition::CharactersCoLocated {
-                characters: vec![luke, vader, emperor],
-            }],
-            vec![],
-        ));
+        let mut state = co_located_state(1, vec![luke, vader, emperor]);
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert_eq!(fired.len(), 1, "All 3 characters co-located should fire");
@@ -1397,106 +1349,26 @@ mod tests {
 
     #[test]
     fn characters_co_located_false_when_at_different_systems() {
-        use crate::dat::{ExplorationStatus, Faction};
+        use crate::dat::Faction;
 
         let mut world = make_world();
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Test".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let sys1 = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Endor".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Empire),
-        });
-        let sys2 = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(1),
-            name: "Coruscant".into(),
-            sector: sector_key,
-            x: 100,
-            y: 100,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Empire),
-        });
+        let sector_key = test_sector(&mut world, "Test");
+        let empire = ControlKind::Controlled(Faction::Empire);
+        let sys1 = test_system(&mut world, sector_key, "Endor", empire);
+        let sys2 = test_system(&mut world, sector_key, "Coruscant", empire);
 
-        let luke = world
-            .characters
-            .insert(make_character("Luke", ForceTier::Experienced));
-        let vader = world
-            .characters
-            .insert(make_character("Vader", ForceTier::Experienced));
+        let luke = test_character(&mut world, "Luke", ForceTier::Experienced);
+        let vader = test_character(&mut world, "Vader", ForceTier::Experienced);
 
         // Luke at sys1, Vader at sys2
-        let fleet1 = world.fleets.insert(crate::world::Fleet {
-            location: sys1,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![luke],
-            is_alliance: true,
-            bombarding: false,
-        });
+        let fleet1 = test_fleet(&mut world, sys1, vec![luke], true);
         world.systems[sys1].fleets.push(fleet1);
 
-        let fleet2 = world.fleets.insert(crate::world::Fleet {
-            location: sys2,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![vader],
-            is_alliance: false,
-            bombarding: false,
-        });
+        let fleet2 = test_fleet(&mut world, sys2, vec![vader], false);
         world.systems[sys2].fleets.push(fleet2);
 
-        let mut state = EventState::new();
-        state.define(event(
-            1,
-            vec![EventCondition::CharactersCoLocated {
-                characters: vec![luke, vader],
-            }],
-            vec![],
-        ));
-
-        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert!(
-            fired.is_empty(),
+            !co_location_fires(&world, vec![luke, vader]),
             "Characters at different systems should not be co-located"
         );
     }
@@ -1504,9 +1376,7 @@ mod tests {
     #[test]
     fn characters_co_located_empty_or_single_is_vacuously_true() {
         let mut world = make_world();
-        let luke = world
-            .characters
-            .insert(make_character("Luke", ForceTier::Aware));
+        let luke = test_character(&mut world, "Luke", ForceTier::Aware);
 
         let mut state = EventState::new();
 
@@ -1536,105 +1406,29 @@ mod tests {
     #[test]
     fn characters_co_located_false_for_nonexistent_character() {
         let mut world = make_world();
-        let luke = world
-            .characters
-            .insert(make_character("Luke", ForceTier::Experienced));
-        let vader = world
-            .characters
-            .insert(make_character("Vader", ForceTier::Experienced));
+        let (luke, vader) = experienced_pair(&mut world);
 
         // Remove Vader — his key is now stale
         world.characters.remove(vader);
 
-        let mut state = EventState::new();
-        state.define(event(
-            1,
-            vec![EventCondition::CharactersCoLocated {
-                characters: vec![luke, vader],
-            }],
-            vec![],
-        ));
-
-        let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert!(
-            fired.is_empty(),
+            !co_location_fires(&world, vec![luke, vader]),
             "Co-location should fail for non-existent character"
         );
     }
 
     #[test]
     fn characters_co_located_across_different_fleets_at_same_system() {
-        use crate::dat::{ExplorationStatus, Faction};
-
-        let mut world = make_world();
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Test".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let sys_key = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Endor".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Empire),
-        });
-
-        let luke = world
-            .characters
-            .insert(make_character("Luke", ForceTier::Experienced));
-        let vader = world
-            .characters
-            .insert(make_character("Vader", ForceTier::Experienced));
+        let (mut world, sys_key) = endor_world();
+        let (luke, vader) = experienced_pair(&mut world);
 
         // Luke in Alliance fleet, Vader in Empire fleet — both at same system
-        let fleet1 = world.fleets.insert(crate::world::Fleet {
-            location: sys_key,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![luke],
-            is_alliance: true,
-            bombarding: false,
-        });
-        let fleet2 = world.fleets.insert(crate::world::Fleet {
-            location: sys_key,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![vader],
-            is_alliance: false,
-            bombarding: false,
-        });
+        let fleet1 = test_fleet(&mut world, sys_key, vec![luke], true);
+        let fleet2 = test_fleet(&mut world, sys_key, vec![vader], false);
         world.systems[sys_key].fleets.push(fleet1);
         world.systems[sys_key].fleets.push(fleet2);
 
-        let mut state = EventState::new();
-        state.define(event(
-            1,
-            vec![EventCondition::CharactersCoLocated {
-                characters: vec![luke, vader],
-            }],
-            vec![],
-        ));
+        let mut state = co_located_state(1, vec![luke, vader]);
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert_eq!(
@@ -1646,68 +1440,18 @@ mod tests {
 
     #[test]
     fn characters_co_located_via_current_system() {
-        use crate::dat::{ExplorationStatus, Faction};
-
-        let mut world = make_world();
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Test".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let sys_key = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Endor".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Empire),
-        });
+        let (mut world, sys_key) = endor_world();
 
         // Luke in a fleet, Emperor via current_system only (no fleet)
-        let luke = world
-            .characters
-            .insert(make_character("Luke", ForceTier::Experienced));
+        let luke = test_character(&mut world, "Luke", ForceTier::Experienced);
         let mut emperor = make_character("Emperor", ForceTier::Experienced);
         emperor.current_system = Some(sys_key);
         let emperor_key = world.characters.insert(emperor);
 
-        let fleet = world.fleets.insert(crate::world::Fleet {
-            location: sys_key,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![luke],
-            is_alliance: true,
-            bombarding: false,
-        });
+        let fleet = test_fleet(&mut world, sys_key, vec![luke], true);
         world.systems[sys_key].fleets.push(fleet);
 
-        let mut state = EventState::new();
-        state.define(event(
-            1,
-            vec![EventCondition::CharactersCoLocated {
-                characters: vec![luke, emperor_key],
-            }],
-            vec![],
-        ));
+        let mut state = co_located_state(1, vec![luke, emperor_key]);
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert_eq!(
@@ -1723,41 +1467,16 @@ mod tests {
 
     #[test]
     fn character_assigned_to_fleet_true_when_on_any_fleet() {
-        use crate::dat::{ExplorationStatus, Faction};
+        use crate::dat::Faction;
 
         let mut world = make_world();
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "S".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let sys_key = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Tatooine".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
-        });
+        let sector_key = test_sector(&mut world, "S");
+        let sys_key = test_system(
+            &mut world,
+            sector_key,
+            "Tatooine",
+            ControlKind::Controlled(Faction::Alliance),
+        );
 
         // Parked fleet (no MovementState order) — character still counts
         // as "assigned" because the integrator can resolve at the fleet's
@@ -1767,22 +1486,13 @@ mod tests {
             han.current_fleet = None; // will be set after fleet insert
             world.characters.insert(han)
         };
-        let fleet_key = world.fleets.insert(crate::world::Fleet {
-            location: sys_key,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![han_key],
-            is_alliance: true,
-            bombarding: false,
-        });
+        let fleet_key = test_fleet(&mut world, sys_key, vec![han_key], true);
         world.characters.get_mut(han_key).unwrap().current_fleet = Some(fleet_key);
 
-        let mut state = EventState::new();
-        state.define(event(
+        let mut state = condition_state(
             1,
-            vec![EventCondition::CharacterAssignedToFleet { character: han_key }],
-            vec![],
-        ));
+            EventCondition::CharacterAssignedToFleet { character: han_key },
+        );
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert_eq!(fired.len(), 1, "character on parked fleet must pass");
     }
@@ -1794,57 +1504,18 @@ mod tests {
         let mut world = make_world();
         let mut han = make_character("Han", ForceTier::None);
         // Seed a bogus fleet handle via an actual fleet insert.
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "S".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let sys_key = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(0),
-            name: "S".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.0,
-            popularity_empire: 0.0,
-            is_populated: false,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        });
-        let fleet_key = world.fleets.insert(crate::world::Fleet {
-            location: sys_key,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
+        let sector_key = test_sector(&mut world, "S");
+        let sys_key = test_system(&mut world, sector_key, "S", ControlKind::Uncontrolled);
+        let fleet_key = test_fleet(&mut world, sys_key, vec![], false);
         han.current_fleet = Some(fleet_key);
         let han_key = world.characters.insert(han);
         // Kill and re-check — mark_killed clears current_fleet.
         world.characters.get_mut(han_key).unwrap().mark_killed();
 
-        let mut state = EventState::new();
-        state.define(event(
+        let mut state = condition_state(
             1,
-            vec![EventCondition::CharacterAssignedToFleet { character: han_key }],
-            vec![],
-        ));
+            EventCondition::CharacterAssignedToFleet { character: han_key },
+        );
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert!(fired.is_empty(), "killed character must not be 'assigned'");
     }
@@ -1881,41 +1552,15 @@ mod tests {
         // clears current_system + current_fleet, so the fleet-roster and
         // current_system paths both fail — plus we explicitly short-circuit
         // at the top of the condition as defense-in-depth.
-        use crate::dat::ExplorationStatus;
-
         let mut world = make_world();
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Test".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let sys_key = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Destroyed".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: true,
-            control: ControlKind::Uncontrolled,
-        });
+        let sector_key = test_sector(&mut world, "Test");
+        let sys_key = test_system(
+            &mut world,
+            sector_key,
+            "Destroyed",
+            ControlKind::Uncontrolled,
+        );
+        world.systems[sys_key].is_destroyed = true;
 
         let mut luke = make_character("Luke", ForceTier::Experienced);
         luke.current_system = Some(sys_key);
@@ -1926,28 +1571,24 @@ mod tests {
         let vader_key = world.characters.insert(vader);
 
         // Both alive first — co-located event fires.
-        let mut state = EventState::new();
-        state.define(event(
+        let mut state = condition_state(
             1,
-            vec![EventCondition::CharactersCoLocated {
+            EventCondition::CharactersCoLocated {
                 characters: vec![luke_key, vader_key],
-            }],
-            vec![],
-        ));
+            },
+        );
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
         assert_eq!(fired.len(), 1, "alive + co-located should fire");
 
         // Kill Luke; redefine the event (consolidator reset) and re-check —
         // must not fire because one of the characters is now dead.
         world.characters.get_mut(luke_key).unwrap().mark_killed();
-        let mut state2 = EventState::new();
-        state2.define(event(
+        let mut state2 = condition_state(
             2,
-            vec![EventCondition::CharactersCoLocated {
+            EventCondition::CharactersCoLocated {
                 characters: vec![luke_key, vader_key],
-            }],
-            vec![],
-        ));
+            },
+        );
         let fired2 = EventSystem::advance(&mut state2, &world, &tick(2), &[]);
         assert!(
             fired2.is_empty(),

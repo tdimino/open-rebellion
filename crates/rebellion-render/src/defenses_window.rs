@@ -474,16 +474,9 @@ impl DefensesWindowState {
     /// subject; direct fixture content remains visible while its system exists.
     #[must_use]
     pub fn has_visible_content(&self, snapshot: &RoutingSnapshot, world: &GameWorld) -> bool {
-        self.windows.iter().any(|window| match window.id {
-            Some(id) => {
-                snapshot.is_visible(id)
-                    && snapshot.key(id).is_some_and(|key| {
-                        key.kind == WindowKind::Defenses && key.subject == window.subject
-                    })
-                    && system_subject(world, window.system) == window.subject
-            }
-            None => world.systems.contains_key(window.system),
-        })
+        self.windows
+            .iter()
+            .any(|window| window_is_visible(window, snapshot, world))
     }
 
     /// Whether exact manager-owned Defenses content remains attached.
@@ -710,16 +703,7 @@ impl DefensesWindowState {
     /// stale prior-frame area cannot retarget before Defenses paints.
     pub fn refresh_release_targets(&mut self, snapshot: &RoutingSnapshot, world: &GameWorld) {
         for window in &mut self.windows {
-            window.release_target_visible = match window.id {
-                Some(id) => {
-                    snapshot.is_visible(id)
-                        && snapshot.key(id).is_some_and(|key| {
-                            key.kind == WindowKind::Defenses && key.subject == window.subject
-                        })
-                        && system_subject(world, window.system) == window.subject
-                }
-                None => world.systems.contains_key(window.system),
-            };
+            window.release_target_visible = window_is_visible(window, snapshot, world);
         }
     }
 
@@ -1272,6 +1256,23 @@ fn area_id(window: &OpenDefensesWindow) -> egui::Id {
     egui::Id::new(("original-defenses-window", window.id, window.system))
 }
 
+fn window_is_visible(
+    window: &OpenDefensesWindow,
+    snapshot: &RoutingSnapshot,
+    world: &GameWorld,
+) -> bool {
+    match window.id {
+        Some(id) => {
+            snapshot.is_visible(id)
+                && snapshot.key(id).is_some_and(|key| {
+                    key.kind == WindowKind::Defenses && key.subject == window.subject
+                })
+                && system_subject(world, window.system) == window.subject
+        }
+        None => world.systems.contains_key(window.system),
+    }
+}
+
 fn window_screen_rect(window: &OpenDefensesWindow, layout: CockpitLayout) -> egui::Rect {
     egui::Rect::from_min_size(
         egui::pos2(
@@ -1403,6 +1404,47 @@ pub fn draw_managed_defenses_windows(
     router: &mut FrameInputRouter,
 ) -> Vec<DefensesWindowAction> {
     draw_managed_defenses_windows_shown(
+        ManagedDefensesDraw {
+            ctx,
+            world,
+            fog,
+            missions,
+            economy,
+            state,
+            faction,
+            layout,
+            cache,
+            snapshot,
+            pointer_events,
+            router,
+        },
+        &|_| true,
+    )
+}
+
+/// Inputs shared by the managed Defenses renderer and its visibility-aware
+/// application boundary.
+pub struct ManagedDefensesDraw<'a> {
+    pub ctx: &'a egui::Context,
+    pub world: &'a GameWorld,
+    pub fog: &'a FogState,
+    pub missions: &'a MissionState,
+    pub economy: &'a EconomyState,
+    pub state: &'a mut DefensesWindowState,
+    pub faction: CockpitFaction,
+    pub layout: CockpitLayout,
+    pub cache: &'a mut BmpCache,
+    pub snapshot: &'a RoutingSnapshot,
+    pub pointer_events: &'a [(InputEventId, PointerPhase)],
+    pub router: &'a mut FrameInputRouter,
+}
+
+/// [`draw_managed_defenses_windows`] with command-center GID visibility.
+pub fn draw_managed_defenses_windows_shown(
+    input: ManagedDefensesDraw<'_>,
+    shown: &dyn Fn(GalaxyChild) -> bool,
+) -> Vec<DefensesWindowAction> {
+    let ManagedDefensesDraw {
         ctx,
         world,
         fog,
@@ -1415,30 +1457,7 @@ pub fn draw_managed_defenses_windows(
         snapshot,
         pointer_events,
         router,
-        &|_| true,
-    )
-}
-
-/// [`draw_managed_defenses_windows`] with command-center GID visibility.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
-)]
-pub fn draw_managed_defenses_windows_shown(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    fog: &FogState,
-    missions: &MissionState,
-    economy: &EconomyState,
-    state: &mut DefensesWindowState,
-    faction: CockpitFaction,
-    layout: CockpitLayout,
-    cache: &mut BmpCache,
-    snapshot: &RoutingSnapshot,
-    pointer_events: &[(InputEventId, PointerPhase)],
-    router: &mut FrameInputRouter,
-    shown: &dyn Fn(GalaxyChild) -> bool,
-) -> Vec<DefensesWindowAction> {
+    } = input;
     draw_defenses_windows_with_snapshot(
         ctx,
         world,
@@ -2089,7 +2108,7 @@ mod tests {
     use crate::fleet_window::tests::PAINTED;
     use rebellion_core::dat::SectorGroup;
     use rebellion_core::economy::SupportValues;
-    use rebellion_core::ids::DatId;
+    use rebellion_core::ids::{DatId, FighterClassKey};
     use rebellion_core::missions::{MissionFaction, MissionKind, MissionRequest};
     use rebellion_core::world::{
         Character, ControlKind, DefenseFacilityInstance, Sector, SpecialForceUnit, System,
@@ -2139,6 +2158,30 @@ mod tests {
             control,
         });
         (world, system)
+    }
+
+    fn fighter_drag_fixture(
+        faction: CockpitFaction,
+    ) -> (GameWorld, SystemKey, FighterClassKey, MissionState) {
+        let is_alliance = faction == CockpitFaction::Alliance;
+        let (mut world, system) = world(ControlKind::Controlled(if is_alliance {
+            Faction::Alliance
+        } else {
+            Faction::Empire
+        }));
+        let class = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass {
+                dat_id: DatId::new(if is_alliance {
+                    0x1c00_0001
+                } else {
+                    0x1c00_0005
+                }),
+                name: "Fighter".into(),
+                ..Default::default()
+            });
+        world.systems[system].add_squadrons(class, 1, is_alliance);
+        (world, system, class, MissionState::new())
     }
 
     fn add_defense(world: &mut GameWorld, system: SystemKey, dat_id: u32, is_alliance: bool) {
@@ -2424,24 +2467,63 @@ mod tests {
         (id, commit.transition)
     }
 
-    #[test]
-    fn defenses_window_shared_identity_preserves_content() {
-        let (world, system, _) = stocked();
-        let mut manager = WindowManager::new();
+    fn prepared_managed_window(
+        world: &GameWorld,
+        system: SystemKey,
+    ) -> (WindowManager, DefensesWindowState, PreparedDefensesWindow) {
+        let manager = WindowManager::new();
         let mut state = DefensesWindowState::default();
         let prepared = state
-            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
+            .prepare_open(world, system, ORIGIN, CockpitFaction::Alliance, scaled())
             .expect("live system has a stable DAT subject");
-        assert_eq!(prepared.spec().key.kind, WindowKind::Defenses);
-        assert_eq!(prepared.spec().owner, WindowOwner::StrategicRoot);
-        let (id, opened) = commit_prepared_defenses_window(&mut manager, &mut state, prepared);
-        assert_eq!(opened, WindowTransition::Opened { id });
+        (manager, state, prepared)
+    }
 
+    fn opened_managed_window(
+        world: &GameWorld,
+        system: SystemKey,
+    ) -> (WindowManager, DefensesWindowState) {
+        let (mut manager, mut state, prepared) = prepared_managed_window(world, system);
+        commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        (manager, state)
+    }
+
+    fn assert_preserved_content(
+        state: &mut DefensesWindowState,
+        system: SystemKey,
+        selected: DefensesItem,
+    ) {
+        assert_eq!(state.window_count(), 1);
+        let content = state.window_mut(system).unwrap();
+        assert_eq!(content.logical_position, ORIGIN);
+        assert_eq!(content.page, DefensesPage::Batteries);
+        assert_eq!(content.selected, Some(selected));
+        assert_eq!(content.first_row, 1);
+    }
+
+    fn seed_preserved_content(
+        world: &GameWorld,
+        state: &mut DefensesWindowState,
+        system: SystemKey,
+    ) -> DefensesItem {
         let selected = DefensesItem::Defense(world.systems[system].defense_facilities[0]);
         let content = state.window_mut(system).unwrap();
         content.page = DefensesPage::Batteries;
         content.selected = Some(selected);
         content.first_row = 1;
+        selected
+    }
+
+    #[test]
+    fn defenses_window_shared_identity_preserves_content() {
+        let (world, system, _) = stocked();
+        let (mut manager, mut state, prepared) = prepared_managed_window(&world, system);
+        assert_eq!(prepared.spec().key.kind, WindowKind::Defenses);
+        assert_eq!(prepared.spec().owner, WindowOwner::StrategicRoot);
+        let (id, opened) = commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        assert_eq!(opened, WindowTransition::Opened { id });
+
+        let selected = seed_preserved_content(&world, &mut state, system);
 
         let reopened = state
             .prepare_open(
@@ -2459,12 +2541,7 @@ mod tests {
             transition,
             WindowTransition::Existing { id: existing, .. } if existing == id
         ));
-        assert_eq!(state.window_count(), 1);
-        let content = state.window_mut(system).unwrap();
-        assert_eq!(content.logical_position, ORIGIN);
-        assert_eq!(content.page, DefensesPage::Batteries);
-        assert_eq!(content.selected, Some(selected));
-        assert_eq!(content.first_row, 1);
+        assert_preserved_content(&mut state, system, selected);
 
         manager.apply(WindowCommand::Minimize(id)).unwrap();
         assert!(!state.window_is_visible(&manager.begin_frame(), system));
@@ -2485,11 +2562,7 @@ mod tests {
             WindowTransition::Existing { id: existing, .. } if existing == id
         ));
         assert!(state.window_is_visible(&manager.begin_frame(), system));
-        let content = state.window_mut(system).unwrap();
-        assert_eq!(content.logical_position, ORIGIN);
-        assert_eq!(content.page, DefensesPage::Batteries);
-        assert_eq!(content.selected, Some(selected));
-        assert_eq!(content.first_row, 1);
+        assert_preserved_content(&mut state, system, selected);
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -2499,11 +2572,7 @@ mod tests {
         let mut manager = WindowManager::new();
         let mut state = DefensesWindowState::default();
         assert!(state.open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled(),));
-        let selected = DefensesItem::Defense(world.systems[system].defense_facilities[0]);
-        let content = state.window_mut(system).unwrap();
-        content.page = DefensesPage::Batteries;
-        content.selected = Some(selected);
-        content.first_row = 1;
+        let selected = seed_preserved_content(&world, &mut state, system);
 
         let prepared = state
             .prepare_open(
@@ -2526,12 +2595,7 @@ mod tests {
             "the accepted manager identity must attach to the exact fixture content"
         );
         assert_eq!(state.window_id(system), Some(id));
-        assert_eq!(state.window_count(), 1);
-        let content = state.window_mut(system).unwrap();
-        assert_eq!(content.logical_position, ORIGIN);
-        assert_eq!(content.page, DefensesPage::Batteries);
-        assert_eq!(content.selected, Some(selected));
-        assert_eq!(content.first_row, 1);
+        assert_preserved_content(&mut state, system, selected);
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -2610,13 +2674,7 @@ mod tests {
                     .unwrap(),
             ),
         );
-        let valid = run_managed(
-            &world,
-            &MissionState::new(),
-            &mut state,
-            &manager,
-            vec![(vec![egui::Event::PointerMoved(at(100.0, 100.0))], vec![])],
-        );
+        let valid = run_managed_idle(&world, &mut state, &manager);
         assert!(valid.actions.is_empty());
         assert_eq!(state.release_target(layer), Some(stale_system));
 
@@ -2628,13 +2686,7 @@ mod tests {
             None,
             "the app prepass must invalidate a stale layer before Fleet can resolve a drop"
         );
-        let rendered = run_managed(
-            &world,
-            &MissionState::new(),
-            &mut state,
-            &manager,
-            vec![(vec![egui::Event::PointerMoved(at(100.0, 100.0))], vec![])],
-        );
+        let rendered = run_managed_idle(&world, &mut state, &manager);
 
         assert_eq!(rendered.actions, [DefensesWindowAction::Close(id)]);
         assert!(
@@ -2706,12 +2758,8 @@ mod tests {
     #[test]
     fn defenses_visible_content_follows_exact_frozen_identity() {
         let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
-        let mut manager = WindowManager::new();
-        let mut state = DefensesWindowState::default();
-        let prepared = state
-            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
-            .unwrap();
-        let (id, _) = commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        let (mut manager, state) = opened_managed_window(&world, system);
+        let id = state.window_id(system).unwrap();
         assert!(state.has_visible_content(&manager.begin_frame(), &world));
 
         manager.apply(WindowCommand::Minimize(id)).unwrap();
@@ -2738,12 +2786,8 @@ mod tests {
     #[test]
     fn defenses_pointer_hits_only_its_visible_topmost_manager_layer() {
         let (world, system) = world(ControlKind::Controlled(Faction::Alliance));
-        let mut manager = WindowManager::new();
-        let mut state = DefensesWindowState::default();
-        let prepared = state
-            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
-            .unwrap();
-        let (id, _) = commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        let (mut manager, state) = opened_managed_window(&world, system);
+        let id = state.window_id(system).unwrap();
         let snapshot = manager.begin_frame();
         let rect = state.screen_rect(scaled(), system).unwrap();
         let inside = (rect.center().x, rect.center().y);
@@ -2858,6 +2902,41 @@ mod tests {
         painted: Vec<(u32, egui::Pos2)>,
     }
 
+    fn raw_input(
+        index: usize,
+        events: Vec<egui::Event>,
+        modifiers: egui::Modifiers,
+    ) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 1000.0),
+            )),
+            time: Some(index as f64 * 0.05),
+            events,
+            modifiers,
+            ..Default::default()
+        }
+    }
+
+    fn record_frame(result: &mut Run, output: egui::FullOutput) {
+        result.painted = PAINTED.with(|painted| painted.take());
+        result.texts.clear();
+        for clipped in output.shapes {
+            if let egui::Shape::Text(text) = clipped.shape {
+                let format = &text.galley.job.sections[0].format;
+                result.texts.push(Text {
+                    text: text.galley.text().to_owned(),
+                    pos: text.pos,
+                    color: format.color,
+                    font: format.font_id.size,
+                    size: text.galley.size(),
+                    wrap: text.galley.job.wrap.max_width,
+                });
+            }
+        }
+    }
+
     /// Draw the windows once per frame of events, on [`scaled`] for the
     /// Alliance; the last frame's text and bitmaps are kept.
     fn run(
@@ -2910,16 +2989,7 @@ mod tests {
         }
         let mut result = Run::default();
         for (index, events) in frames.into_iter().enumerate() {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                time: Some(index as f64 * 0.05),
-                events,
-                modifiers,
-                ..Default::default()
-            };
+            let input = raw_input(index, events, modifiers);
             PAINTED.with(|painted| painted.borrow_mut().clear());
             let output = ctx.run(input, |ctx| {
                 result.actions.extend(draw_defenses_windows(
@@ -2934,21 +3004,7 @@ mod tests {
                     &mut cache,
                 ));
             });
-            result.painted = PAINTED.with(|painted| painted.take());
-            result.texts.clear();
-            for clipped in output.shapes {
-                if let egui::Shape::Text(text) = clipped.shape {
-                    let format = &text.galley.job.sections[0].format;
-                    result.texts.push(Text {
-                        text: text.galley.text().to_owned(),
-                        pos: text.pos,
-                        color: format.color,
-                        font: format.font_id.size,
-                        size: text.galley.size(),
-                        wrap: text.galley.job.wrap.max_width,
-                    });
-                }
-            }
+            record_frame(&mut result, output);
         }
         result
     }
@@ -2999,15 +3055,7 @@ mod tests {
                 );
                 routed.push((event, phase));
             }
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                time: Some(index as f64 * 0.05),
-                events,
-                ..Default::default()
-            };
+            let input = raw_input(index, events, egui::Modifiers::default());
             PAINTED.with(|painted| painted.borrow_mut().clear());
             let output = ctx.run(input, |ctx| {
                 result.actions.extend(draw_managed_defenses_windows(
@@ -3025,23 +3073,23 @@ mod tests {
                     &mut router,
                 ));
             });
-            result.painted = PAINTED.with(|painted| painted.take());
-            result.texts.clear();
-            for clipped in output.shapes {
-                if let egui::Shape::Text(text) = clipped.shape {
-                    let format = &text.galley.job.sections[0].format;
-                    result.texts.push(Text {
-                        text: text.galley.text().to_owned(),
-                        pos: text.pos,
-                        color: format.color,
-                        font: format.font_id.size,
-                        size: text.galley.size(),
-                        wrap: text.galley.job.wrap.max_width,
-                    });
-                }
-            }
+            record_frame(&mut result, output);
         }
         result
+    }
+
+    fn run_managed_idle(
+        world: &GameWorld,
+        state: &mut DefensesWindowState,
+        manager: &WindowManager,
+    ) -> Run {
+        run_managed(
+            world,
+            &MissionState::new(),
+            state,
+            manager,
+            vec![(vec![egui::Event::PointerMoved(at(100.0, 100.0))], vec![])],
+        )
     }
 
     fn hover(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
@@ -3058,6 +3106,24 @@ mod tests {
             pressed,
             modifiers: egui::Modifiers::default(),
         }
+    }
+
+    fn begin_squadron_drag(
+        world: &GameWorld,
+        missions: &MissionState,
+        state: &mut DefensesWindowState,
+        faction: CockpitFaction,
+        start: egui::Pos2,
+        end: egui::Pos2,
+    ) {
+        let plain = (faction, egui::Modifiers::default());
+        let _ = run_as(world, missions, state, click(at(118.0, 36.0)), plain);
+        let mut frames = hover(start);
+        frames.extend([
+            vec![press(start, true)],
+            vec![egui::Event::PointerMoved(end)],
+        ]);
+        let _ = run_as(world, missions, state, frames, plain);
     }
 
     fn click(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
@@ -3226,40 +3292,15 @@ mod tests {
     #[test]
     fn a_squadron_dropped_with_ctrl_held_is_a_confirmed_move_for_either_side() {
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
-            let is_alliance = faction == CockpitFaction::Alliance;
-            let (mut world, system) = world(ControlKind::Controlled(if is_alliance {
-                Faction::Alliance
-            } else {
-                Faction::Empire
-            }));
-            let class = world
-                .fighter_classes
-                .insert(rebellion_core::world::FighterClass {
-                    dat_id: DatId::new(if is_alliance {
-                        0x1c00_0001
-                    } else {
-                        0x1c00_0005
-                    }),
-                    name: "Fighter".into(),
-                    ..Default::default()
-                });
-            world.systems[system].add_squadrons(class, 1, is_alliance);
-            let missions = MissionState::new();
+            let (world, system, class, missions) = fighter_drag_fixture(faction);
             for (modifiers, confirmed) in [
                 (egui::Modifiers::default(), false),
                 (egui::Modifiers::CTRL, true),
             ] {
                 let mut state = DefensesWindowState::default();
                 assert!(state.open(&world, system, ORIGIN, faction, scaled()));
-                let plain = (faction, egui::Modifiers::default());
-                let _ = run_as(&world, &missions, &mut state, click(at(118.0, 36.0)), plain);
                 let (start, end) = (at(30.0, 100.0), at(300.0, 100.0));
-                let mut frames = hover(start);
-                frames.extend([
-                    vec![press(start, true)],
-                    vec![egui::Event::PointerMoved(end)],
-                ]);
-                let _ = run_as(&world, &missions, &mut state, frames, plain);
+                begin_squadron_drag(&world, &missions, &mut state, faction, start, end);
                 let released = run_as(
                     &world,
                     &missions,
@@ -3290,37 +3331,13 @@ mod tests {
     #[test]
     fn a_squadron_drop_needs_a_long_move_that_leaves_the_list_for_either_side() {
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
-            let is_alliance = faction == CockpitFaction::Alliance;
-            let (mut world, system) = world(ControlKind::Controlled(if is_alliance {
-                Faction::Alliance
-            } else {
-                Faction::Empire
-            }));
-            let class = world
-                .fighter_classes
-                .insert(rebellion_core::world::FighterClass {
-                    dat_id: DatId::new(if is_alliance {
-                        0x1c00_0001
-                    } else {
-                        0x1c00_0005
-                    }),
-                    name: "Fighter".into(),
-                    ..Default::default()
-                });
-            world.systems[system].add_squadrons(class, 1, is_alliance);
-            let missions = MissionState::new();
+            let (world, system, _class, missions) = fighter_drag_fixture(faction);
             let plain = (faction, egui::Modifiers::default());
             let drops = |from: (f32, f32), to: (f32, f32)| {
                 let mut state = DefensesWindowState::default();
                 assert!(state.open(&world, system, ORIGIN, faction, scaled()));
-                let _ = run_as(&world, &missions, &mut state, click(at(118.0, 36.0)), plain);
                 let (start, end) = (at(from.0, from.1), at(to.0, to.1));
-                let mut frames = hover(start);
-                frames.extend([
-                    vec![press(start, true)],
-                    vec![egui::Event::PointerMoved(end)],
-                ]);
-                let _ = run_as(&world, &missions, &mut state, frames, plain);
+                begin_squadron_drag(&world, &missions, &mut state, faction, start, end);
                 run_as(
                     &world,
                     &missions,
@@ -3487,12 +3504,7 @@ mod tests {
     #[test]
     fn managed_secondary_press_selects_and_clears_with_its_exact_phase() {
         let (world, system, missions) = stocked();
-        let mut manager = WindowManager::new();
-        let mut state = DefensesWindowState::default();
-        let prepared = state
-            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
-            .unwrap();
-        commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        let (manager, mut state) = opened_managed_window(&world, system);
         let secondary = |point, pressed| egui::Event::PointerButton {
             pos: point,
             button: egui::PointerButton::Secondary,
@@ -3553,12 +3565,7 @@ mod tests {
         for index in 0..8 {
             add_character(&mut world, system, &format!("Extra {index}"), true);
         }
-        let mut manager = WindowManager::new();
-        let mut state = DefensesWindowState::default();
-        let prepared = state
-            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled())
-            .unwrap();
-        commit_prepared_defenses_window(&mut manager, &mut state, prepared);
+        let (manager, mut state) = opened_managed_window(&world, system);
         let thumb = at(220.0, 100.0);
         let dragged = at(220.0, 200.0);
         run_managed(

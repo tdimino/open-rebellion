@@ -70,6 +70,17 @@ fn open(manager: &mut WindowManager, spec: rebellion_windowing::WindowSpec) -> W
     }
 }
 
+fn suspend_owned_child(
+    manager: &mut WindowManager,
+    spec: rebellion_windowing::WindowSpec,
+) -> (WindowId, WindowId) {
+    let child = open(manager, spec);
+    checked(manager, WindowCommand::Minimize(child));
+    let peer = open(manager, detail(WindowKind::Defenses, 3));
+    manager.set_active_windows(&BTreeSet::from([peer])).unwrap();
+    (child, peer)
+}
+
 fn target(window: WindowId) -> RouteTarget {
     RouteTarget::Window(FocusTarget {
         window,
@@ -466,10 +477,7 @@ fn contract_dormant_normal_restore_preserves_scene_membership_and_focus() {
     let owner = open(&mut manager, detail(WindowKind::System, 1));
     let mut spec = detail(WindowKind::Fleet, 2);
     spec.owner = WindowOwner::Window(owner);
-    let child = open(&mut manager, spec);
-    checked(&mut manager, WindowCommand::Minimize(child));
-    let peer = open(&mut manager, detail(WindowKind::Defenses, 3));
-    manager.set_active_windows(&BTreeSet::from([peer])).unwrap();
+    let (child, peer) = suspend_owned_child(&mut manager, spec);
     let focus_before = manager.focused();
     let lease = manager.begin_frame();
     let commit = checked(&mut manager, WindowCommand::Restore(child));
@@ -496,10 +504,7 @@ fn contract_transient_restore_rejects_a_dormant_owner_atomically() {
     spec.owner = WindowOwner::Window(owner);
     spec.policy.band = rebellion_windowing::StackBand::Transient;
     spec.policy.placement = rebellion_windowing::OpenPlacement::AboveOwner;
-    let child = open(&mut manager, spec);
-    checked(&mut manager, WindowCommand::Minimize(child));
-    let peer = open(&mut manager, detail(WindowKind::Defenses, 3));
-    manager.set_active_windows(&BTreeSet::from([peer])).unwrap();
+    let (child, peer) = suspend_owned_child(&mut manager, spec);
     let before = format!("{manager:?}");
     assert_eq!(
         manager.apply(WindowCommand::Restore(child)),

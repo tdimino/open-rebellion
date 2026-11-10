@@ -627,19 +627,25 @@ fn native(rect: egui::Rect, size: egui::Vec2, scale: f32) -> egui::Rect {
     egui::Rect::from_min_size(rect.min, size * scale)
 }
 
-pub(crate) fn paint(
+fn paint_resource(
     painter: &egui::Painter,
     ctx: &egui::Context,
     cache: &mut BmpCache,
     resource_id: u32,
     rect: egui::Rect,
     scale: f32,
+    button: bool,
 ) {
     #[cfg(test)]
     crate::fleet_window::tests::PAINTED.with(|painted| {
         painted.borrow_mut().push((resource_id, rect.min));
     });
-    if let Some(texture) = cache.get(ctx, DllSource::Strategy, resource_id) {
+    let texture = if button {
+        cache.get_button(ctx, DllSource::Strategy, resource_id)
+    } else {
+        cache.get(ctx, DllSource::Strategy, resource_id)
+    };
+    if let Some(texture) = texture {
         painter
             .with_clip_rect(painter.clip_rect().intersect(rect))
             .image(
@@ -651,32 +657,28 @@ pub(crate) fn paint(
     }
 }
 
+macro_rules! paint_resource_fn {
+    ($(#[$meta:meta])* $name:ident, $button:literal) => {
+        $(#[$meta])*
+        pub(crate) fn $name(
+            painter: &egui::Painter,
+            ctx: &egui::Context,
+            cache: &mut BmpCache,
+            resource_id: u32,
+            rect: egui::Rect,
+            scale: f32,
+        ) {
+            paint_resource(painter, ctx, cache, resource_id, rect, scale, $button);
+        }
+    };
+}
+
+paint_resource_fn!(paint, false);
+
 /// A CoolStrobeButton's bitmap (`FUN_00602150`), keyed on its first stored
 /// pixel as `FUN_00602d30` blits it over the window behind
 /// ([`BmpCache::get_button`]), at native size clipped to the control.
-pub(crate) fn paint_button(
-    painter: &egui::Painter,
-    ctx: &egui::Context,
-    cache: &mut BmpCache,
-    resource_id: u32,
-    rect: egui::Rect,
-    scale: f32,
-) {
-    #[cfg(test)]
-    crate::fleet_window::tests::PAINTED.with(|painted| {
-        painted.borrow_mut().push((resource_id, rect.min));
-    });
-    if let Some(texture) = cache.get_button(ctx, DllSource::Strategy, resource_id) {
-        painter
-            .with_clip_rect(painter.clip_rect().intersect(rect))
-            .image(
-                texture.id(),
-                native(rect, texture.size_vec2(), scale),
-                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
-    }
-}
+paint_resource_fn!(paint_button, true);
 
 /// A two-state bitmap button (`FUN_00602150`): the second bitmap shows while
 /// it is held or, for a tab, while it is the current page.
@@ -1227,6 +1229,13 @@ mod tests {
                 vec![MissionKind::Diplomacy, MissionKind::Espionage],
             )
             .expect("valid Mission context");
+        commit_prepared_open(state, prepared)
+    }
+
+    fn commit_prepared_open(
+        state: &mut MissionDialogState,
+        prepared: PreparedMissionDialog,
+    ) -> (WindowManager, rebellion_windowing::WindowId) {
         let mut manager = WindowManager::new();
         let committed = manager
             .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
@@ -1384,22 +1393,8 @@ mod tests {
         let prepared = state
             .prepare_adoption()
             .expect("unmanaged content is adoptable");
-        let mut manager = WindowManager::new();
-        let committed = manager
-            .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
-                crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
-                1,
-            ))))
-            .expect("manager accepts Mission dialog");
-        let WindowTransition::Opened { id } = committed.transition else {
-            panic!("expected new Mission identity");
-        };
+        let (_manager, id) = commit_prepared_open(&mut state, prepared);
 
-        assert_eq!(
-            state.commit_open(prepared, &committed.transition),
-            Some(id),
-            "an existing identity-less fixture dialog must adopt the exact manager receipt"
-        );
         let dialog = state.dialog().expect("adopted content remains open");
         assert_eq!(dialog.page(), MissionDialogPage::Agents);
         assert_eq!(dialog.agents(), team);

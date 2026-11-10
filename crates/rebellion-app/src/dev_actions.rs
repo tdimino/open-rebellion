@@ -323,6 +323,24 @@ fn bring_side(
     )))
 }
 
+/// The named fleet accepted by `matches`, ignoring case.
+fn named_fleet(
+    world: &GameWorld,
+    name: &str,
+    matches: impl Fn(&rebellion_core::world::Fleet) -> bool,
+) -> Option<FleetKey> {
+    world
+        .fleets
+        .iter()
+        .filter(|(_, fleet)| matches(fleet))
+        .map(|(key, _)| key)
+        .find(|&key| {
+            world
+                .fleet_name(key)
+                .is_some_and(|fleet_name| fleet_name.eq_ignore_ascii_case(name.trim()))
+        })
+}
+
 /// Put a Death Star ship (the CAPSHPSD family-0x18 class) in the named
 /// Imperial fleet, as a completed build leaves it
 /// (`integrator::apply_boarding_inner`).
@@ -342,16 +360,7 @@ pub fn give_death_star(world: &mut GameWorld, name: &str) -> Result<String, Stri
         ));
     }
     // Both sides number their fleets, so only Imperial names are searched.
-    let fleet = world
-        .fleets
-        .iter()
-        .filter(|(_, fleet)| !fleet.is_alliance)
-        .map(|(key, _)| key)
-        .find(|&key| {
-            world
-                .fleet_name(key)
-                .is_some_and(|fleet_name| fleet_name.eq_ignore_ascii_case(name.trim()))
-        })
+    let fleet = named_fleet(world, name, |fleet| !fleet.is_alliance)
         .ok_or_else(|| format!("no Imperial fleet named {name:?}"))?;
     let (class, hull) = world
         .capital_ship_classes
@@ -380,16 +389,7 @@ pub fn give_death_star(world: &mut GameWorld, name: &str) -> Result<String, Stri
 /// tick through the repair system's own rules, and the damage counters are
 /// left as they are.
 pub fn damage_ship(world: &mut GameWorld, alliance: bool, name: &str) -> Result<String, String> {
-    let fleet = world
-        .fleets
-        .iter()
-        .filter(|(_, fleet)| fleet.is_alliance == alliance)
-        .map(|(key, _)| key)
-        .find(|&key| {
-            world
-                .fleet_name(key)
-                .is_some_and(|fleet_name| fleet_name.eq_ignore_ascii_case(name.trim()))
-        })
+    let fleet = named_fleet(world, name, |fleet| fleet.is_alliance == alliance)
         .ok_or_else(|| format!("no fleet of yours named {name:?}"))?;
     let fleet_name = world.fleet_name(fleet).unwrap_or_default().to_owned();
     let system = world
@@ -415,16 +415,9 @@ pub fn damage_ship(world: &mut GameWorld, alliance: bool, name: &str) -> Result<
 /// The fleet of `side` named `name`, ignoring case. Both sides number their
 /// fleets, so the side tells the two `Fleet 1`s apart.
 pub fn find_fleet(world: &GameWorld, side: Faction, name: &str) -> Result<FleetKey, String> {
-    world
-        .fleets
-        .iter()
-        .filter(|(_, fleet)| Faction::of_alliance(fleet.is_alliance) == side)
-        .map(|(key, _)| key)
-        .find(|&key| {
-            world
-                .fleet_name(key)
-                .is_some_and(|fleet_name| fleet_name.eq_ignore_ascii_case(name.trim()))
-        })
+    named_fleet(world, name, |fleet| {
+        Faction::of_alliance(fleet.is_alliance) == side
+    })
         .ok_or_else(|| {
             let side = if side == Faction::Alliance {
                 "Alliance"
@@ -1081,6 +1074,16 @@ pub fn save_path(evidence: &std::path::Path, name: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn controlled_system(holder: Faction) -> (GameWorld, SystemKey, bool) {
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System {
+            name: "Coruscant".into(),
+            control: rebellion_core::world::ControlKind::Controlled(holder),
+            ..System::default()
+        });
+        (world, system, holder == Faction::Alliance)
+    }
     use rebellion_core::world::{Abode, CapitalShipClass, Character, Fleet, Sector, System};
 
     #[test]
@@ -1361,13 +1364,7 @@ mod tests {
             ControlKind, DefenseFacilityInstance, ShipInstance, SystemSquadrons, TroopUnit,
         };
         for holder in [Faction::Alliance, Faction::Empire] {
-            let ours = holder == Faction::Alliance;
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(System {
-                name: "Coruscant".into(),
-                control: ControlKind::Controlled(holder),
-                ..System::default()
-            });
+            let (mut world, system, ours) = controlled_system(holder);
             let troop = |world: &mut GameWorld, is_alliance| {
                 let key = world.troops.insert(TroopUnit {
                     is_alliance,
@@ -1437,15 +1434,9 @@ mod tests {
     // at once, on the ship with room (regiment-unload.md).
     #[test]
     fn embark_boards_the_players_regiments_and_refuses_too_many_with_nothing_moved() {
-        use rebellion_core::world::{ControlKind, ShipInstance, TroopUnit};
+        use rebellion_core::world::{ShipInstance, TroopUnit};
         for holder in [Faction::Alliance, Faction::Empire] {
-            let ours = holder == Faction::Alliance;
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(System {
-                name: "Coruscant".into(),
-                control: ControlKind::Controlled(holder),
-                ..System::default()
-            });
+            let (mut world, system, ours) = controlled_system(holder);
             let troops: Vec<_> = [ours, ours, !ours]
                 .into_iter()
                 .map(|is_alliance| {

@@ -1449,15 +1449,21 @@ version = "0.1.0"
     }
 
     #[cfg(unix)]
-    #[test]
-    fn saving_mod_config_atomically_replaces_the_file() {
-        use std::os::unix::fs::MetadataExt;
-
+    fn saved_config() -> (tempfile::TempDir, PathBuf, ModConfig) {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("config.toml");
         let mut config = ModConfig::default();
         config.toggle("first");
         config.save(tmp.path()).unwrap();
+        (tmp, path, config)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_mod_config_atomically_replaces_the_file() {
+        use std::os::unix::fs::MetadataExt;
+
+        let (tmp, path, mut config) = saved_config();
         let original_inode = std::fs::metadata(&path).unwrap().ino();
 
         config.toggle("second");
@@ -1474,11 +1480,7 @@ version = "0.1.0"
     fn failed_config_write_preserves_the_previous_file() {
         use std::os::unix::fs::PermissionsExt;
 
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("config.toml");
-        let mut config = ModConfig::default();
-        config.toggle("first");
-        config.save(tmp.path()).unwrap();
+        let (tmp, path, mut config) = saved_config();
         let original = std::fs::read(&path).unwrap();
 
         let original_permissions = std::fs::metadata(tmp.path()).unwrap().permissions();

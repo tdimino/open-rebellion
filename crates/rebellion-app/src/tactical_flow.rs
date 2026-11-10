@@ -272,6 +272,29 @@ mod tests {
             .push(ShipInstance::new(class, 100, is_alliance));
     }
 
+    fn assert_entry_rejected(
+        world: &GameWorld,
+        entry: BattleEntry,
+        expected: BattleEntryError,
+    ) {
+        let mut tactical = TacticalState::default();
+        let mut messages = MessageLog::default();
+        let mut mode = GameMode::Galaxy;
+        assert_eq!(
+            begin_player_battle(
+                world,
+                None,
+                entry,
+                &mut tactical,
+                &mut messages,
+                &mut mode,
+            ),
+            Err(expected)
+        );
+        assert_eq!(mode, GameMode::Galaxy);
+        assert!(tactical.session.is_none());
+    }
+
     #[test]
     fn both_player_sides_enter_the_same_production_tactical_path() {
         let (world, system, attacker, defender) = opposing_empty_fleets();
@@ -308,12 +331,8 @@ mod tests {
     #[test]
     fn invalid_entry_does_not_mutate_battle_state() {
         let (world, system, attacker, _defender) = opposing_empty_fleets();
-        let mut tactical = TacticalState::default();
-        let mut messages = MessageLog::default();
-        let mut mode = GameMode::Galaxy;
-        let result = begin_player_battle(
+        assert_entry_rejected(
             &world,
-            None,
             BattleEntry {
                 system,
                 attacker: CombatForce::of_fleet(&world, attacker),
@@ -322,13 +341,8 @@ mod tests {
                 tick: 17,
                 rng_seed: 0x1111_0002,
             },
-            &mut tactical,
-            &mut messages,
-            &mut mode,
+            BattleEntryError::SameFleet,
         );
-        assert_eq!(result, Err(BattleEntryError::SameFleet));
-        assert_eq!(mode, GameMode::Galaxy);
-        assert!(tactical.session.is_none());
     }
 
     #[test]
@@ -336,13 +350,8 @@ mod tests {
         let (mut world, system, attacker, defender) = opposing_empty_fleets();
         give_death_star_ship(&mut world, attacker);
         give_death_star_ship(&mut world, defender);
-        let mut tactical = TacticalState::default();
-        let mut messages = MessageLog::default();
-        let mut mode = GameMode::Galaxy;
-
-        let result = begin_player_battle(
+        assert_entry_rejected(
             &world,
-            None,
             BattleEntry {
                 system,
                 attacker: CombatForce::of_fleet(&world, attacker),
@@ -351,14 +360,8 @@ mod tests {
                 tick: 17,
                 rng_seed: 0x1111_0003,
             },
-            &mut tactical,
-            &mut messages,
-            &mut mode,
+            BattleEntryError::MultipleDeathStars,
         );
-
-        assert_eq!(result, Err(BattleEntryError::MultipleDeathStars));
-        assert_eq!(mode, GameMode::Galaxy);
-        assert!(tactical.session.is_none());
     }
 
     #[test]

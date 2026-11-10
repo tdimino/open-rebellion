@@ -50,6 +50,19 @@ fn station_world(owner_is_alliance: bool, damage: i32) -> (GameWorld, SystemKey,
     (world, system, owner, enemy)
 }
 
+fn session_with_fleet_ship() -> (FleetKey, BattleSession) {
+    let fleet = FleetKey::default();
+    let mut ship = test_ship(64, 0, true, true);
+    ship.fleet = Some(fleet);
+    (fleet, test_session(vec![ship], Vec::new(), true))
+}
+
+fn arm_death_star(session: &mut BattleSession) {
+    let mut station = test_death_star(false);
+    station.laser_charge = ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE;
+    session.death_star = Some(station);
+}
+
 // FUN_0040b0e0.c:86-118 exports a family-0x18 ship only as the station's
 // short record; FUN_0040bcd0 passes FUN_00595ef0 the class hull (+0x248),
 // the remaining hull (+0x248 - +0x274), the shield (a family-0x25 child of
@@ -132,10 +145,7 @@ fn the_trench_chance_is_half_the_torpedo_term_plus_the_rating_truncated() {
 // else 1.0.
 #[test]
 fn the_commander_rating_is_combat_over_twenty_plus_one_while_its_fleet_fights() {
-    let fleet = FleetKey::default();
-    let mut ship = test_ship(64, 0, true, true);
-    ship.fleet = Some(fleet);
-    let mut session = test_session(vec![ship], Vec::new(), true);
+    let (fleet, mut session) = session_with_fleet_ship();
     assert_eq!(session.trench_run_rating(), 1.0);
     for (combat, rating) in [(0, 1.0), (60, 4.0), (70, 4.5), (160, 9.0)] {
         session.trench_run_commander = Some(TacticalTrenchCommander {
@@ -250,10 +260,7 @@ fn the_highest_alliance_commander_rates_the_run_and_a_tie_keeps_the_systems() {
 // rates 1.
 #[test]
 fn the_headless_rating_needs_the_commanders_carrier_in_the_battle_alive_or_not() {
-    let fleet = FleetKey::default();
-    let mut ship = test_ship(64, 0, true, true);
-    ship.fleet = Some(fleet);
-    let mut session = test_session(vec![ship], Vec::new(), true);
+    let (fleet, mut session) = session_with_fleet_ship();
     let commander = |fleet| {
         Some(TacticalTrenchCommander {
             combat: 160,
@@ -509,9 +516,7 @@ fn the_computer_empire_fires_a_full_charge_at_the_first_live_enemy_ship_every_si
         test_ship(0x1400_0002, 0, false, true),
     ];
     let mut session = test_session(ships, Vec::new(), true);
-    let mut station = test_death_star(false);
-    station.laser_charge = ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE;
-    session.death_star = Some(station);
+    arm_death_star(&mut session);
     session.death_star_ai.countdown = 6.0;
     for _ in 0..5 {
         session.advance_computer_controller();
@@ -1005,9 +1010,7 @@ fn a_battle_run_without_its_window_fires_the_station_on_its_first_step() {
         test_ship(0x1400_0003, 0, false, true),
     ];
     let mut session = test_session(ships, Vec::new(), true);
-    let mut station = test_death_star(false);
-    station.laser_charge = ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE;
-    session.death_star = Some(station);
+    arm_death_star(&mut session);
 
     session.headless_step();
 

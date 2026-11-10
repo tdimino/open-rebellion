@@ -513,6 +513,45 @@ mod tests {
         }
     }
 
+    fn fleet_world(
+    ) -> (
+        GameWorld,
+        SystemKey,
+        crate::ids::CapitalShipKey,
+        crate::ids::FighterKey,
+    ) {
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System::default());
+        let cruiser = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x1400_0040),
+            name: "Cruiser".into(),
+            troop_capacity: 1,
+            ..CapitalShipClass::default()
+        });
+        let wing = world.fighter_classes.insert(FighterClass {
+            dat_id: DatId::new(0x1c00_0001),
+            name: "Wing".into(),
+            ..FighterClass::default()
+        });
+        (world, system, cruiser, wing)
+    }
+
+    fn system_with_regiments() -> (GameWorld, SystemKey) {
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System::default());
+        let rebels = named(&mut world, 0x1000_0005, "Mon Calamari Regiment");
+        let troopers = named(&mut world, 0x1000_0006, "Stormtrooper Regiment");
+        for (class, is_alliance) in [(rebels, true), (troopers, false)] {
+            let troop = world.troops.insert(TroopUnit {
+                class_dat_id: class,
+                is_alliance,
+                ..TroopUnit::default()
+            });
+            world.systems[system].ground_units.push(troop);
+        }
+        (world, system)
+    }
+
     #[test]
     fn the_picture_follows_the_destroyed_lists_and_the_assaults_owner() {
         // FUN_00496770 code 2: 0x2b9b with +0x80, else 0x2b9c with +0x88,
@@ -542,19 +581,7 @@ mod tests {
         // ship's children (FUN_004fcd00) after it; Personnel with +0xac
         // bit 0 to +0x90.
         for alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(System::default());
-            let cruiser = world.capital_ship_classes.insert(CapitalShipClass {
-                dat_id: DatId::new(0x1400_0040),
-                name: "Cruiser".into(),
-                troop_capacity: 1,
-                ..CapitalShipClass::default()
-            });
-            let wing = world.fighter_classes.insert(FighterClass {
-                dat_id: DatId::new(0x1c00_0001),
-                name: "Wing".into(),
-                ..FighterClass::default()
-            });
+            let (mut world, system, cruiser, wing) = fleet_world();
             let mut first = ShipInstance::new(cruiser, 10, alliance);
             first.tag = 1;
             let mut second = ShipInstance::new(cruiser, 10, alliance);
@@ -656,18 +683,7 @@ mod tests {
         // (bit 5, FUN_00556430) is not usable (0x004f7b80), so it and its
         // children are left out; the characters still list.
         for alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(System::default());
-            let cruiser = world.capital_ship_classes.insert(CapitalShipClass {
-                dat_id: DatId::new(0x1400_0040),
-                name: "Cruiser".into(),
-                ..CapitalShipClass::default()
-            });
-            let wing = world.fighter_classes.insert(FighterClass {
-                dat_id: DatId::new(0x1c00_0001),
-                name: "Wing".into(),
-                ..FighterClass::default()
-            });
+            let (mut world, system, cruiser, wing) = fleet_world();
             let mut travelling = ShipInstance::new(cruiser, 10, alliance);
             travelling.tag = 1;
             travelling.transit = Some(crate::world::ShipTransit {
@@ -715,18 +731,7 @@ mod tests {
     fn a_system_lists_both_sides_children_and_its_captives_apart() {
         // FUN_00496f50 on event 0x14f value 0: every child of the system to
         // +0x70, captive Personnel to +0x98.
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System::default());
-        let rebels = named(&mut world, 0x1000_0005, "Mon Calamari Regiment");
-        let troopers = named(&mut world, 0x1000_0006, "Stormtrooper Regiment");
-        for (class, is_alliance) in [(rebels, true), (troopers, false)] {
-            let troop = world.troops.insert(TroopUnit {
-                class_dat_id: class,
-                is_alliance,
-                ..TroopUnit::default()
-            });
-            world.systems[system].ground_units.push(troop);
-        }
+        let (mut world, system) = system_with_regiments();
         let held = world.characters.insert(Character {
             dat_id: DatId::new(0x3800_0341),
             name: "Held".into(),
@@ -775,18 +780,7 @@ mod tests {
         // +0x70, other regiments to +0x78; a captive of +0x68's side to
         // +0x90, any other captive to +0x98; the rest to +0x70.
         for holder in [Faction::Alliance, Faction::Empire] {
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(System::default());
-            let rebels = named(&mut world, 0x1000_0005, "Mon Calamari Regiment");
-            let troopers = named(&mut world, 0x1000_0006, "Stormtrooper Regiment");
-            for (class, is_alliance) in [(rebels, true), (troopers, false)] {
-                let troop = world.troops.insert(TroopUnit {
-                    class_dat_id: class,
-                    is_alliance,
-                    ..TroopUnit::default()
-                });
-                world.systems[system].ground_units.push(troop);
-            }
+            let (mut world, system) = system_with_regiments();
             let person = |key, raw, name| ReportUnit {
                 object: Some(ReportObject::Character(key)),
                 ..unit(raw, name)

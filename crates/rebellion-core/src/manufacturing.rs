@@ -1093,6 +1093,102 @@ mod tests {
         (world, systems, class)
     }
 
+    fn single_yard(
+        is_alliance: bool,
+    ) -> (
+        crate::world::GameWorld,
+        SystemKey,
+        CapitalShipKey,
+        ManufacturingState,
+    ) {
+        let (world, systems, class) = yard_world(1, is_alliance);
+        (world, systems[0], class, ManufacturingState::new())
+    }
+
+    fn build_and_seat(
+        world: &mut crate::world::GameWorld,
+        state: &mut ManufacturingState,
+        yard: SystemKey,
+        class: CapitalShipKey,
+        cost: u32,
+        count: u32,
+    ) {
+        state.build(
+            yard,
+            &QueueItem::new(BuildableKind::CapitalShip(class), cost),
+            count,
+        );
+        seat_ordered_ships(world, state);
+    }
+
+    fn built_yard(
+        is_alliance: bool,
+        cost: u32,
+        count: u32,
+    ) -> (
+        crate::world::GameWorld,
+        SystemKey,
+        ManufacturingState,
+        FleetKey,
+    ) {
+        let (mut world, yard, class, mut state) = single_yard(is_alliance);
+        build_and_seat(&mut world, &mut state, yard, class, cost, count);
+        let fleet = world.systems[yard].fleets[0];
+        (world, yard, state, fleet)
+    }
+
+    fn queued_ship_tags(state: &ManufacturingState, yard: SystemKey) -> Vec<u32> {
+        state
+            .queue(yard, ProductionArea::Shipyard)
+            .unwrap()
+            .items()
+            .iter()
+            .map(|item| item.ship)
+            .collect()
+    }
+
+    fn ships_bound_for_target(
+        system_count: usize,
+        is_alliance: bool,
+    ) -> (
+        crate::world::GameWorld,
+        Vec<SystemKey>,
+        CapitalShipKey,
+        ManufacturingState,
+        FleetKey,
+    ) {
+        let (mut world, systems, class) = yard_world(system_count, is_alliance);
+        let (yard, target) = (systems[0], systems[1]);
+        world.systems[target].x = 100;
+        world.capital_ship_classes[class].hyperdrive = 100;
+        let mut state = ManufacturingState::new();
+        state.build_units(
+            yard,
+            vec![
+                QueueItem::new(BuildableKind::CapitalShip(class), 5)
+                    .delivered_to(Destination::System(target));
+                2
+            ],
+        );
+        seat_ordered_ships(&mut world, &mut state);
+        let fleet = world.systems[target].fleets[0];
+        (world, systems, class, state, fleet)
+    }
+
+    fn worked_system_pair(
+        first_cost: u32,
+        second_cost: u32,
+    ) -> (ManufacturingState, SystemKey, SystemKey) {
+        let keys = mock_system_keys(2);
+        let (first, second) = (keys[0], keys[1]);
+        let mut state = ManufacturingState::new();
+        state.enqueue(first, cap_ship_item(first_cost));
+        state.enqueue(second, cap_ship_item(second_cost));
+        work(&mut state, first, ProductionArea::Shipyard, 2);
+        work(&mut state, second, ProductionArea::Shipyard, 2);
+        (state, first, second)
+    }
+
     /// The ships of `fleet` as (tag, completed, usable).
     fn ships(world: &crate::world::GameWorld, fleet: FleetKey) -> Vec<(u32, bool, bool)> {
         world.fleets[fleet]
@@ -1153,24 +1249,13 @@ mod tests {
     #[test]
     fn the_units_of_one_build_share_one_new_fleet_for_either_side() {
         for is_alliance in [true, false] {
-            let (mut world, systems, class) = yard_world(1, is_alliance);
-            let yard = systems[0];
-            let mut state = ManufacturingState::new();
-            let unit = QueueItem::new(BuildableKind::CapitalShip(class), 5);
-            state.build(yard, &unit, 2);
-
-            seat_ordered_ships(&mut world, &mut state);
+            let (mut world, yard, class, mut state) = single_yard(is_alliance);
+            build_and_seat(&mut world, &mut state, yard, class, 5, 2);
             seat_ordered_ships(&mut world, &mut state);
 
             assert_eq!(world.systems[yard].fleets.len(), 1, "{is_alliance}");
             let fleet = world.systems[yard].fleets[0];
-            let tags: Vec<u32> = state
-                .queue(yard, ProductionArea::Shipyard)
-                .unwrap()
-                .items()
-                .iter()
-                .map(|item| item.ship)
-                .collect();
+            let tags = queued_ship_tags(&state, yard);
             assert_eq!(
                 ships(&world, fleet),
                 [(tags[0], false, false), (tags[1], false, false)],
@@ -1187,16 +1272,8 @@ mod tests {
     #[test]
     fn an_ordered_ship_and_its_fleet_are_numbered_on_the_order_day_for_either_side() {
         for is_alliance in [true, false] {
-            let (mut world, systems, class) = yard_world(1, is_alliance);
-            let yard = systems[0];
-            let mut state = ManufacturingState::new();
-            state.build(
-                yard,
-                &QueueItem::new(BuildableKind::CapitalShip(class), 5),
-                1,
-            );
-
-            seat_ordered_ships(&mut world, &mut state);
+            let (mut world, yard, class, mut state) = single_yard(is_alliance);
+            build_and_seat(&mut world, &mut state, yard, class, 5, 1);
 
             let fleet = world.systems[yard].fleets[0];
             assert_eq!(world.fleet_name(fleet), Some("Fleet 1"), "{is_alliance}");
@@ -1262,9 +1339,7 @@ mod tests {
     fn a_new_build_destroys_what_its_area_was_building_and_seats_the_new_ship_in_the_same_fleet_for_either_side(
     ) {
         for is_alliance in [true, false] {
-            let (mut world, systems, class) = yard_world(1, is_alliance);
-            let yard = systems[0];
-            let mut state = ManufacturingState::new();
+            let (mut world, yard, class, mut state) = single_yard(is_alliance);
             let unit = QueueItem::new(BuildableKind::CapitalShip(class), 5);
             state.build(yard, &unit, 1);
             seat_ordered_ships(&mut world, &mut state);
@@ -1288,16 +1363,7 @@ mod tests {
     #[test]
     fn stop_destroys_the_areas_unfinished_ships_and_disbands_their_emptied_fleet_for_either_side() {
         for is_alliance in [true, false] {
-            let (mut world, systems, class) = yard_world(1, is_alliance);
-            let yard = systems[0];
-            let mut state = ManufacturingState::new();
-            state.build(
-                yard,
-                &QueueItem::new(BuildableKind::CapitalShip(class), 5),
-                2,
-            );
-            seat_ordered_ships(&mut world, &mut state);
-            let fleet = world.systems[yard].fleets[0];
+            let (mut world, yard, mut state, fleet) = built_yard(is_alliance, 5, 2);
 
             state.stop(yard, ProductionArea::Shipyard);
             seat_ordered_ships(&mut world, &mut state);
@@ -1312,28 +1378,13 @@ mod tests {
     #[test]
     fn a_queue_entry_whose_ship_is_gone_leaves_its_queue_for_either_side() {
         for is_alliance in [true, false] {
-            let (mut world, systems, class) = yard_world(1, is_alliance);
-            let yard = systems[0];
-            let mut state = ManufacturingState::new();
-            state.build(
-                yard,
-                &QueueItem::new(BuildableKind::CapitalShip(class), 5),
-                2,
-            );
-            seat_ordered_ships(&mut world, &mut state);
-            let fleet = world.systems[yard].fleets[0];
+            let (mut world, yard, mut state, fleet) = built_yard(is_alliance, 5, 2);
             let kept = world.fleets[fleet].capital_ships[1].tag;
             world.fleets[fleet].capital_ships[0].alive = false;
 
             seat_ordered_ships(&mut world, &mut state);
 
-            let tags: Vec<u32> = state
-                .queue(yard, ProductionArea::Shipyard)
-                .unwrap()
-                .items()
-                .iter()
-                .map(|item| item.ship)
-                .collect();
+            let tags = queued_ship_tags(&state, yard);
             assert_eq!(tags, [kept], "{is_alliance}");
         }
     }
@@ -1346,15 +1397,8 @@ mod tests {
     fn completion_marks_the_ordered_ship_completed_in_place_keeping_its_fleet_tag_and_name_for_either_side(
     ) {
         for is_alliance in [true, false] {
-            let (mut world, systems, class) = yard_world(1, is_alliance);
-            let yard = systems[0];
-            let mut state = ManufacturingState::new();
-            state.build(
-                yard,
-                &QueueItem::new(BuildableKind::CapitalShip(class), 1),
-                1,
-            );
-            seat_ordered_ships(&mut world, &mut state);
+            let (mut world, yard, class, mut state) = single_yard(is_alliance);
+            build_and_seat(&mut world, &mut state, yard, class, 1, 1);
             let fleet = world.systems[yard].fleets[0];
             let tag = world.fleets[fleet].capital_ships[0].tag;
             state.add_progress(yard, ProductionArea::Shipyard);
@@ -1392,22 +1436,10 @@ mod tests {
     #[test]
     fn a_ship_finished_for_a_fleet_in_hyperspace_flies_to_its_destination_for_either_side() {
         for is_alliance in [true, false] {
-            let (mut world, systems, class) = yard_world(3, is_alliance);
-            let (yard, target, far) = (systems[0], systems[1], systems[2]);
-            world.systems[target].x = 100;
+            let (mut world, systems, _class, _state, fleet) =
+                ships_bound_for_target(3, is_alliance);
+            let (yard, far) = (systems[0], systems[2]);
             world.systems[far].x = 200;
-            world.capital_ship_classes[class].hyperdrive = 100;
-            let mut state = ManufacturingState::new();
-            state.build_units(
-                yard,
-                vec![
-                    QueueItem::new(BuildableKind::CapitalShip(class), 5)
-                        .delivered_to(Destination::System(target));
-                    2
-                ],
-            );
-            seat_ordered_ships(&mut world, &mut state);
-            let fleet = world.systems[target].fleets[0];
             let tag = world.fleets[fleet].capital_ships[1].tag;
             let mut movement = crate::movement::MovementState::new();
             assert!(crate::movement::begin_fleet_transit(
@@ -1441,21 +1473,9 @@ mod tests {
     #[test]
     fn a_ship_finished_for_a_fleet_elsewhere_starts_its_own_leg_from_the_yard_for_either_side() {
         for is_alliance in [true, false] {
-            let (mut world, systems, class) = yard_world(2, is_alliance);
+            let (mut world, systems, class, _state, fleet) =
+                ships_bound_for_target(2, is_alliance);
             let (yard, target) = (systems[0], systems[1]);
-            world.systems[target].x = 100;
-            world.capital_ship_classes[class].hyperdrive = 100;
-            let mut state = ManufacturingState::new();
-            state.build_units(
-                yard,
-                vec![
-                    QueueItem::new(BuildableKind::CapitalShip(class), 5)
-                        .delivered_to(Destination::System(target));
-                    2
-                ],
-            );
-            seat_ordered_ships(&mut world, &mut state);
-            let fleet = world.systems[target].fleets[0];
             let second = world.fleets[fleet].capital_ships[1].tag;
 
             finish_ships(
@@ -1937,13 +1957,7 @@ mod tests {
 
     #[test]
     fn multiple_systems_complete_independently() {
-        let keys = mock_system_keys(2);
-        let (sys_a, sys_b) = (keys[0], keys[1]);
-        let mut state = ManufacturingState::new();
-        state.enqueue(sys_a, cap_ship_item(2));
-        state.enqueue(sys_b, cap_ship_item(5));
-        work(&mut state, sys_a, ProductionArea::Shipyard, 2);
-        work(&mut state, sys_b, ProductionArea::Shipyard, 2);
+        let (mut state, sys_a, sys_b) = worked_system_pair(2, 5);
 
         let completions = ManufacturingSystem::advance(&mut state, &ticks(1..=2));
 
@@ -1995,13 +2009,7 @@ mod tests {
 
     #[test]
     fn k6_manufacturing_idle_skips_blockaded_systems() {
-        let keys = mock_system_keys(2);
-        let (sys_a, sys_b) = (keys[0], keys[1]);
-        let mut state = ManufacturingState::new();
-        state.enqueue(sys_a, cap_ship_item(2));
-        state.enqueue(sys_b, cap_ship_item(2));
-        work(&mut state, sys_a, ProductionArea::Shipyard, 2);
-        work(&mut state, sys_b, ProductionArea::Shipyard, 2);
+        let (mut state, sys_a, sys_b) = worked_system_pair(2, 2);
 
         // Blockade sys_a — it must NOT complete, so no idle transition.
         let mut blocked = HashSet::new();

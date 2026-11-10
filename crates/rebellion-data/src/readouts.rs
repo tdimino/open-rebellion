@@ -614,9 +614,23 @@ pub fn show_side(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rebellion_core::ids::SystemKey;
     use rebellion_core::world::{
         ControlKind, DefenseFacilityInstance, Fleet, Sector, System, TroopUnit,
     };
+
+    fn world_with_named_systems() -> (GameWorld, SystemKey, SystemKey) {
+        let mut world = GameWorld::default();
+        let home = world.systems.insert(System {
+            name: "Home".into(),
+            ..System::default()
+        });
+        let away = world.systems.insert(System {
+            name: "Away".into(),
+            ..System::default()
+        });
+        (world, home, away)
+    }
 
     #[test]
     fn show_system_counts_each_sides_units_and_names_its_fleets() {
@@ -731,14 +745,7 @@ mod tests {
 
     #[test]
     fn list_characters_says_where_each_character_stands() {
-        let mut world = GameWorld::default();
-        let mut at = |name: &str| {
-            world.systems.insert(System {
-                name: name.into(),
-                ..System::default()
-            })
-        };
-        let (home, away) = (at("Home"), at("Away"));
+        let (mut world, home, away) = world_with_named_systems();
         let parked = world.fleets.insert(Fleet {
             location: home,
             ..Fleet::default()
@@ -821,14 +828,7 @@ mod tests {
 
     #[test]
     fn list_fleets_names_each_fleets_side_and_where_it_is() {
-        let mut world = GameWorld::default();
-        let mut at = |name: &str| {
-            world.systems.insert(System {
-                name: name.into(),
-                ..System::default()
-            })
-        };
-        let (home, away) = (at("Home"), at("Away"));
+        let (mut world, home, away) = world_with_named_systems();
         let class = world
             .capital_ship_classes
             .insert(rebellion_core::world::CapitalShipClass::default());

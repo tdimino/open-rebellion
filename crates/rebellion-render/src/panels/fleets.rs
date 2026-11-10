@@ -74,6 +74,23 @@ const EMPIRE_CAPITAL_SHIP_MINIS: [u32; 15] = [
 /// Displayed size for GOKRES mini-icons in panel lists (original is 61x25).
 const MINI_ICON_HEIGHT: f32 = 20.0;
 
+fn draw_mini_icon(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    bmp_cache: &mut BmpCache,
+    resource_id: Option<u32>,
+) {
+    let Some(tex) = resource_id.and_then(|id| bmp_cache.get(ctx, DllSource::Gokres, id)) else {
+        return;
+    };
+    let size = tex.size();
+    let width = MINI_ICON_HEIGHT * size[0] as f32 / size[1] as f32;
+    ui.add(egui::Image::new(egui::load::SizedTexture::new(
+        tex.id(),
+        Vec2::new(width, MINI_ICON_HEIGHT),
+    )));
+}
+
 // ---------------------------------------------------------------------------
 // FleetsState
 // ---------------------------------------------------------------------------
@@ -210,21 +227,12 @@ pub fn draw_fleets(
                                         });
                                     ui.horizontal(|ui| {
                                         // GOKRES.DLL 61x25 mini-icon for this ship class.
-                                        if let Some(mini_id) = capital_ship_mini_id(dat_id) {
-                                            if let Some(tex) =
-                                                bmp_cache.get(ctx, DllSource::Gokres, mini_id)
-                                            {
-                                                let size = tex.size();
-                                                let h = MINI_ICON_HEIGHT;
-                                                let w = h * size[0] as f32 / size[1] as f32;
-                                                ui.add(egui::Image::new(
-                                                    egui::load::SizedTexture::new(
-                                                        tex.id(),
-                                                        Vec2::new(w, h),
-                                                    ),
-                                                ));
-                                            }
-                                        }
+                                        draw_mini_icon(
+                                            ui,
+                                            ctx,
+                                            bmp_cache,
+                                            capital_ship_mini_id(dat_id),
+                                        );
                                         ui.label(
                                             RichText::new(format!("{class_name} ×{count}"))
                                                 .color(theme::TEXT_PRIMARY)
@@ -252,21 +260,12 @@ pub fn draw_fleets(
                                         });
                                     ui.horizontal(|ui| {
                                         // GOKRES.DLL 61x25 mini-icon for this fighter class.
-                                        if let Some(mini_id) = fighter_mini_id(dat_id) {
-                                            if let Some(tex) =
-                                                bmp_cache.get(ctx, DllSource::Gokres, mini_id)
-                                            {
-                                                let size = tex.size();
-                                                let h = MINI_ICON_HEIGHT;
-                                                let w = h * size[0] as f32 / size[1] as f32;
-                                                ui.add(egui::Image::new(
-                                                    egui::load::SizedTexture::new(
-                                                        tex.id(),
-                                                        Vec2::new(w, h),
-                                                    ),
-                                                ));
-                                            }
-                                        }
+                                        draw_mini_icon(
+                                            ui,
+                                            ctx,
+                                            bmp_cache,
+                                            fighter_mini_id(dat_id),
+                                        );
                                         ui.label(
                                             RichText::new(format!(
                                                 "{} ×{}",

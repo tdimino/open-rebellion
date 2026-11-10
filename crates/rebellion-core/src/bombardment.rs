@@ -1282,6 +1282,11 @@ mod tests {
         Sector, System, TroopUnit,
     };
 
+    const OPPOSING_SIDES: [(Faction, Faction); 2] = [
+        (Faction::Alliance, Faction::Empire),
+        (Faction::Empire, Faction::Alliance),
+    ];
+
     fn entry(id: u16, value: i32) -> GnprtbEntry {
         GnprtbEntry {
             parameter_id: u32::from(id),
@@ -1371,6 +1376,99 @@ mod tests {
         });
         world.systems[system].fleets.push(key);
         key
+    }
+
+    fn single_ship_attacker(
+        holder: Faction,
+        bombarder: Faction,
+        bombard: u32,
+        hull: u32,
+        shields: u32,
+        family: u8,
+    ) -> (GameWorld, SystemKey, FleetKey) {
+        let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, bombard, hull, shields, family);
+        (world, system, attacker)
+    }
+
+    fn battery(attack_strength: u32) -> ClassStats {
+        ClassStats {
+            attack_strength,
+            ..ClassStats::default()
+        }
+    }
+
+    fn bombard_military_at_roll(
+        world: &mut GameWorld,
+        system: SystemKey,
+        bombarder: Faction,
+        attacker: FleetKey,
+        step: u32,
+    ) -> StrikeReport {
+        assert!(flag_fleet(world, attacker, false));
+        bombard(
+            world,
+            system,
+            BombardKind::Military,
+            bombarder,
+            &[attacker],
+            f64::from(step) / 40.0,
+        )
+    }
+
+    fn destroyed_by_battery(
+        holder: Faction,
+        bombarder: Faction,
+    ) -> (GameWorld, FleetKey, StrikeReport) {
+        let (mut world, system, attacker) =
+            single_ship_attacker(holder, bombarder, 5, 50, 0, 0x14);
+        defence(&mut world, system, holder, LNR_FAMILY, battery(60));
+        let report = run(&mut world, system, BombardKind::Military, &[attacker]);
+        (world, attacker, report)
+    }
+
+    fn collateral_attack(
+        holder: Faction,
+        bombarder: Faction,
+        yards: usize,
+    ) -> (GameWorld, SystemKey, FleetKey) {
+        let (mut world, system, attacker) =
+            single_ship_attacker(holder, bombarder, 1, 100, 0, 0x14);
+        for _ in 0..yards {
+            yard(&mut world, system, holder, 0);
+        }
+        (world, system, attacker)
+    }
+
+    fn run_defended_military(
+        world: &mut GameWorld,
+        system: SystemKey,
+        holder: Faction,
+        attacker: FleetKey,
+    ) -> StrikeReport {
+        defence(world, system, holder, LNR_FAMILY, battery(60));
+        regiment(world, system, holder, 10);
+        run(world, system, BombardKind::Military, &[attacker])
+    }
+
+    fn run_civilian_after_yard(
+        world: &mut GameWorld,
+        system: SystemKey,
+        holder: Faction,
+        bombarder: Faction,
+        attacker: FleetKey,
+    ) -> StrikeReport {
+        yard(world, system, holder, 0);
+        clear_flags(world, system, bombarder);
+        run(world, system, BombardKind::Civilian, &[attacker])
+    }
+
+    fn destroyed_dat_ids(report: &StrikeReport) -> Vec<DatId> {
+        report
+            .system_destroyed
+            .iter()
+            .map(|unit| unit.dat_id)
+            .collect()
     }
 
     fn class(world: &mut GameWorld, raw: u32, stats: ClassStats) -> DatId {
@@ -1578,9 +1676,8 @@ mod tests {
     ) -> Vec<usize> {
         (0..40)
             .map(|step| {
-                let (mut world, system) = world(Some(holder));
-                let armed = ship_class(&mut world, 1, 100, 0, 0x14);
-                let attacker = fleet(&mut world, system, bombarder, &[armed]);
+                let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 1, 100, 0, 0x14);
                 stage(&mut world, system);
                 assert!(flag_fleet(&mut world, attacker, false));
                 let report = bombard(
@@ -1602,10 +1699,7 @@ mod tests {
         // FUN_0058df60 +0x40: with chance 1 in count + 1, one civilian
         // facility is hit before the loop. The one military target, valued
         // 10, never dies (FUN_0055e970), so any kill is the collateral.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let kills =
                 civilian_kills(holder, bombarder, BombardKind::Military, |world, system| {
                     regiment(world, system, holder, 10);
@@ -1625,24 +1719,10 @@ mod tests {
         // FUN_0058df60: the roll is FUN_0053e290(+0x20 - 1 + +0x24) <
         // +0x24 with +0x24 = 1 (FUN_0058d990), so a count of 0 always takes
         // the collateral hit.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             for step in 0..40 {
-                let (mut world, system) = world(Some(holder));
-                let armed = ship_class(&mut world, 1, 100, 0, 0x14);
-                let attacker = fleet(&mut world, system, bombarder, &[armed]);
-                yard(&mut world, system, holder, 0);
-                assert!(flag_fleet(&mut world, attacker, false));
-                let report = bombard(
-                    &mut world,
-                    system,
-                    BombardKind::Military,
-                    bombarder,
-                    &[attacker],
-                    f64::from(step) / 40.0,
-                );
+                let (mut world, system, attacker) = collateral_attack(holder, bombarder, 1);
+                let report = bombard_military_at_roll(&mut world, system, bombarder, attacker, step);
                 assert_eq!(report.facilities.len(), 1, "{holder:?} step {step}");
             }
         }
@@ -1653,26 +1733,11 @@ mod tests {
         // FUN_0058d080 0x0058d0f8-0x0058d116: the walk counts up to the
         // drawn index without advancing (no FUN_005130d0), so the pick is
         // the iterator's first element.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             for step in 0..40 {
-                let (mut world, system) = world(Some(holder));
-                let armed = ship_class(&mut world, 1, 100, 0, 0x14);
-                let attacker = fleet(&mut world, system, bombarder, &[armed]);
-                yard(&mut world, system, holder, 0);
-                yard(&mut world, system, holder, 0);
+                let (mut world, system, attacker) = collateral_attack(holder, bombarder, 2);
                 let first = world.systems[system].manufacturing_facilities[0];
-                assert!(flag_fleet(&mut world, attacker, false));
-                let report = bombard(
-                    &mut world,
-                    system,
-                    BombardKind::Military,
-                    bombarder,
-                    &[attacker],
-                    f64::from(step) / 40.0,
-                );
+                let report = bombard_military_at_roll(&mut world, system, bombarder, attacker, step);
                 assert_eq!(
                     report.facilities,
                     vec![FacilityRef::Manufacturing(first)],
@@ -1690,25 +1755,13 @@ mod tests {
         // orders by family, then id (comparator FUN_00584320, vtable
         // 0x0066a168 slot 2). A construction yard (0x2a) built before a
         // shipyard (0x28) still comes after it.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             for step in 0..40 {
-                let (mut world, system) = world(Some(holder));
-                let armed = ship_class(&mut world, 1, 100, 0, 0x14);
-                let attacker = fleet(&mut world, system, bombarder, &[armed]);
+                let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 1, 100, 0, 0x14);
                 civilian(&mut world, system, holder, 0x2a);
                 let shipyard = civilian(&mut world, system, holder, 0x28);
-                assert!(flag_fleet(&mut world, attacker, false));
-                let report = bombard(
-                    &mut world,
-                    system,
-                    BombardKind::Military,
-                    bombarder,
-                    &[attacker],
-                    f64::from(step) / 40.0,
-                );
+                let report = bombard_military_at_roll(&mut world, system, bombarder, attacker, step);
                 assert_eq!(report.facilities, vec![shipyard], "{holder:?} step {step}");
             }
         }
@@ -1767,10 +1820,7 @@ mod tests {
         // FUN_0050b610.c:45-70 keeps the troop bits and the holder while both
         // sides' regiments stand; FUN_0058cba0 takes the holder from system
         // +0x24 bits 6-7.
-        for (earlier, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (earlier, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(earlier));
             let armed = ship_class(&mut world, 5, 100, 0, 0x14);
             let attacker = fleet(&mut world, system, bombarder, &[armed]);
@@ -1793,21 +1843,14 @@ mod tests {
         // damage. LNR damage past W reaches the hull. One LNR of 60, S = 100,
         // H = 1000: undamaged W = 100 takes it all; c = 2 gives W = 50 and
         // 10 to the hull; d = 500 gives W = 50 and 10 to the hull.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             for (counter, hull, expected) in [(0, 1000, 1000), (2, 1000, 990), (0, 500, 490)] {
-                let (mut world, system) = world(Some(holder));
-                let class = ship_class(&mut world, 1, 1000, 100, 0x14);
-                let attacker = fleet(&mut world, system, bombarder, &[class]);
+                let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 1, 1000, 100, 0x14);
                 let ship = &mut world.fleets[attacker].capital_ships[0];
                 ship.set_shield_nibble(counter);
                 ship.hull_current = hull;
-                let lnr = ClassStats {
-                    attack_strength: 60,
-                    ..ClassStats::default()
-                };
+                let lnr = battery(60);
                 defence(&mut world, system, holder, LNR_FAMILY, lnr);
                 assert!(flag_fleet(&mut world, attacker, false));
                 bombard(
@@ -1866,17 +1909,10 @@ mod tests {
         // FUN_00527550 (KDY) and FUN_005272e0 (LNR) build their iterators
         // with FUN_00513050, which takes no side; only the shield iterator
         // FUN_00527940 passes one.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 5, 10_000, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
-            let lnr = ClassStats {
-                attack_strength: 60,
-                ..ClassStats::default()
-            };
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 5, 10_000, 0, 0x14);
+            let lnr = battery(60);
             defence(&mut world, system, bombarder, LNR_FAMILY, lnr);
             assert!(flag_fleet(&mut world, attacker, false));
             let report = bombard(
@@ -1895,10 +1931,7 @@ mod tests {
     fn only_target_military_adds_the_collateral_hit() {
         // One hit on two civilian facilities valued 0 kills exactly one:
         // Target Civilian runs no collateral (+0x40 clear).
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let kills =
                 civilian_kills(holder, bombarder, BombardKind::Civilian, |world, system| {
                     yard(world, system, holder, 0);
@@ -1915,13 +1948,9 @@ mod tests {
     fn a_fleets_strength_sums_its_ships_and_each_squadrons_value() {
         // FUN_005032a0: +0x1dc sums the ships' bombard values and each
         // squadron's FIGHTSD bombardment_defense.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 5, 100, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 5, 100, 0, 0x14);
             let class = world.fighter_classes.insert(crate::world::FighterClass {
                 bombardment_defense: 2,
                 ..crate::world::FighterClass::default()
@@ -1943,13 +1972,9 @@ mod tests {
     #[test]
     fn a_death_star_fleet_given_another_order_bombards_instead_of_destroying() {
         // FUN_0058d990 runs the destruction only for 0x223.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let death_star = ship_class(&mut world, 15, 25_000, 2000, 0x18);
-            let attacker = fleet(&mut world, system, bombarder, &[death_star]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 15, 25_000, 2000, 0x18);
             assert!(flag_fleet(&mut world, attacker, false), "{holder:?}");
             assert!(
                 matches!(
@@ -2034,13 +2059,9 @@ mod tests {
     #[test]
     fn a_facility_valued_ten_survives_every_hit() {
         // FUN_0058cf80: a facility reads its class bombardment_defense.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 40, 100, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 40, 100, 0, 0x14);
             yard(&mut world, system, holder, 10);
             let report = run(&mut world, system, BombardKind::Civilian, &[attacker]);
             assert_eq!(report.hits, 40, "{holder:?}");
@@ -2055,13 +2076,9 @@ mod tests {
 
     #[test]
     fn the_report_names_the_system_order_and_both_sides() {
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 1, 100, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 1, 100, 0, 0x14);
             let report = run(&mut world, system, BombardKind::Civilian, &[attacker]);
             assert_eq!(report.system, Some(system), "{holder:?}");
             assert_eq!(report.kind, Some(BombardKind::Civilian), "{holder:?}");
@@ -2074,13 +2091,9 @@ mod tests {
     fn only_a_general_of_the_holder_standing_at_the_system_leads_its_defence() {
         // FUN_00509330: the first living General at the system, not aboard
         // a fleet, of the holder's side.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 5, 100_000, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 5, 100_000, 0, 0x14);
             let decoys: [fn(&mut Character); 4] = [
                 |c| c.command_kind = CommandKind::Admiral,
                 |c| c.is_killed = true,
@@ -2095,10 +2108,7 @@ mod tests {
                     set(c);
                 });
             }
-            let lnr = ClassStats {
-                attack_strength: 60,
-                ..ClassStats::default()
-            };
+            let lnr = battery(60);
             defence(&mut world, system, holder, LNR_FAMILY, lnr);
             let report = run(&mut world, system, BombardKind::Military, &[attacker]);
             assert_eq!(report.defence_damage, 60, "{holder:?}");
@@ -2109,13 +2119,9 @@ mod tests {
     fn only_an_admiral_of_the_fleets_side_aboard_multiplies_its_hits() {
         // FUN_004fd790(fleet, 2): an Admiral aboard, alive, of the fleet's
         // side; a General aboard does not count.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 3, 100, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 3, 100, 0, 0x14);
             let general = character(&mut world, system, |c| {
                 c.command_kind = CommandKind::General;
                 c.is_alliance = bombarder == Faction::Alliance;
@@ -2139,18 +2145,12 @@ mod tests {
     #[test]
     fn every_battery_fires_at_one_of_the_bombarding_ships() {
         // FUN_0058dc10: each battery draws a ship over 0..count - 1.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             for step in 0..40 {
                 let (mut world, system) = world(Some(holder));
                 let armed = ship_class(&mut world, 5, 10_000, 0, 0x14);
                 let attacker = fleet(&mut world, system, bombarder, &[armed, armed]);
-                let lnr = ClassStats {
-                    attack_strength: 60,
-                    ..ClassStats::default()
-                };
+                let lnr = battery(60);
                 defence(&mut world, system, holder, LNR_FAMILY, lnr);
                 assert!(flag_fleet(&mut world, attacker, false), "{holder:?}");
                 let report = bombard(
@@ -2175,19 +2175,8 @@ mod tests {
     fn lnr_fire_that_empties_a_hull_destroys_the_ship_after_the_run() {
         // FUN_0058d540: a hull at 0 runs the destroy slot; the ship leaves
         // its fleet once the run ends.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let frail = ship_class(&mut world, 5, 50, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[frail]);
-            let lnr = ClassStats {
-                attack_strength: 60,
-                ..ClassStats::default()
-            };
-            defence(&mut world, system, holder, LNR_FAMILY, lnr);
-            let report = run(&mut world, system, BombardKind::Military, &[attacker]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (world, attacker, report) = destroyed_by_battery(holder, bombarder);
             assert_eq!(report.ships_destroyed, 1, "{holder:?}");
             assert!(
                 world.fleets[attacker].capital_ships.is_empty(),
@@ -2202,10 +2191,7 @@ mod tests {
         // FUN_004fd6b0 sums the active ships (FUN_00502db0) and each one's
         // squadrons (FUN_005039d0); the effect phase (FUN_0058df60) runs
         // after the defence phase has destroyed the carrier.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let mut outcomes = std::collections::BTreeSet::new();
             for step in 0..40 {
                 let (mut world, system) = world(Some(holder));
@@ -2225,21 +2211,10 @@ mod tests {
                     count: 3,
                     carrier: 1,
                 });
-                let lnr = ClassStats {
-                    attack_strength: 60,
-                    ..ClassStats::default()
-                };
+                let lnr = battery(60);
                 defence(&mut world, system, holder, LNR_FAMILY, lnr);
                 regiment(&mut world, system, holder, 10);
-                assert!(flag_fleet(&mut world, attacker, false));
-                let report = bombard(
-                    &mut world,
-                    system,
-                    BombardKind::Military,
-                    bombarder,
-                    &[attacker],
-                    f64::from(step) / 40.0,
-                );
+                let report = bombard_military_at_roll(&mut world, system, bombarder, attacker, step);
                 let expected = if report.ships_destroyed == 1 {
                     5
                 } else {
@@ -2260,10 +2235,7 @@ mod tests {
     fn kdy_overflow_zeroes_only_the_ship_it_hit_across_two_fleets() {
         // FUN_0058d540's +0x1dc write is per ship; the other fleet's ship
         // keeps its strength, so the hits are one ship's worth.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             for step in 0..40 {
                 let (mut world, system) = world(Some(holder));
                 let armed = ship_class(&mut world, 5, 100, 0, 0x14);
@@ -2294,15 +2266,11 @@ mod tests {
     #[test]
     fn a_run_without_hits_takes_no_collateral() {
         // FUN_0058df60 returns before the collateral when the hits are 0.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let kills: Vec<usize> = (0..40)
                 .map(|step| {
-                    let (mut world, system) = world(Some(holder));
-                    let unarmed = ship_class(&mut world, 0, 100, 0, 0x14);
-                    let attacker = fleet(&mut world, system, bombarder, &[unarmed]);
+                    let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 0, 100, 0, 0x14);
                     regiment(&mut world, system, holder, 10);
                     yard(&mut world, system, holder, 0);
                     assert!(flag_fleet(&mut world, attacker, false), "{holder:?}");
@@ -2328,10 +2296,7 @@ mod tests {
     #[test]
     fn one_fleet_with_strength_passes_the_gate() {
         // FUN_00582440 ends at the first passing fleet; zero strength is 8/6.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             let idle = ship_class(&mut world, 0, 100, 0, 0x14);
             let armed = ship_class(&mut world, 3, 100, 0, 0x14);
@@ -2353,10 +2318,7 @@ mod tests {
     #[test]
     fn destroy_system_needs_a_death_star_ship() {
         // FUN_00582440: 0x223 also needs a family 0x18-0x1b ship (8/8).
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             let armed = ship_class(&mut world, 3, 100, 0, 0x14);
             let star = ship_class(&mut world, 15, 100, 0, 0x18);
@@ -2388,10 +2350,7 @@ mod tests {
     #[test]
     fn a_team_across_two_holders_is_refused() {
         // FUN_00553770: the order's systems must share one holder (1/0x14).
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, held) = world(Some(holder));
             let neutral = world.systems.insert(System::default());
             let armed = ship_class(&mut world, 3, 100, 0, 0x14);
@@ -2408,10 +2367,7 @@ mod tests {
     #[test]
     fn a_fleet_in_transit_is_not_flagged() {
         // FUN_004ffa70: an en-route ship refuses the fleet command (1/0x11).
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             let armed = ship_class(&mut world, 3, 100, 0, 0x14);
             let mover = fleet(&mut world, system, bombarder, &[armed]);
@@ -2475,10 +2431,7 @@ mod tests {
         // FUN_00582440's 8/6 (VM Ord Pardon: an Alliance fleet of strength 0
         // shows Planetary Bombardment disabled).
         let movement = crate::movement::MovementState::new();
-        for (side, holder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (side, holder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             let idle = ship_class(&mut world, 0, 100, 0, 0x14);
             let unarmed = fleet(&mut world, system, side, &[idle]);
@@ -2519,11 +2472,7 @@ mod tests {
         // route (FUN_004f9860, 1/1) and a fleet with no ship (8/1,
         // FUN_004ffa70.c:15-60).
         for side in [Faction::Empire, Faction::Alliance] {
-            let other = if side == Faction::Empire {
-                Faction::Alliance
-            } else {
-                Faction::Empire
-            };
+            let other = opponent_of(side);
             let (mut world, system) = world(Some(other));
             let armed = ship_class(&mut world, 3, 100, 0, 0x14);
             let own = fleet(&mut world, system, side, &[armed]);
@@ -2565,11 +2514,7 @@ mod tests {
         // +0x50 0x42), a ship on its own leg en route (FUN_00556430).
         let movement = crate::movement::MovementState::new();
         for side in [Faction::Empire, Faction::Alliance] {
-            let other = if side == Faction::Empire {
-                Faction::Alliance
-            } else {
-                Faction::Empire
-            };
+            let other = opponent_of(side);
             let (mut world, system) = world(Some(other));
             let armed = ship_class(&mut world, 3, 100, 0, 0x14);
             let own = fleet(&mut world, system, side, &[armed, armed]);
@@ -2682,13 +2627,9 @@ mod tests {
         // FUN_0058df60: strength x (leadership / GNPRTB 0x601 + 1), less the
         // family-0x24 generators' DEFFACSD shield (+0x60); the 0x25 shield
         // does not count.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 3, 100, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 3, 100, 0, 0x14);
             let admiral = character(&mut world, system, |c| {
                 c.command_kind = CommandKind::Admiral;
                 c.is_alliance = bombarder == Faction::Alliance;
@@ -2715,13 +2656,9 @@ mod tests {
     #[test]
     fn a_target_valued_ten_survives_every_hit() {
         // FUN_0055e970: a hit kills when v < a draw over 1..=10.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 40, 100, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 40, 100, 0, 0x14);
             let troop = regiment(&mut world, system, holder, 10);
             let report = run(&mut world, system, BombardKind::Military, &[attacker]);
             assert_eq!(report.hits, 40, "{holder:?}");
@@ -2733,21 +2670,16 @@ mod tests {
     #[test]
     fn a_civilian_kill_sets_the_support_loss_and_a_military_one_does_not() {
         // +0x28 is set by a 0x28-0x2f facility, energy or raw material.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 5, 100, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 5, 100, 0, 0x14);
             let troop = regiment(&mut world, system, holder, 0);
             let report = run(&mut world, system, BombardKind::Military, &[attacker]);
             assert_eq!(report.regiments, vec![(troop, holder)], "{holder:?}");
             assert!(!report.run.support_loss, "{holder:?}");
 
-            yard(&mut world, system, holder, 0);
-            clear_flags(&mut world, system, bombarder);
-            let report = run(&mut world, system, BombardKind::Civilian, &[attacker]);
+            let report =
+                run_civilian_after_yard(&mut world, system, holder, bombarder, attacker);
             assert_eq!(report.facilities.len(), 1, "{holder:?}");
             assert!(report.run.support_loss, "{holder:?}");
             assert!(
@@ -2760,13 +2692,9 @@ mod tests {
     #[test]
     fn only_the_holders_objects_are_targets() {
         // FUN_0058cba0's iterators take the holder's objects only.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 5, 100, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 5, 100, 0, 0x14);
             let own = regiment(&mut world, system, bombarder, 0);
             let report = run(&mut world, system, BombardKind::Military, &[attacker]);
             assert!(report.regiments.is_empty(), "{holder:?}");
@@ -2795,10 +2723,7 @@ mod tests {
     #[test]
     fn each_successful_hit_lowers_energy_or_raw_material_by_one() {
         // FUN_0058cf20, FUN_0058cf50; values GNPRTB 0x604 and 0x605, here 0.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             world.gnprtb =
                 GnprtbParams::new(vec![entry(0x601, 40), entry(0x602, 1), entry(0x603, 10)]);
@@ -2819,13 +2744,9 @@ mod tests {
     fn kdy_fire_past_the_shields_zeroes_a_ships_strength_and_spares_its_hull() {
         // FUN_0058d540: KDY overflow stays in the first accumulator, which
         // zeroes slot +0x1dc (FUN_00500f00); it never reaches the hull.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 5, 200, 50, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 5, 200, 50, 0x14);
             let kdy = ClassStats {
                 attack_strength: 100,
                 ..ClassStats::default()
@@ -2844,22 +2765,15 @@ mod tests {
     fn lnr_fire_past_the_shields_lowers_the_hull_and_the_general_multiplies_it() {
         // FUN_0058d540: LNR damage left after the shields lowers the hull;
         // FUN_0055e930: attack x (General's leadership / GNPRTB 0x600 + 1).
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 5, 200, 50, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 5, 200, 50, 0x14);
             character(&mut world, system, |c| {
                 c.command_kind = CommandKind::General;
                 c.leadership.base = 40;
                 c.is_alliance = holder == Faction::Alliance;
             });
-            let lnr = ClassStats {
-                attack_strength: 60,
-                ..ClassStats::default()
-            };
+            let lnr = battery(60);
             defence(&mut world, system, holder, 0x23, lnr);
             let report = run(&mut world, system, BombardKind::Military, &[attacker]);
             assert_eq!(report.defence_damage, 120, "{holder:?}");
@@ -2874,13 +2788,9 @@ mod tests {
     #[test]
     fn hull_damage_lowers_a_ships_strength_in_proportion() {
         // FUN_00500f00: modifier - modifier x hull damage / max hull.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 10, 200, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 10, 200, 0, 0x14);
             world.fleets[attacker].capital_ships[0].hull_current = 100;
             assert_eq!(fleet_strength(&world, attacker), 5, "{holder:?}");
         }
@@ -2890,10 +2800,7 @@ mod tests {
     fn only_minor_characters_directly_at_the_system_are_rolled() {
         // FUN_0058d990: minor characters (0x38-0x3b), not aboard a fleet, not
         // in transit, any side; GNPRTB 0x606 here 100 percent.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             world.gnprtb = GnprtbParams::new(vec![entry(0x606, 100)]);
             let armed = ship_class(&mut world, 3, 100, 0, 0x14);
@@ -2923,9 +2830,8 @@ mod tests {
             (Faction::Empire, Faction::Empire, REASON_OWN_BOMBARDMENT),
             (Faction::Alliance, Faction::Alliance, REASON_OWN_BOMBARDMENT),
         ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 5, 100, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 5, 100, 0, 0x14);
             let key = regiment(&mut world, system, holder, 0);
             let class = world.troops[key].class_dat_id;
             if let Some(value) = world.buildable_classes.get_mut(&class) {
@@ -2949,18 +2855,12 @@ mod tests {
         // FUN_0058d540 -> FUN_00501ae0(hull loss, 0xf); its slot +0x1c0 is
         // CAPSHPSD uprising_defense.
         use crate::blockade::{UnitLoss, REASON_BOMBARDMENT};
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             let armed = ship_class(&mut world, 5, 50, 0, 0x14);
             world.capital_ship_classes[armed].uprising_defense = 4;
             let attacker = fleet(&mut world, system, bombarder, &[armed]);
-            let lnr = ClassStats {
-                attack_strength: 60,
-                ..ClassStats::default()
-            };
+            let lnr = battery(60);
             defence(&mut world, system, holder, 0x23, lnr);
             let report = run(&mut world, system, BombardKind::Military, &[attacker]);
             assert_eq!(report.ships_destroyed, 1);
@@ -2982,10 +2882,7 @@ mod tests {
     // unfinished ship or one on its own leg neither bombards nor draws fire.
     #[test]
     fn an_unfinished_or_travelling_ship_neither_bombards_nor_draws_fire_for_either_side() {
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             let armed = ship_class(&mut world, 5, 10_000, 0, 0x14);
             let idle = ship_class(&mut world, 7, 10_000, 0, 0x14);
@@ -2997,10 +2894,7 @@ mod tests {
                 arrival_tick: 9,
             });
             assert_eq!(fleet_strength(&world, attacker), 5, "{bombarder:?}");
-            let lnr = ClassStats {
-                attack_strength: 60,
-                ..ClassStats::default()
-            };
+            let lnr = battery(60);
             for _ in 0..4 {
                 defence(&mut world, system, holder, LNR_FAMILY, lnr);
             }
@@ -3021,10 +2915,7 @@ mod tests {
     // unfinished Death Star kills nothing.
     #[test]
     fn an_unfinished_death_star_opens_no_kill_for_either_side() {
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             let armed = ship_class(&mut world, 5, 100, 0, 0x14);
             let death_star = ship_class(&mut world, 15, 25_000, 2000, 0x18);
@@ -3051,22 +2942,12 @@ mod tests {
     // FUN_004f7410), and event 0x301 reruns bit 11 at once (FUN_00514510).
     #[test]
     fn a_death_star_the_batteries_destroy_clears_its_sectors_bit_for_either_side() {
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let frail = ship_class(&mut world, 5, 50, 0, 0x18);
-            let attacker = fleet(&mut world, system, bombarder, &[frail]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 5, 50, 0, 0x18);
             crate::death_star::refresh_sectors(&mut world);
             assert_eq!(world.death_star_sectors.len(), 1, "{bombarder:?}");
-            let lnr = ClassStats {
-                attack_strength: 60,
-                ..ClassStats::default()
-            };
-            defence(&mut world, system, holder, LNR_FAMILY, lnr);
-            regiment(&mut world, system, holder, 10);
-            let report = run(&mut world, system, BombardKind::Military, &[attacker]);
+            let report = run_defended_military(&mut world, system, holder, attacker);
             assert_eq!(report.ships_destroyed, 1, "{bombarder:?}");
             assert!(world.death_star_sectors.is_empty(), "{bombarder:?}");
         }
@@ -3082,10 +2963,7 @@ mod tests {
     fn the_squadrons_aboard_a_ship_the_batteries_destroy_are_the_bombarders_losses_for_either_side()
     {
         use crate::blockade::{UnitLoss, REASON_BOMBARDMENT};
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             let frail = ship_class(&mut world, 5, 50, 0, 0x14);
             world.capital_ship_classes[frail].uprising_defense = 4;
@@ -3103,13 +2981,7 @@ mod tests {
                     count: 2,
                     carrier,
                 });
-            let lnr = ClassStats {
-                attack_strength: 60,
-                ..ClassStats::default()
-            };
-            defence(&mut world, system, holder, LNR_FAMILY, lnr);
-            regiment(&mut world, system, holder, 10);
-            let report = run(&mut world, system, BombardKind::Military, &[attacker]);
+            let report = run_defended_military(&mut world, system, holder, attacker);
             let loss = |value| UnitLoss {
                 side: bombarder,
                 value,
@@ -3126,36 +2998,19 @@ mod tests {
         // system goes to the Operation Report's +0x80, the regiments and
         // facilities a hit destroys (FUN_0058ce70) and the HQ
         // (FUN_00517cd0).
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 5, 100, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (mut world, system, attacker) =
+                single_ship_attacker(holder, bombarder, 5, 100, 0, 0x14);
             let troop = regiment(&mut world, system, holder, 0);
             let troop_class = world.troops[troop].class_dat_id;
             let report = run(&mut world, system, BombardKind::Military, &[attacker]);
-            assert_eq!(
-                report
-                    .system_destroyed
-                    .iter()
-                    .map(|unit| unit.dat_id)
-                    .collect::<Vec<_>>(),
-                [troop_class],
-                "{bombarder:?}"
-            );
+            assert_eq!(destroyed_dat_ids(&report), [troop_class], "{bombarder:?}");
             assert!(report.fleet_destroyed.is_empty());
 
-            yard(&mut world, system, holder, 0);
-            clear_flags(&mut world, system, bombarder);
-            let report = run(&mut world, system, BombardKind::Civilian, &[attacker]);
+            let report =
+                run_civilian_after_yard(&mut world, system, holder, bombarder, attacker);
             assert_eq!(
-                report
-                    .system_destroyed
-                    .iter()
-                    .map(|unit| unit.dat_id)
-                    .collect::<Vec<_>>(),
+                destroyed_dat_ids(&report),
                 [DatId::new(0x2800_0000)],
                 "{bombarder:?}"
             );
@@ -3180,10 +3035,7 @@ mod tests {
         // squadrons the lost ship carried go with it
         // (carriage::drop_lost_squadrons).
         use crate::world::{FighterClass, FighterEntry};
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             let armed = ship_class(&mut world, 5, 50, 0, 0x14);
             world.capital_ship_classes[armed].dat_id = DatId::new(0x1400_0040);
@@ -3200,10 +3052,7 @@ mod tests {
                 count: 2,
                 carrier: 3,
             });
-            let lnr = ClassStats {
-                attack_strength: 60,
-                ..ClassStats::default()
-            };
+            let lnr = battery(60);
             defence(&mut world, system, holder, 0x23, lnr);
             let report = run(&mut world, system, BombardKind::Military, &[attacker]);
             let lost: Vec<_> = report
@@ -3226,19 +3075,8 @@ mod tests {
         // window draws the dead ship from that view (FUN_0044e500,
         // FUN_0042c3b0), so its entry keeps the bit.
         use crate::operation_report::ReportObject;
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system) = world(Some(holder));
-            let armed = ship_class(&mut world, 5, 50, 0, 0x14);
-            let attacker = fleet(&mut world, system, bombarder, &[armed]);
-            let lnr = ClassStats {
-                attack_strength: 60,
-                ..ClassStats::default()
-            };
-            defence(&mut world, system, holder, LNR_FAMILY, lnr);
-            let report = run(&mut world, system, BombardKind::Military, &[attacker]);
+        for (holder, bombarder) in OPPOSING_SIDES {
+            let (_, _, report) = destroyed_by_battery(holder, bombarder);
             assert_eq!(report.ships_destroyed, 1, "{bombarder:?}");
             assert_eq!(
                 report
@@ -3278,10 +3116,7 @@ mod tests {
             multiplayer_alliance: value,
             multiplayer_empire: value,
         };
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             world.sdprtb = crate::world::SdprtbParams::new(vec![
                 sd(SDPRTB_RIM_AMOUNT, -2),
@@ -3344,10 +3179,7 @@ mod tests {
     #[test]
     fn a_support_loss_moves_the_bombarders_support_at_the_system_by_gnprtb_7705() {
         // FUN_0058e320 -> FUN_0055a0e0: GNPRTB 7705 (-20) for the bombarder.
-        for (holder, bombarder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             finalize(
                 &mut world,

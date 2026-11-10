@@ -272,6 +272,24 @@ fn section_header(ui: &mut egui::Ui, label: &str) {
     ui.add(egui::Separator::default().spacing(4.0));
 }
 
+fn choice_button(ui: &mut egui::Ui, text: RichText, selected: bool, size: [f32; 2]) -> bool {
+    let fill = if selected {
+        Color32::from_rgb(40, 38, 20)
+    } else {
+        Color32::from_rgb(20, 22, 36)
+    };
+    let stroke = egui::Stroke::new(
+        if selected { 1.5 } else { 0.5 },
+        if selected {
+            theme::GOLD
+        } else {
+            theme::GOLD_DIM
+        },
+    );
+    ui.add_sized(size, egui::Button::new(text).fill(fill).stroke(stroke))
+        .clicked()
+}
+
 fn galaxy_size_button(
     ui: &mut egui::Ui,
     label: &str,
@@ -280,51 +298,23 @@ fn galaxy_size_button(
     current: &mut GalaxySize,
 ) {
     let selected = *current == value;
-    let fill = if selected {
-        Color32::from_rgb(40, 38, 20)
-    } else {
-        Color32::from_rgb(20, 22, 36)
-    };
-    let stroke_color = if selected {
-        theme::GOLD
-    } else {
-        theme::GOLD_DIM
-    };
-
-    let btn = egui::Button::new(
+    let text =
         RichText::new(format!("{label}\n{description}"))
             .color(if selected {
                 theme::GOLD_BRIGHT
             } else {
                 theme::TEXT_PRIMARY
             })
-            .size(12.0),
-    )
-    .fill(fill)
-    .stroke(egui::Stroke::new(
-        if selected { 1.5 } else { 0.5_f32 },
-        stroke_color,
-    ));
+            .size(12.0);
 
-    if ui.add_sized([140.0, 56.0], btn).clicked() {
+    if choice_button(ui, text, selected, [140.0, 56.0]) {
         *current = value;
     }
 }
 
 fn difficulty_button(ui: &mut egui::Ui, value: Difficulty, current: &mut Difficulty) {
     let selected = *current == value;
-    let fill = if selected {
-        Color32::from_rgb(40, 38, 20)
-    } else {
-        Color32::from_rgb(20, 22, 36)
-    };
-    let stroke_color = if selected {
-        theme::GOLD
-    } else {
-        theme::GOLD_DIM
-    };
-
-    let btn = egui::Button::new(
+    let text =
         RichText::new(value.label())
             .color(if selected {
                 theme::GOLD_BRIGHT
@@ -332,15 +322,9 @@ fn difficulty_button(ui: &mut egui::Ui, value: Difficulty, current: &mut Difficu
                 theme::TEXT_PRIMARY
             })
             .size(14.0)
-            .strong(),
-    )
-    .fill(fill)
-    .stroke(egui::Stroke::new(
-        if selected { 1.5 } else { 0.5_f32 },
-        stroke_color,
-    ));
+            .strong();
 
-    if ui.add_sized([120.0, 40.0], btn).clicked() {
+    if choice_button(ui, text, selected, [120.0, 40.0]) {
         *current = value;
     }
 }

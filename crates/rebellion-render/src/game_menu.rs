@@ -826,6 +826,16 @@ mod tests {
 
     const MENU_ID: &str = "game_menu_test";
 
+    fn assert_menu_on_top(ctx: &egui::Context) {
+        let menu = ctx
+            .memory(|memory| memory.area_rect(egui::Id::new(MENU_ID)))
+            .expect("the menu is laid out");
+        assert_eq!(
+            ctx.layer_id_at(menu.center()).map(|layer| layer.id),
+            Some(egui::Id::new(MENU_ID))
+        );
+    }
+
     #[test]
     fn the_menu_opens_above_a_dialog_shown_after_it() {
         // FUN_00442860's pop-up is the topmost window; the mission dialog
@@ -877,14 +887,7 @@ mod tests {
                 );
             });
         }
-        let menu = ctx
-            .memory(|memory| memory.area_rect(egui::Id::new(MENU_ID)))
-            .expect("the menu is laid out");
-
-        assert_eq!(
-            ctx.layer_id_at(menu.center()).map(|layer| layer.id),
-            Some(egui::Id::new(MENU_ID))
-        );
+        assert_menu_on_top(&ctx);
     }
 
     #[test]
@@ -924,14 +927,7 @@ mod tests {
                 );
             });
         }
-        let menu = ctx
-            .memory(|memory| memory.area_rect(egui::Id::new(MENU_ID)))
-            .expect("the menu is laid out");
-
-        assert_eq!(
-            ctx.layer_id_at(menu.center()).map(|layer| layer.id),
-            Some(egui::Id::new(MENU_ID))
-        );
+        assert_menu_on_top(&ctx);
     }
 
     fn labelled(label: &'static str, enabled: bool) -> GameMenuEntry<'static> {
@@ -1432,6 +1428,27 @@ mod tests {
         )
     }
 
+    fn open_managed_menu(
+        manager: &mut rebellion_windowing::WindowManager,
+        owner: rebellion_windowing::WindowId,
+    ) -> (ManagedMenuState, rebellion_windowing::WindowId) {
+        let mut menu = ManagedMenuState::default();
+        let prepared = menu.prepare_open(owner);
+        let opened = manager.apply(prepared.command()).unwrap();
+        let id = menu.commit_open(prepared, &opened.transition).unwrap();
+        (menu, id)
+    }
+
+    fn remove_closed_content(
+        menu: &mut ManagedMenuState,
+        commit: &rebellion_windowing::WindowCommit,
+    ) {
+        let rebellion_windowing::WindowTransition::Closed { closed, .. } = &commit.transition else {
+            panic!("expected close, got {:?}", commit.transition);
+        };
+        menu.remove_content(closed);
+    }
+
     #[test]
     fn menu_replacement_is_atomic_and_saves_eligible_invoker_focus() {
         // FUN_00442380/FUN_00442430 save the invoker focus; port: changing
@@ -1525,10 +1542,7 @@ mod tests {
 
         let mut manager = rebellion_windowing::WindowManager::new();
         let owner = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
-        let mut menu = ManagedMenuState::default();
-        let prepared = menu.prepare_open(owner);
-        let opened = manager.apply(prepared.command()).unwrap();
-        let id = menu.commit_open(prepared, &opened.transition).unwrap();
+        let (mut menu, id) = open_managed_menu(&mut manager, owner);
         let frame = manager.begin_frame();
         let mut router = FrameInputRouter::default();
         router.begin_frame(1, &frame);
@@ -1549,11 +1563,7 @@ mod tests {
         let closed = manager
             .apply(rebellion_windowing::WindowCommand::Close(id))
             .unwrap();
-        let removed = match &closed.transition {
-            rebellion_windowing::WindowTransition::Closed { closed, .. } => closed,
-            other => panic!("expected close, got {other:?}"),
-        };
-        menu.remove_content(removed);
+        remove_closed_content(&mut menu, &closed);
         assert_eq!(menu.window_id(), None);
 
         router.begin_frame(2, &manager.begin_frame());
@@ -1579,10 +1589,7 @@ mod tests {
         // Break caught: orphaning Menu content or focusing through live teardown.
         let mut manager = rebellion_windowing::WindowManager::new();
         let owner = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
-        let mut menu = ManagedMenuState::default();
-        let prepared = menu.prepare_open(owner);
-        let opened = manager.apply(prepared.command()).unwrap();
-        let menu_id = menu.commit_open(prepared, &opened.transition).unwrap();
+        let (mut menu, menu_id) = open_managed_menu(&mut manager, owner);
 
         let closed = manager
             .apply(rebellion_windowing::WindowCommand::Close(owner))
@@ -1598,11 +1605,7 @@ mod tests {
                 rebellion_windowing::WindowEvent::FocusChanged { .. }
             ] if *window == menu_id && *closed_owner == owner
         ));
-        let removed = match &closed.transition {
-            rebellion_windowing::WindowTransition::Closed { closed, .. } => closed,
-            other => panic!("expected close, got {other:?}"),
-        };
-        menu.remove_content(removed);
+        remove_closed_content(&mut menu, &closed);
         assert_eq!(menu.window_id(), None);
     }
 
@@ -1683,10 +1686,7 @@ mod tests {
         // Break caught: registering Menu under a surrogate/root owner.
         let mut manager = rebellion_windowing::WindowManager::new();
         let owner = detail(&mut manager, rebellion_windowing::WindowKind::Defenses, 17);
-        let mut menu = ManagedMenuState::default();
-        let prepared = menu.prepare_open(owner);
-        let opened = manager.apply(prepared.command()).unwrap();
-        let id = menu.commit_open(prepared, &opened.transition).unwrap();
+        let (_menu, id) = open_managed_menu(&mut manager, owner);
         assert_eq!(
             manager.begin_frame().owner(id),
             Some(rebellion_windowing::WindowOwner::Window(owner))

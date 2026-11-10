@@ -215,6 +215,19 @@ mod tests {
         }
     }
 
+    fn run_messages(
+        world: &mut GameWorld,
+        templates: &TextTemplates,
+        system: SystemKey,
+        assaulter: Faction,
+        holder: Faction,
+        after: Faction,
+    ) -> (AssaultEffects, Vec<GameMessage>) {
+        let effects = assault(world, system, assaulter, holder, after);
+        let messages = assault_messages(world, templates, 7, &effects);
+        (effects, messages)
+    }
+
     #[test]
     fn a_taken_or_defended_system_files_an_operation_report_for_both_sides() {
         // FUN_00496770's assault branch: 0x7090, then 0x7091 when the holder
@@ -235,8 +248,8 @@ mod tests {
                     format!("{at} Troops have defended Selonia from an {by} assault."),
                 ),
             ] {
-                let effects = assault(&mut world, system, assaulter, holder, after);
-                let messages = assault_messages(&world, &templates, 7, &effects);
+                let (_, messages) =
+                    run_messages(&mut world, &templates, system, assaulter, holder, after);
                 assert_eq!(messages.len(), 2, "{assaulter:?}");
                 for message in &messages {
                     let display = message.display.as_ref().unwrap();
@@ -270,8 +283,8 @@ mod tests {
         for (assaulter, holder) in BOTH {
             let (mut world, system) = world(Some(holder));
             for after in [assaulter, holder] {
-                let effects = assault(&mut world, system, assaulter, holder, after);
-                let messages = assault_messages(&world, &templates, 7, &effects);
+                let (effects, messages) =
+                    run_messages(&mut world, &templates, system, assaulter, holder, after);
                 assert_eq!(messages.len(), 2, "{assaulter:?}");
                 for message in &messages {
                     assert_eq!(
@@ -445,6 +458,58 @@ mod tests {
         ]);
     }
 
+    fn blockaded_fleet(
+        world: &mut GameWorld,
+        system: SystemKey,
+        side: Faction,
+    ) -> (TroopTransportState, FleetKey, BlockadeState) {
+        let mut transport = TroopTransportState::new();
+        let fleet = loaded_fleet(world, &mut transport, system, side);
+        let mut blockade = BlockadeState::new();
+        rebellion_core::blockade::BlockadeSystem::advance(
+            &mut blockade,
+            world,
+            &[rebellion_core::tick::TickEvent { tick: 1 }],
+        );
+        (transport, fleet, blockade)
+    }
+
+    fn issue_test_order(
+        world: &mut GameWorld,
+        fleets: &[FleetKey],
+        side: Faction,
+        transport: &mut TroopTransportState,
+        blockade: &mut BlockadeState,
+    ) -> (Vec<AssaultEffects>, MessageLog) {
+        let mut movement = MovementState::new();
+        let mut manufacturing = ManufacturingState::new();
+        let mut deliveries = rebellion_core::delivery::DeliveryState::new();
+        let mut missions = rebellion_core::missions::MissionState::new();
+        let uprisings = rebellion_core::uprising::UprisingState::new();
+        let mut log = MessageLog::default();
+        let runs = issue(
+            world,
+            fleets,
+            side,
+            &mut StrikeStates {
+                movement: &mut movement,
+                manufacturing: &mut manufacturing,
+                transport,
+                deliveries: &mut deliveries,
+                missions: &mut missions,
+                uprisings: &uprisings,
+                blockade,
+                tick: 3,
+                step: 0,
+            },
+            &mut || 0.5,
+            &templates(),
+            &mut log,
+        )
+        .unwrap();
+        (runs, log)
+    }
+
     #[test]
     fn the_menu_row_follows_the_orders_enable_slot_for_a_fleet_and_its_icon() {
         // FUN_005814d0 on the team: the blockading fleet with a regiment
@@ -454,14 +519,7 @@ mod tests {
         for (side, holder) in BOTH {
             let (mut world, system) = world(Some(holder));
             shield_limit(&mut world);
-            let mut transport = TroopTransportState::new();
-            let fleet = loaded_fleet(&mut world, &mut transport, system, side);
-            let mut blockade = BlockadeState::new();
-            rebellion_core::blockade::BlockadeSystem::advance(
-                &mut blockade,
-                &world,
-                &[rebellion_core::tick::TickEvent { tick: 1 }],
-            );
+            let (transport, fleet, blockade) = blockaded_fleet(&mut world, system, side);
             let is_alliance = side == Faction::Alliance;
             let icon = Some(MenuObject::SystemIcon {
                 system,
@@ -509,40 +567,14 @@ mod tests {
         for (side, holder) in BOTH {
             let (mut world, system) = world(Some(holder));
             shield_limit(&mut world);
-            let mut movement = MovementState::new();
-            let mut manufacturing = ManufacturingState::new();
-            let mut transport = TroopTransportState::new();
-            let fleet = loaded_fleet(&mut world, &mut transport, system, side);
-            let mut deliveries = rebellion_core::delivery::DeliveryState::new();
-            let mut missions = rebellion_core::missions::MissionState::new();
-            let uprisings = rebellion_core::uprising::UprisingState::new();
-            let mut blockade = BlockadeState::new();
-            rebellion_core::blockade::BlockadeSystem::advance(
-                &mut blockade,
-                &world,
-                &[rebellion_core::tick::TickEvent { tick: 1 }],
-            );
-            let mut log = MessageLog::default();
-            let runs = issue(
+            let (mut transport, fleet, mut blockade) = blockaded_fleet(&mut world, system, side);
+            let (runs, log) = issue_test_order(
                 &mut world,
                 &[fleet],
                 side,
-                &mut StrikeStates {
-                    movement: &mut movement,
-                    manufacturing: &mut manufacturing,
-                    transport: &mut transport,
-                    deliveries: &mut deliveries,
-                    missions: &mut missions,
-                    uprisings: &uprisings,
-                    blockade: &mut blockade,
-                    tick: 3,
-                    step: 0,
-                },
-                &mut || 0.5,
-                &templates(),
-                &mut log,
-            )
-            .unwrap();
+                &mut transport,
+                &mut blockade,
+            );
             assert_eq!(runs.len(), 1, "{side:?}");
             assert_eq!(world.systems[system].control, ControlKind::Controlled(side));
             let titles: Vec<&str> = log
@@ -577,43 +609,20 @@ mod tests {
                 control: ControlKind::Controlled(holder),
                 ..System::default()
             });
-            let mut movement = MovementState::new();
-            let mut manufacturing = ManufacturingState::new();
             let mut transport = TroopTransportState::new();
             let team = [
                 loaded_fleet(&mut world, &mut transport, system, side),
                 loaded_fleet(&mut world, &mut transport, system, side),
                 loaded_fleet(&mut world, &mut transport, other, side),
             ];
-            let mut deliveries = rebellion_core::delivery::DeliveryState::new();
-            let mut missions = rebellion_core::missions::MissionState::new();
-            let uprisings = rebellion_core::uprising::UprisingState::new();
             let mut blockade = BlockadeState::new();
             rebellion_core::blockade::BlockadeSystem::advance(
                 &mut blockade,
                 &world,
                 &[rebellion_core::tick::TickEvent { tick: 1 }],
             );
-            let runs = issue(
-                &mut world,
-                &team,
-                side,
-                &mut StrikeStates {
-                    movement: &mut movement,
-                    manufacturing: &mut manufacturing,
-                    transport: &mut transport,
-                    deliveries: &mut deliveries,
-                    missions: &mut missions,
-                    uprisings: &uprisings,
-                    blockade: &mut blockade,
-                    tick: 3,
-                    step: 0,
-                },
-                &mut || 0.5,
-                &templates(),
-                &mut MessageLog::default(),
-            )
-            .unwrap();
+            let (runs, _) =
+                issue_test_order(&mut world, &team, side, &mut transport, &mut blockade);
             let counted: Vec<(Option<SystemKey>, u32)> = runs
                 .iter()
                 .map(|run| {

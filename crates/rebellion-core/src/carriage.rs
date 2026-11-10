@@ -558,6 +558,13 @@ mod tests {
         })
     }
 
+    fn side_fleet(is_alliance: bool, capacities: &[u32]) -> (GameWorld, FleetKey) {
+        let mut world = GameWorld::default();
+        let key = fleet(&mut world, capacities);
+        world.fleets[key].is_alliance = is_alliance;
+        (world, key)
+    }
+
     fn carriers(world: &GameWorld, fleet: FleetKey) -> Vec<(u32, u32)> {
         world.fleets[fleet]
             .fighters
@@ -693,9 +700,7 @@ mod tests {
     #[test]
     fn products_ordered_for_a_fleet_take_its_ships_in_queue_order() {
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let key = fleet(&mut world, &[1, 2]);
-            world.fleets[key].is_alliance = is_alliance;
+            let (mut world, key) = side_fleet(is_alliance, &[1, 2]);
             let class = world.fighter_classes.insert(Default::default());
             let ship = world
                 .capital_ship_classes
@@ -741,9 +746,7 @@ mod tests {
     #[test]
     fn regiments_ordered_together_fill_the_roomiest_ships_in_turn() {
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let key = fleet(&mut world, &[0, 0, 0]);
-            world.fleets[key].is_alliance = is_alliance;
+            let (mut world, key) = side_fleet(is_alliance, &[0, 0, 0]);
             for (ship, troops) in world.fleets[key].capital_ships.iter().zip([1, 2, 0]) {
                 world.capital_ship_classes[ship.class].troop_capacity = troops;
             }
@@ -767,9 +770,7 @@ mod tests {
     #[test]
     fn an_untagged_squadron_is_not_lost_with_a_ship() {
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let key = fleet(&mut world, &[1, 2]);
-            world.fleets[key].is_alliance = is_alliance;
+            let (mut world, key) = side_fleet(is_alliance, &[1, 2]);
             let class = world.fighter_classes.insert(Default::default());
             let [first, second] = [0, 1].map(|index| tag_ship(&mut world, key, index).unwrap());
             for (carrier, count) in [(0, 1), (first, 2), (second, 1)] {
@@ -881,9 +882,7 @@ mod tests {
     #[test]
     fn characters_ride_the_first_usable_ship_else_the_first_living_one_for_either_side() {
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let key = fleet(&mut world, &[0, 0, 0]);
-            world.fleets[key].is_alliance = is_alliance;
+            let (mut world, key) = side_fleet(is_alliance, &[0, 0, 0]);
             let ships = &mut world.fleets[key].capital_ships;
             ships[0].transit = Some(crate::world::ShipTransit {
                 from: Default::default(),

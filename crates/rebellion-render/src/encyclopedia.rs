@@ -765,34 +765,8 @@ pub fn draw_encyclopedia_surface_focused(
         .fixed_pos(origin)
         .order(surface_order)
         .show(ctx, |ui| {
-            let size = egui::vec2(
-                ENCYCLOPEDIA_INDEX_WIDTH * scale,
-                ENCYCLOPEDIA_INDEX_HEIGHT * scale,
-            );
-            let (window_rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            let window_rect = paint_index_shell(ui, ctx, cache, faction, scale);
             surface_rect = Some(window_rect);
-            let (base, rail) = match faction {
-                crate::cockpit::CockpitFaction::Alliance => (10_335, 10_585),
-                crate::cockpit::CockpitFaction::Empire => (10_336, 10_589),
-            };
-            paint_original_resource_native(
-                ui.painter(),
-                ctx,
-                cache,
-                base,
-                window_rect.min,
-                scale,
-                window_rect,
-            );
-            paint_original_resource_native(
-                ui.painter(),
-                ctx,
-                cache,
-                rail,
-                encyclopedia_point(window_rect, scale, 412.0, 0.0),
-                scale,
-                window_rect,
-            );
             let content_rect = encyclopedia_rect(
                 window_rect,
                 scale,
@@ -1236,16 +1210,8 @@ fn draw_surface_index(
         .saturating_sub(ORIGINAL_INDEX_VISIBLE_ROWS);
     let list_rect = original_index_list_rect(window_rect, scale);
     let list_painter = ui.painter().with_clip_rect(list_rect);
-    if ui.rect_contains_pointer(list_rect) {
-        let wheel = ui.input(|input| input.raw_scroll_delta.y);
-        if wheel.abs() > f32::EPSILON {
-            let rows = ((wheel.abs() / 24.0).ceil() as usize).clamp(1, 3);
-            state.scroll_row = if wheel < 0.0 {
-                state.scroll_row.saturating_add(rows).min(max_scroll)
-            } else {
-                state.scroll_row.saturating_sub(rows)
-            };
-        }
+    if let Some(scroll) = wheel_scroll(ui, list_rect, state.scroll_row, max_scroll) {
+        state.scroll_row = scroll;
     }
     if max_scroll > 0 {
         state.scroll_row = draw_encyclopedia_scrollbar(
@@ -1401,13 +1367,10 @@ fn draw_surface_control(
     enabled: bool,
     captured_control: &mut Option<u16>,
 ) -> bool {
-    let rect = encyclopedia_rect(
+    let rect = encyclopedia_control_rect(
         window_rect,
         scale,
-        f32::from(control.x),
-        f32::from(control.y),
-        f32::from(control.width),
-        f32::from(control.height),
+        [control.x, control.y, control.width, control.height],
     );
     let control_id = ui
         .id()
@@ -1680,33 +1643,7 @@ fn draw_encyclopedia_index_layers(
         .fixed_pos(origin)
         .order(egui::Order::Middle)
         .show(ctx, |ui| {
-            let size = egui::vec2(
-                ENCYCLOPEDIA_INDEX_WIDTH * scale,
-                ENCYCLOPEDIA_INDEX_HEIGHT * scale,
-            );
-            let (window_rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-            let (base, rail) = match faction {
-                crate::cockpit::CockpitFaction::Alliance => (10_335, 10_585),
-                crate::cockpit::CockpitFaction::Empire => (10_336, 10_589),
-            };
-            paint_original_resource_native(
-                ui.painter(),
-                ctx,
-                cache,
-                base,
-                window_rect.min,
-                scale,
-                window_rect,
-            );
-            paint_original_resource_native(
-                ui.painter(),
-                ctx,
-                cache,
-                rail,
-                encyclopedia_point(window_rect, scale, 412.0, 0.0),
-                scale,
-                window_rect,
-            );
+            let window_rect = paint_index_shell(ui, ctx, cache, faction, scale);
             let content_rect = encyclopedia_rect(
                 window_rect,
                 scale,
@@ -1803,17 +1740,7 @@ fn draw_original_index_content(
         .saturating_sub(ORIGINAL_INDEX_VISIBLE_ROWS);
     let list_rect = original_index_list_rect(window_rect, scale);
     let list_painter = painter.with_clip_rect(list_rect);
-    if ui.rect_contains_pointer(list_rect) {
-        let wheel = ui.input(|input| input.raw_scroll_delta.y);
-        if wheel.abs() > f32::EPSILON {
-            let rows = ((wheel.abs() / 24.0).ceil() as usize).clamp(1, 3);
-            outcome.scroll_row = Some(if wheel < 0.0 {
-                content.scroll_row.saturating_add(rows).min(max_scroll)
-            } else {
-                content.scroll_row.saturating_sub(rows)
-            });
-        }
-    }
+    outcome.scroll_row = wheel_scroll(ui, list_rect, content.scroll_row, max_scroll);
     if max_scroll > 0 {
         let next_scroll = draw_encyclopedia_scrollbar(
             ui,
@@ -1874,13 +1801,10 @@ fn draw_original_control(
     control: OriginalControlSpec,
     selected: bool,
 ) -> bool {
-    let rect = encyclopedia_rect(
+    let rect = encyclopedia_control_rect(
         window_rect,
         scale,
-        f32::from(control.x),
-        f32::from(control.y),
-        f32::from(control.width),
-        f32::from(control.height),
+        [control.x, control.y, control.width, control.height],
     );
     let control_id = ui
         .id()
@@ -1967,6 +1891,78 @@ fn encyclopedia_rect(
         encyclopedia_point(parent, scale, x, y),
         egui::vec2(width * scale, height * scale),
     )
+}
+
+fn encyclopedia_control_rect(
+    parent: egui::Rect,
+    scale: f32,
+    [x, y, width, height]: [u16; 4],
+) -> egui::Rect {
+    encyclopedia_rect(
+        parent,
+        scale,
+        f32::from(x),
+        f32::from(y),
+        f32::from(width),
+        f32::from(height),
+    )
+}
+
+fn paint_index_shell(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    faction: crate::cockpit::CockpitFaction,
+    scale: f32,
+) -> egui::Rect {
+    let size = egui::vec2(
+        ENCYCLOPEDIA_INDEX_WIDTH * scale,
+        ENCYCLOPEDIA_INDEX_HEIGHT * scale,
+    );
+    let (window_rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let (base, rail) = match faction {
+        crate::cockpit::CockpitFaction::Alliance => (10_335, 10_585),
+        crate::cockpit::CockpitFaction::Empire => (10_336, 10_589),
+    };
+    paint_original_resource_native(
+        ui.painter(),
+        ctx,
+        cache,
+        base,
+        window_rect.min,
+        scale,
+        window_rect,
+    );
+    paint_original_resource_native(
+        ui.painter(),
+        ctx,
+        cache,
+        rail,
+        encyclopedia_point(window_rect, scale, 412.0, 0.0),
+        scale,
+        window_rect,
+    );
+    window_rect
+}
+
+fn wheel_scroll(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    current: usize,
+    max_scroll: usize,
+) -> Option<usize> {
+    if !ui.rect_contains_pointer(rect) {
+        return None;
+    }
+    let wheel = ui.input(|input| input.raw_scroll_delta.y);
+    (wheel.abs() > f32::EPSILON).then(|| {
+        let rows = ((wheel.abs() / 24.0).ceil() as usize).clamp(1, 3);
+        if wheel < 0.0 {
+            current.saturating_add(rows).min(max_scroll)
+        } else {
+            current.saturating_sub(rows)
+        }
+    })
 }
 
 fn original_index_list_rect(parent: egui::Rect, scale: f32) -> egui::Rect {
@@ -2581,6 +2577,24 @@ mod tests {
         }
     }
 
+    fn draw_focused_test_surface(
+        ctx: &egui::Context,
+        cache: &mut BmpCache,
+        state: &mut EncyclopediaSurfaceState,
+        surface: &EncyclopediaSurface<'_>,
+        focused_control: Option<ControlId>,
+    ) -> Option<EncyclopediaSurfaceAction> {
+        draw_encyclopedia_surface_focused(
+            ctx,
+            cache,
+            egui::Pos2::ZERO,
+            1.0,
+            state,
+            surface,
+            focused_control,
+        )
+    }
+
     fn pointer_button(point: egui::Pos2, pressed: bool) -> egui::Event {
         egui::Event::PointerButton {
             pos: point,
@@ -2950,6 +2964,15 @@ mod tests {
         }
     }
 
+    fn counting_cache() -> (
+        Rc<RefCell<TextureCounts>>,
+        EncyclopediaTopicTextureCache<CountingTextureBackend>,
+    ) {
+        let counts = Rc::new(RefCell::new(TextureCounts::default()));
+        let backend = CountingTextureBackend(counts.clone());
+        (counts, EncyclopediaTopicTextureCache::new(backend))
+    }
+
     fn synthetic_indexed_edata() -> Vec<u8> {
         const WIDTH: usize = 400;
         const HEIGHT: usize = 200;
@@ -2989,9 +3012,7 @@ mod tests {
 
     #[test]
     fn topic_texture_cache_hits_once_and_releases_on_resource_or_generation_change() {
-        let counts = Rc::new(RefCell::new(TextureCounts::default()));
-        let backend = CountingTextureBackend(counts.clone());
-        let mut cache = EncyclopediaTopicTextureCache::new(backend);
+        let (counts, mut cache) = counting_cache();
         let first_bytes = synthetic_indexed_edata();
         let second_bytes = synthetic_indexed_edata();
         let first = artwork_view("EDATA.014", "digest-14", &first_bytes);
@@ -3023,9 +3044,7 @@ mod tests {
 
     #[test]
     fn topic_texture_cache_invalidates_when_only_sampling_profile_changes() {
-        let counts = Rc::new(RefCell::new(TextureCounts::default()));
-        let backend = CountingTextureBackend(counts.clone());
-        let mut cache = EncyclopediaTopicTextureCache::new(backend);
+        let (counts, mut cache) = counting_cache();
         let bytes = synthetic_indexed_edata();
         let nearest = artwork_view("EDATA.014", "same-digest", &bytes);
         let mut linear = nearest;
@@ -3202,11 +3221,9 @@ mod tests {
         assert!(!focused_key_remained);
 
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            draw_encyclopedia_surface_focused(
+            draw_focused_test_surface(
                 ctx,
                 &mut cache,
-                egui::Pos2::ZERO,
-                1.0,
                 &mut state,
                 &surface,
                 Some(ENCYCLOPEDIA_SEARCH_CONTROL),
@@ -3222,11 +3239,9 @@ mod tests {
         let _ = ctx.run(
             surface_input(vec![egui::Event::Text("A".to_owned())], 1.0),
             |ctx| {
-                search_action = draw_encyclopedia_surface_focused(
+                search_action = draw_focused_test_surface(
                     ctx,
                     &mut cache,
-                    egui::Pos2::ZERO,
-                    1.0,
                     &mut state,
                     &surface,
                     Some(ENCYCLOPEDIA_SEARCH_CONTROL),
@@ -3249,11 +3264,9 @@ mod tests {
             ..Default::default()
         };
         let _ = ctx.run(tab, |ctx| {
-            draw_encyclopedia_surface_focused(
+            draw_focused_test_surface(
                 ctx,
                 &mut cache,
-                egui::Pos2::ZERO,
-                1.0,
                 &mut state,
                 &surface,
                 Some(ENCYCLOPEDIA_SEARCH_CONTROL),
@@ -3305,24 +3318,14 @@ mod tests {
         let topic = surface_keyboard_focus_id(EncyclopediaSurfaceMode::Topic);
 
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            draw_encyclopedia_surface_focused(
-                ctx,
-                &mut cache,
-                egui::Pos2::ZERO,
-                1.0,
-                &mut state,
-                &surface,
-                None,
-            );
+            draw_focused_test_surface(ctx, &mut cache, &mut state, &surface, None);
         });
         assert!(!ctx.memory(|memory| memory.has_focus(topic)));
 
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            draw_encyclopedia_surface_focused(
+            draw_focused_test_surface(
                 ctx,
                 &mut cache,
-                egui::Pos2::ZERO,
-                1.0,
                 &mut state,
                 &surface,
                 Some(ENCYCLOPEDIA_TOPIC_CONTROL),
@@ -3333,25 +3336,15 @@ mod tests {
         let unrelated = egui::Id::new("unrelated-after-topic-focus-loss");
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             ctx.memory_mut(|memory| memory.request_focus(unrelated));
-            draw_encyclopedia_surface_focused(
-                ctx,
-                &mut cache,
-                egui::Pos2::ZERO,
-                1.0,
-                &mut state,
-                &surface,
-                None,
-            );
+            draw_focused_test_surface(ctx, &mut cache, &mut state, &surface, None);
         });
         assert!(ctx.memory(|memory| memory.has_focus(unrelated)));
 
         let mut rebound = EncyclopediaSurfaceState::new();
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            draw_encyclopedia_surface_focused(
+            draw_focused_test_surface(
                 ctx,
                 &mut cache,
-                egui::Pos2::ZERO,
-                1.0,
                 &mut rebound,
                 &surface,
                 Some(ENCYCLOPEDIA_INDEX_CONTROL),

@@ -4,7 +4,7 @@ use rebellion_windowing::{
     BubblePolicy, Cardinality, ContentReport, ContentStatus, ExistingOpenPolicy, FocusOnOpen,
     FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy, RouteTarget,
     StackBand, SubjectId, WindowCommand, WindowError, WindowKind, WindowManager, WindowOwner,
-    WindowPolicy, WindowSpec, WindowTransition,
+    WindowPolicy, WindowSpec, WindowTransition, ReconcileReport, RoutingSnapshot, WindowId,
 };
 
 fn policy(input: InputPolicy) -> WindowPolicy {
@@ -58,17 +58,48 @@ fn hits(
     ids.into_iter().collect()
 }
 
-#[test]
-fn topmost_eligible_hit_wins_independent_of_hit_registration_order() {
+fn open_pair(
+    first: (WindowKind, u64, InputPolicy),
+    second: (WindowKind, u64, InputPolicy),
+) -> (WindowManager, WindowId, WindowId) {
     let mut manager = WindowManager::new();
-    let lower = open(
+    let first = open(&mut manager, spec(first.0, first.1, first.2));
+    let second = open(&mut manager, spec(second.0, second.1, second.2));
+    (manager, first, second)
+}
+
+fn modeless_pair() -> (WindowManager, WindowId, WindowId) {
+    open_pair(
+        (WindowKind::System, 1, InputPolicy::Modeless),
+        (WindowKind::Fleet, 2, InputPolicy::Modeless),
+    )
+}
+
+fn owner_menu() -> (WindowManager, WindowId, WindowId) {
+    let mut manager = WindowManager::new();
+    let owner = open(
         &mut manager,
         spec(WindowKind::System, 1, InputPolicy::Modeless),
     );
-    let upper = open(
-        &mut manager,
-        spec(WindowKind::Fleet, 2, InputPolicy::Modeless),
-    );
+    let menu = open(&mut manager, menu_spec(owner));
+    (manager, owner, menu)
+}
+
+fn reconcile_single(
+    kind: WindowKind,
+    input: InputPolicy,
+    status: ContentStatus,
+) -> (WindowManager, WindowId, RoutingSnapshot, ReconcileReport) {
+    let mut manager = WindowManager::new();
+    let window = open(&mut manager, spec(kind, 1, input));
+    let frame = manager.begin_frame();
+    let report = manager.reconcile(&frame, &[ContentReport { window, status }]);
+    (manager, window, frame, report)
+}
+
+#[test]
+fn topmost_eligible_hit_wins_independent_of_hit_registration_order() {
+    let (mut manager, lower, upper) = modeless_pair();
     let frame = manager.begin_frame();
     for registered in [hits([lower, upper]), hits([upper, lower])] {
         assert_eq!(
@@ -83,15 +114,7 @@ fn topmost_eligible_hit_wins_independent_of_hit_registration_order() {
 
 #[test]
 fn modeless_eligibility_does_not_grant_all_windows_the_same_event() {
-    let mut manager = WindowManager::new();
-    let lower = open(
-        &mut manager,
-        spec(WindowKind::System, 1, InputPolicy::Modeless),
-    );
-    let upper = open(
-        &mut manager,
-        spec(WindowKind::Fleet, 2, InputPolicy::Modeless),
-    );
+    let (mut manager, lower, upper) = modeless_pair();
     let frame = manager.begin_frame();
     assert!(frame.allows_input(lower));
     assert!(frame.allows_input(upper));
@@ -106,14 +129,9 @@ fn modeless_eligibility_does_not_grant_all_windows_the_same_event() {
 
 #[test]
 fn modal_blocks_root_inside_and_outside_its_hit_regions() {
-    let mut manager = WindowManager::new();
-    let background = open(
-        &mut manager,
-        spec(WindowKind::System, 1, InputPolicy::Modeless),
-    );
-    let modal = open(
-        &mut manager,
-        spec(WindowKind::Status, 2, InputPolicy::StrategicModal),
+    let (mut manager, background, modal) = open_pair(
+        (WindowKind::System, 1, InputPolicy::Modeless),
+        (WindowKind::Status, 2, InputPolicy::StrategicModal),
     );
     let frame = manager.begin_frame();
     assert_eq!(
@@ -226,12 +244,7 @@ fn handled_text_stays_with_the_control_and_unhandled_keys_stop_at_a_strategic_mo
 
 #[test]
 fn dismissible_menu_blocks_outside_press_until_explicit_close() {
-    let mut manager = WindowManager::new();
-    let owner = open(
-        &mut manager,
-        spec(WindowKind::System, 1, InputPolicy::Modeless),
-    );
-    let menu = open(&mut manager, menu_spec(owner));
+    let (mut manager, _owner, menu) = owner_menu();
     let old = manager.begin_frame();
     assert_eq!(
         old.pointer_route(&BTreeSet::new()).target,
@@ -247,12 +260,7 @@ fn dismissible_menu_blocks_outside_press_until_explicit_close() {
 
 #[test]
 fn dismissible_menu_blocks_press_on_its_underlying_owner() {
-    let mut manager = WindowManager::new();
-    let owner = open(
-        &mut manager,
-        spec(WindowKind::System, 1, InputPolicy::Modeless),
-    );
-    let menu = open(&mut manager, menu_spec(owner));
+    let (mut manager, owner, menu) = owner_menu();
     assert_eq!(
         manager.begin_frame().pointer_route(&hits([owner])).target,
         RouteTarget::BlockedBy(menu)
@@ -261,18 +269,10 @@ fn dismissible_menu_blocks_press_on_its_underlying_owner() {
 
 #[test]
 fn an_unpainted_strategic_modal_is_retained_as_a_fail_closed_blocker() {
-    let mut manager = WindowManager::new();
-    let modal = open(
-        &mut manager,
-        spec(WindowKind::Status, 1, InputPolicy::StrategicModal),
-    );
-    let frame = manager.begin_frame();
-    let report = manager.reconcile(
-        &frame,
-        &[ContentReport {
-            window: modal,
-            status: ContentStatus::Unpaintable,
-        }],
+    let (manager, modal, frame, report) = reconcile_single(
+        WindowKind::Status,
+        InputPolicy::StrategicModal,
+        ContentStatus::Unpaintable,
     );
     assert_eq!(report.blocking_unpainted, vec![modal]);
     assert_eq!(manager.id_for(frame.key(modal).unwrap()), Some(modal));
@@ -280,18 +280,10 @@ fn an_unpainted_strategic_modal_is_retained_as_a_fail_closed_blocker() {
 
 #[test]
 fn unpaintable_modeless_content_is_retained_without_implicit_close() {
-    let mut manager = WindowManager::new();
-    let window = open(
-        &mut manager,
-        spec(WindowKind::System, 1, InputPolicy::Modeless),
-    );
-    let frame = manager.begin_frame();
-    let report = manager.reconcile(
-        &frame,
-        &[ContentReport {
-            window,
-            status: ContentStatus::Unpaintable,
-        }],
+    let (manager, window, frame, report) = reconcile_single(
+        WindowKind::System,
+        InputPolicy::Modeless,
+        ContentStatus::Unpaintable,
     );
     assert!(report.removed.is_empty());
     assert_eq!(manager.id_for(frame.key(window).unwrap()), Some(window));
@@ -299,18 +291,10 @@ fn unpaintable_modeless_content_is_retained_without_implicit_close() {
 
 #[test]
 fn explicitly_absent_modeless_content_closes_with_events() {
-    let mut manager = WindowManager::new();
-    let window = open(
-        &mut manager,
-        spec(WindowKind::System, 1, InputPolicy::Modeless),
-    );
-    let frame = manager.begin_frame();
-    let report = manager.reconcile(
-        &frame,
-        &[ContentReport {
-            window,
-            status: ContentStatus::Absent,
-        }],
+    let (manager, window, frame, report) = reconcile_single(
+        WindowKind::System,
+        InputPolicy::Modeless,
+        ContentStatus::Absent,
     );
     assert_eq!(report.removed, vec![window]);
     assert!(!report.events.is_empty());
@@ -340,18 +324,10 @@ fn explicitly_absent_minimized_content_removes_its_history_entry() {
 
 #[test]
 fn absent_modal_reports_blocker_until_explicit_close() {
-    let mut manager = WindowManager::new();
-    let modal = open(
-        &mut manager,
-        spec(WindowKind::Status, 1, InputPolicy::StrategicModal),
-    );
-    let frame = manager.begin_frame();
-    let report = manager.reconcile(
-        &frame,
-        &[ContentReport {
-            window: modal,
-            status: ContentStatus::Absent,
-        }],
+    let (manager, modal, frame, report) = reconcile_single(
+        WindowKind::Status,
+        InputPolicy::StrategicModal,
+        ContentStatus::Absent,
     );
     assert_eq!(report.blocking_unpainted, vec![modal]);
     assert_eq!(manager.id_for(frame.key(modal).unwrap()), Some(modal));
@@ -390,18 +366,10 @@ fn absent_modeless_owner_cannot_implicitly_close_ready_modal_child() {
 
 #[test]
 fn suspended_content_is_retained_without_claiming_it_painted() {
-    let mut manager = WindowManager::new();
-    let window = open(
-        &mut manager,
-        spec(WindowKind::System, 1, InputPolicy::Modeless),
-    );
-    let frame = manager.begin_frame();
-    let report = manager.reconcile(
-        &frame,
-        &[ContentReport {
-            window,
-            status: ContentStatus::Suspended,
-        }],
+    let (_manager, _window, _frame, report) = reconcile_single(
+        WindowKind::System,
+        InputPolicy::Modeless,
+        ContentStatus::Suspended,
     );
     assert!(report.removed.is_empty());
     assert!(report.blocking_unpainted.is_empty());
@@ -516,14 +484,9 @@ fn foreign_snapshot_cannot_reconcile_an_aliasing_window_id() {
 
 #[test]
 fn scene_restriction_removes_inactive_modal_and_focus_from_route() {
-    let mut manager = WindowManager::new();
-    let background = open(
-        &mut manager,
-        spec(WindowKind::System, 1, InputPolicy::Modeless),
-    );
-    let modal = open(
-        &mut manager,
-        spec(WindowKind::Status, 2, InputPolicy::StrategicModal),
+    let (mut manager, background, modal) = open_pair(
+        (WindowKind::System, 1, InputPolicy::Modeless),
+        (WindowKind::Status, 2, InputPolicy::StrategicModal),
     );
     let restricted = manager.begin_frame().restrict_to(&hits([background]));
     assert_eq!(restricted.active_modal(), None);
@@ -536,12 +499,7 @@ fn scene_restriction_removes_inactive_modal_and_focus_from_route() {
 
 #[test]
 fn scene_restriction_fails_closed_on_child_without_active_owner() {
-    let mut manager = WindowManager::new();
-    let owner = open(
-        &mut manager,
-        spec(WindowKind::System, 1, InputPolicy::Modeless),
-    );
-    let menu = open(&mut manager, menu_spec(owner));
+    let (mut manager, _owner, menu) = owner_menu();
     let restricted = manager.begin_frame().restrict_to(&hits([menu]));
     assert!(!restricted.is_visible(menu));
     assert!(restricted.pointer_allows_root());
@@ -613,14 +571,9 @@ fn inactive_modal_does_not_constrain_active_scene_open_or_root_route() {
 
 #[test]
 fn reactivated_modal_repairs_order_and_cancels_background_capture() {
-    let mut manager = WindowManager::new();
-    let background = open(
-        &mut manager,
-        spec(WindowKind::System, 1, InputPolicy::Modeless),
-    );
-    let modal = open(
-        &mut manager,
-        spec(WindowKind::BattleAlert, 2, InputPolicy::StrategicModal),
+    let (mut manager, background, modal) = open_pair(
+        (WindowKind::System, 1, InputPolicy::Modeless),
+        (WindowKind::BattleAlert, 2, InputPolicy::StrategicModal),
     );
     manager.set_active_windows(&hits([background])).unwrap();
     manager

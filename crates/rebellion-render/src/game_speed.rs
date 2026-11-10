@@ -982,6 +982,17 @@ mod tests {
             .layout_for(640.0 * scale, 480.0 * scale)
     }
 
+    fn open_speed_menu() -> (CockpitLayout, egui::Context, BmpCache, GameSpeedUiState) {
+        (
+            strategic_layout(1.0),
+            egui::Context::default(),
+            BmpCache::new(),
+            GameSpeedUiState {
+                menu_anchor: Some((100.0, 100.0)),
+            },
+        )
+    }
+
     fn screen(layout: CockpitLayout, (x, y): (f32, f32)) -> egui::Pos2 {
         egui::pos2(
             layout.canvas.x + x * layout.scale,
@@ -1054,12 +1065,7 @@ mod tests {
         // FUN_004424c0 reports the chosen item; FUN_0042d190's records map
         // the five rows to the five speeds in order.
         for index in 0..GameSpeed::ALL.len() {
-            let layout = strategic_layout(1.0);
-            let ctx = egui::Context::default();
-            let mut cache = BmpCache::new();
-            let mut state = GameSpeedUiState {
-                menu_anchor: Some((100.0, 100.0)),
-            };
+            let (layout, ctx, mut cache, mut state) = open_speed_menu();
             let mut chosen = None;
             let mut draw = |ctx: &egui::Context| {
                 chosen = chosen.or(draw_game_speed_menu(
@@ -1088,12 +1094,7 @@ mod tests {
 
     #[test]
     fn a_press_outside_the_speed_menu_closes_it_without_a_choice() {
-        let layout = strategic_layout(1.0);
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let mut state = GameSpeedUiState {
-            menu_anchor: Some((100.0, 100.0)),
-        };
+        let (layout, ctx, mut cache, mut state) = open_speed_menu();
         let mut chosen = None;
         let outside = screen(layout, (600.0, 450.0));
         for events in [vec![], vec![], vec![primary(outside, true)]] {

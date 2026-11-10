@@ -335,6 +335,19 @@ fn pending_class(kind: BuildableKind) -> Option<(DatId, u8)> {
     }
 }
 
+fn built_facility_cell(
+    item: FacilityItem,
+    class: DatId,
+    owner: u8,
+    wanted_family: u8,
+    wanted_side: u8,
+) -> Option<FacilityCell> {
+    (class.family() == wanted_family && owner == wanted_side)
+        .then(|| facility_picture(class, owner, FacilityState::Built))
+        .flatten()
+        .map(|picture| FacilityCell { item, picture })
+}
+
 /// The cells of `page` at `system`, in walk order: its built facilities of
 /// the shown side and family, then those queued for it, then those en route
 /// to it; on the mines page, one empty deposit per raw-material deposit
@@ -362,7 +375,6 @@ pub fn page_cells(
     };
     let side = control_side(value.control);
     let family = page_family(page);
-    let wanted = |class: DatId, owner: u8| class.family() == family && owner == side;
     let mut cells: Vec<FacilityCell> = Vec::new();
     let (manufacturing_keys, production_keys): (Vec<_>, Vec<_>) = if visible {
         (
@@ -392,15 +404,14 @@ pub fn page_cells(
             continue;
         };
         let owner = crate::fleet_window::faction_side(facility.side);
-        if wanted(facility.class_dat_id, owner) {
-            if let Some(picture) =
-                facility_picture(facility.class_dat_id, owner, FacilityState::Built)
-            {
-                cells.push(FacilityCell {
-                    item: FacilityItem::Manufacturing(key),
-                    picture,
-                });
-            }
+        if let Some(cell) = built_facility_cell(
+            FacilityItem::Manufacturing(key),
+            facility.class_dat_id,
+            owner,
+            family,
+            side,
+        ) {
+            cells.push(cell);
         }
     }
     for &key in &production_keys {
@@ -408,15 +419,14 @@ pub fn page_cells(
             continue;
         };
         let owner = crate::fleet_window::faction_side(facility.side);
-        if wanted(facility.class_dat_id, owner) {
-            if let Some(picture) =
-                facility_picture(facility.class_dat_id, owner, FacilityState::Built)
-            {
-                cells.push(FacilityCell {
-                    item: FacilityItem::Production(key),
-                    picture,
-                });
-            }
+        if let Some(cell) = built_facility_cell(
+            FacilityItem::Production(key),
+            facility.class_dat_id,
+            owner,
+            family,
+            side,
+        ) {
+            cells.push(cell);
         }
     }
     if !visible {

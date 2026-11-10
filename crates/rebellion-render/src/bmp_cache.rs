@@ -2092,6 +2092,10 @@ fn decode_macroquad_texture(
     resource_id: u32,
 ) -> Option<Texture2D> {
     let rgba = decode_rgba_image(bytes, source, resource_id).ok()?;
+    macroquad_texture(&rgba)
+}
+
+fn macroquad_texture(rgba: &image::RgbaImage) -> Option<Texture2D> {
     let width = u16::try_from(rgba.width()).ok()?;
     let height = u16::try_from(rgba.height()).ok()?;
     let texture = Texture2D::from_rgba8(width, height, rgba.as_raw());
@@ -2150,20 +2154,12 @@ fn button_color_image(
     resource_id: u32,
 ) -> image::ImageResult<egui::ColorImage> {
     let rgba = button_rgba_image(bytes, source, resource_id)?;
-    let (w, h) = rgba.dimensions();
-    Ok(egui::ColorImage::from_rgba_unmultiplied(
-        [w as usize, h as usize],
-        rgba.as_raw(),
-    ))
+    Ok(color_image(&rgba))
 }
 
 fn button_macroquad_texture(bytes: &[u8], source: DllSource, resource_id: u32) -> Option<Texture2D> {
     let rgba = button_rgba_image(bytes, source, resource_id).ok()?;
-    let width = u16::try_from(rgba.width()).ok()?;
-    let height = u16::try_from(rgba.height()).ok()?;
-    let texture = Texture2D::from_rgba8(width, height, rgba.as_raw());
-    texture.set_filter(FilterMode::Nearest);
-    Some(texture)
+    macroquad_texture(&rgba)
 }
 
 fn decode_color_image(
@@ -2172,12 +2168,15 @@ fn decode_color_image(
     resource_id: u32,
 ) -> image::ImageResult<egui::ColorImage> {
     let rgba = decode_rgba_image(bytes, source, resource_id)?;
+    Ok(color_image(&rgba))
+}
 
+fn color_image(rgba: &image::RgbaImage) -> egui::ColorImage {
     let (w, h) = rgba.dimensions();
-    Ok(egui::ColorImage::from_rgba_unmultiplied(
+    egui::ColorImage::from_rgba_unmultiplied(
         [w as usize, h as usize],
         rgba.as_raw(),
-    ))
+    )
 }
 
 /// The tactical window's realized palette (`FUN_0059ae70`) takes entries
@@ -2317,6 +2316,56 @@ fn load_image_bytes_as_texture(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn encode_image(image: image::RgbaImage, format: image::ImageFormat) -> Vec<u8> {
+        let mut encoded = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut std::io::Cursor::new(&mut encoded), format)
+            .unwrap();
+        encoded
+    }
+
+    fn encoded_row(pixels: &[[u8; 4]], format: image::ImageFormat) -> Vec<u8> {
+        let mut image = image::RgbaImage::new(u32::try_from(pixels.len()).unwrap(), 1);
+        for (x, pixel) in pixels.iter().enumerate() {
+            image.put_pixel(u32::try_from(x).unwrap(), 0, image::Rgba(*pixel));
+        }
+        encode_image(image, format)
+    }
+
+    fn decoded_alpha(encoded: &[u8], source: DllSource, resource_id: u32) -> Vec<u8> {
+        decode_color_image(encoded, source, resource_id)
+            .unwrap()
+            .pixels
+            .iter()
+            .map(|pixel| pixel.a())
+            .collect()
+    }
+
+    fn assert_alpha(
+        encoded: &[u8],
+        source: DllSource,
+        resource_ids: &[u32],
+        expected: &[u8],
+    ) {
+        for &resource_id in resource_ids {
+            assert_eq!(
+                decoded_alpha(encoded, source, resource_id),
+                expected,
+                "resource {resource_id}"
+            );
+        }
+    }
+
+    fn blue_pixel_png() -> Vec<u8> {
+        encoded_row(&[[0, 0, 255, 255]], image::ImageFormat::Png)
+    }
+
+    fn assert_blue_keying(source: DllSource, keyed: &[u32], opaque: &[u32]) {
+        let encoded = blue_pixel_png();
+        assert_alpha(&encoded, source, keyed, &[0]);
+        assert_alpha(&encoded, source, opaque, &[255]);
+    }
 
     #[test]
     fn missing_resource_is_negatively_cached() {
@@ -2508,26 +2557,16 @@ mod tests {
     #[test]
     fn cockpit_background_blue_screen_becomes_transparent() {
         // Source: STRATEGY.DLL command-center shell palette-blue matte.
-        let mut image = image::RgbaImage::new(2, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        image.put_pixel(1, 0, image::Rgba([80, 90, 100, 255]));
-
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        let decoded = decode_color_image(
+        let encoded = encoded_row(
+            &[[0, 0, 255, 255], [80, 90, 100, 255]],
+            image::ImageFormat::Png,
+        );
+        assert_alpha(
             &encoded,
             DllSource::Strategy,
-            resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL,
-        )
-        .unwrap();
-
-        assert_eq!(decoded.pixels[0].a(), 0);
-        assert_eq!(decoded.pixels[1].a(), 255);
+            &[resources::strategy::ALLIANCE_COMMAND_CENTER_SHELL],
+            &[0, 255],
+        );
     }
 
     #[test]
@@ -2545,27 +2584,19 @@ mod tests {
         image.put_pixel(1, 0, image::Rgba([0, 0, 255, 255]));
         image.put_pixel(0, 1, image::Rgba([0, 0, 255, 255]));
         image.put_pixel(1, 1, image::Rgba([200, 90, 20, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        let alpha = |source, id| -> Vec<u8> {
-            decode_color_image(&encoded, source, id)
-                .unwrap()
-                .pixels
-                .iter()
-                .map(|pixel| pixel.a())
-                .collect()
-        };
-        for id in [0x2640, 0x2741, 0x278f] {
-            assert_eq!(alpha(DllSource::Gokres, id), [255, 0, 0, 255], "{id:#x}");
-        }
-        for id in [0x2865, 0x2869, 0x286a, 0x2875, 0x2876, 0x287c] {
-            assert_eq!(alpha(DllSource::Strategy, id), [255, 0, 0, 255], "{id:#x}");
-        }
+        let encoded = encode_image(image, image::ImageFormat::Png);
+        assert_alpha(
+            &encoded,
+            DllSource::Gokres,
+            &[0x2640, 0x2741, 0x278f],
+            &[255, 0, 0, 255],
+        );
+        assert_alpha(
+            &encoded,
+            DllSource::Strategy,
+            &[0x2865, 0x2869, 0x286a, 0x2875, 0x2876, 0x287c],
+            &[255, 0, 0, 255],
+        );
     }
 
     /// An 8-bit bottom-up BMP, 2 by 2, whose first stored pixel (the image's
@@ -2665,22 +2696,22 @@ mod tests {
     fn the_destroyed_systems_asteroid_field_keys_its_black_background() {
         // STRATEGY 10240 (FUN_0045bbb0) keys palette index 0, its only black
         // entry; other bitmaps keep their black pixels.
-        let mut image = image::RgbaImage::new(4, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 0, 255]));
-        image.put_pixel(1, 0, image::Rgba([120, 100, 80, 255]));
-        image.put_pixel(2, 0, image::Rgba([0, 100, 80, 255]));
-        image.put_pixel(3, 0, image::Rgba([100, 0, 0, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
+        let encoded = encoded_row(
+            &[
+                [0, 0, 0, 255],
+                [120, 100, 80, 255],
+                [0, 100, 80, 255],
+                [100, 0, 0, 255],
+            ],
+            image::ImageFormat::Png,
+        );
 
-        let decoded = decode_color_image(&encoded, DllSource::Strategy, 10_240).unwrap();
-        let alpha: Vec<u8> = decoded.pixels.iter().map(|pixel| pixel.a()).collect();
-        assert_eq!(alpha, vec![0, 255, 255, 255]);
+        assert_alpha(
+            &encoded,
+            DllSource::Strategy,
+            &[10_240],
+            &[0, 255, 255, 255],
+        );
         // 10242 is keyed by no rule; a Tactical 10240 is another bitmap.
         for (source, id) in [(DllSource::Strategy, 10_242), (DllSource::Tactical, 10_240)] {
             let other = decode_color_image(&encoded, source, id).unwrap();
@@ -2693,50 +2724,36 @@ mod tests {
         // STRATEGY 10382..10387 use pure palette blue as the transparent
         // control matte. The enabled arrow fill and dark drop shadow are
         // authored pixels and must remain opaque.
-        let mut image = image::RgbaImage::new(3, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        image.put_pixel(1, 0, image::Rgba([30, 62, 166, 255]));
-        image.put_pixel(2, 0, image::Rgba([0, 0, 0, 255]));
-
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-
-        for resource_id in 10_382..=10_387 {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 0, "resource {resource_id}");
-            assert_eq!(decoded.pixels[1].a(), 255, "resource {resource_id}");
-            assert_eq!(decoded.pixels[2].a(), 255, "resource {resource_id}");
-        }
+        let encoded = encoded_row(
+            &[
+                [0, 0, 255, 255],
+                [30, 62, 166, 255],
+                [0, 0, 0, 255],
+            ],
+            image::ImageFormat::Png,
+        );
+        let resource_ids: Vec<_> = (10_382..=10_387).collect();
+        assert_alpha(
+            &encoded,
+            DllSource::Strategy,
+            &resource_ids,
+            &[0, 255, 255],
+        );
     }
 
     #[test]
     fn a_staged_cursor_mask_is_transparent_and_its_white_is_opaque() {
         // Source: REBEXE.EXE cursor 1002, whose AND mask staging keys blue.
-        let mut image = image::RgbaImage::new(2, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        image.put_pixel(1, 0, image::Rgba([255, 255, 255, 255]));
-
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Bmp,
-            )
-            .unwrap();
-        let decoded = decode_color_image(
+        let encoded = encoded_row(
+            &[[0, 0, 255, 255], [255, 255, 255, 255]],
+            image::ImageFormat::Bmp,
+        );
+        assert_alpha(
             &encoded,
             DllSource::Rebexe,
-            resources::rebexe::TARGETING_CURSOR,
-        )
-        .unwrap();
-
-        assert_eq!(decoded.pixels[0].a(), 0);
-        assert_eq!(decoded.pixels[1].a(), 255);
+            &[resources::rebexe::TARGETING_CURSOR],
+            &[0, 255],
+        );
         assert_eq!(DllSource::Rebexe.dll_dir_name(), "rebexe-exe");
         assert_eq!(DllSource::Rebexe.texture_prefix(), "rebexe");
     }
@@ -2744,35 +2761,16 @@ mod tests {
     #[test]
     fn tactical_control_matte_is_transparent_but_panel_blue_is_opaque() {
         // Source: TACTICAL.DLL control overlays 1026-1061 vs. panel bitmaps.
-        let mut image = image::RgbaImage::new(1, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-
-        let control = decode_color_image(&encoded, DllSource::Tactical, 1048).unwrap();
-        let panel = decode_color_image(&encoded, DllSource::Tactical, 1302).unwrap();
-        assert_eq!(control.pixels[0].a(), 0);
-        assert_eq!(panel.pixels[0].a(), 255);
+        assert_blue_keying(DllSource::Tactical, &[1048], &[1302]);
     }
 
     #[test]
     fn tactical_selected_ship_lime_matte_is_transparent() {
         // Source: TACTICAL.DLL selected-ship portraits 2001-2029 lime compositing matte.
-        let mut image = image::RgbaImage::new(2, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 255, 0, 255]));
-        image.put_pixel(1, 0, image::Rgba([90, 100, 110, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
+        let encoded = encoded_row(
+            &[[0, 255, 0, 255], [90, 100, 110, 255]],
+            image::ImageFormat::Png,
+        );
         let decoded = decode_rgba_image(&encoded, DllSource::Tactical, 2001).unwrap();
         assert_eq!(decoded.get_pixel(0, 0).0, [0, 255, 0, 0]);
         assert_eq!(decoded.get_pixel(1, 0).0, [90, 100, 110, 255]);
@@ -2784,40 +2782,20 @@ mod tests {
     #[test]
     fn galaxy_starfield_preserves_deep_blue_pixels() {
         // Source: STRATEGY.DLL galaxy starfield resources exempt from blue-screen keying.
-        let mut image = image::RgbaImage::new(1, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        let decoded = decode_color_image(
-            &encoded,
+        assert_blue_keying(
             DllSource::Strategy,
-            resources::strategy::GALAXY_STARFIELD_BRIGHT,
-        )
-        .unwrap();
-
-        assert_eq!(decoded.pixels[0].a(), 255);
+            &[],
+            &[resources::strategy::GALAXY_STARFIELD_BRIGHT],
+        );
     }
 
     #[test]
     fn gid_marker_blue_screen_becomes_transparent() {
         // Source: STRATEGY.DLL GID marker resources with palette-blue matte.
-        let mut image = image::RgbaImage::new(2, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        image.put_pixel(1, 0, image::Rgba([225, 20, 20, 255]));
-
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
+        let encoded = encoded_row(
+            &[[0, 0, 255, 255], [225, 20, 20, 255]],
+            image::ImageFormat::Png,
+        );
         let decoded = decode_rgba_image(
             &encoded,
             DllSource::Strategy,
@@ -2832,33 +2810,29 @@ mod tests {
     #[test]
     fn gokres_miniature_blue_screen_becomes_transparent() {
         // Source: GOKRES.DLL mini-icon resources 16000-19999 with palette-blue matte.
-        let mut image = image::RgbaImage::new(3, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        image.put_pixel(1, 0, image::Rgba([20, 20, 220, 255]));
-        image.put_pixel(2, 0, image::Rgba([90, 100, 180, 255]));
-
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        for resource_id in [
-            16_385,
-            16_640,
-            16_896,
-            17_472,
-            17_728,
-            resources::gokres::MINI_FIGHTER_X_WING,
-            resources::gokres::MINI_SHIP_CORELLIAN_CORVETTE,
-            19_008,
-        ] {
-            let decoded = decode_color_image(&encoded, DllSource::Gokres, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 0);
-            assert_eq!(decoded.pixels[1].a(), 0);
-            assert_eq!(decoded.pixels[2].a(), 255);
-        }
+        let encoded = encoded_row(
+            &[
+                [0, 0, 255, 255],
+                [20, 20, 220, 255],
+                [90, 100, 180, 255],
+            ],
+            image::ImageFormat::Png,
+        );
+        assert_alpha(
+            &encoded,
+            DllSource::Gokres,
+            &[
+                16_385,
+                16_640,
+                16_896,
+                17_472,
+                17_728,
+                resources::gokres::MINI_FIGHTER_X_WING,
+                resources::gokres::MINI_SHIP_CORELLIAN_CORVETTE,
+                19_008,
+            ],
+            &[0, 0, 255],
+        );
     }
 
     #[test]
@@ -2866,29 +2840,11 @@ mod tests {
         // FUN_0042c3b0 composes a unit's or facility's picture and the
         // Status window blits it keyed (FUN_005fd0f0, FUN_00443130); GOKRES
         // 262..264 are full production-manager scenes.
-        let mut image = image::RgbaImage::new(2, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        image.put_pixel(1, 0, image::Rgba([90, 100, 180, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        let alpha = |resource_id| {
-            decode_color_image(&encoded, DllSource::Gokres, resource_id)
-                .unwrap()
-                .pixels[0]
-                .a()
-        };
-
-        for keyed in [1, 261, 512, 1_089, 1_412] {
-            assert_eq!(alpha(keyed), 0, "{keyed}");
-        }
-        for opaque in [262, 263, 264] {
-            assert_eq!(alpha(opaque), 255, "{opaque}");
-        }
+        assert_blue_keying(
+            DllSource::Gokres,
+            &[1, 261, 512, 1_089, 1_412],
+            &[262, 263, 264],
+        );
     }
 
     #[test]
@@ -2896,42 +2852,31 @@ mod tests {
         // FUN_0044c630 copies the picture to (12, 13), then blits the shell
         // 0x285f / 0x2860 and the rail art 0x2a44 / 0x2a45 over it keyed
         // (FUN_005fd0f0); the shells' 400x310 aperture is palette blue.
-        let mut image = image::RgbaImage::new(2, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        image.put_pixel(1, 0, image::Rgba([51, 120, 156, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        for id in [0x285f, 0x2860, 0x2a44, 0x2a45] {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 0, "{id:#x}");
-            assert_eq!(decoded.pixels[1].a(), 255, "{id:#x}");
-        }
+        let encoded = encoded_row(
+            &[[0, 0, 255, 255], [51, 120, 156, 255]],
+            image::ImageFormat::Png,
+        );
+        assert_alpha(
+            &encoded,
+            DllSource::Strategy,
+            &[0x285f, 0x2860, 0x2a44, 0x2a45],
+            &[0, 255],
+        );
     }
 
     #[test]
     fn sector_planet_blue_screen_becomes_transparent() {
         // Source: STRATEGY.DLL sector planet resources 10212-10239 with palette-blue matte.
-        let mut image = image::RgbaImage::new(2, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        image.put_pixel(1, 0, image::Rgba([120, 140, 180, 255]));
-
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        for resource_id in [10212, 10234, 10237, 10239] {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 0);
-            assert_eq!(decoded.pixels[1].a(), 255);
-        }
+        let encoded = encoded_row(
+            &[[0, 0, 255, 255], [120, 140, 180, 255]],
+            image::ImageFormat::Png,
+        );
+        assert_alpha(
+            &encoded,
+            DllSource::Strategy,
+            &[10212, 10234, 10237, 10239],
+            &[0, 255],
+        );
     }
 
     #[test]
@@ -2939,47 +2884,20 @@ mod tests {
         // STRATEGY 10400.. frames and pictures, 10775/10783 fleet icons and
         // 11536.. rail icons carry the palette-blue matte; the pane art
         // 10407 and the tab art 10409.. are blitted whole and clipped.
-        let mut image = image::RgbaImage::new(2, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        image.put_pixel(1, 0, image::Rgba([255, 0, 0, 255]));
-
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        for resource_id in [
-            10400, 10401, 10420, 10425, 10451, 10475, 10775, 10784, 11536,
-        ] {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 0, "{resource_id}");
-            assert_eq!(decoded.pixels[1].a(), 255, "{resource_id}");
-        }
-        for resource_id in [10407, 10409, 10416, 10770] {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 255, "{resource_id}");
-        }
+        assert_blue_keying(
+            DllSource::Strategy,
+            &[
+                10400, 10401, 10420, 10425, 10451, 10475, 10775, 10784, 11536,
+            ],
+            &[10407, 10409, 10416, 10770],
+        );
     }
 
     #[test]
     fn the_headquarters_marker_keys_out_its_blue_matte() {
         // STRATEGY 904 (0x388, FUN_0045bbb0) sits on a palette-blue matte
         // that FUN_005fca00 treats as transparent.
-        let mut image = image::RgbaImage::new(2, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        image.put_pixel(1, 0, image::Rgba([255, 200, 0, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        let decoded = decode_color_image(&encoded, DllSource::Strategy, 904).unwrap();
-        assert_eq!(decoded.pixels[0].a(), 0);
-        assert_eq!(decoded.pixels[1].a(), 255);
+        assert_blue_keying(DllSource::Strategy, &[904], &[]);
     }
 
     #[test]
@@ -2989,30 +2907,15 @@ mod tests {
         // the original's yard column 10298 shows the background through its
         // gaps. The background 10297 is opaque: its blue is the line under
         // the tabs.
-        let mut image = image::RgbaImage::new(1, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        let alpha = |resource_id| {
-            decode_color_image(&encoded, DllSource::Strategy, resource_id)
-                .unwrap()
-                .pixels[0]
-                .a()
-        };
-        for resource_id in [10262, 10264, 10290, 10291, 10296, 10298] {
-            assert_eq!(alpha(resource_id), 0, "{resource_id}");
-        }
-        assert_eq!(alpha(10297), 255);
         // FUN_004568a0's facility pictures and the deposit 9005 sit on the
         // same matte over the background.
-        for resource_id in [9001, 9005, 9014, 9022, 9030, 9032] {
-            assert_eq!(alpha(resource_id), 0, "{resource_id}");
-        }
+        assert_blue_keying(
+            DllSource::Strategy,
+            &[
+                10262, 10264, 10290, 10291, 10296, 10298, 9001, 9005, 9014, 9022, 9030, 9032,
+            ],
+            &[10297],
+        );
     }
 
     #[test]
@@ -3020,23 +2923,11 @@ mod tests {
         // STRATEGY 10771..10790 (FUN_0045ca80's four kinds, both bitmaps,
         // every side) each carry the palette-blue matte; the Fleet window's
         // background 10770 beside them does not.
-        let mut image = image::RgbaImage::new(1, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        for resource_id in [10771, 10774, 10777, 10781, 10788, 10790] {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 0, "{resource_id}");
-        }
-        for resource_id in [10770, 10791] {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 255, "{resource_id}");
-        }
+        assert_blue_keying(
+            DllSource::Strategy,
+            &[10771, 10774, 10777, 10781, 10788, 10790],
+            &[10770, 10791],
+        );
     }
 
     #[test]
@@ -3046,23 +2937,11 @@ mod tests {
         // keyed over the mini by FUN_004a9ab0) and 11533..11535 (the rail
         // icons) carry the palette-blue matte; the background 10577 is the
         // window's surface and stays opaque.
-        let mut image = image::RgbaImage::new(1, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        for resource_id in [10550, 10563, 10576, 10578, 10579, 11533, 11535] {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 0, "{resource_id}");
-        }
-        for resource_id in [10549, 10577, 10580, 11532] {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 255, "{resource_id}");
-        }
+        assert_blue_keying(
+            DllSource::Strategy,
+            &[10550, 10563, 10576, 10578, 10579, 11533, 11535],
+            &[10549, 10577, 10580, 11532],
+        );
     }
 
     #[test]
@@ -3071,23 +2950,11 @@ mod tests {
         // Display) and 10528..10535 (Fleet Finder and Ship Finder), buttons
         // FUN_00461960 builds, blitted keyed by FUN_00602d30; the panels
         // 10522..10527 behind them stay opaque.
-        let mut image = image::RgbaImage::new(1, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        for resource_id in [10500, 10506, 10514, 10521, 10528, 10535] {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 0, "{resource_id}");
-        }
-        for resource_id in [10499, 10507, 10513, 10522, 10527, 10536] {
-            let decoded = decode_color_image(&encoded, DllSource::Strategy, resource_id).unwrap();
-            assert_eq!(decoded.pixels[0].a(), 255, "{resource_id}");
-        }
+        assert_blue_keying(
+            DllSource::Strategy,
+            &[10500, 10506, 10514, 10521, 10528, 10535],
+            &[10499, 10507, 10513, 10522, 10527, 10536],
+        );
     }
 
     #[test]
@@ -3097,62 +2964,29 @@ mod tests {
         // FUN_00602d30) and 11539..11541 (the rail icons, FUN_004a21c0);
         // GOKRES 0x5c00.. (the Empire's mission minis, which the list blits
         // keyed in FUN_00609960). The background 11165 stays opaque.
-        let mut image = image::RgbaImage::new(1, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
-        let alpha = |source, resource_id| {
-            decode_color_image(&encoded, source, resource_id)
-                .unwrap()
-                .pixels[0]
-                .a()
-        };
-        for resource_id in [11127, 11128, 11539, 11541, 11560, 11569] {
-            assert_eq!(alpha(DllSource::Strategy, resource_id), 0, "{resource_id}");
-        }
-        for resource_id in [11126, 11129, 11165, 11542, 11559, 11570] {
-            assert_eq!(
-                alpha(DllSource::Strategy, resource_id),
-                255,
-                "{resource_id}"
-            );
-        }
-        for resource_id in [
-            1_600, 1_935, 2_112, 2_715, 5_696, 6_031, 20_480, 21_569, 22_336, 22_527, 23_552,
-            23_568, 23_807,
-        ] {
-            assert_eq!(alpha(DllSource::Gokres, resource_id), 0, "{resource_id}");
-        }
-        for resource_id in [
-            1_599, 1_936, 2_111, 2_716, 5_695, 6_032, 22_528, 23_551, 23_808,
-        ] {
-            assert_eq!(alpha(DllSource::Gokres, resource_id), 255, "{resource_id}");
-        }
+        assert_blue_keying(
+            DllSource::Strategy,
+            &[11127, 11128, 11539, 11541, 11560, 11569],
+            &[11126, 11129, 11165, 11542, 11559, 11570],
+        );
+        assert_blue_keying(
+            DllSource::Gokres,
+            &[
+                1_600, 1_935, 2_112, 2_715, 5_696, 6_031, 20_480, 21_569, 22_336, 22_527,
+                23_552, 23_568, 23_807,
+            ],
+            &[
+                1_599, 1_936, 2_111, 2_716, 5_695, 6_032, 22_528, 23_551, 23_808,
+            ],
+        );
     }
 
     #[test]
     fn unrelated_blue_resource_remains_opaque() {
-        let mut image = image::RgbaImage::new(1, 1);
-        image.put_pixel(0, 0, image::Rgba([0, 0, 255, 255]));
-
-        let mut encoded = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut encoded),
-                image::ImageFormat::Png,
-            )
-            .unwrap();
         // GOKRES 2112 was used here until the Status window's trace showed
         // it is a character portrait blitted keyed (FUN_00443130); 3088 is
         // outside every keyed range.
-        let decoded = decode_color_image(&encoded, DllSource::Gokres, 3088).unwrap();
-
-        assert_eq!(decoded.pixels[0].a(), 255);
+        assert_blue_keying(DllSource::Gokres, &[], &[3088]);
     }
 
     #[test]

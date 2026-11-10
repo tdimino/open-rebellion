@@ -1282,7 +1282,8 @@ mod tests {
         Character, ControlKind, ForceTier, Sector, SkillPair, SpecialForceUnit, System,
     };
     use rebellion_windowing::{
-        ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowManager, WindowTransition,
+        ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowId, WindowManager,
+        WindowTransition,
     };
 
     fn layout() -> CockpitLayout {
@@ -1315,6 +1316,28 @@ mod tests {
 
     fn tap(key: egui::Key) -> Vec<Vec<egui::Event>> {
         vec![vec![key_state(key, true)], vec![key_state(key, false)]]
+    }
+
+    fn open_managed_personnel(
+        faction: CockpitFaction,
+    ) -> (WindowManager, PersonnelFinderState, WindowId) {
+        let mut manager = WindowManager::new();
+        let mut state = PersonnelFinderState::default();
+        let prepared = PersonnelFinderState::prepare_open(faction);
+        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
+        let id = match opened.transition {
+            WindowTransition::Opened { id } => id,
+            ref other => panic!("expected Personnel Finder open, got {other:?}"),
+        };
+        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        (manager, state, id)
+    }
+
+    fn focus(id: WindowId, control: ControlId) -> FocusTarget {
+        FocusTarget {
+            window: id,
+            control: Some(control),
+        }
     }
 
     fn drive_focused_in_context(
@@ -1354,17 +1377,117 @@ mod tests {
         emitted
     }
 
+    fn drive_event(
+        ctx: &egui::Context,
+        world: &GameWorld,
+        fog: &FogState,
+        state: &mut PersonnelFinderState,
+        focus: FocusTarget,
+        event: egui::Event,
+    ) -> Option<ManagedPersonnelFinderAction> {
+        drive_focused_in_context(ctx, world, fog, state, focus, vec![vec![event]])
+    }
+
+    fn drive_key(
+        ctx: &egui::Context,
+        world: &GameWorld,
+        fog: &FogState,
+        state: &mut PersonnelFinderState,
+        focus: FocusTarget,
+        key: egui::Key,
+    ) -> Option<ManagedPersonnelFinderAction> {
+        drive_event(ctx, world, fog, state, focus, key_state(key, true))
+    }
+
+    fn drive_key_without_action(
+        ctx: &egui::Context,
+        world: &GameWorld,
+        fog: &FogState,
+        state: &mut PersonnelFinderState,
+        focus: FocusTarget,
+        key: egui::Key,
+    ) {
+        assert_eq!(drive_key(ctx, world, fog, state, focus, key), None);
+    }
+
+    fn drive_text_without_action(
+        ctx: &egui::Context,
+        world: &GameWorld,
+        fog: &FogState,
+        state: &mut PersonnelFinderState,
+        focus: FocusTarget,
+        text: &str,
+    ) {
+        assert_eq!(
+            drive_event(
+                ctx,
+                world,
+                fog,
+                state,
+                focus,
+                egui::Event::Text(text.into()),
+            ),
+            None
+        );
+    }
+
+    fn assert_selection(state: &PersonnelFinderState, chosen: usize, name: &str) {
+        let window = state.window.as_ref().unwrap();
+        assert_eq!(window.chosen, Some(chosen));
+        assert_eq!(window.name, name);
+    }
+
+    fn escape_input() -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(700.0, 520.0),
+            )),
+            events: vec![key_state(egui::Key::Escape, true)],
+            ..Default::default()
+        }
+    }
+
+    fn managed_navigation() -> (
+        PersonnelFinderState,
+        WindowId,
+        FocusTarget,
+        FocusTarget,
+        egui::Context,
+    ) {
+        let (_manager, state, id) = open_managed_personnel(CockpitFaction::Alliance);
+        (
+            state,
+            id,
+            focus(id, PERSONNEL_FINDER_NAME_CONTROL),
+            focus(id, PERSONNEL_FINDER_LIST_CONTROL),
+            egui::Context::default(),
+        )
+    }
+
+    fn draw_fixture_frame(
+        ctx: &egui::Context,
+        world: &GameWorld,
+        fog: &FogState,
+        state: &mut PersonnelFinderState,
+        layout: CockpitLayout,
+        cache: &mut BmpCache,
+        screen_rect: egui::Rect,
+    ) {
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(screen_rect),
+                ..Default::default()
+            },
+            |ctx| {
+                let _ = draw_personnel_finder(ctx, world, fog, state, layout, cache);
+            },
+        );
+    }
+
     #[test]
     fn personnel_finder_duplicate_preserves_content() {
-        let mut manager = WindowManager::new();
-        let mut state = PersonnelFinderState::default();
-        let prepared = PersonnelFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Personnel Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (mut manager, mut state, id) = open_managed_personnel(CockpitFaction::Alliance);
 
         let content = state.window.as_mut().unwrap();
         content.tab = PersonnelTab::Imperial;
@@ -1373,10 +1496,7 @@ mod tests {
         content.chosen = Some(3);
         content.first_row = 2;
         content.focus_name = false;
-        let focused = FocusTarget {
-            window: id,
-            control: Some(PERSONNEL_FINDER_LIST_CONTROL),
-        };
+        let focused = focus(id, PERSONNEL_FINDER_LIST_CONTROL);
         manager.apply(WindowCommand::Focus(focused)).unwrap();
 
         let duplicate = PersonnelFinderState::prepare_open(CockpitFaction::Empire);
@@ -1409,15 +1529,7 @@ mod tests {
 
     #[test]
     fn personnel_finder_rejects_stale_publication_receipts_without_retargeting() {
-        let mut manager = WindowManager::new();
-        let mut state = PersonnelFinderState::default();
-        let prepared = PersonnelFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Personnel Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (mut manager, mut state, id) = open_managed_personnel(CockpitFaction::Alliance);
         let content = state.window.as_mut().unwrap();
         content.tab = PersonnelTab::Imperial;
         content.name = "Leia".into();
@@ -1460,15 +1572,7 @@ mod tests {
 
     #[test]
     fn personnel_finder_modal_blocks_underlay() {
-        let mut manager = WindowManager::new();
-        let mut state = PersonnelFinderState::default();
-        let prepared = PersonnelFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Personnel Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (mut manager, state, id) = open_managed_personnel(CockpitFaction::Alliance);
         let frame = manager.begin_frame();
         let inside = state.screen_rect(layout()).unwrap().center();
         let hits = state
@@ -1538,33 +1642,12 @@ mod tests {
 
     #[test]
     fn personnel_finder_close_consumes_trigger() {
-        let mut manager = WindowManager::new();
-        let mut state = PersonnelFinderState::default();
-        let prepared = PersonnelFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Personnel Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (mut manager, mut state, id) = open_managed_personnel(CockpitFaction::Alliance);
         let world = GameWorld::default();
         let fog = FogState::new(Faction::Alliance);
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(700.0, 520.0),
-            )),
-            events: vec![egui::Event::Key {
-                key: egui::Key::Escape,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::default(),
-            }],
-            ..Default::default()
-        };
+        let input = escape_input();
         let mut action = None;
         let _ = ctx.run(input, |ctx| {
             action = draw_personnel_finder_focused(
@@ -1602,129 +1685,36 @@ mod tests {
         add_sf(&mut world, yavin, 0x3c00_0004, true);
         add_sf(&mut world, zulu, 0x3c00_0004, true);
         let fog = FogState::new(Faction::Alliance);
-        let mut manager = WindowManager::new();
-        let mut state = PersonnelFinderState::default();
-        let prepared = PersonnelFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Personnel Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(PERSONNEL_FINDER_NAME_CONTROL),
-        };
-        let list_focus = FocusTarget {
-            window: id,
-            control: Some(PERSONNEL_FINDER_LIST_CONTROL),
-        };
-        let ctx = egui::Context::default();
+        let (mut state, id, name_focus, list_focus, ctx) = managed_navigation();
         let _ = ctx.run(egui::RawInput::default(), |_| {});
 
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                name_focus,
-                vec![vec![egui::Event::Text("Y".into())]],
-            ),
-            None
-        );
+        drive_text_without_action(&ctx, &world, &fog, &mut state, name_focus, "Y");
         assert_eq!(state.window.as_ref().unwrap().name, "Y");
         assert_eq!(state.window.as_ref().unwrap().chosen, Some(1));
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                name_focus,
-                vec![vec![key_state(egui::Key::ArrowDown, true)]],
-            ),
-            None
+        drive_key_without_action(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            name_focus,
+            egui::Key::ArrowDown,
         );
         assert_eq!(state.take_focus_request(), Some(list_focus));
         assert_eq!(state.window.as_ref().unwrap().chosen, Some(1));
 
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                list_focus,
-                vec![vec![key_state(egui::Key::ArrowDown, true)]],
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().chosen, Some(2));
-        assert_eq!(state.window.as_ref().unwrap().name, "Zulu");
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                list_focus,
-                vec![vec![key_state(egui::Key::ArrowDown, true)]],
-            ),
-            None
-        );
+        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowDown);
+        assert_selection(&state, 2, "Zulu");
+        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowDown);
         assert_eq!(state.window.as_ref().unwrap().chosen, Some(2));
 
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                list_focus,
-                vec![vec![key_state(egui::Key::ArrowUp, true)]],
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().chosen, Some(1));
-        assert_eq!(state.window.as_ref().unwrap().name, "Yavin");
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                list_focus,
-                vec![vec![key_state(egui::Key::ArrowUp, true)]],
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().chosen, Some(0));
-        assert_eq!(state.window.as_ref().unwrap().name, "Alpha");
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                list_focus,
-                vec![vec![key_state(egui::Key::ArrowUp, true)]],
-            ),
-            None
-        );
+        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowUp);
+        assert_selection(&state, 1, "Yavin");
+        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowUp);
+        assert_selection(&state, 0, "Alpha");
+        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowUp);
         assert_eq!(state.take_focus_request(), Some(name_focus));
         state.window.as_mut().unwrap().name.clear();
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                name_focus,
-                vec![vec![egui::Event::Text("Y".into())]],
-            ),
-            None
-        );
+        drive_text_without_action(&ctx, &world, &fog, &mut state, name_focus, "Y");
         assert_eq!(state.window.as_ref().unwrap().name, "Y");
 
         assert_eq!(
@@ -1744,41 +1734,11 @@ mod tests {
         assert!(state.is_open(), "managed content waits for close receipt");
 
         assert_eq!(state.window.as_ref().unwrap().tab, PersonnelTab::Alliance);
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                list_focus,
-                vec![vec![key_state(egui::Key::ArrowRight, true)]],
-            ),
-            None
-        );
+        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowRight);
         assert_eq!(state.window.as_ref().unwrap().tab, PersonnelTab::Imperial);
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                list_focus,
-                vec![vec![key_state(egui::Key::ArrowRight, true)]],
-            ),
-            None
-        );
+        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowRight);
         assert_eq!(state.window.as_ref().unwrap().tab, PersonnelTab::Imperial);
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                list_focus,
-                vec![vec![key_state(egui::Key::ArrowLeft, true)]],
-            ),
-            None
-        );
+        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowLeft);
         assert_eq!(state.window.as_ref().unwrap().tab, PersonnelTab::Alliance);
 
         assert_eq!(
@@ -1802,19 +1762,8 @@ mod tests {
     fn personnel_finder_first_draw_filters_newlines_and_keeps_paste() {
         let world = GameWorld::default();
         let fog = FogState::new(Faction::Alliance);
-        let mut manager = WindowManager::new();
-        let mut state = PersonnelFinderState::default();
-        let prepared = PersonnelFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Personnel Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let focus = FocusTarget {
-            window: id,
-            control: Some(PERSONNEL_FINDER_NAME_CONTROL),
-        };
+        let (_manager, mut state, id) = open_managed_personnel(CockpitFaction::Alliance);
+        let focus = focus(id, PERSONNEL_FINDER_NAME_CONTROL);
         let ctx = egui::Context::default();
 
         assert_eq!(
@@ -1839,30 +1788,19 @@ mod tests {
     fn personnel_finder_list_focus_does_not_capture_deferred_name_input() {
         let world = GameWorld::default();
         let fog = FogState::new(Faction::Alliance);
-        let mut manager = WindowManager::new();
-        let mut state = PersonnelFinderState::default();
-        let prepared = PersonnelFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Personnel Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (_manager, mut state, id) = open_managed_personnel(CockpitFaction::Alliance);
         state.window.as_mut().unwrap().focus_name = false;
-        let focus = FocusTarget {
-            window: id,
-            control: Some(PERSONNEL_FINDER_LIST_CONTROL),
-        };
+        let focus = focus(id, PERSONNEL_FINDER_LIST_CONTROL);
         let ctx = egui::Context::default();
 
         assert_eq!(
-            drive_focused_in_context(
+            drive_event(
                 &ctx,
                 &world,
                 &fog,
                 &mut state,
                 focus,
-                vec![vec![egui::Event::Text("Y".into())]],
+                egui::Event::Text("Y".into()),
             ),
             None
         );
@@ -1884,54 +1822,22 @@ mod tests {
             add_sf(&mut world, system, class, true);
         }
         let fog = FogState::new(Faction::Alliance);
-        let mut manager = WindowManager::new();
-        let mut state = PersonnelFinderState::default();
-        let prepared = PersonnelFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Personnel Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(PERSONNEL_FINDER_NAME_CONTROL),
-        };
-        let list_focus = FocusTarget {
-            window: id,
-            control: Some(PERSONNEL_FINDER_LIST_CONTROL),
-        };
-        let ctx = egui::Context::default();
+        let (mut state, _id, name_focus, list_focus, ctx) = managed_navigation();
         state.window.as_mut().unwrap().chosen = Some(usize::MAX);
 
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                name_focus,
-                vec![vec![key_state(egui::Key::ArrowDown, true)]],
-            ),
-            None
+        drive_key_without_action(
+            &ctx,
+            &world,
+            &fog,
+            &mut state,
+            name_focus,
+            egui::Key::ArrowDown,
         );
-        assert_eq!(state.window.as_ref().unwrap().chosen, Some(2));
-        assert_eq!(state.window.as_ref().unwrap().name, "Zulu");
+        assert_selection(&state, 2, "Zulu");
 
         state.window.as_mut().unwrap().chosen = Some(usize::MAX);
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &world,
-                &fog,
-                &mut state,
-                list_focus,
-                vec![vec![key_state(egui::Key::ArrowUp, true)]],
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().chosen, Some(1));
-        assert_eq!(state.window.as_ref().unwrap().name, "Yavin");
+        drive_key_without_action(&ctx, &world, &fog, &mut state, list_focus, egui::Key::ArrowUp);
+        assert_selection(&state, 1, "Yavin");
     }
 
     #[test]
@@ -1944,28 +1850,12 @@ mod tests {
         let layout = layout();
         let mut cache = BmpCache::new();
         let screen_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(700.0, 520.0));
-        let _ = ctx.run(
-            egui::RawInput {
-                screen_rect: Some(screen_rect),
-                ..Default::default()
-            },
-            |ctx| {
-                let _ = draw_personnel_finder(ctx, &world, &fog, &mut state, layout, &mut cache);
-            },
-        );
+        draw_fixture_frame(&ctx, &world, &fog, &mut state, layout, &mut cache, screen_rect);
         state.window.as_mut().unwrap().focus_name = true;
         ctx.memory_mut(|memory| {
             memory.surrender_focus(egui::Id::new("original-personnel-finder-name"));
         });
-        let _ = ctx.run(
-            egui::RawInput {
-                screen_rect: Some(screen_rect),
-                ..Default::default()
-            },
-            |ctx| {
-                let _ = draw_personnel_finder(ctx, &world, &fog, &mut state, layout, &mut cache);
-            },
-        );
+        draw_fixture_frame(&ctx, &world, &fog, &mut state, layout, &mut cache, screen_rect);
 
         assert_eq!(state.window.as_ref().unwrap().pending_focus, None);
     }
@@ -2081,6 +1971,24 @@ mod tests {
         }
     }
 
+    fn listed_luke(configure: impl FnOnce(&mut Character)) -> String {
+        let mut world = GameWorld::default();
+        let yavin = add_system(&mut world, "Yavin");
+        let mut luke = default_character();
+        luke.name = "Luke Skywalker".into();
+        luke.current_system = Some(yavin);
+        configure(&mut luke);
+        world.characters.insert(luke);
+        character_rows(
+            &world,
+            &FogState::new(Faction::Alliance),
+            Faction::Alliance,
+            PersonnelTab::Alliance,
+        )[0]
+            .display_name()
+            .to_owned()
+    }
+
     fn add_sf(
         world: &mut GameWorld,
         system: SystemKey,
@@ -2183,36 +2091,17 @@ mod tests {
     #[test]
     fn a_character_on_mission_shows_its_state_in_the_name() {
         // FUN_00465bb0: "Name - Location ( On Mission ) ".
-        let mut world = GameWorld::default();
-        let yavin = add_system(&mut world, "Yavin");
-
-        let mut luke = default_character();
-        luke.name = "Luke Skywalker".into();
-        luke.current_system = Some(yavin);
-        luke.on_mission = true;
-        world.characters.insert(luke);
-
-        let fog = FogState::new(Faction::Alliance);
-        let listed = character_rows(&world, &fog, Faction::Alliance, PersonnelTab::Alliance);
-        assert!(listed[0].display_name().contains("On Mission"));
+        assert!(listed_luke(|luke| luke.on_mission = true).contains("On Mission"));
     }
 
     #[test]
     fn a_killed_character_is_listed_as_killed() {
         // FUN_00465bb0's destroyed branch; the reference capture lists
         // "Ackbar - Killed" (steam-guide guide-023.png).
-        let mut world = GameWorld::default();
-        let yavin = add_system(&mut world, "Yavin");
-
-        let mut luke = default_character();
-        luke.name = "Luke Skywalker".into();
-        luke.current_system = Some(yavin);
-        luke.is_killed = true;
-        world.characters.insert(luke);
-
-        let fog = FogState::new(Faction::Alliance);
-        let listed = character_rows(&world, &fog, Faction::Alliance, PersonnelTab::Alliance);
-        assert_eq!(listed[0].display_name(), "Luke Skywalker - Killed");
+        assert_eq!(
+            listed_luke(|luke| luke.is_killed = true),
+            "Luke Skywalker - Killed"
+        );
     }
 
     #[test]
@@ -2540,20 +2429,7 @@ mod tests {
         let layout = layout();
         let ctx = egui::Context::default();
 
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(700.0, 520.0),
-            )),
-            events: vec![egui::Event::Key {
-                key: egui::Key::Escape,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::default(),
-            }],
-            ..Default::default()
-        };
+        let input = escape_input();
         let _ = ctx.run(input, |ctx| {
             draw_personnel_finder(ctx, &world, &fog, &mut state, layout, &mut cache);
         });

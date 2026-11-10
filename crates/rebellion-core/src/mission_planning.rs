@@ -877,6 +877,20 @@ mod tests {
         }))
     }
 
+    fn sabotage_agent(world: &mut GameWorld, id: u32, skill: u32) -> MissionMember {
+        agent(world, id, |character| {
+            character.combat = pair(skill);
+            character.espionage = pair(skill);
+        })
+    }
+
+    fn set_en_route(world: &mut GameWorld, member: MissionMember, en_route: bool) {
+        match member {
+            MissionMember::Character(key) => world.characters[key].en_route = en_route,
+            MissionMember::SpecialForce(key) => world.special_forces[key].en_route = en_route,
+        }
+    }
+
     fn planner(world: &GameWorld) -> Planner<'_> {
         Planner::new(world, &HashSet::new(), true, 1, [false; 3])
     }
@@ -1092,21 +1106,13 @@ mod tests {
         // leader and FUN_0047b360 drops him; the failed plan frees him, and
         // the DS Sabotage planner picks him again before the next best.
         let mut world = world();
-        let skilled = |c: &mut Character| {
-            c.combat = pair(95);
-            c.espionage = pair(95);
-            c.leadership = pair(90);
-            c.on_mission = true;
-        };
-        let _busy = agent(&mut world, 1, skilled);
-        let second = agent(&mut world, 2, |c| {
-            c.combat = pair(80);
-            c.espionage = pair(80);
-        });
-        let _third = agent(&mut world, 3, |c| {
-            c.combat = pair(70);
-            c.espionage = pair(70);
-        });
+        let busy = sabotage_agent(&mut world, 1, 95);
+        if let MissionMember::Character(key) = busy {
+            world.characters[key].leadership = pair(90);
+            world.characters[key].on_mission = true;
+        }
+        let second = sabotage_agent(&mut world, 2, 80);
+        let _third = sabotage_agent(&mut world, 3, 70);
         let mut planner = planner(&world);
 
         assert_eq!(planner.plan(MissionKind::Recruitment), None);
@@ -1121,21 +1127,10 @@ mod tests {
         // 0x20 (FUN_00402230) is in no query's forbid mask, only in
         // FUN_0047b360's.
         let mut world = world();
-        let travelling = agent(&mut world, 1, |c| {
-            c.combat = pair(95);
-            c.espionage = pair(95);
-        });
-        let second = agent(&mut world, 2, |c| {
-            c.combat = pair(80);
-            c.espionage = pair(80);
-        });
-        let _third = agent(&mut world, 3, |c| {
-            c.combat = pair(70);
-            c.espionage = pair(70);
-        });
-        if let MissionMember::Character(key) = travelling {
-            world.characters[key].en_route = true;
-        }
+        let travelling = sabotage_agent(&mut world, 1, 95);
+        let second = sabotage_agent(&mut world, 2, 80);
+        let _third = sabotage_agent(&mut world, 3, 70);
+        set_en_route(&mut world, travelling, true);
         let mut planner = Planner::new(&world, &HashSet::new(), true, 1, [false; 3]);
 
         assert_eq!(
@@ -1162,9 +1157,7 @@ mod tests {
         if let MissionMember::SpecialForce(key) = busy {
             world.special_forces[key].on_mission = false;
         }
-        if let MissionMember::SpecialForce(key) = busy {
-            world.special_forces[key].en_route = true;
-        }
+        set_en_route(&mut world, busy, true);
         let mut planner = Planner::new(&world, &HashSet::new(), true, 1, [false; 3]);
 
         assert_eq!(

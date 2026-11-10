@@ -396,6 +396,24 @@ mod tests {
         })
     }
 
+    fn training_fixture(
+        jedi_probability: u32,
+        force_xp: u32,
+        force_tier: ForceTier,
+    ) -> (GameWorld, CharacterKey, JediState) {
+        let mut world = GameWorld::default();
+        let key = add_jedi_character(&mut world, jedi_probability, force_xp, force_tier);
+        let mut state = JediState::new();
+        state.start_training(key, true, 0);
+        (world, key, state)
+    }
+
+    fn was_discovered(events: &[JediEvent]) -> bool {
+        events
+            .iter()
+            .any(|event| matches!(event, JediEvent::JediDiscovered { .. }))
+    }
+
     #[test]
     fn no_trainees_returns_empty() {
         let world = GameWorld::default();
@@ -406,11 +424,7 @@ mod tests {
 
     #[test]
     fn experience_accumulates_and_tier_advances() {
-        let mut world = GameWorld::default();
-        let key = add_jedi_character(&mut world, 100, 0, ForceTier::Aware);
-
-        let mut state = JediState::new();
-        state.start_training(key, true, 0);
+        let (world, _, mut state) = training_fixture(100, 0, ForceTier::Aware);
 
         // Advance 50 ticks — should reach Training threshold (XP_TO_TRAINING = 50).
         // But force_experience on the character starts at 0 — the system reads it
@@ -437,12 +451,8 @@ mod tests {
 
     #[test]
     fn training_completes_at_experienced() {
-        let mut world = GameWorld::default();
         // Start at 140 XP — 10 more will push past XP_TO_EXPERIENCED=150.
-        let key = add_jedi_character(&mut world, 100, 140, ForceTier::Training);
-
-        let mut state = JediState::new();
-        state.start_training(key, true, 0);
+        let (world, key, mut state) = training_fixture(100, 140, ForceTier::Training);
 
         let events = JediSystem::advance(&mut state, &world, &ticks(10), &[0.99]);
 
@@ -463,11 +473,8 @@ mod tests {
 
     #[test]
     fn detection_triggers_on_low_roll() {
-        let mut world = GameWorld::default();
-        let key = add_jedi_character(&mut world, 100, XP_TO_TRAINING, ForceTier::Training);
-
-        let mut state = JediState::new();
-        state.start_training(key, true, 0);
+        let (world, _, mut state) =
+            training_fixture(100, XP_TO_TRAINING, ForceTier::Training);
 
         // Advance DETECTION_CHECK_INTERVAL ticks so detection triggers.
         // Low roll (0.0) < DETECT_PROB_TRAINING = 0.15 → detection fires.
@@ -478,19 +485,13 @@ mod tests {
             &[0.01],
         );
 
-        let detected = events
-            .iter()
-            .any(|e| matches!(e, JediEvent::JediDiscovered { .. }));
-        assert!(detected, "detection should fire on low roll");
+        assert!(was_discovered(&events), "detection should fire on low roll");
     }
 
     #[test]
     fn detection_does_not_trigger_on_high_roll() {
-        let mut world = GameWorld::default();
-        let key = add_jedi_character(&mut world, 100, XP_TO_TRAINING, ForceTier::Training);
-
-        let mut state = JediState::new();
-        state.start_training(key, true, 0);
+        let (world, _, mut state) =
+            training_fixture(100, XP_TO_TRAINING, ForceTier::Training);
 
         // High roll (0.99) > DETECT_PROB_TRAINING = 0.15 → no detection.
         let events = JediSystem::advance(
@@ -500,42 +501,32 @@ mod tests {
             &[0.99],
         );
 
-        let detected = events
-            .iter()
-            .any(|e| matches!(e, JediEvent::JediDiscovered { .. }));
-        assert!(!detected, "detection should not fire on high roll");
+        assert!(
+            !was_discovered(&events),
+            "detection should not fire on high roll"
+        );
     }
 
     #[test]
     fn already_discovered_jedi_not_re_detected() {
-        let mut world = GameWorld::default();
-        let key = add_jedi_character(&mut world, 100, XP_TO_TRAINING, ForceTier::Training);
+        let (mut world, key, mut state) =
+            training_fixture(100, XP_TO_TRAINING, ForceTier::Training);
         // Mark as already discovered.
         world.characters[key].is_discovered_jedi = true;
-
-        let mut state = JediState::new();
-        state.start_training(key, true, 0);
 
         // Even with low roll, no detection event should fire.
         let events =
             JediSystem::advance(&mut state, &world, &ticks(DETECTION_CHECK_INTERVAL), &[0.0]);
 
-        let detected = events
-            .iter()
-            .any(|e| matches!(e, JediEvent::JediDiscovered { .. }));
         assert!(
-            !detected,
+            !was_discovered(&events),
             "already-discovered Jedi should not trigger detection again"
         );
     }
 
     #[test]
     fn start_training_is_idempotent() {
-        let mut world = GameWorld::default();
-        let key = add_jedi_character(&mut world, 50, 0, ForceTier::Aware);
-        let mut state = JediState::new();
-
-        state.start_training(key, true, 0);
+        let (_, key, mut state) = training_fixture(50, 0, ForceTier::Aware);
         state.start_training(key, true, 5);
         assert_eq!(
             state.training.len(),
@@ -546,11 +537,7 @@ mod tests {
 
     #[test]
     fn stop_training_removes_record() {
-        let mut world = GameWorld::default();
-        let key = add_jedi_character(&mut world, 50, 0, ForceTier::Aware);
-        let mut state = JediState::new();
-
-        state.start_training(key, true, 0);
+        let (_, key, mut state) = training_fixture(50, 0, ForceTier::Aware);
         assert!(state.is_training(key));
         state.stop_training(key);
         assert!(!state.is_training(key));
@@ -582,10 +569,7 @@ mod tests {
         // reactive story events but must not accumulate XP or advance tiers.
         // The trainee should be removed from `state.training` on the next
         // advance after being marked killed.
-        let mut world = GameWorld::default();
-        let key = add_jedi_character(&mut world, 100, 0, ForceTier::Aware);
-        let mut state = JediState::new();
-        state.start_training(key, true, 0);
+        let (mut world, key, mut state) = training_fixture(100, 0, ForceTier::Aware);
         assert!(state.is_training(key));
 
         // Kill the trainee.

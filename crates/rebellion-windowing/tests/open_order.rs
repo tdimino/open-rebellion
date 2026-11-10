@@ -6,7 +6,7 @@ use rebellion_windowing::{
     CaptureCancelReason, Cardinality, CloseReason, ControlId, ExistingEffect, ExistingOpenPolicy,
     FocusOnOpen, FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy,
     StackBand, SubjectId, WindowCommand, WindowError, WindowEvent, WindowId, WindowKey, WindowKind,
-    WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
+    WindowCommit, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
 };
 
 fn assert_opaque_id_traits<T: Copy + Debug + Eq + Hash + Ord>() {}
@@ -101,6 +101,42 @@ fn replaced_id(transition: WindowTransition, expected_old: WindowId) -> WindowId
     }
 }
 
+fn replace_window(
+    manager: &mut WindowManager,
+    old: WindowId,
+    new: WindowSpec,
+) -> (WindowCommit, WindowId) {
+    let commit = manager
+        .apply(WindowCommand::Replace { old, new })
+        .unwrap();
+    let new = replaced_id(commit.transition.clone(), old);
+    (commit, new)
+}
+
+fn closed(window: WindowId, key: WindowKey, reason: CloseReason) -> WindowEvent {
+    WindowEvent::Closed {
+        window,
+        key,
+        reason,
+    }
+}
+
+fn focus_changed(previous: Option<FocusTarget>, current: WindowId) -> WindowEvent {
+    WindowEvent::FocusChanged {
+        previous,
+        current: Some(FocusTarget {
+            window: current,
+            control: None,
+        }),
+    }
+}
+
+fn modal_pair(manager: &mut WindowManager) -> (WindowId, WindowId) {
+    let lower = open_window(manager, singleton_spec(WindowKind::SystemFinder));
+    let active = open_window(manager, singleton_spec(WindowKind::FleetFinder));
+    (lower, active)
+}
+
 #[test]
 fn replacement_cleans_history_capture_and_focus_atomically() {
     // port: atomic publication; lifecycle sources FUN_00600f90,
@@ -151,33 +187,11 @@ fn replacement_cleans_history_capture_and_focus_atomically() {
                 window: menu,
                 reason: CaptureCancelReason::OwnerClosed
             },
-            WindowEvent::Closed {
-                window: menu,
-                key: menu_spec.key,
-                reason: CloseReason::OwnerClosed
-            },
-            WindowEvent::Closed {
-                window: child,
-                key: child_spec.key,
-                reason: CloseReason::OwnerClosed
-            },
-            WindowEvent::Closed {
-                window: hidden,
-                key: hidden_spec.key,
-                reason: CloseReason::OwnerClosed
-            },
-            WindowEvent::Closed {
-                window: old,
-                key: old_spec.key,
-                reason: CloseReason::Replaced
-            },
-            WindowEvent::FocusChanged {
-                previous: focus_before,
-                current: Some(FocusTarget {
-                    window: new,
-                    control: None
-                })
-            },
+            closed(menu, menu_spec.key, CloseReason::OwnerClosed),
+            closed(child, child_spec.key, CloseReason::OwnerClosed),
+            closed(hidden, hidden_spec.key, CloseReason::OwnerClosed),
+            closed(old, old_spec.key, CloseReason::Replaced),
+            focus_changed(focus_before, new),
         ]
     );
     for key in [old_spec.key, hidden_spec.key, child_spec.key, menu_spec.key] {
@@ -440,18 +454,8 @@ fn replacement_cancels_newly_blocked_surviving_capture_before_teardown() {
                 window: survivor,
                 reason: CaptureCancelReason::ModalOpened
             },
-            WindowEvent::Closed {
-                window: old,
-                key: old_spec.key,
-                reason: CloseReason::Replaced
-            },
-            WindowEvent::FocusChanged {
-                previous: focus_before,
-                current: Some(FocusTarget {
-                    window: new,
-                    control: None
-                })
-            },
+            closed(old, old_spec.key, CloseReason::Replaced),
+            focus_changed(focus_before, new),
         ]
     );
     assert_eq!(manager.visible_order(), &[survivor, new]);
@@ -514,10 +518,7 @@ fn menu_replacement_retains_saved_control_focus_and_fresh_identity() {
     let spec = transient_menu_spec(owner);
     let old = open_window(&mut manager, spec);
     manager.apply(WindowCommand::CapturePointer(old)).unwrap();
-    let commit = manager
-        .apply(WindowCommand::Replace { old, new: spec })
-        .unwrap();
-    let new = replaced_id(commit.transition, old);
+    let (commit, new) = replace_window(&mut manager, old, spec);
     assert_eq!(new.get(), 3);
     assert_eq!(manager.id_for(spec.key), Some(new));
     assert_eq!(manager.visible_order(), &[owner, new]);
@@ -579,10 +580,7 @@ fn replacement_of_a_hidden_root_is_fresh_and_stale_roots_are_rejected() {
     let spec = modeless_subject_spec(WindowKind::System, 1);
     let old = open_window(&mut manager, spec);
     manager.apply(WindowCommand::Minimize(old)).unwrap();
-    let commit = manager
-        .apply(WindowCommand::Replace { old, new: spec })
-        .unwrap();
-    let new = replaced_id(commit.transition, old);
+    let (_commit, new) = replace_window(&mut manager, old, spec);
     assert_eq!(new.get(), 2);
     assert_eq!(manager.visible_order(), &[new]);
     assert!(manager.presentation_history().is_empty());
@@ -660,36 +658,10 @@ fn low_band_insertions_do_not_raise_unrelated_normal_windows() {
     // Source: strategic-windowing-toolkit.md, research-gate answer 3.
     // Break caught: interpreting HWND_BOTTOM-style Sector insertion as global activation.
     let mut manager = WindowManager::new();
-    let system_id = opened_id(
-        manager
-            .apply(WindowCommand::Open(modeless_subject_spec(
-                WindowKind::System,
-                41,
-            )))
-            .expect("System opens")
-            .transition,
-    );
-    let fleet_id = opened_id(
-        manager
-            .apply(WindowCommand::Open(modeless_subject_spec(
-                WindowKind::Fleet,
-                42,
-            )))
-            .expect("Fleet opens")
-            .transition,
-    );
-    let sector_one = opened_id(
-        manager
-            .apply(WindowCommand::Open(sector_spec(1)))
-            .expect("first low-band Sector opens")
-            .transition,
-    );
-    let sector_two = opened_id(
-        manager
-            .apply(WindowCommand::Open(sector_spec(2)))
-            .expect("second low-band Sector opens")
-            .transition,
-    );
+    let system_id = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 41));
+    let fleet_id = open_window(&mut manager, modeless_subject_spec(WindowKind::Fleet, 42));
+    let sector_one = open_window(&mut manager, sector_spec(1));
+    let sector_two = open_window(&mut manager, sector_spec(2));
 
     assert_eq!(
         manager.visible_order(),
@@ -702,36 +674,10 @@ fn transient_open_stays_above_registered_owner_and_normal_band() {
     // Source: strategic-windowing-toolkit.md, research-gate answer 3.
     // Break caught: treating an owner-relative transient as ordinary Normal-band content.
     let mut manager = WindowManager::new();
-    let sector_id = opened_id(
-        manager
-            .apply(WindowCommand::Open(sector_spec(7)))
-            .expect("Sector opens")
-            .transition,
-    );
-    let system_id = opened_id(
-        manager
-            .apply(WindowCommand::Open(modeless_subject_spec(
-                WindowKind::System,
-                41,
-            )))
-            .expect("System opens")
-            .transition,
-    );
-    let fleet_id = opened_id(
-        manager
-            .apply(WindowCommand::Open(modeless_subject_spec(
-                WindowKind::Fleet,
-                42,
-            )))
-            .expect("unrelated Fleet opens")
-            .transition,
-    );
-    let menu_id = opened_id(
-        manager
-            .apply(WindowCommand::Open(transient_menu_spec(system_id)))
-            .expect("owned transient opens")
-            .transition,
-    );
+    let sector_id = open_window(&mut manager, sector_spec(7));
+    let system_id = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 41));
+    let fleet_id = open_window(&mut manager, modeless_subject_spec(WindowKind::Fleet, 42));
+    let menu_id = open_window(&mut manager, transient_menu_spec(system_id));
 
     assert_eq!(
         manager.visible_order(),
@@ -837,20 +783,7 @@ fn transient_owned_by_lower_modal_cannot_overtake_active_modal() {
     // Source: implementation plan, Task 2 active-modal order boundary.
     // Break caught: using the lowest modal instead of the topmost active modal for eligibility.
     let mut manager = WindowManager::new();
-    let lower_modal_id = opened_id(
-        manager
-            .apply(WindowCommand::Open(singleton_spec(
-                WindowKind::SystemFinder,
-            )))
-            .expect("first modal opens")
-            .transition,
-    );
-    let active_modal_id = opened_id(
-        manager
-            .apply(WindowCommand::Open(singleton_spec(WindowKind::FleetFinder)))
-            .expect("second modal becomes active")
-            .transition,
-    );
+    let (lower_modal_id, active_modal_id) = modal_pair(&mut manager);
     let before = manager.visible_order().to_vec();
 
     assert_eq!(
@@ -878,20 +811,7 @@ fn lower_modal_owned_modeless_open_stays_below_active_modal() {
     // Source: implementation plan, Task 2 active-modal order boundary.
     // Break caught: treating any modal owner as eligible to overtake a newer modal.
     let mut manager = WindowManager::new();
-    let lower_modal_id = opened_id(
-        manager
-            .apply(WindowCommand::Open(singleton_spec(
-                WindowKind::SystemFinder,
-            )))
-            .expect("first modal opens")
-            .transition,
-    );
-    let active_modal_id = opened_id(
-        manager
-            .apply(WindowCommand::Open(singleton_spec(WindowKind::FleetFinder)))
-            .expect("second modal becomes active")
-            .transition,
-    );
+    let (lower_modal_id, active_modal_id) = modal_pair(&mut manager);
     let child = WindowSpec {
         owner: WindowOwner::Window(lower_modal_id),
         ..modeless_subject_spec(WindowKind::System, 42)

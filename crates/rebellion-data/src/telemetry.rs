@@ -450,6 +450,21 @@ pub fn control_resolved_payload(
     })
 }
 
+fn control_change_payload(
+    world: &GameWorld,
+    system: SystemKey,
+    previous: ControlKind,
+    current: ControlKind,
+    cause: &'static str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "system": sys_name(world, system),
+        "from": format!("{previous:?}"),
+        "to": format!("{current:?}"),
+        "cause": cause,
+    })
+}
+
 /// The `details` of a `control_changed` record from a Planetary Assault,
 /// whose landing or losses rebuilt the holder (`FUN_0050b610`).
 #[must_use]
@@ -458,15 +473,12 @@ pub fn control_assault_payload(
     system: SystemKey,
     previous: ControlKind,
 ) -> serde_json::Value {
-    serde_json::json!({
-        "system": sys_name(world, system),
-        "from": format!("{previous:?}"),
-        "to": format!(
-            "{:?}",
-            world.systems.get(system).map(|sys| sys.control).unwrap_or_default()
-        ),
-        "cause": "assault",
-    })
+    let current = world
+        .systems
+        .get(system)
+        .map(|sys| sys.control)
+        .unwrap_or_default();
+    control_change_payload(world, system, previous, current, "assault")
 }
 
 /// The `details` of an `assault` record: the run's sides, counts and
@@ -503,12 +515,13 @@ pub fn control_destroyed_payload(
     system: SystemKey,
     previous: ControlKind,
 ) -> serde_json::Value {
-    serde_json::json!({
-        "system": sys_name(world, system),
-        "from": format!("{previous:?}"),
-        "to": format!("{:?}", ControlKind::Uncontrolled),
-        "cause": "planet_destroyed",
-    })
+    control_change_payload(
+        world,
+        system,
+        previous,
+        ControlKind::Uncontrolled,
+        "planet_destroyed",
+    )
 }
 
 /// A decision trace as a telemetry record: `system` names the subsystem,

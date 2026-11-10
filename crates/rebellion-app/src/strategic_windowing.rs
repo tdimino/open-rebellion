@@ -28,7 +28,7 @@ use rebellion_render::{
 use rebellion_windowing::{
     BubblePolicy, ContentReport, ContentStatus, ExistingEffect, FocusTarget, ReconcileReport,
     RouteTarget, RoutingSnapshot, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent,
-    WindowId, WindowKind, WindowOwner, WindowTransition,
+    WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
 };
 
 use crate::encyclopedia_surface::{EncyclopediaSurfaceController, EncyclopediaWindowOpenError};
@@ -165,6 +165,76 @@ struct QueuedWindowCommand {
     prepared_message_index: Option<PreparedMessageIndex>,
     prepared_status: Option<PreparedStatusWindow>,
     prepared_sector: Option<PreparedSectorWindow>,
+}
+
+impl QueuedWindowCommand {
+    fn new(command: WindowCommand) -> Self {
+        Self {
+            command,
+            prepared_build_selection: None,
+            prepared_build_selection_confirm: None,
+            prepared_mission_dialog: None,
+            prepared_mission_dialog_confirm: None,
+            prepared_move_confirmation: None,
+            prepared_move_confirmation_confirm: None,
+            prepared_scrap_confirmation: None,
+            prepared_scrap_confirmation_confirm: None,
+            prepared_system: None,
+            prepared_defenses: None,
+            prepared_missions: None,
+            prepared_fleet: None,
+            prepared_fleet_finder: None,
+            prepared_troop_finder: None,
+            prepared_personnel_finder: None,
+            prepared_message_index: None,
+            prepared_status: None,
+            prepared_sector: None,
+        }
+    }
+
+    fn with_payload(mut self, attach: impl FnOnce(&mut Self)) -> Self {
+        attach(&mut self);
+        self
+    }
+}
+
+fn open_or_replace(replacing: Option<WindowId>, new: WindowSpec) -> WindowCommand {
+    replacing.map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
+        old,
+        new,
+    })
+}
+
+enum ContextualPreparedWindow {
+    Mission(PreparedMissionDialog),
+    Move(PreparedMoveConfirmation),
+    Scrap(PreparedScrapConfirmation),
+}
+
+impl ContextualPreparedWindow {
+    fn replacing(&self) -> Option<WindowId> {
+        match self {
+            Self::Mission(prepared) => prepared.replacing(),
+            Self::Move(prepared) => prepared.replacing(),
+            Self::Scrap(prepared) => prepared.replacing(),
+        }
+    }
+
+    fn spec(&self, subject: SubjectId) -> WindowSpec {
+        match self {
+            Self::Mission(prepared) => prepared.spec(subject),
+            Self::Move(prepared) => prepared.spec(subject),
+            Self::Scrap(prepared) => prepared.spec(subject),
+        }
+    }
+
+    fn attach(self, queued: &mut QueuedWindowCommand) {
+        match self {
+            Self::Mission(prepared) => queued.prepared_mission_dialog = Some(prepared),
+            Self::Move(prepared) => queued.prepared_move_confirmation = Some(prepared),
+            Self::Scrap(prepared) => queued.prepared_scrap_confirmation = Some(prepared),
+        }
+    }
 }
 
 /// Application scene whose registered windows currently participate in routing.
@@ -526,79 +596,39 @@ impl StrategicWindowing {
         {
             return;
         }
-        self.pending.push(QueuedWindowCommand {
-            command,
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        self.pending.push(QueuedWindowCommand::new(command));
+    }
+
+    fn enqueue_contextual_prepared(
+        &mut self,
+        prepared: ContextualPreparedWindow,
+    ) -> Result<(), WindowError> {
+        let subject = self.next_context_subject()?;
+        let command = open_or_replace(prepared.replacing(), prepared.spec(subject));
+        self.pending.push(
+            QueuedWindowCommand::new(command).with_payload(|queued| prepared.attach(queued)),
+        );
+        Ok(())
     }
 
     /// Queues validated Build Selection context beside its singleton open.
     pub fn enqueue_build_selection_open(&mut self, prepared: PreparedBuildSelection) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: Some(prepared),
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_build_selection = Some(prepared)),
+        );
     }
 
     /// Queues the exact close paired with an inert Build Selection confirm.
     /// The candidate is returned only if that close commits and releases the
     /// attached content identity.
     pub fn enqueue_build_selection_confirm(&mut self, prepared: PreparedBuildSelectionConfirm) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Close(prepared.window_id()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: Some(prepared),
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Close(prepared.window_id());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_build_selection_confirm = Some(prepared)),
+        );
     }
 
     /// Allocates a fresh command-context subject and queues inert Mission
@@ -607,61 +637,17 @@ impl StrategicWindowing {
         &mut self,
         prepared: PreparedMissionDialog,
     ) -> Result<(), WindowError> {
-        let subject = self.next_context_subject()?;
-        let new = prepared.spec(subject);
-        self.pending.push(QueuedWindowCommand {
-            command: prepared
-                .replacing()
-                .map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
-                    old,
-                    new,
-                }),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: Some(prepared),
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
-        Ok(())
+        self.enqueue_contextual_prepared(ContextualPreparedWindow::Mission(prepared))
     }
 
     /// Queues the exact close paired with an inert Mission order. The order
     /// is returned only when that close tears down its attached identity.
     pub fn enqueue_mission_dialog_confirm(&mut self, prepared: PreparedMissionDialogConfirm) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Close(prepared.window_id()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: Some(prepared),
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Close(prepared.window_id());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_mission_dialog_confirm = Some(prepared)),
+        );
     }
 
     /// Allocates a fresh command-context subject and queues inert Move
@@ -670,60 +656,16 @@ impl StrategicWindowing {
         &mut self,
         prepared: PreparedMoveConfirmation,
     ) -> Result<(), WindowError> {
-        let subject = self.next_context_subject()?;
-        let new = prepared.spec(subject);
-        self.pending.push(QueuedWindowCommand {
-            command: prepared
-                .replacing()
-                .map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
-                    old,
-                    new,
-                }),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: Some(prepared),
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
-        Ok(())
+        self.enqueue_contextual_prepared(ContextualPreparedWindow::Move(prepared))
     }
 
     /// Queues the exact close paired with one inert Move order.
     pub fn enqueue_move_confirmation_confirm(&mut self, prepared: PreparedMoveConfirmationConfirm) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Close(prepared.window_id()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: Some(prepared),
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Close(prepared.window_id());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_move_confirmation_confirm = Some(prepared)),
+        );
     }
 
     /// Allocates a fresh command context for the manufacturing Stop dialog.
@@ -744,35 +686,7 @@ impl StrategicWindowing {
         &mut self,
         prepared: PreparedScrapConfirmation,
     ) -> Result<(), WindowError> {
-        let subject = self.next_context_subject()?;
-        let new = prepared.spec(subject);
-        self.pending.push(QueuedWindowCommand {
-            command: prepared
-                .replacing()
-                .map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
-                    old,
-                    new,
-                }),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: Some(prepared),
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
-        Ok(())
+        self.enqueue_contextual_prepared(ContextualPreparedWindow::Scrap(prepared))
     }
 
     /// Queues the exact close paired with one inert Scrap order.
@@ -780,52 +694,20 @@ impl StrategicWindowing {
         &mut self,
         prepared: PreparedScrapConfirmationConfirm,
     ) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Close(prepared.window_id()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: Some(prepared),
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Close(prepared.window_id());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_scrap_confirmation_confirm = Some(prepared)),
+        );
     }
 
     /// Queues validated System content beside its semantic detail open.
     pub fn enqueue_system_open(&mut self, prepared: PreparedSystemWindow) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: Some(prepared),
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_system = Some(prepared)),
+        );
     }
 
     /// Queues validated Sector content beside either an exact duplicate open
@@ -833,32 +715,11 @@ impl StrategicWindowing {
     /// until the matching manager receipt is published.
     pub fn enqueue_sector_open(&mut self, prepared: PreparedSectorWindow) {
         let new = prepared.spec();
-        self.pending.push(QueuedWindowCommand {
-            command: prepared
-                .replacing()
-                .map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
-                    old,
-                    new,
-                }),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: Some(prepared),
-        });
+        let command = open_or_replace(prepared.replacing(), new);
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_sector = Some(prepared)),
+        );
     }
 
     /// Revalidates one in-flight Sector intent before the manager can apply its
@@ -895,230 +756,86 @@ impl StrategicWindowing {
 
     /// Queues validated Defenses content beside its semantic detail open.
     pub fn enqueue_defenses_open(&mut self, prepared: PreparedDefensesWindow) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: Some(prepared),
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_defenses = Some(prepared)),
+        );
     }
 
     /// Queues validated Missions content beside its semantic detail open.
     pub fn enqueue_missions_open(&mut self, prepared: PreparedMissionsWindow) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: Some(prepared),
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_missions = Some(prepared)),
+        );
     }
 
     /// Queues validated System content for publication only after Galaxy is
     /// active. Battle Results destinations must not join Tactical membership.
     pub fn enqueue_galaxy_system_open(&mut self, prepared: PreparedSystemWindow) {
-        self.pending_galaxy.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: Some(prepared),
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending_galaxy.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_system = Some(prepared)),
+        );
     }
 
     /// Queues a validated Fleet content candidate beside its semantic open.
     /// The candidate returns to the app only after the manager applies it.
     pub fn enqueue_fleet_open(&mut self, prepared: PreparedFleetWindow) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: Some(prepared),
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_fleet = Some(prepared)),
+        );
     }
 
     /// Queues validated Fleet content for publication only after Galaxy is
     /// active, preserving the outgoing Results frame's immutable lease.
     pub fn enqueue_galaxy_fleet_open(&mut self, prepared: PreparedFleetWindow) {
-        self.pending_galaxy.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: Some(prepared),
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending_galaxy.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_fleet = Some(prepared)),
+        );
     }
 
     /// Queues inert Fleet Finder content beside its semantic singleton open.
     pub fn enqueue_fleet_finder_open(&mut self, prepared: PreparedFleetFinder) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: Some(prepared),
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_fleet_finder = Some(prepared)),
+        );
     }
 
     /// Queues inert Troop Finder content beside its semantic singleton open.
     pub fn enqueue_troop_finder_open(&mut self, prepared: PreparedTroopFinder) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: Some(prepared),
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_troop_finder = Some(prepared)),
+        );
     }
 
     /// Queues inert Personnel Finder content beside its semantic singleton open.
     pub fn enqueue_personnel_finder_open(&mut self, prepared: PreparedPersonnelFinder) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: Some(prepared),
-            prepared_message_index: None,
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_personnel_finder = Some(prepared)),
+        );
     }
 
     /// Queues inert Message Index content beside its semantic singleton open.
     pub fn enqueue_message_index_open(&mut self, prepared: PreparedMessageIndex) {
-        self.pending.push(QueuedWindowCommand {
-            command: WindowCommand::Open(prepared.spec()),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: Some(prepared),
-            prepared_status: None,
-            prepared_sector: None,
-        });
+        let command = WindowCommand::Open(prepared.spec());
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_message_index = Some(prepared)),
+        );
     }
 
     /// Queues validated contextual Status content. A later logical open
@@ -1130,30 +847,11 @@ impl StrategicWindowing {
         replacing: Option<WindowId>,
     ) {
         let new = prepared.spec();
-        self.pending.push(QueuedWindowCommand {
-            command: replacing.map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
-                old,
-                new,
-            }),
-            prepared_build_selection: None,
-            prepared_build_selection_confirm: None,
-            prepared_mission_dialog: None,
-            prepared_mission_dialog_confirm: None,
-            prepared_move_confirmation: None,
-            prepared_move_confirmation_confirm: None,
-            prepared_scrap_confirmation: None,
-            prepared_scrap_confirmation_confirm: None,
-            prepared_system: None,
-            prepared_defenses: None,
-            prepared_missions: None,
-            prepared_fleet: None,
-            prepared_fleet_finder: None,
-            prepared_troop_finder: None,
-            prepared_personnel_finder: None,
-            prepared_message_index: None,
-            prepared_status: Some(prepared),
-            prepared_sector: None,
-        });
+        let command = open_or_replace(replacing, new);
+        self.pending.push(
+            QueuedWindowCommand::new(command)
+                .with_payload(|queued| queued.prepared_status = Some(prepared)),
+        );
     }
 
     /// Queues manager-owned System minimization.
@@ -1251,6 +949,79 @@ impl StrategicWindowing {
         Some(self.apply_queued(queued))
     }
 
+    fn opened_or_attached_existing(&self, transition: &WindowTransition) -> Option<WindowId> {
+        match transition {
+            WindowTransition::Opened { id } => Some(*id),
+            WindowTransition::Existing { id, .. } => {
+                self.attached_content.contains(id).then_some(*id)
+            }
+            _ => None,
+        }
+    }
+
+    fn opened_replaced_or_attached_existing(
+        &self,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        match transition {
+            WindowTransition::Opened { id } | WindowTransition::Replaced { new: id, .. } => {
+                Some(*id)
+            }
+            WindowTransition::Existing { id, .. } => {
+                self.attached_content.contains(id).then_some(*id)
+            }
+            _ => None,
+        }
+    }
+
+    fn opened_or_replaced(transition: &WindowTransition) -> Option<WindowId> {
+        match transition {
+            WindowTransition::Opened { id } | WindowTransition::Replaced { new: id, .. } => {
+                Some(*id)
+            }
+            _ => None,
+        }
+    }
+
+    fn opened_or_attached_noop_existing(
+        &self,
+        transition: &WindowTransition,
+    ) -> Option<WindowId> {
+        match transition {
+            WindowTransition::Opened { id } => Some(*id),
+            WindowTransition::Existing {
+                id,
+                effect: ExistingEffect::NoOp,
+            } => self.attached_content.contains(id).then_some(*id),
+            _ => None,
+        }
+    }
+
+    fn confirmation_committed(
+        transition: &WindowTransition,
+        removed_content: &[WindowId],
+        window: WindowId,
+    ) -> bool {
+        matches!(
+            transition,
+            WindowTransition::Closed { root, closed, .. }
+                if *root == window && closed.contains(&window)
+        ) && removed_content.contains(&window)
+    }
+
+    fn focus_opened_control(&mut self, transition: &WindowTransition, control: &'static str) {
+        let WindowTransition::Opened { id } = transition else {
+            return;
+        };
+        let focus = FocusTarget {
+            window: *id,
+            control: Some(control),
+        };
+        if let Ok(commit) = self.manager.apply(WindowCommand::Focus(focus)) {
+            self.record_transition(&commit.transition, &commit.events);
+        }
+    }
+
     fn apply_queued(&mut self, queued: QueuedWindowCommand) -> AppliedWindowCommand {
         let QueuedWindowCommand {
             command,
@@ -1344,192 +1115,74 @@ impl StrategicWindowing {
             self.record_transition(&commit.transition, &commit.events);
             removed_content = self.release_matching_content(&commit.events);
             if prepared_build_selection.is_some() {
-                build_selection_content_id = match &commit.transition {
-                    WindowTransition::Opened { id } => Some(*id),
-                    WindowTransition::Existing { id, .. } => {
-                        self.attached_content.contains(id).then_some(*id)
-                    }
-                    _ => None,
-                };
+                build_selection_content_id = self.opened_or_attached_existing(&commit.transition);
             }
             if let Some(prepared) = prepared_build_selection_confirm {
                 let window = prepared.window_id();
-                if matches!(
-                    &commit.transition,
-                    WindowTransition::Closed { root, closed, .. }
-                        if *root == window && closed.contains(&window)
-                ) && removed_content.contains(&window)
-                {
+                if Self::confirmation_committed(&commit.transition, &removed_content, window) {
                     confirmed_build_selection = Some(prepared);
                 }
             }
             if prepared_mission_dialog.is_some() {
-                mission_dialog_content_id = match &commit.transition {
-                    WindowTransition::Opened { id }
-                    | WindowTransition::Replaced { new: id, .. } => Some(*id),
-                    WindowTransition::Existing { id, .. } => {
-                        self.attached_content.contains(id).then_some(*id)
-                    }
-                    _ => None,
-                };
+                mission_dialog_content_id =
+                    self.opened_replaced_or_attached_existing(&commit.transition);
             }
             if let Some(prepared) = prepared_mission_dialog_confirm.as_ref() {
                 let window = prepared.window_id();
-                if matches!(
-                    &commit.transition,
-                    WindowTransition::Closed { root, closed, .. }
-                        if *root == window && closed.contains(&window)
-                ) && removed_content.contains(&window)
-                {
+                if Self::confirmation_committed(&commit.transition, &removed_content, window) {
                     confirmed_mission_dialog = prepared_mission_dialog_confirm;
                 }
             }
             if prepared_move_confirmation.is_some() {
-                move_confirmation_content_id = match &commit.transition {
-                    WindowTransition::Opened { id }
-                    | WindowTransition::Replaced { new: id, .. } => Some(*id),
-                    _ => None,
-                };
+                move_confirmation_content_id = Self::opened_or_replaced(&commit.transition);
             }
             if let Some(prepared) = prepared_move_confirmation_confirm.as_ref() {
                 let window = prepared.window_id();
-                if matches!(
-                    &commit.transition,
-                    WindowTransition::Closed { root, closed, .. }
-                        if *root == window && closed.contains(&window)
-                ) && removed_content.contains(&window)
-                {
+                if Self::confirmation_committed(&commit.transition, &removed_content, window) {
                     confirmed_move_confirmation = prepared_move_confirmation_confirm;
                 }
             }
             if prepared_scrap_confirmation.is_some() {
-                scrap_confirmation_content_id = match &commit.transition {
-                    WindowTransition::Opened { id }
-                    | WindowTransition::Replaced { new: id, .. } => Some(*id),
-                    _ => None,
-                };
+                scrap_confirmation_content_id = Self::opened_or_replaced(&commit.transition);
             }
             if let Some(prepared) = prepared_scrap_confirmation_confirm.as_ref() {
                 let window = prepared.window_id();
-                if matches!(
-                    &commit.transition,
-                    WindowTransition::Closed { root, closed, .. }
-                        if *root == window && closed.contains(&window)
-                ) && removed_content.contains(&window)
-                {
+                if Self::confirmation_committed(&commit.transition, &removed_content, window) {
                     confirmed_scrap_confirmation = prepared_scrap_confirmation_confirm;
                 }
             }
             if prepared_system.is_some() {
-                system_content_id = match &commit.transition {
-                    WindowTransition::Opened { id } => Some(*id),
-                    WindowTransition::Existing { id, .. } => {
-                        self.attached_content.contains(id).then_some(*id)
-                    }
-                    _ => None,
-                };
+                system_content_id = self.opened_or_attached_existing(&commit.transition);
             }
             if prepared_defenses.is_some() {
-                defenses_content_id = match &commit.transition {
-                    WindowTransition::Opened { id } => Some(*id),
-                    WindowTransition::Existing { id, .. } => {
-                        self.attached_content.contains(id).then_some(*id)
-                    }
-                    _ => None,
-                };
+                defenses_content_id = self.opened_or_attached_existing(&commit.transition);
             }
             if prepared_missions.is_some() {
-                missions_content_id = match &commit.transition {
-                    WindowTransition::Opened { id } => Some(*id),
-                    WindowTransition::Existing { id, .. } => {
-                        self.attached_content.contains(id).then_some(*id)
-                    }
-                    _ => None,
-                };
+                missions_content_id = self.opened_or_attached_existing(&commit.transition);
             }
             if prepared_fleet.is_some() {
-                fleet_content_id = match &commit.transition {
-                    WindowTransition::Opened { id } => Some(*id),
-                    WindowTransition::Existing { id, .. } => {
-                        self.attached_content.contains(id).then_some(*id)
-                    }
-                    _ => None,
-                };
+                fleet_content_id = self.opened_or_attached_existing(&commit.transition);
             }
             if prepared_fleet_finder.is_some() {
-                fleet_finder_content_id = match &commit.transition {
-                    WindowTransition::Opened { id } => Some(*id),
-                    WindowTransition::Existing { id, .. } => {
-                        self.attached_content.contains(id).then_some(*id)
-                    }
-                    _ => None,
-                };
-                if let WindowTransition::Opened { id } = commit.transition {
-                    let focus = FocusTarget {
-                        window: id,
-                        control: Some(FLEET_FINDER_NAME_CONTROL),
-                    };
-                    if let Ok(focus_commit) = self.manager.apply(WindowCommand::Focus(focus)) {
-                        self.record_transition(&focus_commit.transition, &focus_commit.events);
-                    }
-                }
+                fleet_finder_content_id = self.opened_or_attached_existing(&commit.transition);
+                self.focus_opened_control(&commit.transition, FLEET_FINDER_NAME_CONTROL);
             }
             if prepared_troop_finder.is_some() {
-                troop_finder_content_id = match &commit.transition {
-                    WindowTransition::Opened { id } => Some(*id),
-                    WindowTransition::Existing {
-                        id,
-                        effect: ExistingEffect::NoOp,
-                    } => self.attached_content.contains(id).then_some(*id),
-                    _ => None,
-                };
-                if let WindowTransition::Opened { id } = commit.transition {
-                    let focus = FocusTarget {
-                        window: id,
-                        control: Some(TROOP_FINDER_NAME_CONTROL),
-                    };
-                    if let Ok(focus_commit) = self.manager.apply(WindowCommand::Focus(focus)) {
-                        self.record_transition(&focus_commit.transition, &focus_commit.events);
-                    }
-                }
+                troop_finder_content_id =
+                    self.opened_or_attached_noop_existing(&commit.transition);
+                self.focus_opened_control(&commit.transition, TROOP_FINDER_NAME_CONTROL);
             }
             if prepared_personnel_finder.is_some() {
-                personnel_finder_content_id = match &commit.transition {
-                    WindowTransition::Opened { id } => Some(*id),
-                    WindowTransition::Existing {
-                        id,
-                        effect: ExistingEffect::NoOp,
-                    } => self.attached_content.contains(id).then_some(*id),
-                    _ => None,
-                };
-                if let WindowTransition::Opened { id } = commit.transition {
-                    let focus = FocusTarget {
-                        window: id,
-                        control: Some(PERSONNEL_FINDER_NAME_CONTROL),
-                    };
-                    if let Ok(focus_commit) = self.manager.apply(WindowCommand::Focus(focus)) {
-                        self.record_transition(&focus_commit.transition, &focus_commit.events);
-                    }
-                }
+                personnel_finder_content_id =
+                    self.opened_or_attached_noop_existing(&commit.transition);
+                self.focus_opened_control(&commit.transition, PERSONNEL_FINDER_NAME_CONTROL);
             }
             if prepared_message_index.is_some() {
-                message_index_content_id = match &commit.transition {
-                    WindowTransition::Opened { id } => Some(*id),
-                    WindowTransition::Existing { id, .. } => {
-                        self.attached_content.contains(id).then_some(*id)
-                    }
-                    _ => None,
-                };
+                message_index_content_id = self.opened_or_attached_existing(&commit.transition);
             }
             if prepared_status.is_some() {
-                status_content_id = match &commit.transition {
-                    WindowTransition::Opened { id } => Some(*id),
-                    WindowTransition::Replaced { new, .. } => Some(*new),
-                    WindowTransition::Existing { id, .. } => {
-                        self.attached_content.contains(id).then_some(*id)
-                    }
-                    _ => None,
-                };
+                status_content_id =
+                    self.opened_replaced_or_attached_existing(&commit.transition);
             }
             if prepared_sector.is_some() {
                 sector_content_id = match &commit.transition {
@@ -2160,7 +1813,9 @@ mod tests {
     use rebellion_render::fleet_window::FleetWindowEntry;
     use rebellion_render::fleet_window::FleetWindowReport;
     use rebellion_render::missions_window::MissionsWindowReport;
-    use rebellion_render::system_window::{draw_managed_system_windows, SystemWindowInputEvent};
+    use rebellion_render::system_window::{
+        draw_managed_system_windows, ManagedSystemDraw, SystemWindowInputEvent,
+    };
     use rebellion_render::windowing_input::{
         FrameInputRouter, InputDisposition, InputEventId, InputRecipient, PointerButtonId,
         PointerPhase,
@@ -2231,6 +1886,388 @@ mod tests {
         (world, system)
     }
 
+    fn move_confirmation(
+        fleet: FleetKey,
+        destination: SystemKey,
+        days: u32,
+    ) -> rebellion_render::move_confirmation::MoveConfirmation {
+        use rebellion_render::move_confirmation::MoveConfirmation;
+
+        MoveConfirmation {
+            faction: MissionFaction::Alliance,
+            fleets: vec![fleet],
+            members: Vec::new(),
+            ships: None,
+            units: Vec::new(),
+            destination,
+            join: None,
+            blockaded: false,
+            lines: vec![("Red Fleet".into(), days)],
+        }
+    }
+
+    fn scrap_confirmation() -> rebellion_render::move_confirmation::ScrapConfirmation {
+        use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
+        use rebellion_render::move_confirmation::ScrapConfirmation;
+
+        ScrapConfirmation {
+            faction: MissionFaction::Alliance,
+            order: ScrapOrder::Troop(Default::default()),
+            targets: vec![ScrapTarget::Troop(Default::default())],
+            names: vec!["Army Regiment".into()],
+        }
+    }
+
+    fn coordinator_with_fleet_capture() -> (StrategicWindowing, WindowId) {
+        let mut coordinator = StrategicWindowing::new();
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            WindowKind::Fleet,
+            SubjectId::new(1, 1),
+            WindowOwner::StrategicRoot,
+        )));
+        let owner = opened_id(&coordinator.apply_pending()[0]);
+        coordinator.enqueue(WindowCommand::CapturePointer(owner));
+        assert!(coordinator.apply_pending()[0].result.is_ok());
+        (coordinator, owner)
+    }
+
+    fn assert_modal_cancelled_capture(applied: &AppliedWindowCommand, owner: WindowId) {
+        use rebellion_windowing::CaptureCancelReason;
+
+        assert!(applied
+            .result
+            .as_ref()
+            .unwrap()
+            .events
+            .contains(&WindowEvent::CaptureCancelled {
+                window: owner,
+                reason: CaptureCancelReason::ModalOpened,
+            }));
+    }
+
+    fn route_pointer_phases(
+        router: &mut FrameInputRouter,
+        frame: u64,
+        window: WindowId,
+        phases: Vec<PointerPhase>,
+    ) -> Vec<(InputEventId, PointerPhase)> {
+        phases
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, phase)| {
+                let event = InputEventId {
+                    frame,
+                    ordinal: u32::try_from(ordinal).unwrap(),
+                };
+                assert_eq!(
+                    router.collect_pointer(event, &BTreeSet::from([window]), phase),
+                    InputRecipient::Window(window)
+                );
+                (event, phase)
+            })
+            .collect()
+    }
+
+    fn begin_routed_frame(
+        coordinator: &StrategicWindowing,
+        router: &mut FrameInputRouter,
+        index: usize,
+        window: WindowId,
+        phases: Vec<PointerPhase>,
+    ) -> (RoutingSnapshot, Vec<(InputEventId, PointerPhase)>) {
+        let frame = u64::try_from(index + 1).unwrap();
+        let snapshot = coordinator.begin_frame();
+        router.begin_frame(frame, &snapshot);
+        let routed = route_pointer_phases(router, frame, window, phases);
+        (snapshot, routed)
+    }
+
+    fn test_raw_input(index: usize, events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(640.0, 480.0),
+            )),
+            time: Some(index as f64 * 0.05),
+            events,
+            ..egui::RawInput::default()
+        }
+    }
+
+    fn detail_test_context<T: Default>() -> (GameWorld, SystemKey, T, StrategicWindowing) {
+        let (world, system) = fleet_world();
+        (world, system, T::default(), StrategicWindowing::new())
+    }
+
+    fn assert_minimized(applied: &AppliedWindowCommand, id: WindowId) {
+        assert!(matches!(
+            applied.result.as_ref().unwrap().transition,
+            WindowTransition::Minimized { id: minimized, .. } if minimized == id
+        ));
+    }
+
+    fn assert_restored(applied: &AppliedWindowCommand, id: WindowId) {
+        assert!(matches!(
+            applied.result.as_ref().unwrap().transition,
+            WindowTransition::Restored { id: restored, .. } if restored == id
+        ));
+    }
+
+    fn minimize_content(
+        coordinator: &mut StrategicWindowing,
+        id: WindowId,
+        enqueue: impl FnOnce(&mut StrategicWindowing, WindowId),
+    ) {
+        enqueue(coordinator, id);
+        let applied = coordinator.apply_pending().remove(0);
+        assert_minimized(&applied, id);
+        assert!(coordinator.has_content(id));
+        assert!(!coordinator.begin_frame().is_visible(id));
+    }
+
+    fn restore_content(
+        coordinator: &mut StrategicWindowing,
+        id: WindowId,
+    ) -> AppliedWindowCommand {
+        coordinator.enqueue(WindowCommand::Restore(id));
+        let applied = coordinator.apply_pending().remove(0);
+        assert_restored(&applied, id);
+        assert!(coordinator.begin_frame().is_visible(id));
+        applied
+    }
+
+    fn close_content(coordinator: &mut StrategicWindowing, id: WindowId) -> Vec<WindowId> {
+        coordinator.enqueue(WindowCommand::Close(id));
+        let closed = coordinator.apply_pending().remove(0);
+        assert_eq!(closed.removed_content, [id]);
+        closed.removed_content
+    }
+
+    fn close_detail_content(
+        coordinator: &mut StrategicWindowing,
+        id: WindowId,
+        remove: impl FnOnce(&[WindowId]),
+    ) {
+        let removed = close_content(coordinator, id);
+        remove(&removed);
+        assert!(!coordinator.has_content(id));
+    }
+
+    fn finish_detail_lifecycle<T>(
+        coordinator: &mut StrategicWindowing,
+        id: WindowId,
+        state: &mut T,
+        contains: impl Fn(&T, WindowId) -> bool,
+        remove: impl FnOnce(&mut T, &[WindowId]),
+    ) -> AppliedWindowCommand {
+        let restored = restore_content(coordinator, id);
+        assert!(contains(state, id));
+        let removed = close_content(coordinator, id);
+        remove(state, &removed);
+        assert!(!contains(state, id));
+        assert!(!coordinator.has_content(id));
+        restored
+    }
+
+    fn assert_existing_noop(applied: &AppliedWindowCommand, id: WindowId) {
+        assert!(matches!(
+            applied.result.as_ref().unwrap().transition,
+            WindowTransition::Existing {
+                id: existing,
+                effect: ExistingEffect::NoOp,
+            } if existing == id
+        ));
+    }
+
+    fn finder_name_focus(
+        coordinator: &StrategicWindowing,
+        id: WindowId,
+        control: ControlId,
+    ) -> FocusTarget {
+        let focus = FocusTarget {
+            window: id,
+            control: Some(control),
+        };
+        assert_eq!(coordinator.begin_frame().focused(), Some(focus));
+        focus
+    }
+
+    fn open_fleet_finder(coordinator: &mut StrategicWindowing) -> WindowId {
+        coordinator
+            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
+        opened_id(&coordinator.apply_pending()[0])
+    }
+
+    trait FinderTestState {
+        type Prepared;
+
+        fn content_id(applied: &AppliedWindowCommand) -> Option<WindowId>;
+        fn take_prepared(applied: &mut AppliedWindowCommand) -> Self::Prepared;
+        fn commit_prepared(
+            &mut self,
+            prepared: Self::Prepared,
+            transition: &WindowTransition,
+        ) -> Option<WindowId>;
+        fn window_id(&self) -> Option<WindowId>;
+    }
+
+    macro_rules! impl_finder_test_state {
+        ($state:ty, $prepared:ty, $content_id:ident, $prepared_field:ident) => {
+            impl FinderTestState for $state {
+                type Prepared = $prepared;
+
+                fn content_id(applied: &AppliedWindowCommand) -> Option<WindowId> {
+                    applied.$content_id
+                }
+
+                fn take_prepared(applied: &mut AppliedWindowCommand) -> Self::Prepared {
+                    applied.$prepared_field.take().unwrap()
+                }
+
+                fn commit_prepared(
+                    &mut self,
+                    prepared: Self::Prepared,
+                    transition: &WindowTransition,
+                ) -> Option<WindowId> {
+                    self.commit_open(prepared, transition)
+                }
+
+                fn window_id(&self) -> Option<WindowId> {
+                    <$state>::window_id(self)
+                }
+            }
+        };
+    }
+
+    impl_finder_test_state!(
+        FleetFinderState,
+        PreparedFleetFinder,
+        fleet_finder_content_id,
+        prepared_fleet_finder
+    );
+    impl_finder_test_state!(
+        TroopFinderState,
+        PreparedTroopFinder,
+        troop_finder_content_id,
+        prepared_troop_finder
+    );
+    impl_finder_test_state!(
+        PersonnelFinderState,
+        PreparedPersonnelFinder,
+        personnel_finder_content_id,
+        prepared_personnel_finder
+    );
+
+    fn commit_finder_open<T: FinderTestState>(
+        finder: &mut T,
+        applied: &mut AppliedWindowCommand,
+    ) -> WindowId {
+        let id = T::content_id(applied).unwrap();
+        let prepared = T::take_prepared(applied);
+        assert_eq!(
+            finder.commit_prepared(prepared, &applied.result.as_ref().unwrap().transition),
+            Some(id)
+        );
+        id
+    }
+
+    fn commit_existing_finder<T: FinderTestState>(
+        finder: &mut T,
+        applied: &mut AppliedWindowCommand,
+        id: WindowId,
+        coordinator: &StrategicWindowing,
+        expected_focus: FocusTarget,
+    ) {
+        assert_existing_noop(applied, id);
+        assert_eq!(T::content_id(applied), Some(id));
+        assert_eq!(commit_finder_open(finder, applied), id);
+        assert_eq!(finder.window_id(), Some(id));
+        assert_eq!(coordinator.begin_frame().focused(), Some(expected_focus));
+    }
+
+    fn commit_pending_existing_finder<T: FinderTestState>(
+        coordinator: &mut StrategicWindowing,
+        finder: &mut T,
+        id: WindowId,
+        expected_focus: FocusTarget,
+    ) {
+        let mut applied = coordinator.apply_pending().remove(0);
+        commit_existing_finder(finder, &mut applied, id, coordinator, expected_focus);
+    }
+
+    fn enqueue_singletons(
+        coordinator: &mut StrategicWindowing,
+        kinds: impl IntoIterator<Item = WindowKind>,
+    ) {
+        for kind in kinds {
+            coordinator.enqueue(WindowCommand::Open(singleton_spec(
+                kind,
+                WindowOwner::StrategicRoot,
+            )));
+        }
+    }
+
+    fn open_singleton(coordinator: &mut StrategicWindowing, kind: WindowKind) -> WindowId {
+        coordinator.enqueue(WindowCommand::Open(singleton_spec(
+            kind,
+            WindowOwner::StrategicRoot,
+        )));
+        opened_id(&coordinator.apply_pending()[0])
+    }
+
+    fn tactical_alert(coordinator: &mut StrategicWindowing) -> TacticalWindowIdentity {
+        coordinator
+            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Alert)
+            .unwrap()
+            .window
+            .unwrap()
+    }
+
+    fn open_attached_contextual(
+        coordinator: &mut StrategicWindowing,
+        kind: WindowKind,
+        subject: SubjectId,
+    ) -> WindowId {
+        coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            kind,
+            subject,
+            WindowOwner::StrategicRoot,
+        )));
+        let id = opened_id(&coordinator.apply_pending()[0]);
+        assert!(coordinator.attach_content(id));
+        id
+    }
+
+    fn commit_fleet_open(
+        world: &GameWorld,
+        system: SystemKey,
+        position: (i16, i16),
+        state: &mut FleetWindowState,
+        coordinator: &mut StrategicWindowing,
+    ) -> (WindowId, AppliedWindowCommand) {
+        let prepared = state
+            .prepare_open(
+                world,
+                system,
+                position,
+                CockpitFaction::Alliance,
+                fleet_layout(),
+                None,
+            )
+            .unwrap();
+        coordinator.enqueue_fleet_open(prepared);
+        let mut applied = coordinator.apply_pending().remove(0);
+        let id = applied.fleet_content_id.unwrap();
+        assert_eq!(
+            state.commit_open(
+                applied.prepared_fleet.take().unwrap(),
+                &applied.result.as_ref().unwrap().transition,
+            ),
+            Some(id)
+        );
+        (id, applied)
+    }
+
     #[cfg(feature = "interface-test-fixtures")]
     #[derive(Debug, Clone, Copy)]
     enum CommandModalCase {
@@ -2292,43 +2329,23 @@ mod tests {
                         .unwrap();
                 }
                 Self::MoveConfirmation => {
-                    use rebellion_render::move_confirmation::{
-                        MoveConfirmation, MoveConfirmationState,
-                    };
+                    use rebellion_render::move_confirmation::MoveConfirmationState;
 
                     coordinator
                         .enqueue_move_confirmation_open(
                             MoveConfirmationState::default()
-                                .prepare_open(MoveConfirmation {
-                                    faction: MissionFaction::Alliance,
-                                    fleets: vec![fleet],
-                                    members: Vec::new(),
-                                    ships: None,
-                                    units: Vec::new(),
-                                    destination: system,
-                                    join: None,
-                                    blockaded: false,
-                                    lines: vec![("Red Fleet".into(), 1)],
-                                })
+                                .prepare_open(move_confirmation(fleet, system, 1))
                                 .unwrap(),
                         )
                         .unwrap();
                 }
                 Self::ScrapConfirmation => {
-                    use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
-                    use rebellion_render::move_confirmation::{
-                        ScrapConfirmation, ScrapConfirmationState,
-                    };
+                    use rebellion_render::move_confirmation::ScrapConfirmationState;
 
                     coordinator
                         .enqueue_scrap_confirmation_open(
                             ScrapConfirmationState::default()
-                                .prepare_open(ScrapConfirmation {
-                                    faction: MissionFaction::Alliance,
-                                    order: ScrapOrder::Troop(Default::default()),
-                                    targets: vec![ScrapTarget::Troop(Default::default())],
-                                    names: vec!["Army Regiment".into()],
-                                })
+                                .prepare_open(scrap_confirmation())
                                 .unwrap(),
                         )
                         .unwrap();
@@ -2428,6 +2445,19 @@ mod tests {
     }
 
     #[cfg(feature = "interface-test-fixtures")]
+    fn apply_command_modal_cancellation(fixture: &mut CommandModalInterruptionFixture) {
+        let mut sectors = SectorWindowState::default();
+        let mut defenses = DefensesWindowState::default();
+        crate::apply_capture_cancellation_events(
+            &fixture.applied.result.as_ref().unwrap().events,
+            &mut fixture.router,
+            &mut sectors,
+            &mut fixture.fleets,
+            &mut defenses,
+        );
+    }
+
+    #[cfg(feature = "interface-test-fixtures")]
     #[test]
     fn command_modal_open_cancels_fleet_capture_and_drag_payload() {
         use rebellion_windowing::{CaptureCancelReason, WindowEvent};
@@ -2461,15 +2491,7 @@ mod tests {
                 "capture clears before close/focus receipts for {case:?}"
             );
 
-            let mut sectors = SectorWindowState::default();
-            let mut defenses = DefensesWindowState::default();
-            crate::apply_capture_cancellation_events(
-                &commit.events,
-                &mut fixture.router,
-                &mut sectors,
-                &mut fixture.fleets,
-                &mut defenses,
-            );
+            apply_command_modal_cancellation(&mut fixture);
 
             assert_eq!(fixture.coordinator.begin_frame().capture_owner(), None);
             assert!(!fixture.fleets.is_dragging());
@@ -2482,16 +2504,7 @@ mod tests {
     fn command_modal_interruption_quarantines_later_release() {
         for case in CommandModalCase::ALL {
             let mut fixture = command_modal_interruption_fixture(case);
-            let commit = fixture.applied.result.as_ref().unwrap();
-            let mut sectors = SectorWindowState::default();
-            let mut defenses = DefensesWindowState::default();
-            crate::apply_capture_cancellation_events(
-                &commit.events,
-                &mut fixture.router,
-                &mut sectors,
-                &mut fixture.fleets,
-                &mut defenses,
-            );
+            apply_command_modal_cancellation(&mut fixture);
 
             fixture
                 .router
@@ -2624,17 +2637,8 @@ mod tests {
     #[test]
     fn build_selection_windowing_modal_cancels_capture() {
         use rebellion_render::build_selection::BuildSelectionState;
-        use rebellion_windowing::CaptureCancelReason;
 
-        let mut coordinator = StrategicWindowing::new();
-        coordinator.enqueue(WindowCommand::Open(contextual_spec(
-            WindowKind::Fleet,
-            SubjectId::new(1, 1),
-            WindowOwner::StrategicRoot,
-        )));
-        let owner = opened_id(&coordinator.apply_pending()[0]);
-        coordinator.enqueue(WindowCommand::CapturePointer(owner));
-        assert!(coordinator.apply_pending()[0].result.is_ok());
+        let (mut coordinator, owner) = coordinator_with_fleet_capture();
 
         let state = BuildSelectionState::default();
         coordinator.enqueue_build_selection_open(
@@ -2648,11 +2652,7 @@ mod tests {
                 .unwrap(),
         );
         let applied = coordinator.apply_pending();
-        let commit = applied[0].result.as_ref().unwrap();
-        assert!(commit.events.contains(&WindowEvent::CaptureCancelled {
-            window: owner,
-            reason: CaptureCancelReason::ModalOpened,
-        }));
+        assert_modal_cancelled_capture(&applied[0], owner);
     }
 
     #[test]
@@ -2742,17 +2742,8 @@ mod tests {
     #[test]
     fn mission_dialog_windowing_modal_cancels_capture() {
         use rebellion_render::mission_dialog::MissionDialogState;
-        use rebellion_windowing::CaptureCancelReason;
 
-        let mut coordinator = StrategicWindowing::new();
-        coordinator.enqueue(WindowCommand::Open(contextual_spec(
-            WindowKind::Fleet,
-            SubjectId::new(1, 1),
-            WindowOwner::StrategicRoot,
-        )));
-        let owner = opened_id(&coordinator.apply_pending()[0]);
-        coordinator.enqueue(WindowCommand::CapturePointer(owner));
-        assert!(coordinator.apply_pending()[0].result.is_ok());
+        let (mut coordinator, owner) = coordinator_with_fleet_capture();
 
         let state = MissionDialogState::default();
         coordinator
@@ -2769,73 +2760,43 @@ mod tests {
             )
             .unwrap();
         let applied = coordinator.apply_pending();
-        let commit = applied[0].result.as_ref().unwrap();
-        assert!(commit.events.contains(&WindowEvent::CaptureCancelled {
-            window: owner,
-            reason: CaptureCancelReason::ModalOpened,
-        }));
+        assert_modal_cancelled_capture(&applied[0], owner);
     }
 
     #[test]
     fn move_confirmation_windowing_modal_cancels_capture() {
-        use rebellion_render::move_confirmation::{MoveConfirmation, MoveConfirmationState};
-        use rebellion_windowing::CaptureCancelReason;
+        use rebellion_render::move_confirmation::MoveConfirmationState;
 
-        let mut coordinator = StrategicWindowing::new();
-        coordinator.enqueue(WindowCommand::Open(contextual_spec(
-            WindowKind::Fleet,
-            SubjectId::new(1, 1),
-            WindowOwner::StrategicRoot,
-        )));
-        let owner = opened_id(&coordinator.apply_pending()[0]);
-        coordinator.enqueue(WindowCommand::CapturePointer(owner));
-        assert!(coordinator.apply_pending()[0].result.is_ok());
+        let (mut coordinator, owner) = coordinator_with_fleet_capture();
 
         let state = MoveConfirmationState::default();
         coordinator
             .enqueue_move_confirmation_open(
                 state
-                    .prepare_open(MoveConfirmation {
-                        faction: MissionFaction::Alliance,
-                        fleets: vec![Default::default()],
-                        members: Vec::new(),
-                        ships: None,
-                        units: Vec::new(),
-                        destination: SystemKey::default(),
-                        join: None,
-                        blockaded: false,
-                        lines: vec![("Red Fleet".into(), 2)],
-                    })
+                    .prepare_open(move_confirmation(
+                        FleetKey::default(),
+                        SystemKey::default(),
+                        2,
+                    ))
                     .unwrap(),
             )
             .unwrap();
         let applied = coordinator.apply_pending();
-        let commit = applied[0].result.as_ref().unwrap();
-        assert!(commit.events.contains(&WindowEvent::CaptureCancelled {
-            window: owner,
-            reason: CaptureCancelReason::ModalOpened,
-        }));
+        assert_modal_cancelled_capture(&applied[0], owner);
         assert!(applied[0].move_confirmation_content_id.is_some());
     }
 
     #[test]
     fn scrap_confirmation_receipt_dispatches_once() {
-        use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
         use rebellion_render::move_confirmation::{
-            ScrapConfirmation, ScrapConfirmationAction, ScrapConfirmationState,
+            ScrapConfirmationAction, ScrapConfirmationState,
         };
 
         let mut coordinator = StrategicWindowing::new();
         let mut state = ScrapConfirmationState::default();
         coordinator
             .enqueue_scrap_confirmation_open(
-                state
-                    .prepare_open(ScrapConfirmation {
-                        faction: MissionFaction::Alliance,
-                        order: ScrapOrder::Troop(Default::default()),
-                        targets: vec![ScrapTarget::Troop(Default::default())],
-                        names: vec!["Army Regiment".into()],
-                    })
+                state.prepare_open(scrap_confirmation())
                     .unwrap(),
             )
             .unwrap();
@@ -2868,27 +2829,19 @@ mod tests {
 
     #[test]
     fn confirmation_close_requires_attached_content_receipt() {
-        use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
         use rebellion_render::move_confirmation::{
-            MoveConfirmation, MoveConfirmationState, ScrapConfirmation, ScrapConfirmationState,
+            MoveConfirmationState, ScrapConfirmationState,
         };
 
         let mut move_coordinator = StrategicWindowing::new();
         let mut move_state = MoveConfirmationState::default();
         move_coordinator
             .enqueue_move_confirmation_open(
-                move_state
-                    .prepare_open(MoveConfirmation {
-                        faction: MissionFaction::Alliance,
-                        fleets: vec![Default::default()],
-                        members: Vec::new(),
-                        ships: None,
-                        units: Vec::new(),
-                        destination: SystemKey::default(),
-                        join: None,
-                        blockaded: false,
-                        lines: vec![("Red Fleet".into(), 2)],
-                    })
+                move_state.prepare_open(move_confirmation(
+                    FleetKey::default(),
+                    SystemKey::default(),
+                    2,
+                ))
                     .unwrap(),
             )
             .unwrap();
@@ -2911,13 +2864,7 @@ mod tests {
         let mut scrap_state = ScrapConfirmationState::default();
         scrap_coordinator
             .enqueue_scrap_confirmation_open(
-                scrap_state
-                    .prepare_open(ScrapConfirmation {
-                        faction: MissionFaction::Alliance,
-                        order: ScrapOrder::Troop(Default::default()),
-                        targets: vec![ScrapTarget::Troop(Default::default())],
-                        names: vec!["Army Regiment".into()],
-                    })
+                scrap_state.prepare_open(scrap_confirmation())
                     .unwrap(),
             )
             .unwrap();
@@ -2940,9 +2887,8 @@ mod tests {
 
     #[test]
     fn confirmation_publication_rollbacks_close_exact_identity() {
-        use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
         use rebellion_render::move_confirmation::{
-            MoveConfirmation, MoveConfirmationState, ScrapConfirmation, ScrapConfirmationState,
+            MoveConfirmationState, ScrapConfirmationState,
         };
 
         let open_sentinel = |coordinator: &mut StrategicWindowing, value| {
@@ -2966,18 +2912,11 @@ mod tests {
         let mut move_coordinator = StrategicWindowing::new();
         move_coordinator
             .enqueue_move_confirmation_open(
-                MoveConfirmationState::default()
-                    .prepare_open(MoveConfirmation {
-                        faction: MissionFaction::Alliance,
-                        fleets: vec![Default::default()],
-                        members: Vec::new(),
-                        ships: None,
-                        units: Vec::new(),
-                        destination: SystemKey::default(),
-                        join: None,
-                        blockaded: false,
-                        lines: vec![("Red Fleet".into(), 2)],
-                    })
+                MoveConfirmationState::default().prepare_open(move_confirmation(
+                    FleetKey::default(),
+                    SystemKey::default(),
+                    2,
+                ))
                     .unwrap(),
             )
             .unwrap();
@@ -3002,13 +2941,7 @@ mod tests {
         let mut scrap_coordinator = StrategicWindowing::new();
         scrap_coordinator
             .enqueue_scrap_confirmation_open(
-                ScrapConfirmationState::default()
-                    .prepare_open(ScrapConfirmation {
-                        faction: MissionFaction::Alliance,
-                        order: ScrapOrder::Troop(Default::default()),
-                        targets: vec![ScrapTarget::Troop(Default::default())],
-                        names: vec!["Army Regiment".into()],
-                    })
+                ScrapConfirmationState::default().prepare_open(scrap_confirmation())
                     .unwrap(),
             )
             .unwrap();
@@ -3347,30 +3280,9 @@ mod tests {
             let mut router = FrameInputRouter::default();
             let mut visible_rows = Vec::new();
             for (index, (events, phases)) in frames.into_iter().enumerate() {
-                let frame = u64::try_from(index + 1).unwrap();
-                let snapshot = coordinator.begin_frame();
-                router.begin_frame(frame, &snapshot);
-                let mut routed = Vec::new();
-                for (ordinal, phase) in phases.into_iter().enumerate() {
-                    let event = InputEventId {
-                        frame,
-                        ordinal: u32::try_from(ordinal).unwrap(),
-                    };
-                    assert_eq!(
-                        router.collect_pointer(event, &BTreeSet::from([window]), phase),
-                        InputRecipient::Window(window)
-                    );
-                    routed.push((event, phase));
-                }
-                let input = egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(640.0, 480.0),
-                    )),
-                    time: Some(index as f64 * 0.05),
-                    events,
-                    ..egui::RawInput::default()
-                };
+                let (snapshot, routed) =
+                    begin_routed_frame(coordinator, &mut router, index, window, phases);
+                let input = test_raw_input(index, events);
                 let output = ctx.run(input, |ctx| {
                     let _ = draw_managed_defenses_windows(
                         ctx,
@@ -3432,53 +3344,36 @@ mod tests {
             let window = self.system_windows.window_id(self.system).unwrap();
             let mut router = FrameInputRouter::default();
             for (index, (events, phases)) in frames.into_iter().enumerate() {
-                let frame = u64::try_from(index + 1).unwrap();
-                let snapshot = coordinator.begin_frame();
-                router.begin_frame(frame, &snapshot);
-                let mut routed = Vec::new();
-                for (ordinal, phase) in phases.into_iter().enumerate() {
-                    let event = InputEventId {
-                        frame,
-                        ordinal: u32::try_from(ordinal).unwrap(),
-                    };
-                    assert_eq!(
-                        router.collect_pointer(event, &BTreeSet::from([window]), phase),
-                        InputRecipient::Window(window)
-                    );
-                    routed.push(SystemWindowInputEvent {
-                        id: event,
+                let (snapshot, routed) =
+                    begin_routed_frame(coordinator, &mut router, index, window, phases);
+                let routed = routed
+                    .into_iter()
+                    .map(|(id, phase)| SystemWindowInputEvent {
+                        id,
                         point: (point.x, point.y),
                         phase,
-                    });
-                }
-                let input = egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(640.0, 480.0),
-                    )),
-                    time: Some(index as f64 * 0.05),
-                    events,
-                    ..egui::RawInput::default()
-                };
+                    })
+                    .collect::<Vec<_>>();
+                let input = test_raw_input(index, events);
                 let _ = ctx.run(input, |ctx| {
-                    let _ = draw_managed_system_windows(
+                    let _ = draw_managed_system_windows(ManagedSystemDraw {
                         ctx,
-                        &self.world,
-                        &movement,
-                        &self.fog,
-                        &self.missions,
-                        &manufacturing,
-                        &deliveries,
-                        &mut self.system_windows,
-                        CockpitFaction::Alliance,
-                        fleet_layout(),
-                        &mut cache,
-                        &snapshot,
-                        &routed,
-                        &mut router,
-                        false,
-                        &|_| true,
-                    );
+                        world: &self.world,
+                        movement: &movement,
+                        fog: &self.fog,
+                        missions: &self.missions,
+                        manufacturing: &manufacturing,
+                        deliveries: &deliveries,
+                        state: &mut self.system_windows,
+                        faction: CockpitFaction::Alliance,
+                        layout: fleet_layout(),
+                        cache: &mut cache,
+                        snapshot: &snapshot,
+                        pointer_events: &routed,
+                        router: &mut router,
+                        front: false,
+                        shown: &|_| true,
+                    });
                 });
             }
         }
@@ -3727,14 +3622,11 @@ mod tests {
         let mut coordinator = StrategicWindowing::new();
         let mut ids = Vec::new();
         for value in 0..13 {
-            coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            let id = open_attached_contextual(
+                &mut coordinator,
                 WindowKind::System,
                 SubjectId::new(2, 10_000 + value),
-                WindowOwner::StrategicRoot,
-            )));
-            let opened = coordinator.apply_pending().remove(0);
-            let id = opened_id(&opened);
-            assert!(coordinator.attach_content(id));
+            );
             coordinator.enqueue(WindowCommand::Minimize(id));
             let minimized = coordinator.apply_pending().remove(0);
             if value < 12 {
@@ -3764,14 +3656,11 @@ mod tests {
         let mut coordinator = StrategicWindowing::new();
         let mut ids = Vec::new();
         for value in 0..3 {
-            coordinator.enqueue(WindowCommand::Open(contextual_spec(
+            let id = open_attached_contextual(
+                &mut coordinator,
                 WindowKind::Fleet,
                 SubjectId::new(2, 20_000 + value),
-                WindowOwner::StrategicRoot,
-            )));
-            let opened = coordinator.apply_pending().remove(0);
-            let id = opened_id(&opened);
-            assert!(coordinator.attach_content(id));
+            );
             coordinator.enqueue(WindowCommand::Minimize(id));
             assert!(coordinator.apply_pending()[0].removed_content.is_empty());
             ids.push(id);
@@ -3924,9 +3813,8 @@ mod tests {
 
     #[test]
     fn system_detail_commits_raise_restore_and_exact_removal_receipts() {
-        let (world, system) = fleet_world();
-        let mut state = SystemWindowState::default();
-        let mut coordinator = StrategicWindowing::new();
+        let (world, system, mut state, mut coordinator) =
+            detail_test_context::<SystemWindowState>();
         let prepared = state
             .prepare_open(
                 &world,
@@ -3949,14 +3837,7 @@ mod tests {
         assert!(coordinator.acknowledge_system_publication(id));
         assert_eq!(state.window_id(system), Some(id));
 
-        coordinator.enqueue_system_minimize(id);
-        let minimized = coordinator.apply_pending().remove(0);
-        assert!(matches!(
-            minimized.result.as_ref().unwrap().transition,
-            WindowTransition::Minimized { id: minimized_id, .. } if minimized_id == id
-        ));
-        assert!(coordinator.has_content(id));
-        assert!(!coordinator.begin_frame().is_visible(id));
+        minimize_content(&mut coordinator, id, StrategicWindowing::enqueue_system_minimize);
         assert_eq!(coordinator.begin_frame().presentation_history(), [id]);
         assert_eq!(coordinator.saved_galaxy_order(), [(id, false)]);
 
@@ -3987,71 +3868,35 @@ mod tests {
         assert!(coordinator.begin_frame().is_visible(id));
         assert!(coordinator.begin_frame().presentation_history().is_empty());
 
-        coordinator.enqueue(WindowCommand::Close(id));
-        let closed = coordinator.apply_pending().remove(0);
-        assert_eq!(closed.removed_content, [id]);
-        state.remove_content(&closed.removed_content);
+        close_detail_content(&mut coordinator, id, |removed| state.remove_content(removed));
         assert!(!state.contains_window(id));
-        assert!(!coordinator.has_content(id));
     }
 
     #[test]
     fn fleet_commit_publishes_content_and_history_only_after_manager_transition() {
-        let (world, system) = fleet_world();
-        let mut state = FleetWindowState::default();
-        let mut coordinator = StrategicWindowing::new();
-        let prepared = state
-            .prepare_open(
-                &world,
-                system,
-                (40, 50),
-                CockpitFaction::Alliance,
-                fleet_layout(),
-                None,
-            )
-            .unwrap();
-
-        coordinator.enqueue_fleet_open(prepared);
+        let (world, system, mut state, mut coordinator) =
+            detail_test_context::<FleetWindowState>();
         assert!(coordinator.begin_frame().paint_order().is_empty());
-        let mut opened = coordinator.apply_pending().remove(0);
-        let id = opened.fleet_content_id.unwrap();
-        let commit = opened.result.as_ref().unwrap();
-        assert_eq!(
-            state.commit_open(opened.prepared_fleet.take().unwrap(), &commit.transition),
-            Some(id)
+        let (id, _) = commit_fleet_open(
+            &world,
+            system,
+            (40, 50),
+            &mut state,
+            &mut coordinator,
         );
         assert!(!coordinator.has_content(id));
         assert!(coordinator.acknowledge_fleet_publication(id));
         assert!(coordinator.has_content(id));
         assert_eq!(state.window_id(system), Some(id));
 
-        coordinator.enqueue_fleet_minimize(id);
-        let minimized = coordinator.apply_pending().remove(0);
-        assert!(matches!(
-            minimized.result.as_ref().unwrap().transition,
-            WindowTransition::Minimized {
-                id: minimized_id, ..
-            } if minimized_id == id
-        ));
-        assert!(coordinator.has_content(id));
-        assert!(!coordinator.begin_frame().is_visible(id));
+        minimize_content(&mut coordinator, id, StrategicWindowing::enqueue_fleet_minimize);
         assert_eq!(coordinator.begin_frame().presentation_history(), [id]);
 
-        coordinator.enqueue(WindowCommand::Restore(id));
-        let restored = coordinator.apply_pending().remove(0);
+        let restored = restore_content(&mut coordinator, id);
         assert_eq!(restored.fleet_content_id, None);
-        assert!(matches!(
-            restored.result.as_ref().unwrap().transition,
-            WindowTransition::Restored { id: restored_id, .. } if restored_id == id
-        ));
-        assert!(coordinator.begin_frame().is_visible(id));
         assert!(coordinator.begin_frame().presentation_history().is_empty());
 
-        coordinator.enqueue(WindowCommand::Close(id));
-        let closed = coordinator.apply_pending().remove(0);
-        assert_eq!(closed.removed_content, [id]);
-        state.remove_content(&closed.removed_content);
-        assert!(!coordinator.has_content(id));
+        close_detail_content(&mut coordinator, id, |removed| state.remove_content(removed));
         assert_eq!(state.window_count(), 0);
 
         coordinator.enqueue_fleet_minimize(id);
@@ -4061,28 +3906,14 @@ mod tests {
 
     #[test]
     fn ordinary_fleet_reopen_reports_the_restored_rail_identity() {
-        let (world, system) = fleet_world();
-        let mut state = FleetWindowState::default();
-        let mut coordinator = StrategicWindowing::new();
-        let prepared = state
-            .prepare_open(
-                &world,
-                system,
-                (40, 50),
-                CockpitFaction::Alliance,
-                fleet_layout(),
-                None,
-            )
-            .unwrap();
-        coordinator.enqueue_fleet_open(prepared);
-        let mut opened = coordinator.apply_pending().remove(0);
-        let id = opened.fleet_content_id.unwrap();
-        assert_eq!(
-            state.commit_open(
-                opened.prepared_fleet.take().unwrap(),
-                &opened.result.as_ref().unwrap().transition,
-            ),
-            Some(id)
+        let (world, system, mut state, mut coordinator) =
+            detail_test_context::<FleetWindowState>();
+        let (id, _) = commit_fleet_open(
+            &world,
+            system,
+            (40, 50),
+            &mut state,
+            &mut coordinator,
         );
         assert!(coordinator.acknowledge_fleet_publication(id));
 
@@ -4122,9 +3953,8 @@ mod tests {
 
     #[test]
     fn defenses_detail_commits_raise_restore_and_exact_removal_receipts() {
-        let (world, system) = fleet_world();
-        let mut state = DefensesWindowState::default();
-        let mut coordinator = StrategicWindowing::new();
+        let (world, system, mut state, mut coordinator) =
+            detail_test_context::<DefensesWindowState>();
         let prepared = state
             .prepare_open(
                 &world,
@@ -4149,41 +3979,29 @@ mod tests {
         assert!(coordinator.acknowledge_defenses_publication(id));
         assert_eq!(state.window_id(system), Some(id));
 
-        coordinator.enqueue_defenses_minimize(id);
-        let minimized = coordinator.apply_pending().remove(0);
-        assert!(matches!(
-            minimized.result.as_ref().unwrap().transition,
-            WindowTransition::Minimized { id: minimized_id, .. } if minimized_id == id
-        ));
-        assert!(coordinator.has_content(id));
-        assert!(!coordinator.begin_frame().is_visible(id));
+        minimize_content(
+            &mut coordinator,
+            id,
+            StrategicWindowing::enqueue_defenses_minimize,
+        );
         assert!(state.contains_window(id));
 
-        coordinator.enqueue(WindowCommand::Restore(id));
-        let restored = coordinator.apply_pending().remove(0);
+        let restored = finish_detail_lifecycle(
+            &mut coordinator,
+            id,
+            &mut state,
+            DefensesWindowState::contains_window,
+            DefensesWindowState::remove_content,
+        );
         assert_eq!(restored.defenses_content_id, None);
-        assert!(matches!(
-            restored.result.as_ref().unwrap().transition,
-            WindowTransition::Restored { id: restored_id, .. } if restored_id == id
-        ));
-        assert!(coordinator.begin_frame().is_visible(id));
-        assert!(state.contains_window(id));
-
-        coordinator.enqueue(WindowCommand::Close(id));
-        let closed = coordinator.apply_pending().remove(0);
-        assert_eq!(closed.removed_content, [id]);
-        state.remove_content(&closed.removed_content);
-        assert!(!state.contains_window(id));
-        assert!(!coordinator.has_content(id));
     }
 
     #[test]
     fn missions_detail_commits_raise_restore_and_exact_removal_receipts() {
-        let (world, system) = fleet_world();
+        let (world, system, mut state, mut coordinator) =
+            detail_test_context::<MissionsWindowState>();
         let fog = FogState::new(Faction::Alliance);
         let missions = MissionState::new();
-        let mut state = MissionsWindowState::default();
-        let mut coordinator = StrategicWindowing::new();
         let prepared = state
             .prepare_open(
                 &world,
@@ -4210,32 +4028,21 @@ mod tests {
         assert!(coordinator.acknowledge_missions_publication(id));
         assert_eq!(state.window_id(system), Some(id));
 
-        coordinator.enqueue_missions_minimize(id);
-        let minimized = coordinator.apply_pending().remove(0);
-        assert!(matches!(
-            minimized.result.as_ref().unwrap().transition,
-            WindowTransition::Minimized { id: minimized_id, .. } if minimized_id == id
-        ));
-        assert!(coordinator.has_content(id));
-        assert!(!coordinator.begin_frame().is_visible(id));
+        minimize_content(
+            &mut coordinator,
+            id,
+            StrategicWindowing::enqueue_missions_minimize,
+        );
         assert!(state.contains_window(id));
 
-        coordinator.enqueue(WindowCommand::Restore(id));
-        let restored = coordinator.apply_pending().remove(0);
+        let restored = finish_detail_lifecycle(
+            &mut coordinator,
+            id,
+            &mut state,
+            MissionsWindowState::contains_window,
+            MissionsWindowState::remove_content,
+        );
         assert_eq!(restored.missions_content_id, None);
-        assert!(matches!(
-            restored.result.as_ref().unwrap().transition,
-            WindowTransition::Restored { id: restored_id, .. } if restored_id == id
-        ));
-        assert!(coordinator.begin_frame().is_visible(id));
-        assert!(state.contains_window(id));
-
-        coordinator.enqueue(WindowCommand::Close(id));
-        let closed = coordinator.apply_pending().remove(0);
-        assert_eq!(closed.removed_content, [id]);
-        state.remove_content(&closed.removed_content);
-        assert!(!state.contains_window(id));
-        assert!(!coordinator.has_content(id));
     }
 
     #[test]
@@ -4292,40 +4099,14 @@ mod tests {
         assert!(coordinator.begin_frame().paint_order().is_empty());
 
         let mut opened = coordinator.apply_pending().remove(0);
-        let id = opened.fleet_finder_content_id.unwrap();
-        let transition = &opened.result.as_ref().unwrap().transition;
-        assert_eq!(
-            finder.commit_open(opened.prepared_fleet_finder.take().unwrap(), transition),
-            Some(id)
-        );
+        let id = commit_finder_open(&mut finder, &mut opened);
         assert!(coordinator.acknowledge_fleet_finder_publication(id));
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(FLEET_FINDER_NAME_CONTROL),
-        };
-        assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+        let name_focus = finder_name_focus(&coordinator, id, FLEET_FINDER_NAME_CONTROL);
 
         finder.set_tab(rebellion_render::fleet_finder::FinderTab::Imperial);
         coordinator
             .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Empire));
-        let mut duplicate = coordinator.apply_pending().remove(0);
-        assert!(matches!(
-            duplicate.result.as_ref().unwrap().transition,
-            WindowTransition::Existing {
-                id: existing,
-                effect: ExistingEffect::NoOp,
-            } if existing == id
-        ));
-        assert_eq!(duplicate.fleet_finder_content_id, Some(id));
-        assert_eq!(
-            finder.commit_open(
-                duplicate.prepared_fleet_finder.take().unwrap(),
-                &duplicate.result.as_ref().unwrap().transition,
-            ),
-            Some(id)
-        );
-        assert_eq!(finder.window_id(), Some(id));
-        assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+        commit_pending_existing_finder(&mut coordinator, &mut finder, id, name_focus);
     }
 
     #[test]
@@ -4336,50 +4117,20 @@ mod tests {
             .enqueue_troop_finder_open(TroopFinderState::prepare_open(CockpitFaction::Alliance));
 
         let mut opened = coordinator.apply_pending().remove(0);
-        let id = opened.troop_finder_content_id.unwrap();
-        assert_eq!(
-            finder.commit_open(
-                opened.prepared_troop_finder.take().unwrap(),
-                &opened.result.as_ref().unwrap().transition,
-            ),
-            Some(id)
-        );
+        let id = commit_finder_open(&mut finder, &mut opened);
         assert!(coordinator.acknowledge_troop_finder_publication(id));
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_NAME_CONTROL),
-        };
-        assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+        let name_focus = finder_name_focus(&coordinator, id, TROOP_FINDER_NAME_CONTROL);
 
         finder.set_tab(TroopTab::Imperial);
         coordinator
             .enqueue_troop_finder_open(TroopFinderState::prepare_open(CockpitFaction::Empire));
-        let mut duplicate = coordinator.apply_pending().remove(0);
-        assert!(matches!(
-            duplicate.result.as_ref().unwrap().transition,
-            WindowTransition::Existing {
-                id: existing,
-                effect: ExistingEffect::NoOp,
-            } if existing == id
-        ));
-        assert_eq!(duplicate.troop_finder_content_id, Some(id));
-        assert_eq!(
-            finder.commit_open(
-                duplicate.prepared_troop_finder.take().unwrap(),
-                &duplicate.result.as_ref().unwrap().transition,
-            ),
-            Some(id)
-        );
-        assert_eq!(finder.window_id(), Some(id));
-        assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+        commit_pending_existing_finder(&mut coordinator, &mut finder, id, name_focus);
     }
 
     #[test]
     fn troop_finder_wrong_publication_is_rejected_and_rolled_back() {
         let mut coordinator = StrategicWindowing::new();
-        coordinator
-            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
-        let fleet_finder = opened_id(&coordinator.apply_pending()[0]);
+        let fleet_finder = open_fleet_finder(&mut coordinator);
         assert!(!coordinator.acknowledge_troop_finder_publication(fleet_finder));
 
         coordinator
@@ -4406,52 +4157,22 @@ mod tests {
         ));
 
         let mut opened = coordinator.apply_pending().remove(0);
-        let id = opened.personnel_finder_content_id.unwrap();
-        assert_eq!(
-            finder.commit_open(
-                opened.prepared_personnel_finder.take().unwrap(),
-                &opened.result.as_ref().unwrap().transition,
-            ),
-            Some(id)
-        );
+        let id = commit_finder_open(&mut finder, &mut opened);
         assert!(coordinator.acknowledge_personnel_finder_publication(id));
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(PERSONNEL_FINDER_NAME_CONTROL),
-        };
-        assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+        let name_focus = finder_name_focus(&coordinator, id, PERSONNEL_FINDER_NAME_CONTROL);
 
         finder.set_tab(PersonnelTab::Imperial);
         finder.set_view(PersonnelView::Characters);
         coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
             CockpitFaction::Empire,
         ));
-        let mut duplicate = coordinator.apply_pending().remove(0);
-        assert!(matches!(
-            duplicate.result.as_ref().unwrap().transition,
-            WindowTransition::Existing {
-                id: existing,
-                effect: ExistingEffect::NoOp,
-            } if existing == id
-        ));
-        assert_eq!(duplicate.personnel_finder_content_id, Some(id));
-        assert_eq!(
-            finder.commit_open(
-                duplicate.prepared_personnel_finder.take().unwrap(),
-                &duplicate.result.as_ref().unwrap().transition,
-            ),
-            Some(id)
-        );
-        assert_eq!(finder.window_id(), Some(id));
-        assert_eq!(coordinator.begin_frame().focused(), Some(name_focus));
+        commit_pending_existing_finder(&mut coordinator, &mut finder, id, name_focus);
     }
 
     #[test]
     fn personnel_finder_wrong_publication_is_rejected_and_rolled_back() {
         let mut coordinator = StrategicWindowing::new();
-        coordinator
-            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
-        let fleet_finder = opened_id(&coordinator.apply_pending()[0]);
+        let fleet_finder = open_fleet_finder(&mut coordinator);
         assert!(!coordinator.acknowledge_personnel_finder_publication(fleet_finder));
 
         coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
@@ -4601,9 +4322,7 @@ mod tests {
     #[test]
     fn finder_unhandled_function_key_stops_at_modal_boundary() {
         let mut coordinator = StrategicWindowing::new();
-        coordinator
-            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
-        let id = opened_id(&coordinator.apply_pending()[0]);
+        let id = open_fleet_finder(&mut coordinator);
         let frame = coordinator.begin_frame();
         let event = InputEventId {
             frame: 1,
@@ -4625,9 +4344,7 @@ mod tests {
     #[test]
     fn finder_close_key_cannot_open_another_surface_in_same_frame() {
         let mut coordinator = StrategicWindowing::new();
-        coordinator
-            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
-        let id = opened_id(&coordinator.apply_pending()[0]);
+        let id = open_fleet_finder(&mut coordinator);
         let closing_frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
         let event = InputEventId {
             frame: 7,
@@ -4656,9 +4373,7 @@ mod tests {
     #[test]
     fn finder_modal_blocks_root_and_retained_detail_input() {
         let mut coordinator = StrategicWindowing::new();
-        coordinator
-            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
-        let id = opened_id(&coordinator.apply_pending()[0]);
+        let id = open_fleet_finder(&mut coordinator);
         let frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
 
         assert_eq!(frame.snapshot().active_modal(), Some(id));
@@ -4710,12 +4425,10 @@ mod tests {
     #[test]
     fn apply_batch_preserves_non_sector_order_and_defers_receipt_side_enqueue() {
         let mut coordinator = StrategicWindowing::new();
-        for kind in [WindowKind::Encyclopedia, WindowKind::MessageIndex] {
-            coordinator.enqueue(WindowCommand::Open(singleton_spec(
-                kind,
-                WindowOwner::StrategicRoot,
-            )));
-        }
+        enqueue_singletons(
+            &mut coordinator,
+            [WindowKind::Encyclopedia, WindowKind::MessageIndex],
+        );
         assert_eq!(coordinator.begin_apply_batch(), 2);
         let first = coordinator.apply_next_pending().unwrap();
         assert!(matches!(
@@ -4766,12 +4479,10 @@ mod tests {
     #[test]
     fn strategic_windowing_receipts_remove_only_matching_content_ids() {
         let mut coordinator = StrategicWindowing::new();
-        for kind in [WindowKind::Encyclopedia, WindowKind::MessageIndex] {
-            coordinator.enqueue(WindowCommand::Open(singleton_spec(
-                kind,
-                WindowOwner::StrategicRoot,
-            )));
-        }
+        enqueue_singletons(
+            &mut coordinator,
+            [WindowKind::Encyclopedia, WindowKind::MessageIndex],
+        );
         let applied = coordinator.apply_pending();
         let first = opened_id(&applied[0]);
         let second = opened_id(&applied[1]);
@@ -5021,11 +4732,7 @@ mod tests {
         use rebellion_render::tactical_view::TacticalWindowPhase;
 
         let mut coordinator = StrategicWindowing::new();
-        let alert = coordinator
-            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Alert)
-            .unwrap()
-            .window
-            .unwrap();
+        let alert = tactical_alert(&mut coordinator);
 
         let combat = coordinator
             .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Combat)
@@ -5046,11 +4753,7 @@ mod tests {
         use rebellion_render::tactical_view::TacticalWindowPhase;
 
         let mut coordinator = StrategicWindowing::new();
-        let alert = coordinator
-            .commit_scene_phase(WindowScene::Tactical, TacticalWindowPhase::Alert)
-            .unwrap()
-            .window
-            .unwrap();
+        let alert = tactical_alert(&mut coordinator);
 
         let suspended = coordinator
             .commit_scene_phase(WindowScene::Suspended, TacticalWindowPhase::Alert)
@@ -5307,11 +5010,7 @@ mod tests {
     #[test]
     fn windowing_no_legacy_underlay_action_under_modal() {
         let mut coordinator = StrategicWindowing::new();
-        coordinator.enqueue(WindowCommand::Open(singleton_spec(
-            WindowKind::Encyclopedia,
-            WindowOwner::StrategicRoot,
-        )));
-        let modal = opened_id(&coordinator.apply_pending()[0]);
+        let modal = open_singleton(&mut coordinator, WindowKind::Encyclopedia);
 
         let frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
         let event = InputEventId {
@@ -5340,11 +5039,7 @@ mod tests {
     #[test]
     fn windowing_frame_boundary_keeps_close_event_lease() {
         let mut coordinator = StrategicWindowing::new();
-        coordinator.enqueue(WindowCommand::Open(singleton_spec(
-            WindowKind::Encyclopedia,
-            WindowOwner::StrategicRoot,
-        )));
-        let modal = opened_id(&coordinator.apply_pending()[0]);
+        let modal = open_singleton(&mut coordinator, WindowKind::Encyclopedia);
         let closing_frame = coordinator.begin_production_frame(ApplicationInputLocks::default());
 
         coordinator.enqueue(WindowCommand::Close(modal));

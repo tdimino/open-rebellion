@@ -680,25 +680,33 @@ mod tests {
         }
     }
 
-    fn bmp(pixel: [u8; 3]) -> Arc<[u8]> {
+    fn bmp_header(pixel_offset: u32, pixel_bytes: u32, bits: u16, colors: u32) -> Vec<u8> {
         const WIDTH: u32 = 400;
         const HEIGHT: u32 = 200;
-        const PIXEL_OFFSET: u32 = 54;
-        const PIXEL_BYTES: u32 = WIDTH * HEIGHT * 3;
-        const FILE_BYTES: u32 = PIXEL_OFFSET + PIXEL_BYTES;
-        let mut bytes = Vec::with_capacity(FILE_BYTES as usize);
+        let file_bytes = pixel_offset + pixel_bytes;
+        let mut bytes = Vec::with_capacity(file_bytes as usize);
         bytes.extend_from_slice(b"BM");
-        bytes.extend_from_slice(&FILE_BYTES.to_le_bytes());
+        bytes.extend_from_slice(&file_bytes.to_le_bytes());
         bytes.extend_from_slice(&[0; 4]);
-        bytes.extend_from_slice(&PIXEL_OFFSET.to_le_bytes());
+        bytes.extend_from_slice(&pixel_offset.to_le_bytes());
         bytes.extend_from_slice(&40_u32.to_le_bytes());
         bytes.extend_from_slice(&(WIDTH as i32).to_le_bytes());
         bytes.extend_from_slice(&(HEIGHT as i32).to_le_bytes());
         bytes.extend_from_slice(&1_u16.to_le_bytes());
-        bytes.extend_from_slice(&24_u16.to_le_bytes());
+        bytes.extend_from_slice(&bits.to_le_bytes());
         bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend_from_slice(&PIXEL_BYTES.to_le_bytes());
-        bytes.extend_from_slice(&[0; 16]);
+        bytes.extend_from_slice(&pixel_bytes.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&colors.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes
+    }
+
+    fn bmp(pixel: [u8; 3]) -> Arc<[u8]> {
+        const WIDTH: u32 = 400;
+        const HEIGHT: u32 = 200;
+        const PIXEL_BYTES: u32 = WIDTH * HEIGHT * 3;
+        let mut bytes = bmp_header(54, PIXEL_BYTES, 24, 0);
         for _ in 0..WIDTH * HEIGHT {
             bytes.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
         }
@@ -711,21 +719,7 @@ mod tests {
         const PIXEL_OFFSET: u32 = 14 + 40 + 1024;
         const PIXEL_BYTES: u32 = WIDTH * HEIGHT;
         const FILE_BYTES: u32 = PIXEL_OFFSET + PIXEL_BYTES;
-        let mut bytes = Vec::with_capacity(FILE_BYTES as usize);
-        bytes.extend_from_slice(b"BM");
-        bytes.extend_from_slice(&FILE_BYTES.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        bytes.extend_from_slice(&PIXEL_OFFSET.to_le_bytes());
-        bytes.extend_from_slice(&40_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH as i32).to_le_bytes());
-        bytes.extend_from_slice(&(HEIGHT as i32).to_le_bytes());
-        bytes.extend_from_slice(&1_u16.to_le_bytes());
-        bytes.extend_from_slice(&8_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend_from_slice(&PIXEL_BYTES.to_le_bytes());
-        bytes.extend_from_slice(&[0; 8]);
-        bytes.extend_from_slice(&256_u32.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        let mut bytes = bmp_header(PIXEL_OFFSET, PIXEL_BYTES, 8, 256);
         bytes.resize(PIXEL_OFFSET as usize, 0);
         bytes[58..62].copy_from_slice(&[pixel[2], pixel[1], pixel[0], 0]);
         bytes.resize(FILE_BYTES as usize, 1);

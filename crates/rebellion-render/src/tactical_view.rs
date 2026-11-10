@@ -347,6 +347,32 @@ pub struct TacticalWindowInput {
     /// Whether the physical primary button remains down.
     pub primary_down: bool,
 }
+
+#[derive(Debug, Clone, Copy)]
+enum TacticalLogicalPointerEvent {
+    CancelGesture,
+    PrimaryPress((f32, f32)),
+    PrimaryRelease((f32, f32)),
+}
+
+fn tactical_logical_pointer_events(
+    canvas: TacticalCanvas,
+    input: &TacticalWindowInput,
+) -> impl Iterator<Item = TacticalLogicalPointerEvent> + '_ {
+    input.events.iter().filter_map(move |event| match *event {
+        TacticalWindowEvent::CancelGesture => Some(TacticalLogicalPointerEvent::CancelGesture),
+        TacticalWindowEvent::PrimaryPress(screen) => Some(
+            TacticalLogicalPointerEvent::PrimaryPress(canvas.logical_pointer(screen.0, screen.1)),
+        ),
+        TacticalWindowEvent::PrimaryRelease(screen) => {
+            Some(TacticalLogicalPointerEvent::PrimaryRelease(
+                canvas.logical_pointer(screen.0, screen.1),
+            ))
+        }
+        TacticalWindowEvent::Wheel { .. } => None,
+    })
+}
+
 /// The strip look the selection does not give: what the original's slot
 /// bits hold after inputs that install no mode.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -902,11 +928,7 @@ impl TacticalState {
         let Some(session) = self.session.as_mut() else {
             return;
         };
-        let Some(ship_index) = session
-            .ships
-            .iter()
-            .position(|ship| ship.alive && ship.is_attacker == session.player_is_attacker)
-        else {
+        let Some(ship_index) = first_live_player_ship(session) else {
             return;
         };
         for ship in &mut session.ships {
@@ -1224,28 +1246,8 @@ impl TacticalState {
             let Some(session) = self.session.as_mut() else {
                 return;
             };
-            let player_ships = session
-                .ships
-                .iter()
-                .enumerate()
-                .filter(|(_, ship)| {
-                    ship.alive
-                        && ship.is_attacker == session.player_is_attacker
-                        && ship.subsystem_capacity.engines
-                })
-                .map(|(index, _)| index)
-                .take(2)
-                .collect::<Vec<_>>();
-            let player_fighters = session
-                .fighters
-                .iter()
-                .enumerate()
-                .filter(|(_, fighter)| {
-                    fighter.alive && fighter.is_attacker == session.player_is_attacker
-                })
-                .map(|(index, _)| index)
-                .take(2)
-                .collect::<Vec<_>>();
+            let player_ships = live_player_ships(session, true, 2);
+            let player_fighters = live_player_fighters(session, 2);
             if player_ships.len() < 2 || player_fighters.len() < 2 {
                 return;
             }
@@ -1337,24 +1339,8 @@ impl TacticalState {
             let Some(session) = self.session.as_mut() else {
                 return;
             };
-            let player_ships = session
-                .ships
-                .iter()
-                .enumerate()
-                .filter(|(_, ship)| ship.alive && ship.is_attacker == session.player_is_attacker)
-                .map(|(index, _)| index)
-                .take(2)
-                .collect::<Vec<_>>();
-            let player_fighters = session
-                .fighters
-                .iter()
-                .enumerate()
-                .filter(|(_, fighter)| {
-                    fighter.alive && fighter.is_attacker == session.player_is_attacker
-                })
-                .map(|(index, _)| index)
-                .take(2)
-                .collect::<Vec<_>>();
+            let player_ships = live_player_ships(session, false, 2);
+            let player_fighters = live_player_fighters(session, 2);
             if player_ships.len() < 2 || player_fighters.len() < 2 {
                 return;
             }
@@ -1512,14 +1498,7 @@ impl TacticalState {
         let Some(session) = self.session.as_mut() else {
             return;
         };
-        let player_ships = session
-            .ships
-            .iter()
-            .enumerate()
-            .filter(|(_, ship)| ship.alive && ship.is_attacker == session.player_is_attacker)
-            .map(|(index, _)| index)
-            .take(2)
-            .collect::<Vec<_>>();
+        let player_ships = live_player_ships(session, false, 2);
         let destroyed = session
             .ships
             .iter()
@@ -1606,26 +1585,9 @@ impl TacticalState {
     #[cfg(feature = "interface-test-fixtures")]
     pub fn configure_projectile_field_fixture(&mut self) {
         {
-            let Some(session) = self.session.as_mut() else {
+            let Some((session, alliance, empire)) = faction_fixture_session(self, 3) else {
                 return;
             };
-            let alliance = session
-                .ships
-                .iter()
-                .enumerate()
-                .filter(|(_, ship)| ship.identity.is_alliance)
-                .map(|(index, _)| index)
-                .collect::<Vec<_>>();
-            let empire = session
-                .ships
-                .iter()
-                .enumerate()
-                .filter(|(_, ship)| !ship.identity.is_alliance)
-                .map(|(index, _)| index)
-                .collect::<Vec<_>>();
-            if alliance.len() < 3 || empire.len() < 3 {
-                return;
-            }
             session.weapon_effects.clear();
             let projectile_fixtures = [
                 (
@@ -1703,11 +1665,7 @@ impl TacticalState {
         let Some(session) = self.session.as_mut() else {
             return;
         };
-        let Some(index) = session
-            .ships
-            .iter()
-            .position(|ship| ship.alive && ship.is_attacker == session.player_is_attacker)
-        else {
+        let Some(index) = first_live_player_ship(session) else {
             return;
         };
         for ship in &mut session.ships {
@@ -1727,26 +1685,9 @@ impl TacticalState {
     #[cfg(feature = "interface-test-fixtures")]
     pub fn configure_subsystem_field_command_fixture(&mut self) {
         self.configure_selected_damage_fixture();
-        let Some(session) = self.session.as_mut() else {
+        let Some((session, alliance, empire)) = faction_fixture_session(self, 3) else {
             return;
         };
-        let alliance = session
-            .ships
-            .iter()
-            .enumerate()
-            .filter(|(_, ship)| ship.identity.is_alliance)
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
-        let empire = session
-            .ships
-            .iter()
-            .enumerate()
-            .filter(|(_, ship)| !ship.identity.is_alliance)
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
-        if alliance.len() < 3 || empire.len() < 3 {
-            return;
-        }
         session.field_effects.clear();
         assert!(session.set_tractor_field(empire[0], alliance[1], true));
         assert!(session.set_tractor_field(empire[2], alliance[1], true));
@@ -1779,15 +1720,7 @@ impl TacticalState {
         let Some(session) = self.session.as_mut() else {
             return;
         };
-        let Some(index) = session.ships.iter().position(|ship| {
-            ship.alive
-                && ship.is_attacker == session.player_is_attacker
-                && ship
-                    .subsystem_capacity
-                    .hit_limits()
-                    .iter()
-                    .all(|limit| *limit > 0)
-        }) else {
+        let Some(index) = first_fully_damageable_player_ship(session) else {
             return;
         };
         for ship in &mut session.ships {
@@ -1836,15 +1769,7 @@ impl TacticalState {
         let Some(session) = self.session.as_mut() else {
             return;
         };
-        let Some(target) = session.ships.iter().position(|ship| {
-            ship.alive
-                && ship.is_attacker == session.player_is_attacker
-                && ship
-                    .subsystem_capacity
-                    .hit_limits()
-                    .iter()
-                    .all(|limit| *limit > 0)
-        }) else {
+        let Some(target) = first_fully_damageable_player_ship(session) else {
             return;
         };
         let Some(source) = session.ships.iter().enumerate().find_map(|(index, ship)| {
@@ -1884,15 +1809,7 @@ impl TacticalState {
         {
             session.subsystem_repairs.push(repair);
         }
-        refresh_original_subsystem_conditions(&mut session.ships, &session.field_effects);
-        let target_object_id = u32::try_from(target).unwrap_or(u32::MAX).saturating_add(1);
-        let target_position = session.ships[target].source_position.rendered();
-        let (camera_x, camera_y) =
-            camera_offset_for_target(session.ships[target].x, session.ships[target].y);
-        session.paused = true;
-        (self.camera_x, self.camera_y) = (camera_x, camera_y);
-        self.asset_renderer
-            .focus_target(target_object_id, target_position);
+        focus_fixture_ship(self, target);
     }
 
     /// Advance one selected production capital through the recovered
@@ -1932,16 +1849,7 @@ impl TacticalState {
         session.selected_fighter_group = None;
         assert!(session.set_maneuver_state_value(target, Some(4.0)));
         session.advance_original_tactical_movement(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
-        refresh_original_subsystem_conditions(&mut session.ships, &session.field_effects);
-
-        let target_object_id = u32::try_from(target).unwrap_or(u32::MAX).saturating_add(1);
-        let target_position = session.ships[target].source_position.rendered();
-        let (camera_x, camera_y) =
-            camera_offset_for_target(session.ships[target].x, session.ships[target].y);
-        session.paused = true;
-        (self.camera_x, self.camera_y) = (camera_x, camera_y);
-        self.asset_renderer
-            .focus_target(target_object_id, target_position);
+        focus_fixture_ship(self, target);
     }
 
     /// End the current battle — clears session. Returns the session for
@@ -2084,6 +1992,102 @@ impl TacticalState {
         self.battle_alert_open = false;
         self.battle_alert_pressed = None;
     }
+}
+
+#[cfg(feature = "interface-test-fixtures")]
+fn first_live_player_ship(session: &BattleSession) -> Option<usize> {
+    session
+        .ships
+        .iter()
+        .position(|ship| ship.alive && ship.is_attacker == session.player_is_attacker)
+}
+
+#[cfg(feature = "interface-test-fixtures")]
+fn live_player_ships(
+    session: &BattleSession,
+    require_engines: bool,
+    limit: usize,
+) -> Vec<usize> {
+    session
+        .ships
+        .iter()
+        .enumerate()
+        .filter(|(_, ship)| {
+            ship.alive
+                && ship.is_attacker == session.player_is_attacker
+                && (!require_engines || ship.subsystem_capacity.engines)
+        })
+        .map(|(index, _)| index)
+        .take(limit)
+        .collect()
+}
+
+#[cfg(feature = "interface-test-fixtures")]
+fn live_player_fighters(session: &BattleSession, limit: usize) -> Vec<usize> {
+    session
+        .fighters
+        .iter()
+        .enumerate()
+        .filter(|(_, fighter)| {
+            fighter.alive && fighter.is_attacker == session.player_is_attacker
+        })
+        .map(|(index, _)| index)
+        .take(limit)
+        .collect()
+}
+
+#[cfg(feature = "interface-test-fixtures")]
+fn ship_indices_by_faction(session: &BattleSession) -> (Vec<usize>, Vec<usize>) {
+    let mut alliance = Vec::new();
+    let mut empire = Vec::new();
+    for (index, ship) in session.ships.iter().enumerate() {
+        if ship.identity.is_alliance {
+            alliance.push(index);
+        } else {
+            empire.push(index);
+        }
+    }
+    (alliance, empire)
+}
+
+#[cfg(feature = "interface-test-fixtures")]
+fn faction_fixture_session(
+    state: &mut TacticalState,
+    required_per_faction: usize,
+) -> Option<(&mut BattleSession, Vec<usize>, Vec<usize>)> {
+    let session = state.session.as_mut()?;
+    let (alliance, empire) = ship_indices_by_faction(session);
+    (alliance.len() >= required_per_faction && empire.len() >= required_per_faction)
+        .then_some((session, alliance, empire))
+}
+
+#[cfg(feature = "interface-test-fixtures")]
+fn first_fully_damageable_player_ship(session: &BattleSession) -> Option<usize> {
+    session.ships.iter().position(|ship| {
+        ship.alive
+            && ship.is_attacker == session.player_is_attacker
+            && ship
+                .subsystem_capacity
+                .hit_limits()
+                .iter()
+                .all(|limit| *limit > 0)
+    })
+}
+
+#[cfg(feature = "interface-test-fixtures")]
+fn focus_fixture_ship(state: &mut TacticalState, target: usize) {
+    let (object_id, position, camera) = {
+        let session = state.session.as_mut().expect("active tactical fixture");
+        refresh_original_subsystem_conditions(&mut session.ships, &session.field_effects);
+        let ship = &session.ships[target];
+        let object_id = u32::try_from(target).unwrap_or(u32::MAX).saturating_add(1);
+        let position = ship.source_position.rendered();
+        let camera = camera_offset_for_target(ship.x, ship.y);
+        session.paused = true;
+        (object_id, position, camera)
+    };
+    (state.camera_x, state.camera_y) = camera;
+    state.asset_renderer.focus_target(object_id, position);
 }
 
 /// Default ship icon size when no sprite is available.
@@ -2814,6 +2818,40 @@ fn command_panel_selection(
     }
 }
 
+fn tactical_command_available(
+    control: TacticalCommandControl,
+    selected_fighter: bool,
+    attack_death_star_enabled: bool,
+) -> bool {
+    (!matches!(
+        control,
+        TacticalCommandControl::PreviousCapital | TacticalCommandControl::NextCapital
+    ) || !selected_fighter)
+        && (control != TacticalCommandControl::Recover || selected_fighter)
+        && (control != TacticalCommandControl::AttackDeathStar || attack_death_star_enabled)
+}
+
+fn available_tactical_command_controls(
+    panel: TacticalCommandPanel,
+    has_selection: bool,
+    selected_fighter: bool,
+    attack_death_star_enabled: bool,
+) -> impl Iterator<Item = TacticalCommandControl> {
+    let (has_selection, selected_fighter) =
+        command_panel_selection(panel, has_selection, selected_fighter);
+    tactical_command_controls(panel)
+        .iter()
+        .copied()
+        .filter(move |control| {
+            has_selection
+                && tactical_command_available(
+                    *control,
+                    selected_fighter,
+                    attack_death_star_enabled,
+                )
+        })
+}
+
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -2833,25 +2871,13 @@ fn tactical_command_control_at(
     x: f32,
     y: f32,
 ) -> Option<TacticalCommandControl> {
-    let (has_selection, selected_fighter) =
-        command_panel_selection(panel, has_selection, selected_fighter);
-    if !has_selection {
-        return None;
-    }
-    tactical_command_controls(panel)
-        .iter()
-        .copied()
+    available_tactical_command_controls(
+        panel,
+        has_selection,
+        selected_fighter,
+        attack_death_star_enabled,
+    )
         .find(|control| {
-            if (matches!(
-                *control,
-                TacticalCommandControl::PreviousCapital | TacticalCommandControl::NextCapital
-            ) && selected_fighter)
-                || (*control == TacticalCommandControl::Recover && !selected_fighter)
-                || (*control == TacticalCommandControl::AttackDeathStar
-                    && !attack_death_star_enabled)
-            {
-                return false;
-            }
             let (rect, resource) = tactical_command_spec(*control, player_is_alliance);
             if !rect.contains(x, y) {
                 return false;
@@ -2874,23 +2900,14 @@ fn tactical_command_rect_control_at(
     x: f32,
     y: f32,
 ) -> Option<TacticalCommandControl> {
-    let (has_selection, selected_fighter) =
-        command_panel_selection(panel, has_selection, selected_fighter);
-    if !has_selection {
-        return None;
-    }
-    tactical_command_controls(panel)
-        .iter()
-        .copied()
+    available_tactical_command_controls(
+        panel,
+        has_selection,
+        selected_fighter,
+        attack_death_star_enabled,
+    )
         .find(|control| {
-            (!matches!(
-                *control,
-                TacticalCommandControl::PreviousCapital | TacticalCommandControl::NextCapital
-            ) || !selected_fighter)
-                && (*control != TacticalCommandControl::Recover || selected_fighter)
-                && (*control != TacticalCommandControl::AttackDeathStar
-                    || attack_death_star_enabled)
-                && tactical_command_spec(*control, true).0.contains(x, y)
+            tactical_command_spec(*control, true).0.contains(x, y)
         })
 }
 
@@ -4137,6 +4154,33 @@ fn draw_tactical_assignment_button(
     draw_tactical_button(cache, resource, canvas, rect.x, rect.y);
 }
 
+fn draw_assignment_confirm_cancel(
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+    pressed: Option<TacticalCommandControl>,
+) {
+    use resources::tactical as art;
+    for (control, normal, pressed_art) in [
+        (
+            TacticalCommandControl::Confirm,
+            art::BTN_ASSIGN_CONFIRM_NORMAL,
+            art::BTN_ASSIGN_CONFIRM_PRESSED,
+        ),
+        (
+            TacticalCommandControl::Cancel,
+            art::BTN_ASSIGN_CANCEL_NORMAL,
+            art::BTN_ASSIGN_CANCEL_PRESSED,
+        ),
+    ] {
+        let resource = if pressed == Some(control) {
+            pressed_art
+        } else {
+            normal
+        };
+        draw_tactical_assignment_button(cache, canvas, control, resource);
+    }
+}
+
 fn draw_tactical_assignment_panel(
     cache: &mut BmpCache,
     canvas: TacticalCanvas,
@@ -4201,29 +4245,7 @@ fn draw_tactical_assignment_panel(
                     art::BTN_TACTIC_STAND_OFF
                 },
             );
-            for (control, normal, pressed_art) in [
-                (
-                    TacticalCommandControl::Confirm,
-                    art::BTN_ASSIGN_CONFIRM_NORMAL,
-                    art::BTN_ASSIGN_CONFIRM_PRESSED,
-                ),
-                (
-                    TacticalCommandControl::Cancel,
-                    art::BTN_ASSIGN_CANCEL_NORMAL,
-                    art::BTN_ASSIGN_CANCEL_PRESSED,
-                ),
-            ] {
-                draw_tactical_assignment_button(
-                    cache,
-                    canvas,
-                    control,
-                    if pressed == Some(control) {
-                        pressed_art
-                    } else {
-                        normal
-                    },
-                );
-            }
+            draw_assignment_confirm_cancel(cache, canvas, pressed);
         }
         TacticalCommandPanel::Missions {
             pending_order,
@@ -4311,29 +4333,7 @@ fn draw_tactical_assignment_panel(
                     art::BTN_ATTACK_DEATH_STAR_NORMAL
                 },
             );
-            for (control, normal, pressed_art) in [
-                (
-                    TacticalCommandControl::Confirm,
-                    art::BTN_ASSIGN_CONFIRM_NORMAL,
-                    art::BTN_ASSIGN_CONFIRM_PRESSED,
-                ),
-                (
-                    TacticalCommandControl::Cancel,
-                    art::BTN_ASSIGN_CANCEL_NORMAL,
-                    art::BTN_ASSIGN_CANCEL_PRESSED,
-                ),
-            ] {
-                draw_tactical_assignment_button(
-                    cache,
-                    canvas,
-                    control,
-                    if pressed == Some(control) {
-                        pressed_art
-                    } else {
-                        normal
-                    },
-                );
-            }
+            draw_assignment_confirm_cancel(cache, canvas, pressed);
         }
     }
 }
@@ -5610,23 +5610,7 @@ fn handle_original_tactical_controls(
                     state.zoom = (state.zoom / 1.25).max(0.5);
                     state.asset_renderer.zoom_out();
                 }
-                Some(TacticalHudControl::CameraTarget) => {
-                    state.camera_follow = None;
-                    let selected = state.session.as_ref().and_then(|session| {
-                        session.selected_ship.and_then(|index| {
-                            session.ships.get(index).map(|ship| {
-                                (index, ship.x, ship.y, ship.source_position.rendered())
-                            })
-                        })
-                    });
-                    if let Some((_index, x, y, _source_position)) = selected {
-                        (state.camera_x, state.camera_y) = camera_offset_for_target(x, y);
-                        state.asset_renderer.focus_target(
-                            u32::try_from(_index).unwrap_or(u32::MAX).saturating_add(1),
-                            _source_position,
-                        );
-                    }
-                }
+                Some(TacticalHudControl::CameraTarget) => focus_selected_ship(state),
                 Some(TacticalHudControl::CameraLeft) => {
                     if state.camera_follow.take().is_some() {
                         macroquad::logging::info!(
@@ -5716,25 +5700,29 @@ fn handle_original_tactical_controls(
         state.asset_renderer.zoom_out();
     }
     if is_key_pressed(KeyCode::Enter) {
-        state.camera_follow = None;
-        let selected = state.session.as_ref().and_then(|session| {
-            session.selected_ship.and_then(|index| {
-                session.ships.get(index).map(|ship| {
-                    (
-                        u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1),
-                        ship.x,
-                        ship.y,
-                        ship.source_position.rendered(),
-                    )
-                })
-            })
-        });
-        if let Some((object_id, x, y, source)) = selected {
-            (state.camera_x, state.camera_y) = camera_offset_for_target(x, y);
-            state.asset_renderer.focus_target(object_id, source);
-        }
+        focus_selected_ship(state);
     }
     TacticalAction::None
+}
+
+fn focus_selected_ship(state: &mut TacticalState) {
+    state.camera_follow = None;
+    let selected = state.session.as_ref().and_then(|session| {
+        session.selected_ship.and_then(|index| {
+            session.ships.get(index).map(|ship| {
+                (
+                    u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1),
+                    ship.x,
+                    ship.y,
+                    ship.source_position.rendered(),
+                )
+            })
+        })
+    });
+    if let Some((object_id, x, y, source)) = selected {
+        (state.camera_x, state.camera_y) = camera_offset_for_target(x, y);
+        state.asset_renderer.focus_target(object_id, source);
+    }
 }
 
 fn camera_offset_for_target(x: f32, y: f32) -> (f32, f32) {
@@ -5763,6 +5751,23 @@ struct BattleAlertSkin {
     buttons: [[u32; 3]; 3],
 }
 
+fn battle_alert_tab_rects(player_is_alliance: bool) -> [NativeRect; 4] {
+    let (x, ys, width) = if player_is_alliance {
+        (418.0, [21.0, 81.0, 143.0, 205.0], 41.0)
+    } else {
+        (426.0, [17.0, 80.0, 143.0, 206.0], 44.0)
+    };
+    ys.map(|y| NativeRect::new(x, y, width, 41.0))
+}
+
+fn tactical_faction_text_color(player_is_alliance: bool) -> Color {
+    if player_is_alliance {
+        Color::from_rgba(255, 45, 40, 255)
+    } else {
+        Color::from_rgba(40, 255, 65, 255)
+    }
+}
+
 fn battle_alert_skin(player_is_alliance: bool) -> BattleAlertSkin {
     use resources::strategy as art;
     if player_is_alliance {
@@ -5789,12 +5794,7 @@ fn battle_alert_skin(player_is_alliance: bool) -> BattleAlertSkin {
                     art::BATTLE_SYSTEM_ALLIANCE_PRESSED,
                 ],
             ],
-            tab_rects: [
-                NativeRect::new(418.0, 21.0, 41.0, 41.0),
-                NativeRect::new(418.0, 81.0, 41.0, 41.0),
-                NativeRect::new(418.0, 143.0, 41.0, 41.0),
-                NativeRect::new(418.0, 205.0, 41.0, 41.0),
-            ],
+            tab_rects: battle_alert_tab_rects(true),
             buttons: [
                 [
                     art::BATTLE_ALERT_RETREAT_ALLIANCE_NORMAL,
@@ -5837,12 +5837,7 @@ fn battle_alert_skin(player_is_alliance: bool) -> BattleAlertSkin {
                     art::BATTLE_SYSTEM_EMPIRE_PRESSED,
                 ],
             ],
-            tab_rects: [
-                NativeRect::new(426.0, 17.0, 44.0, 41.0),
-                NativeRect::new(426.0, 80.0, 44.0, 41.0),
-                NativeRect::new(426.0, 143.0, 44.0, 41.0),
-                NativeRect::new(426.0, 206.0, 44.0, 41.0),
-            ],
+            tab_rects: battle_alert_tab_rects(false),
             buttons: [
                 [
                     art::BATTLE_ALERT_RETREAT_EMPIRE_NORMAL,
@@ -6087,6 +6082,29 @@ fn draw_result_text_in_cell(
     set_tactical_aperture_clip(None);
 }
 
+fn wrap_text_lines(lines: &[String], fits: impl Fn(&str) -> bool) -> Vec<String> {
+    let mut wrapped = Vec::new();
+    for line in lines {
+        let mut current = String::new();
+        for word in line.split_whitespace() {
+            let candidate = if current.is_empty() {
+                word.to_owned()
+            } else {
+                format!("{current} {word}")
+            };
+            if current.is_empty() || fits(&candidate) {
+                current = candidate;
+            } else {
+                wrapped.push(std::mem::replace(&mut current, word.to_owned()));
+            }
+        }
+        if !current.is_empty() {
+            wrapped.push(current);
+        }
+    }
+    wrapped
+}
+
 /// Lines wrap at `max_width` and advance one cell height (the em over
 /// 2048/2288, Arial's ascent plus descent), as `DrawText` steps a
 /// word-broken paragraph.
@@ -6102,29 +6120,12 @@ fn draw_result_wrapped_lines(
     let font = result_font();
     let font_size = (size * canvas.scale).max(1.0) as u16;
     let advance = size * 2288.0 / 2048.0;
-    for line in lines {
-        let mut current = String::new();
-        for word in line.split_whitespace() {
-            let candidate = if current.is_empty() {
-                word.to_owned()
-            } else {
-                format!("{current} {word}")
-            };
-            if !current.is_empty()
-                && result_text_width(&candidate, font.as_ref(), font_size)
-                    > max_width * canvas.scale
-            {
-                draw_result_text_in_cell(canvas, &current, x, baseline_y, size, color);
-                baseline_y += advance;
-                current = word.to_owned();
-            } else {
-                current = candidate;
-            }
-        }
-        if !current.is_empty() {
-            draw_result_text_in_cell(canvas, &current, x, baseline_y, size, color);
-            baseline_y += advance;
-        }
+    let wrapped = wrap_text_lines(lines, |candidate| {
+        result_text_width(candidate, font.as_ref(), font_size) <= max_width * canvas.scale
+    });
+    for line in wrapped {
+        draw_result_text_in_cell(canvas, &line, x, baseline_y, size, color);
+        baseline_y += advance;
     }
 }
 
@@ -6823,25 +6824,7 @@ fn draw_battle_alert_summary(canvas: TacticalCanvas, lines: &[String], color: Co
         result_text_width(text, font.as_ref(), font_size)
             <= BATTLE_ALERT_SUMMARY_WIDTH * canvas.scale
     };
-    let mut wrapped = Vec::new();
-    for line in lines {
-        let mut current = String::new();
-        for word in line.split_whitespace() {
-            let candidate = if current.is_empty() {
-                word.to_owned()
-            } else {
-                format!("{current} {word}")
-            };
-            if current.is_empty() || fits(&candidate) {
-                current = candidate;
-            } else {
-                wrapped.push(std::mem::replace(&mut current, word.to_owned()));
-            }
-        }
-        if !current.is_empty() {
-            wrapped.push(current);
-        }
-    }
+    let wrapped = wrap_text_lines(lines, fits);
     let x = BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_SUMMARY_X;
     let top = BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_SUMMARY_Y;
     for (index, line) in wrapped.iter().enumerate() {
@@ -7374,18 +7357,16 @@ fn apply_battle_alert_input(
         .session
         .as_ref()
         .is_some_and(battle_alert_retreat_enabled);
-    for event in &input.events {
-        let screen = match *event {
-            TacticalWindowEvent::CancelGesture => {
+    for event in tactical_logical_pointer_events(canvas, input) {
+        let point = match event {
+            TacticalLogicalPointerEvent::CancelGesture => {
                 state.battle_alert_pressed = None;
                 continue;
             }
-            TacticalWindowEvent::PrimaryPress(screen)
-            | TacticalWindowEvent::PrimaryRelease(screen) => screen,
-            TacticalWindowEvent::Wheel { .. } => continue,
+            TacticalLogicalPointerEvent::PrimaryPress(point)
+            | TacticalLogicalPointerEvent::PrimaryRelease(point) => point,
         };
-        let point = canvas.logical_pointer(screen.0, screen.1);
-        if matches!(event, TacticalWindowEvent::PrimaryPress(_)) {
+        if matches!(event, TacticalLogicalPointerEvent::PrimaryPress(_)) {
             state.battle_alert_pressed = battle_alert_control_at(skin, retreat_enabled, point);
             continue;
         }
@@ -7466,11 +7447,7 @@ fn draw_original_battle_alert(
     prewarm_tactical_font_atlas(session, canvas, &mut state.warmed_font_sizes);
     let player_alliance = player_is_alliance(session);
     let skin = battle_alert_skin(player_alliance);
-    let text_color = if player_alliance {
-        Color::from_rgba(255, 45, 40, 255)
-    } else {
-        Color::from_rgba(40, 255, 65, 255)
-    };
+    let text_color = tactical_faction_text_color(player_alliance);
 
     // The app has drawn the live command center beneath this window.
     draw_strategy_bitmap(
@@ -7644,18 +7621,16 @@ fn apply_battle_result_input(
     canvas: TacticalCanvas,
     input: &TacticalWindowInput,
 ) -> TacticalAction {
-    for event in &input.events {
-        let screen = match *event {
-            TacticalWindowEvent::CancelGesture => {
+    for event in tactical_logical_pointer_events(canvas, input) {
+        let point = match event {
+            TacticalLogicalPointerEvent::CancelGesture => {
                 state.battle_result_pressed = None;
                 continue;
             }
-            TacticalWindowEvent::PrimaryPress(screen)
-            | TacticalWindowEvent::PrimaryRelease(screen) => screen,
-            TacticalWindowEvent::Wheel { .. } => continue,
+            TacticalLogicalPointerEvent::PrimaryPress(point)
+            | TacticalLogicalPointerEvent::PrimaryRelease(point) => point,
         };
-        let point = canvas.logical_pointer(screen.0, screen.1);
-        if matches!(event, TacticalWindowEvent::PrimaryPress(_)) {
+        if matches!(event, TacticalLogicalPointerEvent::PrimaryPress(_)) {
             state.battle_result_pressed = battle_result_control_at(state, skin, point);
             continue;
         }
@@ -7719,11 +7694,7 @@ fn draw_original_battle_results(
     prewarm_tactical_font_atlas(session, canvas, &mut state.warmed_font_sizes);
     let player_alliance = player_is_alliance(session);
     let skin = battle_result_skin(player_alliance);
-    let text_color = if player_alliance {
-        Color::from_rgba(255, 45, 40, 255)
-    } else {
-        Color::from_rgba(40, 255, 65, 255)
-    };
+    let text_color = tactical_faction_text_color(player_alliance);
 
     // The app has drawn the live command center beneath this window.
     draw_strategy_bitmap(
@@ -8551,54 +8522,16 @@ pub fn draw_tactical_view(
                 ship.manual_targets.clone()
             };
             for target_spec in targets {
-                match target_spec {
-                    TacticalAttackTarget::CapitalShip(target_index) => {
-                        let Some(target_ship) = session.ships.get(target_index) else {
-                            continue;
-                        };
-                        if !target_ship.alive {
-                            continue;
-                        }
-                        let target = tactical_ship_screen_position(
-                            target_index,
-                            target_ship,
-                            &ship_projections,
-                            scale,
-                            offset_x,
-                            offset_y,
-                        );
-                        let radius = ship_projections.get(&target_index).map_or(
-                            DEFAULT_SHIP_SIZE * scale * 0.4,
-                            |projection| {
-                                (projection.max - projection.min).max_element() * 0.6 + 3.0
-                            },
-                        );
-                        draw_tactical_attack_target(source, target, radius);
-                    }
-                    TacticalAttackTarget::FighterGroup(target_index) => {
-                        let Some(target_fighter) = session.fighters.get(target_index) else {
-                            continue;
-                        };
-                        if !target_fighter.alive {
-                            continue;
-                        }
-                        let target = tactical_fighter_screen_position(
-                            target_index,
-                            target_fighter,
-                            &fighter_projections,
-                            scale,
-                            offset_x,
-                            offset_y,
-                        );
-                        let radius = fighter_projections.get(&target_index).map_or(
-                            FIGHTER_SIZE * scale * 0.75,
-                            |projection| {
-                                (projection.max - projection.min).max_element() * 0.6 + 3.0
-                            },
-                        );
-                        draw_tactical_attack_target(source, target, radius);
-                    }
-                }
+                draw_tactical_attack_target_spec(
+                    session,
+                    &ship_projections,
+                    &fighter_projections,
+                    source,
+                    target_spec,
+                    scale,
+                    offset_x,
+                    offset_y,
+                );
             }
         }
 
@@ -8614,52 +8547,17 @@ pub fn draw_tactical_view(
                 offset_x,
                 offset_y,
             );
-            match fighter.attack_target {
-                Some(TacticalAttackTarget::CapitalShip(target_index)) => {
-                    let Some(target_ship) = session.ships.get(target_index) else {
-                        continue;
-                    };
-                    if !target_ship.alive {
-                        continue;
-                    }
-                    let target = tactical_ship_screen_position(
-                        target_index,
-                        target_ship,
-                        &ship_projections,
-                        scale,
-                        offset_x,
-                        offset_y,
-                    );
-                    let radius = ship_projections
-                        .get(&target_index)
-                        .map_or(DEFAULT_SHIP_SIZE * scale * 0.4, |projection| {
-                            (projection.max - projection.min).max_element() * 0.6 + 3.0
-                        });
-                    draw_tactical_attack_target(source, target, radius);
-                }
-                Some(TacticalAttackTarget::FighterGroup(target_index)) => {
-                    let Some(target_fighter) = session.fighters.get(target_index) else {
-                        continue;
-                    };
-                    if !target_fighter.alive {
-                        continue;
-                    }
-                    let target = tactical_fighter_screen_position(
-                        target_index,
-                        target_fighter,
-                        &fighter_projections,
-                        scale,
-                        offset_x,
-                        offset_y,
-                    );
-                    let radius = fighter_projections
-                        .get(&target_index)
-                        .map_or(FIGHTER_SIZE * scale * 0.75, |projection| {
-                            (projection.max - projection.min).max_element() * 0.6 + 3.0
-                        });
-                    draw_tactical_attack_target(source, target, radius);
-                }
-                None => {}
+            if let Some(target) = fighter.attack_target {
+                draw_tactical_attack_target_spec(
+                    session,
+                    &ship_projections,
+                    &fighter_projections,
+                    source,
+                    target,
+                    scale,
+                    offset_x,
+                    offset_y,
+                );
             }
         }
     }
@@ -8788,6 +8686,40 @@ pub fn draw_tactical_view(
 // Combat input handling
 // ---------------------------------------------------------------------------
 
+fn refresh_ship_navigation_waypoint(ship: &mut TacticalShip) {
+    ship.source_waypoint = ship.navigation_route.first().copied();
+    ship.source_desired_forward = ship
+        .source_waypoint
+        .map_or(TacticalWorldVector::ZERO, |waypoint| {
+            source_delta(waypoint, ship.source_position).normalized()
+        });
+}
+
+fn tactical_ship_at_pointer(
+    ships: &[TacticalShip],
+    projections: &HashMap<usize, TacticalScreenProjection>,
+    screen_pointer: Vec2,
+    projected_hit_radius: f32,
+    arena_pointer: (f32, f32),
+    fallback_hit_radius: f32,
+    eligible: impl Fn(&TacticalShip) -> bool,
+) -> Option<usize> {
+    ships.iter().enumerate().find_map(|(index, ship)| {
+        if !eligible(ship) {
+            return None;
+        }
+        let projected_hit = projections
+            .get(&index)
+            .is_some_and(|projection| projection.contains(screen_pointer, projected_hit_radius));
+        let dx = arena_pointer.0 - ship.x;
+        let dy = arena_pointer.1 - ship.y;
+        (projected_hit
+            || (!projections.contains_key(&index)
+                && dx * dx + dy * dy < fallback_hit_radius * fallback_hit_radius))
+            .then_some(index)
+    })
+}
+
 fn tactical_ship_screen_position(
     ship_index: usize,
     ship: &TacticalShip,
@@ -8814,6 +8746,61 @@ fn tactical_fighter_screen_position(
         || macroquad::math::Vec2::new(offset_x + fighter.x * scale, offset_y + fighter.y * scale),
         |projection| projection.center,
     )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The shared renderer needs both object families, their projections, and the arena transform."
+)]
+fn draw_tactical_attack_target_spec(
+    session: &BattleSession,
+    ship_projections: &HashMap<usize, TacticalScreenProjection>,
+    fighter_projections: &HashMap<usize, TacticalScreenProjection>,
+    source: Vec2,
+    target_spec: TacticalAttackTarget,
+    scale: f32,
+    offset_x: f32,
+    offset_y: f32,
+) {
+    let (target, radius) = match target_spec {
+        TacticalAttackTarget::CapitalShip(index) => {
+            let Some(ship) = session.ships.get(index).filter(|ship| ship.alive) else {
+                return;
+            };
+            let target = tactical_ship_screen_position(
+                index,
+                ship,
+                ship_projections,
+                scale,
+                offset_x,
+                offset_y,
+            );
+            let radius = ship_projections.get(&index).map_or(
+                DEFAULT_SHIP_SIZE * scale * 0.4,
+                |projection| (projection.max - projection.min).max_element() * 0.6 + 3.0,
+            );
+            (target, radius)
+        }
+        TacticalAttackTarget::FighterGroup(index) => {
+            let Some(fighter) = session.fighters.get(index).filter(|fighter| fighter.alive) else {
+                return;
+            };
+            let target = tactical_fighter_screen_position(
+                index,
+                fighter,
+                fighter_projections,
+                scale,
+                offset_x,
+                offset_y,
+            );
+            let radius = fighter_projections.get(&index).map_or(
+                FIGHTER_SIZE * scale * 0.75,
+                |projection| (projection.max - projection.min).max_element() * 0.6 + 3.0,
+            );
+            (target, radius)
+        }
+    };
+    draw_tactical_attack_target(source, target, radius);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -9049,12 +9036,7 @@ fn handle_combat_input(
                     .retain(|point| *point != navigation.position);
                 if before != ship.navigation_route.len() {
                     changed += 1;
-                    ship.source_waypoint = ship.navigation_route.first().copied();
-                    ship.source_desired_forward = ship
-                        .source_waypoint
-                        .map_or(TacticalWorldVector::ZERO, |waypoint| {
-                            source_delta(waypoint, ship.source_position).normalized()
-                        });
+                    refresh_ship_navigation_waypoint(ship);
                 }
             }
             macroquad::logging::info!(
@@ -9069,26 +9051,19 @@ fn handle_combat_input(
 
     // Left-click: select player's ship.
     if inside_battle && is_mouse_button_pressed(MouseButton::Left) {
-        let mut hit = None;
-        for (i, ship) in session.ships.iter().enumerate() {
-            if !ship.alive || ship.retreating {
-                continue;
-            }
-            if ship.is_attacker != session.player_is_attacker {
-                continue;
-            }
-            let projected_hit = projections.get(&i).is_some_and(|projection| {
-                projection.contains(screen_pointer, projected_hit_radius)
-            });
-            let dx = arena_pointer_x - ship.x;
-            let dy = arena_pointer_y - ship.y;
-            if projected_hit
-                || (!projections.contains_key(&i) && dx * dx + dy * dy < hit_radius * hit_radius)
-            {
-                hit = Some(i);
-                break;
-            }
-        }
+        let hit = tactical_ship_at_pointer(
+            &session.ships,
+            projections,
+            screen_pointer,
+            projected_hit_radius,
+            (arena_pointer_x, arena_pointer_y),
+            hit_radius,
+            |ship| {
+                ship.alive
+                    && !ship.retreating
+                    && ship.is_attacker == session.player_is_attacker
+            },
+        );
 
         if let Some(idx) = hit {
             strips_released = pick_own_ship(session, idx, control);
@@ -9121,12 +9096,7 @@ fn handle_combat_input(
                     ship.navigation_route.clear();
                     ship.navigation_route.push(navigation.position);
                 }
-                ship.source_waypoint = ship.navigation_route.first().copied();
-                ship.source_desired_forward = ship
-                    .source_waypoint
-                    .map_or(TacticalWorldVector::ZERO, |waypoint| {
-                        source_delta(waypoint, ship.source_position).normalized()
-                    });
+                refresh_ship_navigation_waypoint(ship);
                 assigned += 1;
                 longest_route = longest_route.max(ship.navigation_route.len());
             }
@@ -9140,27 +9110,15 @@ fn handle_combat_input(
             );
             return strips_released;
         }
-        let mut target_hit = None;
-        for (i, ship) in session.ships.iter().enumerate() {
-            if !ship.alive {
-                continue;
-            }
-            // Can only target enemy ships.
-            if ship.is_attacker == session.player_is_attacker {
-                continue;
-            }
-            let projected_hit = projections.get(&i).is_some_and(|projection| {
-                projection.contains(screen_pointer, projected_hit_radius)
-            });
-            let dx = arena_pointer_x - ship.x;
-            let dy = arena_pointer_y - ship.y;
-            if projected_hit
-                || (!projections.contains_key(&i) && dx * dx + dy * dy < hit_radius * hit_radius)
-            {
-                target_hit = Some(i);
-                break;
-            }
-        }
+        let target_hit = tactical_ship_at_pointer(
+            &session.ships,
+            projections,
+            screen_pointer,
+            projected_hit_radius,
+            (arena_pointer_x, arena_pointer_y),
+            hit_radius,
+            |ship| ship.alive && ship.is_attacker != session.player_is_attacker,
+        );
 
         if *death_star_targeting {
             if let Some(target_idx) = target_hit {
@@ -9370,6 +9328,74 @@ mod tests {
                 SummaryCell::Blank => String::new(),
             })
             .collect()
+    }
+
+    fn primary_input(point: (f32, f32), pressed: bool) -> TacticalWindowInput {
+        let event = if pressed {
+            TacticalWindowEvent::PrimaryPress(point)
+        } else {
+            TacticalWindowEvent::PrimaryRelease(point)
+        };
+        TacticalWindowInput {
+            pointer_screen: point,
+            events: vec![event],
+            primary_down: pressed,
+        }
+    }
+
+    fn battle_result_test_context() -> (TacticalState, BattleResultSkin, (f32, f32)) {
+        let mut session = test_session(Vec::new(), Vec::new(), true);
+        session.phase = BattlePhase::Results;
+        let state = TacticalState {
+            session: Some(session),
+            battle_alert_open: false,
+            ..TacticalState::default()
+        };
+        let skin = battle_result_skin(player_is_alliance(state.session.as_ref().unwrap()));
+        let close = (
+            BATTLE_RESULTS_WINDOW_X + skin.close_rect.x + 2.0,
+            BATTLE_RESULTS_WINDOW_Y + skin.close_rect.y + 2.0,
+        );
+        (state, skin, close)
+    }
+
+    fn ship_order_snapshot(
+        ships: &[TacticalShip],
+    ) -> Vec<(
+        Vec<TacticalAttackTarget>,
+        Option<TacticalAttackTarget>,
+        Option<usize>,
+    )> {
+        ships
+            .iter()
+            .map(|ship| {
+                (
+                    ship.manual_targets.clone(),
+                    ship.attack_target,
+                    ship.escort_target,
+                )
+            })
+            .collect()
+    }
+
+    fn assert_mixed_task_force_rejected(
+        session: &mut BattleSession,
+        selected: std::ops::Range<usize>,
+        target: usize,
+        target_is_fighter: bool,
+        faction: TacticalVoiceFaction,
+    ) {
+        let before = ship_order_snapshot(&session.ships[selected.clone()]);
+        let result = assign_selected_capital_focus_target(session, target, target_is_fighter);
+        assert_eq!(
+            result,
+            TacticalFocusAssignment::RejectedMixedTaskForces { member_count: 2 }
+        );
+        assert_eq!(ship_order_snapshot(&session.ships[selected]), before);
+        assert_eq!(
+            session.take_pending_voice_cues(),
+            vec![TacticalVoiceCue::target_task_force_rejected(faction)]
+        );
     }
 
     #[test]
@@ -9987,11 +10013,7 @@ mod tests {
         let skin = battle_alert_skin(player_is_alliance(state.session.as_ref().unwrap()));
         let button = (BATTLE_ALERT_WINDOW_X + 300.0, BATTLE_ALERT_WINDOW_Y + 305.0);
 
-        let release_only = TacticalWindowInput {
-            pointer_screen: button,
-            events: vec![TacticalWindowEvent::PrimaryRelease(button)],
-            ..TacticalWindowInput::default()
-        };
+        let release_only = primary_input(button, false);
         assert_eq!(
             apply_battle_alert_input(
                 &mut state,
@@ -10002,20 +10024,12 @@ mod tests {
             TacticalAction::None
         );
 
-        let press = TacticalWindowInput {
-            pointer_screen: button,
-            events: vec![TacticalWindowEvent::PrimaryPress(button)],
-            primary_down: true,
-        };
+        let press = primary_input(button, true);
         assert_eq!(
             apply_battle_alert_input(&mut state, skin, TacticalCanvas::new(640.0, 480.0), &press),
             TacticalAction::None
         );
-        let release = TacticalWindowInput {
-            pointer_screen: button,
-            events: vec![TacticalWindowEvent::PrimaryRelease(button)],
-            ..TacticalWindowInput::default()
-        };
+        let release = primary_input(button, false);
         assert_eq!(
             apply_battle_alert_input(
                 &mut state,
@@ -10035,34 +10049,15 @@ mod tests {
 
     #[test]
     fn tactical_windowing_results_cancellation_quarantines_the_orphan_release() {
-        let mut session = test_session(Vec::new(), Vec::new(), true);
-        session.phase = BattlePhase::Results;
-        let mut state = TacticalState {
-            session: Some(session),
-            battle_alert_open: false,
-            ..TacticalState::default()
-        };
-        let skin = battle_result_skin(player_is_alliance(state.session.as_ref().unwrap()));
-        let close = (
-            BATTLE_RESULTS_WINDOW_X + skin.close_rect.x + 2.0,
-            BATTLE_RESULTS_WINDOW_Y + skin.close_rect.y + 2.0,
-        );
-        let press = TacticalWindowInput {
-            pointer_screen: close,
-            events: vec![TacticalWindowEvent::PrimaryPress(close)],
-            primary_down: true,
-        };
+        let (mut state, skin, close) = battle_result_test_context();
+        let press = primary_input(close, true);
         assert_eq!(
             apply_battle_result_input(&mut state, skin, TacticalCanvas::new(640.0, 480.0), &press),
             TacticalAction::None
         );
 
         state.cancel_window_gestures();
-        let release = TacticalWindowInput {
-            pointer_screen: close,
-            events: vec![TacticalWindowEvent::PrimaryRelease(close)],
-            ..TacticalWindowInput::default()
-        };
+        let release = primary_input(close, false);
         assert_eq!(
             apply_battle_result_input(
                 &mut state,
@@ -10097,11 +10092,7 @@ mod tests {
                     &mut state,
                     skin,
                     canvas,
-                    &TacticalWindowInput {
-                        pointer_screen: point,
-                        events: vec![TacticalWindowEvent::PrimaryPress(point)],
-                        primary_down: true,
-                    },
+                    &primary_input(point, true),
                 ),
                 TacticalAction::None
             );
@@ -10111,11 +10102,7 @@ mod tests {
                     &mut state,
                     skin,
                     canvas,
-                    &TacticalWindowInput {
-                        pointer_screen: point,
-                        events: vec![TacticalWindowEvent::PrimaryRelease(point)],
-                        ..TacticalWindowInput::default()
-                    },
+                    &primary_input(point, false),
                 ),
                 TacticalAction::None
             );
@@ -10126,28 +10113,13 @@ mod tests {
 
     #[test]
     fn tactical_windowing_results_preserves_release_before_press_order() {
-        let mut session = test_session(Vec::new(), Vec::new(), true);
-        session.phase = BattlePhase::Results;
-        let mut state = TacticalState {
-            session: Some(session),
-            battle_alert_open: false,
-            ..TacticalState::default()
-        };
-        let skin = battle_result_skin(player_is_alliance(state.session.as_ref().unwrap()));
-        let close = (
-            BATTLE_RESULTS_WINDOW_X + skin.close_rect.x + 2.0,
-            BATTLE_RESULTS_WINDOW_Y + skin.close_rect.y + 2.0,
-        );
+        let (mut state, skin, close) = battle_result_test_context();
         let blank = (
             BATTLE_RESULTS_WINDOW_X + 210.0,
             BATTLE_RESULTS_WINDOW_Y + 300.0,
         );
 
-        let earlier_blank_press = TacticalWindowInput {
-            pointer_screen: blank,
-            primary_down: true,
-            events: vec![TacticalWindowEvent::PrimaryPress(blank)],
-        };
+        let earlier_blank_press = primary_input(blank, true);
         assert_eq!(
             apply_battle_result_input(
                 &mut state,
@@ -11159,6 +11131,17 @@ mod tests {
         (pressed.first().copied(), fighter)
     }
 
+    fn two_ship_slot_state(side: (bool, bool), withdrawn: bool) -> TacticalState {
+        let mut state = strip_test_state(side);
+        pick_own_ship(state.session.as_mut().unwrap(), 0, false);
+        pick_own_ship(state.session.as_mut().unwrap(), 2, true);
+        if withdrawn {
+            state.withdraw_player_side();
+        }
+        run_task_force_slot_command(&mut state, 5);
+        state
+    }
+
     // Source: FUN_0059fd40.c:40-59 installs the base mode FUN_005a0c80 when
     // the selected task force's slot posts again; base entry releases both
     // strips and deletes the mode's selection (FUN_005a0c80.c:16-18,
@@ -11411,11 +11394,7 @@ mod tests {
     #[test]
     fn a_plain_pick_releases_a_stale_slot_but_keeps_its_caption() {
         for side in STRIP_SIDES {
-            let mut state = strip_test_state(side);
-            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
-            pick_own_ship(state.session.as_mut().unwrap(), 2, true);
-            state.withdraw_player_side();
-            run_task_force_slot_command(&mut state, 5);
+            let mut state = two_ship_slot_state(side, true);
             assert_eq!(
                 pressed_strip_slots(&state),
                 (Some(5), None),
@@ -11439,11 +11418,7 @@ mod tests {
     #[test]
     fn a_number_key_releases_a_stale_slot_and_captions_its_own() {
         for side in STRIP_SIDES {
-            let mut state = strip_test_state(side);
-            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
-            pick_own_ship(state.session.as_mut().unwrap(), 2, true);
-            state.withdraw_player_side();
-            run_task_force_slot_command(&mut state, 5);
+            let mut state = two_ship_slot_state(side, true);
             run_tactical_key_action(&mut state, TacticalKeyAction::TaskForceSlot(6));
             assert_eq!(pressed_task_force_slots(&state), vec![6], "side={side:?}");
             let strips = drawn_strips(&state);
@@ -11752,10 +11727,7 @@ mod tests {
     #[test]
     fn two_own_ships_form_a_task_force_in_any_unassigned_slot() {
         for side in STRIP_SIDES {
-            let mut state = strip_test_state(side);
-            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
-            pick_own_ship(state.session.as_mut().unwrap(), 2, true);
-            run_task_force_slot_command(&mut state, 5);
+            let state = two_ship_slot_state(side, false);
             let session = state.session.as_ref().unwrap();
             assert_eq!(session.ships[0].task_force, 5, "side={side:?}");
             assert_eq!(session.ships[2].task_force, 5);
@@ -11771,11 +11743,7 @@ mod tests {
     #[test]
     fn two_own_ships_press_an_unassigned_slot_but_form_no_task_force_once_the_player_withdraws() {
         for side in STRIP_SIDES {
-            let mut state = strip_test_state(side);
-            pick_own_ship(state.session.as_mut().unwrap(), 0, false);
-            pick_own_ship(state.session.as_mut().unwrap(), 2, true);
-            state.withdraw_player_side();
-            run_task_force_slot_command(&mut state, 5);
+            let state = two_ship_slot_state(side, true);
             let session = state.session.as_ref().unwrap();
             assert!(
                 session.ships.iter().all(|ship| ship.task_force != 5),
@@ -11835,39 +11803,12 @@ mod tests {
         second.escort_target = Some(4);
         let hostile = test_ship(128, 2, false, true);
         let mut session = test_session(vec![first, second, hostile], Vec::new(), true);
-        let before = session.ships[..2]
-            .iter()
-            .map(|ship| {
-                (
-                    ship.manual_targets.clone(),
-                    ship.attack_target,
-                    ship.escort_target,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let result = assign_selected_capital_focus_target(&mut session, 2, false);
-
-        assert_eq!(
-            result,
-            TacticalFocusAssignment::RejectedMixedTaskForces { member_count: 2 }
-        );
-        assert_eq!(
-            session.ships[..2]
-                .iter()
-                .map(|ship| (
-                    ship.manual_targets.clone(),
-                    ship.attack_target,
-                    ship.escort_target
-                ))
-                .collect::<Vec<_>>(),
-            before
-        );
-        assert_eq!(
-            session.take_pending_voice_cues(),
-            vec![TacticalVoiceCue::target_task_force_rejected(
-                TacticalVoiceFaction::Alliance
-            )]
+        assert_mixed_task_force_rejected(
+            &mut session,
+            0..2,
+            2,
+            false,
+            TacticalVoiceFaction::Alliance,
         );
     }
 
@@ -11886,39 +11827,12 @@ mod tests {
         second.task_force = 4;
         second.escort_target = Some(0);
         let mut session = test_session(vec![hostile, first, second], Vec::new(), false);
-        let before = session.ships[1..]
-            .iter()
-            .map(|ship| {
-                (
-                    ship.manual_targets.clone(),
-                    ship.attack_target,
-                    ship.escort_target,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let result = assign_selected_capital_focus_target(&mut session, 0, true);
-
-        assert_eq!(
-            result,
-            TacticalFocusAssignment::RejectedMixedTaskForces { member_count: 2 }
-        );
-        assert_eq!(
-            session.ships[1..]
-                .iter()
-                .map(|ship| (
-                    ship.manual_targets.clone(),
-                    ship.attack_target,
-                    ship.escort_target
-                ))
-                .collect::<Vec<_>>(),
-            before
-        );
-        assert_eq!(
-            session.take_pending_voice_cues(),
-            vec![TacticalVoiceCue::target_task_force_rejected(
-                TacticalVoiceFaction::Empire
-            )]
+        assert_mixed_task_force_rejected(
+            &mut session,
+            1..3,
+            0,
+            true,
+            TacticalVoiceFaction::Empire,
         );
     }
 

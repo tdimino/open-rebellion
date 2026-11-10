@@ -484,6 +484,37 @@ impl Regions {
     }
 }
 
+fn adjust_ship_flag_counters(counters: &mut [i64; 10], record: &ShipRecord, delta: i64) {
+    for (flag, index) in [
+        (ship::DEATH_STAR, counter::DEATH_STAR),
+        (ship::GRAVITY_WELL, counter::GRAVITY_WELL),
+        (ship::LASER, counter::LASER),
+    ] {
+        if record.flags & flag != 0 {
+            counters[index] += delta;
+        }
+    }
+}
+
+fn fleet_records<'a>(round: &'a Round<'_>) -> impl Iterator<Item = &'a FleetRecord> {
+    round
+        .inputs
+        .world
+        .fleets
+        .keys()
+        .filter_map(|key| round.fleets.get(&key))
+}
+
+fn primary_owned_system(round: &mut Round<'_>, sector: SectorKey) -> Option<SystemKey> {
+    pick_system(
+        round,
+        sector,
+        Words::new(0x8000_0000, 0, sys::OWN, 0x2, 0, 0),
+        7,
+        Dir::Smallest,
+    )
+}
+
 impl RegionalRecord {
     /// `FUN_004769f0`: the plan entry the record serves, copied to its
     /// ships and fleets.
@@ -628,15 +659,7 @@ impl RegionalRecord {
         if s.squadrons > 0 {
             c[counter::SQUADRONS] += s.squadrons;
         }
-        for (flag, index) in [
-            (ship::DEATH_STAR, counter::DEATH_STAR),
-            (ship::GRAVITY_WELL, counter::GRAVITY_WELL),
-            (ship::LASER, counter::LASER),
-        ] {
-            if s.flags & flag != 0 {
-                c[index] += 1;
-            }
-        }
+        adjust_ship_flag_counters(c, s, 1);
         self.ships.push(tag);
     }
 
@@ -666,15 +689,7 @@ impl RegionalRecord {
             c[counter::BOMBARD] -= s.bombard;
             c[counter::REGIMENTS] -= s.regiments;
             c[counter::SQUADRONS] -= s.squadrons;
-            for (flag, index) in [
-                (ship::DEATH_STAR, counter::DEATH_STAR),
-                (ship::GRAVITY_WELL, counter::GRAVITY_WELL),
-                (ship::LASER, counter::LASER),
-            ] {
-                if s.flags & flag != 0 {
-                    c[index] -= 1;
-                }
-            }
+            adjust_ship_flag_counters(c, s, -1);
         }
         self.ships.remove(at);
     }
@@ -940,6 +955,7 @@ impl RegionalRecord {
         source: FleetKey,
         eligible: u32,
         never_flagship: bool,
+        require_free: bool,
     ) -> Option<AIAction> {
         let tags = round.fleets.get(&source)?.ships.clone();
         let mut team = Vec::new();
@@ -947,7 +963,10 @@ impl RegionalRecord {
             let Some(s) = round.ships.get(&tag) else {
                 continue;
             };
-            if s.flags & eligible != 0 || !self.serves(s) {
+            if (require_free && s.flags & ship::FREE == 0)
+                || s.flags & eligible != 0
+                || !self.serves(s)
+            {
                 continue;
             }
             if never_flagship && s.flags & ship::FLAGSHIP != 0 {
@@ -979,10 +998,7 @@ impl RegionalRecord {
             (s.x, s.y)
         };
         let world = round.inputs.world;
-        let items: Vec<(FleetKey, i64)> = world
-            .fleets
-            .keys()
-            .filter_map(|k| round.fleets.get(&k))
+        let items: Vec<(FleetKey, i64)> = fleet_records(round)
             .filter(|f| f.has(0x8005) && f.flags & fleet::EN_ROUTE == 0)
             .filter_map(|f| {
                 let at = world.systems.get(f.location)?;
@@ -994,7 +1010,7 @@ impl RegionalRecord {
             .collect();
         let mut holder = Holder::new(vec![(items, Dir::Smallest)], &mut round.rng);
         while let Some(source) = holder.pick() {
-            let order = self.take_free_ships(round, marks, source);
+            let order = self.take_from(round, marks, source, 0xc0_3800, false, true);
             if order.is_some() {
                 return order;
             }
@@ -1002,53 +1018,16 @@ impl RegionalRecord {
         None
     }
 
-    /// `FUN_004782a0`'s pass over one fleet: free ships with none of
-    /// `0xc03800` that serve a shortfall; a Create Fleet of them.
-    fn take_free_ships(
-        &mut self,
-        round: &mut Round<'_>,
-        marks: &mut Marks,
-        source: FleetKey,
-    ) -> Option<AIAction> {
-        let tags = round.fleets.get(&source)?.ships.clone();
-        let mut team = Vec::new();
-        for tag in tags {
-            let Some(s) = round.ships.get(&tag) else {
-                continue;
-            };
-            // Free ships only, none en route, unfinished, crewed or
-            // flagged 0x800000.
-            if s.flags & ship::FREE == 0 || s.flags & 0xc0_3800 != 0 || !self.serves(s) {
-                continue;
-            }
-            self.adopt_ship(round, marks, tag);
-            team.push(tag);
-        }
-        if team.is_empty() {
-            return None;
-        }
-        let to_system = self.destination(round, source);
-        Some(AIAction::CreateFleet {
-            fleet: source,
-            ships: team,
-            to_system,
-        })
-    }
-
     /// `FUN_00478690`: ships from a fleet of a later plan entry's record;
     /// its flagship is asked to stand down instead.
     fn poach(&mut self, round: &mut Round<'_>, marks: &mut Marks) -> Option<AIAction> {
-        let world = round.inputs.world;
-        let items: Vec<(FleetKey, i64)> = world
-            .fleets
-            .keys()
-            .filter_map(|k| round.fleets.get(&k))
+        let items: Vec<(FleetKey, i64)> = fleet_records(round)
             .filter(|f| f.has(0x8001) && f.flags & 0xf000_0006 == 0 && f.plan > self.plan)
             .map(|f| (f.key, i64::from(f.plan)))
             .collect();
         let mut holder = Holder::new(vec![(items, Dir::Largest)], &mut round.rng);
         while let Some(source) = holder.pick() {
-            let order = self.take_from(round, marks, source, 0xc2_3800, true);
+            let order = self.take_from(round, marks, source, 0xc2_3800, true, false);
             if order.is_some() {
                 return order;
             }
@@ -1108,13 +1087,7 @@ impl RegionalRecord {
         }
         let key = self.sector?;
         let own_free = Words::new(0, 0, sys::OWN, 0x2, 0, 0);
-        if let Some(s) = pick_system(
-            round,
-            key,
-            Words::new(0x8000_0000, 0, sys::OWN, 0x2, 0, 0),
-            7,
-            Dir::Smallest,
-        ) {
+        if let Some(s) = primary_owned_system(round, key) {
             return Some(s);
         }
         let from = round.fleets.get(&source).map(|f| f.location);
@@ -1359,14 +1332,7 @@ impl RegionalRecord {
                     // FUN_004b9310: an unvisited held system, oldest
                     // intel first.
                     let w = Words::new(0, 0, sys::HELD, 0, 0, 0x70_0201);
-                    let day = i64::try_from(round.inputs.tick).unwrap_or(i64::MAX);
-                    let mut items: Vec<(SystemKey, i64)> = systems_of(round, key)
-                        .into_iter()
-                        .filter_map(|s| round.records.get(&s))
-                        .filter(|r| w.admits(r))
-                        .map(|r| (r.key, if r.own { 0 } else { day - r.last_seen }))
-                        .collect();
-                    items.retain(|(s, _)| !p.visited.contains(s));
+                    let items = intel_items(round, key, w, &p.visited);
                     if items.is_empty() {
                         let mark = marks.sector_mut(key);
                         mark.exhausted = true;
@@ -1399,6 +1365,34 @@ impl RegionalRecord {
     }
 }
 
+fn set_space_requirement(
+    requirement: &mut [i64; 10],
+    attack: i64,
+    manoeuvre: i64,
+    fighters: i64,
+    best: &BestClasses,
+    use_best_attack: bool,
+) {
+    let raise = |field: &mut i64, value: i64| *field = (*field).max(value);
+    let attack = attack * 12 / 10;
+    raise(
+        &mut requirement[counter::ATTACK],
+        if use_best_attack {
+            attack.max(best.attack)
+        } else {
+            attack
+        },
+    );
+    raise(
+        &mut requirement[counter::MANOEUVRE],
+        (manoeuvre * 12 / 10).max(best.manoeuvre),
+    );
+    raise(&mut requirement[counter::HANGAR], fighters * 12 / 10);
+    requirement[counter::TROOP_ROOM] = 0;
+    requirement[counter::DEATH_STAR] = 0;
+    requirement[counter::REGIMENTS] = 0;
+}
+
 /// Posture slot 20 (`FUN_004bb510`, `FUN_004b9fe0`, `FUN_004b4920`,
 /// `FUN_004b8b70`, `FUN_004b3300`, `FUN_004b6a60`): the requirement, each
 /// field raised to its new value and never lowered.
@@ -1427,16 +1421,8 @@ fn requirement(
     let fighters = squadrons + carried;
     match kind {
         1 => {
-            up(&mut r[counter::ATTACK], attack * 12 / 10);
-            up(
-                &mut r[counter::MANOEUVRE],
-                (manoeuvre * 12 / 10).max(b.manoeuvre),
-            );
-            up(&mut r[counter::HANGAR], fighters * 12 / 10);
-            r[counter::TROOP_ROOM] = 0;
-            r[counter::DEATH_STAR] = 0;
+            set_space_requirement(r, attack, manoeuvre, fighters, b, false);
             up(&mut r[counter::BOMBARD], (shield * 11 / 10).max(b.bombard));
-            r[counter::REGIMENTS] = 0;
         }
         2 => {
             up(&mut r[counter::ATTACK], (attack * 3 / 2).max(b.attack));
@@ -1450,15 +1436,7 @@ fn requirement(
             r[counter::REGIMENTS] = 0;
         }
         3 => {
-            up(&mut r[counter::ATTACK], (attack * 12 / 10).max(b.attack));
-            up(
-                &mut r[counter::MANOEUVRE],
-                (manoeuvre * 12 / 10).max(b.manoeuvre),
-            );
-            up(&mut r[counter::HANGAR], fighters * 12 / 10);
-            r[counter::TROOP_ROOM] = 0;
-            r[counter::DEATH_STAR] = 0;
-            r[counter::REGIMENTS] = 0;
+            set_space_requirement(r, attack, manoeuvre, fighters, b, true);
         }
         4 => {
             let at_target = target.map_or(0, |t| t.squadron_manoeuvre * 3 / 2);
@@ -2406,14 +2384,31 @@ impl RegionalRecord {
         set_fleet_need(round, marks, f, need, Some(target));
     }
 
+    fn posture_fleet(
+        &self,
+        posture: &Posture,
+        round: &Round<'_>,
+    ) -> Option<(FleetKey, SectorKey, FleetRecord)> {
+        let fleet = posture.fleet?;
+        let sector = self.sector?;
+        let record = round.fleets.get(&fleet)?.clone();
+        Some((fleet, sector, record))
+    }
+
+    fn regiment_fleet(
+        &self,
+        posture: &Posture,
+        round: &Round<'_>,
+    ) -> Option<(FleetKey, SectorKey, FleetRecord)> {
+        self.posture_fleet(posture, round)
+            .filter(|(_, _, record)| record.regiments_active > 0)
+    }
+
     /// Posture slot 15: an enemy fleet or squadrons the fleet can beat
     /// (`FUN_004bafe0`, `FUN_004b9c90`, `FUN_004b4560`, `FUN_004b8880`,
     /// `FUN_004b2d70`, `FUN_004b6340`).
     fn engage_target(&self, p: &mut Posture, round: &mut Round<'_>, marks: &mut Marks) -> bool {
-        let (Some(f), Some(key)) = (p.fleet, self.sector) else {
-            return false;
-        };
-        let Some(r) = round.fleets.get(&f).cloned() else {
+        let Some((f, key, r)) = self.posture_fleet(p, round) else {
             return false;
         };
         if r.attack <= 0 {
@@ -2450,13 +2445,7 @@ impl RegionalRecord {
     /// Posture slot 16: an assault (`FUN_004b8ab0` kind 4,
     /// `FUN_004b6510` kind 6).
     fn assault_target(&self, p: &Posture, round: &mut Round<'_>, marks: &mut Marks) -> bool {
-        let (Some(f), Some(key)) = (p.fleet, self.sector) else {
-            return false;
-        };
-        let Some(r) = round.fleets.get(&f).cloned() else {
-            return false;
-        };
-        if r.regiments_active <= 0 {
+        let Some((f, key, r)) = self.regiment_fleet(p, round) else {
             return false;
         }
         let best = round_best(round);
@@ -2507,13 +2496,7 @@ impl RegionalRecord {
     /// Posture slot 18, kind 5 (`FUN_004b2f40`): a neutral unpopulated
     /// system to drop regiments on.
     fn drop_target(&self, p: &Posture, round: &mut Round<'_>, marks: &mut Marks) -> bool {
-        let (Some(f), Some(key)) = (p.fleet, self.sector) else {
-            return false;
-        };
-        let Some(r) = round.fleets.get(&f).cloned() else {
-            return false;
-        };
-        if r.regiments_active <= 0 {
+        let Some((f, key, r)) = self.regiment_fleet(p, round) else {
             return false;
         }
         let w = Words::new(0, 0, sys::NEUTRAL, 0, 0, 0x10_0208);
@@ -2527,10 +2510,7 @@ impl RegionalRecord {
     /// Posture slot 17 (`FUN_004bb300` kind 1, `FUN_004b4730` kind 3,
     /// `FUN_004b3110` kind 5, `FUN_004b6870` kind 6).
     fn bombard_target(&self, p: &Posture, round: &mut Round<'_>, marks: &mut Marks) -> bool {
-        let (Some(f), Some(key)) = (p.fleet, self.sector) else {
-            return false;
-        };
-        let Some(r) = round.fleets.get(&f).cloned() else {
+        let Some((f, key, r)) = self.posture_fleet(p, round) else {
             return false;
         };
         if r.bombard <= 0 {
@@ -2665,13 +2645,7 @@ impl RegionalRecord {
         {
             return Some(l);
         }
-        if let Some(s) = pick_system(
-            round,
-            key,
-            Words::new(0x8000_0000, 0, sys::OWN, 0x2, 0, 0),
-            7,
-            Dir::Smallest,
-        ) {
+        if let Some(s) = primary_owned_system(round, key) {
             return Some(s);
         }
         if let Some(s) = pick_system(
@@ -3089,15 +3063,24 @@ fn oldest_intel(
     w: Words,
     skip: &[SystemKey],
 ) -> Option<SystemKey> {
+    let items = intel_items(round, key, w, skip);
+    rank_pick(&[(items, Dir::Largest)], &mut round.rng)
+}
+
+fn intel_items(
+    round: &Round<'_>,
+    key: SectorKey,
+    words: Words,
+    skip: &[SystemKey],
+) -> Vec<(SystemKey, i64)> {
     let day = i64::try_from(round.inputs.tick).unwrap_or(i64::MAX);
-    let items: Vec<(SystemKey, i64)> = systems_of(round, key)
+    systems_of(round, key)
         .into_iter()
         .filter(|s| !skip.contains(s))
         .filter_map(|s| round.records.get(&s))
-        .filter(|r| w.admits(r))
+        .filter(|r| words.admits(r))
         .map(|r| (r.key, if r.own { 0 } else { day - r.last_seen }))
-        .collect();
-    rank_pick(&[(items, Dir::Largest)], &mut round.rng)
+        .collect()
 }
 
 /// `FUN_004b8f80`: kind 4's target, a held system not the side's with
@@ -3129,6 +3112,44 @@ mod tests {
     use crate::dat::Faction;
     use crate::world::GameWorld;
 
+    fn with_world_round<R>(
+        world: &GameWorld,
+        side: Faction,
+        f: impl FnOnce(&mut Round<'_>, &mut Marks) -> R,
+    ) -> R {
+        let transport = crate::troop_transport::TroopTransportState::new();
+        with_world_round_and_transport(world, side, &transport, f)
+    }
+
+    fn with_world_round_and_transport<R>(
+        world: &GameWorld,
+        side: Faction,
+        transport: &crate::troop_transport::TroopTransportState,
+        f: impl FnOnce(&mut Round<'_>, &mut Marks) -> R,
+    ) -> R {
+        let manufacturing = crate::manufacturing::ManufacturingState::new();
+        let uprisings = crate::uprising::UprisingState::new();
+        let research = crate::research::ResearchState::new();
+        let movement = crate::movement::MovementState::new();
+        let input_marks = Marks::default();
+        let inputs = crate::ai_production::RoundInputs {
+            world,
+            manufacturing: &manufacturing,
+            transport,
+            uprisings: &uprisings,
+            research: &research,
+            movement: &movement,
+            marks: &input_marks,
+            side,
+            tick: 7,
+            round_in_day: 0,
+        };
+        let production = crate::ai_production::ProductionState::default();
+        let mut round = Round::new(&production, &inputs);
+        let mut marks = Marks::default();
+        f(&mut round, &mut marks)
+    }
+
     /// A round of `side` over an empty world whose sector records have the
     /// keys and syncs of `sectors`. port: test fixture values, not rules.
     fn with_sectors<R>(
@@ -3137,34 +3158,17 @@ mod tests {
         f: impl FnOnce(&mut Round<'_>) -> R,
     ) -> R {
         let world = GameWorld::default();
-        let manufacturing = crate::manufacturing::ManufacturingState::new();
-        let transport = crate::troop_transport::TroopTransportState::new();
-        let uprisings = crate::uprising::UprisingState::new();
-        let research = crate::research::ResearchState::new();
-        let movement = crate::movement::MovementState::new();
-        let marks = Marks::default();
-        let inputs = crate::ai_production::RoundInputs {
-            world: &world,
-            manufacturing: &manufacturing,
-            transport: &transport,
-            uprisings: &uprisings,
-            research: &research,
-            movement: &movement,
-            marks: &marks,
-            side,
-            tick: 7,
-            round_in_day: 0,
-        };
-        let mut round = Round::new(&crate::ai_production::ProductionState::default(), &inputs);
-        round.sectors = sectors
-            .iter()
-            .map(|&(key, sync)| SectorRecord {
-                key,
-                sync,
-                ..SectorRecord::default()
-            })
-            .collect();
-        f(&mut round)
+        with_world_round(&world, side, |round, _| {
+            round.sectors = sectors
+                .iter()
+                .map(|&(key, sync)| SectorRecord {
+                    key,
+                    sync,
+                    ..SectorRecord::default()
+                })
+                .collect();
+            f(round)
+        })
     }
 
     fn with_round<R>(side: Faction, sync: i64, f: impl FnOnce(&mut Round<'_>) -> R) -> R {
@@ -3204,37 +3208,19 @@ mod tests {
             world.systems[system].fleets.push(fleet);
             crate::carriage::tag_all(&mut world);
             let take = |world: &GameWorld| {
-                let manufacturing = crate::manufacturing::ManufacturingState::new();
-                let transport = crate::troop_transport::TroopTransportState::new();
-                let uprisings = crate::uprising::UprisingState::new();
-                let research = crate::research::ResearchState::new();
-                let movement = crate::movement::MovementState::new();
-                let mut marks = Marks::default();
-                let inputs = crate::ai_production::RoundInputs {
-                    world,
-                    manufacturing: &manufacturing,
-                    transport: &transport,
-                    uprisings: &uprisings,
-                    research: &research,
-                    movement: &movement,
-                    marks: &Marks::default(),
-                    side,
-                    tick: 7,
-                    round_in_day: 0,
-                };
-                let mut round =
-                    Round::new(&crate::ai_production::ProductionState::default(), &inputs);
-                round.sectors = vec![SectorRecord {
-                    key: sector,
-                    ..SectorRecord::default()
-                }];
-                let mut record = RegionalRecord {
-                    id: 1,
-                    sector: Some(sector),
-                    ..RegionalRecord::default()
-                };
-                record.counters[counter::HANGAR] = -1;
-                record.take_free(&mut round, &mut marks)
+                with_world_round(world, side, |round, marks| {
+                    round.sectors = vec![SectorRecord {
+                        key: sector,
+                        ..SectorRecord::default()
+                    }];
+                    let mut record = RegionalRecord {
+                        id: 1,
+                        sector: Some(sector),
+                        ..RegionalRecord::default()
+                    };
+                    record.counters[counter::HANGAR] = -1;
+                    record.take_free(round, marks)
+                })
             };
 
             assert_eq!(take(&world), None, "{side:?}");
@@ -3511,31 +3497,15 @@ mod tests {
                 .load(&mut world, &ProductRoom::default(), f, &troops)
                 .expect("the regiments board");
         }
-        let marks = Marks::default();
-        let manufacturing = crate::manufacturing::ManufacturingState::new();
-        let uprisings = crate::uprising::UprisingState::new();
-        let research = crate::research::ResearchState::new();
-        let movement = crate::movement::MovementState::new();
-        let inputs = crate::ai_production::RoundInputs {
-            world: &world,
-            manufacturing: &manufacturing,
-            transport: &transport,
-            uprisings: &uprisings,
-            research: &research,
-            movement: &movement,
-            marks: &marks,
-            side,
-            tick: 7,
-            round_in_day: 0,
-        };
-        let mut round = Round::new(&crate::ai_production::ProductionState::default(), &inputs);
-        let mut record = RegionalRecord {
-            id: 1,
-            sector: Some(sector),
-            fleets: keys.clone(),
-            ..RegionalRecord::default()
-        };
-        run(&mut record, &mut round, &keys, target)
+        with_world_round_and_transport(&world, side, &transport, |round, _| {
+            let mut record = RegionalRecord {
+                id: 1,
+                sector: Some(sector),
+                fleets: keys.clone(),
+                ..RegionalRecord::default()
+            };
+            run(&mut record, round, &keys, target)
+        })
     }
 
     /// A kind-6 posture's turn for `at_enemy_headquarters`' fleet with no
@@ -3757,6 +3727,49 @@ mod tests {
         }
     }
 
+    fn assault_action(executed: &Executed) -> AIAction {
+        AIAction::Assault {
+            fleet: executed.fleets[0],
+            system: executed.target,
+        }
+    }
+
+    fn bombard_action(executed: &Executed) -> AIAction {
+        AIAction::Bombard {
+            fleet: executed.fleets[0],
+            system: executed.target,
+            kind: Strike::General,
+        }
+    }
+
+    fn aim_assault(
+        round: &mut Round<'_>,
+        marks: &mut Marks,
+        fleets: &[FleetKey],
+        target: SystemKey,
+    ) {
+        aim_all(round, marks, fleets, target, fleet::ASSAULT);
+    }
+
+    fn aim_winning_engage(
+        round: &mut Round<'_>,
+        marks: &mut Marks,
+        fleets: &[FleetKey],
+        target: SystemKey,
+    ) {
+        aim_all(round, marks, fleets, target, fleet::ENGAGE);
+        round
+            .records
+            .get_mut(&target)
+            .expect("the target's record")
+            .squadron_attack = 1;
+        round
+            .fleets
+            .get_mut(&fleets[0])
+            .expect("the fleet's record")
+            .attack = 10;
+    }
+
     // FUN_004b1070.c: a bombardment need clears on the call that issues its
     // order (:60-70 to :100-101); an assault need stays with its order
     // (:78-91); a drop need stays while FUN_004ae440 passes, one regiment
@@ -3768,24 +3781,12 @@ mod tests {
             let e = execute_calls(side, (0x14, 0, 2, 1), 1, |round, marks, f, t| {
                 aim_all(round, marks, f, t, fleet::BOMBARD);
             });
-            let (f, t) = (e.fleets[0], e.target);
-            let bombard = AIAction::Bombard {
-                fleet: f,
-                system: t,
-                kind: Strike::General,
-            };
-            assert_eq!(e.calls, vec![(Some(bombard), true)], "{side:?}");
+            assert_eq!(e.calls, vec![(Some(bombard_action(&e)), true)], "{side:?}");
             assert_eq!(e.needs, vec![(0, None)], "{side:?}");
 
-            let e = execute_calls(side, (0x14, 1, 0, 1), 1, |round, marks, f, t| {
-                aim_all(round, marks, f, t, fleet::ASSAULT);
-            });
-            let (f, t) = (e.fleets[0], e.target);
-            let assault = AIAction::Assault {
-                fleet: f,
-                system: t,
-            };
-            assert_eq!(e.calls, vec![(Some(assault), true)], "{side:?}");
+            let e = execute_calls(side, (0x14, 1, 0, 1), 1, aim_assault);
+            assert_eq!(e.calls, vec![(Some(assault_action(&e)), true)], "{side:?}");
+            let t = e.target;
             assert_eq!(e.needs, vec![(fleet::ASSAULT, Some(t))], "{side:?}");
 
             // port: the AI record of a neutral, unpopulated system with no
@@ -3822,12 +3823,7 @@ mod tests {
                     .expect("the target's record")
                     .hq_count = 0;
             });
-            let (f, t) = (e.fleets[0], e.target);
-            let assault = AIAction::Assault {
-                fleet: f,
-                system: t,
-            };
-            assert_eq!(e.calls, vec![(Some(assault), true)], "{side:?}");
+            assert_eq!(e.calls, vec![(Some(assault_action(&e)), true)], "{side:?}");
 
             let e = execute_calls(side, (0x18, 0, 2, 1), 1, |round, marks, f, t| {
                 aim_all(round, marks, f, t, fleet::BOMBARD);
@@ -3837,13 +3833,7 @@ mod tests {
                     .expect("the target's record")
                     .hq_count = 0;
             });
-            let (f, t) = (e.fleets[0], e.target);
-            let bombard = AIAction::Bombard {
-                fleet: f,
-                system: t,
-                kind: Strike::General,
-            };
-            assert_eq!(e.calls, vec![(Some(bombard), true)], "{side:?}");
+            assert_eq!(e.calls, vec![(Some(bombard_action(&e)), true)], "{side:?}");
 
             // port: the fleet's AI record placed away from its target.
             let e = execute_calls(side, (0x18, 1, 0, 1), 1, |round, marks, f, t| {
@@ -3873,19 +3863,7 @@ mod tests {
             assert_eq!(e.calls, vec![(None, true)], "{side:?}");
             assert_eq!(e.needs, vec![(0, None)], "{side:?}");
 
-            let e = execute_calls(side, (0x14, 0, 0, 1), 1, |round, marks, f, t| {
-                aim_all(round, marks, f, t, fleet::ENGAGE);
-                round
-                    .records
-                    .get_mut(&t)
-                    .expect("the target's record")
-                    .squadron_attack = 1;
-                round
-                    .fleets
-                    .get_mut(&f[0])
-                    .expect("the fleet's record")
-                    .attack = 10;
-            });
+            let e = execute_calls(side, (0x14, 0, 0, 1), 1, aim_winning_engage);
             assert_eq!(e.calls, vec![(None, true)], "{side:?}");
             assert_eq!(e.needs, vec![(fleet::ENGAGE, Some(e.target))], "{side:?}");
         }
@@ -3935,27 +3913,13 @@ mod tests {
     #[test]
     fn the_execute_trace_labels_an_order_a_cleared_need_and_a_kept_one() {
         let side = Faction::Empire;
-        let e = execute_calls(side, (0x14, 1, 0, 1), 1, |round, marks, f, t| {
-            aim_all(round, marks, f, t, fleet::ASSAULT);
-        });
+        let e = execute_calls(side, (0x14, 1, 0, 1), 1, aim_assault);
         assert_eq!(e.outcomes, ["order"]);
         let e = execute_calls(side, (0x14, 0, 0, 1), 1, |round, marks, f, t| {
             aim_all(round, marks, f, t, fleet::ENGAGE);
         });
         assert_eq!(e.outcomes, ["cleared"]);
-        let e = execute_calls(side, (0x14, 0, 0, 1), 1, |round, marks, f, t| {
-            aim_all(round, marks, f, t, fleet::ENGAGE);
-            round
-                .records
-                .get_mut(&t)
-                .expect("the target's record")
-                .squadron_attack = 1;
-            round
-                .fleets
-                .get_mut(&f[0])
-                .expect("the fleet's record")
-                .attack = 10;
-        });
+        let e = execute_calls(side, (0x14, 0, 0, 1), 1, aim_winning_engage);
         assert_eq!(e.outcomes, ["kept"]);
     }
 
@@ -4038,34 +4002,17 @@ mod tests {
             capital_ships: vec![ship],
             ..Default::default()
         });
-        let transport = crate::troop_transport::TroopTransportState::new();
-        let marks = Marks::default();
-        let manufacturing = crate::manufacturing::ManufacturingState::new();
-        let uprisings = crate::uprising::UprisingState::new();
-        let research = crate::research::ResearchState::new();
-        let movement = crate::movement::MovementState::new();
-        let inputs = crate::ai_production::RoundInputs {
-            world: &world,
-            manufacturing: &manufacturing,
-            transport: &transport,
-            uprisings: &uprisings,
-            research: &research,
-            movement: &movement,
-            marks: &marks,
-            side,
-            tick: 7,
-            round_in_day: 0,
-        };
-        let mut round = Round::new(&crate::ai_production::ProductionState::default(), &inputs);
-        let mut record = RegionalRecord {
-            id: 1,
-            sector: Some(sector),
-            fleets: vec![f],
-            ..RegionalRecord::default()
-        };
-        // The record holds the fleet (fleet +0x30, FUN_0041acd0's test).
-        round.fleets.get_mut(&f).expect("the fleet's record").record = record.id;
-        run(&mut record, &mut round, f, home, &troops)
+        with_world_round(&world, side, |round, _| {
+            let mut record = RegionalRecord {
+                id: 1,
+                sector: Some(sector),
+                fleets: vec![f],
+                ..RegionalRecord::default()
+            };
+            // The record holds the fleet (fleet +0x30, FUN_0041acd0's test).
+            round.fleets.get_mut(&f).expect("the fleet's record").record = record.id;
+            run(&mut record, round, f, home, &troops)
+        })
     }
 
     // FUN_004adb70: state 2 (posture slot 13) takes an own system of the

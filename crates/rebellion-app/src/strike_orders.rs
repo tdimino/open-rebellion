@@ -968,6 +968,25 @@ mod tests {
         })
     }
 
+    fn character_strike_messages(templates: &TextTemplates, alliance: bool) -> Vec<GameMessage> {
+        let (mut world, system) = world(Some(Faction::Alliance));
+        let character = world.characters.insert(Character {
+            name: "Ackbar".into(),
+            is_alliance: alliance,
+            is_empire: !alliance,
+            ..Character::default()
+        });
+        strike_messages(
+            &world,
+            templates,
+            7,
+            &strike(system, Faction::Empire, Faction::Alliance, |report| {
+                report.planet_destroyed = true;
+                report.characters = vec![character];
+            }),
+        )
+    }
+
     #[test]
     fn a_sabotaged_death_star_plays_its_movie_to_both_sides_with_no_row_or_advice() {
         // FUN_0048d470 on event 0x305 for an object of family 0x18-0x1b:
@@ -1043,22 +1062,7 @@ mod tests {
         // alone; without them there is no original text to file.
         let empty = TextTemplates::default();
         for alliance in [true, false] {
-            let (mut world, system) = world(Some(Faction::Alliance));
-            let character = world.characters.insert(Character {
-                name: "Ackbar".into(),
-                is_alliance: alliance,
-                is_empire: !alliance,
-                ..Character::default()
-            });
-            let messages = strike_messages(
-                &world,
-                &empty,
-                7,
-                &strike(system, Faction::Empire, Faction::Alliance, |report| {
-                    report.planet_destroyed = true;
-                    report.characters = vec![character];
-                }),
-            );
+            let messages = character_strike_messages(&empty, alliance);
             assert!(messages.is_empty(), "{alliance}: {messages:?}");
         }
     }
@@ -1068,22 +1072,7 @@ mod tests {
         // Notification 0x1a, Character Health, for the character's side.
         let templates = templates();
         for alliance in [true, false] {
-            let (mut world, system) = world(Some(Faction::Alliance));
-            let character = world.characters.insert(Character {
-                name: "Ackbar".into(),
-                is_alliance: alliance,
-                is_empire: !alliance,
-                ..Character::default()
-            });
-            let messages = strike_messages(
-                &world,
-                &templates,
-                7,
-                &strike(system, Faction::Empire, Faction::Alliance, |report| {
-                    report.planet_destroyed = true;
-                    report.characters = vec![character];
-                }),
-            );
+            let messages = character_strike_messages(&templates, alliance);
             let killed = &messages[0];
             assert_eq!(killed.text, "Ackbar has been killed.");
             assert_eq!(killed.display.as_ref().unwrap().title, "Ackbar Killed");

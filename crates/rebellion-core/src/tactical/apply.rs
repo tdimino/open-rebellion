@@ -17,6 +17,14 @@ pub struct BattleReturn {
     pub withdrawal: Option<SystemKey>,
 }
 
+fn winner_is_alliance(session: &BattleSession) -> Option<bool> {
+    match session.winner {
+        Some(CombatWinner::Attacker) => Some(session.attacker_is_alliance),
+        Some(CombatWinner::Defender) => Some(!session.attacker_is_alliance),
+        Some(CombatWinner::Draw) | None => None,
+    }
+}
+
 /// Seat each side's morale before a battle (`FUN_00599c90.c:99-186`): its
 /// retreat permission (`side+0x80`) and its withdrawal threshold
 /// (`side+0x24`). A computer side takes `FUN_004e6110`'s threshold
@@ -361,11 +369,7 @@ pub fn apply_results(
     // FUN_0051ddf0 → FUN_00516ef0: the winner's system squadrons are
     // checked in their seat and the loser's fleets and squadrons look for a
     // place to go (`post_battle`).
-    let recorded = match session.winner {
-        Some(CombatWinner::Attacker) => Some(session.attacker_is_alliance),
-        Some(CombatWinner::Defender) => Some(!session.attacker_is_alliance),
-        Some(CombatWinner::Draw) | None => None,
-    };
+    let recorded = winner_is_alliance(session);
     let pass_winner = crate::post_battle::pass_winner(world, session.system, recorded);
     crate::trace::record(crate::trace::TraceMask::COMBAT, "pass_winner", || {
         serde_json::json!({
@@ -418,12 +422,7 @@ pub fn apply_results(
         .winner_fleet
         .is_none_or(|fleet| !world.fleets.get(fleet).is_some_and(crate::world::Fleet::usable))
     {
-        let winner_is_alliance = match session.winner {
-            Some(CombatWinner::Attacker) => Some(session.attacker_is_alliance),
-            Some(CombatWinner::Defender) => Some(!session.attacker_is_alliance),
-            Some(CombatWinner::Draw) | None => None,
-        };
-        if let Some(winner_is_alliance) = winner_is_alliance {
+        if let Some(winner_is_alliance) = winner_is_alliance(session) {
             result.winner_fleet = world.systems.get(session.system).and_then(|system| {
                 system.fleets.iter().copied().find(|&fleet| {
                     world

@@ -1150,6 +1150,38 @@ mod tests {
         (manager, id)
     }
 
+    fn unrelated_manager() -> WindowManager {
+        let mut manager = WindowManager::new();
+        manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        manager
+    }
+
+    fn managed_training(
+        kinds: Vec<BuildableKind>,
+    ) -> (
+        BuildSelectionState,
+        WindowManager,
+        rebellion_windowing::WindowId,
+    ) {
+        let (_, system) = galaxy(true);
+        let mut state = BuildSelectionState::default();
+        let (manager, id) = managed_open(
+            &mut state,
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            kinds,
+        );
+        (state, manager, id)
+    }
+
     #[test]
     fn build_selection_windowing_failed_context_preserves_old() {
         let (_world, system) = galaxy(true);
@@ -1182,17 +1214,9 @@ mod tests {
 
     #[test]
     fn build_selection_duplicate_open_preserves_manufacturing_context() {
-        let (_world, system) = galaxy(true);
         let first = BuildableKind::Troop(DatId::new(0x1000_0001));
         let replacement = BuildableKind::Troop(DatId::new(0x1000_0002));
-        let mut state = BuildSelectionState::default();
-        let (mut manager, id) = managed_open(
-            &mut state,
-            system,
-            ProductionArea::TrainingFacility,
-            true,
-            vec![first, replacement],
-        );
+        let (mut state, mut manager, id) = managed_training(vec![first, replacement]);
         let dialog = state.dialog_mut().unwrap();
         dialog.select(1);
         dialog.step_quantity(true);
@@ -1226,29 +1250,13 @@ mod tests {
 
     #[test]
     fn build_selection_rejects_mismatched_publication_receipts_without_replacing_content() {
-        let (_world, system) = galaxy(true);
         let first = BuildableKind::Troop(DatId::new(0x1000_0001));
         let replacement = BuildableKind::Troop(DatId::new(0x1000_0002));
-        let mut state = BuildSelectionState::default();
-        let (_manager, original) = managed_open(
-            &mut state,
-            system,
-            ProductionArea::TrainingFacility,
-            true,
-            vec![first],
-        );
+        let (mut state, _manager, original) = managed_training(vec![first]);
         state.dialog_mut().unwrap().step_quantity(true);
         let before = state.dialog().unwrap().clone();
 
-        let mut unrelated = WindowManager::new();
-        unrelated
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
+        let mut unrelated = unrelated_manager();
         let prepared = state
             .prepare_open(
                 SystemKey::default(),
@@ -1305,15 +1313,7 @@ mod tests {
         let before = state.dialog().unwrap().clone();
         assert_eq!(state.commit_confirm(prepared, &[], &world), None);
         assert_eq!(state.dialog(), Some(&before));
-        let mut unrelated = WindowManager::new();
-        unrelated
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
+        let mut unrelated = unrelated_manager();
         let wrong = unrelated
             .apply(WindowCommand::Open(
                 crate::windowing_policy::singleton_spec(
@@ -1746,6 +1746,21 @@ mod tests {
         ]
     }
 
+    fn training_fixture(
+        regiments: Vec<BuildableKind>,
+    ) -> (GameWorld, BuildSelectionState, Vec<BuildableKind>, Vec<String>) {
+        let (world, system) = galaxy(true);
+        let names = regiments.iter().map(|&kind| product(&world, kind).0).collect();
+        let mut state = BuildSelectionState::default();
+        assert!(state.open(
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            regiments.clone(),
+        ));
+        (world, state, regiments, names)
+    }
+
     fn open() -> BuildSelectionState {
         let mut state = BuildSelectionState::default();
         assert!(state.open(
@@ -1854,22 +1869,8 @@ mod tests {
     // it (notification 0x29b, FUN_0060d020 -> FUN_0060c970).
     #[test]
     fn the_class_list_shows_two_rows_and_a_click_picks_one() {
-        let (world, system) = galaxy(true);
-        let mut state = BuildSelectionState::default();
-        let regiments = kinds();
-        assert!(state.open(
-            system,
-            ProductionArea::TrainingFacility,
-            true,
-            regiments.clone()
-        ));
-        let at = egui::Pos2::ZERO;
-        drive(
-            &world,
-            &mut state,
-            (111.0, 99.0),
-            vec![vec![press(at, true)], vec![press(at, false)]],
-        );
+        let (world, mut state, regiments, _) = training_fixture(kinds());
+        click(&world, &mut state, (111.0, 99.0));
         assert!(state.dialog().unwrap().list_open());
         let (_, texts) = drive_at(&world, &mut state, 1.0, (111.0, 99.0), vec![]);
         let origin = window_rect(layout()).min;
@@ -1891,14 +1892,7 @@ mod tests {
         }
         // The popup holds the capture (FUN_0060d020): a click beside it (x
         // 6..201) or on Cancel closes it, picks nothing and cancels nothing.
-        let click_at = |state: &mut BuildSelectionState, point| {
-            drive(
-                &world,
-                state,
-                point,
-                vec![vec![press(at, true)], vec![press(at, false)]],
-            )
-        };
+        let click_at = |state: &mut BuildSelectionState, point| click(&world, state, point);
         for outside in [(203.0, 150.0), (170.0, 240.0)] {
             if !state.dialog().unwrap().list_open() {
                 click_at(&mut state, (111.0, 99.0));
@@ -1923,24 +1917,9 @@ mod tests {
     // rests on the first row.
     #[test]
     fn the_class_list_greys_every_row_but_the_picked_and_hovered_ones() {
-        let (world, system) = galaxy(true);
-        let regiments = kinds();
-        let names: Vec<String> = regiments.iter().map(|&k| product(&world, k).0).collect();
-        let mut state = BuildSelectionState::default();
-        assert!(state.open(
-            system,
-            ProductionArea::TrainingFacility,
-            true,
-            regiments.clone()
-        ));
-        let at = egui::Pos2::ZERO;
+        let (world, mut state, regiments, names) = training_fixture(kinds());
         let toggle = |state: &mut BuildSelectionState| {
-            drive(
-                &world,
-                state,
-                (111.0, 99.0),
-                vec![vec![press(at, true)], vec![press(at, false)]],
-            );
+            click(&world, state, (111.0, 99.0));
         };
         let rows = |state: &mut BuildSelectionState, point| {
             list_rows(&drive_at(&world, state, 1.0, point, vec![]).1, &names)
@@ -1968,12 +1947,7 @@ mod tests {
             rows(&mut state, (100.0, 120.0)),
             vec![(names[0].clone(), white), (names[1].clone(), GREY)]
         );
-        drive(
-            &world,
-            &mut state,
-            (100.0, 190.0),
-            vec![vec![press(at, true)], vec![press(at, false)]],
-        );
+        click(&world, &mut state, (100.0, 190.0));
         assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
         // Reopened over the first row, the picked second row stays white.
         toggle(&mut state);
@@ -1993,25 +1967,11 @@ mod tests {
     // list's scroll bar.
     #[test]
     fn the_class_list_opens_on_the_class_and_scrolls_with_the_wheel() {
-        let (world, system) = galaxy(true);
         let mut regiments = kinds();
         regiments.push(BuildableKind::Troop(DatId::new(0x1000_0003)));
-        let names: Vec<String> = regiments.iter().map(|&k| product(&world, k).0).collect();
-        let mut state = BuildSelectionState::default();
-        assert!(state.open(
-            system,
-            ProductionArea::TrainingFacility,
-            true,
-            regiments.clone()
-        ));
+        let (world, mut state, regiments, names) = training_fixture(regiments);
         state.dialog_mut().unwrap().select(2);
-        let at = egui::Pos2::ZERO;
-        drive(
-            &world,
-            &mut state,
-            (111.0, 99.0),
-            vec![vec![press(at, true)], vec![press(at, false)]],
-        );
+        click(&world, &mut state, (111.0, 99.0));
         let shown = |state: &mut BuildSelectionState, events| {
             list_rows(
                 &drive_at(&world, state, 1.0, (100.0, 150.0), events).1,
@@ -2042,14 +2002,8 @@ mod tests {
     #[test]
     fn the_class_list_picks_only_on_its_rows() {
         let (world, system) = galaxy(true);
-        let at = egui::Pos2::ZERO;
         let click_at = |state: &mut BuildSelectionState, point| {
-            drive(
-                &world,
-                state,
-                point,
-                vec![vec![press(at, true)], vec![press(at, false)]],
-            );
+            click(&world, state, point);
         };
         let mut state = open();
         click_at(&mut state, (111.0, 99.0));
@@ -2077,11 +2031,7 @@ mod tests {
     // The rows and the pointer's row scale with the window.
     #[test]
     fn the_class_list_rows_scale_with_the_window() {
-        let (world, system) = galaxy(true);
-        let regiments = kinds();
-        let names: Vec<String> = regiments.iter().map(|&k| product(&world, k).0).collect();
-        let mut state = BuildSelectionState::default();
-        assert!(state.open(system, ProductionArea::TrainingFacility, true, regiments));
+        let (world, mut state, _regiments, names) = training_fixture(kinds());
         let at = egui::Pos2::ZERO;
         drive_at(
             &world,

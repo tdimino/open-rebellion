@@ -191,27 +191,31 @@ mod tests {
         (1..=n).map(|t| TickEvent { tick: t }).collect()
     }
 
-    #[test]
-    fn high_loyalty_no_betrayal() {
+    fn advance_character(character: Character, roll: f64) -> (CharacterKey, Vec<BetrayalEvent>) {
         let mut state = BetrayalState::new();
         let mut world = GameWorld::default();
+        let key = world.characters.insert(character);
+        let events = BetrayalSystem::advance(
+            &mut state,
+            &world,
+            &ticks(1),
+            &[roll],
+            &test_loyalty_table(),
+        );
+        (key, events)
+    }
+
+    #[test]
+    fn high_loyalty_no_betrayal() {
         // Loyalty 80 → score = 80 - 50 = 30 → >= 0 → skip
-        world.characters.insert(default_test_character("Loyal", 80));
-        let table = test_loyalty_table();
-        let events = BetrayalSystem::advance(&mut state, &world, &ticks(1), &[0.0], &table);
+        let (_, events) = advance_character(default_test_character("Loyal", 80), 0.0);
         assert!(events.is_empty());
     }
 
     #[test]
     fn low_loyalty_low_roll_triggers_betrayal() {
-        let mut state = BetrayalState::new();
-        let mut world = GameWorld::default();
         // Loyalty 10 → score = 10 - 50 = -40 → table says 80% → roll 0.1 < 0.8 → betrays
-        let ck = world
-            .characters
-            .insert(default_test_character("Disloyal", 10));
-        let table = test_loyalty_table();
-        let events = BetrayalSystem::advance(&mut state, &world, &ticks(1), &[0.1], &table);
+        let (ck, events) = advance_character(default_test_character("Disloyal", 10), 0.1);
         assert_eq!(events.len(), 1);
         match &events[0] {
             BetrayalEvent::CharacterBetrayed {
@@ -227,13 +231,9 @@ mod tests {
 
     #[test]
     fn is_unable_to_betray_blocks_betrayal() {
-        let mut state = BetrayalState::new();
-        let mut world = GameWorld::default();
         let mut c = default_test_character("Luke", 10); // low loyalty but immune
         c.is_unable_to_betray = true;
-        world.characters.insert(c);
-        let table = test_loyalty_table();
-        let events = BetrayalSystem::advance(&mut state, &world, &ticks(1), &[0.0], &table);
+        let (_, events) = advance_character(c, 0.0);
         assert!(events.is_empty());
     }
 

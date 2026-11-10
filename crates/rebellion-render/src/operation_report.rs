@@ -1399,6 +1399,24 @@ mod tests {
         run.painted.contains(&(id, egui::pos2(x, y)))
     }
 
+    fn painted_position(run: &Run, id: u32) -> Option<egui::Pos2> {
+        run.painted
+            .iter()
+            .find(|(painted, _)| *painted == id)
+            .map(|&(_, pos)| pos)
+    }
+
+    fn world_with_ship_class() -> (GameWorld, SystemKey, rebellion_core::ids::CapitalShipKey) {
+        use rebellion_core::world::CapitalShipClass;
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System::default());
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            hull: 10,
+            ..CapitalShipClass::default()
+        });
+        (world, system, class)
+    }
+
     fn text<'a>(run: &'a Run, text: &str) -> &'a Text {
         run.texts
             .iter()
@@ -1640,13 +1658,8 @@ mod tests {
         // marks follow its +0x50 and +0xac at each refill: en route while it
         // or its fleet travels (FUN_004f8240) and not destroyed (bit 3), a
         // ship's damage (FUN_00501c00), a character's captivity.
-        use rebellion_core::world::{CapitalShipClass, Character, Fleet, ShipInstance};
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System::default());
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            hull: 10,
-            ..CapitalShipClass::default()
-        });
+        use rebellion_core::world::{Character, Fleet, ShipInstance};
+        let (mut world, system, class) = world_with_ship_class();
         let ship = |tag: u32, hull: i32| {
             let mut ship = ShipInstance::new(class, 10, true);
             ship.tag = tag;
@@ -1760,14 +1773,9 @@ mod tests {
         // FUN_004f8240.c:17-31: a ship's en route bit 4 is its own leg (bit
         // 5, FUN_00556430) or its container's bit 4, and FUN_0044edb0 hands
         // FUN_0042c3b0 the ship itself.
-        use rebellion_core::world::{CapitalShipClass, Fleet, ShipInstance, ShipTransit};
+        use rebellion_core::world::{Fleet, ShipInstance, ShipTransit};
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(System::default());
-            let class = world.capital_ship_classes.insert(CapitalShipClass {
-                hull: 10,
-                ..CapitalShipClass::default()
-            });
+            let (mut world, system, class) = world_with_ship_class();
             let mut travelling = ShipInstance::new(class, 10, is_alliance);
             travelling.tag = 3;
             travelling.transit = Some(ShipTransit {
@@ -1829,14 +1837,12 @@ mod tests {
                 &mut state,
                 click(rail(side, ReportView::FleetForces)),
             );
-            let at = |id: u32| {
-                list.painted
-                    .iter()
-                    .find(|(painted, _)| *painted == id)
-                    .map(|&(_, pos)| pos)
-            };
-            assert!(at(portrait).is_some(), "{faction:?}");
-            assert_eq!(at(portrait + 0x1000), at(portrait), "{faction:?}");
+            assert!(painted_position(&list, portrait).is_some(), "{faction:?}");
+            assert_eq!(
+                painted_position(&list, portrait + 0x1000),
+                painted_position(&list, portrait),
+                "{faction:?}"
+            );
         }
     }
 
@@ -1859,16 +1865,10 @@ mod tests {
                     window.report = Arc::new(value);
                 }
                 let list = run(&mut state, click(rail(side, ReportView::FleetForces)));
-                let at = |id: u32| {
-                    list.painted
-                        .iter()
-                        .find(|(painted, _)| *painted == id)
-                        .map(|&(_, pos)| pos)
-                };
-                assert!(at(portrait).is_some(), "{faction:?}");
+                assert!(painted_position(&list, portrait).is_some(), "{faction:?}");
                 assert_eq!(
-                    at(portrait + 0x2000),
-                    at(portrait).filter(|_| damaged),
+                    painted_position(&list, portrait + 0x2000),
+                    painted_position(&list, portrait).filter(|_| damaged),
                     "{faction:?} damaged {damaged}"
                 );
             }

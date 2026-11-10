@@ -974,21 +974,110 @@ mod tests {
         state.content_reports(&manager.begin_frame(), sources)[0].status
     }
 
-    #[test]
-    fn status_window_windowing_preserves_context() {
-        let (mut world, luke, ..) = world_with_luke();
-        let han = add_character(&mut world, "Han Solo");
+    struct OpenedCharacter {
+        world: GameWorld,
+        character: CharacterKey,
+        empty: Empty,
+        manager: WindowManager,
+        state: StatusWindowState,
+        id: WindowId,
+    }
+
+    fn open_fixture(
+        world: &GameWorld,
+        object: StatusObject,
+        subject: u64,
+    ) -> (Empty, WindowManager, StatusWindowState, WindowId) {
         let empty = Empty::new();
         let mut manager = WindowManager::new();
         let mut state = StatusWindowState::default();
-        let subject = context(41);
         let id = opened_status(
             &mut manager,
             &mut state,
-            empty.sources(&world),
-            StatusObject::Character(luke),
-            subject,
+            empty.sources(world),
+            object,
+            context(subject),
         );
+        (empty, manager, state, id)
+    }
+
+    fn opened_luke(subject: u64) -> OpenedCharacter {
+        let (world, character, ..) = world_with_luke();
+        let (empty, manager, state, id) =
+            open_fixture(&world, StatusObject::Character(character), subject);
+        OpenedCharacter {
+            world,
+            character,
+            empty,
+            manager,
+            state,
+            id,
+        }
+    }
+
+    struct OpenedIndexed {
+        world: GameWorld,
+        fleet: FleetKey,
+        empty: Empty,
+        manager: WindowManager,
+        state: StatusWindowState,
+        id: WindowId,
+    }
+
+    fn opened_indexed(ship: bool, subject: u64, zero_ship_tags: bool) -> OpenedIndexed {
+        let (mut world, fleet) = world_with_indexed_fleet();
+        if zero_ship_tags {
+            for value in &mut world.fleets[fleet].capital_ships {
+                value.tag = 0;
+            }
+        }
+        let object = if ship {
+            StatusObject::Ship { fleet, index: 1 }
+        } else {
+            StatusObject::Fighter { fleet, index: 1 }
+        };
+        let (empty, manager, state, id) = open_fixture(&world, object, subject);
+        OpenedIndexed {
+            world,
+            fleet,
+            empty,
+            manager,
+            state,
+            id,
+        }
+    }
+
+    fn assert_unpaintable(
+        manager: &mut WindowManager,
+        state: &StatusWindowState,
+        sources: StatusSources<'_>,
+        id: WindowId,
+    ) {
+        let frame = manager.begin_frame();
+        let reports = state.content_reports(&frame, sources);
+        assert_eq!(
+            reports,
+            [ContentReport {
+                window: id,
+                status: ContentStatus::Unpaintable,
+            }]
+        );
+        assert_eq!(manager.reconcile(&frame, &reports).blocking_unpainted, [id]);
+        assert_eq!(state.window_id(), Some(id));
+    }
+
+    #[test]
+    fn status_window_windowing_preserves_context() {
+        let OpenedCharacter {
+            mut world,
+            character: luke,
+            empty,
+            mut manager,
+            mut state,
+            id,
+        } = opened_luke(41);
+        let han = add_character(&mut world, "Han Solo");
+        let subject = context(41);
         state.window.as_mut().unwrap().scroll = 17.0;
 
         let duplicate = StatusWindowState::prepare_open(
@@ -1020,17 +1109,14 @@ mod tests {
 
     #[test]
     fn status_window_windowing_blocks_underlay() {
-        let (world, luke, ..) = world_with_luke();
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        let id = opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Character(luke),
-            context(42),
-        );
+        let OpenedCharacter {
+            world,
+            empty,
+            mut manager,
+            mut state,
+            id,
+            ..
+        } = opened_luke(42);
         let frame = manager.begin_frame();
         let inside = window_rect(layout()).center();
         let hits = state
@@ -1090,17 +1176,12 @@ mod tests {
 
     #[test]
     fn status_window_windowing_close_keeps_lease() {
-        let (world, luke, ..) = world_with_luke();
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        let id = opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Character(luke),
-            context(43),
-        );
+        let OpenedCharacter {
+            mut manager,
+            mut state,
+            id,
+            ..
+        } = opened_luke(43);
         let frame = manager.begin_frame();
         let mut router = FrameInputRouter::default();
         router.begin_frame(7, &frame);
@@ -1133,18 +1214,15 @@ mod tests {
 
     #[test]
     fn status_window_context_replacement_is_atomic() {
-        let (mut world, luke, ..) = world_with_luke();
+        let OpenedCharacter {
+            mut world,
+            character: luke,
+            empty,
+            mut manager,
+            mut state,
+            id: old,
+        } = opened_luke(44);
         let han = add_character(&mut world, "Han Solo");
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        let old = opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Character(luke),
-            context(44),
-        );
         state.window.as_mut().unwrap().scroll = 9.0;
         let replacement = StatusWindowState::prepare_open(
             empty.sources(&world),
@@ -1189,19 +1267,16 @@ mod tests {
 
     #[test]
     fn status_window_rejects_mismatched_publication_receipts() {
-        let (mut world, luke, ..) = world_with_luke();
+        let OpenedCharacter {
+            mut world,
+            character: luke,
+            empty,
+            mut manager,
+            mut state,
+            id: original,
+        } = opened_luke(56);
         let han = add_character(&mut world, "Han Solo");
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
         let original_subject = context(56);
-        let original = opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Character(luke),
-            original_subject,
-        );
         state.window.as_mut().unwrap().scroll = 13.0;
 
         let unrelated_open = StatusWindowState::prepare_open(
@@ -1282,17 +1357,9 @@ mod tests {
 
     #[test]
     fn status_window_outside_press_and_f_keys_do_not_reach_cockpit() {
-        let (world, luke, ..) = world_with_luke();
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        let id = opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Character(luke),
-            context(46),
-        );
+        let OpenedCharacter {
+            manager, id, ..
+        } = opened_luke(46);
         let frame = manager.begin_frame();
         let mut router = FrameInputRouter::default();
         router.begin_frame(8, &frame);
@@ -1326,18 +1393,15 @@ mod tests {
 
     #[test]
     fn status_window_stale_subject_rejects_confirm_without_retargeting() {
-        let (mut world, luke, ..) = world_with_luke();
+        let OpenedCharacter {
+            mut world,
+            character: luke,
+            empty,
+            state,
+            id,
+            ..
+        } = opened_luke(47);
         let stale = add_character(&mut world, "Stale Character");
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        let id = opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Character(luke),
-            context(47),
-        );
         world.characters.remove(stale);
 
         assert!(StatusWindowState::prepare_open(
@@ -1355,20 +1419,14 @@ mod tests {
 
     #[test]
     fn committed_ship_index_compaction_is_unpaintable_without_retargeting() {
-        let (mut world, fleet) = world_with_indexed_fleet();
-        for ship in &mut world.fleets[fleet].capital_ships {
-            ship.tag = 0;
-        }
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        let id = opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Ship { fleet, index: 1 },
-            context(50),
-        );
+        let OpenedIndexed {
+            mut world,
+            fleet,
+            empty,
+            mut manager,
+            state,
+            id,
+        } = opened_indexed(true, 50, true);
         assert_eq!(
             status_view(
                 empty.sources(&world),
@@ -1394,40 +1452,19 @@ mod tests {
             "Ship C",
             "the raw index demonstrates the stale-index retarget hazard"
         );
-        let frame = manager.begin_frame();
-
-        assert_eq!(
-            state.content_reports(&frame, empty.sources(&world)),
-            [ContentReport {
-                window: id,
-                status: ContentStatus::Unpaintable,
-            }]
-        );
-        assert_eq!(
-            manager
-                .reconcile(
-                    &frame,
-                    &state.content_reports(&frame, empty.sources(&world))
-                )
-                .blocking_unpainted,
-            [id]
-        );
-        assert_eq!(state.window_id(), Some(id));
+        assert_unpaintable(&mut manager, &state, empty.sources(&world), id);
     }
 
     #[test]
     fn committed_fighter_index_compaction_is_unpaintable_without_retargeting() {
-        let (mut world, fleet) = world_with_indexed_fleet();
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        let id = opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Fighter { fleet, index: 1 },
-            context(51),
-        );
+        let OpenedIndexed {
+            mut world,
+            fleet,
+            empty,
+            mut manager,
+            state,
+            id,
+        } = opened_indexed(false, 51, false);
         assert_eq!(
             status_view(
                 empty.sources(&world),
@@ -1453,40 +1490,19 @@ mod tests {
             "Fighter C",
             "the raw index demonstrates the stale-index retarget hazard"
         );
-        let frame = manager.begin_frame();
-
-        assert_eq!(
-            state.content_reports(&frame, empty.sources(&world)),
-            [ContentReport {
-                window: id,
-                status: ContentStatus::Unpaintable,
-            }]
-        );
-        assert_eq!(
-            manager
-                .reconcile(
-                    &frame,
-                    &state.content_reports(&frame, empty.sources(&world))
-                )
-                .blocking_unpainted,
-            [id]
-        );
-        assert_eq!(state.window_id(), Some(id));
+        assert_unpaintable(&mut manager, &state, empty.sources(&world), id);
     }
 
     #[test]
     fn committed_ship_requires_same_roster_living_hull_and_tag() {
-        let (mut world, fleet) = world_with_indexed_fleet();
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Ship { fleet, index: 1 },
-            context(52),
-        );
+        let OpenedIndexed {
+            mut world,
+            fleet,
+            empty,
+            manager,
+            state,
+            ..
+        } = opened_indexed(true, 52, false);
 
         world.fleets[fleet].capital_ships[1].alive = false;
         assert_eq!(
@@ -1513,17 +1529,14 @@ mod tests {
 
     #[test]
     fn committed_fighter_requires_positive_count_same_class_and_carrier() {
-        let (mut world, fleet) = world_with_indexed_fleet();
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Fighter { fleet, index: 1 },
-            context(53),
-        );
+        let OpenedIndexed {
+            mut world,
+            fleet,
+            empty,
+            manager,
+            state,
+            ..
+        } = opened_indexed(false, 53, false);
 
         world.fleets[fleet].fighters[1].count = 0;
         assert_eq!(
@@ -1571,17 +1584,14 @@ mod tests {
 
     #[test]
     fn committed_unpaintable_status_stays_modal_for_recovery_close() {
-        let (mut world, luke, ..) = world_with_luke();
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        let id = opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Character(luke),
-            context(49),
-        );
+        let OpenedCharacter {
+            mut world,
+            character: luke,
+            empty,
+            mut manager,
+            state,
+            id,
+        } = opened_luke(49);
         world.characters.remove(luke);
         let frame = manager.begin_frame();
 
@@ -1818,6 +1828,38 @@ mod tests {
         }
     }
 
+    fn pointer_input(pos: egui::Pos2, extra: Vec<egui::Event>) -> egui::RawInput {
+        let mut events = vec![egui::Event::PointerMoved(pos)];
+        events.extend(extra);
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(700.0, 520.0),
+            )),
+            events,
+            ..Default::default()
+        }
+    }
+
+    struct DrawHarness {
+        layout: CockpitLayout,
+        pos: egui::Pos2,
+        ctx: egui::Context,
+        cache: BmpCache,
+        empty: Empty,
+    }
+
+    fn draw_harness((x, y): (f32, f32)) -> DrawHarness {
+        let layout = layout();
+        DrawHarness {
+            pos: window_rect(layout).min + egui::vec2(x, y),
+            layout,
+            ctx: egui::Context::default(),
+            cache: BmpCache::new(),
+            empty: Empty::new(),
+        }
+    }
+
     /// Run two idle frames, then one per entry of `frames`, with the pointer
     /// at window pixel `(x, y)`.
     fn drive(
@@ -1826,24 +1868,16 @@ mod tests {
         (x, y): (f32, f32),
         frames: Vec<Vec<egui::Event>>,
     ) -> Option<StatusWindowAction> {
-        let layout = layout();
-        let pos = window_rect(layout).min + egui::vec2(x, y);
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let empty = Empty::new();
+        let DrawHarness {
+            layout,
+            pos,
+            ctx,
+            mut cache,
+            empty,
+        } = draw_harness((x, y));
         let mut emitted = None;
         for extra in [vec![], vec![]].into_iter().chain(frames) {
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra);
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
+            let _ = ctx.run(pointer_input(pos, extra), |ctx| {
                 if let Some(action) = draw_status_window(
                     ctx,
                     empty.sources(world),
@@ -1879,11 +1913,13 @@ mod tests {
         frame: &RoutingSnapshot,
         point: (f32, f32),
     ) -> Option<(WindowId, StatusWindowAction)> {
-        let layout = layout();
-        let pos = window_rect(layout).min + egui::vec2(point.0, point.1);
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let empty = Empty::new();
+        let DrawHarness {
+            layout,
+            pos,
+            ctx,
+            mut cache,
+            empty,
+        } = draw_harness(point);
         let mut emitted = None;
         for extra in [
             vec![],
@@ -1891,17 +1927,7 @@ mod tests {
             vec![press(pos, true)],
             vec![press(pos, false)],
         ] {
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra);
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
+            let _ = ctx.run(pointer_input(pos, extra), |ctx| {
                 if let Some(action) = draw_managed_status_window(
                     ctx,
                     empty.sources(world),
@@ -1920,17 +1946,13 @@ mod tests {
 
     #[test]
     fn managed_status_is_raised_only_by_the_shared_focus_adapter() {
-        let (world, key, ..) = world_with_luke();
-        let empty = Empty::new();
-        let mut manager = WindowManager::new();
-        let mut state = StatusWindowState::default();
-        opened_status(
-            &mut manager,
-            &mut state,
-            empty.sources(&world),
-            StatusObject::Character(key),
-            context(40),
-        );
+        let OpenedCharacter {
+            world,
+            empty,
+            manager,
+            mut state,
+            ..
+        } = opened_luke(40);
         let frame = manager.begin_frame();
         let layout = layout();
         let ctx = egui::Context::default();

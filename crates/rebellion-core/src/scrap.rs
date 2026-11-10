@@ -64,6 +64,13 @@ fn travelling_squadron(
     })
 }
 
+fn fighter_costs_maintenance(world: &GameWorld, class: crate::ids::FighterKey) -> bool {
+    world
+        .fighter_classes
+        .get(class)
+        .is_some_and(|value| value.maintenance_cost > 0)
+}
+
 /// The side's objects the overdraft timer may scrap (`FUN_0052e530`): those
 /// that exist, are the side's, and cost maintenance. Mines and refineries
 /// cost none, so they are never picked. Listed in the walk's family order
@@ -115,10 +122,7 @@ pub fn overdraft_candidates(world: &GameWorld, side: Faction) -> Vec<ScrapTarget
     }
     for (key, fleet) in fleets() {
         for (entry, fighters) in fleet.fighters.iter().enumerate() {
-            let costs = world
-                .fighter_classes
-                .get(fighters.class)
-                .is_some_and(|class| class.maintenance_cost > 0);
+            let costs = fighter_costs_maintenance(world, fighters.class);
             if costs {
                 candidates.extend(
                     (0..fighters.count).map(|_| ScrapTarget::Fighter { fleet: key, entry }),
@@ -132,10 +136,7 @@ pub fn overdraft_candidates(world: &GameWorld, side: Faction) -> Vec<ScrapTarget
             .iter()
             .filter(|entry| entry.is_alliance == is_alliance)
         {
-            let costs = world
-                .fighter_classes
-                .get(fighters.class)
-                .is_some_and(|class| class.maintenance_cost > 0);
+            let costs = fighter_costs_maintenance(world, fighters.class);
             if costs {
                 candidates.extend((0..fighters.count).map(|_| ScrapTarget::SystemFighter {
                     system,
@@ -909,16 +910,32 @@ mod tests {
         (world, system)
     }
 
+    fn ground_troop(
+        world: &mut GameWorld,
+        system: crate::ids::SystemKey,
+        is_alliance: bool,
+    ) -> TroopKey {
+        let troop = world.troops.insert(TroopUnit {
+            class_dat_id: DatId::new(0x1000_0001),
+            is_alliance,
+        });
+        world.systems[system].ground_units.push(troop);
+        troop
+    }
+
+    fn fighter_class(world: &mut GameWorld) -> crate::ids::FighterKey {
+        world.fighter_classes.insert(crate::world::FighterClass {
+            refined_material_cost: 8,
+            ..crate::world::FighterClass::default()
+        })
+    }
+
     // FUN_00530270: a scrapped object returns half its class's refined cost
     // (class +0x48, FUN_004f2980) to its side, rounded down.
     #[test]
     fn scrapping_returns_half_the_refined_cost_to_its_side() {
         let (mut world, system) = world();
-        let troop = world.troops.insert(TroopUnit {
-            class_dat_id: DatId::new(0x1000_0001),
-            is_alliance: true,
-        });
-        world.systems[system].ground_units.push(troop);
+        let troop = ground_troop(&mut world, system, true);
         let mut stockpiles = StockpileState::new();
         let mut transport = TroopTransportState::default();
 
@@ -948,11 +965,7 @@ mod tests {
     #[test]
     fn scrapping_returns_the_objects_maintenance() {
         let (mut world, system) = world();
-        let troop = world.troops.insert(TroopUnit {
-            class_dat_id: DatId::new(0x1000_0001),
-            is_alliance: true,
-        });
-        world.systems[system].ground_units.push(troop);
+        let troop = ground_troop(&mut world, system, true);
         let manufacturing = crate::manufacturing::ManufacturingState::new();
         let before = crate::resources::maintenance_used(&world, &manufacturing, Faction::Alliance);
 
@@ -1226,13 +1239,7 @@ mod tests {
     fn a_travelling_squadrons_scrap_takes_only_the_one_named() {
         let (mut world, system) = world();
         let other_system = world.systems.insert(System::default());
-        let class = |world: &mut GameWorld| {
-            world.fighter_classes.insert(crate::world::FighterClass {
-                refined_material_cost: 8,
-                ..crate::world::FighterClass::default()
-            })
-        };
-        let (named, other) = (class(&mut world), class(&mut world));
+        let (named, other) = (fighter_class(&mut world), fighter_class(&mut world));
         let transit =
             |class, is_alliance, leg, arrival_tick| crate::troop_transport::SquadronTransit {
                 class,
@@ -1276,13 +1283,7 @@ mod tests {
     #[test]
     fn an_emptied_squadron_scraps_nothing() {
         let (mut world, system) = world();
-        let class = |world: &mut GameWorld| {
-            world.fighter_classes.insert(crate::world::FighterClass {
-                refined_material_cost: 8,
-                ..crate::world::FighterClass::default()
-            })
-        };
-        let (named, other) = (class(&mut world), class(&mut world));
+        let (named, other) = (fighter_class(&mut world), fighter_class(&mut world));
         let mut stockpiles = StockpileState::new();
         let mut transport = TroopTransportState::new();
         let squadrons = |class, count, is_alliance| crate::world::SystemSquadrons {
@@ -1697,6 +1698,22 @@ mod tests {
         (fleet, troops)
     }
 
+    fn laden_world(
+        is_alliance: bool,
+    ) -> (
+        Faction,
+        GameWorld,
+        TroopTransportState,
+        FleetKey,
+        [TroopKey; 2],
+    ) {
+        let side = Faction::of_alliance(is_alliance);
+        let (mut world, system) = world();
+        let mut transport = TroopTransportState::default();
+        let (fleet, troops) = laden_fleet(&mut world, system, &mut transport, is_alliance);
+        (side, world, transport, fleet, troops)
+    }
+
     // FUN_00502840 (hook +0x11c) runs FUN_00557b90 -> FUN_005582b0 ->
     // FUN_004f2b50 -> FUN_004fb520 first, which calls slot +0xb4 on every
     // child: FUN_004f8710 destroys a completed child that is not en route
@@ -1707,11 +1724,8 @@ mod tests {
     #[test]
     fn a_scrapped_ships_squadrons_and_regiments_go_with_it_and_return_half_their_cost() {
         for is_alliance in [true, false] {
-            let side = Faction::of_alliance(is_alliance);
-            let (mut world, system) = world();
-            let mut transport = TroopTransportState::default();
-            let (fleet, [aboard, other]) =
-                laden_fleet(&mut world, system, &mut transport, is_alliance);
+            let (side, mut world, mut transport, fleet, [aboard, other]) =
+                laden_world(is_alliance);
             let mut stockpiles = StockpileState::new();
 
             let scrapped = scrap(
@@ -1745,10 +1759,7 @@ mod tests {
     #[test]
     fn a_scrap_order_reports_what_each_ship_took_with_it() {
         for is_alliance in [true, false] {
-            let side = Faction::of_alliance(is_alliance);
-            let (mut world, system) = world();
-            let mut transport = TroopTransportState::default();
-            let (fleet, _) = laden_fleet(&mut world, system, &mut transport, is_alliance);
+            let (side, mut world, mut transport, fleet, _) = laden_world(is_alliance);
             world.fleets[fleet]
                 .fighters
                 .retain(|entry| entry.carrier == 1);

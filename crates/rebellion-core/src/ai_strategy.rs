@@ -735,6 +735,18 @@ impl Plan {
         Holder::new(lists, &mut round.rng).pick()
     }
 
+    /// The mode-3/mode-6 fallback: expand into the strongest eligible sector.
+    fn expansion_pick(&self, round: &mut Round<'_>) -> Option<SectorKey> {
+        let filter = Filter::b(0, 2);
+        let lists = self.lists(
+            round,
+            Self::q(round, filter, 3, Dir::Largest),
+            Some(filter),
+            Some(filter),
+        );
+        self.pick(round, lists)
+    }
+
     /// The common tail's stage: picks from one holder until the plan is
     /// full or the holder is empty.
     fn fill(&mut self, round: &mut Round<'_>, kind: u8, f: Filter, key: u32, dir: Dir) {
@@ -805,9 +817,7 @@ impl Plan {
         let mut kind = 6;
         if pick.is_none() {
             kind = 5;
-            let f = Filter::b(0, 2);
-            let lists = self.lists(round, Self::q(round, f, 3, Dir::Largest), Some(f), Some(f));
-            pick = self.pick(round, lists);
+            pick = self.expansion_pick(round);
         }
         if let Some(s) = pick {
             self.add(s, kind, 0);
@@ -870,9 +880,7 @@ impl Plan {
         }
         if pick.is_none() {
             kind = 5;
-            let f = Filter::b(0, 2);
-            let lists = self.lists(round, Self::q(round, f, 3, Dir::Largest), Some(f), Some(f));
-            pick = self.pick(round, lists);
+            pick = self.expansion_pick(round);
         }
         if let Some(s) = pick {
             self.add(s, kind, 0);

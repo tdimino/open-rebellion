@@ -94,18 +94,109 @@ fn open(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
     )
 }
 
-#[test]
-fn minimize_removes_visible_order_and_adds_history_once() {
-    // Source: FUN_00428b40 presentation rail; port history contains hidden details only.
+fn system_and_fleet() -> (WindowManager, WindowId, WindowId) {
     let mut manager = WindowManager::new();
-    let first = open(
+    let system = open(
         &mut manager,
         modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
     );
-    let second = open(
+    let fleet = open(
         &mut manager,
         modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
     );
+    (manager, system, fleet)
+}
+
+fn minimized_system_and_fleet() -> (WindowManager, WindowId, WindowId) {
+    let (mut manager, system, fleet) = system_and_fleet();
+    manager.apply(WindowCommand::Minimize(system)).unwrap();
+    (manager, system, fleet)
+}
+
+fn preserve_focus_modal() -> (WindowManager, WindowId) {
+    let mut manager = WindowManager::new();
+    let id = open_preserve_focus_modal(&mut manager);
+    (manager, id)
+}
+
+fn open_preserve_focus_modal(manager: &mut WindowManager) -> WindowId {
+    let mut modal = modal_spec(WindowKind::Status);
+    modal.policy.focus_on_open = FocusOnOpen::Preserve;
+    open(manager, modal)
+}
+
+fn captured_owner_tree() -> (WindowManager, WindowId, WindowId, WindowKey, WindowKey) {
+    let mut manager = WindowManager::new();
+    let owner_spec = modeless_spec(WindowKind::Fleet, 1, WindowOwner::StrategicRoot);
+    let owner_key = owner_spec.key;
+    let owner = open(&mut manager, owner_spec);
+    let child_spec = menu_spec(owner);
+    let child_key = child_spec.key;
+    let child = open(&mut manager, child_spec);
+    manager
+        .apply(WindowCommand::CapturePointer(child))
+        .expect("eligible child owns the gesture");
+    (manager, owner, child, owner_key, child_key)
+}
+
+fn open_gid_menu(manager: &mut WindowManager) -> (WindowId, WindowId) {
+    let mut sector_spec = modeless_spec(WindowKind::Sector, 1, WindowOwner::StrategicRoot);
+    sector_spec.policy.focus_on_open = FocusOnOpen::Preserve;
+    let sector = open(manager, sector_spec);
+    let mut gid_spec = menu_spec(sector);
+    gid_spec.owner = WindowOwner::StrategicRoot;
+    gid_spec.policy.input = InputPolicy::Modeless;
+    gid_spec.policy.band = StackBand::Normal;
+    gid_spec.policy.placement = OpenPlacement::TopOfBand;
+    let menu = open(manager, gid_spec);
+    (sector, menu)
+}
+
+fn close_window(
+    manager: &mut WindowManager,
+    window: WindowId,
+) -> rebellion_windowing::WindowCommit {
+    manager
+        .apply(WindowCommand::Close(window))
+        .expect("window closes")
+}
+
+fn restore_focus(manager: &mut WindowManager) -> rebellion_windowing::WindowCommit {
+    manager
+        .apply(WindowCommand::RestoreFocus)
+        .expect("focus walk succeeds")
+}
+
+fn assert_focus_walk(
+    manager: &mut WindowManager,
+    menu: WindowId,
+    current: Option<FocusTarget>,
+) {
+    let order_before = manager.visible_order().to_vec();
+    let commit = restore_focus(manager);
+    assert_eq!(
+        commit.transition,
+        WindowTransition::Focused {
+            previous: Some(FocusTarget {
+                window: menu,
+                control: None,
+            }),
+            current,
+        }
+    );
+    assert_eq!(manager.focused(), current);
+    assert_eq!(manager.visible_order(), order_before);
+    assert_eq!(
+        manager.id_for(WindowKey::singleton(WindowKind::Menu)),
+        Some(menu)
+    );
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+#[test]
+fn minimize_removes_visible_order_and_adds_history_once() {
+    // Source: FUN_00428b40 presentation rail; port history contains hidden details only.
+    let (mut manager, first, second) = system_and_fleet();
     let commit = manager.apply(WindowCommand::Minimize(second)).unwrap();
     assert_eq!(
         commit.transition,
@@ -232,14 +323,8 @@ fn restore_removes_history_and_raises_without_reallocating_identity() {
     // Source: FUN_00429020 removes the selected rail entry and restores its
     // presentation; its last act sends 0x467 with the restored window
     // (FUN_00429020.c:85), and FUN_00422ce0 0x467 shows, raises and focuses it.
-    let mut manager = WindowManager::new();
+    let (mut manager, id, other) = minimized_system_and_fleet();
     let spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
-    let id = open(&mut manager, spec);
-    manager.apply(WindowCommand::Minimize(id)).unwrap();
-    let other = open(
-        &mut manager,
-        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
-    );
     assert_eq!(
         manager
             .apply(WindowCommand::Restore(id))
@@ -311,14 +396,8 @@ fn reopening_a_minimized_detail_focuses_it_like_a_rail_restore() {
     // Source: FUN_0045aac0 reopens a minimized detail through FUN_00429020
     // (FUN_0045aac0.c:157), which sends 0x467 with it (FUN_00429020.c:85):
     // FUN_00422ce0 0x467 shows, raises and focuses the window.
-    let mut manager = WindowManager::new();
+    let (mut manager, id, other) = minimized_system_and_fleet();
     let spec = modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot);
-    let id = open(&mut manager, spec);
-    manager.apply(WindowCommand::Minimize(id)).unwrap();
-    let other = open(
-        &mut manager,
-        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
-    );
     let commit = manager.apply(WindowCommand::Open(spec)).unwrap();
     assert_eq!(
         commit.transition,
@@ -689,15 +768,7 @@ fn restoring_and_reminimizing_a_middle_entry_updates_only_its_age() {
 #[test]
 fn minimize_preserves_unrelated_focus_capture_and_rejects_stale_ids() {
     // Port: background minimization does not interrupt an unrelated gesture/control.
-    let mut manager = WindowManager::new();
-    let id = open(
-        &mut manager,
-        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
-    );
-    let other = open(
-        &mut manager,
-        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
-    );
+    let (mut manager, id, other) = system_and_fleet();
     let target = FocusTarget {
         window: other,
         control: Some(ControlId(17)),
@@ -948,9 +1019,7 @@ fn menu_close_restores_the_saved_root_focus() {
         .expect("root can focus before opening a menu");
     let menu = open(&mut manager, menu_spec(owner));
 
-    let commit = manager
-        .apply(WindowCommand::Close(menu))
-        .expect("menu closes");
+    let commit = close_window(&mut manager, menu);
 
     assert_eq!(
         commit.transition,
@@ -989,9 +1058,7 @@ fn menu_close_restores_saved_control_only_if_still_eligible() {
         })
     );
 
-    let commit = manager
-        .apply(WindowCommand::Close(menu))
-        .expect("menu closes");
+    let commit = close_window(&mut manager, menu);
 
     assert_eq!(
         commit.transition,
@@ -1009,15 +1076,7 @@ fn menu_close_restores_saved_control_only_if_still_eligible() {
 fn activate_changes_order_and_focus_but_focus_alone_does_not() {
     // Source: implementation plan, lifecycle transaction matrix `Activate` / `Focus child`.
     // Break caught: treating keyboard focus as an implicit z-order mutation.
-    let mut manager = WindowManager::new();
-    let first = open(
-        &mut manager,
-        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
-    );
-    let second = open(
-        &mut manager,
-        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
-    );
+    let (mut manager, first, second) = system_and_fleet();
     let first_control = FocusTarget {
         window: first,
         control: Some(ControlId(5)),
@@ -1051,15 +1110,7 @@ fn activate_changes_order_and_focus_but_focus_alone_does_not() {
 fn serialized_raise_keeps_focus_while_replaying_z_order() {
     // FUN_00440ea0 serializes the shared z walk independently of keyboard
     // focus. Break caught: load-order replay focusing every raised window.
-    let mut manager = WindowManager::new();
-    let first = open(
-        &mut manager,
-        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
-    );
-    let top = open(
-        &mut manager,
-        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
-    );
+    let (mut manager, first, top) = system_and_fleet();
     manager
         .apply(WindowCommand::Focus(FocusTarget {
             window: first,
@@ -1189,15 +1240,7 @@ fn close_preserves_surviving_root_focus() {
     // Source: implementation plan, close restoration first preserves unrelated
     // surviving focus; the persistent strategic root is such a target.
     // Break caught: treating root focus as absence and selecting a surface.
-    let mut manager = WindowManager::new();
-    let survivor = open(
-        &mut manager,
-        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
-    );
-    let closing = open(
-        &mut manager,
-        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
-    );
+    let (mut manager, survivor, closing) = system_and_fleet();
     manager
         .apply(WindowCommand::FocusRoot)
         .expect("root can focus without a modal");
@@ -1274,15 +1317,7 @@ fn ordinary_window_close_uses_global_eligible_order_not_a_private_focus_stack() 
     // Source: strategic-windowing-toolkit.md, "Native focus"; the dormant native
     // saved-focus slot is not a basis for a per-window stack in the port.
     // Break caught: restoring the target saved when this ordinary window opened.
-    let mut manager = WindowManager::new();
-    let old_focus = open(
-        &mut manager,
-        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
-    );
-    let closing = open(
-        &mut manager,
-        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
-    );
+    let (mut manager, old_focus, closing) = system_and_fleet();
     let global_previous = open(
         &mut manager,
         modeless_spec(WindowKind::Defenses, 3, WindowOwner::StrategicRoot),
@@ -1327,39 +1362,9 @@ fn gid_escape_with_no_current_child_focuses_only_the_view() {
     // Wine, alliance-day54-advice day 61: Corellian sector, first GID press,
     // Escape changes nothing (gid-legend.md, "Escape and the keyboard focus").
     let mut manager = WindowManager::new();
-    let mut sector_spec = modeless_spec(WindowKind::Sector, 1, WindowOwner::StrategicRoot);
-    sector_spec.policy.focus_on_open = FocusOnOpen::Preserve;
-    let sector = open(&mut manager, sector_spec);
+    let (_sector, menu) = open_gid_menu(&mut manager);
     assert_eq!(manager.focused(), None);
-    let mut gid_spec = menu_spec(sector);
-    gid_spec.owner = WindowOwner::StrategicRoot;
-    gid_spec.policy.input = InputPolicy::Modeless;
-    gid_spec.policy.band = StackBand::Normal;
-    gid_spec.policy.placement = OpenPlacement::TopOfBand;
-    let menu = open(&mut manager, gid_spec);
-    let order_before = manager.visible_order().to_vec();
-
-    let commit = manager
-        .apply(WindowCommand::RestoreFocus)
-        .expect("GID Escape focus walk succeeds");
-
-    assert_eq!(
-        commit.transition,
-        WindowTransition::Focused {
-            previous: Some(FocusTarget {
-                window: menu,
-                control: None,
-            }),
-            current: None,
-        }
-    );
-    assert_eq!(manager.focused(), None);
-    assert_eq!(manager.visible_order(), order_before);
-    assert_eq!(
-        manager.id_for(WindowKey::singleton(WindowKind::Menu)),
-        Some(menu)
-    );
-    assert_eq!(manager.validate(), Ok(()));
+    assert_focus_walk(&mut manager, menu, None);
 }
 
 #[test]
@@ -1372,15 +1377,7 @@ fn closing_a_modal_over_the_gid_menu_with_no_current_child_focuses_only_the_view
     // Index, and once it closed the menu was still open with the windows
     // hidden (gid-legend.md, "Escape and the keyboard focus").
     let mut manager = WindowManager::new();
-    let mut sector_spec = modeless_spec(WindowKind::Sector, 1, WindowOwner::StrategicRoot);
-    sector_spec.policy.focus_on_open = FocusOnOpen::Preserve;
-    let sector = open(&mut manager, sector_spec);
-    let mut gid_spec = menu_spec(sector);
-    gid_spec.owner = WindowOwner::StrategicRoot;
-    gid_spec.policy.input = InputPolicy::Modeless;
-    gid_spec.policy.band = StackBand::Normal;
-    gid_spec.policy.placement = OpenPlacement::TopOfBand;
-    let menu = open(&mut manager, gid_spec);
+    let (sector, menu) = open_gid_menu(&mut manager);
     let index = open(&mut manager, modal_spec(WindowKind::MessageIndex));
 
     let commit = manager.apply(WindowCommand::Close(index)).unwrap();
@@ -1431,42 +1428,17 @@ fn gid_escape_focus_walk_keeps_menu_registered_and_preserves_z_order() {
     // Source: FUN_00422ce0 message 0x467 and FUN_004aab50; gid-legend.md,
     // "Escape and the keyboard focus". Menu Escape restores the top child
     // without destroying or reordering the still-open GID menu.
-    let mut manager = WindowManager::new();
-    let lower = open(
-        &mut manager,
-        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
-    );
-    let top = open(
-        &mut manager,
-        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
-    );
+    let (mut manager, lower, top) = system_and_fleet();
     let menu = open(&mut manager, menu_spec(top));
-    let order_before = manager.visible_order().to_vec();
-
-    let commit = manager
-        .apply(WindowCommand::RestoreFocus)
-        .expect("GID Escape focus walk succeeds");
-
-    assert_eq!(
-        commit.transition,
-        WindowTransition::Focused {
-            previous: Some(FocusTarget {
-                window: menu,
-                control: None,
-            }),
-            current: Some(FocusTarget {
-                window: top,
-                control: None,
-            }),
-        }
-    );
-    assert_eq!(manager.visible_order(), order_before);
-    assert_eq!(
-        manager.id_for(WindowKey::singleton(WindowKind::Menu)),
-        Some(menu)
+    assert_focus_walk(
+        &mut manager,
+        menu,
+        Some(FocusTarget {
+            window: top,
+            control: None,
+        }),
     );
     assert_eq!(manager.visible_order(), &[lower, top, menu]);
-    assert_eq!(manager.validate(), Ok(()));
 }
 
 #[test]
@@ -1522,11 +1494,7 @@ fn focus_rejects_hidden_blocked_and_unknown_targets() {
 fn preserve_focus_modal_repairs_root_focus_to_the_modal() {
     // Source: strategic-windowing-toolkit.md, strategic modality blocks the root.
     // Break caught: leaving semantic root focus active when a preserve-focus modal opens.
-    let mut manager = WindowManager::new();
-    let mut modal = modal_spec(WindowKind::Status);
-    modal.policy.focus_on_open = FocusOnOpen::Preserve;
-
-    let modal_id = open(&mut manager, modal);
+    let (manager, modal_id) = preserve_focus_modal();
 
     assert_eq!(
         manager.focused(),
@@ -1555,10 +1523,7 @@ fn preserve_focus_modal_repairs_blocked_underlay_focus_to_the_modal() {
             control: None,
         })
     );
-    let mut modal = modal_spec(WindowKind::Status);
-    modal.policy.focus_on_open = FocusOnOpen::Preserve;
-
-    let modal_id = open(&mut manager, modal);
+    let modal_id = open_preserve_focus_modal(&mut manager);
 
     assert_eq!(
         manager.focused(),
@@ -1758,14 +1723,7 @@ fn capture_close_cancels_before_child_content_teardown() {
     // destruction unregisters capture before parent teardown and restoration.
     // Break caught: dropping feature content before its drag payload receives
     // cancellation, or emitting the owner before its child.
-    let mut manager = WindowManager::new();
-    let owner_spec = modeless_spec(WindowKind::Fleet, 1, WindowOwner::StrategicRoot);
-    let owner = open(&mut manager, owner_spec);
-    let child_spec = menu_spec(owner);
-    let child = open(&mut manager, child_spec);
-    manager
-        .apply(WindowCommand::CapturePointer(child))
-        .expect("eligible child owns the gesture");
+    let (mut manager, owner, child, owner_key, child_key) = captured_owner_tree();
 
     let commit = manager
         .apply(WindowCommand::Close(owner))
@@ -1780,12 +1738,12 @@ fn capture_close_cancels_before_child_content_teardown() {
             },
             WindowEvent::Closed {
                 window: child,
-                key: child_spec.key,
+                key: child_key,
                 reason: CloseReason::OwnerClosed,
             },
             WindowEvent::Closed {
                 window: owner,
-                key: owner_spec.key,
+                key: owner_key,
                 reason: CloseReason::Requested,
             },
             WindowEvent::FocusChanged {
@@ -1894,14 +1852,7 @@ fn capture_reset_preserves_monotonic_allocator() {
     // campaign clears every gesture/content reference without recycling IDs.
     // Break caught: orphaning a drag payload during reset or letting a stale
     // callback address a fresh campaign window.
-    let mut manager = WindowManager::new();
-    let owner_spec = modeless_spec(WindowKind::Fleet, 1, WindowOwner::StrategicRoot);
-    let owner = open(&mut manager, owner_spec);
-    let child_spec = menu_spec(owner);
-    let child = open(&mut manager, child_spec);
-    manager
-        .apply(WindowCommand::CapturePointer(child))
-        .expect("child gesture captures before reset");
+    let (mut manager, owner, child, owner_key, child_key) = captured_owner_tree();
 
     let events = manager.reset_session();
 
@@ -1914,12 +1865,12 @@ fn capture_reset_preserves_monotonic_allocator() {
             },
             WindowEvent::Closed {
                 window: child,
-                key: child_spec.key,
+                key: child_key,
                 reason: CloseReason::SessionReset,
             },
             WindowEvent::Closed {
                 window: owner,
-                key: owner_spec.key,
+                key: owner_key,
                 reason: CloseReason::SessionReset,
             },
             WindowEvent::FocusChanged {
@@ -2096,15 +2047,7 @@ fn capture_cancellation_is_exactly_once_when_nothing_is_captured() {
 
 #[test]
 fn focus_commands_return_ordered_focus_receipts() {
-    let mut manager = WindowManager::new();
-    let first = open(
-        &mut manager,
-        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
-    );
-    let second = open(
-        &mut manager,
-        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
-    );
+    let (mut manager, first, second) = system_and_fleet();
     let first_control = FocusTarget {
         window: first,
         control: Some(ControlId(7)),

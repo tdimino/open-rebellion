@@ -465,21 +465,31 @@ mod tests {
         fleet_key
     }
 
+    fn damaged_ship_world() -> (GameWorld, SystemKey, FleetKey) {
+        let mut world = GameWorld::default();
+        let system = make_shipyard_system(&mut world);
+        let fleet = add_fleet_with_ship(&mut world, system);
+        world.fleets[fleet].capital_ships[0].hull_current = 150;
+        (world, system, fleet)
+    }
+
+    fn advance_once(state: &mut RepairState, world: &GameWorld) -> Vec<RepairEvent> {
+        RepairSystem::advance(
+            state,
+            world,
+            &UprisingState::default(),
+            &[crate::tick::TickEvent { tick: 1 }],
+            &[],
+        )
+    }
+
     #[test]
     fn healthy_ships_do_not_emit_repair_started() {
         let mut world = GameWorld::default();
         let sys_key = make_shipyard_system(&mut world);
         add_fleet_with_ship(&mut world, sys_key);
         let mut state = RepairState::default();
-        let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
-
-        let events = RepairSystem::advance(
-            &mut state,
-            &world,
-            &UprisingState::default(),
-            &tick_events,
-            &[],
-        );
+        let events = advance_once(&mut state, &world);
         assert!(
             events.is_empty(),
             "healthy ships must not start repair telemetry"
@@ -614,10 +624,7 @@ mod tests {
 
     #[test]
     fn no_repair_without_ticks() {
-        let mut world = GameWorld::default();
-        let sys_key = make_shipyard_system(&mut world);
-        let fleet_key = add_fleet_with_ship(&mut world, sys_key);
-        world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 150;
+        let (world, _, _) = damaged_ship_world();
         let mut state = RepairState::default();
 
         let events = RepairSystem::advance(&mut state, &world, &UprisingState::default(), &[], &[]);
@@ -626,43 +633,21 @@ mod tests {
 
     #[test]
     fn no_repair_at_destroyed_system() {
-        let mut world = GameWorld::default();
-        let sys_key = make_shipyard_system(&mut world);
-        let fleet_key = add_fleet_with_ship(&mut world, sys_key);
-        world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 150;
+        let (mut world, sys_key, _) = damaged_ship_world();
         world.systems.get_mut(sys_key).unwrap().is_destroyed = true;
         let mut state = RepairState::default();
-        let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
-
-        let events = RepairSystem::advance(
-            &mut state,
-            &world,
-            &UprisingState::default(),
-            &tick_events,
-            &[],
-        );
+        let events = advance_once(&mut state, &world);
         assert!(events.is_empty(), "no repair at destroyed system");
     }
 
     #[test]
     fn damaged_ship_emits_ship_repaired() {
-        let mut world = GameWorld::default();
-        let sys_key = make_shipyard_system(&mut world);
-        let fleet_key = add_fleet_with_ship(&mut world, sys_key);
-        // Damage the first ship: hull 200 → 150
-        world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 150;
+        let (mut world, sys_key, fleet_key) = damaged_ship_world();
         let mut state = RepairState::default();
-        let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
 
         // FUN_005010a0: the arming day only sets the 2-day timer
         // (GNPRTB 0x804) of a ship at its own shipyard.
-        let armed = RepairSystem::advance(
-            &mut state,
-            &world,
-            &UprisingState::default(),
-            &tick_events,
-            &[],
-        );
+        let armed = advance_once(&mut state, &world);
         assert!(armed.iter().any(|event| matches!(
             event,
             RepairEvent::RepairCheckPerformed { system, fleet, ships_checked: 1 }
@@ -703,20 +688,9 @@ mod tests {
 
     #[test]
     fn repair_started_is_emitted_once_per_continuous_episode() {
-        let mut world = GameWorld::default();
-        let sys_key = make_shipyard_system(&mut world);
-        let fleet_key = add_fleet_with_ship(&mut world, sys_key);
-        world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 150;
+        let (mut world, _, fleet_key) = damaged_ship_world();
         let mut state = RepairState::default();
-        let tick_events = vec![crate::tick::TickEvent { tick: 1 }];
-
-        let first = RepairSystem::advance(
-            &mut state,
-            &world,
-            &UprisingState::default(),
-            &tick_events,
-            &[],
-        );
+        let first = advance_once(&mut state, &world);
         assert!(first.iter().any(|event| matches!(
             event,
             RepairEvent::RepairCheckPerformed { fleet, .. } if *fleet == fleet_key
@@ -751,26 +725,14 @@ mod tests {
         );
 
         world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 200;
-        let healthy = RepairSystem::advance(
-            &mut state,
-            &world,
-            &UprisingState::default(),
-            &tick_events,
-            &[],
-        );
+        let healthy = advance_once(&mut state, &world);
         assert!(!state.is_repairing(fleet_key));
         for event in &healthy {
             event.apply(&mut world);
         }
 
         world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 180;
-        let restarted = RepairSystem::advance(
-            &mut state,
-            &world,
-            &UprisingState::default(),
-            &tick_events,
-            &[],
-        );
+        let restarted = advance_once(&mut state, &world);
         assert!(
             restarted.iter().any(|event| matches!(
                 event,

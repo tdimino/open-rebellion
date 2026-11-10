@@ -914,6 +914,26 @@ mod tests {
         }
     }
 
+    fn loaded_cargo(
+        side: Faction,
+        holder: Faction,
+        ships: usize,
+        troops: usize,
+    ) -> (
+        GameWorld,
+        SystemKey,
+        FleetKey,
+        TroopTransportState,
+        Vec<TroopKey>,
+    ) {
+        let (mut world, system) = world(Some(holder));
+        let class = troop_class(&mut world, 0, 0, 7);
+        let fleet = fleet(&mut world, system, side, ships);
+        let mut transport = TroopTransportState::new();
+        let loaded = load(&mut world, &mut transport, fleet, class, troops);
+        (world, system, fleet, transport, loaded)
+    }
+
     fn run(scene: &mut Scene, draws: &mut Script) -> AssaultReport {
         let fleets = [scene.fleet];
         resolve_with(
@@ -1305,11 +1325,8 @@ mod tests {
         // FUN_0058ba10 walks the fleet's live ships (FUN_00502e30, mode 1)
         // and the regiments aboard each (FUN_00504cc0).
         for (side, holder) in BOTH {
-            let (mut world, system) = world(Some(holder));
-            let class = troop_class(&mut world, 0, 0, 7);
-            let fleet = fleet(&mut world, system, side, 2);
-            let mut transport = TroopTransportState::new();
-            let attackers = load(&mut world, &mut transport, fleet, class, 2);
+            let (mut world, system, fleet, transport, attackers) =
+                loaded_cargo(side, holder, 2, 2);
             let lost = transport.carrier(attackers[0]);
             for ship in &mut world.fleets[fleet].capital_ships {
                 ship.alive = ship.tag != lost;
@@ -1521,11 +1538,10 @@ mod tests {
         unusable: fn(&mut ShipInstance, SystemKey),
         second: bool,
     ) -> (Scene, TroopKey) {
-        let (mut world, system) = world(Some(holder));
-        let class = troop_class(&mut world, 0, 0, 7);
-        let fleet = fleet(&mut world, system, side, 2);
-        let mut transport = TroopTransportState::new();
-        let stranded = load(&mut world, &mut transport, fleet, class, 1)[0];
+        let (mut world, system, fleet, mut transport, attackers) =
+            loaded_cargo(side, holder, 2, 1);
+        let class = world.troops[attackers[0]].class_dat_id;
+        let stranded = attackers[0];
         let tag = transport.carrier(stranded);
         let ship = world.fleets[fleet]
             .capital_ships

@@ -46,6 +46,30 @@ fn steps(session: &mut BattleSession, milliseconds: f32) {
     }
 }
 
+fn hyperdrive_withdrawal_session(is_alliance: bool, ship_hyperdrive: bool) -> BattleSession {
+    let mut squadron = test_fighter(0x1c00_0001, is_alliance);
+    squadron.source_position.z = line(is_alliance);
+    battle(
+        vec![ship(
+            is_alliance,
+            0,
+            ship_hyperdrive,
+            line(is_alliance),
+        )],
+        vec![squadron],
+    )
+}
+
+fn seat_morale(session: &mut BattleSession, world: &GameWorld) {
+    apply::seat_morale(
+        session,
+        world,
+        &crate::troop_transport::TroopTransportState::default(),
+        &crate::movement::MovementState::new(),
+        Some(true),
+    );
+}
+
 // FUN_005ad530.c:20 and :83-100: the controller's +0x84 becomes 2 and its
 // countdown +0x7c at least 30000.0 (DAT_0066c240) without an operational
 // station on side 1; FUN_005c8780.c:28-31 counts it down by the update's
@@ -257,12 +281,7 @@ fn a_task_force_jumps_one_ship_at_a_time() {
 #[test]
 fn hyperdrive_squadrons_jump_and_the_units_left_behind_fight_on() {
     for is_alliance in [true, false] {
-        let mut squadron = test_fighter(0x1c00_0001, is_alliance);
-        squadron.source_position.z = line(is_alliance);
-        let mut session = battle(
-            vec![ship(is_alliance, 0, false, line(is_alliance))],
-            vec![squadron],
-        );
+        let mut session = hyperdrive_withdrawal_session(is_alliance, false);
         session.morale.hyperdrive_squadrons = vec![0];
         session.begin_side_withdrawal(is_alliance);
         let side = usize::from(!is_alliance);
@@ -615,13 +634,7 @@ fn a_side_withdrawal_counts_down_its_transit_to_the_retreat_system() {
         world.systems[system].fleets.sort_unstable();
 
         let mut session = BattleSession::new(&world, system, alliance, empire, true, 1, 0x5eed);
-        apply::seat_morale(
-            &mut session,
-            &world,
-            &crate::troop_transport::TroopTransportState::default(),
-            &crate::movement::MovementState::new(),
-            Some(true),
-        );
+        seat_morale(&mut session, &world);
         let ticks = crate::movement::transit_ticks_between(
             &world,
             (world.systems[system].x, world.systems[system].y),
@@ -730,13 +743,7 @@ fn the_retreat_search_asks_room_for_the_first_mobile_fleets_death_stars_only() {
         };
 
         let mut session = BattleSession::new(&world, battle, attacker, defender, true, 1, 0x5eed);
-        apply::seat_morale(
-            &mut session,
-            &world,
-            &crate::troop_transport::TroopTransportState::default(),
-            &crate::movement::MovementState::new(),
-            Some(true),
-        );
+        seat_morale(&mut session, &world);
 
         let countdown = |to| {
             crate::movement::transit_ticks_between(
@@ -834,12 +841,7 @@ fn the_human_side_keeps_a_zero_threshold_and_a_computer_side_the_evaluators() {
 #[test]
 fn a_jump_sounds_once_as_it_begins() {
     for is_alliance in [true, false] {
-        let mut squadron = test_fighter(0x1c00_0001, is_alliance);
-        squadron.source_position.z = line(is_alliance);
-        let mut session = battle(
-            vec![ship(is_alliance, 0, true, line(is_alliance))],
-            vec![squadron],
-        );
+        let mut session = hyperdrive_withdrawal_session(is_alliance, true);
         session.morale.hyperdrive_squadrons = vec![0];
         session.begin_side_withdrawal(is_alliance);
         steps(&mut session, 34_000.0);

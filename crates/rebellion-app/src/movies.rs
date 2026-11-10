@@ -565,17 +565,18 @@ mod tests {
         }
     }
 
+    fn assert_message_ready(queue: &mut MovieQueue, message: MessageMovie) {
+        assert_eq!(queue.next(false), None);
+        assert_eq!(queue.next(true), Some(Showing::Message(message)));
+    }
+
     #[test]
     fn message_movies_wait_for_a_free_window_then_play_in_filing_order() {
         // FUN_00422ce0 0x482: the modal pump waits on FUN_00601340;
         // FUN_00488b90 plays the head of list +0x28.
         let mut queue = MovieQueue::default();
         queue.file([movie(HEADQUARTERS_DESTROYED), movie(CORUSCANT_CAPTURED)]);
-        assert_eq!(queue.next(false), None);
-        assert_eq!(
-            queue.next(true),
-            Some(Showing::Message(movie(HEADQUARTERS_DESTROYED)))
-        );
+        assert_message_ready(&mut queue, movie(HEADQUARTERS_DESTROYED));
         assert_eq!(
             queue.next(true),
             Some(Showing::Message(movie(CORUSCANT_CAPTURED)))
@@ -596,11 +597,7 @@ mod tests {
             let mut queue = MovieQueue::default();
             queue.end(word, viewer);
             queue.file([movie(HEADQUARTERS_DESTROYED)]);
-            assert_eq!(queue.next(false), None);
-            assert_eq!(
-                queue.next(true),
-                Some(Showing::Message(movie(HEADQUARTERS_DESTROYED)))
-            );
+            assert_message_ready(&mut queue, movie(HEADQUARTERS_DESTROYED));
             assert_eq!(queue.next(true), Some(Showing::Ending(ending)));
             assert_eq!(queue.next(true), None);
         }

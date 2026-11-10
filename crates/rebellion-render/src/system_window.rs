@@ -1323,6 +1323,20 @@ struct Sources<'a> {
     fog: &'a FogState,
 }
 
+struct SystemDraw<'a> {
+    ctx: &'a egui::Context,
+    world: &'a GameWorld,
+    movement: &'a rebellion_core::movement::MovementState,
+    fog: &'a FogState,
+    missions: &'a MissionState,
+    manufacturing: &'a ManufacturingState,
+    deliveries: &'a DeliveryState,
+    state: &'a mut SystemWindowState,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &'a mut BmpCache,
+}
+
 /// Draw the faction rail and every visible Manufacturing and Production
 /// window.
 ///
@@ -1348,17 +1362,19 @@ pub fn draw_system_windows(
     shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<SystemWindowAction> {
     draw_system_windows_with_snapshot(
-        ctx,
-        world,
-        movement,
-        fog,
-        missions,
-        manufacturing,
-        deliveries,
-        state,
-        faction,
-        layout,
-        cache,
+        SystemDraw {
+            ctx,
+            world,
+            movement,
+            fog,
+            missions,
+            manufacturing,
+            deliveries,
+            state,
+            faction,
+            layout,
+            cache,
+        },
         None,
         &[],
         None,
@@ -1369,29 +1385,27 @@ pub fn draw_system_windows(
 
 /// Draw manager-owned System content in the frozen manager order while the
 /// existing reference rail remains a temporary presentation adapter.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Keep explicit state and rendering inputs at this UI boundary; the rail's Missions icon reads the mission state."
-)]
-pub fn draw_managed_system_windows(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    movement: &rebellion_core::movement::MovementState,
-    fog: &FogState,
-    missions: &MissionState,
-    manufacturing: &ManufacturingState,
-    deliveries: &DeliveryState,
-    state: &mut SystemWindowState,
-    faction: CockpitFaction,
-    layout: CockpitLayout,
-    cache: &mut BmpCache,
-    snapshot: &RoutingSnapshot,
-    pointer_events: &[SystemWindowInputEvent],
-    router: &mut FrameInputRouter,
-    front: bool,
-    shown: &dyn Fn(GalaxyChild) -> bool,
-) -> Vec<SystemWindowAction> {
-    draw_system_windows_with_snapshot(
+pub struct ManagedSystemDraw<'a> {
+    pub ctx: &'a egui::Context,
+    pub world: &'a GameWorld,
+    pub movement: &'a rebellion_core::movement::MovementState,
+    pub fog: &'a FogState,
+    pub missions: &'a MissionState,
+    pub manufacturing: &'a ManufacturingState,
+    pub deliveries: &'a DeliveryState,
+    pub state: &'a mut SystemWindowState,
+    pub faction: CockpitFaction,
+    pub layout: CockpitLayout,
+    pub cache: &'a mut BmpCache,
+    pub snapshot: &'a RoutingSnapshot,
+    pub pointer_events: &'a [SystemWindowInputEvent],
+    pub router: &'a mut FrameInputRouter,
+    pub front: bool,
+    pub shown: &'a dyn Fn(GalaxyChild) -> bool,
+}
+
+pub fn draw_managed_system_windows(draw: ManagedSystemDraw<'_>) -> Vec<SystemWindowAction> {
+    let ManagedSystemDraw {
         ctx,
         world,
         movement,
@@ -1403,6 +1417,26 @@ pub fn draw_managed_system_windows(
         faction,
         layout,
         cache,
+        snapshot,
+        pointer_events,
+        router,
+        front,
+        shown,
+    } = draw;
+    draw_system_windows_with_snapshot(
+        SystemDraw {
+            ctx,
+            world,
+            movement,
+            fog,
+            missions,
+            manufacturing,
+            deliveries,
+            state,
+            faction,
+            layout,
+            cache,
+        },
         Some(snapshot),
         pointer_events,
         Some(router),
@@ -1452,28 +1486,27 @@ fn claim_band_rename_press(
     })
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Shared implementation for production snapshots and fixture-only direct content."
-)]
 fn draw_system_windows_with_snapshot(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    movement: &rebellion_core::movement::MovementState,
-    fog: &FogState,
-    missions: &MissionState,
-    manufacturing: &ManufacturingState,
-    deliveries: &DeliveryState,
-    state: &mut SystemWindowState,
-    faction: CockpitFaction,
-    layout: CockpitLayout,
-    cache: &mut BmpCache,
+    draw: SystemDraw<'_>,
     snapshot: Option<&RoutingSnapshot>,
     pointer_events: &[SystemWindowInputEvent],
     mut router: Option<&mut FrameInputRouter>,
     front: bool,
     shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<SystemWindowAction> {
+    let SystemDraw {
+        ctx,
+        world,
+        movement,
+        fog,
+        missions,
+        manufacturing,
+        deliveries,
+        state,
+        faction,
+        layout,
+        cache,
+    } = draw;
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
     }
@@ -2782,6 +2815,14 @@ mod tests {
             .collect()
     }
 
+    fn fleet_window_pair(subjects: [u64; 2]) -> (WindowId, WindowId) {
+        let fleets = fleet_window_ids(&subjects);
+        let [first, second] = fleets.as_slice() else {
+            unreachable!("a two-subject fixture must create two Fleet windows")
+        };
+        (*first, *second)
+    }
+
     fn layout(faction: CockpitFaction, scale: f32) -> CockpitLayout {
         let (x, width, height) = match faction {
             CockpitFaction::Alliance => (55.0, 485.0, 350.0),
@@ -2850,6 +2891,17 @@ mod tests {
         (world, systems)
     }
 
+    fn controlled_fixture_world(
+        count: usize,
+        faction: CockpitFaction,
+    ) -> (GameWorld, Vec<SystemKey>) {
+        let (mut world, systems) = fixture_world(count);
+        for system in &systems {
+            world.systems[*system].control = ControlKind::Controlled(cockpit_faction(faction));
+        }
+        (world, systems)
+    }
+
     fn add_yard(world: &mut GameWorld, system: SystemKey, class: u32) -> FacilityItem {
         let key = world
             .manufacturing_facilities
@@ -2874,6 +2926,26 @@ mod tests {
         FacilityItem::Production(key)
     }
 
+    fn capital_ship_build(
+        name: &str,
+        count: u32,
+    ) -> (GameWorld, SystemKey, ManufacturingState) {
+        let (mut world, systems) = fixture_world(1);
+        let system = systems[0];
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x1400_0040),
+            name: name.into(),
+            ..CapitalShipClass::default()
+        });
+        let mut manufacturing = ManufacturingState::new();
+        manufacturing.build(
+            system,
+            &QueueItem::new(BuildableKind::CapitalShip(class), 10),
+            count,
+        );
+        (world, system, manufacturing)
+    }
+
     fn commit_prepared_system_window(
         manager: &mut WindowManager,
         state: &mut SystemWindowState,
@@ -2886,6 +2958,49 @@ mod tests {
             .commit_open(prepared, &commit.transition)
             .expect("successful System open should publish or preserve content");
         (id, commit.transition)
+    }
+
+    fn prepare_test_window(
+        state: &SystemWindowState,
+        world: &GameWorld,
+        system: SystemKey,
+        position: (i16, i16),
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+    ) -> PreparedSystemWindow {
+        state
+            .prepare_open(world, system, position, faction, layout)
+            .expect("live system has a stable DAT subject")
+    }
+
+    fn managed_test_window(
+        world: &GameWorld,
+        system: SystemKey,
+        layout: CockpitLayout,
+    ) -> (WindowManager, SystemWindowState, WindowId) {
+        let mut manager = WindowManager::new();
+        let mut state = SystemWindowState::default();
+        let prepared = prepare_test_window(
+            &state,
+            world,
+            system,
+            ORIGIN,
+            CockpitFaction::Alliance,
+            layout,
+        );
+        let (id, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+        (manager, state, id)
+    }
+
+    fn frame_input(events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1400.0, 1000.0),
+            )),
+            events,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -3090,50 +3205,30 @@ mod tests {
 
         PAINTED.with(|painted| painted.borrow_mut().clear());
         let ctx = egui::Context::default();
-        let mut router = FrameInputRouter::default();
-        router.begin_frame(1, &snapshot);
-        let mut cache = BmpCache::new();
-        let movement = rebellion_core::movement::MovementState::default();
-        let fog = FogState::new(Faction::Alliance);
-        let missions = MissionState::new();
+        let mut rail = RailTestState::new(Faction::Alliance);
+        rail.router.begin_frame(1, &snapshot);
         let mut actions = Vec::new();
-        let raw_input = || egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1400.0, 1000.0),
-            )),
-            ..egui::RawInput::default()
-        };
+        let raw_input = || frame_input(Vec::new());
         let _ = ctx.run(raw_input(), |ctx| {
-            let _ = draw_reference_rail(
+            let _ = rail.draw(
                 ctx,
                 &world,
-                &movement,
-                &fog,
-                &missions,
                 CockpitFaction::Alliance,
                 rail_layout,
-                &mut cache,
                 &snapshot,
                 &[],
-                &mut router,
             );
         });
         PAINTED.with(|painted| painted.borrow_mut().clear());
-        router.begin_frame(2, &snapshot);
+        rail.router.begin_frame(2, &snapshot);
         let output = ctx.run(raw_input(), |ctx| {
-            actions = draw_reference_rail(
+            actions = rail.draw(
                 ctx,
                 &world,
-                &movement,
-                &fog,
-                &missions,
                 CockpitFaction::Alliance,
                 rail_layout,
-                &mut cache,
                 &snapshot,
                 &[],
-                &mut router,
             );
         });
         assert!(actions.is_empty());
@@ -3147,8 +3242,8 @@ mod tests {
         );
         let missions_icon = crate::missions_window::rail_icon(
             &world,
-            &fog,
-            &missions,
+            &rail.fog,
+            &rail.missions,
             CockpitFaction::Alliance,
             systems[3],
         );
@@ -3178,69 +3273,342 @@ mod tests {
         }
     }
 
+    struct ManagedSystemFixture {
+        manager: WindowManager,
+        state: SystemWindowState,
+        ctx: egui::Context,
+        router: FrameInputRouter,
+        cache: BmpCache,
+        movement: rebellion_core::movement::MovementState,
+        fog: FogState,
+        missions: MissionState,
+        manufacturing: ManufacturingState,
+        deliveries: DeliveryState,
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+    }
+
+    impl ManagedSystemFixture {
+        fn new(faction: CockpitFaction) -> Self {
+            Self {
+                manager: WindowManager::new(),
+                state: SystemWindowState::default(),
+                ctx: egui::Context::default(),
+                router: FrameInputRouter::default(),
+                cache: BmpCache::new(),
+                movement: rebellion_core::movement::MovementState::default(),
+                fog: FogState::new(cockpit_faction(faction)),
+                missions: MissionState::new(),
+                manufacturing: ManufacturingState::new(),
+                deliveries: DeliveryState::new(),
+                faction,
+                layout: layout(faction, 2.0),
+            }
+        }
+
+        fn open(&mut self, world: &GameWorld, system: SystemKey, position: (i32, i32)) -> WindowId {
+            let prepared = self
+                .state
+                .prepare_open(world, system, position, self.faction, self.layout)
+                .unwrap();
+            commit_prepared_system_window(&mut self.manager, &mut self.state, prepared).0
+        }
+
+        fn open_active_rename(&mut self, world: &GameWorld, system: SystemKey) -> WindowId {
+            let id = self.open(world, system, ORIGIN);
+            self.manager.apply(WindowCommand::Activate(id)).unwrap();
+            assert!(self.state.begin_band_rename(
+                system,
+                ProductionArea::Shipyard,
+                "Death Star 1",
+            ));
+            id
+        }
+
+        fn begin_frame(&mut self, frame: u64) -> RoutingSnapshot {
+            let snapshot = self.manager.begin_frame();
+            self.router.begin_frame(frame, &snapshot);
+            snapshot
+        }
+
+        fn draw_started_frame(
+            &mut self,
+            world: &GameWorld,
+            snapshot: &RoutingSnapshot,
+            events: Vec<egui::Event>,
+            pointer_events: &[SystemWindowInputEvent],
+        ) -> Vec<SystemWindowAction> {
+            self.draw_started_input(world, snapshot, frame_input(events), pointer_events)
+        }
+
+        fn draw_started_input(
+            &mut self,
+            world: &GameWorld,
+            snapshot: &RoutingSnapshot,
+            input: egui::RawInput,
+            pointer_events: &[SystemWindowInputEvent],
+        ) -> Vec<SystemWindowAction> {
+            let mut actions = Vec::new();
+            let _ = self.ctx.run(input, |ctx| {
+                actions = draw_managed_system_windows(ManagedSystemDraw {
+                    ctx,
+                    world,
+                    movement: &self.movement,
+                    fog: &self.fog,
+                    missions: &self.missions,
+                    manufacturing: &self.manufacturing,
+                    deliveries: &self.deliveries,
+                    state: &mut self.state,
+                    faction: self.faction,
+                    layout: self.layout,
+                    cache: &mut self.cache,
+                    snapshot,
+                    pointer_events,
+                    router: &mut self.router,
+                    front: true,
+                    shown: &|_| true,
+                });
+            });
+            actions
+        }
+
+        fn draw_frame(
+            &mut self,
+            world: &GameWorld,
+            frame: u64,
+            events: Vec<egui::Event>,
+            pointer_events: &[SystemWindowInputEvent],
+        ) -> Vec<SystemWindowAction> {
+            let snapshot = self.begin_frame(frame);
+            self.draw_started_frame(world, &snapshot, events, pointer_events)
+        }
+
+        fn draw_frames(
+            &mut self,
+            world: &GameWorld,
+            frames: Vec<Vec<egui::Event>>,
+        ) -> Vec<SystemWindowAction> {
+            let mut actions = Vec::new();
+            for (index, events) in frames.into_iter().enumerate() {
+                let frame = u64::try_from(index + 1).unwrap();
+                actions.extend(self.draw_frame(world, frame, events, &[]));
+            }
+            actions
+        }
+    }
+
+    fn managed_rename_fixture(
+        faction: CockpitFaction,
+    ) -> (GameWorld, SystemKey, ManagedSystemFixture, WindowId) {
+        let (world, systems) = controlled_fixture_world(1, faction);
+        let system = systems[0];
+        let mut fixture = ManagedSystemFixture::new(faction);
+        let id = fixture.open_active_rename(&world, system);
+        (world, system, fixture, id)
+    }
+
+    fn minimized_detail(
+        world: &GameWorld,
+        system: SystemKey,
+        kind: WindowKind,
+    ) -> (WindowManager, WindowId) {
+        let mut manager = WindowManager::new();
+        let opened = manager
+            .apply(WindowCommand::Open(contextual_spec(
+                kind,
+                system_subject(world, system).unwrap(),
+                WindowOwner::StrategicRoot,
+            )))
+            .unwrap();
+        let WindowTransition::Opened { id } = opened.transition else {
+            panic!("expected detail open");
+        };
+        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        (manager, id)
+    }
+
+    fn primary_pointer(point: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos: point,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        }
+    }
+
+    fn system_input_event(
+        id: InputEventId,
+        point: egui::Pos2,
+        phase: PointerPhase,
+    ) -> SystemWindowInputEvent {
+        SystemWindowInputEvent {
+            id,
+            point: (point.x, point.y),
+            phase,
+        }
+    }
+
+    fn rail_click_frames(point: egui::Pos2) -> Vec<(Vec<egui::Event>, PointerPhase)> {
+        vec![
+            (vec![egui::Event::PointerMoved(point)], PointerPhase::Hover),
+            (vec![egui::Event::PointerMoved(point)], PointerPhase::Hover),
+            (
+                vec![primary_pointer(point, true)],
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            (
+                vec![primary_pointer(point, false)],
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+        ]
+    }
+
+    struct RailTestFrame<'a> {
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+        snapshot: &'a RoutingSnapshot,
+        event: InputEventId,
+        point: egui::Pos2,
+        phase: PointerPhase,
+        overlay: Option<egui::Rect>,
+    }
+
+    struct RailClickTest {
+        layout: CockpitLayout,
+        point: egui::Pos2,
+        expected_recipient: InputRecipient,
+        overlay: Option<egui::Rect>,
+    }
+
+    fn run_alliance_rail_click(
+        world: &GameWorld,
+        test: RailClickTest,
+        mut snapshot_for_frame: impl FnMut() -> RoutingSnapshot,
+    ) -> Vec<SystemWindowAction> {
+        let ctx = egui::Context::default();
+        let mut rail = RailTestState::new(Faction::Alliance);
+        let mut actions = Vec::new();
+        for (index, (events, phase)) in rail_click_frames(test.point).into_iter().enumerate() {
+            let frame = u64::try_from(index + 1).unwrap();
+            let event = InputEventId { frame, ordinal: 0 };
+            let snapshot = snapshot_for_frame();
+            rail.router.begin_frame(frame, &snapshot);
+            assert_eq!(
+                rail.router
+                    .collect_pointer(event, &std::collections::BTreeSet::new(), phase),
+                test.expected_recipient
+            );
+            actions.extend(rail.run_frame(
+                &ctx,
+                frame_input(events),
+                world,
+                RailTestFrame {
+                    faction: CockpitFaction::Alliance,
+                    layout: test.layout,
+                    snapshot: &snapshot,
+                    event,
+                    point: test.point,
+                    phase,
+                    overlay: test.overlay,
+                },
+            ));
+        }
+        actions
+    }
+
+    struct RailTestState {
+        router: FrameInputRouter,
+        cache: BmpCache,
+        movement: rebellion_core::movement::MovementState,
+        fog: FogState,
+        missions: MissionState,
+    }
+
+    impl RailTestState {
+        fn new(faction: Faction) -> Self {
+            Self {
+                router: FrameInputRouter::default(),
+                cache: BmpCache::new(),
+                movement: rebellion_core::movement::MovementState::default(),
+                fog: FogState::new(faction),
+                missions: MissionState::new(),
+            }
+        }
+
+        fn draw(
+            &mut self,
+            ctx: &egui::Context,
+            world: &GameWorld,
+            faction: CockpitFaction,
+            layout: CockpitLayout,
+            snapshot: &RoutingSnapshot,
+            pointer_events: &[SystemWindowInputEvent],
+        ) -> Vec<SystemWindowAction> {
+            draw_reference_rail(
+                ctx,
+                world,
+                &self.movement,
+                &self.fog,
+                &self.missions,
+                faction,
+                layout,
+                &mut self.cache,
+                snapshot,
+                pointer_events,
+                &mut self.router,
+            )
+        }
+
+        fn run_frame(
+            &mut self,
+            ctx: &egui::Context,
+            input: egui::RawInput,
+            world: &GameWorld,
+            frame: RailTestFrame<'_>,
+        ) -> Vec<SystemWindowAction> {
+            let mut actions = Vec::new();
+            let _ = ctx.run(input, |ctx| {
+                if let Some(rect) = frame.overlay {
+                    egui::Area::new(egui::Id::new("root-cockpit-overlay"))
+                        .fixed_pos(rect.min)
+                        .order(egui::Order::Foreground)
+                        .show(ctx, |ui| {
+                            let _ = ui.allocate_exact_size(rect.size(), egui::Sense::hover());
+                        });
+                }
+                actions = self.draw(
+                    ctx,
+                    world,
+                    frame.faction,
+                    frame.layout,
+                    frame.snapshot,
+                    &[system_input_event(frame.event, frame.point, frame.phase)],
+                );
+            });
+            actions
+        }
+    }
+
     #[test]
     fn reference_rail_restore_removes_entry_without_recreating_content() {
         let (world, systems) = fixture_world(1);
         let system = systems[0];
         let layout = layout(CockpitFaction::Alliance, 2.0);
-        let mut manager = WindowManager::new();
-        let mut state = SystemWindowState::default();
-        let prepared = state
-            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, layout)
-            .unwrap();
-        let (id, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
+        let (mut manager, mut state, id) = managed_test_window(&world, system, layout);
         manager.apply(WindowCommand::Minimize(id)).unwrap();
         assert_eq!(manager.begin_frame().presentation_history(), [id]);
 
         let point = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 0)).center();
-        let pointer_button = |pressed| egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        let frames = [
-            (
-                vec![egui::Event::PointerMoved(point)],
-                PointerPhase::Hover,
-                false,
-            ),
-            (
-                vec![egui::Event::PointerMoved(point)],
-                PointerPhase::Hover,
-                false,
-            ),
-            (
-                vec![pointer_button(true)],
-                PointerPhase::Press(PointerButtonId::Primary),
-                false,
-            ),
-            (
-                vec![pointer_button(false)],
-                PointerPhase::Release(PointerButtonId::Primary),
-                true,
-            ),
-            (
-                vec![egui::Event::PointerMoved(point)],
-                PointerPhase::Hover,
-                false,
-            ),
-            (
-                vec![egui::Event::PointerMoved(point)],
-                PointerPhase::Hover,
-                false,
-            ),
-            (
-                vec![pointer_button(true)],
-                PointerPhase::Press(PointerButtonId::Primary),
-                false,
-            ),
-            (
-                vec![pointer_button(false)],
-                PointerPhase::Release(PointerButtonId::Primary),
-                false,
-            ),
-        ];
+        let mut frames = rail_click_frames(point)
+            .into_iter()
+            .map(|(events, phase)| (events, phase, false))
+            .collect::<Vec<_>>();
+        frames[3].2 = true;
+        frames.extend(
+            rail_click_frames(point)
+                .into_iter()
+                .map(|(events, phase)| (events, phase, false)),
+        );
         let ctx = egui::Context::default();
         let mut router = FrameInputRouter::default();
         let mut actions = Vec::new();
@@ -3257,14 +3625,7 @@ mod tests {
             if preclaimed {
                 assert!(router.claim_root(event));
             }
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                events,
-                ..egui::RawInput::default()
-            };
+            let input = frame_input(events);
             let movement = rebellion_core::movement::MovementState::default();
             let fog = FogState::new(Faction::Alliance);
             let missions = MissionState::new();
@@ -3272,28 +3633,24 @@ mod tests {
             let deliveries = DeliveryState::new();
             let mut frame_actions = Vec::new();
             let _ = ctx.run(input, |ctx| {
-                frame_actions = draw_managed_system_windows(
+                frame_actions = draw_managed_system_windows(ManagedSystemDraw {
                     ctx,
-                    &world,
-                    &movement,
-                    &fog,
-                    &missions,
-                    &manufacturing,
-                    &deliveries,
-                    &mut state,
-                    CockpitFaction::Alliance,
+                    world: &world,
+                    movement: &movement,
+                    fog: &fog,
+                    missions: &missions,
+                    manufacturing: &manufacturing,
+                    deliveries: &deliveries,
+                    state: &mut state,
+                    faction: CockpitFaction::Alliance,
                     layout,
-                    &mut cache,
-                    &snapshot,
-                    &[SystemWindowInputEvent {
-                        id: event,
-                        point: (point.x, point.y),
-                        phase,
-                    }],
-                    &mut router,
-                    true,
-                    &|_| true,
-                );
+                    cache: &mut cache,
+                    snapshot: &snapshot,
+                    pointer_events: &[system_input_event(event, point, phase)],
+                    router: &mut router,
+                    front: true,
+                    shown: &|_| true,
+                });
             });
             actions.extend(frame_actions);
         }
@@ -3316,91 +3673,21 @@ mod tests {
         let (world, systems) = fixture_world(1);
         let system = systems[0];
         let layout = layout(CockpitFaction::Alliance, 2.0);
-        let mut manager = WindowManager::new();
-        let opened = manager
-            .apply(WindowCommand::Open(contextual_spec(
-                WindowKind::Missions,
-                system_subject(&world, system).unwrap(),
-                WindowOwner::StrategicRoot,
-            )))
-            .unwrap();
-        let WindowTransition::Opened { id } = opened.transition else {
-            panic!("expected Missions detail open");
-        };
-        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        let (manager, id) = minimized_detail(&world, system, WindowKind::Missions);
 
         let snapshot = manager.begin_frame();
         let slot = reference_rail_slots(&snapshot, &world, CockpitFaction::Alliance, layout)[0];
         let point = slot.rect().center();
-        let pointer_button = |pressed| egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        let frames = [
-            vec![egui::Event::PointerMoved(point)],
-            vec![egui::Event::PointerMoved(point)],
-            vec![pointer_button(true)],
-            vec![pointer_button(false)],
-        ];
-        let ctx = egui::Context::default();
-        let mut router = FrameInputRouter::default();
-        let mut cache = BmpCache::new();
-        let movement = rebellion_core::movement::MovementState::default();
-        let fog = FogState::new(Faction::Alliance);
-        let missions = MissionState::new();
-        let mut actions = Vec::new();
-
-        for (index, events) in frames.into_iter().enumerate() {
-            let frame = u64::try_from(index + 1).unwrap();
-            let phase = match index {
-                0 | 1 => PointerPhase::Hover,
-                2 => PointerPhase::Press(PointerButtonId::Primary),
-                _ => PointerPhase::Release(PointerButtonId::Primary),
-            };
-            let event = InputEventId { frame, ordinal: 0 };
-            router.begin_frame(frame, &snapshot);
-            assert_eq!(
-                router.collect_pointer(event, &std::collections::BTreeSet::new(), phase),
-                InputRecipient::Root
-            );
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                events,
-                ..egui::RawInput::default()
-            };
-            let mut frame_actions = Vec::new();
-            let _ = ctx.run(input, |ctx| {
-                egui::Area::new(egui::Id::new("root-cockpit-overlay"))
-                    .fixed_pos(slot.rect().min)
-                    .order(egui::Order::Foreground)
-                    .show(ctx, |ui| {
-                        let _ = ui.allocate_exact_size(slot.rect().size(), egui::Sense::hover());
-                    });
-                frame_actions = draw_reference_rail(
-                    ctx,
-                    &world,
-                    &movement,
-                    &fog,
-                    &missions,
-                    CockpitFaction::Alliance,
-                    layout,
-                    &mut cache,
-                    &snapshot,
-                    &[SystemWindowInputEvent {
-                        id: event,
-                        point: (point.x, point.y),
-                        phase,
-                    }],
-                    &mut router,
-                );
-            });
-            actions.extend(frame_actions);
-        }
+        let actions = run_alliance_rail_click(
+            &world,
+            RailClickTest {
+                layout,
+                point,
+                expected_recipient: InputRecipient::Root,
+                overlay: Some(slot.rect()),
+            },
+            || snapshot.clone(),
+        );
 
         assert_eq!(actions, [SystemWindowAction::RestoreReferenceWindow(id)]);
     }
@@ -3409,61 +3696,28 @@ mod tests {
     fn reference_rail_restore_claims_its_own_release_in_multi_release_frame() {
         let (world, systems) = fixture_world(1);
         let layout = layout(CockpitFaction::Alliance, 2.0);
-        let mut manager = WindowManager::new();
-        let opened = manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::contextual_spec(
-                    WindowKind::System,
-                    system_subject(&world, systems[0]).unwrap(),
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let WindowTransition::Opened { id } = opened.transition else {
-            panic!("expected detail open");
-        };
-        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        let (manager, id) = minimized_detail(&world, systems[0], WindowKind::System);
 
         let rail_point = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 0)).center();
         let unrelated_point = egui::pos2(1300.0, 900.0);
-        let pointer_button = |point, pressed| egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
+        let pointer_button = primary_pointer;
         let snapshot = manager.begin_frame();
         let ctx = egui::Context::default();
-        let mut router = FrameInputRouter::default();
-        let mut cache = BmpCache::new();
-        let movement = rebellion_core::movement::MovementState::default();
-        let fog = FogState::new(Faction::Alliance);
-        let missions = MissionState::new();
+        let mut rail = RailTestState::new(Faction::Alliance);
 
         for frame in 1..=2 {
-            router.begin_frame(frame, &snapshot);
+            rail.router.begin_frame(frame, &snapshot);
             let _ = ctx.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(1400.0, 1000.0),
-                    )),
-                    events: vec![egui::Event::PointerMoved(rail_point)],
-                    ..egui::RawInput::default()
-                },
+                frame_input(vec![egui::Event::PointerMoved(rail_point)]),
                 |ctx| {
-                    assert!(draw_reference_rail(
+                    assert!(rail
+                        .draw(
                         ctx,
                         &world,
-                        &movement,
-                        &fog,
-                        &missions,
                         CockpitFaction::Alliance,
                         layout,
-                        &mut cache,
                         &snapshot,
                         &[],
-                        &mut router,
                     )
                     .is_empty());
                 },
@@ -3474,9 +3728,9 @@ mod tests {
             frame: 3,
             ordinal: 0,
         };
-        router.begin_frame(3, &snapshot);
+        rail.router.begin_frame(3, &snapshot);
         assert_eq!(
-            router.collect_pointer(
+            rail.router.collect_pointer(
                 press,
                 &std::collections::BTreeSet::new(),
                 PointerPhase::Press(PointerButtonId::Primary),
@@ -3484,31 +3738,20 @@ mod tests {
             InputRecipient::Root
         );
         let _ = ctx.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                events: vec![pointer_button(rail_point, true)],
-                ..egui::RawInput::default()
-            },
+            frame_input(vec![pointer_button(rail_point, true)]),
             |ctx| {
-                assert!(draw_reference_rail(
+                assert!(rail
+                    .draw(
                     ctx,
                     &world,
-                    &movement,
-                    &fog,
-                    &missions,
                     CockpitFaction::Alliance,
                     layout,
-                    &mut cache,
                     &snapshot,
                     &[SystemWindowInputEvent {
                         id: press,
                         point: (rail_point.x, rail_point.y),
                         phase: PointerPhase::Press(PointerButtonId::Primary),
                     }],
-                    &mut router,
                 )
                 .is_empty());
             },
@@ -3526,7 +3769,7 @@ mod tests {
             frame: 4,
             ordinal: 2,
         };
-        router.begin_frame(4, &snapshot);
+        rail.router.begin_frame(4, &snapshot);
         for (event, phase) in [
             (
                 causal_release,
@@ -3542,30 +3785,20 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                router.collect_pointer(event, &std::collections::BTreeSet::new(), phase),
+                rail.router
+                    .collect_pointer(event, &std::collections::BTreeSet::new(), phase),
                 InputRecipient::Root
             );
         }
         let mut actions = Vec::new();
         let _ = ctx.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                events: vec![pointer_button(rail_point, false)],
-                ..egui::RawInput::default()
-            },
+            frame_input(vec![pointer_button(rail_point, false)]),
             |ctx| {
-                actions = draw_reference_rail(
+                actions = rail.draw(
                     ctx,
                     &world,
-                    &movement,
-                    &fog,
-                    &missions,
                     CockpitFaction::Alliance,
                     layout,
-                    &mut cache,
                     &snapshot,
                     &[
                         SystemWindowInputEvent {
@@ -3584,18 +3817,17 @@ mod tests {
                             phase: PointerPhase::Release(PointerButtonId::Primary),
                         },
                     ],
-                    &mut router,
                 );
             },
         );
 
         assert_eq!(actions, [SystemWindowAction::RestoreReferenceWindow(id)]);
         assert!(
-            !router.claim_root(causal_release),
+            !rail.router.claim_root(causal_release),
             "the rail must claim the release inside its exact slot"
         );
         assert!(
-            router.claim_root(unrelated_release),
+            rail.router.claim_root(unrelated_release),
             "an unrelated root release must remain available"
         );
     }
@@ -3604,20 +3836,7 @@ mod tests {
     fn reference_rail_modal_blocks_restore_and_hover_actions() {
         let (world, systems) = fixture_world(1);
         let layout = layout(CockpitFaction::Alliance, 2.0);
-        let mut manager = WindowManager::new();
-        let opened = manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::contextual_spec(
-                    WindowKind::System,
-                    system_subject(&world, systems[0]).unwrap(),
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let WindowTransition::Opened { id } = opened.transition else {
-            panic!("expected detail open");
-        };
-        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        let (mut manager, id) = minimized_detail(&world, systems[0], WindowKind::System);
         manager
             .apply(WindowCommand::Open(
                 crate::windowing_policy::singleton_spec(
@@ -3627,70 +3846,16 @@ mod tests {
             ))
             .unwrap();
         let point = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 0)).center();
-        let pointer_button = |pressed| egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        let frames = [
-            (vec![egui::Event::PointerMoved(point)], PointerPhase::Hover),
-            (vec![egui::Event::PointerMoved(point)], PointerPhase::Hover),
-            (
-                vec![pointer_button(true)],
-                PointerPhase::Press(PointerButtonId::Primary),
-            ),
-            (
-                vec![pointer_button(false)],
-                PointerPhase::Release(PointerButtonId::Primary),
-            ),
-        ];
-        let ctx = egui::Context::default();
-        let mut router = FrameInputRouter::default();
-        let mut actions = Vec::new();
-        let mut cache = BmpCache::new();
-        let movement = rebellion_core::movement::MovementState::default();
-        let fog = FogState::new(Faction::Alliance);
-        let missions = MissionState::new();
-        for (index, (events, phase)) in frames.into_iter().enumerate() {
-            let frame = u64::try_from(index + 1).unwrap();
-            let event = InputEventId { frame, ordinal: 0 };
-            let snapshot = manager.begin_frame();
-            router.begin_frame(frame, &snapshot);
-            assert_eq!(
-                router.collect_pointer(event, &std::collections::BTreeSet::new(), phase),
-                InputRecipient::Blocked
-            );
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                events,
-                ..egui::RawInput::default()
-            };
-            let mut frame_actions = Vec::new();
-            let _ = ctx.run(input, |ctx| {
-                frame_actions = draw_reference_rail(
-                    ctx,
-                    &world,
-                    &movement,
-                    &fog,
-                    &missions,
-                    CockpitFaction::Alliance,
-                    layout,
-                    &mut cache,
-                    &snapshot,
-                    &[SystemWindowInputEvent {
-                        id: event,
-                        point: (point.x, point.y),
-                        phase,
-                    }],
-                    &mut router,
-                );
-            });
-            actions.extend(frame_actions);
-        }
+        let actions = run_alliance_rail_click(
+            &world,
+            RailClickTest {
+                layout,
+                point,
+                expected_recipient: InputRecipient::Blocked,
+                overlay: None,
+            },
+            || manager.begin_frame(),
+        );
 
         assert!(actions.is_empty(), "modal rail input leaked: {actions:?}");
         assert_eq!(manager.begin_frame().presentation_history(), [id]);
@@ -3700,20 +3865,7 @@ mod tests {
     fn reference_rail_missing_art_does_not_delete_registered_detail() {
         let (world, systems) = fixture_world(1);
         let layout = layout(CockpitFaction::Alliance, 1.0);
-        let mut manager = WindowManager::new();
-        let opened = manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::contextual_spec(
-                    WindowKind::Fleet,
-                    system_subject(&world, systems[0]).unwrap(),
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let WindowTransition::Opened { id } = opened.transition else {
-            panic!("expected detail open");
-        };
-        manager.apply(WindowCommand::Minimize(id)).unwrap();
+        let (manager, id) = minimized_detail(&world, systems[0], WindowKind::Fleet);
         let snapshot = manager.begin_frame();
         let ctx = egui::Context::default();
         let mut router = FrameInputRouter::default();
@@ -3901,13 +4053,21 @@ mod tests {
     }
 
     fn opened(world: &GameWorld, system: SystemKey) -> SystemWindowState {
+        opened_as(world, system, CockpitFaction::Alliance)
+    }
+
+    fn opened_as(
+        world: &GameWorld,
+        system: SystemKey,
+        faction: CockpitFaction,
+    ) -> SystemWindowState {
         let mut state = SystemWindowState::default();
         assert!(state.open(
             world,
             system,
             ORIGIN,
-            CockpitFaction::Alliance,
-            layout(CockpitFaction::Alliance, 2.0)
+            faction,
+            layout(faction, 2.0)
         ));
         state
     }
@@ -3971,6 +4131,24 @@ mod tests {
         all
     }
 
+    fn run_rename_key(
+        world: &GameWorld,
+        system: SystemKey,
+        pressed: egui::Key,
+    ) -> (Run, SystemWindowState) {
+        let mut state = renaming(world, system);
+        let run = run_with(
+            world,
+            &ManufacturingState::new(),
+            &mut state,
+            after_opening(vec![
+                vec![egui::Event::Text("Tarkin".into())],
+                vec![key(pressed)],
+            ]),
+        );
+        (run, state)
+    }
+
     fn renamed(actions: &[SystemWindowAction]) -> Vec<(ProductionArea, &str)> {
         actions
             .iter()
@@ -4029,16 +4207,7 @@ mod tests {
         // over the selected "Death Star 1" renamed the unfinished ship
         // (route-1 Empire save, day 123 played on).
         let (world, systems) = fixture_world(1);
-        let mut state = renaming(&world, systems[0]);
-        let run = run_with(
-            &world,
-            &ManufacturingState::new(),
-            &mut state,
-            after_opening(vec![
-                vec![egui::Event::Text("Tarkin".into())],
-                vec![key(egui::Key::Enter)],
-            ]),
-        );
+        let (run, state) = run_rename_key(&world, systems[0], egui::Key::Enter);
         assert_eq!(
             renamed(&run.actions),
             [(ProductionArea::Shipyard, "Tarkin")]
@@ -4218,16 +4387,7 @@ mod tests {
         // closed with the name unchanged (route-1 Empire save, day 127
         // played on to day 140).
         let (world, systems) = fixture_world(1);
-        let mut state = renaming(&world, systems[0]);
-        let run = run_with(
-            &world,
-            &ManufacturingState::new(),
-            &mut state,
-            after_opening(vec![
-                vec![egui::Event::Text("Tarkin".into())],
-                vec![key(egui::Key::Escape)],
-            ]),
-        );
+        let (run, state) = run_rename_key(&world, systems[0], egui::Key::Escape);
         assert_eq!(renamed(&run.actions), []);
         assert!(state.windows.is_empty());
         assert!(!state.band_rename_open());
@@ -4240,75 +4400,25 @@ mod tests {
         // registry identity until the manager accepts that exact Close.
         let (world, systems) = fixture_world(1);
         let system = systems[0];
-        let layout = layout(CockpitFaction::Alliance, 2.0);
-        let mut manager = WindowManager::new();
-        let mut state = SystemWindowState::default();
-        let prepared = state
-            .prepare_open(&world, system, ORIGIN, CockpitFaction::Alliance, layout)
-            .unwrap();
-        let (id, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
-        manager.apply(WindowCommand::Activate(id)).unwrap();
-        assert!(state.begin_band_rename(system, ProductionArea::Shipyard, "Death Star 1"));
-
-        let ctx = egui::Context::default();
-        let mut router = FrameInputRouter::default();
-        let mut cache = BmpCache::new();
-        let movement = rebellion_core::movement::MovementState::default();
-        let fog = FogState::new(Faction::Alliance);
-        let missions = MissionState::new();
-        let manufacturing = ManufacturingState::new();
-        let deliveries = DeliveryState::new();
-        let mut actions = Vec::new();
-        for (index, events) in after_opening(vec![
+        let mut fixture = ManagedSystemFixture::new(CockpitFaction::Alliance);
+        let id = fixture.open_active_rename(&world, system);
+        let actions = fixture.draw_frames(
+            &world,
+            after_opening(vec![
             vec![egui::Event::Text("Tarkin".into())],
             vec![key(egui::Key::Escape)],
-        ])
-        .into_iter()
-        .enumerate()
-        {
-            let frame = u64::try_from(index + 1).unwrap();
-            let snapshot = manager.begin_frame();
-            router.begin_frame(frame, &snapshot);
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                events,
-                ..egui::RawInput::default()
-            };
-            let output = ctx.run(input, |ctx| {
-                actions.extend(draw_managed_system_windows(
-                    ctx,
-                    &world,
-                    &movement,
-                    &fog,
-                    &missions,
-                    &manufacturing,
-                    &deliveries,
-                    &mut state,
-                    CockpitFaction::Alliance,
-                    layout,
-                    &mut cache,
-                    &snapshot,
-                    &[],
-                    &mut router,
-                    true,
-                    &|_| true,
-                ));
-            });
-            drop(output);
-        }
+            ]),
+        );
 
         assert_eq!(actions, [SystemWindowAction::Close(id)]);
-        assert!(state.contains_window(id));
-        assert!(!state.band_rename_open());
-        let closed = manager.apply(WindowCommand::Close(id)).unwrap();
+        assert!(fixture.state.contains_window(id));
+        assert!(!fixture.state.band_rename_open());
+        let closed = fixture.manager.apply(WindowCommand::Close(id)).unwrap();
         let WindowTransition::Closed { closed, .. } = closed.transition else {
             panic!("expected exact System close receipt");
         };
-        state.remove_content(&closed);
-        assert!(!state.contains_window(id));
+        fixture.state.remove_content(&closed);
+        assert!(!fixture.state.contains_window(id));
     }
 
     #[test]
@@ -4330,28 +4440,8 @@ mod tests {
                 egui::PointerButton::Secondary,
             ),
         ] {
-            let (mut world, systems) = fixture_world(1);
-            let system = systems[0];
-            world.systems[system].control = ControlKind::Controlled(cockpit_faction(faction));
-            let layout = layout(faction, 2.0);
-            let mut manager = WindowManager::new();
-            let mut state = SystemWindowState::default();
-            let prepared = state
-                .prepare_open(&world, system, ORIGIN, faction, layout)
-                .unwrap();
-            let (id, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
-            manager.apply(WindowCommand::Activate(id)).unwrap();
-            assert!(state.begin_band_rename(system, ProductionArea::Shipyard, "Death Star 1"));
+            let (world, system, mut fixture, id) = managed_rename_fixture(faction);
             assert_ne!(BAND_AREAS[1], ProductionArea::Shipyard);
-
-            let ctx = egui::Context::default();
-            let mut router = FrameInputRouter::default();
-            let mut cache = BmpCache::new();
-            let movement = rebellion_core::movement::MovementState::default();
-            let fog = FogState::new(cockpit_faction(faction));
-            let missions = MissionState::new();
-            let manufacturing = ManufacturingState::new();
-            let deliveries = DeliveryState::new();
             let mut actions = Vec::new();
 
             let (bx, by, bw, bh) = BAND_RECTS[1];
@@ -4367,13 +4457,16 @@ mod tests {
             let press_frame = frames.len();
             for (index, events) in frames.into_iter().enumerate() {
                 let frame = u64::try_from(index + 1).unwrap();
-                let snapshot = manager.begin_frame();
-                router.begin_frame(frame, &snapshot);
+                let snapshot = fixture.begin_frame(frame);
                 let routed = if index + 1 == press_frame {
                     let press = InputEventId { frame, ordinal: 0 };
                     let phase = PointerPhase::Press(button);
                     assert_eq!(
-                        router.collect_pointer(press, &std::collections::BTreeSet::from([id]), phase),
+                        fixture.router.collect_pointer(
+                            press,
+                            &std::collections::BTreeSet::from([id]),
+                            phase,
+                        ),
                         InputRecipient::Window(id)
                     );
                     vec![SystemWindowInputEvent {
@@ -4384,34 +4477,7 @@ mod tests {
                 } else {
                     Vec::new()
                 };
-                let input = egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(1400.0, 1000.0),
-                    )),
-                    events,
-                    ..egui::RawInput::default()
-                };
-                let _ = ctx.run(input, |ctx| {
-                    actions.extend(draw_managed_system_windows(
-                        ctx,
-                        &world,
-                        &movement,
-                        &fog,
-                        &missions,
-                        &manufacturing,
-                        &deliveries,
-                        &mut state,
-                        faction,
-                        layout,
-                        &mut cache,
-                        &snapshot,
-                        &routed,
-                        &mut router,
-                        true,
-                        &|_| true,
-                    ));
-                });
+                actions.extend(fixture.draw_started_frame(&world, &snapshot, events, &routed));
             }
 
             assert!(
@@ -4422,9 +4488,9 @@ mod tests {
                 }),
                 "the press ends the edit for {faction:?}: {actions:?}"
             );
-            assert!(!state.band_rename_open(), "{faction:?}");
+            assert!(!fixture.state.band_rename_open(), "{faction:?}");
             assert_eq!(
-                state.selection(system).and_then(|(_, band)| band),
+                fixture.state.selection(system).and_then(|(_, band)| band),
                 Some(BAND_AREAS[1]),
                 "FUN_004534f0 selects the pressed band with the same press for {faction:?}"
             );
@@ -4437,26 +4503,26 @@ mod tests {
         // FUN_00458b50): the app routes that window's Escape to it, and only
         // that window's.
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
-            let (mut world, systems) = fixture_world(2);
-            for system in &systems {
-                world.systems[*system].control =
-                    ControlKind::Controlled(cockpit_faction(faction));
-            }
-            let layout = layout(faction, 2.0);
-            let mut manager = WindowManager::new();
-            let mut state = SystemWindowState::default();
-            let prepared = state
-                .prepare_open(&world, systems[0], ORIGIN, faction, layout)
-                .unwrap();
-            let (first, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
-            let prepared = state
-                .prepare_open(&world, systems[1], (ORIGIN.0 + 200, ORIGIN.1), faction, layout)
-                .unwrap();
-            let (second, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
-            assert_eq!(state.band_rename_window(), None, "{faction:?}");
-            assert!(state.begin_band_rename(systems[1], ProductionArea::Shipyard, "Death Star 1"));
-            assert_eq!(state.band_rename_window(), Some(second), "{faction:?}");
-            assert_ne!(state.band_rename_window(), Some(first), "{faction:?}");
+            let (world, systems) = controlled_fixture_world(2, faction);
+            let mut fixture = ManagedSystemFixture::new(faction);
+            let first = fixture.open(&world, systems[0], ORIGIN);
+            let second = fixture.open(&world, systems[1], (ORIGIN.0 + 200, ORIGIN.1));
+            assert_eq!(fixture.state.band_rename_window(), None, "{faction:?}");
+            assert!(fixture.state.begin_band_rename(
+                systems[1],
+                ProductionArea::Shipyard,
+                "Death Star 1",
+            ));
+            assert_eq!(
+                fixture.state.band_rename_window(),
+                Some(second),
+                "{faction:?}"
+            );
+            assert_ne!(
+                fixture.state.band_rename_window(),
+                Some(first),
+                "{faction:?}"
+            );
         }
     }
 
@@ -4467,33 +4533,10 @@ mod tests {
         // holds the keyboard focus (gid-legend.md, "Escape and the keyboard
         // focus"). A click on another window moves the focus there first.
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
-            let (mut world, systems) = fixture_world(2);
-            for system in &systems {
-                world.systems[*system].control =
-                    ControlKind::Controlled(cockpit_faction(faction));
-            }
-            let layout = layout(faction, 2.0);
-            let mut manager = WindowManager::new();
-            let mut state = SystemWindowState::default();
-            let prepared = state
-                .prepare_open(&world, systems[0], ORIGIN, faction, layout)
-                .unwrap();
-            let (renaming, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
-            let prepared = state
-                .prepare_open(&world, systems[1], (ORIGIN.0 + 200, ORIGIN.1), faction, layout)
-                .unwrap();
-            let (other, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
-            manager.apply(WindowCommand::Activate(renaming)).unwrap();
-            assert!(state.begin_band_rename(systems[0], ProductionArea::Shipyard, "Death Star 1"));
-
-            let ctx = egui::Context::default();
-            let mut router = FrameInputRouter::default();
-            let mut cache = BmpCache::new();
-            let movement = rebellion_core::movement::MovementState::default();
-            let fog = FogState::new(cockpit_faction(faction));
-            let missions = MissionState::new();
-            let manufacturing = ManufacturingState::new();
-            let deliveries = DeliveryState::new();
+            let (world, systems) = controlled_fixture_world(2, faction);
+            let mut fixture = ManagedSystemFixture::new(faction);
+            let renaming = fixture.open_active_rename(&world, systems[0]);
+            let other = fixture.open(&world, systems[1], (ORIGIN.0 + 200, ORIGIN.1));
             let mut actions = Vec::new();
             let frames = after_opening(vec![
                 vec![egui::Event::Text("Tarkin".into())],
@@ -4502,46 +4545,20 @@ mod tests {
             let escape_frame = frames.len();
             for (index, events) in frames.into_iter().enumerate() {
                 if index + 1 == escape_frame {
-                    manager.apply(WindowCommand::Activate(other)).unwrap();
+                    fixture
+                        .manager
+                        .apply(WindowCommand::Activate(other))
+                        .unwrap();
                 }
                 let frame = u64::try_from(index + 1).unwrap();
-                let snapshot = manager.begin_frame();
-                router.begin_frame(frame, &snapshot);
-                let input = egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(1400.0, 1000.0),
-                    )),
-                    events,
-                    ..egui::RawInput::default()
-                };
-                let _ = ctx.run(input, |ctx| {
-                    actions.extend(draw_managed_system_windows(
-                        ctx,
-                        &world,
-                        &movement,
-                        &fog,
-                        &missions,
-                        &manufacturing,
-                        &deliveries,
-                        &mut state,
-                        faction,
-                        layout,
-                        &mut cache,
-                        &snapshot,
-                        &[],
-                        &mut router,
-                        true,
-                        &|_| true,
-                    ));
-                });
+                actions.extend(fixture.draw_frame(&world, frame, events, &[]));
             }
 
             assert!(
                 !actions.contains(&SystemWindowAction::Close(renaming)),
                 "an unfocused window's rename closed it on Escape for {faction:?}: {actions:?}"
             );
-            assert!(state.contains_window(renaming), "{faction:?}");
+            assert!(fixture.state.contains_window(renaming), "{faction:?}");
         }
     }
 
@@ -4555,64 +4572,11 @@ mod tests {
             (CockpitFaction::Alliance, PointerButtonId::Primary),
             (CockpitFaction::Empire, PointerButtonId::Secondary),
         ] {
-            let (mut world, systems) = fixture_world(1);
-            let system = systems[0];
-            world.systems[system].control = ControlKind::Controlled(cockpit_faction(faction));
-            let layout = layout(faction, 2.0);
-            let mut manager = WindowManager::new();
-            let mut state = SystemWindowState::default();
-            let prepared = state
-                .prepare_open(&world, system, ORIGIN, faction, layout)
-                .unwrap();
-            let (id, _) = commit_prepared_system_window(&mut manager, &mut state, prepared);
-            manager.apply(WindowCommand::Activate(id)).unwrap();
-            assert!(state.begin_band_rename(system, ProductionArea::Shipyard, "Death Star 1"));
-
-            let ctx = egui::Context::default();
-            let mut router = FrameInputRouter::default();
-            let mut cache = BmpCache::new();
-            let movement = rebellion_core::movement::MovementState::default();
-            let fog = FogState::new(cockpit_faction(faction));
-            let missions = MissionState::new();
-            let manufacturing = ManufacturingState::new();
-            let deliveries = DeliveryState::new();
-            let mut actions = Vec::new();
-            for (index, events) in after_opening(vec![vec![egui::Event::Text("Tarkin".into())]])
-                .into_iter()
-                .enumerate()
-            {
-                let frame = u64::try_from(index + 1).unwrap();
-                let snapshot = manager.begin_frame();
-                router.begin_frame(frame, &snapshot);
-                let input = egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(1400.0, 1000.0),
-                    )),
-                    events,
-                    ..egui::RawInput::default()
-                };
-                let _ = ctx.run(input, |ctx| {
-                    actions.extend(draw_managed_system_windows(
-                        ctx,
-                        &world,
-                        &movement,
-                        &fog,
-                        &missions,
-                        &manufacturing,
-                        &deliveries,
-                        &mut state,
-                        faction,
-                        layout,
-                        &mut cache,
-                        &snapshot,
-                        &[],
-                        &mut router,
-                        true,
-                        &|_| true,
-                    ));
-                });
-            }
+            let (world, system, mut fixture, id) = managed_rename_fixture(faction);
+            let mut actions = fixture.draw_frames(
+                &world,
+                after_opening(vec![vec![egui::Event::Text("Tarkin".into())]]),
+            );
 
             let point = at(20.0, 100.0);
             let raw_button = match button {
@@ -4626,8 +4590,7 @@ mod tests {
                 pressed,
                 modifiers: egui::Modifiers::default(),
             };
-            let snapshot = manager.begin_frame();
-            router.begin_frame(4, &snapshot);
+            let snapshot = fixture.begin_frame(4);
             let input = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -4640,37 +4603,21 @@ mod tests {
                 ],
                 ..egui::RawInput::default()
             };
-            let _ = ctx.run(input, |ctx| {
-                actions.extend(draw_managed_system_windows(
-                    ctx,
-                    &world,
-                    &movement,
-                    &fog,
-                    &missions,
-                    &manufacturing,
-                    &deliveries,
-                    &mut state,
-                    faction,
-                    layout,
-                    &mut cache,
-                    &snapshot,
-                    &[],
-                    &mut router,
-                    true,
-                    &|_| true,
-                ));
-            });
+            actions.extend(fixture.draw_started_input(&world, &snapshot, input, &[]));
             assert!(actions.is_empty(), "an unrouted raw press must not publish");
-            assert!(state.band_rename_open());
-            assert!(state.contains_window(id));
+            assert!(fixture.state.band_rename_open());
+            assert!(fixture.state.contains_window(id));
 
             let frame = 5;
             let press = InputEventId { frame, ordinal: 0 };
             let phase = PointerPhase::Press(button);
-            let snapshot = manager.begin_frame();
-            router.begin_frame(frame, &snapshot);
+            let snapshot = fixture.begin_frame(frame);
             assert_eq!(
-                router.collect_pointer(press, &std::collections::BTreeSet::from([id]), phase,),
+                fixture.router.collect_pointer(
+                    press,
+                    &std::collections::BTreeSet::from([id]),
+                    phase,
+                ),
                 InputRecipient::Window(id)
             );
             let input = egui::RawInput {
@@ -4680,30 +4627,16 @@ mod tests {
                 )),
                 ..egui::RawInput::default()
             };
-            let _ = ctx.run(input, |ctx| {
-                actions.extend(draw_managed_system_windows(
-                    ctx,
-                    &world,
-                    &movement,
-                    &fog,
-                    &missions,
-                    &manufacturing,
-                    &deliveries,
-                    &mut state,
-                    faction,
-                    layout,
-                    &mut cache,
-                    &snapshot,
-                    &[SystemWindowInputEvent {
+            actions.extend(fixture.draw_started_input(
+                &world,
+                &snapshot,
+                input,
+                &[SystemWindowInputEvent {
                         id: press,
                         point: (point.x, point.y),
                         phase,
                     }],
-                    &mut router,
-                    true,
-                    &|_| true,
-                ));
-            });
+            ));
 
             assert_eq!(
                 actions,
@@ -4713,11 +4646,11 @@ mod tests {
                     name: "Tarkin".into(),
                 }]
             );
-            assert!(state.contains_window(id));
-            assert!(!state.band_rename_open());
-            assert!(manager.begin_frame().key(id).is_some());
+            assert!(fixture.state.contains_window(id));
+            assert!(!fixture.state.band_rename_open());
+            assert!(fixture.manager.begin_frame().key(id).is_some());
             assert!(
-                !router.claim(press, InputRecipient::Window(id)),
+                !fixture.router.claim(press, InputRecipient::Window(id)),
                 "the rename owner must consume the exact admitted press"
             );
         }
@@ -5363,19 +5296,8 @@ mod tests {
     fn a_building_band_shows_its_product_and_units() {
         // FUN_00457c90: the product's name, portrait at (40, 15) and units
         // at (5, 47).
-        let (mut world, systems) = fixture_world(1);
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1400_0040),
-            name: "Corellian Corvette".into(),
-            ..CapitalShipClass::default()
-        });
-        let mut manufacturing = ManufacturingState::new();
-        manufacturing.build(
-            systems[0],
-            &QueueItem::new(BuildableKind::CapitalShip(class), 10),
-            2,
-        );
-        let mut state = opened(&world, systems[0]);
+        let (world, system, manufacturing) = capital_ship_build("Corellian Corvette", 2);
+        let mut state = opened(&world, system);
         let run = run_with(&world, &manufacturing, &mut state, hover(at(150.0, 10.0)));
         assert_eq!(text(&run, "Corellian Corvette").1, at(60.0, 73.0));
         assert_eq!(text(&run, "Building: 2").1, at(60.0, 104.0));
@@ -5414,19 +5336,8 @@ mod tests {
         let mut cache = BmpCache::new();
         cache.set_base_path(&root);
 
-        let (mut world, systems) = fixture_world(1);
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1400_0040),
-            name: "Corellian Corvette".into(),
-            ..CapitalShipClass::default()
-        });
-        let mut manufacturing = ManufacturingState::new();
-        manufacturing.build(
-            systems[0],
-            &QueueItem::new(BuildableKind::CapitalShip(class), 10),
-            2,
-        );
-        let mut state = opened(&world, systems[0]);
+        let (world, system, manufacturing) = capital_ship_build("Corellian Corvette", 2);
+        let mut state = opened(&world, system);
         let run = run_cached(
             &world,
             &manufacturing,
@@ -5631,8 +5542,7 @@ mod tests {
         let (world, systems) = fixture_world(1);
         let manufacturing = ManufacturingState::new();
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
-            let mut state = SystemWindowState::default();
-            assert!(state.open(&world, systems[0], ORIGIN, faction, layout(faction, 2.0)));
+            let mut state = opened_as(&world, systems[0], faction);
             // The Empire's galaxy view starts further right, so the window
             // opens clamped into it.
             let (x, y) = state.windows[0].logical_position;
@@ -5661,8 +5571,7 @@ mod tests {
         faction: CockpitFaction,
     ) -> bool {
         let manufacturing = ManufacturingState::new();
-        let mut state = SystemWindowState::default();
-        assert!(state.open(world, system, ORIGIN, faction, layout(faction, 2.0)));
+        let mut state = opened_as(world, system, faction);
         state.select_tab(system, tab);
         let (x, y) = state.windows[0].logical_position;
         let point = |dx: f32, dy: f32| {
@@ -5721,8 +5630,7 @@ mod tests {
         let (world, systems) = fixture_world(1);
         let manufacturing = ManufacturingState::new();
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
-            let mut state = SystemWindowState::default();
-            assert!(state.open(&world, systems[0], ORIGIN, faction, layout(faction, 2.0)));
+            let mut state = opened_as(&world, systems[0], faction);
             let _ = run_as(
                 &world,
                 &manufacturing,
@@ -5781,20 +5689,9 @@ mod tests {
     fn the_other_sides_production_shows_only_where_its_contents_show() {
         // hyp: as the Defenses window's pages, the other side's facilities
         // and production show only where the player sees its objects.
-        let (mut world, systems) = fixture_world(1);
-        world.systems[systems[0]].control = ControlKind::Controlled(Faction::Empire);
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1400_0040),
-            name: "Star Destroyer".into(),
-            ..CapitalShipClass::default()
-        });
-        let mut manufacturing = ManufacturingState::new();
-        manufacturing.build(
-            systems[0],
-            &QueueItem::new(BuildableKind::CapitalShip(class), 10),
-            1,
-        );
-        let mut state = opened(&world, systems[0]);
+        let (mut world, system, manufacturing) = capital_ship_build("Star Destroyer", 1);
+        world.systems[system].control = ControlKind::Controlled(Faction::Empire);
+        let mut state = opened(&world, system);
         let run = run_with(&world, &manufacturing, &mut state, hover(at(150.0, 10.0)));
         assert!(run
             .texts
@@ -5892,11 +5789,7 @@ mod tests {
         let (world, systems) = fixture_world(2);
         let layout = layout(CockpitFaction::Alliance, 2.0);
         let mut state = SystemWindowState::default();
-        let fleets = fleet_window_ids(&[201, 202]);
-        let [fleet0, fleet1] = fleets.as_slice() else {
-            panic!()
-        };
-        let (fleet0, fleet1) = (*fleet0, *fleet1);
+        let (fleet0, fleet1) = fleet_window_pair([201, 202]);
         state.minimize_fleet_window(fleet0, systems[0], (100, 80));
         state.minimize_fleet_window(fleet0, systems[0], (100, 80));
         assert_eq!(state.rail_count(), 1);
@@ -5942,11 +5835,7 @@ mod tests {
         let (_, systems) = fixture_world(2);
         let mut state = SystemWindowState::default();
         let _ = state.minimize_defenses_window(systems[0], (90, 70));
-        let fleets = fleet_window_ids(&[301, 302]);
-        let [fleet0, fleet1] = fleets.as_slice() else {
-            panic!()
-        };
-        let (fleet0, fleet1) = (*fleet0, *fleet1);
+        let (fleet0, fleet1) = fleet_window_pair([301, 302]);
         state.minimize_fleet_window(fleet0, systems[0], (100, 80));
         state.minimize_fleet_window(fleet1, systems[1], (120, 90));
 

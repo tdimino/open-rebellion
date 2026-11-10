@@ -452,6 +452,19 @@ fn window_button_name(command_id: u16) -> String {
     }
 }
 
+fn message_index_area(id: &'static str, origin: egui::Pos2) -> egui::Area {
+    egui::Area::new(egui::Id::new(id))
+        .fixed_pos(origin)
+        .order(egui::Order::Tooltip)
+}
+
+fn message_index_window_rect(origin: egui::Pos2, scale: f32) -> egui::Rect {
+    egui::Rect::from_min_size(
+        origin,
+        egui::vec2(MESSAGE_INDEX_WIDTH * scale, MESSAGE_INDEX_HEIGHT * scale),
+    )
+}
+
 /// Paint the window's buttons and return the one clicked.
 fn draw_window_buttons(
     ctx: &egui::Context,
@@ -463,14 +476,9 @@ fn draw_window_buttons(
     look: RailLook,
 ) -> Option<u16> {
     let mut clicked = None;
-    egui::Area::new(egui::Id::new("original-message-index-buttons"))
-        .fixed_pos(origin)
-        .order(egui::Order::Tooltip)
+    message_index_area("original-message-index-buttons", origin)
         .show(ctx, |ui| {
-            let window_rect = egui::Rect::from_min_size(
-                origin,
-                egui::vec2(MESSAGE_INDEX_WIDTH * scale, MESSAGE_INDEX_HEIGHT * scale),
-            );
+            let window_rect = message_index_window_rect(origin, scale);
             let (pointer, primary_down) = ctx.input(|input| {
                 (
                     input.pointer.interact_pos(),
@@ -1747,14 +1755,9 @@ fn draw_single_message(
         });
 
     let mut clicked = None;
-    egui::Area::new(egui::Id::new("message-index-single-text"))
-        .fixed_pos(origin)
-        .order(egui::Order::Tooltip)
+    message_index_area("message-index-single-text", origin)
         .show(ctx, |ui| {
-            let window_rect = egui::Rect::from_min_size(
-                origin,
-                egui::vec2(MESSAGE_INDEX_WIDTH * scale, MESSAGE_INDEX_HEIGHT * scale),
-            );
+            let window_rect = message_index_window_rect(origin, scale);
             let at = |x: f32, y: f32, width: f32, height: f32| {
                 message_index_rect(window_rect, scale, x, y, width, height)
             };
@@ -2070,6 +2073,19 @@ mod tests {
         id
     }
 
+    fn managed_index() -> (
+        WindowManager,
+        MessageIndexState,
+        rebellion_windowing::WindowId,
+        rebellion_windowing::RoutingSnapshot,
+    ) {
+        let mut manager = WindowManager::new();
+        let mut state = MessageIndexState::new();
+        let id = open_managed_message_index(&mut manager, &mut state, 0x79);
+        let frame = manager.begin_frame();
+        (manager, state, id, frame)
+    }
+
     fn managed_layout() -> CockpitLayout {
         CockpitLayout {
             canvas: crate::cockpit::CockpitViewport {
@@ -2159,10 +2175,7 @@ mod tests {
 
     #[test]
     fn message_index_windowing_blocks_underlay() {
-        let mut manager = WindowManager::new();
-        let mut state = MessageIndexState::new();
-        let id = open_managed_message_index(&mut manager, &mut state, 0x79);
-        let frame = manager.begin_frame();
+        let (_manager, state, id, frame) = managed_index();
         let inside = window_rect(managed_layout()).center();
         let hits = state
             .hit_window(&frame, managed_layout(), (inside.x, inside.y))
@@ -2305,10 +2318,7 @@ mod tests {
 
     #[test]
     fn message_index_outside_press_does_not_select_map_system() {
-        let mut manager = WindowManager::new();
-        let mut state = MessageIndexState::new();
-        let id = open_managed_message_index(&mut manager, &mut state, 0x79);
-        let frame = manager.begin_frame();
+        let (_manager, _state, id, frame) = managed_index();
         let event = InputEventId {
             frame: 9,
             ordinal: 0,
@@ -2706,12 +2716,39 @@ mod tests {
         filtered_messages(log, 0x79, true)
     }
 
+    fn selection_state(log: &MessageLog) -> (Vec<&GameMessage>, MessageIndexState) {
+        (make_rows(log), MessageIndexState::new())
+    }
+
+    fn state_with_selected<'a>(
+        log: &'a MessageLog,
+        indices: &[usize],
+    ) -> (Vec<&'a GameMessage>, MessageIndexState) {
+        let (rows, mut state) = selection_state(log);
+        for (position, &index) in indices.iter().enumerate() {
+            let modifiers = if position == 0 {
+                egui::Modifiers::NONE
+            } else {
+                modifiers(true, false)
+            };
+            apply_click(&mut state, index, &rows, modifiers);
+        }
+        (rows, state)
+    }
+
+    fn modifiers(command: bool, shift: bool) -> egui::Modifiers {
+        egui::Modifiers {
+            command,
+            shift,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn click_selects_one_row_clearing_others() {
         // Manual p. 43: "a click selects one message."
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
+        let (rows, mut state) = selection_state(&log);
 
         apply_click(&mut state, 0, &rows, egui::Modifiers::NONE);
         assert_eq!(state.selected, BTreeSet::from([rows[0].id]));
@@ -2724,15 +2761,8 @@ mod tests {
     fn ctrl_click_toggles_an_individual_message() {
         // Manual p. 43: "Ctrl-click toggles an individual message."
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
-        let ctrl = egui::Modifiers {
-            command: true,
-            ..Default::default()
-        };
-
-        apply_click(&mut state, 0, &rows, egui::Modifiers::NONE);
-        apply_click(&mut state, 1, &rows, ctrl);
+        let (rows, mut state) = state_with_selected(&log, &[0, 1]);
+        let ctrl = modifiers(true, false);
 
         assert_eq!(state.selected, BTreeSet::from([rows[0].id, rows[1].id]));
 
@@ -2745,12 +2775,8 @@ mod tests {
     fn shift_click_selects_a_contiguous_range_from_the_anchor() {
         // Manual p. 43: "Shift-click selects a contiguous range."
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
-        let shift = egui::Modifiers {
-            shift: true,
-            ..Default::default()
-        };
+        let (rows, mut state) = selection_state(&log);
+        let shift = modifiers(false, true);
 
         // Anchor at row 0.
         apply_click(&mut state, 0, &rows, egui::Modifiers::NONE);
@@ -2769,12 +2795,8 @@ mod tests {
     fn shift_click_range_works_backwards() {
         // Manual p. 43: range is contiguous, direction doesn't matter.
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
-        let shift = egui::Modifiers {
-            shift: true,
-            ..Default::default()
-        };
+        let (rows, mut state) = selection_state(&log);
+        let shift = modifiers(false, true);
 
         apply_click(&mut state, 2, &rows, egui::Modifiers::NONE);
         apply_click(&mut state, 0, &rows, shift);
@@ -2788,12 +2810,8 @@ mod tests {
     #[test]
     fn shift_click_without_anchor_acts_as_normal_click() {
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
-        let shift = egui::Modifiers {
-            shift: true,
-            ..Default::default()
-        };
+        let (rows, mut state) = selection_state(&log);
+        let shift = modifiers(false, true);
 
         apply_click(&mut state, 1, &rows, shift);
 
@@ -2808,15 +2826,7 @@ mod tests {
         // FUN_005f54a0: delete a single message by key, iterated over
         // the selection.
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
-        let ctrl = egui::Modifiers {
-            command: true,
-            ..Default::default()
-        };
-
-        apply_click(&mut state, 0, &rows, egui::Modifiers::NONE);
-        apply_click(&mut state, 2, &rows, ctrl);
+        let (_rows, mut state) = state_with_selected(&log, &[0, 2]);
 
         let action = state.delete_selected();
 
@@ -3050,6 +3060,18 @@ mod tests {
         actions: Vec<MessageIndexAction>,
     }
 
+    fn assert_message_displayed(
+        result: &DriveResult,
+        state: &MessageIndexState,
+        id: MessageId,
+    ) {
+        assert_eq!(state.mode, IndexMode::SingleMessage);
+        assert_eq!(state.viewing, Some(id));
+        assert!(result
+            .actions
+            .contains(&MessageIndexAction::MessageDisplayed(id)));
+    }
+
     /// Run two idle frames, then one frame per entry in `frames` with the
     /// given events, returning the collected actions.
     fn drive(
@@ -3122,42 +3144,33 @@ mod tests {
         }
     }
 
-    fn click_at(pos: egui::Pos2) -> Vec<(egui::Pos2, Vec<egui::Event>)> {
+    fn click_with(
+        pos: egui::Pos2,
+        modifiers: egui::Modifiers,
+    ) -> Vec<(egui::Pos2, Vec<egui::Event>)> {
         vec![
-            (pos, vec![press(pos, true)]),
-            (pos, vec![press(pos, false)]),
+            (pos, vec![press_with(pos, true, modifiers)]),
+            (pos, vec![press_with(pos, false, modifiers)]),
         ]
+    }
+
+    fn click_at(pos: egui::Pos2) -> Vec<(egui::Pos2, Vec<egui::Event>)> {
+        click_with(pos, egui::Modifiers::NONE)
     }
 
     fn ctrl_click_at(pos: egui::Pos2) -> Vec<(egui::Pos2, Vec<egui::Event>)> {
-        let mods = egui::Modifiers {
-            command: true,
-            ..Default::default()
-        };
-        vec![
-            (pos, vec![press_with(pos, true, mods)]),
-            (pos, vec![press_with(pos, false, mods)]),
-        ]
+        click_with(pos, modifiers(true, false))
     }
 
     fn shift_click_at(pos: egui::Pos2) -> Vec<(egui::Pos2, Vec<egui::Event>)> {
-        let mods = egui::Modifiers {
-            shift: true,
-            ..Default::default()
-        };
-        vec![
-            (pos, vec![press_with(pos, true, mods)]),
-            (pos, vec![press_with(pos, false, mods)]),
-        ]
+        click_with(pos, modifiers(false, true))
     }
 
     #[test]
     fn egui_click_selects_one_row() {
         // Manual p. 43: a click selects one message.
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
-        state.set_category(0x79);
+        let (rows, mut state) = selection_state(&log);
 
         drive(&log, &mut state, click_at(row_center(1)));
 
@@ -3168,9 +3181,7 @@ mod tests {
     fn egui_ctrl_click_toggles_selection() {
         // Manual p. 43: Ctrl-click toggles an individual message.
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
-        state.set_category(0x79);
+        let (rows, mut state) = selection_state(&log);
 
         let mut frames = click_at(row_center(0));
         frames.extend(ctrl_click_at(row_center(2)));
@@ -3183,9 +3194,7 @@ mod tests {
     fn egui_shift_click_selects_contiguous_range() {
         // Manual p. 43: Shift-click selects a contiguous range.
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
-        state.set_category(0x79);
+        let (rows, mut state) = selection_state(&log);
 
         let mut frames = click_at(row_center(0));
         frames.extend(shift_click_at(row_center(2)));
@@ -3202,9 +3211,7 @@ mod tests {
         // Manual p. 43: double-click opens (reads) the message.
         // FUN_00469de0: +0x38 = 10 (read font).
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
-        state.set_category(0x79);
+        let (rows, mut state) = selection_state(&log);
 
         let pos = row_center(1);
         let frames = vec![
@@ -3215,19 +3222,13 @@ mod tests {
         ];
         let result = drive(&log, &mut state, frames);
 
-        assert_eq!(state.mode, IndexMode::SingleMessage);
-        assert_eq!(state.viewing, Some(rows[1].id));
-        assert!(result
-            .actions
-            .contains(&MessageIndexAction::MessageDisplayed(rows[1].id)));
+        assert_message_displayed(&result, &state, rows[1].id);
     }
 
     #[test]
     fn egui_batched_double_click_switches_to_mode_2_and_marks_read() {
         let log = test_log();
-        let rows = make_rows(&log);
-        let mut state = MessageIndexState::new();
-        state.set_category(0x79);
+        let (rows, mut state) = selection_state(&log);
 
         let pos = row_center(1);
         let result = drive(
@@ -3244,11 +3245,7 @@ mod tests {
             )],
         );
 
-        assert_eq!(state.mode, IndexMode::SingleMessage);
-        assert_eq!(state.viewing, Some(rows[1].id));
-        assert!(result
-            .actions
-            .contains(&MessageIndexAction::MessageDisplayed(rows[1].id)));
+        assert_message_displayed(&result, &state, rows[1].id);
     }
 
     #[test]

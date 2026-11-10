@@ -467,6 +467,15 @@ fn parse_embark(tail: &str) -> Result<DevCommand, String> {
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn valid_capture_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && !name.starts_with('.')
+}
+
 /// The `DevCommand` a line names, `Ok(None)` when it names none (try the
 /// palette), or `Err` when it names one with bad arguments.
 #[cfg(not(target_arch = "wasm32"))]
@@ -479,12 +488,7 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     }
     if lower.starts_with("capture:") {
         let name = rest("capture:");
-        if name.is_empty()
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-            || name.starts_with('.')
-        {
+        if !valid_capture_name(name) {
             return Err(format!("capture name {name:?}: use letters, digits, - _ ."));
         }
         return Ok(Some(DevCommand::Capture(Some(name.to_owned()))));
@@ -840,12 +844,7 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     }
     if lower.starts_with("save:") || lower.starts_with("load:") {
         let name = rest("save:");
-        if name.is_empty()
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-            || name.starts_with('.')
-        {
+        if !valid_capture_name(name) {
             return Err(format!("save name {name:?}: use letters, digits, - _ ."));
         }
         let name = name.to_owned();

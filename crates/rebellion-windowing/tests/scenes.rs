@@ -63,6 +63,35 @@ fn target(window: WindowId) -> RouteTarget {
     RouteTarget::Window(focus(window))
 }
 
+fn owned_fleet_detail(owner: WindowId) -> WindowSpec {
+    let mut spec = detail(2);
+    spec.key = WindowKey::contextual(WindowKind::Fleet, SubjectId::new(2, 2));
+    spec.owner = WindowOwner::Window(owner);
+    spec
+}
+
+fn transient_fleet_detail(owner: WindowId) -> WindowSpec {
+    let mut spec = owned_fleet_detail(owner);
+    spec.policy.band = StackBand::Transient;
+    spec.policy.placement = OpenPlacement::AboveOwner;
+    spec
+}
+
+fn activate_and_assert(manager: &mut WindowManager, windows: &[WindowId]) {
+    manager
+        .set_active_windows(&windows.iter().copied().collect())
+        .unwrap();
+    assert_eq!(manager.begin_frame().paint_order(), windows);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+fn transient_scene(manager: &mut WindowManager) -> (WindowId, WindowId, WindowId) {
+    let owner = open(manager, detail(1));
+    let menu = open(manager, menu(owner));
+    let child = open(manager, transient_fleet_detail(menu));
+    (owner, menu, child)
+}
+
 #[test]
 fn scene_membership_changes_apply_and_snapshot_together() {
     // Port: explicit ID sets select scenes; retained records never imply active input.
@@ -371,11 +400,7 @@ fn active_modal_can_open_while_another_scenes_menu_is_dormant() {
         RouteTarget::BlockedBy(modal)
     );
     assert_eq!(manager.validate(), Ok(()));
-    manager
-        .set_active_windows(&BTreeSet::from([owner, dormant_menu]))
-        .unwrap();
-    assert_eq!(manager.begin_frame().paint_order(), &[owner, dormant_menu]);
-    assert_eq!(manager.validate(), Ok(()));
+    activate_and_assert(&mut manager, &[owner, dormant_menu]);
 }
 
 #[test]
@@ -401,11 +426,7 @@ fn reopening_an_owner_keeps_its_dormant_menu_in_the_transient_band() {
         assert_eq!(manager.visible_order().last(), Some(&dormant_menu));
         assert!(!manager.begin_frame().is_visible(dormant_menu));
         assert_eq!(manager.begin_frame().keyboard_route().target, target(modal));
-        manager
-            .set_active_windows(&BTreeSet::from([owner, dormant_menu]))
-            .unwrap();
-        assert_eq!(manager.begin_frame().paint_order(), &[owner, dormant_menu]);
-        assert_eq!(manager.validate(), Ok(()));
+        activate_and_assert(&mut manager, &[owner, dormant_menu]);
     }
 }
 
@@ -415,9 +436,7 @@ fn owner_reopen_rejects_an_incompatible_active_child_reorder_atomically() {
     let mut manager = WindowManager::new();
     let owner_spec = detail(1);
     let owner = open(&mut manager, owner_spec);
-    let mut child_spec = detail(2);
-    child_spec.key = WindowKey::contextual(WindowKind::Fleet, SubjectId::new(2, 2));
-    child_spec.owner = WindowOwner::Window(owner);
+    let child_spec = owned_fleet_detail(owner);
     let child = open(&mut manager, child_spec);
     let modal = open(&mut manager, modal());
     manager
@@ -441,14 +460,7 @@ fn modal_open_and_replace_reject_an_unrelated_active_transient_atomically() {
     // Break caught: an unrelated transient subtree is mistaken for modal ancestry.
     for replacing in [false, true] {
         let mut manager = WindowManager::new();
-        let owner = open(&mut manager, detail(1));
-        let menu = open(&mut manager, menu(owner));
-        let mut child_spec = detail(2);
-        child_spec.key = WindowKey::contextual(WindowKind::Fleet, SubjectId::new(2, 2));
-        child_spec.owner = WindowOwner::Window(menu);
-        child_spec.policy.band = StackBand::Transient;
-        child_spec.policy.placement = OpenPlacement::AboveOwner;
-        let child = open(&mut manager, child_spec);
+        let (owner, menu, child) = transient_scene(&mut manager);
         let old = open(&mut manager, detail(3));
         manager
             .set_active_windows(&BTreeSet::from([owner, menu, child]))
@@ -477,14 +489,7 @@ fn modal_open_and_replace_reject_an_unrelated_active_transient_atomically() {
 fn scene_update_rejects_active_children_that_only_borrow_dormant_owner_order() {
     // Break caught: owner position above a modal substitutes for actual modal ancestry.
     let mut manager = WindowManager::new();
-    let owner = open(&mut manager, detail(1));
-    let menu = open(&mut manager, menu(owner));
-    let mut child_spec = detail(2);
-    child_spec.key = WindowKey::contextual(WindowKind::Fleet, SubjectId::new(2, 2));
-    child_spec.owner = WindowOwner::Window(menu);
-    child_spec.policy.band = StackBand::Transient;
-    child_spec.policy.placement = OpenPlacement::AboveOwner;
-    let child = open(&mut manager, child_spec);
+    let (_, _, child) = transient_scene(&mut manager);
     manager.set_active_windows(&BTreeSet::new()).unwrap();
     let modal = open(&mut manager, modal());
     manager.apply(WindowCommand::CapturePointer(modal)).unwrap();
@@ -581,9 +586,7 @@ fn owner_reopen_with_mixed_band_modals_rejects_temporary_child_clamp_inversion()
     let mut owner_spec = detail(1);
     owner_spec.policy.band = StackBand::Low;
     let owner = open(&mut manager, owner_spec);
-    let mut child_spec = detail(2);
-    child_spec.key = WindowKey::contextual(WindowKind::Fleet, SubjectId::new(2, 2));
-    child_spec.owner = WindowOwner::Window(owner);
+    let child_spec = owned_fleet_detail(owner);
     let child = open(&mut manager, child_spec);
     let mut normal_spec = modal();
     normal_spec.owner = WindowOwner::Window(owner);

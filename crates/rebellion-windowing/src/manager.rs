@@ -2085,19 +2085,43 @@ mod tests {
         }
     }
 
+    fn open_id(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
+        match manager
+            .apply(WindowCommand::Open(spec))
+            .expect("window opens")
+            .transition
+        {
+            WindowTransition::Opened { id } => id,
+            other => panic!("expected open, got {other:?}"),
+        }
+    }
+
+    fn focused_pair() -> (WindowManager, WindowId, WindowId) {
+        let mut manager = WindowManager::new();
+        let current = open_id(&mut manager, modeless_spec(WindowKind::System, 1));
+        let previous = open_id(&mut manager, modeless_spec(WindowKind::Fleet, 2));
+        manager
+            .apply(WindowCommand::Focus(crate::FocusTarget {
+                window: current,
+                control: None,
+            }))
+            .expect("first window regains focus");
+        assert_eq!(
+            manager.previous_eligible,
+            Some(crate::FocusTarget {
+                window: previous,
+                control: None,
+            })
+        );
+        (manager, current, previous)
+    }
+
     #[test]
     fn validate_reports_each_private_history_corruption() {
         // Port invariants: bounded, unique, registered hidden details, disjoint from order.
         for case in 0..6 {
             let mut manager = WindowManager::new();
-            let id = match manager
-                .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
-                .unwrap()
-                .transition
-            {
-                WindowTransition::Opened { id } => id,
-                other => panic!("expected open, got {other:?}"),
-            };
+            let id = open_id(&mut manager, modeless_spec(WindowKind::System, 1));
             manager.apply(WindowCommand::Minimize(id)).unwrap();
             let kind = match case {
                 0 => {
@@ -2211,14 +2235,7 @@ mod tests {
     #[test]
     fn validate_reports_unknown_private_active_membership() {
         let mut manager = WindowManager::new();
-        let id = match manager
-            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
-            .unwrap()
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected open, got {other:?}"),
-        };
+        let id = open_id(&mut manager, modeless_spec(WindowKind::System, 1));
         manager.registry.remove(&id);
         manager.key_index.clear();
         manager.visible_order.clear();
@@ -2235,36 +2252,7 @@ mod tests {
     fn close_clears_a_dead_global_previous_focus_candidate() {
         // Private-state assertion covers the contract that no dead focus reference
         // survives even when the current focus belongs to an unrelated window.
-        let mut manager = WindowManager::new();
-        let first = match manager
-            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
-            .expect("first window opens")
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected first open, got {other:?}"),
-        };
-        let previous = match manager
-            .apply(WindowCommand::Open(modeless_spec(WindowKind::Fleet, 2)))
-            .expect("second window opens")
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected second open, got {other:?}"),
-        };
-        manager
-            .apply(WindowCommand::Focus(crate::FocusTarget {
-                window: first,
-                control: None,
-            }))
-            .expect("first window regains focus");
-        assert_eq!(
-            manager.previous_eligible,
-            Some(crate::FocusTarget {
-                window: previous,
-                control: None,
-            })
-        );
+        let (mut manager, first, previous) = focused_pair();
 
         manager
             .apply(WindowCommand::Close(previous))
@@ -2279,36 +2267,7 @@ mod tests {
     fn close_clears_a_hidden_global_previous_focus_candidate() {
         // Private-state setup represents the later hidden/minimized state. A
         // registered identity outside visible order is not a viable restore target.
-        let mut manager = WindowManager::new();
-        let current = match manager
-            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
-            .expect("first window opens")
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected first open, got {other:?}"),
-        };
-        let hidden_previous = match manager
-            .apply(WindowCommand::Open(modeless_spec(WindowKind::Fleet, 2)))
-            .expect("second window opens")
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected second open, got {other:?}"),
-        };
-        manager
-            .apply(WindowCommand::Focus(crate::FocusTarget {
-                window: current,
-                control: None,
-            }))
-            .expect("first window regains focus");
-        assert_eq!(
-            manager.previous_eligible,
-            Some(crate::FocusTarget {
-                window: hidden_previous,
-                control: None,
-            })
-        );
+        let (mut manager, current, hidden_previous) = focused_pair();
         manager.visible_order.retain(|id| *id != hidden_previous);
 
         manager

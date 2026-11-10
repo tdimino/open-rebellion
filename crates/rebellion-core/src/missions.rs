@@ -508,8 +508,7 @@ impl MissionTarget {
         let Self::CapitalShip(tag) = self else {
             return false;
         };
-        crate::carriage::ship_of_tag(world, tag)
-            .and_then(|(fleet, index)| world.fleets[fleet].capital_ships.get(index))
+        mission_capital_ship(world, tag)
             .and_then(|ship| world.capital_ship_classes.get(ship.class))
             .is_some_and(crate::world::CapitalShipClass::is_death_star)
     }
@@ -520,8 +519,7 @@ impl MissionTarget {
         let Self::CapitalShip(tag) = self else {
             return false;
         };
-        crate::carriage::ship_of_tag(world, tag)
-            .and_then(|(fleet, index)| world.fleets[fleet].capital_ships.get(index))
+        mission_capital_ship(world, tag)
             .is_some_and(|ship| !ship.completed)
     }
 
@@ -586,6 +584,11 @@ impl MissionTarget {
             en_route,
         })
     }
+}
+
+fn mission_capital_ship(world: &GameWorld, tag: u32) -> Option<&crate::world::ShipInstance> {
+    crate::carriage::ship_of_tag(world, tag)
+        .and_then(|(fleet, index)| world.fleets[fleet].capital_ships.get(index))
 }
 
 /// Destroy a sabotaged target (slot `+0xac(6)`, `FUN_005746e0`).
@@ -3906,6 +3909,86 @@ fn escapes(world: &GameWorld, key: CharacterKey, draws: &mut impl crate::uprisin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn dispatch_single(
+        state: &mut MissionState,
+        kind: MissionKind,
+        faction: MissionFaction,
+        character: CharacterKey,
+        system: SystemKey,
+        tick: u64,
+    ) -> u64 {
+        state.dispatch(MissionRequest::single(
+            kind, faction, character, system, None, tick,
+        ))
+    }
+
+    fn validate_request(
+        state: &mut MissionState,
+        world: &mut GameWorld,
+        request: MissionRequest,
+    ) -> Result<u64, MissionRefusal> {
+        state.dispatch_validated(request, world, &UprisingState::default())
+    }
+
+    fn test_system_key() -> SystemKey {
+        let mut systems: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
+        systems.insert(())
+    }
+
+    fn lead_and_prisoner() -> (GameWorld, SystemKey, CharacterKey, CharacterKey, MissionState) {
+        let mut world = minimal_world();
+        let (here, _) = two_systems();
+        let lead = agent_at(&mut world, here, true);
+        let prisoner = agent_at(&mut world, here, true);
+        world.characters[prisoner].is_captive = true;
+        (world, here, lead, prisoner, MissionState::new())
+    }
+
+    fn test_system(name: &str, x: u16, special_forces: Vec<SpecialForceKey>) -> crate::world::System {
+        crate::world::System {
+            dat_id: crate::ids::DatId::new(0x9000_0001),
+            name: name.into(),
+            sector: crate::ids::SectorKey::default(),
+            x,
+            y: 0,
+            exploration_status: crate::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            total_energy: 0,
+            raw_materials: 0,
+            espionage_rating: 0.0,
+            fleets: vec![],
+            ground_units: vec![],
+            special_forces,
+            fighters: Vec::new(),
+            defense_facilities: vec![],
+            manufacturing_facilities: vec![],
+            production_facilities: vec![],
+            is_headquarters: false,
+            is_destroyed: false,
+            control: crate::world::ControlKind::Uncontrolled,
+        }
+    }
+
+    fn timed_diplomacy_state(
+        character: CharacterKey,
+        system: SystemKey,
+        ticks: u64,
+    ) -> MissionState {
+        let mut state = MissionState::new();
+        state.missions.push_back(ActiveMission::timed(
+            0,
+            MissionKind::Diplomacy,
+            MissionFaction::Alliance,
+            vec![MissionMember::Character(character)],
+            system,
+            ticks,
+        ));
+        state.next_id = 1;
+        state
+    }
     use crate::ids::{CharacterKey, SystemKey};
     use crate::uprising::UprisingState;
     use crate::world::{Character, GameWorld, SkillPair};
@@ -3944,14 +4027,14 @@ mod tests {
         // FUN_0054bac0 -> FUN_00522130(this, 1).
         let (system, character) = mock_keys();
         let mut state = MissionState::new();
-        let id = state.dispatch(MissionRequest::single(
+        let id = dispatch_single(
+            &mut state,
             MissionKind::Diplomacy,
             MissionFaction::Alliance,
             character,
             system,
-            None,
             7,
-        ));
+        );
         assert_eq!(state.len(), 1);
         let m = &state.missions()[0];
         assert_eq!(m.id, id);
@@ -3963,14 +4046,14 @@ mod tests {
     fn cancel_removes_mission() {
         let (system, character) = mock_keys();
         let mut state = MissionState::new();
-        let id = state.dispatch(MissionRequest::single(
+        let id = dispatch_single(
+            &mut state,
             MissionKind::Diplomacy,
             MissionFaction::Alliance,
             character,
             system,
-            None,
             0,
-        ));
+        );
         let removed = state.cancel(id);
         assert!(removed.is_some());
         assert!(state.is_empty());
@@ -4000,14 +4083,14 @@ mod tests {
     fn no_tick_events_no_results() {
         let (system, character) = mock_keys();
         let mut state = MissionState::new();
-        state.dispatch(MissionRequest::single(
+        dispatch_single(
+            &mut state,
             MissionKind::Diplomacy,
             MissionFaction::Alliance,
             character,
             system,
-            None,
             0,
-        ));
+        );
         let world = minimal_world();
         let results =
             MissionSystem::advance(&mut state, &world, &UprisingState::default(), &[], &[]).results;
@@ -4019,15 +4102,7 @@ mod tests {
     fn a_mission_waits_in_phase_eight_until_its_timer_is_due() {
         // FUN_00522a10 sets the ready bit only when timer 0x38b fires.
         let (system, character) = mock_keys();
-        let mut state = MissionState::new();
-        state.missions.push_back(ActiveMission::timed(
-            0,
-            MissionKind::Diplomacy,
-            MissionFaction::Alliance,
-            vec![MissionMember::Character(character)],
-            system,
-            3,
-        ));
+        let mut state = timed_diplomacy_state(character, system, 3);
         let world = minimal_world();
         let advance = MissionSystem::advance(
             &mut state,
@@ -4045,21 +4120,11 @@ mod tests {
     #[test]
     fn mission_resolves_at_zero_ticks() {
         let mut world = minimal_world();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let system = sys_sm.insert(());
+        let system = test_system_key();
         let character = character_with_diplomacy(&mut world, 80);
 
-        let mut state = MissionState::new();
-        // Manually insert a mission with 1 tick remaining
-        state.missions.push_back(ActiveMission::timed(
-            0,
-            MissionKind::Diplomacy,
-            MissionFaction::Alliance,
-            vec![MissionMember::Character(character)],
-            system,
-            1, // will resolve on next tick
-        ));
-        state.next_id = 1;
+        // Manually insert a mission with 1 tick remaining.
+        let mut state = timed_diplomacy_state(character, system, 1);
 
         // Roll = 0.01 → 1% of 100 → very likely to succeed with high-skill character
         let results = MissionSystem::advance(
@@ -4078,20 +4143,10 @@ mod tests {
     #[test]
     fn guaranteed_failure_with_roll_one() {
         let mut world = minimal_world();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let system = sys_sm.insert(());
+        let system = test_system_key();
         let character = character_with_diplomacy(&mut world, 50);
 
-        let mut state = MissionState::new();
-        state.missions.push_back(ActiveMission::timed(
-            0,
-            MissionKind::Diplomacy,
-            MissionFaction::Alliance,
-            vec![MissionMember::Character(character)],
-            system,
-            1,
-        ));
-        state.next_id = 1;
+        let mut state = timed_diplomacy_state(character, system, 1);
 
         // roll = 1.0 → 100% of 100 → fails since success_prob <= 100
         let advance = MissionSystem::advance(
@@ -4206,8 +4261,7 @@ mod tests {
         // FUN_00525bb0 walks the team, decoy, and captured lists; completion
         // clears each member's RoleOnMissionNotif flag (FUN_00536b00).
         let mut world = minimal_world();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let system = sys_sm.insert(());
+        let system = test_system_key();
         let lead = character_with_diplomacy(&mut world, 80);
         let prisoner = character_with_diplomacy(&mut world, 10);
         let decoy = MissionMember::SpecialForce(world.special_forces.insert(
@@ -4471,8 +4525,7 @@ mod tests {
     #[test]
     fn dispatch_validated_blocks_mandatory_mission() {
         let mut world = minimal_world();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let system = sys_sm.insert(());
+        let system = test_system_key();
         let character = world.characters.insert(Character {
             name: "Mandatory".into(),
             is_alliance: true,
@@ -4509,8 +4562,7 @@ mod tests {
     #[test]
     fn a_character_with_an_active_mission_is_refused_even_without_the_flag() {
         let mut world = minimal_world();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let system = sys_sm.insert(());
+        let system = test_system_key();
         let character = world.characters.insert(Character {
             name: "Agent".into(),
             is_alliance: true,
@@ -4552,8 +4604,7 @@ mod tests {
     #[test]
     fn a_dispatched_character_cannot_take_a_second_mission_until_released() {
         let mut world = minimal_world();
-        let mut sys_sm: slotmap::SlotMap<SystemKey, ()> = slotmap::SlotMap::with_key();
-        let system = sys_sm.insert(());
+        let system = test_system_key();
         let character = world.characters.insert(Character {
             name: "Agent".into(),
             is_alliance: true,
@@ -4735,20 +4786,11 @@ mod tests {
     fn a_prisoner_goes_to_the_captured_list_and_a_team_of_prisoners_is_refused() {
         // FUN_0054bb90 moves a prisoner (slot +0x1d4) from either list to the
         // captured list, then refuses an empty team with 0x40/0x91.
-        let mut world = minimal_world();
-        let (here, _) = two_systems();
-        let lead = agent_at(&mut world, here, true);
-        let prisoner = agent_at(&mut world, here, true);
-        world.characters[prisoner].is_captive = true;
-        let mut state = MissionState::new();
+        let (mut world, here, lead, prisoner, mut state) = lead_and_prisoner();
 
         let alone = request(vec![MissionMember::Character(prisoner)], vec![], here);
         assert_eq!(
-            state.dispatch_validated(
-                alone,
-                &mut world,
-                &crate::uprising::UprisingState::default()
-            ),
+            validate_request(&mut state, &mut world, alone),
             Err(MissionRefusal::EmptyTeam)
         );
         assert!(!world.characters[prisoner].on_mission);
@@ -4757,12 +4799,7 @@ mod tests {
             MissionMember::Character(lead),
             MissionMember::Character(prisoner),
         ];
-        state
-            .dispatch_validated(
-                request(team, vec![], here),
-                &mut world,
-                &crate::uprising::UprisingState::default(),
-            )
+        validate_request(&mut state, &mut world, request(team, vec![], here))
             .expect("the free lead keeps the team non-empty");
         let mission = &state.missions()[0];
         assert_eq!(mission.team, vec![MissionMember::Character(lead)]);
@@ -4820,11 +4857,7 @@ mod tests {
         ];
 
         assert_eq!(
-            state.dispatch_validated(
-                request(team, vec![], here),
-                &mut world,
-                &crate::uprising::UprisingState::default()
-            ),
+            validate_request(&mut state, &mut world, request(team, vec![], here)),
             Err(MissionRefusal::MemberUnavailable(MissionMember::Character(
                 imperial
             )))
@@ -4848,11 +4881,7 @@ mod tests {
         ];
 
         assert_eq!(
-            state.dispatch_validated(
-                request(team, vec![], here),
-                &mut world,
-                &crate::uprising::UprisingState::default()
-            ),
+            validate_request(&mut state, &mut world, request(team, vec![], here)),
             Err(MissionRefusal::MemberUnavailable(MissionMember::Character(
                 far
             )))
@@ -4874,16 +4903,15 @@ mod tests {
         world.characters[prisoner].is_captive = true;
         let prisoner = MissionMember::Character(prisoner);
 
-        state
-            .dispatch_validated(
-                request(
-                    vec![me, me, prisoner, prisoner],
-                    vec![me, decoy, decoy],
-                    here,
-                ),
-                &mut world,
-                &crate::uprising::UprisingState::default(),
-            )
+        validate_request(
+            &mut state,
+            &mut world,
+            request(
+                vec![me, me, prisoner, prisoner],
+                vec![me, decoy, decoy],
+                here,
+            ),
+        )
             .expect("one lead");
         let mission = &state.missions()[0];
         assert_eq!(mission.team, vec![me]);
@@ -4979,30 +5007,9 @@ mod tests {
             en_route: false,
             on_hidden_mission: false,
         });
-        let at = world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(0x9000_0001),
-            name: "Base".into(),
-            sector: crate::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![unit],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: crate::world::ControlKind::Uncontrolled,
-        });
+        let at = world
+            .systems
+            .insert(test_system("Base", 0, vec![unit]));
         (unit, at)
     }
 
@@ -5019,10 +5026,10 @@ mod tests {
         let member = MissionMember::Character(dead);
 
         assert_eq!(
-            state.dispatch_validated(
-                request(vec![member], vec![], here),
+            validate_request(
+                &mut state,
                 &mut world,
-                &crate::uprising::UprisingState::default()
+                request(vec![member], vec![], here),
             ),
             Err(MissionRefusal::MemberUnavailable(member))
         );
@@ -5046,11 +5053,7 @@ mod tests {
         ];
 
         assert_eq!(
-            state.dispatch_validated(
-                request(team, vec![], here),
-                &mut world,
-                &crate::uprising::UprisingState::default()
-            ),
+            validate_request(&mut state, &mut world, request(team, vec![], here)),
             Err(MissionRefusal::MemberUnavailable(MissionMember::Character(
                 gone
             )))
@@ -5069,10 +5072,10 @@ mod tests {
         let decoy = MissionMember::SpecialForce(unit);
 
         assert_eq!(
-            state.dispatch_validated(
-                request(vec![MissionMember::Character(lead)], vec![decoy], at),
+            validate_request(
+                &mut state,
                 &mut world,
-                &crate::uprising::UprisingState::default()
+                request(vec![MissionMember::Character(lead)], vec![decoy], at),
             ),
             Err(MissionRefusal::MemberUnavailable(decoy))
         );
@@ -5100,10 +5103,10 @@ mod tests {
         state.next_id = 1;
 
         assert_eq!(
-            state.dispatch_validated(
-                request(vec![prisoner], vec![], here),
+            validate_request(
+                &mut state,
                 &mut world,
-                &crate::uprising::UprisingState::default()
+                request(vec![prisoner], vec![], here),
             ),
             Err(MissionRefusal::MemberUnavailable(prisoner))
         );
@@ -5114,23 +5117,17 @@ mod tests {
         // FUN_0054bb90 moves a prisoner out of the decoy list before any add,
         // so FUN_00522b30 never sees a prisoner as a decoy; it records the
         // mission on every member it accepts (FUN_00534230).
-        let mut world = minimal_world();
-        let (here, _) = two_systems();
-        let lead = agent_at(&mut world, here, true);
-        let prisoner = agent_at(&mut world, here, true);
-        world.characters[prisoner].is_captive = true;
-        let mut state = MissionState::new();
+        let (mut world, here, lead, prisoner, mut state) = lead_and_prisoner();
 
-        state
-            .dispatch_validated(
-                request(
-                    vec![MissionMember::Character(lead)],
-                    vec![MissionMember::Character(prisoner)],
-                    here,
-                ),
-                &mut world,
-                &crate::uprising::UprisingState::default(),
-            )
+        validate_request(
+            &mut state,
+            &mut world,
+            request(
+                vec![MissionMember::Character(lead)],
+                vec![MissionMember::Character(prisoner)],
+                here,
+            ),
+        )
             .expect("dispatch");
         let mission = &state.missions()[0];
         assert!(mission.decoys.is_empty());
@@ -5155,11 +5152,7 @@ mod tests {
         ];
 
         assert_eq!(
-            state.dispatch_validated(
-                request(team, vec![], here),
-                &mut world,
-                &crate::uprising::UprisingState::default()
-            ),
+            validate_request(&mut state, &mut world, request(team, vec![], here)),
             Err(MissionRefusal::MemberUnavailable(MissionMember::Character(
                 prisoner
             )))
@@ -5183,11 +5176,7 @@ mod tests {
         ];
 
         assert_eq!(
-            state.dispatch_validated(
-                request(team, vec![], here),
-                &mut world,
-                &crate::uprising::UprisingState::default()
-            ),
+            validate_request(&mut state, &mut world, request(team, vec![], here)),
             Err(MissionRefusal::MemberUnavailable(MissionMember::Character(
                 below
             )))
@@ -5268,6 +5257,36 @@ mod tests {
         world.systems[system].control = crate::world::ControlKind::Controlled(side);
     }
 
+    fn special_force(
+        world: &mut GameWorld,
+        class_dat_id: u32,
+        is_alliance: bool,
+        on_mission: bool,
+    ) -> SpecialForceKey {
+        world.special_forces.insert(crate::world::SpecialForceUnit {
+            class_dat_id: crate::ids::DatId::new(class_dat_id),
+            is_alliance,
+            skills: [0; 8],
+            on_mission,
+            en_route: false,
+            on_hidden_mission: false,
+        })
+    }
+
+    fn troop_at(
+        world: &mut GameWorld,
+        system: SystemKey,
+        class_dat_id: u32,
+        is_alliance: bool,
+    ) -> crate::ids::TroopKey {
+        let troop = world.troops.insert(crate::world::TroopUnit {
+            class_dat_id: crate::ids::DatId::new(class_dat_id),
+            is_alliance,
+        });
+        world.systems[system].ground_units.push(troop);
+        troop
+    }
+
     #[test]
     fn every_team_character_rolls_and_a_success_raises_its_skill_by_gnprtb() {
         // FUN_00592f50 rolls each team character, then each team special
@@ -5279,14 +5298,7 @@ mod tests {
         always(&mut world, MissionKind::Diplomacy, 100);
         let first = agent_at(&mut world, here, true);
         let second = agent_at(&mut world, here, true);
-        let unit = world.special_forces.insert(crate::world::SpecialForceUnit {
-            class_dat_id: crate::ids::DatId::new(0x1400_0001),
-            is_alliance: true,
-            skills: [0; 8],
-            on_mission: true,
-            en_route: false,
-            on_hidden_mission: false,
-        });
+        let unit = special_force(&mut world, 0x1400_0001, true, true);
         let team = vec![
             MissionMember::SpecialForce(unit),
             MissionMember::Character(first),
@@ -5560,11 +5572,7 @@ mod tests {
         };
 
         let open = phase_ten(&world, MissionKind::InciteUprising, team(), here, None);
-        let troop = world.troops.insert(crate::world::TroopUnit {
-            class_dat_id: crate::ids::DatId::new(0x1000_0007),
-            is_alliance: false,
-        });
-        world.systems[here].ground_units.push(troop);
+        let troop = troop_at(&mut world, here, 0x1000_0007, false);
         let garrisoned = phase_ten(&world, MissionKind::InciteUprising, team(), here, None);
 
         assert_eq!(open.outcome, MissionOutcome::Success);
@@ -5655,11 +5663,7 @@ mod tests {
                 value: 2,
             }]),
         );
-        let troop = world.troops.insert(crate::world::TroopUnit {
-            class_dat_id: crate::ids::DatId::new(0x1000_0007),
-            is_alliance: false,
-        });
-        world.systems[here].ground_units.push(troop);
+        let troop = troop_at(&mut world, here, 0x1000_0007, false);
         let agitator = agent_at(&mut world, here, true);
 
         let result = phase_ten(
@@ -5876,30 +5880,7 @@ mod tests {
 
     /// A system at `(x, 0)`, populated, held by no one.
     fn system_at(world: &mut GameWorld, x: u16) -> SystemKey {
-        world.systems.insert(crate::world::System {
-            dat_id: crate::ids::DatId::new(0x9000_0001),
-            name: "System".into(),
-            sector: crate::ids::SectorKey::default(),
-            x,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: crate::world::ControlKind::Uncontrolled,
-        })
+        world.systems.insert(test_system("System", x, Vec::new()))
     }
 
     /// The shipped MISSNSD Diplomacy record `0x51000010`: timer (5, 10),
@@ -6004,15 +5985,45 @@ mod tests {
         (state, envoy)
     }
 
+    fn diplomacy_between(
+        world: &mut GameWorld,
+    ) -> (MissionState, CharacterKey, SystemKey, SystemKey) {
+        let from = system_at(world, 0);
+        let to = system_at(world, 100);
+        let (state, envoy) = diplomacy_from(world, from, to);
+        (state, envoy, from, to)
+    }
+
+    fn travelling_diplomacy(
+        world: &mut GameWorld,
+    ) -> (MissionState, CharacterKey, SystemKey, SystemKey) {
+        let (mut state, envoy, from, to) = diplomacy_between(world);
+        step(&mut state, world, 1, &[]);
+        (state, envoy, from, to)
+    }
+
+    fn waiting_diplomacy(world: &mut GameWorld) -> (MissionState, SystemKey) {
+        let here = system_at(world, 0);
+        let (mut state, _) = diplomacy_from(world, here, here);
+        step(&mut state, world, 1, &[0.0]);
+        (state, here)
+    }
+
+    fn ended_codes(advance: &MissionAdvance) -> Vec<(u8, u64)> {
+        advance
+            .ended
+            .iter()
+            .map(|ended| (ended.end_code, ended.tick))
+            .collect()
+    }
+
     #[test]
     fn a_new_mission_steps_to_the_transit_phase_and_places_its_members_en_route_at_the_target() {
         // FUN_00524b70 phase 4: FUN_00556430 starts each member's transit
         // from the origin +0x6c, standing it in the target container en
         // route (move-order.md); the phase waits for the arrivals.
         let mut world = minimal_world();
-        let from = system_at(&mut world, 0);
-        let to = system_at(&mut world, 100);
-        let (mut state, envoy) = diplomacy_from(&mut world, from, to);
+        let (mut state, envoy, from, to) = diplomacy_between(&mut world);
 
         let advance = step(&mut state, &world, 1, &[]);
 
@@ -6051,10 +6062,7 @@ mod tests {
         // en route; phase 8 arms timer 0x38b for min + rand(0..=spread)
         // (FUN_005236e0, FUN_00586130): 5 + floor(0.3 * 11) = 8 days.
         let mut world = minimal_world();
-        let from = system_at(&mut world, 0);
-        let to = system_at(&mut world, 100);
-        let (mut state, envoy) = diplomacy_from(&mut world, from, to);
-        step(&mut state, &world, 1, &[]);
+        let (mut state, envoy, _, _) = travelling_diplomacy(&mut world);
 
         assert!(step(&mut state, &world, 19, &[]).effects.is_empty());
         assert_eq!(state.missions()[0].phase, PHASE_TRANSIT);
@@ -6096,9 +6104,7 @@ mod tests {
     fn a_repeating_mission_returns_to_the_timer_after_each_outcome() {
         // FUN_005227d0: phase 10 steps to 8 when record +0x58 is set.
         let mut world = minimal_world();
-        let here = system_at(&mut world, 0);
-        let (mut state, _) = diplomacy_from(&mut world, here, here);
-        step(&mut state, &world, 1, &[0.0]);
+        let (mut state, _) = waiting_diplomacy(&mut world);
 
         // Outcome 0.99, then the new timer draw 1.0: 5 + 10 days.
         let advance = step(&mut state, &world, 5, &[0.99, 1.0]);
@@ -6110,15 +6116,14 @@ mod tests {
         assert_eq!(mission.timer_due, Some(20));
     }
 
-    #[test]
-    fn a_mission_that_runs_its_course_ends_with_code_one_and_frees_its_members() {
-        // FUN_00522480 in phase 0xb with no code sets end code 1; the
-        // Rescue record does not repeat.
-        let mut world = minimal_world();
-        let here = system_at(&mut world, 0);
+    fn dispatch_rescue(
+        world: &mut GameWorld,
+        from: SystemKey,
+        to: SystemKey,
+    ) -> (MissionState, CharacterKey, CharacterKey) {
         world.mission_records = vec![rescue_record()];
-        let hero = agent_at(&mut world, here, true);
-        let prisoner = agent_at(&mut world, here, true);
+        let hero = agent_at(world, from, true);
+        let prisoner = agent_at(world, to, true);
         world.characters[prisoner].is_captive = true;
         world.characters[prisoner].captured_by = Some(crate::dat::Faction::Empire);
         let mut state = MissionState::new();
@@ -6128,14 +6133,24 @@ mod tests {
                     MissionKind::Rescue,
                     MissionFaction::Alliance,
                     hero,
-                    here,
+                    to,
                     Some(prisoner),
                     0,
                 ),
-                &mut world,
+                world,
                 &crate::uprising::UprisingState::default(),
             )
             .expect("a free hero");
+        (state, hero, prisoner)
+    }
+
+    #[test]
+    fn a_mission_that_runs_its_course_ends_with_code_one_and_frees_its_members() {
+        // FUN_00522480 in phase 0xb with no code sets end code 1; the
+        // Rescue record does not repeat.
+        let mut world = minimal_world();
+        let here = system_at(&mut world, 0);
+        let (mut state, hero, _) = dispatch_rescue(&mut world, here, here);
         // 1 + floor(1.0 * 7).min(6) = 7 days.
         step(&mut state, &world, 1, &[1.0]);
         assert_eq!(state.missions()[0].timer_due, Some(7));
@@ -6155,26 +6170,7 @@ mod tests {
     /// creation steps and waiting for its timer on day 7.
     fn waiting_rescue(world: &mut GameWorld) -> (MissionState, CharacterKey) {
         let here = system_at(world, 0);
-        world.mission_records = vec![rescue_record()];
-        let hero = agent_at(world, here, true);
-        let prisoner = agent_at(world, here, true);
-        world.characters[prisoner].is_captive = true;
-        world.characters[prisoner].captured_by = Some(crate::dat::Faction::Empire);
-        let mut state = MissionState::new();
-        state
-            .dispatch_validated(
-                MissionRequest::single(
-                    MissionKind::Rescue,
-                    MissionFaction::Alliance,
-                    hero,
-                    here,
-                    Some(prisoner),
-                    0,
-                ),
-                world,
-                &crate::uprising::UprisingState::default(),
-            )
-            .expect("a free hero");
+        let (mut state, _, prisoner) = dispatch_rescue(world, here, here);
         step(&mut state, world, 1, &[1.0]);
         (state, prisoner)
     }
@@ -6217,9 +6213,7 @@ mod tests {
     fn diplomacy_ends_with_code_0xf_once_its_side_holds_full_support() {
         // FUN_00573ee0: FUN_00507270 == 100 ends the mission.
         let mut world = minimal_world();
-        let here = system_at(&mut world, 0);
-        let (mut state, _) = diplomacy_from(&mut world, here, here);
-        step(&mut state, &world, 1, &[0.0]);
+        let (mut state, here) = waiting_diplomacy(&mut world);
         world.systems[here].popularity_alliance = 1.0;
 
         let advance = step(&mut state, &world, 5, &[0.0]);
@@ -6241,6 +6235,29 @@ mod tests {
             },
             ..diplomacy_record()
         }
+    }
+
+    fn waiting_recruitment(world: &mut GameWorld, here: SystemKey) -> MissionState {
+        let recruiter = agent_at(world, here, true);
+        // FUN_0056b550: only a major may recruit.
+        world.characters[recruiter].is_major = true;
+        let mut state = MissionState::new();
+        state
+            .dispatch_validated(
+                MissionRequest::single(
+                    MissionKind::Recruitment,
+                    MissionFaction::Alliance,
+                    recruiter,
+                    here,
+                    None,
+                    0,
+                ),
+                world,
+                &crate::uprising::UprisingState::default(),
+            )
+            .expect("a free recruiter");
+        step(&mut state, world, 1, &[0.0]);
+        state
     }
 
     /// An Alliance character outside the side's roster (`+0x50` bit 1 clear).
@@ -6433,25 +6450,7 @@ mod tests {
         let here = system_at(&mut world, 0);
         held_by(&mut world, here, crate::dat::Faction::Alliance);
         world.mission_records = vec![recruitment_record()];
-        let recruiter = agent_at(&mut world, here, true);
-        // FUN_0056b550: only a major may recruit.
-        world.characters[recruiter].is_major = true;
-        let mut state = MissionState::new();
-        state
-            .dispatch_validated(
-                MissionRequest::single(
-                    MissionKind::Recruitment,
-                    MissionFaction::Alliance,
-                    recruiter,
-                    here,
-                    None,
-                    0,
-                ),
-                &mut world,
-                &crate::uprising::UprisingState::default(),
-            )
-            .expect("a free recruiter");
-        step(&mut state, &world, 1, &[0.0]);
+        let mut state = waiting_recruitment(&mut world, here);
         assert!(step(&mut state, &world, 2, &[0.0]).ended.is_empty());
         world.set_recruit_pool_empty(crate::dat::Faction::Alliance);
 
@@ -6552,6 +6551,67 @@ mod tests {
         }
     }
 
+    fn dispatched_sabotage(
+        world: &mut GameWorld,
+        is_alliance: bool,
+    ) -> (
+        MissionState,
+        SystemKey,
+        crate::ids::ManufacturingFacilityKey,
+        CharacterKey,
+    ) {
+        let here = system_at(world, 0);
+        let yard = enemy_yard(world, here);
+        if !is_alliance {
+            world.manufacturing_facilities[yard].side = crate::dat::Faction::Alliance;
+        }
+        let agent = agent_at(world, here, is_alliance);
+        let faction = if is_alliance {
+            MissionFaction::Alliance
+        } else {
+            MissionFaction::Empire
+        };
+        let mut state = MissionState::new();
+        state
+            .dispatch_validated(
+                MissionRequest {
+                    target_object: Some(MissionTarget::ManufacturingFacility(yard)),
+                    ..MissionRequest::single(
+                        MissionKind::Sabotage,
+                        faction,
+                        agent,
+                        here,
+                        None,
+                        0,
+                    )
+                },
+                world,
+                &UprisingState::default(),
+            )
+            .expect("a free saboteur");
+        (state, here, yard, agent)
+    }
+
+    fn sabotage_result(
+        world: &GameWorld,
+        here: SystemKey,
+        yard: crate::ids::ManufacturingFacilityKey,
+        team: Vec<MissionMember>,
+    ) -> MissionResult {
+        let mut mission = ActiveMission::timed(
+            0,
+            MissionKind::Sabotage,
+            MissionFaction::Alliance,
+            team,
+            here,
+            1,
+        );
+        mission.target_object = Some(MissionTarget::ManufacturingFacility(yard));
+        let mut state = MissionState::new();
+        state.push_timed(mission);
+        step(&mut state, world, 1, &[]).results.remove(0)
+    }
+
     #[test]
     fn an_end_right_after_the_outcome_keeps_its_result_and_the_timer_phase_clears_it() {
         // FUN_00521880: phase 10 leaves +0x60 at 2 or 3 and entering phase
@@ -6566,34 +6626,7 @@ mod tests {
                 ..sabotage_record()
             }];
             always(&mut world, MissionKind::Sabotage, 100);
-            let here = system_at(&mut world, 0);
-            let yard = enemy_yard(&mut world, here);
-            if !is_alliance {
-                world.manufacturing_facilities[yard].side = crate::dat::Faction::Alliance;
-            }
-            let agent = agent_at(&mut world, here, is_alliance);
-            let mut state = MissionState::new();
-            state
-                .dispatch_validated(
-                    MissionRequest {
-                        target_object: Some(MissionTarget::ManufacturingFacility(yard)),
-                        ..MissionRequest::single(
-                            MissionKind::Sabotage,
-                            if is_alliance {
-                                MissionFaction::Alliance
-                            } else {
-                                MissionFaction::Empire
-                            },
-                            agent,
-                            here,
-                            None,
-                            0,
-                        )
-                    },
-                    &mut world,
-                    &UprisingState::default(),
-                )
-                .expect("a free saboteur");
+            let (mut state, here, yard, _) = dispatched_sabotage(&mut world, is_alliance);
 
             let first = step(&mut state, &world, 1, &[0.0; 3]);
             let ended = if repeats {
@@ -6623,34 +6656,7 @@ mod tests {
         for is_alliance in [true, false] {
             let mut world = minimal_world();
             world.mission_records = vec![sabotage_record()];
-            let here = system_at(&mut world, 0);
-            let yard = enemy_yard(&mut world, here);
-            if !is_alliance {
-                world.manufacturing_facilities[yard].side = crate::dat::Faction::Alliance;
-            }
-            let agent = agent_at(&mut world, here, is_alliance);
-            let mut state = MissionState::new();
-            state
-                .dispatch_validated(
-                    MissionRequest {
-                        target_object: Some(MissionTarget::ManufacturingFacility(yard)),
-                        ..MissionRequest::single(
-                            MissionKind::Sabotage,
-                            if is_alliance {
-                                MissionFaction::Alliance
-                            } else {
-                                MissionFaction::Empire
-                            },
-                            agent,
-                            here,
-                            None,
-                            0,
-                        )
-                    },
-                    &mut world,
-                    &UprisingState::default(),
-                )
-                .expect("a free saboteur");
+            let (mut state, here, yard, agent) = dispatched_sabotage(&mut world, is_alliance);
             // The yard is lost on the way: rule 4 ends the mission (code 6).
             world.manufacturing_facilities.remove(yard);
             world.systems[here].manufacturing_facilities.clear();
@@ -7048,19 +7054,7 @@ mod tests {
         let team = (0..2)
             .map(|_| MissionMember::Character(agent_at(&mut world, here, true)))
             .collect();
-        let mut mission = ActiveMission::timed(
-            0,
-            MissionKind::Sabotage,
-            MissionFaction::Alliance,
-            team,
-            here,
-            1,
-        );
-        mission.target_object = Some(MissionTarget::ManufacturingFacility(yard));
-        let mut state = MissionState::new();
-        state.push_timed(mission);
-
-        let result = step(&mut state, &world, 1, &[]).results.remove(0);
+        let result = sabotage_result(&world, here, yard, team);
 
         let destroyed: Vec<_> = result
             .effects
@@ -7085,19 +7079,12 @@ mod tests {
         always(&mut world, MissionKind::Sabotage, 0);
         let yard = enemy_yard(&mut world, here);
         let agent = agent_at(&mut world, here, true);
-        let mut mission = ActiveMission::timed(
-            0,
-            MissionKind::Sabotage,
-            MissionFaction::Alliance,
-            vec![MissionMember::Character(agent)],
+        let result = sabotage_result(
+            &world,
             here,
-            1,
+            yard,
+            vec![MissionMember::Character(agent)],
         );
-        mission.target_object = Some(MissionTarget::ManufacturingFacility(yard));
-        let mut state = MissionState::new();
-        state.push_timed(mission);
-
-        let result = step(&mut state, &world, 1, &[]).results.remove(0);
 
         assert!(!result
             .effects
@@ -7128,19 +7115,8 @@ mod tests {
                 is_mine: true,
             });
         world.systems[here].production_facilities.push(mine);
-        let regiment = world.troops.insert(crate::world::TroopUnit {
-            class_dat_id: crate::ids::DatId::new(0x1000_0001),
-            is_alliance: false,
-        });
-        world.systems[here].ground_units.push(regiment);
-        let unit = world.special_forces.insert(crate::world::SpecialForceUnit {
-            class_dat_id: crate::ids::DatId::new(0x3c00_0001),
-            is_alliance: false,
-            skills: [0; 8],
-            on_mission: false,
-            en_route: false,
-            on_hidden_mission: false,
-        });
+        let regiment = troop_at(&mut world, here, 0x1000_0001, false);
+        let unit = special_force(&mut world, 0x3c00_0001, false, false);
         world.systems[here].special_forces.push(unit);
 
         for target in [
@@ -7215,14 +7191,28 @@ mod tests {
         state
     }
 
+    fn waiting_yard_sabotage(
+        world: &mut GameWorld,
+    ) -> (
+        MissionState,
+        SystemKey,
+        crate::ids::ManufacturingFacilityKey,
+    ) {
+        let here = system_at(world, 0);
+        let yard = enemy_yard(world, here);
+        let state = waiting_sabotage(
+            world,
+            here,
+            MissionTarget::ManufacturingFacility(yard),
+        );
+        (state, here, yard)
+    }
+
     #[test]
     fn a_sabotage_ends_with_code_six_once_its_object_is_destroyed() {
         // FUN_00593500 base rule 4 (col 14): a destroyed target ends 6.
         let mut world = minimal_world();
-        let here = system_at(&mut world, 0);
-        let yard = enemy_yard(&mut world, here);
-        let mut state =
-            waiting_sabotage(&mut world, here, MissionTarget::ManufacturingFacility(yard));
+        let (mut state, _, yard) = waiting_yard_sabotage(&mut world);
         destroy_target(&mut world, MissionTarget::ManufacturingFacility(yard));
 
         let advance = step(&mut state, &world, 5, &[0.0]);
@@ -7237,11 +7227,7 @@ mod tests {
         let mut world = minimal_world();
         let here = system_at(&mut world, 0);
         let there = system_at(&mut world, 50);
-        let regiment = world.troops.insert(crate::world::TroopUnit {
-            class_dat_id: crate::ids::DatId::new(0x1000_0001),
-            is_alliance: false,
-        });
-        world.systems[here].ground_units.push(regiment);
+        let regiment = troop_at(&mut world, here, 0x1000_0001, false);
         let mut state = waiting_sabotage(&mut world, here, MissionTarget::Troop(regiment));
         world.systems[here].ground_units.clear();
         world.systems[there].ground_units.push(regiment);
@@ -7255,10 +7241,7 @@ mod tests {
     fn a_sabotage_ends_with_code_eight_once_its_object_belongs_to_its_own_side() {
         // Base rule 3 (col 15): Sabotage may not target its own side.
         let mut world = minimal_world();
-        let here = system_at(&mut world, 0);
-        let yard = enemy_yard(&mut world, here);
-        let mut state =
-            waiting_sabotage(&mut world, here, MissionTarget::ManufacturingFacility(yard));
+        let (mut state, _, yard) = waiting_yard_sabotage(&mut world);
         world.manufacturing_facilities[yard].side = crate::dat::Faction::Alliance;
 
         let advance = step(&mut state, &world, 5, &[0.0]);
@@ -7305,10 +7288,7 @@ mod tests {
     fn a_member_still_travelling_when_its_mission_ends_keeps_travelling() {
         // FUN_00592c80 never moves the members; each transit runs on.
         let mut world = minimal_world();
-        let from = system_at(&mut world, 0);
-        let to = system_at(&mut world, 100);
-        let (mut state, envoy) = diplomacy_from(&mut world, from, to);
-        step(&mut state, &world, 1, &[]);
+        let (mut state, envoy, _, to) = travelling_diplomacy(&mut world);
         world.systems[to].is_destroyed = true;
 
         let advance = step(&mut state, &world, 2, &[]);
@@ -7352,14 +7332,7 @@ mod tests {
         let to = system_at(&mut world, 100);
         let han = agent_at(&mut world, from, true);
         world.characters[han].dat_id = crate::ids::DatId::new(0x243);
-        let unit = world.special_forces.insert(crate::world::SpecialForceUnit {
-            class_dat_id: crate::ids::DatId::new(0x3c00_0003),
-            is_alliance: true,
-            skills: [0; 8],
-            on_mission: false,
-            en_route: false,
-            on_hidden_mission: false,
-        });
+        let unit = special_force(&mut world, 0x3c00_0003, true, false);
         world.systems[from].special_forces.push(unit);
         let mut state = MissionState::new();
         state
@@ -7430,14 +7403,7 @@ mod tests {
             bombarding: false,
         });
         world.characters[pilot].current_fleet = Some(fleet);
-        let unit = world.special_forces.insert(crate::world::SpecialForceUnit {
-            class_dat_id: crate::ids::DatId::new(0x3c00_0003),
-            is_alliance: true,
-            skills: [0; 8],
-            on_mission: true,
-            en_route: false,
-            on_hidden_mission: false,
-        });
+        let unit = special_force(&mut world, 0x3c00_0003, true, true);
         world.systems[from].special_forces.push(unit);
 
         move_member(&mut world, MissionMember::Character(pilot), to);
@@ -7545,23 +7511,13 @@ mod tests {
         // differs from the origin (FUN_00520bb0): an envoy landing at a
         // system the opponent took on the way ends with code 8.
         let mut world = minimal_world();
-        let from = system_at(&mut world, 0);
-        let to = system_at(&mut world, 100);
-        let (mut state, _) = diplomacy_from(&mut world, from, to);
-        step(&mut state, &world, 1, &[]);
+        let (mut state, _, _, to) = travelling_diplomacy(&mut world);
         world.systems[to].control =
             crate::world::ControlKind::Controlled(crate::dat::Faction::Empire);
 
         let advance = step(&mut state, &world, 20, &[0.0]);
 
-        assert_eq!(
-            advance
-                .ended
-                .iter()
-                .map(|e| (e.end_code, e.tick))
-                .collect::<Vec<_>>(),
-            vec![(8, 20)]
-        );
+        assert_eq!(ended_codes(&advance), vec![(8, 20)]);
     }
 
     #[test]
@@ -7626,25 +7582,7 @@ mod tests {
                 character_mask: 0x1_0000,
             },
         }];
-        let recruiter = agent_at(&mut world, here, true);
-        // FUN_0056b550: only a major may recruit.
-        world.characters[recruiter].is_major = true;
-        let mut state = MissionState::new();
-        state
-            .dispatch_validated(
-                MissionRequest::single(
-                    MissionKind::Recruitment,
-                    MissionFaction::Alliance,
-                    recruiter,
-                    here,
-                    None,
-                    0,
-                ),
-                &mut world,
-                &crate::uprising::UprisingState::default(),
-            )
-            .expect("a free recruiter");
-        step(&mut state, &world, 1, &[0.0]);
+        let mut state = waiting_recruitment(&mut world, here);
 
         let advance = step(&mut state, &world, 5, &[0.99]);
 
@@ -7738,8 +7676,7 @@ mod tests {
         let (mut state, prisoner) = waiting_rescue(&mut world);
         world.characters[prisoner].is_captive = false;
         world.characters[prisoner].captured_by = None;
-        let here = state.missions()[0].target_system;
-        world.systems[here].is_destroyed = true;
+        destroy_mission_system(&mut world, &state);
 
         let advance = step(&mut state, &world, 2, &[]);
 
@@ -7751,28 +7688,23 @@ mod tests {
     fn travelling_rescue(world: &mut GameWorld) -> (MissionState, SystemKey) {
         let from = system_at(world, 0);
         let to = system_at(world, 100);
-        world.mission_records = vec![rescue_record()];
-        let hero = agent_at(world, from, true);
-        let prisoner = agent_at(world, to, true);
-        world.characters[prisoner].is_captive = true;
-        world.characters[prisoner].captured_by = Some(crate::dat::Faction::Empire);
-        let mut state = MissionState::new();
-        state
-            .dispatch_validated(
-                MissionRequest::single(
-                    MissionKind::Rescue,
-                    MissionFaction::Alliance,
-                    hero,
-                    to,
-                    Some(prisoner),
-                    0,
-                ),
-                world,
-                &crate::uprising::UprisingState::default(),
-            )
-            .expect("a free hero");
+        let (mut state, _, _) = dispatch_rescue(world, from, to);
         step(&mut state, world, 1, &[]);
         (state, to)
+    }
+
+    fn destroy_mission_system(world: &mut GameWorld, state: &MissionState) -> SystemKey {
+        let here = state.missions()[0].target_system;
+        world.systems[here].is_destroyed = true;
+        here
+    }
+
+    fn mission_codes(state: &MissionState) -> Vec<(u64, u8, bool)> {
+        state
+            .missions()
+            .iter()
+            .map(|mission| (mission.id, mission.end_code, mission.container_loss_seen))
+            .collect()
     }
 
     #[test]
@@ -7799,8 +7731,7 @@ mod tests {
         // Rescue's column 11 does not end it through the validator.
         let mut world = minimal_world();
         let (mut state, _) = waiting_rescue(&mut world);
-        let here = state.missions()[0].target_system;
-        world.systems[here].is_destroyed = true;
+        destroy_mission_system(&mut world, &state);
 
         let advance = step(&mut state, &world, 2, &[]);
 
@@ -7826,15 +7757,11 @@ mod tests {
             elsewhere,
             50,
         ));
-        world.systems[here].is_destroyed = true;
+        destroy_mission_system(&mut world, &state);
 
         state.validate_destroyed(&world, &UprisingState::default(), here);
 
-        let codes: Vec<(u64, u8, bool)> = state
-            .missions()
-            .iter()
-            .map(|mission| (mission.id, mission.end_code, mission.container_loss_seen))
-            .collect();
+        let codes = mission_codes(&state);
         assert_eq!(codes, vec![(0, 7, true), (9, 0, false)]);
         let advance = step(&mut state, &world, 2, &[]);
         assert_eq!(advance.ended[0].end_code, 7);
@@ -7871,7 +7798,7 @@ mod tests {
         for value in added {
             state.push_timed(value);
         }
-        world.systems[here].is_destroyed = true;
+        destroy_mission_system(&mut world, &state);
         // A Rescue whose target is free on its side: its validator code is 8.
         let freed = agent_at(&mut world, here, true);
         let mut first = ActiveMission::timed(
@@ -7887,11 +7814,7 @@ mod tests {
 
         state.validate_destroyed(&world, &UprisingState::default(), here);
 
-        let codes: Vec<(u64, u8, bool)> = state
-            .missions()
-            .iter()
-            .map(|mission| (mission.id, mission.end_code, mission.container_loss_seen))
-            .collect();
+        let codes = mission_codes(&state);
         assert_eq!(
             codes,
             vec![
@@ -7976,22 +7899,12 @@ mod tests {
         // is left travelling and the wait ends at once; phase 5's validator
         // then ends the teamless mission with code 5 (FUN_00522480.c:42-52).
         let mut world = minimal_world();
-        let from = system_at(&mut world, 0);
-        let to = system_at(&mut world, 100);
-        let (mut state, envoy) = diplomacy_from(&mut world, from, to);
-        step(&mut state, &world, 1, &[]);
+        let (mut state, envoy, _, _) = travelling_diplomacy(&mut world);
         world.characters[envoy].mark_killed();
 
         let advance = step(&mut state, &world, 2, &[0.0]);
 
-        assert_eq!(
-            advance
-                .ended
-                .iter()
-                .map(|e| (e.end_code, e.tick))
-                .collect::<Vec<_>>(),
-            vec![(5, 2)]
-        );
+        assert_eq!(ended_codes(&advance), vec![(5, 2)]);
     }
 
     #[test]
@@ -7999,9 +7912,7 @@ mod tests {
         // FUN_00556430.c:31-33: a null origin (+0x6c) starts no transit and
         // moves no one.
         let mut world = minimal_world();
-        let from = system_at(&mut world, 0);
-        let to = system_at(&mut world, 100);
-        let (mut state, envoy) = diplomacy_from(&mut world, from, to);
+        let (mut state, envoy, _, _) = diplomacy_between(&mut world);
         world.characters[envoy].current_system = None;
 
         let advance = step(&mut state, &world, 1, &[0.0]);
@@ -8018,9 +7929,7 @@ mod tests {
         // on as it does for a mission that ends (MemberTransit); the
         // original's cancel path is untraced.
         let mut world = minimal_world();
-        let from = system_at(&mut world, 0);
-        let to = system_at(&mut world, 100);
-        let (mut state, envoy) = diplomacy_from(&mut world, from, to);
+        let (mut state, envoy, from, _) = diplomacy_between(&mut world);
         let departure = step(&mut state, &world, 1, &[]);
         apply_advance_effects(&mut world, &departure.effects);
         let id = state.missions()[0].id;
@@ -8117,14 +8026,7 @@ mod tests {
         });
         world.characters[spy].current_fleet = Some(fleet);
         let unit = |world: &mut GameWorld| {
-            let key = world.special_forces.insert(crate::world::SpecialForceUnit {
-                class_dat_id: crate::ids::DatId::new(0x1400_0001),
-                is_alliance: true,
-                skills: [0; 8],
-                on_mission: true,
-                en_route: false,
-                on_hidden_mission: false,
-            });
+            let key = special_force(world, 0x1400_0001, true, true);
             world.systems[here].special_forces.push(key);
             key
         };

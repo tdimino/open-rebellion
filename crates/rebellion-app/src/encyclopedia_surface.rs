@@ -1515,6 +1515,22 @@ pub(crate) mod tests {
         store.current().unwrap()
     }
 
+    fn open_cockpit(
+        session: &rebellion_data::encyclopedia_session::EncyclopediaSession,
+        controller: &mut EncyclopediaSurfaceController,
+        windows: &mut WindowManager,
+    ) -> rebellion_windowing::WindowId {
+        controller
+            .open(
+                session,
+                EncyclopediaEntryIntent::Cockpit {
+                    audience: EncyclopediaAudience::Empire,
+                },
+                windows,
+            )
+            .unwrap()
+    }
+
     #[test]
     fn adapter_maps_exact_session_identity_and_resolved_topic_without_copying_bytes() {
         let session = session();
@@ -1556,15 +1572,7 @@ pub(crate) mod tests {
         let mut controller = EncyclopediaSurfaceController::new();
         let mut windows = WindowManager::new();
 
-        let id = controller
-            .open(
-                &session,
-                EncyclopediaEntryIntent::Cockpit {
-                    audience: EncyclopediaAudience::Empire,
-                },
-                &mut windows,
-            )
-            .unwrap();
+        let id = open_cockpit(&session, &mut controller, &mut windows);
 
         assert!(controller.is_open());
         let presentation = controller.presentation(&session).unwrap();
@@ -1793,15 +1801,7 @@ pub(crate) mod tests {
         let session = session();
         let mut controller = EncyclopediaSurfaceController::new();
         let mut windows = WindowManager::new();
-        let id = controller
-            .open(
-                &session,
-                EncyclopediaEntryIntent::Cockpit {
-                    audience: EncyclopediaAudience::Empire,
-                },
-                &mut windows,
-            )
-            .unwrap();
+        let id = open_cockpit(&session, &mut controller, &mut windows);
         controller.mark_unpaintable();
         let frame = windows.begin_frame();
         let reports = controller.content_reports(&frame);

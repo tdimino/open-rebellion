@@ -130,22 +130,17 @@ impl EventLogger {
                 .and_then(|v| v.as_str())
                 .is_none_or(|outcome| outcome == "applied")
         };
-        let move_fleet_attacks = self
-            .events
-            .iter()
-            .filter(|e| e.event_type == "ai_action")
-            .filter(applied)
-            .filter(|e| e.details.get("type").and_then(|v| v.as_str()) == Some("MoveFleet"))
-            .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some("Attack"))
-            .count();
-        let move_fleet_reinforce = self
-            .events
-            .iter()
-            .filter(|e| e.event_type == "ai_action")
-            .filter(applied)
-            .filter(|e| e.details.get("type").and_then(|v| v.as_str()) == Some("MoveFleet"))
-            .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some("Reinforce"))
-            .count();
+        let move_fleet_orders = |reason| {
+            self.events
+                .iter()
+                .filter(|e| e.event_type == "ai_action")
+                .filter(applied)
+                .filter(|e| e.details.get("type").and_then(|v| v.as_str()) == Some("MoveFleet"))
+                .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some(reason))
+                .count()
+        };
+        let move_fleet_attacks = move_fleet_orders("Attack");
+        let move_fleet_reinforce = move_fleet_orders("Reinforce");
         println!("\nCombat diagnostics:");
         println!("  Fleet attack orders:     {move_fleet_attacks}");
         println!("  Fleet reinforce orders:  {move_fleet_reinforce}");

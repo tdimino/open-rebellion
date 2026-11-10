@@ -458,13 +458,13 @@ fn finish_work(
     state: &mut StockpileState,
     world: &GameWorld,
     manufacturing: &mut ManufacturingState,
-    tick: u64,
+    day: u64,
     blocked: &std::collections::HashSet<SystemKey>,
     draws: &mut impl Draws,
     events: &mut Vec<StockpileEvent>,
 ) {
     let due =
-        |cycle: &FacilityCycle| cycle.stage == CycleStage::Working && cycle.ready_tick <= tick;
+        |cycle: &FacilityCycle| cycle.stage == CycleStage::Working && cycle.ready_tick <= day;
     let finished: Vec<ProductionFacilityKey> = world
         .production_facilities
         .keys()
@@ -512,7 +512,7 @@ fn finish_work(
         }
         let yard = &world.manufacturing_facilities[key];
         if let Some(area) = yard_area(yard.class_dat_id.family()) {
-            manufacturing.add_progress(system, area);
+        manufacturing.add_progress(system, area);
         }
         if let Some(cycle) = state.yards.get_mut(&key) {
             cycle.stage = CycleStage::Waiting;
@@ -873,7 +873,7 @@ mod tests {
             }
         }
 
-        fn day(&mut self, world: &GameWorld, tick: u64) {
+        fn tick(&mut self, world: &GameWorld, tick: u64) {
             let events = StockpileSystem::advance(
                 &mut self.state,
                 world,
@@ -885,6 +885,15 @@ mod tests {
             self.events.extend(events);
         }
 
+        fn enqueue_ship(&mut self, system: SystemKey, cost: u32) {
+            let mut ships: slotmap::SlotMap<crate::ids::CapitalShipKey, ()> =
+                slotmap::SlotMap::with_key();
+            self.manufacturing.enqueue(
+                system,
+                QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), cost),
+            );
+        }
+
         /// The Alliance's stockpiles after each day of `days`.
         fn days(
             &mut self,
@@ -892,12 +901,55 @@ mod tests {
             days: std::ops::RangeInclusive<u64>,
         ) -> Vec<(u64, i64, i64)> {
             days.map(|tick| {
-                self.day(world, tick);
+                self.tick(world, tick);
                 let stock = self.state.side(Faction::Alliance);
                 (tick, stock.raw, stock.refined)
             })
             .collect()
         }
+    }
+
+    enum Supply {
+        Raw,
+        Refined,
+    }
+
+    fn assert_fifo_cycle<K: Copy>(
+        run: &mut Run,
+        world: &GameWorld,
+        side: Faction,
+        first: K,
+        second: K,
+        supply: Supply,
+        stage: impl Fn(&Run, K) -> CycleStage,
+    ) {
+        let mut tick = 2;
+        run.tick(world, tick);
+        while stage(run, first) == CycleStage::Working {
+            tick += 1;
+            assert!(tick < 200, "{side:?}");
+            run.tick(world, tick);
+        }
+        assert_eq!(stage(run, second), CycleStage::Waiting, "{side:?}");
+        let stock = run.state.side_mut(side);
+        match supply {
+            Supply::Raw => stock.raw = 1,
+            Supply::Refined => stock.refined = 1,
+        }
+        run.tick(world, tick + 1);
+        assert_eq!(stage(run, second), CycleStage::Working, "{side:?}");
+        assert_eq!(stage(run, first), CycleStage::Waiting, "{side:?}");
+    }
+
+    fn waiting_yard(
+        days: std::ops::RangeInclusive<u64>,
+    ) -> (GameWorld, SystemKey, ManufacturingFacilityKey, Run) {
+        let (mut world, system) = world();
+        let key = yard(&mut world, system, SHIPYARD);
+        let mut run = Run::new();
+        run.enqueue_ship(system, 3);
+        run.days(&world, days);
+        (world, system, key, run)
     }
 
     /// The days on which `field` of the Alliance's stockpiles went up.
@@ -1097,13 +1149,8 @@ mod tests {
         let fast = yard(&mut world, system, ADVANCED_SHIPYARD);
         let mut run = Run::new();
         run.state.side_mut(Faction::Alliance).refined = 10;
-        let mut ships: slotmap::SlotMap<crate::ids::CapitalShipKey, ()> =
-            slotmap::SlotMap::with_key();
-        run.manufacturing.enqueue(
-            system,
-            QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 1),
-        );
-        run.day(&world, 1);
+        run.enqueue_ship(system, 1);
+        run.tick(&world, 1);
         assert_eq!(
             run.state.yard_cycle(fast).unwrap().stage,
             CycleStage::Working
@@ -1122,15 +1169,10 @@ mod tests {
         yard(&mut world, system, ADVANCED_SHIPYARD);
         let mut run = Run::new();
         run.state.side_mut(Faction::Alliance).refined = 10;
-        let mut ships: slotmap::SlotMap<crate::ids::CapitalShipKey, ()> =
-            slotmap::SlotMap::with_key();
-        run.manufacturing.enqueue(
-            system,
-            QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 3),
-        );
+        run.enqueue_ship(system, 3);
         let mut completed_on = None;
         for tick in 1..=12 {
-            run.day(&world, tick);
+            run.tick(&world, tick);
             let done = ManufacturingSystem::advance(&mut run.manufacturing, &[TickEvent { tick }]);
             if !done.is_empty() && completed_on.is_none() {
                 completed_on = Some(tick);
@@ -1153,12 +1195,7 @@ mod tests {
             world.manufacturing_facilities[key].side = side;
             let mut run = Run::new();
             run.state.side_mut(side).refined = 100;
-            let mut ships: slotmap::SlotMap<crate::ids::CapitalShipKey, ()> =
-                slotmap::SlotMap::with_key();
-            run.manufacturing.enqueue(
-                system,
-                QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 584),
-            );
+            run.enqueue_ship(system, 584);
             let work_left = |run: &Run| -> u32 {
                 run.manufacturing
                     .queues()
@@ -1169,7 +1206,7 @@ mod tests {
             let mut progress_days = Vec::new();
             let mut before = work_left(&run);
             for tick in 1..=41 {
-                run.day(&world, tick);
+                run.tick(&world, tick);
                 let now = work_left(&run);
                 if now < before {
                     progress_days.push(tick);
@@ -1208,22 +1245,19 @@ mod tests {
             let first = production(&mut world, system, false);
             let mut run = Run::new();
             run.state.side_mut(side).raw = 1;
-            run.day(&world, 1);
+            run.tick(&world, 1);
             let stage = |run: &Run, key| run.state.production_cycle(key).unwrap().stage;
             assert_eq!(stage(&run, first), CycleStage::Working, "{side:?}");
             let second = production(&mut world, system, false);
-            let mut tick = 2;
-            run.day(&world, tick);
-            while stage(&run, first) == CycleStage::Working {
-                tick += 1;
-                assert!(tick < 200, "{side:?}");
-                run.day(&world, tick);
-            }
-            assert_eq!(stage(&run, second), CycleStage::Waiting, "{side:?}");
-            run.state.side_mut(side).raw = 1;
-            run.day(&world, tick + 1);
-            assert_eq!(stage(&run, second), CycleStage::Working, "{side:?}");
-            assert_eq!(stage(&run, first), CycleStage::Waiting, "{side:?}");
+            assert_fifo_cycle(
+                &mut run,
+                &world,
+                side,
+                first,
+                second,
+                Supply::Raw,
+                stage,
+            );
         }
     }
 
@@ -1241,33 +1275,22 @@ mod tests {
             for key in [first, second] {
                 world.manufacturing_facilities[key].side = side;
             }
-            let mut ships: slotmap::SlotMap<crate::ids::CapitalShipKey, ()> =
-                slotmap::SlotMap::with_key();
             let mut run = Run::new();
             run.state.side_mut(side).refined = 1;
-            run.manufacturing.enqueue(
-                system,
-                QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 584),
-            );
-            run.day(&world, 1);
+            run.enqueue_ship(system, 584);
+            run.tick(&world, 1);
             let stage = |run: &Run, key| run.state.yard_cycle(key).unwrap().stage;
             assert_eq!(stage(&run, first), CycleStage::Working, "{side:?}");
-            run.manufacturing.enqueue(
-                other,
-                QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 584),
+            run.enqueue_ship(other, 584);
+            assert_fifo_cycle(
+                &mut run,
+                &world,
+                side,
+                first,
+                second,
+                Supply::Refined,
+                stage,
             );
-            let mut tick = 2;
-            run.day(&world, tick);
-            while stage(&run, first) == CycleStage::Working {
-                tick += 1;
-                assert!(tick < 200, "{side:?}");
-                run.day(&world, tick);
-            }
-            assert_eq!(stage(&run, second), CycleStage::Waiting, "{side:?}");
-            run.state.side_mut(side).refined = 1;
-            run.day(&world, tick + 1);
-            assert_eq!(stage(&run, second), CycleStage::Working, "{side:?}");
-            assert_eq!(stage(&run, first), CycleStage::Waiting, "{side:?}");
         }
     }
 
@@ -1275,22 +1298,13 @@ mod tests {
     // starts when a unit arrives.
     #[test]
     fn a_yard_waits_for_refined_material() {
-        let (mut world, system) = world();
-        let key = yard(&mut world, system, SHIPYARD);
-        let mut run = Run::new();
-        let mut ships: slotmap::SlotMap<crate::ids::CapitalShipKey, ()> =
-            slotmap::SlotMap::with_key();
-        run.manufacturing.enqueue(
-            system,
-            QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 3),
-        );
-        run.days(&world, 1..=3);
+        let (world, _system, key, mut run) = waiting_yard(1..=3);
         assert_eq!(
             run.state.yard_cycle(key).unwrap().stage,
             CycleStage::Waiting
         );
         run.state.side_mut(Faction::Alliance).refined = 1;
-        run.day(&world, 4);
+        run.tick(&world, 4);
         assert_eq!(
             run.state.yard_cycle(key).unwrap().stage,
             CycleStage::Working
@@ -1306,12 +1320,7 @@ mod tests {
         let mut run = Run::new();
         run.blocked.insert(system);
         run.state.side_mut(Faction::Alliance).refined = 10;
-        let mut ships: slotmap::SlotMap<crate::ids::CapitalShipKey, ()> =
-            slotmap::SlotMap::with_key();
-        run.manufacturing.enqueue(
-            system,
-            QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 3),
-        );
+        run.enqueue_ship(system, 3);
         run.days(&world, 1..=10);
         assert_eq!(run.state.side(Faction::Alliance).refined, 10);
         let queue = run
@@ -1325,16 +1334,7 @@ mod tests {
     // draw either.
     #[test]
     fn a_waiting_yard_does_not_draw_under_blockade() {
-        let (mut world, system) = world();
-        let key = yard(&mut world, system, SHIPYARD);
-        let mut run = Run::new();
-        let mut ships: slotmap::SlotMap<crate::ids::CapitalShipKey, ()> =
-            slotmap::SlotMap::with_key();
-        run.manufacturing.enqueue(
-            system,
-            QueueItem::new(BuildableKind::CapitalShip(ships.insert(())), 3),
-        );
-        run.day(&world, 1);
+        let (world, system, key, mut run) = waiting_yard(1..=1);
         assert_eq!(
             run.state.yard_cycle(key).unwrap().stage,
             CycleStage::Waiting
@@ -1364,7 +1364,7 @@ mod tests {
             .events
             .iter()
             .all(|event| !matches!(event, StockpileEvent::OverdraftScrap { .. })));
-        run.day(&world, 11);
+        run.tick(&world, 11);
         assert!(run.events.contains(&StockpileEvent::OverdraftScrap {
             side: Faction::Alliance,
             target: ScrapTarget::Troop(troop),

@@ -1100,6 +1100,28 @@ mod tests {
         );
     }
 
+    fn automation_world(
+        requirement: u32,
+    ) -> (GameWorld, SystemKey, EconomyState, ManufacturingState) {
+        let (mut world, system, economy, manufacturing) = minimal_world(true);
+        add_production_facility(&mut world, system, true, true);
+        add_production_facility(&mut world, system, true, false);
+        add_training_facility(&mut world, system, true);
+        add_troop(&mut world, system, true);
+        requires(&mut world, system, requirement);
+        (world, system, economy, manufacturing)
+    }
+
+    fn constrained_production_world(
+    ) -> (GameWorld, SystemKey, EconomyState, ManufacturingState) {
+        let (mut world, system, economy, manufacturing) = minimal_world(true);
+        add_training_facility(&mut world, system, true);
+        add_production_facility(&mut world, system, true, true);
+        add_production_facility(&mut world, system, true, false);
+        world.systems[system].total_energy = 3;
+        (world, system, economy, manufacturing)
+    }
+
     // -----------------------------------------------------------------
     // Toggle semantics — FUN_00439d60
     // -----------------------------------------------------------------
@@ -1257,26 +1279,8 @@ mod tests {
         add_production_facility(&mut world, sys_key, true, false); // refinery
         add_production_facility(&mut world, sys_key, true, false); // refinery
 
-        let mut agent = PlayerAgent::new();
-        agent.toggle(AutomationModule::Production); // turn ON
-        agent.advisor_flags.take();
-
-        let orders = run_modules(&mut agent, &world, &mfg, &eco);
-        assert_eq!(orders.len(), 1);
-        match &orders[0] {
-            AgentOrder::BuildFacility { kind, .. } => {
-                if let BuildableKind::ProductionFacility(build) = kind {
-                    assert_eq!(
-                        build.class.family(),
-                        0x2c,
-                        "should build a mine when raw < refined"
-                    );
-                } else {
-                    panic!("expected ProductionFacility");
-                }
-            }
-            _ => panic!("expected BuildFacility order"),
-        }
+        let orders = run_modules(&mut producing(), &world, &mfg, &eco);
+        assert_eq!(built(&orders), Some((sys_key, sys_key, true)));
     }
 
     /// Production picks a refinery when raw output >= refined output.
@@ -1294,26 +1298,8 @@ mod tests {
         add_production_facility(&mut world, sys_key, true, true); // mine
         add_production_facility(&mut world, sys_key, true, false); // refinery
 
-        let mut agent = PlayerAgent::new();
-        agent.toggle(AutomationModule::Production);
-        agent.advisor_flags.take();
-
-        let orders = run_modules(&mut agent, &world, &mfg, &eco);
-        assert_eq!(orders.len(), 1);
-        match &orders[0] {
-            AgentOrder::BuildFacility { kind, .. } => {
-                if let BuildableKind::ProductionFacility(build) = kind {
-                    assert_eq!(
-                        build.class.family(),
-                        0x2d,
-                        "should build a refinery when raw >= refined"
-                    );
-                } else {
-                    panic!("expected ProductionFacility");
-                }
-            }
-            _ => panic!("expected BuildFacility order"),
-        }
+        let orders = run_modules(&mut producing(), &world, &mfg, &eco);
+        assert_eq!(built(&orders), Some((sys_key, sys_key, false)));
     }
 
     /// port: production stops where a site has no room under the economy's
@@ -1321,11 +1307,7 @@ mod tests {
     /// facilities already queued for it, and the yard delivers to the site.
     #[test]
     fn production_builds_only_where_there_is_room_and_delivers_there() {
-        let (mut world, sys_key, eco, mut mfg) = minimal_world(true);
-        add_training_facility(&mut world, sys_key, true);
-        add_production_facility(&mut world, sys_key, true, true);
-        add_production_facility(&mut world, sys_key, true, false);
-        world.systems[sys_key].total_energy = 3;
+        let (world, sys_key, eco, mut mfg) = constrained_production_world();
         let mut agent = PlayerAgent::new();
         agent.toggle(AutomationModule::Production);
 
@@ -1587,11 +1569,7 @@ mod tests {
     /// port: only facilities on their way take a site's energy slots.
     #[test]
     fn a_queued_regiment_takes_no_energy_slot() {
-        let (mut world, sys_key, eco, mut mfg) = minimal_world(true);
-        add_training_facility(&mut world, sys_key, true);
-        add_production_facility(&mut world, sys_key, true, true);
-        add_production_facility(&mut world, sys_key, true, false);
-        world.systems[sys_key].total_energy = 3;
+        let (mut world, sys_key, eco, mut mfg) = constrained_production_world();
         let troop = add_troop(&mut world, sys_key, true);
         mfg.enqueue(
             sys_key,
@@ -1684,18 +1662,7 @@ mod tests {
     /// reach the cap of 5, so the cap does not bind.
     #[test]
     fn each_running_module_issues_one_order_and_returns_to_state_zero() {
-        let (mut world, sys_key, eco, mfg) = minimal_world(true);
-        add_production_facility(&mut world, sys_key, true, true);
-        add_production_facility(&mut world, sys_key, true, false);
-        add_training_facility(&mut world, sys_key, true);
-        add_troop(&mut world, sys_key, true);
-        world.support_values.insert(
-            sys_key,
-            crate::economy::SupportValues {
-                garrison_requirement: 10,
-                ..crate::economy::SupportValues::default()
-            },
-        );
+        let (world, _sys_key, eco, mfg) = automation_world(10);
 
         let mut agent = PlayerAgent::new();
         agent.toggle(AutomationModule::Production);
@@ -1712,18 +1679,7 @@ mod tests {
     /// suspended while the other runs.
     #[test]
     fn a_suspended_module_stays_out_while_the_other_runs() {
-        let (mut world, sys_key, eco, mfg) = minimal_world(true);
-        add_production_facility(&mut world, sys_key, true, true);
-        add_production_facility(&mut world, sys_key, true, false);
-        add_training_facility(&mut world, sys_key, true);
-        add_troop(&mut world, sys_key, true);
-        world.support_values.insert(
-            sys_key,
-            crate::economy::SupportValues {
-                garrison_requirement: 10,
-                ..crate::economy::SupportValues::default()
-            },
-        );
+        let (world, _sys_key, eco, mfg) = automation_world(10);
 
         let mut agent = PlayerAgent::new();
         agent.toggle(AutomationModule::Garrisons);
@@ -1743,18 +1699,7 @@ mod tests {
     /// No RNG is involved in the decision logic.
     #[test]
     fn a_step_is_deterministic() {
-        let (mut world, sys_key, eco, mfg) = minimal_world(true);
-        add_production_facility(&mut world, sys_key, true, true);
-        add_production_facility(&mut world, sys_key, true, false);
-        add_training_facility(&mut world, sys_key, true);
-        add_troop(&mut world, sys_key, true);
-        world.support_values.insert(
-            sys_key,
-            crate::economy::SupportValues {
-                garrison_requirement: 3,
-                ..crate::economy::SupportValues::default()
-            },
-        );
+        let (world, _sys_key, eco, mfg) = automation_world(3);
 
         let run = |agent: &mut PlayerAgent| -> Vec<AgentOrder> {
             // Reset to a known state.

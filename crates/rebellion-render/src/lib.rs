@@ -439,10 +439,9 @@ pub fn update_galaxy_map_input(
     if in_viewport {
         let mut best_dist = hover_radius;
         for (key, system) in &world.systems {
-            let (sx, sy) = cam.to_screen(f32::from(system.x), f32::from(system.y));
-            if !cam.contains_with_margin(sx, sy, cam.scale_pixels(20.0)) {
+            let Some((sx, sy)) = visible_system_position(cam, system) else {
                 continue;
-            }
+            };
             let dist = ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt();
             if dist < best_dist {
                 best_dist = dist;
@@ -480,10 +479,9 @@ pub fn draw_galaxy_map(
     // deliberately absent from the parity surface.
     if gid_mode.is_active() {
         for (key, system) in &world.systems {
-            let (sx, sy) = cam.to_screen(f32::from(system.x), f32::from(system.y));
-            if !cam.contains_with_margin(sx, sy, cam.scale_pixels(20.0)) {
+            let Some((sx, sy)) = visible_system_position(cam, system) else {
                 continue;
-            }
+            };
             draw_gid_marker(
                 cache, world, key, system, faction, gid_mode, gid, cam, sx, sy,
             );
@@ -491,6 +489,12 @@ pub fn draw_galaxy_map(
     }
 
     cam
+}
+
+fn visible_system_position(cam: CameraView, system: &System) -> Option<(f32, f32)> {
+    let position = cam.to_screen(f32::from(system.x), f32::from(system.y));
+    cam.contains_with_margin(position.0, position.1, cam.scale_pixels(20.0))
+        .then_some(position)
 }
 
 /// Top of the GID caption's text box in the 640x480 canvas. hyp: measured,
@@ -864,36 +868,39 @@ fn gid_metric(
                     .map(|entry| entry.count)
                     .sum::<u32>()
         }
-        GidMode::DeathStarShields => system
-            .defense_facilities
-            .iter()
-            .filter(|key| {
-                world.defense_facilities.get(**key).is_some_and(|facility| {
-                    facility.side == player_faction && facility.class_dat_id.index() == 4
-                })
-            })
-            .count() as u32,
-        GidMode::PlanetaryShieldGenerators => system
-            .defense_facilities
-            .iter()
-            .filter(|key| {
-                world.defense_facilities.get(**key).is_some_and(|facility| {
-                    facility.side == player_faction
-                        && matches!(facility.class_dat_id.index(), 3 | 6)
-                })
-            })
-            .count() as u32,
-        GidMode::PlanetaryDefenseBatteries => system
-            .defense_facilities
-            .iter()
-            .filter(|key| {
-                world.defense_facilities.get(**key).is_some_and(|facility| {
-                    facility.side == player_faction
-                        && matches!(facility.class_dat_id.index(), 1 | 2 | 5)
-                })
-            })
-            .count() as u32,
+        GidMode::DeathStarShields => {
+            defense_facility_count(world, system, player_faction, |index| index == 4)
+        }
+        GidMode::PlanetaryShieldGenerators => {
+            defense_facility_count(world, system, player_faction, |index| matches!(index, 3 | 6))
+        }
+        GidMode::PlanetaryDefenseBatteries => defense_facility_count(
+            world,
+            system,
+            player_faction,
+            |index| matches!(index, 1 | 2 | 5),
+        ),
     }
+}
+
+fn defense_facility_count(
+    world: &GameWorld,
+    system: &System,
+    faction: rebellion_core::dat::Faction,
+    matches_index: impl Fn(u32) -> bool,
+) -> u32 {
+    system
+        .defense_facilities
+        .iter()
+        .filter(|key| {
+            world
+                .defense_facilities
+                .get(**key)
+                .is_some_and(|facility| {
+                    facility.side == faction && matches_index(facility.class_dat_id.index())
+                })
+        })
+        .count() as u32
 }
 
 fn gid_metric_size(mode: GidMode, value: u32) -> usize {
@@ -1272,6 +1279,37 @@ pub fn draw_blockade_indicators(world: &GameWorld, blockade: &BlockadeState, cam
 mod interaction_tests {
     use super::*;
 
+    struct GidFixture {
+        movement: rebellion_core::movement::MovementState,
+        manufacturing: ManufacturingState,
+        economy: rebellion_core::economy::EconomyState,
+        missions: rebellion_core::missions::MissionState,
+        uprisings: rebellion_core::uprising::UprisingState,
+    }
+
+    impl GidFixture {
+        fn new(manufacturing: ManufacturingState) -> Self {
+            Self {
+                movement: rebellion_core::movement::MovementState::new(),
+                manufacturing,
+                economy: rebellion_core::economy::EconomyState::default(),
+                missions: rebellion_core::missions::MissionState::new(),
+                uprisings: rebellion_core::uprising::UprisingState::default(),
+            }
+        }
+
+        fn context(&self) -> GidOverlayContext<'_> {
+            GidOverlayContext {
+                movement: &self.movement,
+                manufacturing: &self.manufacturing,
+                economy: &self.economy,
+                missions: &self.missions,
+                uprisings: &self.uprisings,
+                highlight: &[],
+            }
+        }
+    }
+
     #[test]
     #[expect(
         clippy::float_cmp,
@@ -1608,7 +1646,6 @@ mod interaction_tests {
             is_destroyed: false,
             control: ControlKind::Controlled(rebellion_core::dat::Faction::Alliance),
         });
-        let movement = rebellion_core::movement::MovementState::new();
         let mut manufacturing = ManufacturingState::new();
         manufacturing.enqueue(
             key,
@@ -1619,17 +1656,8 @@ mod interaction_tests {
                 5,
             ),
         );
-        let economy = rebellion_core::economy::EconomyState::default();
-        let missions = rebellion_core::missions::MissionState::new();
-        let uprisings = rebellion_core::uprising::UprisingState::default();
-        let gid = GidOverlayContext {
-            movement: &movement,
-            manufacturing: &manufacturing,
-            economy: &economy,
-            missions: &missions,
-            uprisings: &uprisings,
-            highlight: &[],
-        };
+        let fixture = GidFixture::new(manufacturing);
+        let gid = fixture.context();
         let metric = |mode| gid_metric(&world, key, &world.systems[key], true, mode, &gid);
 
         assert_eq!(metric(GidMode::IdleShipyards), 1);
@@ -1670,19 +1698,8 @@ mod interaction_tests {
             is_destroyed: true,
             control: ControlKind::Uncontrolled,
         });
-        let movement = rebellion_core::movement::MovementState::new();
-        let manufacturing = ManufacturingState::new();
-        let economy = rebellion_core::economy::EconomyState::default();
-        let missions = rebellion_core::missions::MissionState::new();
-        let uprisings = rebellion_core::uprising::UprisingState::default();
-        let gid = GidOverlayContext {
-            movement: &movement,
-            manufacturing: &manufacturing,
-            economy: &economy,
-            missions: &missions,
-            uprisings: &uprisings,
-            highlight: &[],
-        };
+        let fixture = GidFixture::new(ManufacturingState::new());
+        let gid = fixture.context();
         for faction in [CockpitFaction::Empire, CockpitFaction::Alliance] {
             let marker = |world: &GameWorld, mode| {
                 gid_marker_for_system(world, key, &world.systems[key], faction, mode, &gid)

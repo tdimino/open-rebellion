@@ -425,22 +425,31 @@ mod tests {
         entries
     }
 
-    fn read_native_fixture(
-        source: &[u8],
-        manifest: &[u8],
-        artwork: &[u8],
-    ) -> anyhow::Result<Option<EncyclopediaContentPayload>> {
+    fn native_dirs() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
         let root = tempdir().unwrap();
         let gdata = root.path().join("GData");
         let source_dir = gdata.join("encyclopedia");
         let edata = root.path().join("EData");
         std::fs::create_dir_all(&source_dir).unwrap();
         std::fs::create_dir_all(&edata).unwrap();
-        std::fs::write(source_dir.join("source.json"), source).unwrap();
-        std::fs::write(source_dir.join("source.json.manifest.json"), manifest).unwrap();
+        (root, gdata, source_dir, edata)
+    }
+
+    fn write_artwork(edata: &std::path::Path, artwork: &[u8]) {
         for filename in ["EDATA.001", "EDATA.014", "EDATA.015", "EDATA.115"] {
             std::fs::write(edata.join(filename), artwork).unwrap();
         }
+    }
+
+    fn read_native_fixture(
+        source: &[u8],
+        manifest: &[u8],
+        artwork: &[u8],
+    ) -> anyhow::Result<Option<EncyclopediaContentPayload>> {
+        let (_root, gdata, source_dir, edata) = native_dirs();
+        std::fs::write(source_dir.join("source.json"), source).unwrap();
+        std::fs::write(source_dir.join("source.json.manifest.json"), manifest).unwrap();
+        write_artwork(&edata, artwork);
         read_native_encyclopedia(&gdata, &edata)
     }
 
@@ -465,17 +474,10 @@ mod tests {
 
     #[test]
     fn native_packed_and_loose_bytes_install_identical_sessions() {
-        let root = tempdir().unwrap();
-        let gdata = root.path().join("GData");
-        let source_dir = gdata.join("encyclopedia");
-        let edata = root.path().join("EData");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::fs::create_dir_all(&edata).unwrap();
+        let (_root, gdata, source_dir, edata) = native_dirs();
         std::fs::write(source_dir.join("source.json"), SOURCE).unwrap();
         std::fs::write(source_dir.join("source.json.manifest.json"), MANIFEST).unwrap();
-        for filename in ["EDATA.001", "EDATA.014", "EDATA.015", "EDATA.115"] {
-            std::fs::write(edata.join(filename), indexed_bmp()).unwrap();
-        }
+        write_artwork(&edata, &indexed_bmp());
 
         let native = read_native_encyclopedia(&gdata, &edata).unwrap().unwrap();
         let mut packed_entries = namespaced_entries();
@@ -504,18 +506,11 @@ mod tests {
 
     #[test]
     fn native_acquisition_enforces_the_aggregate_limit_while_reading() {
-        let root = tempdir().unwrap();
-        let gdata = root.path().join("GData");
-        let source_dir = gdata.join("encyclopedia");
-        let edata = root.path().join("EData");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::fs::create_dir_all(&edata).unwrap();
+        let (_root, gdata, source_dir, edata) = native_dirs();
         std::fs::write(source_dir.join("source.json"), SOURCE).unwrap();
         std::fs::write(source_dir.join("source.json.manifest.json"), MANIFEST).unwrap();
         let artwork = indexed_bmp();
-        for filename in ["EDATA.001", "EDATA.014", "EDATA.015", "EDATA.115"] {
-            std::fs::write(edata.join(filename), &artwork).unwrap();
-        }
+        write_artwork(&edata, &artwork);
 
         let error = read_native_encyclopedia_with_artwork_limit(&gdata, &edata, artwork.len() * 3)
             .unwrap_err();
@@ -585,12 +580,7 @@ mod tests {
         assert!(!safe_relative_key("assets/EDATA.001/nested"));
         assert!(!safe_relative_key("assets/EDATA.001\\nested"));
 
-        let root = tempdir().unwrap();
-        let gdata = root.path().join("GData");
-        let source_dir = gdata.join("encyclopedia");
-        let edata = root.path().join("EData");
-        std::fs::create_dir_all(&source_dir).unwrap();
-        std::fs::create_dir_all(&edata).unwrap();
+        let (_root, gdata, source_dir, edata) = native_dirs();
         assert!(read_native_encyclopedia(&gdata, &edata).unwrap().is_none());
 
         std::fs::write(source_dir.join("source.json"), b"{}").unwrap();

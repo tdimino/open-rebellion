@@ -567,18 +567,29 @@ mod tests {
         adapt_encyclopedia_surface(session, &presentation)
     }
 
-    #[test]
-    fn approved_exact_four_x_png_replaces_only_the_rendered_view() {
-        let session = session();
-        let original = original_surface(&session)
+    fn original_artwork(
+        session: &EncyclopediaSession,
+    ) -> rebellion_render::EncyclopediaArtworkView<'_> {
+        original_surface(session)
             .active_topic
             .unwrap()
             .artwork
-            .unwrap();
+            .unwrap()
+    }
+
+    fn approved_output(original_digest: &str) -> (TempDir, Vec<u8>) {
         let root = TempDir::new().unwrap();
         let enhanced = png(1600, 800);
         write_output(&root, &enhanced);
-        write_approval(&root, original.digest, &digest(&enhanced), (1600, 800));
+        write_approval(&root, original_digest, &digest(&enhanced), (1600, 800));
+        (root, enhanced)
+    }
+
+    #[test]
+    fn approved_exact_four_x_png_replaces_only_the_rendered_view() {
+        let session = session();
+        let original = original_artwork(&session);
+        let (root, enhanced) = approved_output(original.digest);
 
         let prepared = prepare_native_encyclopedia_hd(
             AssetRenderProfile::FaithfulHd,
@@ -600,15 +611,8 @@ mod tests {
     #[test]
     fn faithful_hd_retained_bytes_respect_the_aggregate_limit() {
         let session = session();
-        let original = original_surface(&session)
-            .active_topic
-            .unwrap()
-            .artwork
-            .unwrap();
-        let root = TempDir::new().unwrap();
-        let enhanced = png(1600, 800);
-        write_output(&root, &enhanced);
-        write_approval(&root, original.digest, &digest(&enhanced), (1600, 800));
+        let original = original_artwork(&session);
+        let (root, enhanced) = approved_output(original.digest);
 
         let prepared = prepare_native_encyclopedia_hd_with_limit(
             AssetRenderProfile::FaithfulHd,
@@ -704,10 +708,7 @@ mod tests {
             .unwrap()
             .artwork
             .unwrap();
-        let root = TempDir::new().unwrap();
-        let enhanced = png(1600, 800);
-        write_output(&root, &enhanced);
-        write_approval(&root, original.digest, &digest(&enhanced), (1600, 800));
+        let (root, _) = approved_output(original.digest);
         let prepared = prepare_native_encyclopedia_hd(
             AssetRenderProfile::FaithfulHd,
             Some(root.path()),

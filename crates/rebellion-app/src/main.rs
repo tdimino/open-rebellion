@@ -94,12 +94,14 @@ use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
 use rebellion_render::build_selection::{
     draw_build_selection, BuildSelectionAction, BuildSelectionState, PreparedBuildSelectionConfirm,
 };
-use rebellion_render::defenses_window::draw_managed_defenses_windows_shown;
+use rebellion_render::defenses_window::{
+    ManagedDefensesDraw, draw_managed_defenses_windows_shown,
+};
 use rebellion_render::fleet_finder::{
     draw_fleet_finder_focused, FleetFinderAction, FleetFinderState,
 };
 use rebellion_render::fleet_window::{
-    draw_managed_fleet_windows, FleetWindowEntry, FLEET_RENAME_CONTROL,
+    draw_managed_fleet_windows, FleetWindowEntry, ManagedFleetDraw, FLEET_RENAME_CONTROL,
 };
 use rebellion_render::game_menu::{ManagedMenuState, OwnedMenuOutcome, PreparedMenuOpen};
 use rebellion_render::game_speed::{
@@ -113,7 +115,7 @@ use rebellion_render::mission_dialog::{
     PreparedMissionDialogConfirm,
 };
 use rebellion_render::missions_window::{
-    draw_managed_missions_windows_shown, PreparedMissionsWindow,
+    draw_managed_missions_windows_shown, ManagedMissionsDraw, PreparedMissionsWindow,
 };
 use rebellion_render::move_confirmation::{
     draw_move_confirmation, draw_scrap_confirmation, draw_stop_confirmation, MoveConfirmation,
@@ -134,13 +136,15 @@ use rebellion_render::personnel_finder::{
     PersonnelFinderState, PERSONNEL_FINDER_LIST_CONTROL, PERSONNEL_FINDER_NAME_CONTROL,
 };
 use rebellion_render::quadrant_icons::Quadrant;
-use rebellion_render::sector_window::{draw_managed_sector_windows_shown, SectorWindowInputEvent};
+use rebellion_render::sector_window::{
+    draw_managed_sector_windows_shown, SectorWindowDraw, SectorWindowInputEvent,
+};
 use rebellion_render::status_rows::{StatusObject, StatusSources};
 use rebellion_render::status_window::{
     draw_managed_status_window, StatusWindowAction, StatusWindowState,
 };
 use rebellion_render::system_window::{
-    draw_managed_system_windows, fleet_label, SystemWindowInputEvent,
+    draw_managed_system_windows, fleet_label, ManagedSystemDraw, SystemWindowInputEvent,
 };
 use rebellion_render::tactical_view::{
     TacticalWindowEvent, TacticalWindowInput, TacticalWindowPhase,
@@ -15933,16 +15937,18 @@ async fn main() {
 
                     let sector_actions = with_strategic_input(ctx, retained_window_input, || {
                         draw_managed_sector_windows_shown(
-                            ctx,
-                            &world,
-                            &movement_state,
-                            fog_state,
-                            &mut sector_window_state,
-                            cockpit_state.faction,
-                            cockpit_layout,
-                            &mut bmp_cache,
-                            &mission_state,
-                            &uprising_state,
+                            SectorWindowDraw {
+                                ctx,
+                                world: &world,
+                                movement: &movement_state,
+                                fog: fog_state,
+                                state: &mut sector_window_state,
+                                faction: cockpit_state.faction,
+                                layout: cockpit_layout,
+                                cache: &mut bmp_cache,
+                                missions: &mission_state,
+                                uprisings: &uprising_state,
+                            },
                             strategic_frame_boundary.snapshot(),
                             &sector_pointer_routes,
                             &mut strategic_input_router,
@@ -16127,24 +16133,24 @@ async fn main() {
                     }
 
                     for action in with_strategic_input(ctx, retained_window_input, || {
-                        draw_managed_system_windows(
+                        draw_managed_system_windows(ManagedSystemDraw {
                             ctx,
-                            &world,
-                            &movement_state,
-                            fog_state,
-                            &mission_state,
-                            &mfg_state,
-                            &delivery_state,
-                            &mut system_window_state,
-                            cockpit_state.faction,
-                            cockpit_layout,
-                            &mut bmp_cache,
-                            strategic_frame_boundary.snapshot(),
-                            &system_pointer_routes,
-                            &mut strategic_input_router,
-                            true,
-                            &shown_child,
-                        )
+                            world: &world,
+                            movement: &movement_state,
+                            fog: fog_state,
+                            missions: &mission_state,
+                            manufacturing: &mfg_state,
+                            deliveries: &delivery_state,
+                            state: &mut system_window_state,
+                            faction: cockpit_state.faction,
+                            layout: cockpit_layout,
+                            cache: &mut bmp_cache,
+                            snapshot: strategic_frame_boundary.snapshot(),
+                            pointer_events: &system_pointer_routes,
+                            router: &mut strategic_input_router,
+                            front: true,
+                            shown: &shown_child,
+                        })
                     }) {
                         #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                         queue_windowing_pointer_receipt(
@@ -16258,22 +16264,22 @@ async fn main() {
                         }
                     }
 
-                    for action in draw_managed_fleet_windows(
+                    for action in draw_managed_fleet_windows(ManagedFleetDraw {
                         ctx,
-                        &world,
-                        &movement_state,
-                        fog_state,
-                        &troop_transport_state,
-                        &mut fleet_window_state,
-                        cockpit_state.faction,
-                        cockpit_layout,
-                        &mut bmp_cache,
-                        strategic_frame_boundary.snapshot(),
-                        &strategic_pointer_routes,
-                        &mut strategic_input_router,
-                        true,
-                        &shown_child,
-                    ) {
+                        world: &world,
+                        movement: &movement_state,
+                        fog: fog_state,
+                        transport: &troop_transport_state,
+                        state: &mut fleet_window_state,
+                        faction: cockpit_state.faction,
+                        layout: cockpit_layout,
+                        cache: &mut bmp_cache,
+                        snapshot: strategic_frame_boundary.snapshot(),
+                        pointer_events: &strategic_pointer_routes,
+                        router: &mut strategic_input_router,
+                        front: true,
+                        shown: &shown_child,
+                    }) {
                         #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                         queue_windowing_pointer_receipt(
                             &mut pending_windowing_route_receipts,
@@ -16588,18 +16594,20 @@ async fn main() {
 
                     for action in with_strategic_input(ctx, retained_window_input, || {
                         draw_managed_defenses_windows_shown(
-                            ctx,
-                            &world,
-                            fog_state,
-                            &mission_state,
-                            &economy_state,
-                            &mut defenses_window_state,
-                            cockpit_state.faction,
-                            cockpit_layout,
-                            &mut bmp_cache,
-                            strategic_frame_boundary.snapshot(),
-                            &strategic_pointer_routes,
-                            &mut strategic_input_router,
+                            ManagedDefensesDraw {
+                                ctx,
+                                world: &world,
+                                fog: fog_state,
+                                missions: &mission_state,
+                                economy: &economy_state,
+                                state: &mut defenses_window_state,
+                                faction: cockpit_state.faction,
+                                layout: cockpit_layout,
+                                cache: &mut bmp_cache,
+                                snapshot: strategic_frame_boundary.snapshot(),
+                                pointer_events: &strategic_pointer_routes,
+                                router: &mut strategic_input_router,
+                            },
                             &shown_child,
                         )
                     }) {
@@ -16770,17 +16778,19 @@ async fn main() {
 
                     for action in with_strategic_input(ctx, retained_window_input, || {
                         draw_managed_missions_windows_shown(
-                            ctx,
-                            &world,
-                            fog_state,
-                            &mission_state,
-                            &mut missions_window_state,
-                            cockpit_state.faction,
-                            cockpit_layout,
-                            &mut bmp_cache,
-                            strategic_frame_boundary.snapshot(),
-                            &strategic_pointer_routes,
-                            &mut strategic_input_router,
+                            ManagedMissionsDraw {
+                                ctx,
+                                world: &world,
+                                fog: fog_state,
+                                missions: &mission_state,
+                                state: &mut missions_window_state,
+                                faction: cockpit_state.faction,
+                                layout: cockpit_layout,
+                                cache: &mut bmp_cache,
+                                snapshot: strategic_frame_boundary.snapshot(),
+                                pointer_events: &strategic_pointer_routes,
+                                router: &mut strategic_input_router,
+                            },
                             &shown_child,
                         )
                     }) {
@@ -30245,28 +30255,28 @@ mod managed_interface_save_tests {
             };
             let mut frame_actions = Vec::new();
             let _ = ctx.run(input, |ctx| {
-                frame_actions = draw_managed_system_windows(
+                frame_actions = draw_managed_system_windows(ManagedSystemDraw {
                     ctx,
                     world,
-                    &movement,
-                    &fog,
-                    &missions,
-                    &manufacturing,
-                    &deliveries,
-                    systems,
+                    movement: &movement,
+                    fog: &fog,
+                    missions: &missions,
+                    manufacturing: &manufacturing,
+                    deliveries: &deliveries,
+                    state: systems,
                     faction,
                     layout,
-                    &mut cache,
-                    &snapshot,
-                    &[SystemWindowInputEvent {
+                    cache: &mut cache,
+                    snapshot: &snapshot,
+                    pointer_events: &[SystemWindowInputEvent {
                         id: event,
                         point: (point.x, point.y),
                         phase,
                     }],
-                    &mut router,
-                    true,
-                    &|_| true,
-                );
+                    router: &mut router,
+                    front: true,
+                    shown: &|_| true,
+                });
             });
             actions.extend(frame_actions);
         }

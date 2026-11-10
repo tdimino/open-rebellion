@@ -3243,6 +3243,19 @@ mod tests {
         assert!(c2.is_unable_to_betray);
     }
 
+    fn assert_default_character_extension_fields(c: &Character) {
+        assert!(!c.is_unable_to_betray);
+        assert!(!c.is_jedi_trainer);
+        assert!(!c.is_known_jedi);
+        assert_eq!(c.hyperdrive_modifier, 0);
+        assert_eq!(c.enhanced_loyalty, 0);
+        assert!(!c.on_mission);
+        assert!(!c.on_hidden_mission);
+        assert!(!c.on_mandatory_mission);
+        assert!(c.current_system.is_none());
+        assert!(c.current_fleet.is_none());
+    }
+
     #[test]
     fn captive_character_serde_roundtrip() {
         let mut c = default_character();
@@ -3259,16 +3272,7 @@ mod tests {
     #[test]
     fn default_character_new_fields_are_zero_false_none() {
         let c = default_character();
-        assert!(!c.is_unable_to_betray);
-        assert!(!c.is_jedi_trainer);
-        assert!(!c.is_known_jedi);
-        assert_eq!(c.hyperdrive_modifier, 0);
-        assert_eq!(c.enhanced_loyalty, 0);
-        assert!(!c.on_mission);
-        assert!(!c.on_hidden_mission);
-        assert!(!c.on_mandatory_mission);
-        assert!(c.current_system.is_none());
-        assert!(c.current_fleet.is_none());
+        assert_default_character_extension_fields(&c);
     }
 
     #[test]
@@ -3304,16 +3308,7 @@ mod tests {
         }"#;
         let c: Character = serde_json::from_str(json).unwrap();
         // All pre-v8 fields with `#[serde(default)]` should default gracefully
-        assert!(!c.is_unable_to_betray);
-        assert!(!c.is_jedi_trainer);
-        assert!(!c.is_known_jedi);
-        assert_eq!(c.hyperdrive_modifier, 0);
-        assert_eq!(c.enhanced_loyalty, 0);
-        assert!(!c.on_mission);
-        assert!(!c.on_hidden_mission);
-        assert!(!c.on_mandatory_mission);
-        assert!(c.current_system.is_none());
-        assert!(c.current_fleet.is_none());
+        assert_default_character_extension_fields(&c);
         assert_eq!(c.force_tier, ForceTier::None);
         assert!(!c.heritage_known);
         assert!(!c.is_killed);

@@ -525,6 +525,18 @@ pub fn load_game_data_with_options(
     // ── 10a. Buildable classes ─────────────────────────────────────────────
     // What each regiment, special-force and facility class costs to build,
     // for Build Selection (FUN_00437880 lists them, FUN_00538220 prices them).
+    macro_rules! buildable_head {
+        ($record:expr) => {
+            [
+                $record.is_alliance,
+                $record.is_empire,
+                $record.refined_material_cost,
+                $record.maintenance_cost,
+                $record.research_order,
+                $record.research_difficulty,
+            ]
+        };
+    }
     let mut buildable =
         |family: u32, id: u32, text: u16, head: [u32; 6], rate: u32, stats: ClassStats| {
             let [is_alliance, is_empire, refined, maintenance, order, difficulty] = head;
@@ -547,14 +559,7 @@ pub fn load_game_data_with_options(
     if file_available(&troops_path) {
         let file: TroopsFile = read_dat_file(&troops_path)?;
         for d in &file.troops {
-            let head = [
-                d.is_alliance,
-                d.is_empire,
-                d.refined_material_cost,
-                d.maintenance_cost,
-                d.research_order,
-                d.research_difficulty,
-            ];
+            let head = buildable_head!(d);
             let stats = ClassStats {
                 bombardment: d.bombardment_defense,
                 uprising_defense: d.uprising_defense,
@@ -566,14 +571,7 @@ pub fn load_game_data_with_options(
     if file_available(&specfc_path) {
         let file: SpecialForcesFile = read_dat_file(&specfc_path)?;
         for d in &file.units {
-            let head = [
-                d.is_alliance,
-                d.is_empire,
-                d.refined_material_cost,
-                d.maintenance_cost,
-                d.research_order,
-                d.research_difficulty,
-            ];
+            let head = buildable_head!(d);
             buildable(
                 d.family_id,
                 d.id,
@@ -587,14 +585,7 @@ pub fn load_game_data_with_options(
     if file_available(&deffac_path) {
         let file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
         for d in &file.facilities {
-            let head = [
-                d.is_alliance,
-                d.is_empire,
-                d.refined_material_cost,
-                d.maintenance_cost,
-                d.research_order,
-                d.research_difficulty,
-            ];
+            let head = buildable_head!(d);
             let stats = ClassStats {
                 bombardment: d.bombardment_defense,
                 attack_strength: d.attack_strength,
@@ -628,14 +619,7 @@ pub fn load_game_data_with_options(
         if file_available(&path) {
             let file: ManufacturingFacilitiesFile = read_dat_file(&path)?;
             for d in &file.facilities {
-                let head = [
-                    d.is_alliance,
-                    d.is_empire,
-                    d.refined_material_cost,
-                    d.maintenance_cost,
-                    d.research_order,
-                    d.research_difficulty,
-                ];
+                let head = buildable_head!(d);
                 let stats = ClassStats {
                     bombardment: d.bombardment_defense,
                     ..ClassStats::default()

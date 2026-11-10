@@ -396,34 +396,41 @@ fn run_prepared_candidate(
     (output, realized.expect("the egui pass ran"))
 }
 
+fn markers(
+    output: &egui::FullOutput,
+) -> impl Iterator<Item = (ProbeWindow, egui::Rect)> + '_ {
+    output.shapes.iter().filter_map(|clipped| {
+        let egui::Shape::Rect(rect) = &clipped.shape else {
+            return None;
+        };
+        ProbeWindow::ALL
+            .into_iter()
+            .find(|window| window.marker() == rect.fill)
+            .map(|window| (window, clipped.clip_rect))
+    })
+}
+
 fn marker_order(output: &egui::FullOutput) -> Vec<ProbeWindow> {
-    let mut order = Vec::new();
-    for clipped in &output.shapes {
-        if let egui::Shape::Rect(rect) = &clipped.shape {
-            if let Some(window) = ProbeWindow::ALL
-                .into_iter()
-                .find(|window| window.marker() == rect.fill)
-            {
-                order.push(window);
-            }
-        }
-    }
-    order
+    markers(output).map(|(window, _)| window).collect()
 }
 
 fn marker_clips(output: &egui::FullOutput) -> Vec<(ProbeWindow, egui::Rect)> {
-    let mut clips = Vec::new();
-    for clipped in &output.shapes {
-        if let egui::Shape::Rect(rect) = &clipped.shape {
-            if let Some(window) = ProbeWindow::ALL
-                .into_iter()
-                .find(|window| window.marker() == rect.fill)
-            {
-                clips.push((window, clipped.clip_rect));
-            }
-        }
-    }
-    clips
+    markers(output).collect()
+}
+
+fn run_over_overlap(
+    ctx: &egui::Context,
+    state: &mut ProbeState,
+    windows: &[ProbeWindow],
+    events: Vec<egui::Event>,
+) -> (egui::FullOutput, RealizedFrame) {
+    run_candidate(
+        ctx,
+        state,
+        &specs(windows),
+        Some(OVERLAP.center()),
+        events,
+    )
 }
 
 fn render_repeated_raise(ctx: &egui::Context, requested_bottom_to_top: &[ProbeWindow]) {
@@ -627,13 +634,7 @@ fn windowing_adapter_reorders_existing_windows_on_the_first_requested_frame() {
 fn windowing_adapter_keeps_widget_ids_and_text_state_across_raise() {
     let ctx = egui::Context::default();
     let mut state = ProbeState::default();
-    let (_, first) = run_candidate(
-        &ctx,
-        &mut state,
-        &specs(&ProbeWindow::ALL),
-        Some(OVERLAP.center()),
-        Vec::new(),
-    );
+    let (_, first) = run_over_overlap(&ctx, &mut state, &ProbeWindow::ALL, Vec::new());
     let id = text_id(&first, ProbeWindow::A);
     focus_text_at_end(&ctx, id, state.text[&ProbeWindow::A].chars().count());
     let (_, raised) = run_candidate(
@@ -653,24 +654,17 @@ fn windowing_adapter_keeps_widget_ids_and_text_state_across_raise() {
 fn windowing_adapter_keeps_automatic_button_ids_across_rank_and_membership_changes() {
     let ctx = egui::Context::default();
     let mut state = ProbeState::default();
-    let (_, first) = run_candidate(
-        &ctx,
-        &mut state,
-        &specs(&ProbeWindow::ALL),
-        Some(OVERLAP.center()),
-        Vec::new(),
-    );
+    let (_, first) = run_over_overlap(&ctx, &mut state, &ProbeWindow::ALL, Vec::new());
     let first_ids: HashMap<_, _> = first
         .bottom_to_top
         .iter()
         .map(|window| (window.id, window.button_id))
         .collect();
 
-    let (_, raised) = run_candidate(
+    let (_, raised) = run_over_overlap(
         &ctx,
         &mut state,
-        &specs(&[ProbeWindow::C, ProbeWindow::A]),
-        Some(OVERLAP.center()),
+        &[ProbeWindow::C, ProbeWindow::A],
         Vec::new(),
     );
 
@@ -683,13 +677,7 @@ fn windowing_adapter_keeps_automatic_button_ids_across_rank_and_membership_chang
 fn windowing_adapter_blocks_lower_text_edit_before_mutation() {
     let ctx = egui::Context::default();
     let mut state = ProbeState::default();
-    let (_, first) = run_candidate(
-        &ctx,
-        &mut state,
-        &specs(&[ProbeWindow::A]),
-        Some(OVERLAP.center()),
-        Vec::new(),
-    );
+    let (_, first) = run_over_overlap(&ctx, &mut state, &[ProbeWindow::A], Vec::new());
     let id = text_id(&first, ProbeWindow::A);
     focus_text_at_end(&ctx, id, state.text[&ProbeWindow::A].chars().count());
 

@@ -3,8 +3,9 @@ use std::collections::BTreeSet;
 use rebellion_windowing::{
     CaptureCancelReason, Cardinality, CloseReason, ContentReport, ContentStatus,
     ExistingOpenPolicy, FocusOnOpen, FocusRestoration, FocusTarget, InputPolicy, OpenPlacement,
-    PresentationPolicy, RouteTarget, StackBand, SubjectId, WindowCommand, WindowEvent, WindowId,
-    WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
+    PresentationPolicy, ReconcileReport, RouteTarget, StackBand, SubjectId, WindowCommand,
+    WindowEvent, WindowId, WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy,
+    WindowSpec, WindowTransition,
 };
 
 fn detail(kind: WindowKind, subject: u64) -> WindowSpec {
@@ -50,6 +51,18 @@ fn focus(window: WindowId) -> Option<FocusTarget> {
         window,
         control: None,
     })
+}
+
+fn assert_reconciliation_rejected(
+    manager: &WindowManager,
+    result: &ReconcileReport,
+    before: &str,
+    invalid: Vec<WindowId>,
+) {
+    assert_eq!(result.invalid_reports, invalid);
+    assert!(result.removed.is_empty());
+    assert!(result.events.is_empty());
+    assert_eq!(format!("{manager:?}"), before);
 }
 
 #[test]
@@ -312,10 +325,7 @@ fn reconcile_never_removes_windows_created_after_its_snapshot() {
     manager.apply(WindowCommand::CapturePointer(child)).unwrap();
     let before = format!("{manager:?}");
     let result = manager.reconcile(&frame, &[report(owner, ContentStatus::Absent)]);
-    assert_eq!(result.invalid_reports, vec![owner]);
-    assert!(result.removed.is_empty());
-    assert!(result.events.is_empty());
-    assert_eq!(format!("{manager:?}"), before);
+    assert_reconciliation_rejected(&manager, &result, &before, vec![owner]);
     assert_eq!(manager.id_for(child_spec.key), Some(child));
     assert_eq!(manager.validate(), Ok(()));
 }
@@ -404,10 +414,7 @@ fn retained_children_prevent_an_absent_owner_from_discarding_live_content() {
             &frame,
             &[report(owner, ContentStatus::Absent), report(child, status)],
         );
-        assert_eq!(result.invalid_reports, vec![owner]);
-        assert!(result.removed.is_empty());
-        assert!(result.events.is_empty());
-        assert_eq!(format!("{manager:?}"), before);
+        assert_reconciliation_rejected(&manager, &result, &before, vec![owner]);
         assert_eq!(manager.validate(), Ok(()));
     }
     let mut manager = WindowManager::new();
