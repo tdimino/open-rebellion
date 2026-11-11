@@ -6,7 +6,7 @@
 //! between frames, where miniquad dispatches hardware events, so the event
 //! enters miniquad's input path into macroquad and egui exactly as a hand's
 //! would, and a scripted click tests that path rather than bypassing it.
-//! Posting through `-[NSApplication postEvent:]` instead lets AppKit spend a
+//! Posting through `-[NSApplication postEvent:]` instead lets `AppKit` spend a
 //! button press on activating the inactive window (2026-10-09: moves
 //! arrived, presses never did). Nothing moves the hardware pointer or
 //! changes which app is in front. One step posts per frame, so a press and its release land in
@@ -40,7 +40,7 @@ enum Step {
         code: u16,
         down: bool,
     },
-    /// Control pressed or released, as AppKit reports a modifier key.
+    /// Control pressed or released, as `AppKit` reports a modifier key.
     Ctrl(bool),
     /// One wheel line: positive away from the user (up), negative down.
     Scroll(i32),
@@ -165,7 +165,7 @@ fn view_point(x: f32, y: f32, width: f32, height: f32) -> (f64, f64) {
     )
 }
 
-/// macOS virtual key codes (`kVK_*`, HIToolbox `Events.h`) by key name.
+/// macOS virtual key codes (`kVK_*`, `HIToolbox` `Events.h`) by key name.
 fn key_code(name: &str) -> Option<u16> {
     const LETTERS: [u16; 26] = [
         0, 11, 8, 2, 14, 3, 5, 4, 34, 38, 40, 37, 46, 45, 31, 35, 12, 15, 1, 17, 32, 9, 13, 7, 16,

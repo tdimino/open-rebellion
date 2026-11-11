@@ -728,7 +728,7 @@ pub(crate) fn galaxy_centered_rect(layout: CockpitLayout, width: f32, height: f3
 }
 
 /// Draw the open dialog, if any, and report what the player asked for.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The dialog paints in the original's control order; splitting it hides that order."
 )]
@@ -1061,7 +1061,7 @@ pub fn draw_mission_dialog(
 
 /// One mission kind item: the 130 by 65 GOKRES icon centered in the box, and
 /// its name. hyp: the name sits under the icon, centered.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit painter, cache and geometry inputs at this drawing boundary."
 )]
@@ -1103,7 +1103,7 @@ struct ListResult {
 /// An agents or decoys list (`CoolDragList`, `FUN_00607ea0`): 107 by 59
 /// items, each a centered mini with its name under it. port: its scroll bar
 /// (base 0x29fc) is not drawn; the wheel scrolls it by one item.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit painter, cache and geometry inputs at this drawing boundary."
 )]
@@ -1256,7 +1256,7 @@ mod tests {
         // Mission dialog; FUN_00521030 later reads the same order object.
         for faction in [MissionFaction::Alliance, MissionFaction::Empire] {
             let mut state = MissionDialogState::default();
-            let target = MissionTarget::Fleet(Default::default());
+            let target = MissionTarget::Fleet(rebellion_core::ids::FleetKey::default());
             let prepared = state
                 .prepare_open(
                     faction,
@@ -1374,7 +1374,7 @@ mod tests {
         assert_eq!(dialog.faction, MissionFaction::Empire);
         assert_eq!(dialog.kind(), MissionKind::Espionage);
         assert_eq!(dialog.page(), MissionDialogPage::Mission);
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
     }
 
     #[test]
@@ -1661,7 +1661,7 @@ mod tests {
         let dialog = state.dialog().unwrap();
 
         assert_eq!(dialog.agents(), team.as_slice());
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
         assert_eq!(dialog.page(), MissionDialogPage::Mission);
         assert_eq!(dialog.kind(), MissionKind::Diplomacy);
     }
@@ -1697,7 +1697,7 @@ mod tests {
         dialog.move_selected(true);
 
         assert_eq!(dialog.agents(), &[team[1], team[0]]);
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
     }
 
     #[test]
@@ -1710,7 +1710,7 @@ mod tests {
         dialog.move_selected(false);
 
         assert_eq!(dialog.agents(), team.as_slice());
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
     }
 
     #[test]

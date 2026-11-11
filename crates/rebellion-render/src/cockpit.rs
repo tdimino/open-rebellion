@@ -992,7 +992,7 @@ pub fn draw_cockpit_chrome(state: &CockpitState) -> CockpitLayout {
 ///
 /// All strategic map layers use this one clip, preventing synthetic map pixels
 /// from leaking into advisor and command-control apertures in the shell.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -1043,7 +1043,7 @@ pub fn draw_cockpit_background(ctx: &egui::Context, state: &CockpitState, cache:
     );
 }
 
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -1177,7 +1177,7 @@ fn draw_message_index_rail(
     }
 }
 
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Preserve existing conversion of bitmap sizes and bounded UI indices into pixel coordinates."
 )]
@@ -1219,7 +1219,7 @@ fn draw_control(
     );
 }
 
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Preserve existing conversion of bitmap sizes and bounded UI indices into pixel coordinates."
 )]
@@ -1300,7 +1300,7 @@ fn draw_compact_gid_legend(
     double_clicked
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "The category index is bounded by the six-entry GidCategory table."
 )]
@@ -1322,7 +1322,7 @@ fn gid_arrow_resource(faction: CockpitFaction) -> u32 {
     }
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -1716,7 +1716,7 @@ const fn gid_menu_origin(faction: CockpitFaction) -> (f32, f32) {
 /// The menu window's side, 0xa0 (`FUN_00451130`).
 const GID_MENU_SIZE: f32 = 160.0;
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     clippy::cast_precision_loss,
     reason = "Preserve existing conversion of bitmap sizes and bounded UI indices into pixel coordinates. Keep this existing ordered routine together; splitting its phases is a separate refactor."
@@ -1982,7 +1982,7 @@ pub(crate) fn logical_rect_to_screen(layout: CockpitLayout, rect: CockpitViewpor
     )
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
@@ -2518,7 +2518,8 @@ mod tests {
             assert!(!gid.hides(first), "{faction:?}");
             gid.show_child(second);
             gid.close_menu();
-            assert!(!gid.hides(second) && gid.shown.is_empty());
+            assert!(!gid.hides(second));
+            assert_empty!(gid.shown);
         }
     }
 
@@ -3193,7 +3194,7 @@ mod tests {
             let mut commands = std::collections::HashSet::new();
             for category in GidCategory::ALL {
                 let items = gid_submenu_items(category, faction);
-                assert!(!items.is_empty());
+                assert_not_empty!(items);
                 for item in items {
                     assert!(commands.insert(item.mode.command_id()));
                     assert!(item.mode.is_active());

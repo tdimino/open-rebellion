@@ -386,7 +386,7 @@ pub fn resolve(
     resolve_with(world, transport, system, fleets, &mut draws)
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The run's six steps share its counts and read in the original's order."
 )]
@@ -1206,8 +1206,8 @@ mod tests {
             let report = run(&mut scene, &mut draws);
             assert_eq!(draws.asked, [99, 0], "{side:?}");
             assert_eq!(report.shots.len(), 1);
-            assert!(report.engagements.is_empty());
-            assert!(report.landed.is_empty());
+            assert_empty!(report.engagements);
+            assert_empty!(report.landed);
         }
     }
 
@@ -1431,7 +1431,7 @@ mod tests {
             let mut draws = script(&[0, 5, 0]);
             let report = run(&mut scene, &mut draws);
             assert_eq!(draws.asked, [0, 10, 99], "{side:?}");
-            assert!(report.facilities_lost.is_empty());
+            assert_empty!(report.facilities_lost);
         }
     }
 
@@ -1455,7 +1455,7 @@ mod tests {
             );
             assert_eq!(report.defenders_lost, [scene.defenders[0]]);
             assert_eq!(report.energy, 1);
-            assert!(report.landed.is_empty());
+            assert_empty!(report.landed);
         }
     }
 

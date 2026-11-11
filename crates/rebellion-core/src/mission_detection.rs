@@ -52,7 +52,7 @@ const PHASE_BETRAYAL: u8 = 9;
 
 /// port: a mission's draws for one tick event, taken by the detection run
 /// and the phase 10 roll. The original draws each roll inline from its
-/// global generator; the port seeds a SplitMix64 per mission and tick from
+/// global generator; the port seeds a `SplitMix64` per mission and tick from
 /// one caller roll, so the caller's budget stays fixed.
 #[cfg_attr(test, derive(Clone))]
 pub(crate) struct MissionRng {
@@ -61,9 +61,9 @@ pub(crate) struct MissionRng {
 
 impl MissionRng {
     /// port: the seed spreads the roll over 53 bits and mixes in the
-    /// mission id with the SplitMix64 increment.
+    /// mission id with the `SplitMix64` increment.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "a roll in [0, 1) scaled to 53 bits fits u64"
@@ -75,7 +75,7 @@ impl MissionRng {
         }
     }
 
-    /// port: one SplitMix64 step.
+    /// port: one `SplitMix64` step.
     fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut z = self.state;
@@ -1223,7 +1223,7 @@ mod tests {
         let out = run_once(&mut mission, &world);
 
         assert_eq!(mission.end_code, 0);
-        assert!(out.is_empty());
+        assert_empty!(out);
     }
 
     #[test]
@@ -1239,7 +1239,7 @@ mod tests {
             let lead = agent(&mut world, here, 100);
             let mut mission = sabotage(vec![lead], here, 2);
 
-            assert!(run_once(&mut mission, &world).is_empty());
+            assert_empty!(run_once(&mut mission, &world));
             assert_eq!(mission.end_code, 0, "FOILTB {foil:?}");
         }
     }
@@ -1254,8 +1254,8 @@ mod tests {
         let out = run_once(&mut mission, &world);
 
         assert_eq!(mission.end_code, 0);
-        assert!(out.is_empty());
-        assert!(mission.resigning.is_empty());
+        assert_empty!(out);
+        assert_empty!(mission.resigning);
     }
 
     #[test]
@@ -1320,7 +1320,7 @@ mod tests {
         run_once(&mut mission, &world);
 
         assert_eq!(mission.end_code, 0);
-        assert!(mission.resigning.is_empty());
+        assert_empty!(mission.resigning);
     }
 
     #[test]

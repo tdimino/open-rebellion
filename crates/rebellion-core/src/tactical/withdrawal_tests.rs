@@ -411,15 +411,12 @@ fn only_the_withdrawing_sides_living_units_under_withdraw_move() {
         session.fighters[2].order = TacticalOrder::Withdraw;
         session.advance_side_withdrawals(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
         assert!(session.ships[0].source_waypoint.is_some());
-        for index in 1..4 {
-            assert_eq!(session.ships[index].source_waypoint, None, "ship {index}");
+        for (index, ship) in session.ships.iter().enumerate().take(4).skip(1) {
+            assert_eq!(ship.source_waypoint, None, "ship {index}");
         }
         assert_ne!(session.fighters[0].source_position.z, 0.0);
-        for index in 1..4 {
-            assert_eq!(
-                session.fighters[index].source_position.z, 0.0,
-                "squadron {index}"
-            );
+        for (index, fighter) in session.fighters.iter().enumerate().take(4).skip(1) {
+            assert_eq!(fighter.source_position.z, 0.0, "squadron {index}");
         }
     }
 }
@@ -961,9 +958,9 @@ fn trench_battle(rolled: bool) -> BattleSession {
     session.morale.hyperdrive_squadrons = vec![0];
     if rolled {
         // A seed whose first maneuver draw misses, so the roll takes craft.
-        let seed = (0..)
+        let seed = (0..100_000)
             .find(|&seed| OriginalTacticalRng::new(seed).inclusive(1, 10) >= 2)
-            .unwrap();
+            .expect("a maneuver-miss seed exists in the bounded search");
         session.tactical_rng = OriginalTacticalRng::new(seed);
         session.trench_run_remaining_ms = Some(ORIGINAL_TRENCH_RUN_DURATION_MILLISECONDS);
         session.prepare_original_trench_run();

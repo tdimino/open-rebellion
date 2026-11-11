@@ -35,13 +35,13 @@ pub const OPERATION_REPORT_HEIGHT: f32 = 331.0;
 // (FUN_0044c630.c:73-110).
 const SHELL: [u32; 2] = [0x285f, 0x2860];
 const RAIL_ART: [u32; 2] = [0x2a44, 0x2a45];
-/// The rail art's x (`0x19c` / `0x19f`, FUN_0044c630.c:150-155).
+/// The rail art's x (`0x19c` / `0x19f`, `FUN_0044c630.c:150-155`).
 const RAIL_X: [f32; 2] = [412.0, 415.0];
 /// Every layer's picture is blitted at (12, 13) under the shell
-/// (FUN_0044c630.c:149).
+/// (`FUN_0044c630.c:149`).
 const PICTURE_AT: (f32, f32) = (12.0, 13.0);
 /// Layer 3 (tabs `0x97`-`0x9b`), layer 4 (Personnel) and layer 5 (Display)
-/// (FUN_0044c630.c:116-140).
+/// (`FUN_0044c630.c:116-140`).
 const LAYER_TWO_COLUMN: u32 = 0x2a09;
 const LAYER_THREE_COLUMN: u32 = 0x2a0a;
 const LAYER_DISPLAY: u32 = 0x2a0b;
@@ -52,7 +52,7 @@ struct Control {
     art: (u32, u32),
 }
 
-/// Close (`0x0a`), normal then pressed (FUN_0044c630.c:366-391).
+/// Close (`0x0a`), normal then pressed (`FUN_0044c630.c:366-391`).
 const CLOSE: [Control; 2] = [
     Control {
         rect: (423.0, 25.0, 32.0, 31.0),
@@ -65,35 +65,35 @@ const CLOSE: [Control; 2] = [
 ];
 
 /// The rail group (`100`, radio) at A (0x1a2, 0x58), E (0x1aa, 0x59); its
-/// buttons are 41 or 44 wide and 41 high (FUN_0044c630.c:400-420).
+/// buttons are 41 or 44 wide and 41 high (`FUN_0044c630.c:400-420`).
 const RAIL_ORIGIN: [(f32, f32); 2] = [(418.0, 88.0), (426.0, 89.0)];
 const RAIL_BUTTON: [(f32, f32); 2] = [(41.0, 41.0), (44.0, 41.0)];
 
 /// The tab group (`0x96`) at (0x24, 0x3b); each tab 0x31 by 0x29
-/// (FUN_0044c630.c:604-760).
+/// (`FUN_0044c630.c:604-760`).
 const TABS_AT: (f32, f32) = (36.0, 59.0);
 const TAB_SIZE: (f32, f32) = (49.0, 41.0);
 
 /// The list (`FUN_00607ea0` at (0x25, 0x88), 0x15b by 0xa6;
-/// FUN_0044c630.c:786-797).
+/// `FUN_0044c630.c:786-797`).
 const LIST: (f32, f32, f32, f32) = (37.0, 136.0, 347.0, 166.0);
 
-/// The title: font 0xb, centred in 400 at (12, 13) (FUN_0044c630.c:178-184).
+/// The title: font 0xb, centred in 400 at (12, 13) (`FUN_0044c630.c:178-184`).
 const TITLE_AT: (f32, f32) = (12.0, 13.0);
 const TITLE_WIDTH: f32 = 400.0;
 /// The Summary's text: font 6, 0x15e wide, at (0x19, 0xe1) over a black
-/// copy at (0x1a, 0xe2) (FUN_0044c630.c:186-199).
+/// copy at (0x1a, 0xe2) (`FUN_0044c630.c:186-199`).
 const BODY_AT: (f32, f32) = (25.0, 225.0);
 const TEXT_WIDTH: f32 = 350.0;
 /// The Display layer's text `0x7013`: font 6, 0x15e wide, at x 0x1d with
-/// its last line ending at y 0xb1 (FUN_0044c630.c:237-245).
+/// its last line ending at y 0xb1 (`FUN_0044c630.c:237-245`).
 const DISPLAY_TEXT_X: f32 = 29.0;
 const DISPLAY_TEXT_BOTTOM: f32 = 177.0;
-/// The TEXTSTRA entry the Display layer shows (FUN_0044c630.c:237).
+/// The TEXTSTRA entry the Display layer shows (`FUN_0044c630.c:237`).
 pub const DISPLAY_TEXT_ID: u16 = 0x7013;
-/// The column headers' y, font 4 (FUN_0044c630.c:264-328).
+/// The column headers' y, font 4 (`FUN_0044c630.c:264-328`).
 const HEADER_Y: f32 = 117.0;
-/// The overlay (FUN_0044e290): the view's name centred in 0x15b at
+/// The overlay (`FUN_0044e290`): the view's name centred in 0x15b at
 /// (12, 0x24), font 6, and the tab's name at (0x26, 100), font 4.
 const SUBTITLE_AT: (f32, f32) = (12.0, 36.0);
 const SUBTITLE_WIDTH: f32 = 347.0;
@@ -102,7 +102,7 @@ const TAB_NAME_AT: (f32, f32) = (38.0, 100.0);
 /// Display's buttons, 0xa9 by 0x60 at y 0xb6: the system at x 0x1d
 /// (`0x0b`, `0x2a0c`) and the fleet at x 0xe2 (`0x0c`, `0x2a0d` Alliance,
 /// `0x2a0e` Empire); pressed, the side's frame (`0x2a0f`, `0x2a10`) is
-/// keyed over the picture (FUN_0044c630.c:804-931).
+/// keyed over the picture (`FUN_0044c630.c:804-931`).
 const GOTO_SYSTEM_RECT: (f32, f32, f32, f32) = (29.0, 182.0, 169.0, 96.0);
 const GOTO_FLEET_RECT: (f32, f32, f32, f32) = (226.0, 182.0, 169.0, 96.0);
 const GOTO_SYSTEM_ART: u32 = 0x2a0c;
@@ -272,7 +272,7 @@ impl ReportTab {
         }
     }
 
-    /// The tab's x in its group (FUN_0044c630.c:604-760).
+    /// The tab's x in its group (`FUN_0044c630.c:604-760`).
     const fn x(self) -> f32 {
         const X: [f32; 6] = [0.0, 62.0, 124.0, 186.0, 248.0, 312.0];
         X[self.index()]
@@ -333,7 +333,7 @@ impl ReportTab {
     }
 
     /// The column headers and their x, each 0xa5 or 0x6e wide
-    /// (FUN_0044c630.c:264-328): `0x1932`/`0x1933`, or
+    /// (`FUN_0044c630.c:264-328`): `0x1932`/`0x1933`, or
     /// `0x1934`/`0x1935`/`0x1936`.
     const fn headers(self) -> &'static [(&'static str, f32)] {
         match self {
@@ -449,8 +449,7 @@ pub fn cell_picture(unit: &ReportUnit, tab: ReportTab) -> Vec<(DllSource, u32)> 
         _ => crate::manufacturing_window::class_mini(id).map(|(mini, _)| mini),
     };
     mini.and_then(|mini| mini.checked_sub(0x4000))
-        .map(|portrait| vec![(DllSource::Gokres, portrait)])
-        .unwrap_or_default()
+        .map_or_default(|portrait| vec![(DllSource::Gokres, portrait)])
 }
 
 /// The object state `FUN_0042c3b0`'s status marks read.
@@ -575,7 +574,7 @@ pub fn cell_layers(unit: &ReportUnit, tab: ReportTab, status: CellStatus) -> Vec
 
 /// The text colour by the fleet owner (`+0x6c`): `0x20000ff` red for side
 /// 1, `0x200ff00` green for side 2, else `0x2ffff00` cyan
-/// (FUN_0044c630.c:171-177, FUN_0044e290.c:19-28).
+/// (`FUN_0044c630.c:171-177`, `FUN_0044e290.c:19-28`).
 #[must_use]
 pub fn side_color(fleet_owner: Faction) -> egui::Color32 {
     match fleet_owner {
@@ -629,7 +628,7 @@ pub struct OperationReportState {
 impl OperationReportState {
     /// Open `message`'s report on the Summary view and its first tab
     /// (`0x97` for a bombardment, `0x9b` for an assault;
-    /// FUN_0044c630.c:921-923), with the player's art. `reopen_index` is
+    /// `FUN_0044c630.c:921-923`), with the player's art. `reopen_index` is
     /// the Index category when the Index opened it. A message without a
     /// report opens nothing.
     pub fn open(
@@ -812,11 +811,11 @@ fn wrapped(
     painter.layout(text.to_owned(), font, color, width)
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The window paints in the original's layer and control order; splitting it hides that order."
 )]
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The window reads the world, the moves and the Display text it is given."
 )]
@@ -1091,7 +1090,7 @@ fn draw_at(
                             first: first_row,
                             ..range
                         },
-                        &drag,
+                        drag,
                         pointer,
                     ),
                 );
@@ -1328,7 +1327,7 @@ mod tests {
                     DISPLAY_TEXT,
                 ));
             });
-            result.painted = PAINTED.with(|painted| painted.take());
+            result.painted = PAINTED.with(std::cell::RefCell::take);
             result.texts.clear();
             result.rows.clear();
             for clipped in output.shapes {
@@ -1468,8 +1467,8 @@ mod tests {
                 names(system, ReportTab::Manufacturing),
                 ["Yard", "<No Casualties>"]
             );
-            assert!(names(ReportView::Summary, ReportTab::CapitalShips).is_empty());
-            assert!(names(ReportView::Display, ReportTab::CapitalShips).is_empty());
+            assert_empty!(names(ReportView::Summary, ReportTab::CapitalShips));
+            assert_empty!(names(ReportView::Display, ReportTab::CapitalShips));
         }
     }
 

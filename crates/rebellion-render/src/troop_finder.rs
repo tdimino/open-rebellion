@@ -46,7 +46,7 @@ pub(crate) struct Control {
     art: (u32, u32),
 }
 
-/// The side's Close (`200`) and Display (`0xc9`) controls (FUN_0046ce40).
+/// The side's Close (`200`) and Display (`0xc9`) controls (`FUN_0046ce40`).
 struct SideControls {
     close: Control,
     display: Control,
@@ -78,7 +78,7 @@ const CONTROLS: [SideControls; 2] = [
 ];
 
 /// The side tabs (group `100`) at (36, 72): Alliance, Imperial.
-/// FUN_0046ce40: tab 1 at (0, 0) 49x41 art 10502/10503; tab 2 at (52, 0)
+/// `FUN_0046ce40`: tab 1 at (0, 0) 49x41 art 10502/10503; tab 2 at (52, 0)
 /// 49x41 art 10505/10506.
 const TABS: [Control; 2] = [
     Control {
@@ -100,7 +100,7 @@ const LIST: (f32, f32, f32, f32) = (37.0, 144.0, 349.0, 159.0); // 0x25, 0x90
 /// `FUN_00607ea0(.., 0xca, 330, 25)`: each row is 330 by 25.
 const ROW_HEIGHT: f32 = 25.0;
 
-/// The side tab (FUN_0046ea10's `param_1` 1 or 2).
+/// The side tab (`FUN_0046ea10`'s `param_1` 1 or 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TroopTab {
     #[default]
@@ -135,7 +135,7 @@ impl TroopTab {
     }
 }
 
-/// Five troop DatIds per side (FUN_0046d8d0).
+/// Five troop `DatIds` per side (`FUN_0046d8d0`).
 const ALLIANCE_TROOP_CLASSES: [u32; 5] = [
     0x1000_0002, // Army Regiment
     0x1000_0001, // Fleet Regiment
@@ -182,7 +182,7 @@ pub struct TroopFinderRow {
     pub counts: [TroopCount; 5],
 }
 
-/// A typed name chooses the first row it best begins (FUN_00609650).
+/// A typed name chooses the first row it best begins (`FUN_00609650`).
 #[must_use]
 pub fn prefix_choice(rows: &[TroopFinderRow], text: &str) -> Option<usize> {
     let typed: Vec<char> = text.chars().map(|c| c.to_ascii_lowercase()).collect();
@@ -228,7 +228,7 @@ fn count_troops(world: &GameWorld, troops: &[TroopKey], tab: TroopTab) -> [Troop
     counts
 }
 
-/// The rows FUN_0046ea10 lists for `tab`, in name order ignoring case.
+/// The rows `FUN_0046ea10` lists for `tab`, in name order ignoring case.
 ///
 /// For each system, if it holds regiments of the tab's side (direct
 /// children via `System.ground_units`), the system is listed. Then, for
@@ -304,7 +304,7 @@ pub fn rows(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TroopFinderAction {
     /// System row: open the Sector window and the System Defenses window
-    /// (FUN_00429440 kind 10) selecting the first regiment.
+    /// (`FUN_00429440` kind 10) selecting the first regiment.
     OpenDefenses { system: SystemKey },
     /// Fleet row: open the Sector window and the Fleet window (kind 4)
     /// for the fleet's system.
@@ -345,7 +345,7 @@ struct OpenFinder {
     last_clicked: Option<(usize, f64)>,
 }
 
-/// The Troop Finder, one at most (FUN_0042a4d0).
+/// The Troop Finder, one at most (`FUN_0042a4d0`).
 #[derive(Debug, Clone, Default)]
 pub struct TroopFinderState {
     window: Option<OpenFinder>,
@@ -373,7 +373,7 @@ impl TroopFinderState {
     }
 
     /// Publishes prepared content only for a new manager identity. A duplicate
-    /// NoOp acknowledges the existing identity without rebuilding its state.
+    /// `NoOp` acknowledges the existing identity without rebuilding its state.
     pub fn commit_open(
         &mut self,
         prepared: PreparedTroopFinder,
@@ -496,7 +496,7 @@ impl TroopFinderState {
     }
 
     /// Open the Finder on the player's side tab with the focus in the
-    /// name box (FUN_0046ce40). An open Finder stays as it is.
+    /// name box (`FUN_0046ce40`). An open Finder stays as it is.
     pub fn open(&mut self, faction: CockpitFaction) -> bool {
         if self.window.is_some() {
             return false;
@@ -535,7 +535,7 @@ impl TroopFinderState {
     }
 
     /// Show `tab` (group `100`): the list rebuilds and the choice clears
-    /// (FUN_0046ea10).
+    /// (`FUN_0046ea10`).
     pub fn set_tab(&mut self, tab: TroopTab) {
         if let Some(window) = &mut self.window {
             if window.tab != tab {
@@ -572,7 +572,7 @@ fn at(frame: egui::Rect, scale: f32, (x, y, w, h): (f32, f32, f32, f32)) -> egui
 }
 
 /// Rows the list shows at once: 159 / 25 = 6.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Six whole rows of 25 in a list 159 tall."
@@ -590,7 +590,7 @@ fn scrolled_to(first_row: usize, row: usize) -> usize {
     }
 }
 
-/// The five column cell colours (FUN_0046d8d0).
+/// The five column cell colours (`FUN_0046d8d0`).
 ///
 /// Brush index 0 = red (0x20000ff → RGB 255,0,0): tab Alliance, all usable.
 /// Brush index 1 = green (0x200ff00 → RGB 0,255,0): tab Imperial, all usable.
@@ -655,7 +655,7 @@ pub fn draw_troop_finder_focused(
     }
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The window carries its existing render context plus semantic focus; splitting it hides the original control order."
 )]
@@ -1011,7 +1011,7 @@ fn draw_troop_finder_outcome(
     None
 }
 
-/// The action for opening a row (FUN_00429440).
+/// The action for opening a row (`FUN_00429440`).
 fn action_for_row(row: &TroopFinderRow) -> TroopFinderAction {
     if let Some(fleet) = row.fleet {
         TroopFinderAction::OpenFleet {
@@ -1719,7 +1719,7 @@ mod tests {
         });
 
         assert_eq!(
-            ctx.memory(|memory| memory.focused()),
+            ctx.memory(egui::Memory::focused),
             Some(egui::Id::new("original-troop-finder-name"))
         );
     }
@@ -1878,7 +1878,7 @@ mod tests {
         );
         assert_eq!(state.window.as_ref().unwrap().name, name_before_list_text);
         assert_eq!(
-            ctx.memory(|memory| memory.focused()),
+            ctx.memory(egui::Memory::focused),
             Some(egui::Id::new("original-troop-finder-list"))
         );
         assert_eq!(
@@ -1978,12 +1978,11 @@ mod tests {
                 system.ground_units.clear();
             }
         }
-        assert!(rows(
+        assert_empty!(rows(
             &galaxy.world,
             TroopTab::Imperial,
             &TroopTransportState::default(),
-        )
-        .is_empty());
+        ));
 
         let (_manager, mut state, _id, _name_focus, list_focus, ctx) = managed_navigation();
 
@@ -2003,7 +2002,7 @@ mod tests {
             None
         );
         assert_eq!(
-            ctx.memory(|memory| memory.focused()),
+            ctx.memory(egui::Memory::focused),
             Some(egui::Id::new("original-troop-finder-list"))
         );
         assert_eq!(state.take_focus_request(), None);
@@ -2011,12 +2010,11 @@ mod tests {
         for (_, system) in &mut galaxy.world.systems {
             system.ground_units.clear();
         }
-        assert!(rows(
+        assert_empty!(rows(
             &galaxy.world,
             TroopTab::Alliance,
             &TroopTransportState::default(),
-        )
-        .is_empty());
+        ));
 
         drive_tap_without_action(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowUp);
         assert_eq!(state.take_focus_request(), Some(name_focus));

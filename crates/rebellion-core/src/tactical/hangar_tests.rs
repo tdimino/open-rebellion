@@ -11,12 +11,23 @@ use crate::world::{FighterEntry, Fleet, ShipInstance, System};
 /// `capacity` squadrons, and `squadrons` docked-ready fighters per side.
 /// port: test fixture values, not rules.
 fn carrier_battle(capacity: u32, squadrons: usize, player_is_attacker: bool) -> BattleSession {
-    let mut ships = vec![test_ship(0x1400_0001, 0, true, true), test_ship(0x1400_0002, 0, false, true)];
+    let mut ships = vec![
+        test_ship(0x1400_0001, 0, true, true),
+        test_ship(0x1400_0002, 0, false, true),
+    ];
     for ship in &mut ships {
         ship.fighter_capacity = capacity;
     }
-    ships[0].source_position = TacticalWorldPosition { x: -10.0, y: 0.0, z: 5.0 };
-    ships[1].source_position = TacticalWorldPosition { x: 10.0, y: 0.0, z: -5.0 };
+    ships[0].source_position = TacticalWorldPosition {
+        x: -10.0,
+        y: 0.0,
+        z: 5.0,
+    };
+    ships[1].source_position = TacticalWorldPosition {
+        x: 10.0,
+        y: 0.0,
+        z: -5.0,
+    };
     let mut fighters = Vec::new();
     for (carrier, is_alliance) in [(0, true), (1, false)] {
         for _ in 0..squadrons {
@@ -41,15 +52,17 @@ pub(super) fn carried_world() -> (GameWorld, SystemKey) {
     let mut world = GameWorld::default();
     let system = world.systems.insert(System::default());
     for (is_alliance, tag) in [(true, 1), (false, 2)] {
-        let ship_class = world.capital_ship_classes.insert(crate::world::CapitalShipClass {
-            dat_id: DatId::new(0x1400_0001 + tag),
-            family: 0x14,
-            is_alliance,
-            is_empire: !is_alliance,
-            hull: 100,
-            fighter_capacity: 4,
-            ..crate::world::CapitalShipClass::default()
-        });
+        let ship_class = world
+            .capital_ship_classes
+            .insert(crate::world::CapitalShipClass {
+                dat_id: DatId::new(0x1400_0001 + tag),
+                family: 0x14,
+                is_alliance,
+                is_empire: !is_alliance,
+                hull: 100,
+                fighter_capacity: 4,
+                ..crate::world::CapitalShipClass::default()
+            });
         let grounded = world.fighter_classes.insert(crate::world::FighterClass {
             dat_id: DatId::new(0x1c00_0001 + tag),
             squadron_size: 6,
@@ -136,7 +149,10 @@ fn a_squadron_without_a_hyperdrive_starts_docked_in_its_carrier_for_either_side(
         .unwrap();
     empire_jumping.hyperdrive = 0;
     empire_jumping.hyperdrive_if_damaged = 1;
-    assert_eq!(battle_of(&damaged, system).morale.hyperdrive_squadrons, jumping);
+    assert_eq!(
+        battle_of(&damaged, system).morale.hyperdrive_squadrons,
+        jumping
+    );
     for is_alliance in [true, false] {
         let ship = session
             .ships
@@ -197,7 +213,11 @@ fn docked_squadrons_take_no_slot_and_no_share_of_the_battle_extent_for_either_si
         };
         assert_eq!(
             squadrons[1].source_position,
-            TacticalWorldPosition { x: 0.0, y: 0.0, z: lane },
+            TacticalWorldPosition {
+                x: 0.0,
+                y: 0.0,
+                z: lane
+            },
             "the first flying squadron takes the first slot"
         );
     }
@@ -243,7 +263,11 @@ fn an_unresolved_carrier_is_the_station_and_a_full_hangar_never_launches() {
         .all(|fighter| fighter.carrier == Some(TacticalBerth::Station)));
     assert_eq!(fighters[0].docked, Some(TacticalDock::Ready));
     assert_eq!(fighters[1].docked, Some(TacticalDock::Ready));
-    assert_eq!(fighters[2].docked, Some(TacticalDock::Recovered), "no room left");
+    assert_eq!(
+        fighters[2].docked,
+        Some(TacticalDock::Recovered),
+        "no room left"
+    );
 
     ships.push(test_ship(0x1400_0001, 0, true, true));
     let mut fighters = vec![test_fighter(3, true)];
@@ -268,7 +292,10 @@ fn a_carrier_launches_its_front_squadron_when_the_step_reaches_its_armed_time() 
     let empire_armed = 5.0 + oracle.inclusive(0, 8) as f32 + 3.0;
     assert_eq!(session.hangars.ships, vec![alliance_armed, empire_armed]);
     assert_eq!(session.hangars.step, 4);
-    assert!(session.fighters.iter().all(|fighter| fighter.docked.is_some()));
+    assert!(session
+        .fighters
+        .iter()
+        .all(|fighter| fighter.docked.is_some()));
 
     while (session.hangars.step as f32) < alliance_armed {
         session.advance_hangars(1000.0);
@@ -279,8 +306,15 @@ fn a_carrier_launches_its_front_squadron_when_the_step_reaches_its_armed_time() 
     session.advance_hangars(1000.0);
     assert_eq!(session.fighters[0].docked, None);
     assert!(session.fighters[0].alive && session.fighters[0].listed());
-    assert_eq!(session.fighters[0].source_position, session.ships[0].source_position);
-    assert_eq!(session.fighters[1].docked, Some(TacticalDock::Ready), "one per expiry");
+    assert_eq!(
+        session.fighters[0].source_position,
+        session.ships[0].source_position
+    );
+    assert_eq!(
+        session.fighters[1].docked,
+        Some(TacticalDock::Ready),
+        "one per expiry"
+    );
     let mut oracle = rng;
     let rearmed = 5.0 + oracle.inclusive(0, 8) as f32 + launch_step as f32;
     assert_eq!(session.hangars.ships[0], rearmed);
@@ -327,8 +361,15 @@ fn taking_command_arms_each_hangar_a_squadron_docked_in_from_step_three_for_eith
     session.hangars.step = 3;
     let mut oracle = session.tactical_rng;
     session.arm_docked_hangars();
-    assert_eq!(session.hangars.station, 5.0 + oracle.inclusive(0, 8) as f32 + 3.0);
-    assert_eq!(session.hangars.ships, vec![0.0], "a full hangar's squadron arms nothing");
+    assert_eq!(
+        session.hangars.station,
+        5.0 + oracle.inclusive(0, 8) as f32 + 3.0
+    );
+    assert_eq!(
+        session.hangars.ships,
+        vec![0.0],
+        "a full hangar's squadron arms nothing"
+    );
     assert_eq!(session.tactical_rng, oracle);
 }
 
@@ -351,9 +392,19 @@ fn each_carrier_launches_only_its_own_squadrons_while_it_stays_in_the_battle() {
         session.ships[other].retreating = true;
         session.hangars.ships[other] = 3.0;
         session.advance_hangars(2500.0);
-        assert_eq!((session.hangars.step, session.hangars.elapsed_ms), (5, 500.0));
-        assert_eq!(session.fighters[0].docked, Some(TacticalDock::Ready), "side {is_alliance}");
-        assert_eq!(session.hangars.ships[own], 3.0, "an empty list neither launches nor arms");
+        assert_eq!(
+            (session.hangars.step, session.hangars.elapsed_ms),
+            (5, 500.0)
+        );
+        assert_eq!(
+            session.fighters[0].docked,
+            Some(TacticalDock::Ready),
+            "side {is_alliance}"
+        );
+        assert_eq!(
+            session.hangars.ships[own], 3.0,
+            "an empty list neither launches nor arms"
+        );
         session.ships[other].retreating = false;
         session.advance_hangars(500.0);
         assert_eq!(session.fighters[0].docked, None, "side {is_alliance}");
@@ -378,9 +429,18 @@ fn the_station_launches_only_for_a_local_empire_while_operational() {
         session.fighters[0].docked.is_none()
     };
     let station = test_death_star(false);
-    assert!(launched(false, station), "the player is the Empire defender");
+    assert!(
+        launched(false, station),
+        "the player is the Empire defender"
+    );
     assert!(!launched(true, station), "an Alliance player's battle");
-    assert!(!launched(false, TacticalDeathStar { hull: 0.0, ..station }));
+    assert!(!launched(
+        false,
+        TacticalDeathStar {
+            hull: 0.0,
+            ..station
+        }
+    ));
 }
 
 // FUN_005d14d0.c:62-82: the Empire side's headless step launches every
@@ -394,7 +454,10 @@ fn a_battle_run_without_its_window_launches_every_docked_squadron_on_its_first_s
         assert_eq!(fighter.docked, None);
         assert!(fighter.alive);
     }
-    assert_eq!(session.fighters[2].source_position, session.ships[1].source_position);
+    assert_eq!(
+        session.fighters[2].source_position,
+        session.ships[1].source_position
+    );
 }
 
 // FUN_005ba5e0.c:11-15 -> FUN_005b8d10.c:10-22: a departing station moves
@@ -422,7 +485,11 @@ fn a_departing_station_recalls_its_waiting_squadrons_but_not_flying_ones() {
 #[test]
 fn a_destroyed_station_destroys_its_docked_squadrons_only() {
     let mut fighters = Vec::new();
-    for docked in [Some(TacticalDock::Ready), Some(TacticalDock::Recovered), None] {
+    for docked in [
+        Some(TacticalDock::Ready),
+        Some(TacticalDock::Recovered),
+        None,
+    ] {
         let mut fighter = test_fighter(5, false);
         fighter.carrier = Some(TacticalBerth::Station);
         fighter.docked = docked;
@@ -477,7 +544,11 @@ fn a_retreating_squadron_docks_in_its_carrier_then_any_ship_then_the_empire_stat
         ];
         ships[0].fighter_capacity = 1;
         ships[1].fighter_capacity = 1;
-        let fighters = vec![flying(is_alliance, 1), flying(is_alliance, 1), flying(is_alliance, 1)];
+        let fighters = vec![
+            flying(is_alliance, 1),
+            flying(is_alliance, 1),
+            flying(is_alliance, 1),
+        ];
         let mut session = test_session(ships, fighters, true);
         let mut station = test_death_star(!is_alliance);
         station.is_attacker = is_alliance;
@@ -490,7 +561,11 @@ fn a_retreating_squadron_docks_in_its_carrier_then_any_ship_then_the_empire_stat
         );
         session.fighters[0].carrier = Some(TacticalBerth::Ship(1));
         session.fighters[0].docked = Some(TacticalDock::Recovered);
-        assert_eq!(session.retreat_berth(1), Some(TacticalBerth::Ship(0)), "the first with room");
+        assert_eq!(
+            session.retreat_berth(1),
+            Some(TacticalBerth::Ship(0)),
+            "the first with room"
+        );
         session.fighters[1].carrier = Some(TacticalBerth::Ship(0));
         session.fighters[1].docked = Some(TacticalDock::Recovered);
         let last = session.retreat_berth(2);
@@ -524,7 +599,10 @@ fn a_retreat_docks_squadrons_before_its_ships_jump_or_die() {
     session.fighters[0].alive = true;
     session.stalemate_resolve_side(true);
     assert!(!session.ships[0].retreated);
-    assert_eq!(session.fighters[0].squad_count, 0, "docked in a ship that was destroyed");
+    assert_eq!(
+        session.fighters[0].squad_count, 0,
+        "docked in a ship that was destroyed"
+    );
 }
 
 // FUN_005bef90.c:72-96 (FUN_005c0b60.c:57-83, headless FUN_005aee90.c:20-47):
@@ -549,7 +627,11 @@ fn at_the_end_each_squadron_docks_in_the_first_ship_with_room_or_the_empire_stat
     station.action_committed = false;
     session.death_star = Some(station);
     let berths = session.end_berths();
-    assert_eq!(berths[0], Some(TacticalBerth::Ship(0)), "the docked one holds the other berth");
+    assert_eq!(
+        berths[0],
+        Some(TacticalBerth::Ship(0)),
+        "the docked one holds the other berth"
+    );
     assert_eq!(
         berths[1],
         Some(TacticalBerth::Ship(0)),
@@ -562,10 +644,18 @@ fn at_the_end_each_squadron_docks_in_the_first_ship_with_room_or_the_empire_stat
     let mut empire = test_fighter(5, false);
     empire.carrier = None;
     session.fighters.push(empire);
-    assert_eq!(session.end_berths()[5], None, "a destroyed station takes none");
+    assert_eq!(
+        session.end_berths()[5],
+        None,
+        "a destroyed station takes none"
+    );
     session.death_star.as_mut().unwrap().hull = 100.0;
     session.death_star.as_mut().unwrap().action_committed = true;
-    assert_eq!(session.end_berths()[5], Some(TacticalBerth::Station), "departed");
+    assert_eq!(
+        session.end_berths()[5],
+        Some(TacticalBerth::Station),
+        "departed"
+    );
 }
 
 // FUN_0040d320.c:54-85: a squadron docked at the end becomes a child of its
@@ -585,7 +675,11 @@ fn after_the_battle_a_squadron_rides_the_ship_it_docked_in_or_falls_to_the_syste
         .unwrap();
     session.ships[alliance_ship].alive = false;
     session.ships[alliance_ship].hull_current = 0;
-    for fighter in session.fighters.iter_mut().filter(|fighter| fighter.identity.is_alliance) {
+    for fighter in session
+        .fighters
+        .iter_mut()
+        .filter(|fighter| fighter.identity.is_alliance)
+    {
         fighter.docked = None;
         fighter.alive = true;
     }
@@ -594,7 +688,11 @@ fn after_the_battle_a_squadron_rides_the_ship_it_docked_in_or_falls_to_the_syste
     let homes = apply::squadron_homes(&session, &mut world.clone());
     for (fighter, home) in session.fighters.iter().zip(&homes) {
         if fighter.identity.is_alliance {
-            assert_eq!(*home, Some(None), "an Alliance squadron falls to the system");
+            assert_eq!(
+                *home,
+                Some(None),
+                "an Alliance squadron falls to the system"
+            );
         } else {
             assert_eq!(*home, Some(Some((empire_fleet, 2))));
         }

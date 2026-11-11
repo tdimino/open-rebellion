@@ -110,11 +110,11 @@ pub struct FleetsState {
 ///
 /// `player_faction` filters which fleets are shown. Returns the map
 /// navigation action.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -390,7 +390,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
@@ -411,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]

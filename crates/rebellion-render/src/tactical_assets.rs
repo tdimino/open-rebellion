@@ -1995,9 +1995,7 @@ impl TacticalAssetRenderer {
         label: &str,
     ) -> Option<(TacticalDrawReport, String)> {
         let mut report = TacticalDrawReport::default();
-        let Some(source_camera) = self.source_camera else {
-            return None;
-        };
+        let source_camera = self.source_camera?;
         if objects.is_empty() {
             return None;
         }
@@ -2488,7 +2486,7 @@ impl TacticalAssetRenderer {
 }
 
 /// The screen rectangle (top-left, size) of a decal of `texture_size`
-/// texels. `FUN_005d4d10` never calls SetDecalScale, so Direct3D RM scales a
+/// texels. `FUN_005d4d10` never calls `SetDecalScale`, so Direct3D RM scales a
 /// decal by its depth along the view axis: `size` world units span
 /// `size * height / (2 * depth * tan(fovy / 2))` pixels, with the origin
 /// texel on the frame's projection. The front and back planes clip it like
@@ -2524,7 +2522,7 @@ fn project_world_position(
     let ndc = clip.truncate() / clip.w;
     let (x, y, width, height) = aperture;
     Some(vec2(
-        x + (ndc.x + 1.0) * 0.5 * width,
+        x + f32::midpoint(ndc.x, 1.0) * width,
         y + (1.0 - ndc.y) * 0.5 * height,
     ))
 }
@@ -2683,7 +2681,7 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<DecodedMeshObject, String> {
             }
             indices.push(index);
         }
-        for triangle in indices.chunks_exact_mut(3) {
+        for triangle in indices.as_chunks_mut::<3>().0 {
             triangle.swap(1, 2);
         }
         output.push(DecodedMeshChunk {
@@ -2923,7 +2921,9 @@ fn decode_palette_object(
         return Err("tactical palette object has trailing bytes".to_string());
     }
     let mut palette = [[0_u8; 4]; 256];
-    for (entry, source) in palette.iter_mut().zip(rgb.chunks_exact(3)) {
+    let (rgb, remainder) = rgb.as_chunks::<3>();
+    debug_assert_eq!(remainder, &[] as &[u8]);
+    for (entry, source) in palette.iter_mut().zip(rgb) {
         *entry = [source[0], source[1], source[2], 255];
     }
     Ok(palette)
@@ -3105,7 +3105,7 @@ fn decode_indexed_texture_with_rule(
 /// without the texels of its transparent colour, black unless
 /// `SetDecalTransparentColor` changes it, which `FUN_005d4d10` never calls.
 fn key_decal_black(rgba: &mut [u8]) {
-    for texel in rgba.chunks_exact_mut(4) {
+    for texel in rgba.as_chunks_mut::<4>().0 {
         if texel[..3] == [0, 0, 0] {
             texel[3] = 0;
         }
@@ -3219,7 +3219,7 @@ impl<'a> Reader<'a> {
     }
 }
 
-const TACTICAL_VERTEX_GLSL: &str = r#"#version 100
+const TACTICAL_VERTEX_GLSL: &str = r"#version 100
 attribute vec3 position;
 attribute vec2 texcoord;
 attribute vec4 color0;
@@ -3239,9 +3239,9 @@ void main() {
     tint = color0 / 255.0;
     lowp float diffuse = max(dot(normalize(normal.xyz), normalize(SourceLightDirectionAmbient.xyz)), 0.0);
     light = min(vec3(1.0), vec3(SourceLightDirectionAmbient.w) + SourceLightColorDirectional.rgb * SourceLightColorDirectional.w * diffuse);
-}"#;
+}";
 
-const TACTICAL_FRAGMENT_GLSL: &str = r#"#version 100
+const TACTICAL_FRAGMENT_GLSL: &str = r"#version 100
 precision lowp float;
 varying lowp vec2 uv;
 varying lowp vec3 light;
@@ -3252,9 +3252,9 @@ void main() {
     lowp vec4 texel = texture2D(Texture, uv);
     lowp vec3 material = min(vec3(1.0), tint.rgb * light + MaterialEmissive.rgb);
     gl_FragColor = vec4(texel.rgb * material, texel.a * tint.a);
-}"#;
+}";
 
-const TACTICAL_METAL: &str = r#"
+const TACTICAL_METAL: &str = r"
 #include <metal_stdlib>
 using namespace metal;
 struct Uniforms {
@@ -3291,7 +3291,7 @@ fragment float4 fragmentShader(RasterizerData in [[stage_in]], constant Uniforms
     float4 texel = Texture.sample(TextureSmplr, in.uv);
     float3 material = min(float3(1.0), in.tint.rgb * in.light + u.MaterialEmissive.rgb);
     return float4(texel.rgb * material, texel.a * in.tint.a);
-}"#;
+}";
 
 #[cfg(test)]
 mod tests {
@@ -3463,8 +3463,10 @@ mod tests {
     // Source: FUN_005c1c10 initializes the retained-mode device state.
     #[test]
     fn source_device_state_uses_nearest_gouraud_backface_depth_contract() {
-        assert!(!ORIGINAL_DEVICE_DITHER);
-        assert!(!ORIGINAL_SPECULAR_ENABLED);
+        const {
+            assert!(!ORIGINAL_DEVICE_DITHER);
+            assert!(!ORIGINAL_SPECULAR_ENABLED);
+        }
         assert_eq!(original_tactical_texture_filter(), FilterMode::Nearest);
         let pipeline = original_tactical_pipeline_params();
         assert_eq!(pipeline.cull_face, CullFace::Back);
@@ -3917,6 +3919,13 @@ mod tests {
     // Source: FUN_005d3770 LOD state selection and threshold edges.
     #[test]
     fn original_lod_rule_preserves_threshold_edges_and_reduced_detail_mode() {
+        fn immediately_below(value: f32) -> f32 {
+            f32::from_bits(value.to_bits() - 1)
+        }
+        fn immediately_above(value: f32) -> f32 {
+            f32::from_bits(value.to_bits() + 1)
+        }
+
         let close = TacticalLodView::CLOSE_FIXTURE;
         let medium = TacticalLodView::MEDIUM_FIXTURE;
         let far = TacticalLodView::FAR_FIXTURE;
@@ -3946,13 +3955,6 @@ mod tests {
                 assert_eq!(select_original_tactical_lod(current, view), current);
             }
         }
-        fn immediately_below(value: f32) -> f32 {
-            f32::from_bits(value.to_bits() - 1)
-        }
-        fn immediately_above(value: f32) -> f32 {
-            f32::from_bits(value.to_bits() + 1)
-        }
-
         // Non-unit scales guard the executable's divide-then-round sequence.
         // A multiply-first implementation fails at least the 0.3 close edge.
         for projection_scale in [0.3_f32, 2.3_f32] {

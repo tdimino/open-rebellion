@@ -78,7 +78,7 @@ pub enum GameSetupAction {
 // ── Rendering ────────────────────────────────────────────────────────────────
 
 /// Render the game setup screen. Returns an action when the player confirms or goes back.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]

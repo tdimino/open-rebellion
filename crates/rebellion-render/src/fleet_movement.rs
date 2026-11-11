@@ -144,11 +144,14 @@ fn stationary_position(
         })
 }
 
+type ScreenPoint = (f32, f32);
+type TransitPoints = (ScreenPoint, ScreenPoint, ScreenPoint);
+
 fn transit_position(
     world: &GameWorld,
     camera: &CameraView,
     order: &MovementOrder,
-) -> Option<((f32, f32), (f32, f32), (f32, f32))> {
+) -> Option<TransitPoints> {
     let origin = world.systems.get(order.origin)?;
     let destination = world.systems.get(order.destination)?;
     let from = camera.to_screen(f32::from(origin.x), f32::from(origin.y));

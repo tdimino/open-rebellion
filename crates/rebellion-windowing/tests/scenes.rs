@@ -301,12 +301,14 @@ fn scene_change_cancels_capture_before_focus_and_preserves_old_lease() {
     assert_eq!(manager.begin_frame().capture_owner(), None);
     assert_eq!(old.capture_owner(), Some(first));
     assert_eq!(old.pointer_route(&BTreeSet::new()).target, target(first));
-    assert!(manager.set_active_windows(&active).unwrap().is_empty());
-    assert!(manager
-        .apply(WindowCommand::ReleasePointer(first))
-        .unwrap()
-        .events
-        .is_empty());
+    assert_eq!(manager.set_active_windows(&active).unwrap(), Vec::new());
+    assert_eq!(
+        manager
+            .apply(WindowCommand::ReleasePointer(first))
+            .unwrap()
+            .events,
+        Vec::new()
+    );
     assert_eq!(manager.validate(), Ok(()));
 }
 
@@ -321,13 +323,13 @@ fn scene_membership_retains_dormant_history_and_new_opens_are_active() {
         .set_active_windows(&BTreeSet::from([active]))
         .unwrap();
     assert_eq!(manager.presentation_history(), &[hidden]);
-    assert!(manager.begin_frame().presentation_history().is_empty());
+    assert_eq!(manager.begin_frame().presentation_history(), []);
     assert_eq!(manager.id_for(detail(1).key), Some(hidden));
     let fresh = open(&mut manager, detail(3));
     assert_eq!(manager.begin_frame().paint_order(), &[active, fresh]);
     let view = manager.begin_frame().restrict_to(&BTreeSet::from([hidden]));
-    assert!(view.paint_order().is_empty());
-    assert!(view.presentation_history().is_empty());
+    assert_eq!(view.paint_order(), []);
+    assert_eq!(view.presentation_history(), []);
     manager
         .set_active_windows(&BTreeSet::from([active, fresh, hidden]))
         .unwrap();

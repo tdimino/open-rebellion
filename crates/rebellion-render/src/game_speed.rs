@@ -826,7 +826,7 @@ mod tests {
         clock.advance(5.0);
         assert_eq!(clock.tick, 1);
         choose_game_speed(&mut clock, GameSpeed::Paused);
-        assert!(clock.advance(5.0).is_empty());
+        assert_empty!(clock.advance(5.0));
         assert_eq!(clock.tick, 1);
     }
 

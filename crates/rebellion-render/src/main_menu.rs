@@ -96,6 +96,7 @@ pub struct LogicalRect {
 }
 
 impl LogicalRect {
+    #[must_use]
     pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
             x,
@@ -324,7 +325,7 @@ pub fn hit_test(canvas: Rect, pointer: Pos2) -> Option<MainMenuControl> {
         .find_map(|(control, rect)| rect.contains(logical).then_some(*control))
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
@@ -333,7 +334,7 @@ fn animation_resource(start: u32, count: u32, elapsed: f64) -> u32 {
     start + ((elapsed * ANIMATION_FPS) as u32 % count)
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
@@ -519,11 +520,11 @@ fn adjacent_control(current: Option<MainMenuControl>, backwards: bool) -> MainMe
     CONTROL_RECTS[next].0
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     clippy::cast_sign_loss,
@@ -672,7 +673,7 @@ fn draw_music_toggle(
 }
 
 /// Draw the assembled cockpit and return an action when a control activates.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -837,7 +838,7 @@ pub fn draw_main_menu(
             let resource_id = texture_for(control, &MainMenuState::default(), false, 0.0);
             cache
                 .get(ctx, DllSource::Common, resource_id)
-                .map(|texture| texture.id())
+                .map(egui_macroquad::egui::TextureHandle::id)
         });
         if draw_fleet_registry(ctx, canvas, registry, &mut state.fleet_naming, emblems)
             == RegistryOutcome::Close
@@ -922,7 +923,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -1093,7 +1094,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
@@ -1104,7 +1105,7 @@ mod tests {
         for (index, (control, _)) in CONTROL_RECTS.iter().enumerate() {
             assert_eq!(control.index(), index);
             assert_eq!(MainMenuControl::from_index(index as u32), Some(*control));
-            assert!(!control.label().is_empty());
+            assert_not_empty!(control.label());
         }
         assert_eq!(
             CONTROL_RECTS[ORIGINAL_CONTROL_COUNT].0,
@@ -1144,7 +1145,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -1255,9 +1256,9 @@ mod tests {
     fn the_open_registry_holds_the_cockpit_until_escape_closes_it() {
         let mut state = MainMenuState::default();
         let empire = (184.0, 335.0);
-        assert!(run_menu(&mut state, click_at(573.0, 21.0)).is_empty());
+        assert_empty!(run_menu(&mut state, click_at(573.0, 21.0)));
         assert!(state.registry_open());
-        assert!(run_menu(&mut state, click_at(empire.0, empire.1)).is_empty());
+        assert_empty!(run_menu(&mut state, click_at(empire.0, empire.1)));
         assert!(state.registry_open());
         let arrow = egui::Event::Key {
             key: egui::Key::ArrowRight,
@@ -1276,7 +1277,7 @@ mod tests {
             repeat: false,
             modifiers: egui::Modifiers::default(),
         };
-        assert!(run_menu(&mut state, vec![vec![escape]]).is_empty());
+        assert_empty!(run_menu(&mut state, vec![vec![escape]]));
         assert!(!state.registry_open());
         assert_eq!(state.take_sfx(), Some(SfxKind::MenuSelect));
         let started = run_menu(&mut state, click_at(empire.0, empire.1));

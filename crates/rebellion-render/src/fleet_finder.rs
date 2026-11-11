@@ -336,7 +336,7 @@ impl FleetFinderState {
     }
 
     /// Publishes prepared content only for a new manager identity. A duplicate
-    /// NoOp acknowledges the existing identity without rebuilding its state.
+    /// `NoOp` acknowledges the existing identity without rebuilding its state.
     pub fn commit_open(
         &mut self,
         prepared: PreparedFleetFinder,
@@ -622,7 +622,7 @@ fn at(frame: egui::Rect, scale: f32, (x, y, w, h): (f32, f32, f32, f32)) -> egui
 }
 
 /// Rows the list shows at once.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Eight whole rows of 20 in a list 165 tall."
@@ -643,7 +643,7 @@ pub fn draw_fleet_finder(
 }
 
 /// Draw the open manager-owned Finder using the frozen semantic focus.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
     reason = "The window carries the existing render context plus semantic focus; splitting it hides the original control order."
@@ -981,7 +981,7 @@ pub fn draw_fleet_finder_focused(
     if managed_enter
         && matches!(
             focused_control,
-            Some(FLEET_FINDER_NAME_CONTROL) | Some(FLEET_FINDER_LIST_CONTROL)
+            Some(FLEET_FINDER_NAME_CONTROL | FLEET_FINDER_LIST_CONTROL)
         )
     {
         open = open.or(open_window.chosen);
@@ -1573,7 +1573,7 @@ mod tests {
         let frame = manager.begin_frame();
         let reports = FleetFinderState::default().content_reports(&frame);
 
-        assert!(reports.is_empty());
+        assert_empty!(reports);
         let reconciliation = manager.reconcile(&frame, &reports);
         assert_eq!(reconciliation.invalid_reports, [id]);
         assert_eq!(reconciliation.blocking_unpainted, [id]);
@@ -1994,7 +1994,7 @@ mod tests {
         );
         assert_eq!(state.window.as_ref().unwrap().name, name_after_list_focus);
         assert_eq!(
-            ctx.memory(|memory| memory.focused()),
+            ctx.memory(egui::Memory::focused),
             Some(egui::Id::new("original-fleet-finder-list"))
         );
         assert_eq!(
@@ -2222,7 +2222,7 @@ mod tests {
                     result.action = Some(action);
                 }
             });
-            result.painted = crate::fleet_window::tests::PAINTED.with(|painted| painted.take());
+            result.painted = crate::fleet_window::tests::PAINTED.with(std::cell::RefCell::take);
             result.texts = output
                 .shapes
                 .into_iter()

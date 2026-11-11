@@ -130,7 +130,6 @@ pub fn encyclopedia_keyboard_action(
 ) -> Option<EncyclopediaSurfaceAction> {
     match (mode, key) {
         (_, EncyclopediaSurfaceKey::Escape) => Some(EncyclopediaSurfaceAction::Close),
-        (_, EncyclopediaSurfaceKey::Tab) => None,
         (EncyclopediaSurfaceMode::Index, EncyclopediaSurfaceKey::Enter) => {
             selected_object_id.map(EncyclopediaSurfaceAction::OpenTopic)
         }
@@ -159,16 +158,17 @@ pub fn encyclopedia_keyboard_action(
         (EncyclopediaSurfaceMode::Topic, EncyclopediaSurfaceKey::Right) => {
             next_object_id.map(EncyclopediaSurfaceAction::OpenTopic)
         }
-        (EncyclopediaSurfaceMode::Topic, EncyclopediaSurfaceKey::Enter) => None,
         (
             _,
-            EncyclopediaSurfaceKey::Up
+            EncyclopediaSurfaceKey::Tab
+            | EncyclopediaSurfaceKey::Up
             | EncyclopediaSurfaceKey::Down
             | EncyclopediaSurfaceKey::PageUp
             | EncyclopediaSurfaceKey::PageDown
             | EncyclopediaSurfaceKey::Home
             | EncyclopediaSurfaceKey::End,
-        ) => None,
+        )
+        | (EncyclopediaSurfaceMode::Topic, EncyclopediaSurfaceKey::Enter) => None,
     }
 }
 

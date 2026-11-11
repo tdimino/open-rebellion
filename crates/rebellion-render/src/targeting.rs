@@ -496,7 +496,7 @@ mod tests {
         });
 
         assert!(!drawn);
-        assert!(output.shapes.is_empty());
+        assert_empty!(output.shapes);
     }
 
     mod release {

@@ -586,7 +586,7 @@ impl SectorWindowState {
     /// it; every other quadrant needs its icon shown. `Err` says why the
     /// command did nothing.
     #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
-    #[expect(
+    #[allow(
         clippy::too_many_arguments,
         reason = "The command reads the same world views the window paints from."
     )]
@@ -1215,7 +1215,7 @@ fn activate_and_switch_sector(
     state.switch_side(sector);
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep the exact world, visibility, layout, identity, and event-local point explicit."
 )]
@@ -1273,7 +1273,7 @@ fn system_at_screen_point(
     })
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep the frozen draw record, routed event, world visibility, and mutable publication stores explicit."
 )]
@@ -1606,7 +1606,7 @@ fn draw_sector_windows_with_snapshot(
                 .find(|window| window.id == Some(id))
                 .copied()
             {
-                Some(window) if !shown(GalaxyChild::Sector(window.sector)) => continue,
+                Some(window) if !shown(GalaxyChild::Sector(window.sector)) => {}
                 Some(window)
                     if key.subject == window.subject
                         && sector_subject(world, window.sector) == window.subject =>
@@ -1905,7 +1905,7 @@ fn draw_sector_windows_with_snapshot(
     actions
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     clippy::too_many_arguments,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
@@ -2255,7 +2255,7 @@ fn draw_sector_window(
 }
 
 /// [`window_logical_position`] in whole canvas pixels, as a save keeps it.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "The column origins are small whole numbers."
 )]
@@ -2364,7 +2364,7 @@ fn logical_point(parent: egui::Rect, scale: f32, x: f32, y: f32) -> egui::Pos2 {
     egui::pos2(parent.min.x + x * scale, parent.min.y + y * scale)
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -2392,7 +2392,7 @@ fn rect_contains(rect: egui::Rect, point: egui::Pos2) -> bool {
 /// (`DAT_00659ef8` 1023 less `DAT_00659f00` -1), multiplies by 13 or 10
 /// (`DAT_00659f08`, `DAT_00659f10`) and by the window's width or height
 /// (`+0x30`, `+0x34`), and truncates with `__ftol`.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "__ftol truncates the product to a whole pixel."
 )]
@@ -2474,7 +2474,7 @@ fn revolt_flame(
     match system.control.faction()? {
         Faction::Alliance => Some(905),
         Faction::Empire => Some(906),
-        _ => None,
+        Faction::Neutral => None,
     }
 }
 
@@ -2660,7 +2660,7 @@ fn tiled_mesh(ctx: &egui::Context, cache: &mut BmpCache, resource_id: u32) -> Op
 /// One sector-window meter as `FUN_0060e460` paints it: the background
 /// across the whole bar, the foreground across `value / max` of it, and,
 /// when `ticks` is set, a one-pixel line at the start of every unit.
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Meter units are small counts drawn at pixel positions."
 )]
@@ -2708,7 +2708,7 @@ fn paint_meter(
 /// The first two take grey `0x808080` unit lines (`FUN_0060e3b0`). An
 /// unexplored system shows none: `FUN_0045c240` hides them on the system's
 /// `+0x50` bit 3. hyp: that bit marks the system unexplored.
-#[expect(
+#[allow(
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
     reason = "Support points are 0..=100 and resource counts are small."
@@ -3257,7 +3257,7 @@ mod tests {
         let (ctx, world, fog, state, cache, snapshot, router) = resources;
         for frame in frames {
             router.begin_frame(frame, snapshot);
-            assert!(paint_managed_frame_for_test(
+            assert_empty!(paint_managed_frame_for_test(
                 ctx,
                 world,
                 fog,
@@ -3267,8 +3267,7 @@ mod tests {
                 router,
                 &[],
                 vec![egui::Event::PointerMoved(point)],
-            )
-            .is_empty());
+            ));
         }
     }
 
@@ -3432,7 +3431,7 @@ mod tests {
                 |window| state.managed_layer_id(window).map(|layer| vec![layer]),
             );
         });
-        assert!(actions.is_empty());
+        assert_empty!(actions);
         assert_eq!(ctx.layer_id_at(point), Some(sector_layer));
     }
 
@@ -4297,7 +4296,7 @@ mod tests {
             state.commit_open(prepared, &receipt.transition, &manager.begin_frame()),
             None
         );
-        assert!(state.windows.is_empty());
+        assert_empty!(state.windows);
     }
 
     #[test]
@@ -4320,7 +4319,7 @@ mod tests {
             state.commit_open(prepared, &receipt.transition, &manager.begin_frame()),
             None
         );
-        assert!(state.windows.is_empty());
+        assert_empty!(state.windows);
     }
 
     #[test]
@@ -4776,7 +4775,7 @@ mod tests {
         let outside = state.hit_window_ids(&snapshot, layout(1.0), (400.0, 450.0), None);
 
         assert_eq!(inside, std::collections::BTreeSet::from([id]));
-        assert!(outside.is_empty());
+        assert_empty!(outside);
         assert!(matches!(
             snapshot.pointer_route(&inside).target,
             RouteTarget::Window(FocusTarget { window, .. }) if window == id
@@ -5276,7 +5275,7 @@ mod tests {
                 collect_test_click(&mut router, 54, ordinal, &hits, PointerButtonId::Primary);
             route_test!(primary_release_event(release, point) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
             if ordinal < 4 {
-                assert!(actions.is_empty());
+                assert_empty!(actions);
                 assert_eq!(state.windows[0].column, WindowColumn::Primary);
             } else {
                 assert_eq!(actions, [SectorWindowAction::Activate(window)]);
@@ -5448,7 +5447,7 @@ mod tests {
                 collect_test_click(&mut router, 48, ordinal, &hits, PointerButtonId::Primary);
             route_test!(primary_release_event(release, point) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
             if ordinal <= 4 {
-                assert!(actions.is_empty());
+                assert_empty!(actions);
                 assert!(!managed.emitted_opened_icon);
             } else {
                 assert_eq!(
@@ -5508,7 +5507,7 @@ mod tests {
                 );
                 route_test!(primary_release_event(release, point) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
                 if ordinal == 0 {
-                    assert!(actions.is_empty());
+                    assert_empty!(actions);
                 } else {
                     let action = if open_system {
                         SectorWindowAction::OpenSystemWindow {
@@ -6641,7 +6640,7 @@ mod tests {
     }
 
     fn take_painted_bitmaps() -> Vec<(u32, egui::Pos2)> {
-        crate::fleet_window::tests::PAINTED.with(|painted| painted.take())
+        crate::fleet_window::tests::PAINTED.with(std::cell::RefCell::take)
     }
 
     fn double_click_with_missions(
@@ -6810,12 +6809,11 @@ mod tests {
         // beyond the window's right edge (60 + 235) is not this window.
         let (mut world, system, _) = fixture_world();
         add_fleet(&mut world, system);
-        assert!(menus(&clicks_at(
+        assert_empty!(menus(&clicks_at(
             &world,
             system,
             &[(LEFT, (115.0, 90.0)), (RIGHT, (400.0, 200.0))]
-        ))
-        .is_empty());
+        )));
     }
 
     /// Press the left button at canvas point `from`, move to `to` and
@@ -6926,7 +6924,13 @@ mod tests {
         let (mut world, system, _) = fixture_world();
         add_fleet(&mut world, system);
         let none = egui::Modifiers::NONE;
-        assert!(drops(&drag_at(&world, system, (110.0, 90.0), (114.0, 86.0), none)).is_empty());
+        assert_empty!(drops(&drag_at(
+            &world,
+            system,
+            (110.0, 90.0),
+            (114.0, 86.0),
+            none
+        )));
         assert_eq!(
             drops(&drag_at(&world, system, (110.0, 90.0), (110.0, 95.0), none)).len(),
             1
@@ -6964,14 +6968,13 @@ mod tests {
         // (+0x1a0); (200, 250) is empty window space.
         let (mut world, system, _) = fixture_world();
         add_fleet(&mut world, system);
-        assert!(drops(&drag_at(
+        assert_empty!(drops(&drag_at(
             &world,
             system,
             (200.0, 250.0),
             (115.0, 90.0),
             egui::Modifiers::NONE
-        ))
-        .is_empty());
+        )));
     }
 
     #[test]
@@ -7184,7 +7187,7 @@ mod tests {
         // FUN_0045aac0 maps kind 4 to window type 9. (66, 80) lies on the
         // top-left icon, left of the planet's picture.
         let (mut world, system, _) = fixture_world();
-        assert!(opened(&double_click_at(&world, system, (66.0, 80.0))).is_empty());
+        assert_empty!(opened(&double_click_at(&world, system, (66.0, 80.0))));
 
         add_mine(&mut world, system);
         assert_eq!(
@@ -7201,7 +7204,7 @@ mod tests {
         // FUN_0045aac0 maps kind 8 to window type 10. (66, 110) lies on the
         // bottom-left icon, (64, 98) to (92, 117), left of the planet.
         let (mut world, system, _) = fixture_world();
-        assert!(opened(&double_click_at(&world, system, (66.0, 110.0))).is_empty());
+        assert_empty!(opened(&double_click_at(&world, system, (66.0, 110.0))));
 
         add_test_troop(&mut world, system, 0x1000_0002);
         assert_eq!(
@@ -7221,13 +7224,12 @@ mod tests {
         let (mut world, system, _) = fixture_world();
         let agent = add_test_agent(&mut world, system);
         let mut missions = rebellion_core::missions::MissionState::new();
-        assert!(opened(&double_click_with_missions(
+        assert_empty!(opened(&double_click_with_missions(
             &world,
             system,
             &missions,
             (119.0, 110.0)
-        ))
-        .is_empty());
+        )));
 
         dispatch_test_diplomacy(&mut missions, agent, system);
         assert_eq!(
@@ -7323,7 +7325,7 @@ mod tests {
         // and an agent on a mission (kind 0x40), all Alliance (side 1).
         let (mut world, system, _) = fixture_world();
         let empty = rebellion_core::missions::MissionState::new();
-        assert!(painted_quadrant_icons(&world, system, &empty, 2.0).is_empty());
+        assert_empty!(painted_quadrant_icons(&world, system, &empty, 2.0));
 
         add_mine(&mut world, system);
         add_fleet(&mut world, system);
@@ -7422,7 +7424,7 @@ mod tests {
         );
         let _ =
             run_sector_test_frames(world, state, owner, layout, &fog, &missions, inputs, || {
-                crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear())
+                crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
             });
         take_painted_bitmaps()
             .into_iter()

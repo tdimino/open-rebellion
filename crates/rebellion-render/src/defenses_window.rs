@@ -93,7 +93,7 @@ pub enum DefensesPage {
     Regiments,
     /// Id 3: fighter squadrons (`0x1c..0x20`).
     Squadrons,
-    /// Id 4: GenCore shields (`0x24`) and the Death Star Shield (`0x25`).
+    /// Id 4: `GenCore` shields (`0x24`) and the Death Star Shield (`0x25`).
     Shields,
     /// Id 5: KDY-150 (`0x22`) and LNR batteries (`0x23`).
     Batteries,
@@ -181,17 +181,17 @@ impl DefensesItem {
     /// a special force (`FUN_00503b50`), a regiment (`FUN_00504b30`) or a
     /// defense facility, whose menu holds Encyclopedia and Status
     /// (`FUN_0051d990`).
-    const fn menu_object(self, system: SystemKey, side: u8) -> Option<MenuObject> {
+    const fn menu_object(self, system: SystemKey, side: u8) -> MenuObject {
         match self {
-            Self::Character(key) => Some(MenuObject::Character(key)),
-            Self::SpecialForce(key) => Some(MenuObject::SpecialForce(key)),
-            Self::Troop(key) => Some(MenuObject::Troop(key)),
-            Self::Squadron { class, .. } => Some(MenuObject::SystemFighter {
+            Self::Character(key) => MenuObject::Character(key),
+            Self::SpecialForce(key) => MenuObject::SpecialForce(key),
+            Self::Troop(key) => MenuObject::Troop(key),
+            Self::Squadron { class, .. } => MenuObject::SystemFighter {
                 system,
                 class,
                 is_alliance: side == 1,
-            }),
-            Self::Defense(key) => Some(MenuObject::DefenseFacility(key)),
+            },
+            Self::Defense(key) => MenuObject::DefenseFacility(key),
         }
     }
 }
@@ -878,7 +878,7 @@ impl DefensesWindowState {
             .map(|window| GalaxyChild::Defenses(window.system))
     }
 
-    /// The open Defenses content; saved order is supplied by WindowManager.
+    /// The open Defenses content; saved order is supplied by `WindowManager`.
     #[must_use]
     pub fn saved_windows(&self, world: &GameWorld) -> Vec<SavedWindow> {
         self.windows
@@ -1299,7 +1299,7 @@ fn tab_rect(window: egui::Rect, scale: f32, page: DefensesPage) -> egui::Rect {
 
 /// The `index`th grid cell (`FUN_00609ae0`): row-major from the list's
 /// corner, three to a row.
-#[expect(clippy::cast_precision_loss, reason = "Cell indexes are small.")]
+#[allow(clippy::cast_precision_loss, reason = "Cell indexes are small.")]
 fn cell_rect(window: egui::Rect, scale: f32, index: usize) -> egui::Rect {
     let column = (index % COLUMNS) as f32;
     let row = (index / COLUMNS) as f32;
@@ -1351,7 +1351,7 @@ impl WindowDrawResult {
 /// port: the window's keys (`FUN_004aa2b0`: Escape closes, left and right
 /// step the tabs) are not ported; the galaxy view's windows keep no shared
 /// keyboard focus to route them by.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
 )]
@@ -1385,7 +1385,7 @@ pub fn draw_defenses_windows(
 
 /// Draw manager-owned Defenses content in the frozen bottom-to-top paint
 /// order and admit mutations only through routed pointer events.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
 )]
@@ -1489,7 +1489,7 @@ fn claim_defenses_pointer_event(
     })
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Shared implementation for production snapshots and fixture-only direct content."
 )]
@@ -1536,7 +1536,7 @@ fn draw_defenses_windows_with_snapshot(
                 .find(|window| window.id == Some(id))
                 .cloned()
             {
-                Some(window) if !shown(GalaxyChild::Defenses(window.system)) => continue,
+                Some(window) if !shown(GalaxyChild::Defenses(window.system)) => {}
                 Some(window) if window.release_target_visible && key.subject == window.subject => {
                     windows.push(window);
                 }
@@ -1688,7 +1688,7 @@ fn draw_defenses_windows_with_snapshot(
     actions
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
     reason = "Keep the window's ordered paint and input pass together, as the Fleet window does."
@@ -2058,12 +2058,11 @@ fn draw_defenses_window(
                     }
                 }
                 if response.secondary_clicked() {
-                    if let (Some(object), Some(point)) = (
-                        row.item.menu_object(window.system, side),
-                        response
-                            .interact_pointer_pos()
-                            .filter(|point| rect_contains(cell.intersect(list), *point)),
-                    ) {
+                    if let Some(point) = response
+                        .interact_pointer_pos()
+                        .filter(|point| rect_contains(cell.intersect(list), *point))
+                    {
+                        let object = row.item.menu_object(window.system, side);
                         result.object_menu = Some((Some(object), canvas_point(layout, point)));
                         result
                             .note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
@@ -2077,7 +2076,7 @@ fn draw_defenses_window(
                 cache,
                 local,
                 scale,
-                &bar.blits(range, &scroll, pointer),
+                &bar.blits(range, scroll, pointer),
             );
 
             result.drag_grab = surface_drag_grab(ctx, &window_response, local, scale, &[]);
@@ -2294,7 +2293,7 @@ mod tests {
         );
         assert_eq!(page(DefensesPage::Regiments), ["Alliance Army Regiment"]);
         // port: squadrons live only aboard fleets.
-        assert!(page(DefensesPage::Squadrons).is_empty());
+        assert_empty!(page(DefensesPage::Squadrons));
         assert_eq!(
             page(DefensesPage::Personnel),
             ["Idle", "Hidden", "Guerrillas"]
@@ -2309,7 +2308,13 @@ mod tests {
         world.systems[system].control = ControlKind::Controlled(Faction::Empire);
         let unseen = FogState::new(Faction::Alliance);
 
-        assert!(labels(&world, &unseen, &missions, system, DefensesPage::Batteries).is_empty());
+        assert_empty!(labels(
+            &world,
+            &unseen,
+            &missions,
+            system,
+            DefensesPage::Batteries
+        ));
         assert_eq!(
             labels(
                 &world,
@@ -2339,11 +2344,17 @@ mod tests {
         let fog = seen(system);
         world.systems[system].control = ControlKind::Uncontrolled;
         for page in DefensesPage::ALL {
-            assert!(labels(&world, &fog, &missions, system, page).is_empty());
+            assert_empty!(labels(&world, &fog, &missions, system, page));
         }
         world.systems[system].control = ControlKind::Controlled(Faction::Alliance);
         world.systems[system].exploration_status = ExplorationStatus::Unexplored;
-        assert!(labels(&world, &fog, &missions, system, DefensesPage::Batteries).is_empty());
+        assert_empty!(labels(
+            &world,
+            &fog,
+            &missions,
+            system,
+            DefensesPage::Batteries
+        ));
     }
 
     #[test]
@@ -2675,7 +2686,7 @@ mod tests {
             ),
         );
         let valid = run_managed_idle(&world, &mut state, &manager);
-        assert!(valid.actions.is_empty());
+        assert_empty!(valid.actions);
         assert_eq!(state.release_target(layer), Some(stale_system));
 
         world.systems[stale_system].dat_id = DatId::new(101);
@@ -2920,7 +2931,7 @@ mod tests {
     }
 
     fn record_frame(result: &mut Run, output: egui::FullOutput) {
-        result.painted = PAINTED.with(|painted| painted.take());
+        result.painted = PAINTED.with(std::cell::RefCell::take);
         result.texts.clear();
         for clipped in output.shapes {
             if let egui::Shape::Text(text) = clipped.shape {
@@ -3265,7 +3276,7 @@ mod tests {
 
         let mut state = opened(&world, system);
         let closed = run(&world, &missions, &mut state, click(at(224.0, 9.0)));
-        assert!(closed.actions.is_empty());
+        assert_empty!(closed.actions);
         assert_eq!(state.window_count(), 0);
     }
 
@@ -3498,7 +3509,7 @@ mod tests {
 
         // Above the list, a right click opens nothing.
         let outside = run(&world, &missions, &mut state, right_click(at(100.0, 60.0)));
-        assert!(menus(&outside).is_empty());
+        assert_empty!(menus(&outside));
     }
 
     #[test]

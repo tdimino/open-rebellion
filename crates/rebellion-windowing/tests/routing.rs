@@ -285,7 +285,7 @@ fn unpaintable_modeless_content_is_retained_without_implicit_close() {
         InputPolicy::Modeless,
         ContentStatus::Unpaintable,
     );
-    assert!(report.removed.is_empty());
+    assert_eq!(report.removed, Vec::new());
     assert_eq!(manager.id_for(frame.key(window).unwrap()), Some(window));
 }
 
@@ -297,7 +297,7 @@ fn explicitly_absent_modeless_content_closes_with_events() {
         ContentStatus::Absent,
     );
     assert_eq!(report.removed, vec![window]);
-    assert!(!report.events.is_empty());
+    assert_ne!(report.events, Vec::new());
     assert_eq!(manager.id_for(frame.key(window).unwrap()), None);
 }
 
@@ -319,7 +319,7 @@ fn explicitly_absent_minimized_content_removes_its_history_entry() {
         }],
     );
     assert_eq!(report.removed, vec![window]);
-    assert!(manager.begin_frame().presentation_history().is_empty());
+    assert_eq!(manager.begin_frame().presentation_history(), []);
 }
 
 #[test]
@@ -359,7 +359,7 @@ fn absent_modeless_owner_cannot_implicitly_close_ready_modal_child() {
         ],
     );
     assert_eq!(report.invalid_reports, vec![owner]);
-    assert!(report.removed.is_empty());
+    assert_eq!(report.removed, Vec::new());
     assert!(manager.begin_frame().is_visible(owner));
     assert!(manager.begin_frame().is_visible(modal));
 }
@@ -371,8 +371,8 @@ fn suspended_content_is_retained_without_claiming_it_painted() {
         InputPolicy::Modeless,
         ContentStatus::Suspended,
     );
-    assert!(report.removed.is_empty());
-    assert!(report.blocking_unpainted.is_empty());
+    assert_eq!(report.removed, Vec::new());
+    assert_eq!(report.blocking_unpainted, Vec::new());
 }
 
 #[test]
@@ -394,7 +394,7 @@ fn reconcile_never_removes_windows_created_after_its_snapshot() {
             status: ContentStatus::Ready,
         }],
     );
-    assert!(report.removed.is_empty());
+    assert_eq!(report.removed, Vec::new());
     assert!(manager.begin_frame().is_visible(new));
 }
 
@@ -478,7 +478,7 @@ fn foreign_snapshot_cannot_reconcile_an_aliasing_window_id() {
         }],
     );
     assert_eq!(report.invalid_reports, vec![foreign]);
-    assert!(report.removed.is_empty());
+    assert_eq!(report.removed, Vec::new());
     assert!(second.begin_frame().is_visible(local));
 }
 
@@ -520,7 +520,7 @@ fn repeated_scene_restriction_cannot_reintroduce_an_inactive_identity() {
         .begin_frame()
         .restrict_to(&hits([first]))
         .restrict_to(&hits([second]));
-    assert!(restricted.paint_order().is_empty());
+    assert_eq!(restricted.paint_order(), []);
     assert!(restricted.key(second).is_none());
 }
 

@@ -272,7 +272,7 @@ impl OrderRefusal {
 /// way and built for it ([`crate::carriage::ships_for`]), else `{1, 0x27}`;
 /// the area's own queued units give theirs back first, as its Death Stars
 /// do.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The validator reads the world, the queues, the cargo and the order's fields."
 )]
@@ -330,8 +330,7 @@ pub fn order_refusal(
     // ..)`, room + request in `FUN_0054fca0`).
     let own: Vec<u32> = manufacturing
         .queue(system, area)
-        .map(|queue| queue.items().iter().map(|item| item.ship).collect())
-        .unwrap_or_default();
+        .map_or_default(|queue| queue.items().iter().map(|item| item.ship).collect());
     let present = crate::movement::death_stars_counted_at(movement, world, destination, &own);
     (present + count as usize > 1).then_some(OrderRefusal::DeathStarRoom)
 }
@@ -453,14 +452,13 @@ pub fn destination_refusal(
     };
     let target = match destination {
         _ if world.systems.get(target).is_none() => return Some(OrderRefusal::DestinationGone),
-        Destination::System(_) => target,
         Destination::Fleet(_) if area == ProductionArea::ConstructionYard => {
             return Some(OrderRefusal::NotASystem)
         }
         Destination::Fleet(fleet) if !world.systems[target].fleets.contains(&fleet) => {
             return Some(OrderRefusal::DestinationEnRoute)
         }
-        Destination::Fleet(_) => target,
+        Destination::System(_) | Destination::Fleet(_) => target,
     };
     let queued = manufacturing.queue(system, area);
     let death_star = |class| {

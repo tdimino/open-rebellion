@@ -285,13 +285,7 @@ impl RepairSystem {
                     let Some(class) = world.capital_ship_classes.get(ship.class) else {
                         continue;
                     };
-                    let event = if !under_repair {
-                        ship.repair_timer.map(|_| RepairEvent::TimerSet {
-                            fleet: fleet_key,
-                            ship_index,
-                            timer: None,
-                        })
-                    } else {
+                    let event = if under_repair {
                         ships_repaired += 1;
                         let rearmed = RepairTimer {
                             due: now + Self::interval(world, fast),
@@ -325,6 +319,12 @@ impl RepairSystem {
                                 timer: Some(rearmed),
                             }),
                         }
+                    } else {
+                        ship.repair_timer.map(|_| RepairEvent::TimerSet {
+                            fleet: fleet_key,
+                            ship_index,
+                            timer: None,
+                        })
                     };
                     if let Some(event) = event {
                         let mut updated = ship.clone();

@@ -57,10 +57,10 @@ pub struct SimulationStates {
     pub campaign_config: CampaignConfig,
 }
 
-/// port: the `index`th roll of `tick`'s derived stream, one SplitMix64 step
+/// port: the `index`th roll of `tick`'s derived stream, one `SplitMix64` step
 /// over the tick, `salt` (the bits of the tick's first supplied roll, so each
 /// seed has its own stream) and the index, in `[0, 1)`.
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "53 bits fill an f64 mantissa exactly"
 )]
@@ -157,7 +157,7 @@ pub struct AgentSlot<'a> {
 /// blockade, as the original does at departure in that step's phase 5.
 /// `sides` holds each AI and whether it is the second of a dual-AI run;
 /// `agent` the human player's advisor agent, which takes the player's slot.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "A step reads the AI sides, the player's agent, the held predicate and the rolls."
 )]
@@ -514,11 +514,11 @@ fn close_ai_days_emitting(
 ///
 /// `wall_ms` is the wall-clock milliseconds since session start, used for
 /// the `wall_ms` field on each event record.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
@@ -603,7 +603,7 @@ pub fn run_simulation_tick(
         &mut states.troop_transport,
         stockpile_events.iter().filter_map(|event| match *event {
             StockpileEvent::OverdraftScrap { target, .. } => Some(target),
-            _ => None,
+            StockpileEvent::Diverted { .. } => None,
         }),
     );
     integrator.emit_scrapped_aboard(world, &overdraft.losses);
@@ -1057,7 +1057,7 @@ pub fn run_simulation_tick(
 
     // ── 14. Victory check ────────────────────────────────────────────────
     integrator.emit_victory_check(&states.victory);
-    let word = (!tick_events.is_empty() && !states.victory.resolved)
+    let victory_bits = (!tick_events.is_empty() && !states.victory.resolved)
         .then(|| {
             VictorySystem::word(
                 &states.victory,
@@ -1075,8 +1075,8 @@ pub fn run_simulation_tick(
         integrator.apply_victory(&outcome, &mut states.victory, world);
     }
     // The word the next evaluation's tie reads (FUN_005180e0).
-    if let Some(word) = word {
-        states.victory.word = word;
+    if let Some(victory_bits) = victory_bits {
+        states.victory.word = victory_bits;
     }
 
     // ── 15. Campaign snapshot (every 250 ticks) ────────────────────────
@@ -1111,7 +1111,7 @@ mod tests {
     };
 
     /// GNPRTB 7760 (60 at every difficulty), the support a side needs to
-    /// hold a system without regiments (FUN_0055a080).
+    /// hold a system without regiments (`FUN_0055a080`).
     fn support_control_threshold() -> rebellion_core::world::GnprtbParams {
         let entry = rebellion_core::world::GnprtbEntry {
             parameter_id: 7760,
@@ -1348,13 +1348,13 @@ mod tests {
             0,
             &rebellion_core::tuning::GameConfig::default(),
         );
-        assert!(result.is_empty());
+        assert_empty!(result);
     }
 
     /// The assault's landing limit, GNPRTB 7761 (60) and 7762 (-10):
     /// `FUN_00559fe0(side, 0)` = 6, and its shield limit GNPRTB 0x1e03 (2,
     /// `FUN_00507d00`); with `threshold`, also GNPRTB 7760 (60),
-    /// the support that holds a system without regiments (FUN_0055a080).
+    /// the support that holds a system without regiments (`FUN_0055a080`).
     fn assault_gnprtb(threshold: bool) -> rebellion_core::world::GnprtbParams {
         let entry = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
             parameter_id: id,
@@ -1438,17 +1438,19 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
     fn a_decisive_imperial_space_win_bombards_nothing_without_the_order() {
-        let mut world = GameWorld::default();
-        world.gnprtb = support_control_threshold();
+        let mut world = GameWorld {
+            gnprtb: support_control_threshold(),
+            ..GameWorld::default()
+        };
         // Each HQ's people back its holder, so it stays held without troops.
         let alliance_hq = add_test_system(
             &mut world,
@@ -1525,11 +1527,11 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -1620,11 +1622,11 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -1715,7 +1717,7 @@ mod tests {
         // Imperial system (FUN_004ef260, event 0x307; ground-assault.md,
         // section 4).
         let runs = assault(&mut world, &mut states, fleet, Faction::Alliance);
-        assert!(states.troop_transport.is_empty());
+        assert_empty!(states.troop_transport);
         assert!(world.systems[target].ground_units.contains(&troop));
         assert_eq!(
             world.systems[target].control,

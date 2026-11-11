@@ -175,6 +175,10 @@ impl EncyclopediaSessionStore {
     /// # Errors
     /// Returns an error without changing the active session or texture
     /// generation if any layer or complete effective session is invalid.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "installation consumes one command-shaped overlay batch at the store boundary"
+    )]
     pub fn replace_with_overlays(
         &mut self,
         input: EncyclopediaSessionInput,

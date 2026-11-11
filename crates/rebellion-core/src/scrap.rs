@@ -341,20 +341,16 @@ pub fn scrap(
             // half its own class cost (FUN_00530270). A scrap is not refused
             // for a laden ship (FUN_004f9860). port: every squadron and
             // regiment aboard counts as completed.
-            let lost_regiments: Vec<_> = world
-                .fleets
-                .get(fleet)
-                .map(|value| {
-                    transport
-                        .cargo(fleet)
-                        .iter()
-                        .copied()
-                        .filter(|&troop| {
-                            crate::carriage::lost_with_ship(value, transport.carrier(troop))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            let lost_regiments: Vec<_> = world.fleets.get(fleet).map_or_default(|value| {
+                transport
+                    .cargo(fleet)
+                    .iter()
+                    .copied()
+                    .filter(|&troop| {
+                        crate::carriage::lost_with_ship(value, transport.carrier(troop))
+                    })
+                    .collect()
+            });
             for troop in lost_regiments {
                 let class = world
                     .troops
@@ -367,8 +363,7 @@ pub fn scrap(
             let lost_squadrons = world
                 .fleets
                 .get_mut(fleet)
-                .map(crate::carriage::take_lost_squadrons)
-                .unwrap_or_default();
+                .map_or_default(crate::carriage::take_lost_squadrons);
             for entry in lost_squadrons {
                 let each = world
                     .fighter_classes
@@ -956,7 +951,7 @@ mod tests {
         assert_eq!(stockpiles.side(Faction::Alliance).refined, 4);
         assert_eq!(stockpiles.side(Faction::Empire).refined, 0);
         assert!(world.troops.get(troop).is_none());
-        assert!(world.systems[system].ground_units.is_empty());
+        assert_empty!(world.systems[system].ground_units);
     }
 
     // FUN_0052fff0: the load is the sum over what exists, so the scrapped
@@ -1440,7 +1435,11 @@ mod tests {
             target,
             ScrapTarget::CapitalShip { fleet, .. } | ScrapTarget::Fighter { fleet, .. } if *fleet == own
         )));
-        assert!(order_targets(&world, ScrapOrder::Fleet(own), Faction::Empire).is_empty());
+        assert_empty!(order_targets(
+            &world,
+            ScrapOrder::Fleet(own),
+            Faction::Empire
+        ));
     }
 
     // FUN_004ffa70: a fleet en route cannot be scrapped; nor can an order
@@ -1940,6 +1939,6 @@ mod tests {
             [ScrapTarget::CapitalShip { fleet, index: 0 }],
         );
 
-        assert!(world.death_star_sectors.is_empty());
+        assert_empty!(world.death_star_sectors);
     }
 }

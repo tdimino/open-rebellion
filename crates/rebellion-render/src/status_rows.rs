@@ -175,8 +175,7 @@ fn system_name(world: &GameWorld, system: SystemKey) -> String {
     world
         .systems
         .get(system)
-        .map(|value| value.name.clone())
-        .unwrap_or_default()
+        .map_or_default(|value| value.name.clone())
 }
 
 /// A class record's catalog name (TEXTSTRA).
@@ -184,8 +183,7 @@ fn class_name(world: &GameWorld, class: DatId) -> String {
     world
         .buildable_classes
         .get(&class)
-        .map(|value| value.name.clone())
-        .unwrap_or_default()
+        .map_or_default(|value| value.name.clone())
 }
 
 /// `FUN_0044a620`: class `+0x4c` (`FUN_004f2990`).
@@ -572,8 +570,7 @@ fn regiment_place(sources: StatusSources<'_>, key: TroopKey) -> (String, Option<
         .systems
         .iter()
         .find(|(_, value)| value.ground_units.contains(&key))
-        .map(|(_, value)| value.name.clone())
-        .unwrap_or_default();
+        .map_or_default(|(_, value)| value.name.clone());
     (system, None)
 }
 
@@ -588,8 +585,7 @@ pub fn troop_rows(sources: StatusSources<'_>, key: TroopKey) -> Option<Vec<Statu
     let stats = world
         .buildable_classes
         .get(&troop.class_dat_id)
-        .map(|value| value.stats)
-        .unwrap_or_default();
+        .map_or_default(|value| value.stats);
     let (attached, arrival) = regiment_place(sources, key);
     let mut rows = vec![
         row("Attached: ", attached),
@@ -638,8 +634,7 @@ pub fn special_force_rows(
         .systems
         .iter()
         .find(|(_, value)| value.special_forces.contains(&key))
-        .map(|(_, value)| value.name.clone())
-        .unwrap_or_default();
+        .map_or_default(|(_, value)| value.name.clone());
     let status = if unit.en_route {
         "Enroute"
     } else if unit.on_mission {
@@ -662,13 +657,13 @@ pub fn special_force_rows(
 /// The system holding a facility key in one of its lists.
 fn facility_system<K: PartialEq>(
     world: &GameWorld,
-    key: K,
+    key: &K,
     list: impl Fn(&rebellion_core::world::System) -> &[K],
 ) -> Option<SystemKey> {
     world
         .systems
         .iter()
-        .find(|(_, value)| list(value).contains(&key))
+        .find(|(_, value)| list(value).contains(key))
         .map(|(system, _)| system)
 }
 
@@ -686,13 +681,12 @@ pub fn defense_facility_rows(
 ) -> Option<Vec<StatusRow>> {
     let world = sources.world;
     let facility = world.defense_facilities.get(key)?;
-    let system = facility_system(world, key, |value| &value.defense_facilities)?;
+    let system = facility_system(world, &key, |value| &value.defense_facilities)?;
     let class = facility.class_dat_id;
     let stats = world
         .buildable_classes
         .get(&class)
-        .map(|value| value.stats)
-        .unwrap_or_default();
+        .map_or_default(|value| value.stats);
     let mut rows = vec![
         row("Location:", system_name(world, system)),
         row("Status:", ACTIVE),
@@ -979,7 +973,7 @@ pub fn status_view(sources: StatusSources<'_>, object: StatusObject) -> Option<S
         }
         StatusObject::ManufacturingFacility(key) => {
             let facility = world.manufacturing_facilities.get(key)?;
-            let system = facility_system(world, key, |value| &value.manufacturing_facilities)?;
+            let system = facility_system(world, &key, |value| &value.manufacturing_facilities)?;
             view(
                 "Manufacturing Status",
                 faction_index(facility.side),
@@ -990,7 +984,7 @@ pub fn status_view(sources: StatusSources<'_>, object: StatusObject) -> Option<S
         }
         StatusObject::ProductionFacility(key) => {
             let facility = world.production_facilities.get(key)?;
-            let system = facility_system(world, key, |value| &value.production_facilities)?;
+            let system = facility_system(world, &key, |value| &value.production_facilities)?;
             view(
                 "Manufacturing Status",
                 faction_index(facility.side),
@@ -1125,13 +1119,13 @@ mod tests {
         })
     }
 
-    fn catalog(world: &mut GameWorld, id: u32, name: &str, class: BuildableClass) -> DatId {
+    fn catalog(world: &mut GameWorld, id: u32, name: &str, class: &BuildableClass) -> DatId {
         let dat_id = DatId::new(id);
         world.buildable_classes.insert(
             dat_id,
             BuildableClass {
                 name: name.into(),
-                ..class
+                ..class.clone()
             },
         );
         dat_id
@@ -1483,7 +1477,7 @@ mod tests {
             &mut world,
             0x1000_0002,
             "Alliance Army Regiment",
-            BuildableClass {
+            &BuildableClass {
                 maintenance_cost: 1,
                 stats: ClassStats {
                     bombardment: 4,
@@ -1580,7 +1574,7 @@ mod tests {
                 &mut world,
                 id,
                 "Defense",
-                BuildableClass {
+                &BuildableClass {
                     stats: armed_stats,
                     ..BuildableClass::default()
                 },
@@ -1659,7 +1653,7 @@ mod tests {
             &mut world,
             0x2900_0001,
             "Training Facility",
-            BuildableClass {
+            &BuildableClass {
                 processing_rate: 4,
                 ..BuildableClass::default()
             },
@@ -1949,7 +1943,7 @@ mod tests {
             &mut world,
             0x2c00_0001,
             "Mine",
-            BuildableClass {
+            &BuildableClass {
                 maintenance_cost: 1,
                 processing_rate: 3,
                 stats: ClassStats {
@@ -2003,7 +1997,7 @@ mod tests {
             &mut world,
             0x2200_0001,
             "Planetary Shield",
-            BuildableClass::default(),
+            &BuildableClass::default(),
         );
         let shield = world.defense_facilities.insert(DefenseFacilityInstance {
             class_dat_id: class,

@@ -202,7 +202,7 @@ impl GameClock {
     /// the part of the day gone (the original's `+0x20` on a rate change is
     /// untraced), so a change to a slower speed can run many steps at once.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "The accumulator is in [0, 1), so the product is below `rounds`."
@@ -226,7 +226,7 @@ impl GameClock {
     ///
     /// - `dt` should be the real elapsed frame time (e.g. `macroquad::time::get_frame_time()`).
     /// - Negative or zero `dt` is a no-op.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_precision_loss,
         clippy::cast_sign_loss,
@@ -291,17 +291,17 @@ mod tests {
     fn pause_finishes_the_current_day_then_holds() {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::Medium);
-        assert!(clock.advance(1.6).is_empty());
+        assert_empty!(clock.advance(1.6));
         assert!(clock.pause());
         // The half-finished day completes; the next never starts.
         assert_eq!(clock.advance(1.6), vec![TickEvent { tick: 1 }]);
-        assert!(clock.advance(10.0).is_empty());
+        assert_empty!(clock.advance(10.0));
         assert_eq!(clock.tick, 1);
         assert_eq!(clock.speed, GameSpeed::Medium);
 
         clock.resume();
         assert!(!clock.pause_requested());
-        assert!(clock.advance(3.1).is_empty());
+        assert_empty!(clock.advance(3.1));
         assert_eq!(clock.advance(0.2), vec![TickEvent { tick: 2 }]);
     }
 
@@ -342,8 +342,8 @@ mod tests {
     fn negative_time_neither_ticks_nor_delays_the_next_day() {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::Medium);
-        assert!(clock.advance(-5.0).is_empty());
-        assert!(clock.advance(0.0).is_empty());
+        assert_empty!(clock.advance(-5.0));
+        assert_empty!(clock.advance(0.0));
         assert_eq!(clock.advance(3.3), vec![TickEvent { tick: 1 }]);
     }
 
@@ -359,7 +359,7 @@ mod tests {
         let mut clock = GameClock::new();
         // clock starts Paused
         let events = clock.advance(10.0);
-        assert!(events.is_empty());
+        assert_empty!(events);
         assert_eq!(clock.tick, 0);
     }
 
@@ -384,7 +384,7 @@ mod tests {
 
         // Just under a full day — no event yet.
         let events = clock.advance(3.19);
-        assert!(events.is_empty());
+        assert_empty!(events);
         assert_eq!(clock.tick, 0);
 
         // Push over the threshold.
@@ -409,7 +409,7 @@ mod tests {
         let mut clock = GameClock::new();
         clock.set_speed(GameSpeed::VerySlow);
 
-        assert!(clock.advance(150.1).is_empty());
+        assert_empty!(clock.advance(150.1));
         assert_eq!(clock.advance(0.2).len(), 1);
     }
 
@@ -432,14 +432,14 @@ mod tests {
         clock.set_speed(GameSpeed::Slow);
 
         // 9 s of a 15.2 s day — no tick yet.
-        assert!(clock.advance(9.0).is_empty());
+        assert_empty!(clock.advance(9.0));
 
         // 18 s total — one tick fires, 2.8 s remains.
         assert_eq!(clock.advance(9.0).len(), 1);
         assert_eq!(clock.tick, 1);
 
         // 11.8 s of the next day — no tick yet.
-        assert!(clock.advance(9.0).is_empty());
+        assert_empty!(clock.advance(9.0));
         assert_eq!(clock.tick, 1);
     }
 

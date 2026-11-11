@@ -659,7 +659,7 @@ impl TacticalState {
     }
 
     /// Begin a battle between two sides ([`BattleSession::new_with_forces`]).
-    #[expect(
+    #[allow(
         clippy::too_many_arguments,
         reason = "Keep explicit battle inputs at this boundary, as begin_battle does."
     )]
@@ -2157,7 +2157,7 @@ impl WeaponEffectColor for WeaponEffect {
     }
 }
 
-/// The flat Direct3DRM material each projectile selector names.
+/// The flat `Direct3DRM` material each projectile selector names.
 fn projectile_selector_color(selector: u8) -> Color {
     match selector {
         1 => Color::new(0.0, 1.0, 0.0, 1.0),
@@ -2419,8 +2419,8 @@ const TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS: [TacticalWithdrawConfirmationSpec
 ];
 
 const DEATH_STAR_LASER_GAUGE_RECT: NativeRect = NativeRect::new(474.0, 0.0, 166.0, 25.0);
-/// `FUN_005c4ed0`: the gauge window's CoolStrobeButton at (0x89, 2),
-/// 0x15 by 0x14, and its CoolwinStatusBar at (0x22, 9), 0x5f by 6.
+/// `FUN_005c4ed0`: the gauge window's `CoolStrobeButton` at (0x89, 2),
+/// 0x15 by 0x14, and its `CoolwinStatusBar` at (0x22, 9), 0x5f by 6.
 const DEATH_STAR_LASER_BUTTON_RECT: NativeRect = NativeRect::new(611.0, 2.0, 21.0, 20.0);
 const DEATH_STAR_LASER_FILL_RECT: NativeRect = NativeRect::new(508.0, 9.0, 95.0, 6.0);
 /// The charge bar's fill and background, COLORREF `0x200ff00` and
@@ -2840,12 +2840,12 @@ fn available_tactical_command_controls(
         })
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "A containing native bitmap rectangle guarantees finite nonnegative local pixels."
 )]
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The source control predicate keeps panel, selection, faction, resource mask, and pointer coordinates explicit."
 )]
@@ -2897,7 +2897,7 @@ fn tactical_command_rect_control_at(
     .find(|control| tactical_command_spec(*control, true).0.contains(x, y))
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "A containing native bitmap rectangle guarantees finite nonnegative local pixels."
@@ -2916,7 +2916,7 @@ fn group_strip_slots() -> impl Iterator<Item = (TacticalHudControl, NativeRect)>
 
 /// The strip slot a press at `(x, y)` lands on. The slots take a press
 /// anywhere in their rectangle: `FUN_006035f0.c:24-38` tests the bitmap only
-/// under flag `0x10`, which the CoolStrobeButton ctor sets only when its last
+/// under flag `0x10`, which the `CoolStrobeButton` ctor sets only when its last
 /// argument is 0 (`FUN_00602150.c:115-116`), and both slot builders pass 1
 /// (`FUN_0059be80.c:55-56` through `FUN_005c52e0`, `FUN_0059c030.c:52-53`).
 /// A fighter slot is 15
@@ -3112,7 +3112,7 @@ fn tactical_death_star_laser_ready(session: &BattleSession) -> bool {
     })
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "The containing original bitmap rectangle guarantees finite nonnegative pixels."
@@ -3638,7 +3638,7 @@ fn log_trench_run_launch(session: &BattleSession) {
     macroquad::logging::info!(
         "[tactical_death_star] trench_run_launch status=launched fighter_members={} group={} remaining_ms={} rng_state={}",
         session.trench_run_participants.len(),
-        session.trench_run_group.map_or(4, |group| group),
+        session.trench_run_group.unwrap_or(4),
         session.trench_run_remaining_ms.unwrap_or(0.0),
         session.tactical_rng.state(),
     );
@@ -3766,7 +3766,8 @@ fn queue_selected_command_voice(
             // order executor because the local listener may be either the
             // Alliance attackers or the Imperial station owner. The shared
             // executor above has already queued that perspective-correct cue.
-            (TacticalCommandPanel::Missions { .. }, TacticalOrder::AttackDeathStar) => return,
+            (TacticalCommandPanel::Missions { .. }, TacticalOrder::AttackDeathStar)
+            | (TacticalCommandPanel::Display, _) => return,
             (TacticalCommandPanel::Maneuvers { .. }, _) => {
                 TacticalVoiceCue::fighter_maneuver(faction, group)
             }
@@ -3781,7 +3782,6 @@ fn queue_selected_command_voice(
             (TacticalCommandPanel::Missions { .. }, _) => {
                 TacticalVoiceCue::fighter_mission(faction, group)
             }
-            (TacticalCommandPanel::Display, _) => return,
         }
     } else {
         let Some(group) = selected_player_task_force(session) else {
@@ -3883,7 +3883,7 @@ fn draw_tactical_bitmap(cache: &mut BmpCache, id: u32, canvas: TacticalCanvas, x
     draw_original_bitmap(cache, DllSource::Tactical, id, canvas, x, y, None);
 }
 
-/// A tactical CoolStrobeButton (`FUN_00602150`): its bitmap keyed on the
+/// A tactical `CoolStrobeButton` (`FUN_00602150`): its bitmap keyed on the
 /// first stored pixel, as `FUN_00602d30` blits it over what lies behind
 /// ([`BmpCache::get_macroquad_button`]).
 fn draw_tactical_button(cache: &mut BmpCache, id: u32, canvas: TacticalCanvas, x: f32, y: f32) {
@@ -3903,7 +3903,7 @@ fn draw_tactical_button_clipped(
     draw_original_button(cache, DllSource::Tactical, id, canvas, x, y, source_rect);
 }
 
-/// A CoolStrobeButton (`FUN_00602150`) of any DLL's art, keyed on its first
+/// A `CoolStrobeButton` (`FUN_00602150`) of any DLL's art, keyed on its first
 /// stored pixel ([`BmpCache::get_macroquad_button`]) and clipped to
 /// `source_rect` as [`draw_tactical_button_clipped`] clips it.
 fn draw_original_button(
@@ -4110,7 +4110,7 @@ fn debug_assert_warmed_em(em: f32) {
     );
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "The 640x480 tactical source canvas uses integer device-pixel clipping."
 )]
@@ -4363,11 +4363,15 @@ fn draw_tactical_withdraw_confirmation(
 
 /// Paint only resource-backed battle chrome. Unmapped command groups remain
 /// visible but are not passed off as implemented interactions.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The original HUD paints one fixed canvas from explicit battle state."
 )]
-#[expect(
+#[allow(
+    clippy::fn_params_excessive_bools,
+    reason = "Recovered HUD flags are independent inputs to one fixed authored composition."
+)]
+#[allow(
     clippy::too_many_lines,
     reason = "The authored tactical chrome is one fixed 640×480 source composition."
 )]
@@ -5019,7 +5023,7 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
                             "rejected"
                         },
                         fighter_members,
-                        session.trench_run_group.map_or(4, |group| group),
+                        session.trench_run_group.unwrap_or(4),
                         session.trench_run_remaining_ms.unwrap_or(0.0),
                         session.tactical_rng.state(),
                     );
@@ -6398,7 +6402,7 @@ fn result_cell_text(top: f32, entry: u8) -> (f32, f32) {
 /// with its column headers and "Filters" (`0x1952`; `FUN_0046f360.c:305-368`),
 /// the overlay's filter and side names (`FUN_00471200`), the filter tabs and
 /// the list. The tab art is the player's side (`+0x118 + 0x9c`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The window's state lives in TacticalState fields the caller borrows apart from the session."
 )]
@@ -6631,7 +6635,7 @@ fn draw_battle_result_forces(
             first: *scroll,
             ..range
         },
-        drag,
+        *drag,
         pointer,
     ) {
         draw_original_bitmap(
@@ -6856,8 +6860,7 @@ fn draw_battle_alert_text(state: &TacticalState, canvas: TacticalCanvas, text_co
             vec![state
                 .battle_alert_text
                 .as_ref()
-                .map(|(_, summary)| summary.clone())
-                .unwrap_or_default()]
+                .map_or_default(|(_, summary)| summary.clone())]
         }
         BattleAlertTab::Summary => vec![
             format!(
@@ -6903,7 +6906,7 @@ const BATTLE_ALERT_INDENT: f32 = 20.0;
 /// 057.
 const BATTLE_ALERT_CENTRE_WIDTH: f32 = 241.0;
 /// hyp: measured, not traced. Font 4's rows measure at a 14-pixel cell
-/// ("GenCore Level II" 91 pixels wide, "A-wing" 36), font 5's in bold
+/// ("`GenCore` Level II" 91 pixels wide, "A-wing" 36), font 5's in bold
 /// ("Deyer" 34), and the 0xb heading at an em of 20.5 ("Alliance Forces"
 /// 142 wide; a 24-pixel cell would give 148), as the Message Index's text
 /// does (`ghidra/notes/message-index-rows.md`).
@@ -7208,7 +7211,7 @@ fn draw_battle_alert_list(
     // and 057).
     let bar = battle_alert_scroll_bar();
     let range = battle_alert_scroll_range(state.battle_alert_scroll, rows.len());
-    for blit in bar.blits(range, &state.battle_alert_scroll_drag, pointer) {
+    for blit in bar.blits(range, state.battle_alert_scroll_drag, pointer) {
         draw_original_bitmap(
             cache,
             DllSource::Strategy,
@@ -7527,15 +7530,14 @@ fn draw_original_battle_alert(
             rect.height,
         );
         let enabled = control != BattleAlertControl::Retreat || retreat_enabled;
-        let resource_state = if !enabled {
-            2
-        } else if mouse_down
-            && state.battle_alert_pressed == Some(control)
-            && hovered == Some(control)
-        {
-            1
+        let resource_state = if enabled {
+            usize::from(
+                mouse_down
+                    && state.battle_alert_pressed == Some(control)
+                    && hovered == Some(control),
+            )
         } else {
-            0
+            2
         };
         // Retreat, Simulate and Take Command are CoolStrobeButtons, as
         // are the tabs (`FUN_0044f860.c:251-343`, `:371-433`).
@@ -7703,8 +7705,7 @@ fn draw_original_battle_results(
             let summary = state
                 .battle_record
                 .as_ref()
-                .map(|record| record.side(session, world, alliance))
-                .unwrap_or_default();
+                .map_or_default(|record| record.side(session, world, alliance));
             draw_battle_result_forces(
                 cache,
                 canvas,
@@ -7791,11 +7792,11 @@ fn draw_original_battle_results(
 ///
 /// Call this when `GameMode::TacticalCombat`. Returns a `TacticalAction`
 /// indicating whether the main loop should transition modes.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -7979,95 +7980,91 @@ pub fn draw_tactical_view(
         production_projectiles,
         production_effects,
     ) = if state.render_original_participants {
-        state
-            .session
-            .as_ref()
-            .map(|session| {
-                let ships = session
-                    .ships
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, ship)| ship.alive)
-                    .filter_map(|(index, ship)| {
-                        ship.tactical_resource.map(|resource| TacticalRenderObject {
-                            object_id: u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1),
-                            resource_base: resource.mesh_resource_base,
-                            position: session.ship_display_position(index).rendered(),
-                        })
+        state.session.as_ref().map_or_default(|session| {
+            let ships = session
+                .ships
+                .iter()
+                .enumerate()
+                .filter(|(_, ship)| ship.alive)
+                .filter_map(|(index, ship)| {
+                    ship.tactical_resource.map(|resource| TacticalRenderObject {
+                        object_id: u32::try_from(index).unwrap_or(u32::MAX).saturating_add(1),
+                        resource_base: resource.mesh_resource_base,
+                        position: session.ship_display_position(index).rendered(),
                     })
-                    .collect::<Vec<_>>();
-                let fighters = session
-                    .fighters
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, fighter)| fighter.alive)
-                    .filter_map(|(index, fighter)| {
-                        fighter.tactical_resource.map(|resource| {
-                            let player_side = fighter.is_attacker == session.player_is_attacker;
-                            TacticalFighterRenderObject {
-                                object_id: u32::try_from(index)
-                                    .unwrap_or(u32::MAX)
-                                    .saturating_add(1001),
-                                close_resource_id: resource
-                                    .grouped_close_resource(player_side, fighter.fighter_group),
-                                far_resource_id: resource
-                                    .grouped_far_resource(player_side, fighter.fighter_group),
-                                indicator_resource_id: resource
-                                    .grouped_indicator_resource(player_side, fighter.fighter_group),
-                                position: session.fighter_display_position(index).rendered(),
-                            }
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                let effects = tactical_effect_render_objects(session, render_pyrotechnics);
-                let fields = session
-                    .field_effects
-                    .iter()
-                    .filter_map(|effect| {
-                        let ship = session.ships.get(effect.target)?;
-                        Some(TacticalEffectRenderObject {
-                            object_id: u32::try_from(effect.target)
+                })
+                .collect::<Vec<_>>();
+            let fighters = session
+                .fighters
+                .iter()
+                .enumerate()
+                .filter(|(_, fighter)| fighter.alive)
+                .filter_map(|(index, fighter)| {
+                    fighter.tactical_resource.map(|resource| {
+                        let player_side = fighter.is_attacker == session.player_is_attacker;
+                        TacticalFighterRenderObject {
+                            object_id: u32::try_from(index)
                                 .unwrap_or(u32::MAX)
-                                .saturating_add(1),
-                            resource_id: effect.resource_id()?,
-                            source_width: 128,
-                            source_height: 128,
-                            position: ship.source_position.rendered(),
-                        })
+                                .saturating_add(1001),
+                            close_resource_id: resource
+                                .grouped_close_resource(player_side, fighter.fighter_group),
+                            far_resource_id: resource
+                                .grouped_far_resource(player_side, fighter.fighter_group),
+                            indicator_resource_id: resource
+                                .grouped_indicator_resource(player_side, fighter.fighter_group),
+                            position: session.fighter_display_position(index).rendered(),
+                        }
                     })
-                    .collect::<Vec<_>>();
-                let mut projectiles = session
-                    .weapon_effects
-                    .iter()
-                    .enumerate()
-                    .map(|(index, effect)| TacticalProjectileRenderObject {
-                        object_id: u32::try_from(index)
+                })
+                .collect::<Vec<_>>();
+            let effects = tactical_effect_render_objects(session, render_pyrotechnics);
+            let fields = session
+                .field_effects
+                .iter()
+                .filter_map(|effect| {
+                    let ship = session.ships.get(effect.target)?;
+                    Some(TacticalEffectRenderObject {
+                        object_id: u32::try_from(effect.target)
                             .unwrap_or(u32::MAX)
-                            .saturating_add(2001),
-                        origin: effect.source_position.rendered(),
-                        target: effect.target_position.rendered(),
-                        progress: effect.progress(),
-                        longitudinal_scale: effect.longitudinal_scale,
-                        shape_variant: effect.shape_variant,
-                        color_selector: effect.color_selector,
-                        color: effect.color(),
+                            .saturating_add(1),
+                        resource_id: effect.resource_id()?,
+                        source_width: 128,
+                        source_height: 128,
+                        position: ship.source_position.rendered(),
                     })
-                    .collect::<Vec<_>>();
-                if let Some(beam) = session.death_star_beam {
-                    projectiles.push(TacticalProjectileRenderObject {
-                        object_id: 3999,
-                        origin: beam.source_position.rendered(),
-                        target: beam.target_position.rendered(),
-                        progress: (beam.elapsed / beam.duration).clamp(0.0, 1.0),
-                        longitudinal_scale: 1.0,
-                        shape_variant: 1,
-                        color_selector: beam.color_selector,
-                        color: projectile_selector_color(beam.color_selector),
-                    });
-                }
-                (ships, fighters, fields, projectiles, effects)
-            })
-            .unwrap_or_default()
+                })
+                .collect::<Vec<_>>();
+            let mut projectiles = session
+                .weapon_effects
+                .iter()
+                .enumerate()
+                .map(|(index, effect)| TacticalProjectileRenderObject {
+                    object_id: u32::try_from(index)
+                        .unwrap_or(u32::MAX)
+                        .saturating_add(2001),
+                    origin: effect.source_position.rendered(),
+                    target: effect.target_position.rendered(),
+                    progress: effect.progress(),
+                    longitudinal_scale: effect.longitudinal_scale,
+                    shape_variant: effect.shape_variant,
+                    color_selector: effect.color_selector,
+                    color: effect.color(),
+                })
+                .collect::<Vec<_>>();
+            if let Some(beam) = session.death_star_beam {
+                projectiles.push(TacticalProjectileRenderObject {
+                    object_id: 3999,
+                    origin: beam.source_position.rendered(),
+                    target: beam.target_position.rendered(),
+                    progress: (beam.elapsed / beam.duration).clamp(0.0, 1.0),
+                    longitudinal_scale: 1.0,
+                    shape_variant: 1,
+                    color_selector: beam.color_selector,
+                    color: projectile_selector_color(beam.color_selector),
+                });
+            }
+            (ships, fighters, fields, projectiles, effects)
+        })
     } else {
         (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
     };
@@ -8301,7 +8298,7 @@ pub fn draw_tactical_view(
             );
         }
 
-        #[expect(
+        #[allow(
             clippy::manual_clamp,
             reason = "min/max map NaN to the lower bound; clamp would propagate NaN."
         )]
@@ -8403,7 +8400,7 @@ pub fn draw_tactical_view(
         );
 
         let label = format!("x{}", fighter.squad_count);
-        #[expect(
+        #[allow(
             clippy::manual_clamp,
             reason = "min/max map NaN to the lower bound; clamp would propagate NaN."
         )]
@@ -8734,7 +8731,7 @@ fn tactical_fighter_screen_position(
     )
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The shared renderer needs both object families, their projections, and the arena transform."
 )]
@@ -9656,13 +9653,13 @@ mod tests {
         let spoils: [(&str, Spoil); 4] = [
             ("dead", |ship, _| ship.alive = false),
             ("the other side's", |ship, attacker| {
-                ship.is_attacker = !attacker
+                ship.is_attacker = !attacker;
             }),
             ("hyperdrive-less", |ship, _| {
-                ship.subsystem_capacity.hyperdrive = 0
+                ship.subsystem_capacity.hyperdrive = 0;
             }),
             ("hyperdrive-wrecked", |ship, _| {
-                ship.subsystem_condition.hyperdrive = 0
+                ship.subsystem_condition.hyperdrive = 0;
             }),
         ];
         for player_is_attacker in [true, false] {
@@ -9822,7 +9819,7 @@ mod tests {
                     position: session.ships[1].source_position.rendered(),
                 }]
             );
-            assert!(tactical_effect_render_objects(&session, false).is_empty());
+            assert_empty!(tactical_effect_render_objects(&session, false));
         }
     }
 
@@ -10760,12 +10757,7 @@ mod tests {
             TacticalAction::None
         );
         assert!(!state.withdraw_confirmation_open);
-        assert!(state
-            .session
-            .as_ref()
-            .unwrap()
-            .pending_voice_cues
-            .is_empty());
+        assert_empty!(state.session.as_ref().unwrap().pending_voice_cues);
 
         state.battle_options_open = true;
         assert_eq!(
@@ -11460,7 +11452,7 @@ mod tests {
             state.session.as_mut().unwrap().ships[2].retreating = true;
             let session = state.session.as_ref().unwrap();
             assert!(!task_force_assigned(session, 1), "side={side:?}");
-            assert!(task_force_members(session, 1).is_empty());
+            assert_empty!(task_force_members(session, 1));
             assert!(!follow_group_exists(
                 session,
                 TacticalCameraFollow::TaskForce(1)
@@ -11829,7 +11821,7 @@ mod tests {
             ship.manual_targets == vec![TacticalAttackTarget::CapitalShip(2)]
                 && ship.attack_target == Some(TacticalAttackTarget::CapitalShip(2))
         }));
-        assert!(session.take_pending_voice_cues().is_empty());
+        assert_empty!(session.take_pending_voice_cues());
     }
 
     // Source: FUN_005a24d0 focus target toggle.
@@ -11852,9 +11844,9 @@ mod tests {
                 maximum_targets: 0,
             }
         );
-        assert!(session.ships[0].manual_targets.is_empty());
+        assert_empty!(session.ships[0].manual_targets);
         assert_eq!(session.ships[0].attack_target, None);
-        assert!(session.take_pending_voice_cues().is_empty());
+        assert_empty!(session.take_pending_voice_cues());
     }
 
     #[test]
@@ -11874,7 +11866,7 @@ mod tests {
             }
         );
         assert_eq!(session.ships[0].manual_targets, before);
-        assert!(session.take_pending_voice_cues().is_empty());
+        assert_empty!(session.take_pending_voice_cues());
     }
 
     #[test]
@@ -12008,12 +12000,7 @@ mod tests {
         let ship = &state.session.as_ref().unwrap().ships[0];
         assert_eq!(ship.order, TacticalOrder::None);
         assert_eq!(ship.tactic, TacticalTactic::StandOff);
-        assert!(state
-            .session
-            .as_ref()
-            .unwrap()
-            .pending_voice_cues
-            .is_empty());
+        assert_empty!(state.session.as_ref().unwrap().pending_voice_cues);
 
         activate_tactical_command(&mut state, TacticalCommandControl::OpenManeuvers);
         activate_tactical_command(&mut state, TacticalCommandControl::Hammer);
@@ -12157,8 +12144,8 @@ mod tests {
 
     #[test]
     fn a_warm_key_names_its_face_and_size() {
-        assert_eq!(result_face_size(21 | RESULT_FACE_KEY), (false, 21));
-        assert_eq!(result_face_size(12 | RESULT_BOLD_FACE_KEY), (true, 12));
+        assert_eq!(result_face_size(0x15 | RESULT_FACE_KEY), (false, 21));
+        assert_eq!(result_face_size(0x0c | RESULT_BOLD_FACE_KEY), (true, 12));
     }
 
     #[test]

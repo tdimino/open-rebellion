@@ -46,22 +46,22 @@ fn report(window: WindowId, status: ContentStatus) -> ContentReport {
     ContentReport { window, status }
 }
 
-fn focus(window: WindowId) -> Option<FocusTarget> {
-    Some(FocusTarget {
+fn focus_target(window: WindowId) -> FocusTarget {
+    FocusTarget {
         window,
         control: None,
-    })
+    }
 }
 
 fn assert_reconciliation_rejected(
     manager: &WindowManager,
     result: &ReconcileReport,
     before: &str,
-    invalid: Vec<WindowId>,
+    invalid: &[WindowId],
 ) {
     assert_eq!(result.invalid_reports, invalid);
-    assert!(result.removed.is_empty());
-    assert!(result.events.is_empty());
+    assert_eq!(result.removed, Vec::new());
+    assert_eq!(result.events, Vec::new());
     assert_eq!(format!("{manager:?}"), before);
 }
 
@@ -82,15 +82,15 @@ fn reconciliation_paint_absence_is_not_content_absence() {
             report(hidden, ContentStatus::Suspended),
         ],
     );
-    assert!(result.removed.is_empty());
-    assert!(result.events.is_empty());
-    assert!(result.invalid_reports.is_empty());
-    assert!(result.blocking_unpainted.is_empty());
+    assert_eq!(result.removed, Vec::new());
+    assert_eq!(result.events, Vec::new());
+    assert_eq!(result.invalid_reports, Vec::new());
+    assert_eq!(result.blocking_unpainted, Vec::new());
     assert_eq!(format!("{manager:?}"), before);
     let missing = manager.reconcile(&frame, &[]);
     assert_eq!(missing.invalid_reports, vec![visible, hidden]);
-    assert!(missing.removed.is_empty());
-    assert!(missing.events.is_empty());
+    assert_eq!(missing.removed, Vec::new());
+    assert_eq!(missing.events, Vec::new());
     assert_eq!(manager.visible_order(), &[visible]);
     assert_eq!(manager.presentation_history(), &[hidden]);
     assert_eq!(format!("{manager:?}"), before);
@@ -127,7 +127,7 @@ fn reconciliation_new_open_survives_old_snapshot_reports() {
     assert_eq!(manager.id_for(old_spec.key), None);
     assert_eq!(manager.id_for(new_spec.key), Some(new));
     assert_eq!(manager.visible_order(), &[new]);
-    assert_eq!(manager.focused(), focus(new));
+    assert_eq!(manager.focused(), Some(focus_target(new)));
     assert_eq!(open(&mut manager, detail(WindowKind::Missions, 3)).get(), 3);
     assert_eq!(manager.validate(), Ok(()));
 }
@@ -144,8 +144,8 @@ fn an_unpainted_strategic_modal_is_retained_as_a_fail_closed_blocker() {
     let missing = manager.reconcile(&frame, &[report(underlay, ContentStatus::Ready)]);
     assert_eq!(missing.blocking_unpainted, vec![dialog]);
     assert_eq!(missing.invalid_reports, vec![dialog]);
-    assert!(missing.removed.is_empty());
-    assert!(missing.events.is_empty());
+    assert_eq!(missing.removed, Vec::new());
+    assert_eq!(missing.events, Vec::new());
     let unpaintable = manager.reconcile(
         &frame,
         &[
@@ -154,9 +154,9 @@ fn an_unpainted_strategic_modal_is_retained_as_a_fail_closed_blocker() {
         ],
     );
     assert_eq!(unpaintable.blocking_unpainted, vec![dialog]);
-    assert!(unpaintable.invalid_reports.is_empty());
-    assert!(unpaintable.removed.is_empty());
-    assert!(unpaintable.events.is_empty());
+    assert_eq!(unpaintable.invalid_reports, Vec::new());
+    assert_eq!(unpaintable.removed, Vec::new());
+    assert_eq!(unpaintable.events, Vec::new());
     assert_eq!(format!("{manager:?}"), before);
     assert_eq!(manager.begin_frame().active_modal(), Some(dialog));
     assert_eq!(
@@ -179,10 +179,10 @@ fn unpaintable_modeless_content_is_retained_without_implicit_close() {
     let frame = manager.begin_frame();
     let before = format!("{manager:?}");
     let result = manager.reconcile(&frame, &[report(id, ContentStatus::Unpaintable)]);
-    assert!(result.removed.is_empty());
-    assert!(result.blocking_unpainted.is_empty());
-    assert!(result.invalid_reports.is_empty());
-    assert!(result.events.is_empty());
+    assert_eq!(result.removed, Vec::new());
+    assert_eq!(result.blocking_unpainted, Vec::new());
+    assert_eq!(result.invalid_reports, Vec::new());
+    assert_eq!(result.events, Vec::new());
     assert_eq!(format!("{manager:?}"), before);
     assert_eq!(manager.capture_owner(), Some(id));
     assert_eq!(manager.validate(), Ok(()));
@@ -209,7 +209,7 @@ fn explicitly_absent_modeless_content_closes_with_events() {
     let child = open(&mut manager, child_spec);
     let survivor = open(&mut manager, detail(WindowKind::Missions, 4));
     manager
-        .apply(WindowCommand::Focus(focus(child).unwrap()))
+        .apply(WindowCommand::Focus(focus_target(child)))
         .unwrap();
     manager.apply(WindowCommand::CapturePointer(child)).unwrap();
     let frame = manager.begin_frame();
@@ -221,8 +221,8 @@ fn explicitly_absent_modeless_content_closes_with_events() {
     ];
     let result = manager.reconcile(&frame, &reports);
     assert_eq!(result.removed, vec![root, hidden, child]);
-    assert!(result.invalid_reports.is_empty());
-    assert!(result.blocking_unpainted.is_empty());
+    assert_eq!(result.invalid_reports, Vec::new());
+    assert_eq!(result.blocking_unpainted, Vec::new());
     assert_eq!(
         result.events,
         vec![
@@ -246,19 +246,19 @@ fn explicitly_absent_modeless_content_closes_with_events() {
                 reason: CloseReason::ContentRemoved
             },
             WindowEvent::FocusChanged {
-                previous: focus(child),
-                current: focus(survivor)
+                previous: Some(focus_target(child)),
+                current: Some(focus_target(survivor))
             },
         ]
     );
     assert_eq!(manager.visible_order(), &[survivor]);
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.presentation_history(), []);
     assert_eq!(manager.capture_owner(), None);
-    assert_eq!(manager.focused(), focus(survivor));
+    assert_eq!(manager.focused(), Some(focus_target(survivor)));
     let again = manager.reconcile(&frame, &reports);
     assert_eq!(again.invalid_reports, vec![root, hidden, child]);
-    assert!(again.removed.is_empty());
-    assert!(again.events.is_empty());
+    assert_eq!(again.removed, Vec::new());
+    assert_eq!(again.events, Vec::new());
     assert_eq!(frame.capture_owner(), Some(child));
     assert_eq!(manager.validate(), Ok(()));
 }
@@ -273,15 +273,15 @@ fn absent_modal_reports_blocker_until_explicit_close() {
     let before = format!("{manager:?}");
     let result = manager.reconcile(&frame, &[report(dialog, ContentStatus::Absent)]);
     assert_eq!(result.blocking_unpainted, vec![dialog]);
-    assert!(result.invalid_reports.is_empty());
-    assert!(result.removed.is_empty());
-    assert!(result.events.is_empty());
+    assert_eq!(result.invalid_reports, Vec::new());
+    assert_eq!(result.removed, Vec::new());
+    assert_eq!(result.events, Vec::new());
     assert_eq!(format!("{manager:?}"), before);
     manager.apply(WindowCommand::Close(dialog)).unwrap();
     let late = manager.reconcile(&frame, &[report(dialog, ContentStatus::Absent)]);
     assert_eq!(late.invalid_reports, vec![dialog]);
-    assert!(late.blocking_unpainted.is_empty());
-    assert!(late.events.is_empty());
+    assert_eq!(late.blocking_unpainted, Vec::new());
+    assert_eq!(late.events, Vec::new());
     assert!(manager.begin_frame().pointer_allows_root());
 }
 
@@ -301,10 +301,10 @@ fn suspended_content_is_retained_without_claiming_it_painted() {
             report(dialog, ContentStatus::Suspended),
         ],
     );
-    assert!(result.removed.is_empty());
-    assert!(result.invalid_reports.is_empty());
-    assert!(result.blocking_unpainted.is_empty());
-    assert!(result.events.is_empty());
+    assert_eq!(result.removed, Vec::new());
+    assert_eq!(result.invalid_reports, Vec::new());
+    assert_eq!(result.blocking_unpainted, Vec::new());
+    assert_eq!(result.events, Vec::new());
     assert_eq!(format!("{manager:?}"), before);
     assert_eq!(manager.begin_frame().active_modal(), Some(dialog));
     assert_eq!(manager.validate(), Ok(()));
@@ -325,7 +325,7 @@ fn reconcile_never_removes_windows_created_after_its_snapshot() {
     manager.apply(WindowCommand::CapturePointer(child)).unwrap();
     let before = format!("{manager:?}");
     let result = manager.reconcile(&frame, &[report(owner, ContentStatus::Absent)]);
-    assert_reconciliation_rejected(&manager, &result, &before, vec![owner]);
+    assert_reconciliation_rejected(&manager, &result, &before, &[owner]);
     assert_eq!(manager.id_for(child_spec.key), Some(child));
     assert_eq!(manager.validate(), Ok(()));
 }
@@ -355,9 +355,9 @@ fn contradictory_or_unknown_content_reports_are_diagnosed() {
         ],
     );
     assert_eq!(result.invalid_reports, vec![a, b, stale, late]);
-    assert!(result.removed.is_empty());
-    assert!(result.blocking_unpainted.is_empty());
-    assert!(result.events.is_empty());
+    assert_eq!(result.removed, Vec::new());
+    assert_eq!(result.blocking_unpainted, Vec::new());
+    assert_eq!(result.events, Vec::new());
     assert_eq!(format!("{manager:?}"), before);
     assert_eq!(open(&mut manager, detail(WindowKind::System, 5)).get(), 5);
     assert_eq!(manager.validate(), Ok(()));
@@ -378,8 +378,8 @@ fn foreign_snapshot_cannot_delete_an_equal_numeric_identity() {
     let before = format!("{manager:?}");
     let result = manager.reconcile(&frame, &[report(other, ContentStatus::Absent)]);
     assert_eq!(result.invalid_reports, vec![other]);
-    assert!(result.removed.is_empty());
-    assert!(result.events.is_empty());
+    assert_eq!(result.removed, Vec::new());
+    assert_eq!(result.events, Vec::new());
     assert_eq!(format!("{manager:?}"), before);
     let local_frame = manager.begin_frame().clone();
     assert_eq!(
@@ -414,7 +414,7 @@ fn retained_children_prevent_an_absent_owner_from_discarding_live_content() {
             &frame,
             &[report(owner, ContentStatus::Absent), report(child, status)],
         );
-        assert_reconciliation_rejected(&manager, &result, &before, vec![owner]);
+        assert_reconciliation_rejected(&manager, &result, &before, &[owner]);
         assert_eq!(manager.validate(), Ok(()));
     }
     let mut manager = WindowManager::new();
@@ -437,7 +437,7 @@ fn retained_children_prevent_an_absent_owner_from_discarding_live_content() {
     );
     assert_eq!(result.invalid_reports, vec![owner]);
     assert_eq!(result.blocking_unpainted, vec![dialog]);
-    assert!(result.removed.is_empty());
+    assert_eq!(result.removed, Vec::new());
     assert_eq!(format!("{manager:?}"), before);
     assert_eq!(manager.validate(), Ok(()));
 }
@@ -461,8 +461,8 @@ fn same_key_replacement_survives_a_late_report_for_the_old_identity() {
     let before = format!("{manager:?}");
     let result = manager.reconcile(&frame, &[report(old, ContentStatus::Absent)]);
     assert_eq!(result.invalid_reports, vec![old]);
-    assert!(result.removed.is_empty());
-    assert!(result.events.is_empty());
+    assert_eq!(result.removed, Vec::new());
+    assert_eq!(result.events, Vec::new());
     assert_eq!(manager.id_for(spec.key), Some(fresh));
     assert_eq!(format!("{manager:?}"), before);
 }
@@ -479,7 +479,7 @@ fn multiple_absent_roots_deliver_cancellation_teardown_then_only_final_focus() {
     let b = open(&mut manager, b_spec);
     let survivor = open(&mut manager, detail(WindowKind::Defenses, 3));
     manager
-        .apply(WindowCommand::Focus(focus(a).unwrap()))
+        .apply(WindowCommand::Focus(focus_target(a)))
         .unwrap();
     manager.apply(WindowCommand::CapturePointer(a)).unwrap();
     let frame = manager.begin_frame();
@@ -492,7 +492,7 @@ fn multiple_absent_roots_deliver_cancellation_teardown_then_only_final_focus() {
         ],
     );
     assert_eq!(result.removed, vec![a, b]);
-    assert!(result.invalid_reports.is_empty());
+    assert_eq!(result.invalid_reports, Vec::new());
     assert_eq!(
         result.events,
         vec![
@@ -511,12 +511,12 @@ fn multiple_absent_roots_deliver_cancellation_teardown_then_only_final_focus() {
                 reason: CloseReason::ContentRemoved
             },
             WindowEvent::FocusChanged {
-                previous: focus(a),
-                current: focus(survivor)
+                previous: Some(focus_target(a)),
+                current: Some(focus_target(survivor))
             },
         ]
     );
     assert_eq!(manager.visible_order(), &[survivor]);
-    assert_eq!(manager.focused(), focus(survivor));
+    assert_eq!(manager.focused(), Some(focus_target(survivor)));
     assert_eq!(manager.validate(), Ok(()));
 }

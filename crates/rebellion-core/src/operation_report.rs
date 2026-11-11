@@ -286,8 +286,7 @@ fn class_unit(world: &GameWorld, dat_id: DatId) -> ReportUnit {
         name: world
             .buildable_classes
             .get(&dat_id)
-            .map(|class| class.name.clone())
-            .unwrap_or_default(),
+            .map_or_default(|class| class.name.clone()),
         major: false,
         object: None,
     }
@@ -552,7 +551,6 @@ mod tests {
             let troop = world.troops.insert(TroopUnit {
                 class_dat_id: class,
                 is_alliance,
-                ..TroopUnit::default()
             });
             world.systems[system].ground_units.push(troop);
         }
@@ -626,7 +624,6 @@ mod tests {
             let troop = world.troops.insert(TroopUnit {
                 class_dat_id: class,
                 is_alliance: alliance,
-                ..TroopUnit::default()
             });
             world.systems[system].ground_units.push(troop);
             let mut transport = TroopTransportState::default();

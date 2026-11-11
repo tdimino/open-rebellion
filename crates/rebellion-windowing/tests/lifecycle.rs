@@ -254,7 +254,7 @@ fn thirteenth_minimized_detail_evicts_oldest_with_teardown_events() {
         let id = open(
             &mut manager,
             modeless_spec(
-                kinds[subject as usize % kinds.len()],
+                kinds[usize::try_from(subject).expect("test subject fits usize") % kinds.len()],
                 subject,
                 WindowOwner::StrategicRoot,
             ),
@@ -303,7 +303,7 @@ fn thirteenth_minimized_detail_evicts_oldest_with_teardown_events() {
     let oldest = ids.remove(0);
     ids.push(newest);
     assert_eq!(manager.presentation_history(), ids);
-    assert!(manager.visible_order().is_empty());
+    assert_eq!(manager.visible_order(), []);
     assert_eq!(
         manager.id_for(modeless_spec(WindowKind::System, 0, WindowOwner::StrategicRoot).key),
         None
@@ -331,7 +331,7 @@ fn restore_removes_history_and_raises_without_reallocating_identity() {
     );
     assert_eq!(manager.id_for(spec.key), Some(id));
     assert_eq!(manager.visible_order(), &[other, id]);
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.presentation_history(), []);
     assert_eq!(
         manager.focused(),
         Some(FocusTarget {
@@ -375,9 +375,9 @@ fn reopening_minimized_detail_restores_and_raises() {
             effect: rebellion_windowing::ExistingEffect::RestoredAndRaised
         }
     );
-    assert!(commit.events.is_empty());
+    assert_eq!(commit.events, Vec::new());
     assert_eq!(manager.visible_order(), &[id, modal]);
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.presentation_history(), []);
     assert_eq!(
         manager.focused(),
         Some(FocusTarget {
@@ -441,7 +441,7 @@ fn non_history_kind_cannot_minimize() {
                 Err(WindowError::NotMinimizable(id))
             );
             assert_eq!(manager.visible_order(), &[id]);
-            assert!(manager.presentation_history().is_empty());
+            assert_eq!(manager.presentation_history(), []);
         }
         assert_eq!(manager.validate(), Ok(()));
     }
@@ -474,7 +474,7 @@ fn minimizing_owner_with_modal_child_is_rejected_atomically() {
         Err(WindowError::OwnerHasModalChild(owner))
     );
     assert_eq!(manager.visible_order(), order);
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.presentation_history(), []);
     assert_eq!(manager.focused(), focus);
     assert_eq!(manager.capture_owner(), Some(child));
     assert_eq!(manager.id_for(spec.key), Some(child));
@@ -521,7 +521,7 @@ fn minimize_close_and_reset_cancel_capture_once() {
             restored_focus: None
         }
     );
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.presentation_history(), []);
     let hidden = open(&mut manager, spec);
     manager.apply(WindowCommand::Minimize(hidden)).unwrap();
     let visible_spec = modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot);
@@ -555,8 +555,8 @@ fn minimize_close_and_reset_cancel_capture_once() {
             },
         ]
     );
-    assert!(manager.reset_session().is_empty());
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.reset_session(), Vec::new());
+    assert_eq!(manager.presentation_history(), []);
     assert_eq!(manager.id_for(spec.key), None);
     assert_eq!(manager.capture_owner(), None);
     assert_eq!(manager.validate(), Ok(()));
@@ -646,7 +646,7 @@ fn hidden_owned_details_close_child_first_and_cannot_restore_under_a_hidden_owne
         Err(WindowError::InvalidPlacement)
     );
     assert_eq!(manager.presentation_history(), &[child, owner]);
-    assert!(manager.visible_order().is_empty());
+    assert_eq!(manager.visible_order(), []);
     let events = manager.reset_session();
     assert_eq!(
         events,
@@ -684,7 +684,7 @@ fn minimizing_a_visible_nontransient_child_owner_is_rejected_without_losing_cont
         Err(WindowError::InvalidPlacement)
     );
     assert_eq!(manager.visible_order(), &[owner, child]);
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.presentation_history(), []);
     assert_eq!(manager.capture_owner(), Some(child));
     assert_eq!(manager.focused().map(|target| target.window), Some(child));
     assert_eq!(manager.validate(), Ok(()));
@@ -772,11 +772,10 @@ fn minimize_preserves_unrelated_focus_capture_and_rejects_stale_ids() {
     };
     manager.apply(WindowCommand::Focus(target)).unwrap();
     manager.apply(WindowCommand::CapturePointer(other)).unwrap();
-    assert!(manager
-        .apply(WindowCommand::Minimize(id))
-        .unwrap()
-        .events
-        .is_empty());
+    assert_eq!(
+        manager.apply(WindowCommand::Minimize(id)).unwrap().events,
+        Vec::new()
+    );
     assert_eq!(manager.focused(), Some(target));
     assert_eq!(manager.capture_owner(), Some(other));
     assert_eq!(manager.validate(), Ok(()));
@@ -825,7 +824,7 @@ fn restore_rejects_now_ineligible_transient_placement(reopen: bool) {
     manager.apply(WindowCommand::Close(modal)).unwrap();
     manager.apply(command).unwrap();
     assert_eq!(manager.visible_order(), &[owner, child]);
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.presentation_history(), []);
     assert_eq!(manager.validate(), Ok(()));
 }
 
@@ -860,11 +859,13 @@ fn close_after_background_minimize_uses_the_topmost_eligible_focus_walk() {
     manager
         .apply(WindowCommand::CapturePointer(current))
         .unwrap();
-    assert!(manager
-        .apply(WindowCommand::Minimize(hidden))
-        .unwrap()
-        .events
-        .is_empty());
+    assert_eq!(
+        manager
+            .apply(WindowCommand::Minimize(hidden))
+            .unwrap()
+            .events,
+        Vec::new()
+    );
     let target = Some(FocusTarget {
         window: top,
         control: None,
@@ -1164,7 +1165,7 @@ fn duplicate_raise_restore_preserves_focus_without_reallocating() {
             effect: rebellion_windowing::ExistingEffect::Raised,
         }
     );
-    assert!(commit.events.is_empty());
+    assert_eq!(commit.events, Vec::new());
     assert_eq!(manager.visible_order(), &[other, detail]);
     assert_eq!(
         manager.focused(),
@@ -1557,7 +1558,7 @@ fn removed_control_is_downgraded_before_modal_restores_its_owner() {
         invalidated.transition,
         WindowTransition::ControlInvalidated { target: removed }
     );
-    assert!(invalidated.events.is_empty());
+    assert_eq!(invalidated.events, Vec::new());
 
     let closed = manager
         .apply(WindowCommand::Close(modal))
@@ -1643,7 +1644,7 @@ fn capture_is_exclusive_and_release_by_another_window_fails() {
             current: Some(owner),
         }
     );
-    assert!(captured.events.is_empty());
+    assert_eq!(captured.events, Vec::new());
     assert_eq!(manager.capture_owner(), Some(owner));
 
     assert_eq!(
@@ -1666,7 +1667,7 @@ fn capture_is_exclusive_and_release_by_another_window_fails() {
             current: None,
         }
     );
-    assert!(released.events.is_empty());
+    assert_eq!(released.events, Vec::new());
     assert_eq!(manager.capture_owner(), None);
     assert_eq!(manager.validate(), Ok(()));
 }
@@ -2024,7 +2025,7 @@ fn capture_cancellation_is_exactly_once_when_nothing_is_captured() {
             reason: UnchangedReason::NotCaptured,
         }
     );
-    assert!(release.events.is_empty());
+    assert_eq!(release.events, Vec::new());
 
     let cancel = manager
         .apply(WindowCommand::CancelCapture(CaptureCancelReason::FocusLost))
@@ -2036,7 +2037,7 @@ fn capture_cancellation_is_exactly_once_when_nothing_is_captured() {
             reason: UnchangedReason::NotCaptured,
         }
     );
-    assert!(cancel.events.is_empty());
+    assert_eq!(cancel.events, Vec::new());
     assert_eq!(manager.capture_owner(), None);
     assert_eq!(manager.validate(), Ok(()));
 }

@@ -476,16 +476,18 @@ impl ResearchSystem {
                 )
                 .collect(),
             TechType::Troop | TechType::Facility => {
-                let families: &[std::ops::RangeInclusive<u8>] = if tech == TechType::Troop {
-                    &[0x10..=0x13, 0x30..=0x3f]
-                } else {
-                    &[0x22..=0x2d]
+                let family_allowed = |family| match tech {
+                    TechType::Troop => {
+                        (0x10..=0x13).contains(&family) || (0x30..=0x3f).contains(&family)
+                    }
+                    TechType::Facility => (0x22..=0x2d).contains(&family),
+                    TechType::Ship => false,
                 };
                 world
                     .buildable_classes
                     .iter()
                     .filter(|(id, c)| {
-                        families.iter().any(|range| range.contains(&id.family()))
+                        family_allowed(id.family())
                             && serves(c.is_alliance, c.is_empire)
                             && c.refined_material_cost != 0
                     })

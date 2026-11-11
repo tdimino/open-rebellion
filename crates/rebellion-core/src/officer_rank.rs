@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{CharacterKey, FleetKey, SystemKey};
 use crate::world::{Character, GameWorld};
 
-/// The character short `+0x96` (CommandKind; setter `FUN_004ee350`).
+/// The character short `+0x96` (`CommandKind`; setter `FUN_004ee350`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum CommandKind {
     #[default]

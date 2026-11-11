@@ -596,7 +596,7 @@ impl MessageLog {
 ///
 /// Does not own any messages — those live in `MessageLog`.
 #[derive(Debug, Clone)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
 )]
@@ -853,7 +853,7 @@ mod tests {
                 ),
             );
             assert_eq!(log.take_alerts(), [own], "{owner:?}");
-            assert!(log.take_alerts().is_empty());
+            assert_empty!(log.take_alerts());
             assert!(log.get(own).is_some_and(|message| message.report.is_some()));
         }
     }

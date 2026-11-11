@@ -692,7 +692,11 @@ fn move_enemies(world: &mut GameWorld, system: SystemKey, side: u8) {
             character.adrift = true;
         }
     }
-    let Some(units) = world.systems.get(system).map(|sys| sys.special_forces.clone()) else {
+    let Some(units) = world
+        .systems
+        .get(system)
+        .map(|sys| sys.special_forces.clone())
+    else {
         return;
     };
     for unit in units {
@@ -809,6 +813,7 @@ pub fn system_unit_losses(world: &GameWorld, system: SystemKey, reason: u8) -> V
 /// unfinished from its order (`ShipInstance::ordered`), so only completed
 /// ships count. port: a regiment or squadron exists only once complete (a
 /// queued one is a production entry); squadrons en route count.
+#[must_use]
 pub fn strength(world: &GameWorld) -> [i32; 2] {
     let mut sums = [0_i32; 2];
     let mut add = |is_alliance: bool, value: i32, count: u32| {
@@ -1138,14 +1143,16 @@ mod tests {
         // keeps its facilities (facility-ownership.md, "Contested systems").
         for side in [Faction::Alliance, Faction::Empire] {
             let (mut world, systems) = sector_world(2, side);
-            let yard = world
-                .manufacturing_facilities
-                .insert(crate::world::ManufacturingFacilityInstance {
+            let yard = world.manufacturing_facilities.insert(
+                crate::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId::new(0x2800_0001),
                     side,
                     ..crate::world::ManufacturingFacilityInstance::default()
-                });
-            world.systems[systems[0]].manufacturing_facilities.push(yard);
+                },
+            );
+            world.systems[systems[0]]
+                .manufacturing_facilities
+                .push(yard);
             refresh_troop_bits(&mut world, systems[0]);
             let other = if side == Faction::Alliance {
                 Faction::Empire
@@ -1211,7 +1218,7 @@ mod tests {
         stalemate(&mut world, systems[0], Faction::Alliance);
         assert!(world.systems[systems[0]].is_headquarters);
         assert_eq!(alliance(&world, systems[1]), 50);
-        assert!(world.support_events.is_empty());
+        assert_empty!(world.support_events);
     }
 
     /// [`change`] with the troop bits of the old and the new word.
@@ -1245,7 +1252,7 @@ mod tests {
                 "{side:?}"
             );
             assert_eq!(alliance(&world, systems[1]), 50, "{side:?}");
-            assert!(world.support_events.is_empty());
+            assert_empty!(world.support_events);
         }
     }
 
@@ -1406,7 +1413,12 @@ mod tests {
             let steps = [step(1, 0), step(2, 0), step(2, 3), step(2, 3)];
             let mut expected = 50;
             for (index, key) in steps.into_iter().enumerate() {
-                change(&mut world, systems[index], ControlKind::Controlled(captor), key);
+                change(
+                    &mut world,
+                    systems[index],
+                    ControlKind::Controlled(captor),
+                    key,
+                );
                 if index < 3 {
                     expected += toward;
                 }
@@ -1642,7 +1654,7 @@ mod tests {
         assert_eq!(alliance(&world, systems[0]), 95, "posting applies nothing");
         let applied = fire(&mut world, 1).shifts;
         assert_eq!(alliance(&world, systems[0]), 100);
-        assert!(world.support_events.is_empty());
+        assert_empty!(world.support_events);
         // Each record carries its cause, its amount and the clamped move.
         let moves: Vec<_> = applied
             .iter()
@@ -1738,7 +1750,7 @@ mod tests {
             },
             ShiftCause::Bombardment,
         );
-        assert!(world.support_events.is_empty());
+        assert_empty!(world.support_events);
     }
 
     #[test]
@@ -2021,7 +2033,7 @@ mod tests {
             },
         );
         blockade_ended(&mut world, &blockade, systems[0]);
-        assert!(world.support_events.is_empty());
+        assert_empty!(world.support_events);
         blockade.start_losses(systems[0], Faction::Empire);
         assert_eq!(
             blockade
@@ -2110,7 +2122,7 @@ mod tests {
             // 40 + 20, then the first change's SDPRTB 0x1420 shift: 1 + 1.
             assert_eq!(alliance(&world, system), 62);
         }
-        assert!(world.support_events.is_empty());
+        assert_empty!(world.support_events);
     }
 
     /// One populated core system held by `side`'s only regiment, its
@@ -2199,7 +2211,9 @@ mod tests {
                 match path {
                     0 => {
                         let class = world.troops[troop].class_dat_id;
-                        world.buildable_classes.insert(class, BuildableClass::default());
+                        world
+                            .buildable_classes
+                            .insert(class, BuildableClass::default());
                         let scrapped = crate::scrap::scrap(
                             &mut world,
                             &mut crate::stockpiles::StockpileState::default(),

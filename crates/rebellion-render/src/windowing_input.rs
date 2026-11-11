@@ -527,18 +527,18 @@ mod tests {
     fn assert_pointer(
         router: &mut FrameInputRouter,
         id: InputEventId,
-        hit_windows: BTreeSet<WindowId>,
+        hit_windows: &BTreeSet<WindowId>,
         phase: PointerPhase,
         expected: InputRecipient,
     ) {
-        assert_eq!(router.collect_pointer(id, &hit_windows, phase), expected);
+        assert_eq!(router.collect_pointer(id, hit_windows, phase), expected);
     }
 
     fn assert_primary_release_blocked(router: &mut FrameInputRouter) {
         assert_pointer(
             router,
             event(2, 0),
-            BTreeSet::new(),
+            &BTreeSet::new(),
             PointerPhase::Release(PointerButtonId::Primary),
             InputRecipient::Blocked,
         );
@@ -630,14 +630,14 @@ mod tests {
         assert_pointer(
             &mut router,
             event(3, 0),
-            BTreeSet::from([window]),
+            &BTreeSet::from([window]),
             PointerPhase::Press(PointerButtonId::Primary),
             InputRecipient::Window(window),
         );
         assert_pointer(
             &mut router,
             event(3, 1),
-            BTreeSet::new(),
+            &BTreeSet::new(),
             PointerPhase::Release(PointerButtonId::Primary),
             InputRecipient::Window(window),
         );
@@ -652,14 +652,14 @@ mod tests {
         assert_pointer(
             &mut router,
             event(2, 0),
-            BTreeSet::from([window]),
+            &BTreeSet::from([window]),
             PointerPhase::Press(PointerButtonId::Primary),
             InputRecipient::Window(window),
         );
         assert_pointer(
             &mut router,
             event(2, 1),
-            BTreeSet::new(),
+            &BTreeSet::new(),
             PointerPhase::Release(PointerButtonId::Primary),
             InputRecipient::Window(window),
         );

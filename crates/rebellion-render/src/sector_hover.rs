@@ -253,7 +253,7 @@ mod tests {
         add(400, 330);
         let (left, top) = galaxy_canvas_point(CockpitFaction::Empire, 330, 260);
         let (right, bottom) = galaxy_canvas_point(CockpitFaction::Empire, 400, 330);
-        let middle = ((left + right) / 2.0, (top + bottom) / 2.0);
+        let middle = (f32::midpoint(left, right), f32::midpoint(top, bottom));
         assert_eq!(
             sector_at(&world, CockpitFaction::Empire, middle),
             Some(sector)

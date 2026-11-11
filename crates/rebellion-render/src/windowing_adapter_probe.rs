@@ -722,7 +722,7 @@ fn windowing_adapter_routes_overlap_to_exactly_one_button() {
     }
 
     assert_eq!(state.button_hits, vec![ProbeWindow::B]);
-    assert!(state.raw_row_hits.is_empty());
+    assert_empty!(state.raw_row_hits);
 
     let raw_row = OVERLAP.min + egui::vec2(30.0, 120.0);
     for events in [

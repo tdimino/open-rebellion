@@ -10,6 +10,8 @@
 //! `Embark` and `Queue build` stand for no event: they are staging alone.
 //! `agent_docs/dev-commands.md` lists them.
 
+use std::fmt::Write as _;
+
 use rebellion_core::ai::AIAction;
 use rebellion_core::ai_regions::Strike;
 use rebellion_core::bombardment::BombardKind;
@@ -81,10 +83,11 @@ pub fn list_systems(world: &GameWorld) -> String {
             ];
             let mut row = format!("{} {holder}/{fleets}", system.name);
             if counts.iter().any(|&count| count > 0) {
-                row.push_str(&format!(
+                let _ = write!(
+                    row,
                     " squadrons {}/{} fleets {}/{}",
                     counts[0], counts[1], counts[2], counts[3]
-                ));
+                );
             }
             let yards = system
                 .manufacturing_facilities
@@ -93,14 +96,15 @@ pub fn list_systems(world: &GameWorld) -> String {
                 .filter(|facility| facility.is_shipyard)
                 .count();
             if yards > 0 {
-                row.push_str(&format!(" yards {yards}"));
+                let _ = write!(row, " yards {yards}");
             }
             if system.is_populated {
-                row.push_str(&format!(
+                let _ = write!(
+                    row,
                     " support {}/{}",
                     rebellion_core::uprising::support_points(system, Faction::Alliance),
                     rebellion_core::uprising::support_points(system, Faction::Empire)
-                ));
+                );
             }
             row
         })
@@ -606,7 +610,7 @@ pub fn strip_defenders(
 /// the drags. Refused, with nothing moved, when fewer than `count` of the
 /// player's regiments stand there; a regiment the Move refuses stops the
 /// line, naming how many boarded.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The Move reads the world, the transport, movement, the blockades and the products, and the order's fleet, count and day."
 )]
@@ -671,7 +675,7 @@ pub fn embark(
 /// `ManufacturingState::build_units`). The class must be one the side's
 /// managers list (`listed_classes`). port: staging only, with no original
 /// counterpart: it builds for either side, the AI's included.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The order reads the research, the queues, the cargo, the products and the fleets on their way."
 )]
@@ -909,7 +913,7 @@ fn objects_at(world: &GameWorld, system: SystemKey) -> Vec<MissionTarget> {
 /// is refused `0x40`/`0x34` (`FUN_00593500.c:49-58`), which the dialog only
 /// shows as a list without the kind. port: staging only; the player's
 /// dialog never begins an order it does not list.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The dialog's order is these inputs; a parameter struct would only restate them."
 )]
@@ -1426,7 +1430,9 @@ mod tests {
                 ..DefenseFacilityInstance::default()
             });
             world.systems[system].defense_facilities.push(battery);
-            let class = world.fighter_classes.insert(Default::default());
+            let class = world
+                .fighter_classes
+                .insert(rebellion_core::world::FighterClass::default());
             world.systems[system].fighters = vec![
                 SystemSquadrons {
                     class,

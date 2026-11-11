@@ -85,7 +85,7 @@ const GNPRTB_SUPPORT_CONTROL_THRESHOLD: u16 = 7760; // =60: support a side needs
 /// In the original each incident is a one-tick pulse raised by a timer event,
 /// and the system vtable (`0x0065e640`) holds each incident's effect.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
 )]
@@ -166,7 +166,7 @@ pub enum SupportHolder {
 }
 
 /// `FUN_0055a080` on the system's Alliance support (`+0x58`, 0-100).
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Support is a fraction of 1 and rounds to a whole percent."
 )]
@@ -188,10 +188,11 @@ fn support_holder(
 
 /// Per-system resource and economy tracking.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
 )]
+#[derive(Default)]
 pub struct SystemEconomy {
     /// Production speed modifier from fleet/KDY presence (0-100).
     pub production_modifier: i8,
@@ -220,23 +221,6 @@ pub struct SystemEconomy {
     /// a prior tick. Suppresses `EVT_RESOURCE_DISCOVERY` (0x155) on the
     /// very first eval — the galaxy seed itself is not a "discovery".
     pub resource_discovery_armed: bool,
-}
-
-impl Default for SystemEconomy {
-    fn default() -> Self {
-        Self {
-            production_modifier: 0,
-            energy_allocated: 0,
-            raw_material_allocated: 0,
-            energy_overcapped: false,
-            raw_material_overcapped: false,
-            summary: SystemSummary::default(),
-            incident_flags: IncidentFlags::default(),
-            uprising_visible: false,
-            last_support_holder: SupportHolder::default(),
-            resource_discovery_armed: false,
-        }
-    }
 }
 
 /// What the support hook's three writers store on a system (`FUN_005109f0`):
@@ -396,11 +380,11 @@ impl EconomySystem {
     /// column the support hook reads too.
     ///
     /// Runs BEFORE manufacturing in the tick order (economy affects production).
-    #[expect(
+    #[allow(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -693,7 +677,7 @@ fn count_military_presence(world: &GameWorld, sys: &crate::world::System) -> Mil
 /// The drift as the original stores it at system `+0x6c`: the integer
 /// percentage, negated for side 2 (`FUN_00559c40`). It is 0 at an unheld
 /// system.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "a drift is at most 100 percent"
 )]
@@ -721,7 +705,7 @@ fn support_drift_value(control: ControlKind, alliance_delta: f32, empire_delta: 
 ///     drift = clamp(base - p4*7686 - p5*7687 - regiments(p6)*7688, 0, 100)
 /// if empire_controlled: drift = -drift
 /// ```
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -836,10 +820,11 @@ fn calculate_support_drift(
 /// The original sums facility outputs (virtual method at +0x1c8) and mine outputs,
 /// then caps at system limits. If overcapped, the original randomly prunes facilities/mines.
 /// We report overcap via events and let the caller decide on pruning.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
+#[must_use]
 pub fn calculate_resource_allocation(world: &GameWorld, sys: &crate::world::System) -> (u32, u32) {
     // Sum production facility outputs (energy generators).
     // Each production facility contributes 1 unit of energy output.
@@ -1001,7 +986,7 @@ fn evaluate_incident_flags(summary: &SystemSummary, eco: &SystemEconomy) -> Inci
 ///
 /// Formula: `(GNPRTB[7763] * 100) / max(support_pct, 1)`.
 /// Higher support means a lower collection rate (less taxation needed).
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -1027,7 +1012,7 @@ fn calculate_collection_rate(support: f32, gnprtb: &GnprtbParams, difficulty: u8
 /// Calculate troops needed to prevent uprising at this system.
 ///
 /// Formula: `(threshold - support_pct) / abs(divisor)` when support < threshold.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -1103,7 +1088,7 @@ mod tests {
     use crate::world::GameWorld;
 
     /// Create a `GnprtbParams` with the stock economy values.
-    #[expect(
+    #[allow(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
@@ -1718,7 +1703,7 @@ mod tests {
         let mut state = EconomyState::default();
         world.difficulty_index = 2;
         let events = EconomySystem::advance(&mut state, &mut world, &[]);
-        assert!(events.is_empty());
+        assert_empty!(events);
     }
 
     #[test]

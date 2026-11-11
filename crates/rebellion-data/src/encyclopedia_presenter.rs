@@ -162,6 +162,7 @@ pub struct EncyclopediaPresentation<'a> {
 impl EncyclopediaPresentation<'_> {
     /// Build an in-view transition without reconstructing or changing the
     /// caller to which close/return must eventually navigate.
+    #[must_use]
     pub const fn follow_up(
         &self,
         mode: EncyclopediaPresentationMode,
@@ -223,10 +224,20 @@ impl EncyclopediaPresenter {
     /// Contextual misses follow the original unresolved-context behavior and
     /// open the full index while retaining the exact caller token. Invalid
     /// internal index/object selections fail closed instead of guessing.
-    pub fn present<'a>(
-        session: &'a EncyclopediaSession,
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the category, object, or presentation intent is
+    /// inconsistent with the validated session.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a session that bypassed validation lacks a topic binding for
+    /// one of its catalog entries.
+    pub fn present(
+        session: &EncyclopediaSession,
         intent: EncyclopediaEntryIntent,
-    ) -> Result<EncyclopediaPresentation<'a>, EncyclopediaPresenterError> {
+    ) -> Result<EncyclopediaPresentation<'_>, EncyclopediaPresenterError> {
         let normalized = NormalizedEntry::from_intent(session, intent)?;
         let catalog = session.catalog();
         let category = catalog.category(normalized.category_command).ok_or(

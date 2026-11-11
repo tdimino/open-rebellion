@@ -202,7 +202,7 @@ impl JediSystem {
     /// 2. Update `world.characters[key].force_tier` from `TierAdvanced` events.
     /// 3. Update `world.characters[key].is_discovered_jedi` from `JediDiscovered` events.
     /// 4. Call `state.stop_training(key)` for each `TrainingComplete` event.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -419,7 +419,7 @@ mod tests {
         let world = GameWorld::default();
         let mut state = JediState::new();
         let events = JediSystem::advance(&mut state, &world, &ticks(10), &[0.5]);
-        assert!(events.is_empty());
+        assert_empty!(events);
     }
 
     #[test]

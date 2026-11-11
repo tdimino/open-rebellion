@@ -314,10 +314,14 @@ impl Default for WindowManager {
 }
 
 impl WindowManager {
-    /// Fixed original rail bound, recovered from FUN_00428b40.
+    /// Fixed original rail bound, recovered from `FUN_00428b40`.
     pub const PRESENTATION_HISTORY_CAPACITY: usize = 12;
 
     /// Creates an empty manager for one UI session.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the process-wide manager identity space is exhausted.
     #[must_use]
     pub fn new() -> Self {
         let manager_id = NEXT_MANAGER_ID.fetch_add(1, Ordering::Relaxed);
@@ -405,6 +409,11 @@ impl WindowManager {
     }
 
     /// Atomically selects the identities that participate in the active scene.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the set contains an unknown window, omits an
+    /// active owner, or would produce an invalid modal order.
     pub fn set_active_windows(
         &mut self,
         active: &BTreeSet<WindowId>,
@@ -437,14 +446,14 @@ impl WindowManager {
         }
         self.validate_modal_order(&proposed_order, active)
             .map_err(|_| WindowError::InvalidPlacement)?;
-        self.active_windows = active.clone();
+        self.active_windows.clone_from(active);
         self.visible_order = proposed_order;
         if self
             .capture_owner
             .is_some_and(|owner| !self.is_focus_eligible(owner))
         {
             events.extend(
-                self.cancel_capture(CaptureCancelReason::SceneChanged)?
+                self.cancel_capture(CaptureCancelReason::SceneChanged)
                     .events,
             );
         }
@@ -472,6 +481,11 @@ impl WindowManager {
     }
 
     /// Reconciles explicit feature-content reports against exactly one old snapshot.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an internally preflighted reconciliation root disappears
+    /// before its synchronous teardown completes.
     pub fn reconcile(
         &mut self,
         frame: &RoutingSnapshot,
@@ -650,6 +664,13 @@ impl WindowManager {
     }
 
     /// Validates the registry, semantic-key index, ownership, and visible order.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first broken registry invariant and the involved windows.
+    // Keeping the complete invariant audit together makes its ordering and
+    // first-failure behavior explicit.
+    #[allow(clippy::too_many_lines)]
     pub fn validate(&self) -> Result<(), InvariantViolation> {
         if let Some(id) = self
             .active_windows
@@ -931,6 +952,11 @@ impl WindowManager {
     }
 
     /// Applies one command atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the command references invalid state or violates
+    /// a window ownership, placement, focus, capture, or cardinality rule.
     pub fn apply(&mut self, command: WindowCommand) -> Result<WindowCommit, WindowError> {
         match command {
             WindowCommand::Open(spec) => self.open(spec),
@@ -945,7 +971,7 @@ impl WindowManager {
             WindowCommand::RestoreFocus => self.restore_focus(),
             WindowCommand::CapturePointer(id) => self.capture_pointer(id),
             WindowCommand::ReleasePointer(id) => self.release_pointer(id),
-            WindowCommand::CancelCapture(reason) => self.cancel_capture(reason),
+            WindowCommand::CancelCapture(reason) => Ok(self.cancel_capture(reason)),
             WindowCommand::Close(id) => self.close(id),
         }
     }
@@ -1087,9 +1113,8 @@ impl WindowManager {
             return Err(WindowError::InvalidReplacement(old));
         }
         let opened = proposed.open(new)?;
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            _ => return Err(WindowError::InvalidReplacement(old)),
+        let WindowTransition::Opened { id } = opened.transition else {
+            return Err(WindowError::InvalidReplacement(old));
         };
 
         // Capture on a survivor may become blocked by the new modal. Deliver that
@@ -1314,17 +1339,17 @@ impl WindowManager {
         })
     }
 
-    fn cancel_capture(&mut self, reason: CaptureCancelReason) -> Result<WindowCommit, WindowError> {
+    fn cancel_capture(&mut self, reason: CaptureCancelReason) -> WindowCommit {
         let Some(previous) = self.capture_owner.take() else {
-            return Ok(WindowCommit {
+            return WindowCommit {
                 transition: WindowTransition::Unchanged {
                     subject: TransitionSubject::StrategicRoot,
                     reason: UnchangedReason::NotCaptured,
                 },
                 events: Vec::new(),
-            });
+            };
         };
-        Ok(WindowCommit {
+        WindowCommit {
             transition: WindowTransition::CaptureChanged {
                 previous: Some(previous),
                 current: None,
@@ -1333,7 +1358,7 @@ impl WindowManager {
                 window: previous,
                 reason,
             }],
-        })
+        }
     }
 
     fn cancel_capture_if_ineligible(&mut self, reason: CaptureCancelReason) -> Option<WindowEvent> {
@@ -1525,7 +1550,7 @@ impl WindowManager {
             .capture_owner
             .is_some_and(|owner| owner == id || descendants.contains(&owner))
         {
-            events.extend(self.cancel_capture(CaptureCancelReason::Minimized)?.events);
+            events.extend(self.cancel_capture(CaptureCancelReason::Minimized).events);
         }
         for child in descendants {
             if self
@@ -1735,14 +1760,15 @@ impl WindowManager {
     /// (`FUN_00422ce0.c:1145-1148`, `:1181-1182`); otherwise the walk makes
     /// the topmost eligible child current (`:1157-1173`).
     fn current_child_walk(&mut self) -> Option<crate::FocusTarget> {
-        if self.current_child.is_none() {
-            return None;
-        }
+        self.current_child?;
         let walked = self.topmost_eligible_restoration();
         self.current_child = walked.map(|target| target.window);
         walked
     }
 
+    // This is a single ordered preflight: later checks rely on earlier owner
+    // and policy validation, so keeping it linear avoids partial assumptions.
+    #[allow(clippy::too_many_lines)]
     fn validate_new_spec(&self, spec: WindowSpec) -> Result<(), WindowError> {
         match spec.policy.cardinality {
             Cardinality::Singleton if spec.key.subject.is_some() => {

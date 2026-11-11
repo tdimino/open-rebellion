@@ -116,7 +116,7 @@ pub(crate) fn side_arg(side: Faction) -> Option<TemplateArg> {
     match side {
         Faction::Alliance => Some(TemplateArg::side(true)),
         Faction::Empire => Some(TemplateArg::side(false)),
-        _ => None,
+        Faction::Neutral => None,
     }
 }
 
@@ -822,8 +822,11 @@ mod tests {
         };
         // Both game types: AD alone (Standard, no win) and with EW
         // (Headquarters Only) file the same movie.
-        assert_eq!(word_movies(&templates, 0, AD), [hq.clone()]);
-        assert_eq!(word_movies(&templates, 0, AD | EW | GO), [hq.clone()]);
+        assert_eq!(word_movies(&templates, 0, AD), std::slice::from_ref(&hq));
+        assert_eq!(
+            word_movies(&templates, 0, AD | EW | GO),
+            std::slice::from_ref(&hq)
+        );
         assert_eq!(word_movies(&templates, 0, CA | AW | GO), [coruscant]);
         assert_eq!(word_movies(&templates, LC, AD | LC), [hq]);
     }
@@ -913,7 +916,7 @@ mod tests {
             for viewer in [bombarder, holder] {
                 assert_eq!(
                     strike_movies(&world, &templates, [&run], viewer),
-                    [played.clone()],
+                    std::slice::from_ref(&played),
                     "{bombarder:?} bombards, {viewer:?} views"
                 );
             }

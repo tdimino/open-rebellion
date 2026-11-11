@@ -260,7 +260,7 @@ impl ModContent {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return ModContentTarget::Missing;
             }
-            Err(error) => return content_target_error(path, error),
+            Err(error) => return content_target_error(path, &error),
         };
         if metadata.file_type().is_symlink() || !metadata.is_file() {
             return ModContentTarget::ReadError {
@@ -290,7 +290,7 @@ impl ModContent {
         });
         match result {
             Ok(bytes) => ModContentTarget::Bytes(bytes),
-            Err(error) => content_target_error(path, error),
+            Err(error) => content_target_error(path, &error),
         }
     }
 
@@ -340,7 +340,7 @@ impl ModContent {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn content_target_error(path: PathBuf, error: std::io::Error) -> ModContentTarget {
+fn content_target_error(path: PathBuf, error: &std::io::Error) -> ModContentTarget {
     ModContentTarget::ReadError {
         message: format!("reading mod content target {}: {error}", path.display()),
         path,
@@ -1151,7 +1151,7 @@ version = "0.1.0"
 "#;
         let manifest: ModManifest = toml::from_str(toml_str).unwrap();
         assert_eq!(manifest.name, "minimal");
-        assert!(manifest.dependencies.is_empty());
+        assert_empty!(manifest.dependencies);
     }
 
     // ── resolve_load_order ───────────────────────────────────────────────────
@@ -1356,7 +1356,7 @@ version = "0.1.0"
         let tmp = tempfile::tempdir().unwrap();
         let runtime = ModRuntime::discover(tmp.path());
         assert_eq!(runtime.discovered.len(), 0);
-        assert!(runtime.errors.is_empty());
+        assert_empty!(runtime.errors);
     }
 
     #[test]
@@ -1428,7 +1428,7 @@ version = "0.1.0"
         runtime.refresh();
 
         assert!(runtime.config_error.is_none());
-        assert!(runtime.errors.is_empty());
+        assert_empty!(runtime.errors);
         assert!(runtime.config.is_enabled("mod-a"));
         assert!(runtime.discovered[0].enabled);
     }
@@ -1445,7 +1445,7 @@ version = "0.1.0"
         assert!(error.to_string().contains("replacing mod configuration"));
         assert!(!runtime.config.is_enabled("mod-a"));
         assert!(!runtime.discovered[0].enabled);
-        assert!(runtime.errors.is_empty());
+        assert_empty!(runtime.errors);
     }
 
     #[cfg(unix)]
@@ -1569,7 +1569,7 @@ version = "1.0.0"
         let runtime = ModRuntime::discover(tmp.path());
         // enabled_sorted() should return empty (load order resolution fails)
         let sorted = runtime.enabled_sorted();
-        assert!(sorted.is_empty());
+        assert_empty!(sorted);
         assert!(matches!(
             runtime.errors.as_slice(),
             [ModError::MissingDependency { mod_name, dep_name }]
@@ -1603,7 +1603,7 @@ version = "1.0.0"
 
         let runtime = ModRuntime::discover(tmp.path());
 
-        assert!(runtime.enabled_sorted().is_empty());
+        assert_empty!(runtime.enabled_sorted());
         assert!(matches!(
             runtime.errors.as_slice(),
             [ModError::VersionMismatch { mod_name, dep_name, required, found }]
@@ -1631,7 +1631,7 @@ version = "1.0.0"
         write_manifest(tmp.path(), "mod-base", "version = \"1.0.0\"\n");
         runtime.refresh();
 
-        assert!(runtime.errors.is_empty());
+        assert_empty!(runtime.errors);
         assert_eq!(runtime.enabled_sorted().len(), 2);
     }
 
@@ -1651,7 +1651,7 @@ version = "1.0.0"
         config.save(tmp.path()).unwrap();
 
         let mut runtime = ModRuntime::discover(tmp.path());
-        assert!(runtime.enabled_sorted().is_empty());
+        assert_empty!(runtime.enabled_sorted());
         let mut named: Vec<_> = runtime
             .errors
             .iter()
@@ -1688,7 +1688,7 @@ version = "1.0.0"
 
         runtime.toggle_mod("mod-base").unwrap();
 
-        assert!(runtime.errors.is_empty());
+        assert_empty!(runtime.errors);
         assert_eq!(runtime.enabled_sorted().len(), 2);
     }
 

@@ -202,7 +202,7 @@ impl QueueItem {
 
     /// Progress fraction in [0.0, 1.0].
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_precision_loss,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -1670,7 +1670,7 @@ mod tests {
         let first =
             ManufacturingSystem::advance_tracked(&mut state, &ticks(1..=1), &HashSet::new());
         assert_eq!(first.completions.len(), 1);
-        assert!(first.newly_idle.is_empty());
+        assert_empty!(first.newly_idle);
 
         work(&mut state, system, ProductionArea::TrainingFacility, 2);
         let second =
@@ -1800,7 +1800,7 @@ mod tests {
         assert_eq!(q.completion_days(100, &[1]), [Some(107), Some(111)]);
         assert_eq!(q.completion_days(100, &[2, 2]), [Some(108), Some(112)]);
         assert_eq!(q.completion_days(100, &[]), [None, None]);
-        assert!(ProductionQueue::new().completion_days(5, &[1]).is_empty());
+        assert_empty!(ProductionQueue::new().completion_days(5, &[1]));
     }
 
     // FUN_00529dd0: the manager keeps working as many yards as there are
@@ -1826,7 +1826,7 @@ mod tests {
         for _ in 0..4 {
             q.add_progress();
         }
-        assert!(q.take_completed().is_empty());
+        assert_empty!(q.take_completed());
         assert_eq!(q.active().unwrap().work_done, 4);
         assert_eq!(q.active().unwrap().work_left(), 6);
     }
@@ -1840,7 +1840,7 @@ mod tests {
             q.add_progress();
         }
         assert_eq!(q.take_completed().len(), 1);
-        assert!(q.is_empty());
+        assert_empty!(q);
     }
 
     // FUN_0052a430: progress beyond the active unit's cost goes to the
@@ -1868,7 +1868,7 @@ mod tests {
             q.add_progress();
         }
         assert_eq!(q.take_completed().len(), 3);
-        assert!(q.is_empty());
+        assert_empty!(q);
         assert_eq!(q.work_left(), 0);
     }
 
@@ -1927,7 +1927,7 @@ mod tests {
         state.enqueue(system, cap_ship_item(2));
 
         let completions = ManufacturingSystem::advance(&mut state, &ticks(1..=30));
-        assert!(completions.is_empty());
+        assert_empty!(completions);
         assert_eq!(
             state
                 .queue(system, ProductionArea::Shipyard)
@@ -2001,7 +2001,7 @@ mod tests {
         // transition detection must NOT emit again.
         let advance2 =
             ManufacturingSystem::advance_tracked(&mut state, &ticks(3..=3), &HashSet::new());
-        assert!(advance2.completions.is_empty());
+        assert_empty!(advance2.completions);
         assert!(
             advance2.newly_idle.is_empty(),
             "K6: already-empty queue must not re-fire"

@@ -255,6 +255,7 @@ pub struct OriginalTacticalLayout {
 }
 
 impl OriginalTacticalLayout {
+    #[must_use]
     pub fn from_active_counts(first_active_objects: usize, second_active_objects: usize) -> Self {
         let first_active_objects = u16::try_from(first_active_objects).unwrap_or(u16::MAX);
         let second_active_objects = u16::try_from(second_active_objects).unwrap_or(u16::MAX);
@@ -370,6 +371,7 @@ impl TacticalWorldVector {
         z: 1.0,
     };
 
+    #[must_use]
     pub fn normalized(self) -> Self {
         let magnitude = self.x.hypot(self.y).hypot(self.z);
         if magnitude > f32::EPSILON {
@@ -397,7 +399,7 @@ impl TacticalWorldPosition {
     };
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct OriginalTacticalSlots {
     index: usize,
     magnitude: f32,
@@ -556,7 +558,7 @@ impl TacticalTactic {
 
 /// One individual ship hull participating in the battle.
 #[derive(Debug, Clone)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
 )]
@@ -1295,7 +1297,7 @@ impl TacticalTrenchCommander {
     /// 1..=9. `+0x50` is the combat over the integer 20 as a float
     /// (`FUN_0040d680`: `FILD`, `FIDIV dword [DAT_006a80e8]`), so 70 rates
     /// 4.5.
-    #[expect(clippy::cast_precision_loss, reason = "a skill well under 2^24")]
+    #[allow(clippy::cast_precision_loss, reason = "a skill well under 2^24")]
     fn rating(self) -> f32 {
         (self.combat as f32 / 20.0 + 1.0).clamp(1.0, ORIGINAL_TRENCH_RUN_RATING_MAX)
     }
@@ -1404,7 +1406,7 @@ pub struct TacticalDeathStarBeam {
     pub target_position: TacticalWorldPosition,
     pub elapsed: f32,
     pub duration: f32,
-    /// Direct3DRM material selector: 0 red (Alliance), 1 green (Empire).
+    /// `Direct3DRM` material selector: 0 red (Alliance), 1 green (Empire).
     pub color_selector: u8,
 }
 
@@ -1434,7 +1436,7 @@ impl TacticalDeathStar {
     /// (`FUN_005003d0`; `FUN_0040bcd0` → `FUN_00595ef0`), for the side
     /// `is_attacker`.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_precision_loss,
         reason = "The source stores the hulls as floats."
     )]
@@ -1518,7 +1520,7 @@ impl TacticalDeathStar {
     /// (`FUN_005d4d10`, `_DAT_0066d258`, `_DAT_0066d250`), on which
     /// `FUN_005d59e0` builds the shot.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "The source multiplies by double constants and stores floats."
     )]
@@ -1547,7 +1549,7 @@ impl TacticalDeathStar {
 /// `n <= 1`) and `__ftol` truncates the unrounded product. The station uses
 /// 0.2 (`_DAT_0066d244`), the planet 0.1 (`_DAT_0066d23c`).
 #[must_use]
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "The source truncates with __ftol and stores the offset as a float."
 )]
@@ -1891,7 +1893,7 @@ pub struct WeaponEffect {
     pub longitudinal_scale: f32,
     /// One of the three exact triangle families built by `FUN_005ee590`.
     pub shape_variant: u8,
-    /// Direct3DRM material selector: 0 red, 1 green, 2 blue.
+    /// `Direct3DRM` material selector: 0 red, 1 green, 2 blue.
     pub color_selector: u8,
     /// Source lifecycle timer and exact one- or two-second duration.
     pub elapsed: f32,
@@ -2299,7 +2301,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::CapitalManeuver,
-            2 + group.min(7) as u16,
+            2 + u16::from(group.min(7)),
         )
     }
 
@@ -2309,7 +2311,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::FighterManeuver,
-            10 + group.min(3) as u16,
+            10 + u16::from(group.min(3)),
         )
     }
 
@@ -2320,18 +2322,18 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::ManeuverComplete,
-            15 + group.min(7) as u16,
+            15 + u16::from(group.min(7)),
         )
     }
 
     /// `FUN_005bae60` events 0x37..0x3a and 0xb1..0xb4, the RGBY lines after the
-    /// task forces (`tactical-voice-map.json` maneuver_complete). Their caller is not recovered.
+    /// task forces (`tactical-voice-map.json` `maneuver_complete`). Their caller is not recovered.
     #[must_use]
     pub fn fighter_maneuver_complete(faction: TacticalVoiceFaction, group: u8) -> Self {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::ManeuverComplete,
-            23 + group.min(3) as u16,
+            23 + u16::from(group.min(3)),
         )
     }
 
@@ -2341,7 +2343,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::CapitalAttack,
-            28 + group.min(7) as u16,
+            28 + u16::from(group.min(7)),
         )
     }
 
@@ -2351,7 +2353,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::FighterAttack,
-            36 + group.min(3) as u16,
+            36 + u16::from(group.min(3)),
         )
     }
 
@@ -2361,18 +2363,18 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::OrdersComplete,
-            41 + group.min(7) as u16,
+            41 + u16::from(group.min(7)),
         )
     }
 
     /// `FUN_005bae60` events 0x51..0x54 and 0xcb..0xce, the RGBY lines after the
-    /// task forces (`tactical-voice-map.json` orders_complete). Their caller is not recovered.
+    /// task forces (`tactical-voice-map.json` `orders_complete`). Their caller is not recovered.
     #[must_use]
     pub fn fighter_orders_complete(faction: TacticalVoiceFaction, group: u8) -> Self {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::OrdersComplete,
-            49 + group.min(3) as u16,
+            49 + u16::from(group.min(3)),
         )
     }
 
@@ -2383,7 +2385,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::TargetDestroyed,
-            54 + group.min(7) as u16,
+            54 + u16::from(group.min(7)),
         )
     }
 
@@ -2393,7 +2395,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::TargetDestroyed,
-            62 + group.min(3) as u16,
+            62 + u16::from(group.min(3)),
         )
     }
 
@@ -2403,7 +2405,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::CapitalDestroyed,
-            67 + group.min(7) as u16,
+            67 + u16::from(group.min(7)),
         )
     }
 
@@ -2413,7 +2415,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::FighterLosses,
-            75 + group.min(3) as u16,
+            75 + u16::from(group.min(3)),
         )
     }
 
@@ -2428,7 +2430,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::CapitalFormation,
-            base + group.min(7) as u16,
+            base + u16::from(group.min(7)),
         )
     }
 
@@ -2442,7 +2444,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::CapitalMission,
-            base + group.min(7) as u16,
+            base + u16::from(group.min(7)),
         )
     }
 
@@ -2456,7 +2458,7 @@ impl TacticalVoiceCue {
         Self::from_offset(
             faction,
             TacticalVoiceEvent::FighterMission,
-            base + group.min(3) as u16,
+            base + u16::from(group.min(3)),
         )
     }
 
@@ -2509,7 +2511,7 @@ impl TacticalVoiceCue {
         )
     }
 
-    /// `FUN_005bae60` events 0x96 and 0x118 (`tactical-voice-map.json` withdrawal_complete). Their
+    /// `FUN_005bae60` events 0x96 and 0x118 (`tactical-voice-map.json` `withdrawal_complete`). Their
     /// caller is not recovered.
     #[must_use]
     pub const fn withdrawal_complete(faction: TacticalVoiceFaction) -> Self {
@@ -2521,7 +2523,7 @@ impl TacticalVoiceCue {
     }
 
     /// `FUN_005bae60` events 0x97/0x98 and 0x119/0x11a (`tactical-voice-map.json`
-    /// battle_won_opponent_withdrew, battle_won_opponent_destroyed). Their caller
+    /// `battle_won_opponent_withdrew`, `battle_won_opponent_destroyed`). Their caller
     /// is not recovered.
     #[must_use]
     pub const fn battle_won(faction: TacticalVoiceFaction, opponent_withdrew: bool) -> Self {
@@ -2542,7 +2544,7 @@ impl TacticalVoiceCue {
     }
 
     /// `FUN_005bae60` events 0x99 and 0x11b (`tactical-voice-map.json`
-    /// battle_lost). Their caller is not recovered.
+    /// `battle_lost`). Their caller is not recovered.
     #[must_use]
     pub const fn battle_lost(faction: TacticalVoiceFaction) -> Self {
         let source_event = match faction {
@@ -2577,14 +2579,14 @@ impl TacticalVoiceCue {
         Self::from_source_event(TacticalVoiceEvent::DeathStarUnderAttack, 0x115)
     }
 
-    /// `FUN_005bae60` event 0x116 (`tactical-voice-map.json` death_star_status: broken off). Its
+    /// `FUN_005bae60` event 0x116 (`tactical-voice-map.json` `death_star_status`: broken off). Its
     /// caller is not recovered.
     #[must_use]
     pub const fn death_star_attack_broken_off() -> Self {
         Self::from_source_event(TacticalVoiceEvent::DeathStarAttackBrokenOff, 0x116)
     }
 
-    /// `FUN_005bae60` event 0x117 (`tactical-voice-map.json` death_star_status: destroyed). Its
+    /// `FUN_005bae60` event 0x117 (`tactical-voice-map.json` `death_star_status`: destroyed). Its
     /// caller is not recovered.
     #[must_use]
     pub const fn death_star_destroyed() -> Self {
@@ -2811,10 +2813,8 @@ fn original_projectile_profile(
     };
     let color_selector = if weapon == WeaponKind::IonCannon {
         2
-    } else if source_is_alliance {
-        0
     } else {
-        1
+        u8::from(!source_is_alliance)
     };
     OriginalProjectileProfile {
         longitudinal_scale,
@@ -3161,7 +3161,10 @@ fn original_tactical_objects_overlap(first: &TacticalShip, second: &TacticalShip
     }
     let x = first.source_position.x - second.source_position.x;
     let z = first.source_position.z - second.source_position.z;
-    let planar_radius = (first_envelope.planar_diameter + second_envelope.planar_diameter) * 0.5;
+    let planar_radius = f32::midpoint(
+        first_envelope.planar_diameter,
+        second_envelope.planar_diameter,
+    );
     x.mul_add(x, z * z) < planar_radius * planar_radius
 }
 
@@ -3858,6 +3861,7 @@ impl BattleSession {
 
     /// A battle between two sides, each its fleet (if any) and the squadrons
     /// the system holds for it ([`CombatForce`]).
+    #[must_use]
     pub fn new_with_forces(
         world: &GameWorld,
         system: SystemKey,
@@ -4539,7 +4543,7 @@ impl BattleSession {
     /// Push `count` squadrons of `class` as fighters, each tagged with its
     /// roster `index` and its place in that entry, carried by `fleet`, or
     /// held by the battle system when `fleet` is `None`.
-    #[expect(
+    #[allow(
         clippy::cast_precision_loss,
         clippy::too_many_arguments,
         reason = "Retain the existing tactical float conversions; each input names one squadron fact."
@@ -4719,25 +4723,6 @@ impl BattleSession {
         ships: &mut [TacticalShip],
         fighters: &mut [TacticalFighter],
     ) -> OriginalTacticalLayout {
-        let active_count = |is_alliance| {
-            ships
-                .iter()
-                .filter(|ship| ship.alive && ship.identity.is_alliance == is_alliance)
-                .count()
-                + fighters
-                    .iter()
-                    .filter(|fighter| {
-                        fighter.alive
-                            && fighter.squad_count > 0
-                            && fighter.identity.is_alliance == is_alliance
-                    })
-                    .count()
-        };
-        // Original tactical side zero is the Alliance collection at +0x08;
-        // side one is the Imperial collection at +0x0c.
-        let layout =
-            OriginalTacticalLayout::from_active_counts(active_count(true), active_count(false));
-
         fn place_ships(ships: &mut [TacticalShip], is_alliance: bool, z: f32) {
             let mut slots = OriginalTacticalSlots::default();
             for ship in ships
@@ -4766,6 +4751,25 @@ impl BattleSession {
                 };
             }
         }
+
+        let active_count = |is_alliance| {
+            ships
+                .iter()
+                .filter(|ship| ship.alive && ship.identity.is_alliance == is_alliance)
+                .count()
+                + fighters
+                    .iter()
+                    .filter(|fighter| {
+                        fighter.alive
+                            && fighter.squad_count > 0
+                            && fighter.identity.is_alliance == is_alliance
+                    })
+                    .count()
+        };
+        // Original tactical side zero is the Alliance collection at +0x08;
+        // side one is the Imperial collection at +0x0c.
+        let layout =
+            OriginalTacticalLayout::from_active_counts(active_count(true), active_count(false));
 
         place_ships(ships, true, layout.outer_negative_z);
         place_ships(ships, false, layout.outer_positive_z);
@@ -4812,8 +4816,7 @@ impl BattleSession {
                     .iter()
                     .enumerate()
                     .max_by_key(|(index, members)| (members.len(), std::cmp::Reverse(*index)))
-                    .map(|(index, _)| index)
-                    .unwrap_or(0);
+                    .map_or(0, |(index, _)| index);
                 if groups[donor].len() <= 7 {
                     continue;
                 }
@@ -4840,12 +4843,10 @@ impl BattleSession {
                 .weapon_arcs
                 .iter()
                 .any(|arc| arc.laser_cannons > 0 || arc.ion_cannons > 0 || arc.turbolasers > 0);
-            if !has_weapons {
-                2
-            } else if has_lasers {
-                1
+            if has_weapons {
+                usize::from(has_lasers)
             } else {
-                0
+                2
             }
         }
 
@@ -4991,7 +4992,7 @@ impl BattleSession {
     /// Attacker ships go on the left side, defender ships on the right.
     /// Ships are stacked vertically, centered. port: the flat 2D layout; the
     /// source placement sets `source_position`.
-    #[expect(
+    #[allow(
         clippy::cast_precision_loss,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
@@ -5028,7 +5029,7 @@ impl BattleSession {
 
     /// Auto-place fighter squadrons near their side's capital ships.
     /// port: the flat 2D layout's offsets and row spacing.
-    #[expect(
+    #[allow(
         clippy::cast_precision_loss,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
@@ -5067,7 +5068,7 @@ impl BattleSession {
         }
     }
 
-    #[expect(
+    #[allow(
         clippy::cast_precision_loss,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
@@ -5131,10 +5132,14 @@ impl BattleSession {
                 effect.frame = (effect.frame + 1) % 8;
             }
         }
-        if let Some(beam) = self.death_star_beam.as_mut() {
+        let beam_finished = if let Some(beam) = self.death_star_beam.as_mut() {
             beam.elapsed += elapsed;
-            if beam.elapsed >= beam.duration {
-                let beam = self.death_star_beam.take().unwrap();
+            beam.elapsed >= beam.duration
+        } else {
+            false
+        };
+        if beam_finished {
+            if let Some(beam) = self.death_star_beam.take() {
                 if let Some(target) = self.ships.get_mut(beam.target) {
                     target.hull_current = 0;
                     target.alive = false;
@@ -5657,7 +5662,7 @@ impl BattleSession {
     /// (`FUN_005ba8a0`) and destroys every squadron in its hangar
     /// (`0x5af38b-0x5af3f4`); the survivors keep their damage.
     /// port: a squadron's place in `fighters` is its id order (`+0xec`).
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
         clippy::cast_sign_loss,
@@ -5789,7 +5794,7 @@ impl BattleSession {
         }
         let shielded = fighter.shield > 0.0;
         fighter.shield -= damage;
-        let overflow = (fighter.shield < 0.0).then(|| -fighter.shield);
+        let overflow = (fighter.shield < 0.0).then_some(-fighter.shield);
         if let Some(overflow) = overflow {
             fighter.shield = 0.0;
             fighter.hull_current = (fighter.hull_current - overflow.max(1.0)).max(0.0);
@@ -5924,9 +5929,7 @@ impl BattleSession {
     pub fn begin_side_withdrawal(&mut self, is_attacker: bool) {
         let side = usize::from(!is_attacker);
         let empire = is_attacker != self.attacker_is_alliance;
-        let station_operational = self
-            .death_star
-            .is_some_and(|death_star| death_star.operational());
+        let station_operational = self.death_star.is_some_and(TacticalDeathStar::operational);
         let floor = if empire && station_operational {
             ORIGINAL_STATION_WITHDRAWAL_COUNTDOWN_MILLISECONDS
         } else {
@@ -6530,8 +6533,7 @@ impl BattleSession {
         }
         let winner = self.decided_winner();
         self.pending_log_lines.push(format!(
-            "[tactical_stalemate] attacker_strength={} defender_strength={} winner={:?}",
-            attacker, defender, winner
+            "[tactical_stalemate] attacker_strength={attacker} defender_strength={defender} winner={winner:?}"
         ));
         self.queue_battle_outcome_voice();
         self.winner = Some(winner);
@@ -6598,9 +6600,7 @@ impl BattleSession {
     /// capacity `+0x10`).
     fn retreat_berth(&self, index: usize) -> Option<TacticalBerth> {
         let fighter = &self.fighters[index];
-        let station_open = self
-            .death_star
-            .is_some_and(|death_star| death_star.operational());
+        let station_open = self.death_star.is_some_and(TacticalDeathStar::operational);
         let ship_open = |ship: usize| {
             self.ships.get(ship).is_some_and(|ship| {
                 ship.alive && !ship.retreating && ship.is_attacker == fighter.is_attacker
@@ -7026,8 +7026,12 @@ impl BattleSession {
             }
             // State 5 owns the timed trench-run producer. These fighters do
             // not chip the Death Star through the ordinary battery path.
-            (TacticalOrder::AttackDeathStar, _) => return None,
-            (TacticalOrder::AttackCapitalShips | TacticalOrder::AttackFighters, _) => return None,
+            (
+                TacticalOrder::AttackDeathStar
+                | TacticalOrder::AttackCapitalShips
+                | TacticalOrder::AttackFighters,
+                _,
+            ) => return None,
             _ => None,
         };
         if let Some(target) = requested {
@@ -7516,7 +7520,7 @@ impl BattleSession {
     /// order of the source's queue children is untraced); the station takes
     /// no squadrons (`FUN_005b8570` docks none at an unfinished one in
     /// practice, `ghidra/notes/tactical-death-star.md` section 9).
-    #[expect(
+    #[allow(
         clippy::cast_precision_loss,
         reason = "The source stores the hulls as floats."
     )]
@@ -7649,11 +7653,7 @@ impl BattleSession {
         while self.hangars.elapsed_ms >= ORIGINAL_BATTLE_STEP_MILLISECONDS {
             self.hangars.elapsed_ms -= ORIGINAL_BATTLE_STEP_MILLISECONDS;
             let local_is_alliance = self.player_is_attacker == self.attacker_is_alliance;
-            if !local_is_alliance
-                && self
-                    .death_star
-                    .is_some_and(|death_star| death_star.operational())
-            {
+            if !local_is_alliance && self.death_star.is_some_and(TacticalDeathStar::operational) {
                 self.advance_hangar(TacticalBerth::Station);
             }
             for index in 0..self.ships.len() {
@@ -8142,6 +8142,7 @@ impl BattleSession {
         has_stranded_ship
     }
 
+    #[must_use]
     pub const fn player_voice_faction(&self) -> TacticalVoiceFaction {
         if self.player_is_attacker == self.attacker_is_alliance {
             TacticalVoiceFaction::Alliance
@@ -8182,6 +8183,7 @@ impl BattleSession {
 // TacticalState — top-level UI state
 // ---------------------------------------------------------------------------
 
+#[must_use]
 pub fn source_delta(to: TacticalWorldPosition, from: TacticalWorldPosition) -> TacticalWorldVector {
     TacticalWorldVector {
         x: to.x - from.x,
@@ -9311,10 +9313,10 @@ fn assign_engagement_targets(
             .map(|group| {
                 let mut damage = 0.0;
                 let seconds = engagement_kill_seconds(session, group, target, &mut damage);
-                let key = if !(0.0..=ORIGINAL_ENGAGEMENT_KILL_SECONDS).contains(&seconds) {
-                    ORIGINAL_ENGAGEMENT_UNREACHABLE_KEY - damage
-                } else {
+                let key = if (0.0..=ORIGINAL_ENGAGEMENT_KILL_SECONDS).contains(&seconds) {
                     seconds
+                } else {
+                    ORIGINAL_ENGAGEMENT_UNREACHABLE_KEY - damage
                 };
                 (key, *group)
             })

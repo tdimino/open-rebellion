@@ -531,7 +531,7 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
             checked: false,
             enabled: match item.command {
                 ObjectMenuCommand::Mission => gates.mission,
-                ObjectMenuCommand::Move => {
+                ObjectMenuCommand::Move | ObjectMenuCommand::ConfirmedMove => {
                     gates.movement_enabled(fleet, troop, squadron, ship, member)
                 }
                 ObjectMenuCommand::CreateFleet => ship && gates.create_fleet,
@@ -539,9 +539,6 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
                 ObjectMenuCommand::Destination => gates.destination,
                 ObjectMenuCommand::Stop => producer && gates.stop,
                 ObjectMenuCommand::Build => producer && gates.build,
-                ObjectMenuCommand::ConfirmedMove => {
-                    gates.movement_enabled(fleet, troop, squadron, ship, member)
-                }
                 ObjectMenuCommand::Scrap => gates.scrap,
                 ObjectMenuCommand::Assault => fleet && gates.assault,
                 ObjectMenuCommand::Command | ObjectMenuCommand::Bombardment => {
@@ -1161,6 +1158,10 @@ mod tests {
         assert!(!icon_rows.contains(&"Stop") && !icon_rows.contains(&"Build"));
     }
 
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "This fixture helper returns the selection shape consumed by object_menu_rows."
+    )]
     fn icon(quadrant: Quadrant) -> Option<MenuObject> {
         Some(MenuObject::SystemIcon {
             system: SystemKey::default(),
@@ -1603,7 +1604,7 @@ mod tests {
         // without exactly one selected object.
         let rows = object_menu_rows(None, MISSION_GATE);
         assert_eq!(labels(&rows), ["Encyclopedia", "Status"]);
-        assert!(enabled(&rows).is_empty());
+        assert_empty!(enabled(&rows));
     }
 
     #[test]
@@ -1789,7 +1790,7 @@ mod tests {
         };
         assert_eq!(checked(CommandKind::Admiral), ["Admiral"]);
         assert_eq!(checked(CommandKind::General), ["General"]);
-        assert!(checked(CommandKind::None).is_empty());
+        assert_empty!(checked(CommandKind::None));
     }
 
     #[test]

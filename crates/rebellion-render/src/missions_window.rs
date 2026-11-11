@@ -248,7 +248,7 @@ impl MissionsWindowState {
     /// Validates and prepares Missions content without mutating the live
     /// store. The stable subject is the system's original DAT identity.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::too_many_arguments,
         reason = "Opening selects the first row, which reads the mission and fog state."
     )]
@@ -285,7 +285,7 @@ impl MissionsWindowState {
     /// Prepares the Finder's requested member selection as part of the same
     /// atomic content candidate that accompanies the manager open.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::too_many_arguments,
         reason = "Finder preparation carries the existing opener's complete content context."
     )]
@@ -379,7 +379,7 @@ impl MissionsWindowState {
     /// galaxy view, with its first mission selected (`FUN_0049f540`,
     /// `FUN_00609500`), or bring its open window to the front: one per
     /// system (`FUN_0045aac0`).
-    #[expect(
+    #[allow(
         clippy::too_many_arguments,
         reason = "Opening selects the first row, which reads the mission and fog state."
     )]
@@ -740,7 +740,7 @@ impl MissionsWindowState {
             .map(|window| GalaxyChild::Missions(window.system))
     }
 
-    /// The open Missions content; saved order is supplied by WindowManager.
+    /// The open Missions content; saved order is supplied by `WindowManager`.
     #[must_use]
     pub fn saved_windows(&self, world: &GameWorld) -> Vec<SavedWindow> {
         self.windows
@@ -1198,7 +1198,7 @@ fn target_name(world: &GameWorld, target: Option<Target>) -> String {
 
 /// Where a bitmap lands centred in a box: the original's integer
 /// `(box - size) / 2` offsets (`FUN_0049fef0`, `FUN_004a0e10`).
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     reason = "Boxes and bitmap sizes are small integers."
@@ -1217,7 +1217,7 @@ fn picture_at(size: Option<[usize; 2]>) -> (f32, f32) {
 
 /// A member row's text top (`FUN_004a0e10`, item `+0x34`): the mini's height
 /// plus its centring offset, so the name sits under the mini.
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     reason = "Bitmap heights are small integers."
@@ -1264,7 +1264,7 @@ fn tab_rect(window: egui::Rect, scale: f32, tab: MissionsTab) -> egui::Rect {
 
 /// The `index`th mission row (`FUN_00609ae0`, `+0xf0` 1): stacked from the
 /// list's corner.
-#[expect(clippy::cast_precision_loss, reason = "Row indexes are small.")]
+#[allow(clippy::cast_precision_loss, reason = "Row indexes are small.")]
 fn mission_row_rect(window: egui::Rect, scale: f32, index: usize) -> egui::Rect {
     logical_rect(
         window,
@@ -1278,7 +1278,7 @@ fn mission_row_rect(window: egui::Rect, scale: f32, index: usize) -> egui::Rect 
 
 /// The `index`th member row (`FUN_00609ae0`'s grid): the next cell would
 /// pass the list's width, so each row holds one.
-#[expect(clippy::cast_precision_loss, reason = "Row indexes are small.")]
+#[allow(clippy::cast_precision_loss, reason = "Row indexes are small.")]
 fn member_row_rect(window: egui::Rect, scale: f32, index: usize) -> egui::Rect {
     logical_rect(
         window,
@@ -1333,7 +1333,7 @@ fn draw_missions_windows_with_snapshot_pointer_mutation(
 /// port: the scroll bars, the tab help text, the list drags (`FUN_004a0400`)
 /// and Escape (`FUN_004a0e00`) are not ported; the galaxy view's windows keep
 /// no shared keyboard focus to route a key by.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
 )]
@@ -1365,7 +1365,7 @@ pub fn draw_missions_windows(
 
 /// Draw manager-owned Missions content in the frozen bottom-to-top paint
 /// order and admit mutations only through routed pointer events.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
 )]
@@ -1463,7 +1463,7 @@ fn claim_missions_pointer_event(
     })
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Shared implementation for production snapshots and fixture-only direct content."
 )]
@@ -1520,7 +1520,7 @@ fn draw_missions_windows_with_snapshot(
                 .find(|window| window.id == Some(id))
                 .cloned()
             {
-                Some(window) if !shown(GalaxyChild::Missions(window.system)) => continue,
+                Some(window) if !shown(GalaxyChild::Missions(window.system)) => {}
                 Some(window) if window.release_target_visible && key.subject == window.subject => {
                     windows.push(window);
                 }
@@ -1626,7 +1626,7 @@ fn draw_missions_windows_with_snapshot(
     actions
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
     reason = "Keep the window's ordered paint and input pass together, as the Defenses window does."
@@ -2264,7 +2264,13 @@ mod tests {
             world.characters[member].on_hidden_mission = true;
         }
         world.systems[system].control = ControlKind::Controlled(Faction::Empire);
-        assert!(mission_rows(&world, &unseen(), &missions, Faction::Alliance, system).is_empty());
+        assert_empty!(mission_rows(
+            &world,
+            &unseen(),
+            &missions,
+            Faction::Alliance,
+            system
+        ));
 
         let mut seen = unseen();
         seen.reveal(system);
@@ -3064,7 +3070,7 @@ mod tests {
         let mut cache = BmpCache::new();
 
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            assert!(draw_missions_windows(
+            assert_empty!(draw_missions_windows(
                 ctx,
                 &world,
                 &fog,
@@ -3073,8 +3079,7 @@ mod tests {
                 CockpitFaction::Alliance,
                 scaled(),
                 &mut cache,
-            )
-            .is_empty());
+            ));
         });
 
         assert_eq!(state.release_target(layer), None);
@@ -3425,7 +3430,7 @@ mod tests {
     }
 
     fn record_output(result: &mut Run, output: egui::FullOutput) {
-        result.painted = PAINTED.with(|painted| painted.take());
+        result.painted = PAINTED.with(std::cell::RefCell::take);
         result.texts.clear();
         for clipped in output.shapes {
             if let egui::Shape::Text(text) = clipped.shape {
@@ -3652,7 +3657,7 @@ mod tests {
             });
         }
 
-        assert!(actions.is_empty());
+        assert_empty!(actions);
     }
 
     #[test]
@@ -3682,7 +3687,7 @@ mod tests {
                     .show(ctx, |ui| {
                         ui.allocate_response(rect.size(), egui::Sense::click());
                     });
-                assert!(draw_managed_missions_windows(
+                assert_empty!(draw_managed_missions_windows(
                     ctx,
                     &world,
                     &fog,
@@ -3694,8 +3699,7 @@ mod tests {
                     &snapshot,
                     &[],
                     &mut router,
-                )
-                .is_empty());
+                ));
             });
         }
 
@@ -3718,7 +3722,7 @@ mod tests {
             (vec![press(point, false)], vec![]),
         ];
         let blocked = run_managed(&world, &missions, &mut state, &manager, unrouted);
-        assert!(blocked.actions.is_empty());
+        assert_empty!(blocked.actions);
         assert_eq!(
             state.report(&world, &fog, &missions, system).unwrap().tab,
             MissionsTab::Agents
@@ -3914,7 +3918,7 @@ mod tests {
 
         let mut state = opened(&world, &missions, system);
         let closed = run(&world, &missions, &mut state, click(at(224.0, 9.0)));
-        assert!(closed.actions.is_empty());
+        assert_empty!(closed.actions);
         assert_eq!(state.window_count(), 0);
     }
 

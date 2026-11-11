@@ -221,7 +221,7 @@ impl From<MissionFaction> for crate::dat::Faction {
 // ---------------------------------------------------------------------------
 
 /// One mission member: a character or a special-forces unit. The original
-/// accepts DatId families `0x30..0x3f` (`FUN_00522b30`,
+/// accepts `DatId` families `0x30..0x3f` (`FUN_00522b30`,
 /// `ghidra/notes/decoy-roll.md`, "Adding members").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MissionMember {
@@ -280,7 +280,7 @@ pub struct ActiveMission {
     /// and 6 act only when it differs from the target (`FUN_00520bb0`).
     pub origin: Option<SystemKey>,
     /// The container the members joined from (each member's `+0x70`,
-    /// written when its OnMission bit sets, `FUN_00536490`): the fleet or
+    /// written when its `OnMission` bit sets, `FUN_00536490`): the fleet or
     /// system they shared at the order (`FUN_00522b30`).
     pub set_out_from: Option<MoveDestination>,
     /// Travel speed phase 2 gave the character members (`+0x9a`,
@@ -443,7 +443,7 @@ impl ActiveMission {
 
     /// Progress through the current wait, in [0.0, 1.0].
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_precision_loss,
         reason = "a display fraction over day counts far below 2^52"
     )]
@@ -735,10 +735,9 @@ impl MissionRefusal {
     #[must_use]
     pub const fn status(&self) -> (u32, u32) {
         match self {
-            Self::EmptyTeam => (0x40, 0x91),
             // hyp: FUN_00522b30 adds no unavailable member, so the team the
             // validator sees is empty, as for EmptyTeam.
-            Self::MemberUnavailable(_) => (0x40, 0x91),
+            Self::EmptyTeam | Self::MemberUnavailable(_) => (0x40, 0x91),
             Self::MembersNotAllowed => (0x40, 0x01),
             Self::RecruiterNotMajor => (0x40, 0x06),
             Self::NoResearchSkill => (0x40, 0x04),
@@ -1087,7 +1086,7 @@ fn member_odds(
         MissionKind::Espionage => Some(skill(Skill::Espionage)),
         MissionKind::Rescue => Some(skill(Skill::Combat)),
         MissionKind::Sabotage | MissionKind::DeathStarSabotage => {
-            Some((skill(Skill::Espionage) + skill(Skill::Combat)) / 2)
+            Some(i32::midpoint(skill(Skill::Espionage), skill(Skill::Combat)))
         }
         MissionKind::Recruitment => system.map(|sys| skill(Skill::Leadership) - support(sys)),
         MissionKind::InciteUprising => {
@@ -1119,7 +1118,7 @@ fn member_odds(
         MissionKind::Espionage => (skill(Skill::Espionage), "espionage skill, ESPIMSTB"),
         MissionKind::Rescue => (skill(Skill::Combat), "combat skill, RESCMSTB"),
         MissionKind::Sabotage | MissionKind::DeathStarSabotage => (
-            (skill(Skill::Espionage) + skill(Skill::Combat)) / 2,
+            i32::midpoint(skill(Skill::Espionage), skill(Skill::Combat)),
             "mean of espionage and combat skill, sabotage MSTB",
         ),
         MissionKind::Recruitment => (
@@ -1160,9 +1159,9 @@ fn skill_of(world: &GameWorld, character: CharacterKey, skill: Skill) -> i32 {
 /// Set or clear a member's on-mission role flag. Clearing it also clears the
 /// member's hidden-mission flag.
 ///
-/// The original's leave path `FUN_00536220` recomputes OnMission (bit 7,
+/// The original's leave path `FUN_00536220` recomputes `OnMission` (bit 7,
 /// `FUN_00534950` → `FUN_00534800`) and clears bits 0 and 2..5; where it
-/// clears OnHiddenMission (bit 8) is untraced. port: bit 8 clears with bit 7.
+/// clears `OnHiddenMission` (bit 8) is untraced. port: bit 8 clears with bit 7.
 pub fn set_on_mission(world: &mut GameWorld, member: MissionMember, on_mission: bool) {
     match member {
         MissionMember::Character(key) => {
@@ -1448,6 +1447,15 @@ impl MissionState {
     /// then checks the target (`FUN_0054c590`, [`validate`] at creation,
     /// `FUN_00542b60.c:139-150`). Completion clears the flags through
     /// `MemberAvailable`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first member, destination, or target validation refusal;
+    /// refused requests do not create a mission.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "dispatch consumes a command-shaped request at the public API boundary"
+    )]
     pub fn dispatch_validated(
         &mut self,
         request: MissionRequest,
@@ -2001,11 +2009,7 @@ impl MissionState {
         let (target_system, target_object) = match destination {
             MoveDestination::System(system) => (system, None),
             MoveDestination::Fleet(fleet) => (
-                world
-                    .fleets
-                    .get(fleet)
-                    .map(|f| f.location)
-                    .unwrap_or_default(),
+                world.fleets.get(fleet).map_or_default(|f| f.location),
                 Some(MissionTarget::Fleet(fleet)),
             ),
         };
@@ -2682,6 +2686,10 @@ pub(crate) fn validate(
 /// `FUN_00586e20`): `Some` with the verdict when they decide it (a refusal,
 /// or a skip of every later check), `None` when the class validator runs
 /// next.
+#[allow(
+    clippy::option_option,
+    reason = "the outer option decides whether class rules run; the inner option is the verdict"
+)]
 fn base_rules(
     mission: &ActiveMission,
     world: &GameWorld,
@@ -3268,25 +3276,24 @@ impl MissionSystem {
             PHASE_TIMER => {
                 // FUN_00521880: entering phase 8 clears the result.
                 mission.result = 0;
-                let delay = match mission
+                let delay = if let Some(record) = mission
                     .kind
                     .record_id()
                     .and_then(|id| world.mission_record(id))
                 {
-                    Some(record) => crate::uprising::one_roll_timer_delay(
+                    crate::uprising::one_roll_timer_delay(
                         i32::try_from(record.timer_min_days).unwrap_or(i32::MAX),
                         i32::try_from(record.timer_spread_days).unwrap_or(i32::MAX),
                         draws.next(),
-                    ),
+                    )
+                } else {
                     // port: a kind with no record keeps the port's range.
-                    None => {
-                        let (min, max) = mission.kind.tick_range();
-                        crate::uprising::one_roll_timer_delay(
-                            i32::try_from(min).unwrap_or(i32::MAX),
-                            i32::try_from(max - min).unwrap_or(i32::MAX),
-                            draws.next(),
-                        )
-                    }
+                    let (min, max) = mission.kind.tick_range();
+                    crate::uprising::one_roll_timer_delay(
+                        i32::try_from(min).unwrap_or(i32::MAX),
+                        i32::try_from(max - min).unwrap_or(i32::MAX),
+                        draws.next(),
+                    )
                 };
                 mission.wait_start = now;
                 mission.timer_due = Some(now + delay);
@@ -4084,7 +4091,7 @@ mod tests {
         );
         let removed = state.cancel(id);
         assert!(removed.is_some());
-        assert!(state.is_empty());
+        assert_empty!(state);
     }
 
     // --- MissionSystem::advance tests ---
@@ -4122,7 +4129,7 @@ mod tests {
         let world = minimal_world();
         let results =
             MissionSystem::advance(&mut state, &world, &UprisingState::default(), &[], &[]).results;
-        assert!(results.is_empty());
+        assert_empty!(results);
         assert_eq!(state.len(), 1);
     }
 
@@ -4139,7 +4146,7 @@ mod tests {
             &[TickEvent { tick: 1 }],
             &[0.0],
         );
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         let mission = &state.missions()[0];
         assert_eq!((mission.phase, mission.ready), (PHASE_TIMER, false));
         assert_eq!(mission.days_left(1, None), Some(2));
@@ -4164,7 +4171,7 @@ mod tests {
         )
         .results;
         assert_eq!(results.len(), 1);
-        assert!(state.is_empty());
+        assert_empty!(state);
         assert_eq!(results[0].kind, MissionKind::Diplomacy);
     }
 
@@ -4186,7 +4193,7 @@ mod tests {
         );
         assert_eq!(advance.results[0].outcome, MissionOutcome::Failure);
         // A failure has no world effect; the release comes with the end.
-        assert!(advance.results[0].effects.is_empty());
+        assert_empty!(advance.results[0].effects);
         assert_eq!(
             advance.effects,
             vec![MissionEffect::MemberAvailable {
@@ -4409,12 +4416,12 @@ mod tests {
             let system = system_at(&mut world, 0);
             let key = prisoner(&mut world, is_alliance, system);
 
-            assert!(escape_step_with(&mut world, 10, &mut queue(&[7])).is_empty());
+            assert_empty!(escape_step_with(&mut world, 10, &mut queue(&[7])));
             assert_eq!(world.characters[key].escape_due, Some(117), "{is_alliance}");
-            assert!(escape_step_with(&mut world, 116, &mut queue(&[])).is_empty());
+            assert_empty!(escape_step_with(&mut world, 116, &mut queue(&[])));
 
             // The roll 30 misses a 30 percent chance; the timer re-arms.
-            assert!(escape_step_with(&mut world, 117, &mut queue(&[30, 0])).is_empty());
+            assert_empty!(escape_step_with(&mut world, 117, &mut queue(&[30, 0])));
             assert_eq!(world.characters[key].escape_due, Some(217), "{is_alliance}");
 
             let escaped = escape_step_with(&mut world, 217, &mut queue(&[29, 0]));
@@ -4441,7 +4448,7 @@ mod tests {
             let key = prisoner(&mut world, is_alliance, system);
             world.characters[key].capture_tick = Some(10);
 
-            assert!(escape_step_with(&mut world, 11, &mut queue(&[7])).is_empty());
+            assert_empty!(escape_step_with(&mut world, 11, &mut queue(&[7])));
 
             assert_eq!(world.characters[key].escape_due, Some(117), "{is_alliance}");
         }
@@ -4538,7 +4545,7 @@ mod tests {
         world.characters[key].on_mission = true;
         world.characters[key].escape_due = Some(5);
 
-        assert!(escape_step_with(&mut world, 5, &mut queue(&[0, 0])).is_empty());
+        assert_empty!(escape_step_with(&mut world, 5, &mut queue(&[0, 0])));
     }
 
     #[test]
@@ -4597,7 +4604,7 @@ mod tests {
             ))),
             "mandatory mission character should be blocked"
         );
-        assert!(state.is_empty());
+        assert_empty!(state);
     }
 
     #[test]
@@ -4903,7 +4910,7 @@ mod tests {
                 imperial
             )))
         );
-        assert!(state.is_empty());
+        assert_empty!(state);
         assert!(!world.characters[lead].on_mission);
     }
 
@@ -5068,7 +5075,7 @@ mod tests {
             validate_request(&mut state, &mut world, request(vec![member], vec![], here),),
             Err(MissionRefusal::MemberUnavailable(member))
         );
-        assert!(state.is_empty());
+        assert_empty!(state);
         assert!(!world.characters[dead].on_mission);
     }
 
@@ -5165,7 +5172,7 @@ mod tests {
         )
         .expect("dispatch");
         let mission = &state.missions()[0];
-        assert!(mission.decoys.is_empty());
+        assert_empty!(mission.decoys);
         assert_eq!(mission.captured, vec![MissionMember::Character(prisoner)]);
         assert!(world.characters[prisoner].on_mission);
     }
@@ -5360,7 +5367,7 @@ mod tests {
         let result = phase_ten(&world, MissionKind::Diplomacy, vec![envoy], here, None);
 
         assert_eq!(result.outcome, MissionOutcome::Failure);
-        assert!(result.effects.is_empty());
+        assert_empty!(result.effects);
     }
 
     #[test]
@@ -5398,7 +5405,7 @@ mod tests {
                 points: 4,
             }]
         );
-        assert!(support(&away).is_empty());
+        assert_empty!(support(&away));
         assert_eq!(
             support(&neutral),
             vec![MissionEffect::SupportGained {
@@ -5436,7 +5443,7 @@ mod tests {
             None,
         );
 
-        assert!(raised(&home).is_empty());
+        assert_empty!(raised(&home));
         assert_eq!(raised(&away), vec![(spy, Skill::Espionage, 1)]);
         for result in [&home, &away] {
             assert!(result
@@ -5586,7 +5593,7 @@ mod tests {
             effect,
             MissionEffect::CharacterInjured { character, injury } if *character == leader && *injury > 0
         )));
-        assert!(raised(&result).is_empty());
+        assert_empty!(raised(&result));
         assert_ne!(result.outcome, MissionOutcome::Success);
     }
 
@@ -5616,7 +5623,7 @@ mod tests {
         assert_eq!(open.outcome, MissionOutcome::Success);
         assert_eq!(raised(&open), vec![(agitator, Skill::Leadership, 1)]);
         assert_eq!(garrisoned.outcome, MissionOutcome::Failure);
-        assert!(raised(&garrisoned).is_empty());
+        assert_empty!(raised(&garrisoned));
         assert_eq!((incidents(&open), incidents(&garrisoned)), (1, 1));
     }
 
@@ -5670,7 +5677,7 @@ mod tests {
         }
         let ended = run(&world, &revolt);
 
-        assert!(quiet.effects.is_empty());
+        assert_empty!(quiet.effects);
         assert_eq!(quiet.outcome, MissionOutcome::Failure);
         assert_eq!(unended.outcome, MissionOutcome::Failure);
         assert_eq!(
@@ -6102,7 +6109,7 @@ mod tests {
         let mut world = minimal_world();
         let (mut state, envoy, _, _) = travelling_diplomacy(&mut world);
 
-        assert!(step(&mut state, &world, 19, &[]).effects.is_empty());
+        assert_empty!(step(&mut state, &world, 19, &[]).effects);
         assert_eq!(state.missions()[0].phase, PHASE_TRANSIT);
 
         let advance = step(&mut state, &world, 20, &[0.3]);
@@ -6113,7 +6120,7 @@ mod tests {
                 en_route: false
             }]
         );
-        assert!(state.en_route().is_empty());
+        assert_empty!(state.en_route());
         let mission = &state.missions()[0];
         assert_eq!(mission.phase, PHASE_TIMER);
         assert_eq!(mission.timer_due, Some(28));
@@ -6134,7 +6141,7 @@ mod tests {
                 to: here
             }]
         );
-        assert!(state.en_route().is_empty());
+        assert_empty!(state.en_route());
         assert_eq!(state.missions()[0].timer_due, Some(5));
     }
 
@@ -6148,7 +6155,7 @@ mod tests {
         let advance = step(&mut state, &world, 5, &[0.99, 1.0]);
 
         assert_eq!(advance.results.len(), 1);
-        assert!(advance.ended.is_empty());
+        assert_empty!(advance.ended);
         let mission = &state.missions()[0];
         assert_eq!(mission.phase, PHASE_TIMER);
         assert_eq!(mission.timer_due, Some(20));
@@ -6183,6 +6190,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::similar_names,
+        reason = "the test distinguishes `here` from its `hero`"
+    )]
     fn a_mission_that_runs_its_course_ends_with_code_one_and_frees_its_members() {
         // FUN_00522480 in phase 0xb with no code sets end code 1; the
         // Rescue record does not repeat.
@@ -6201,7 +6212,7 @@ mod tests {
         assert!(advance.effects.contains(&MissionEffect::MemberAvailable {
             member: MissionMember::Character(hero)
         }));
-        assert!(state.is_empty());
+        assert_empty!(state);
     }
 
     /// A Rescue of an Alliance prisoner held by the Empire, past its
@@ -6223,10 +6234,10 @@ mod tests {
         world.characters[prisoner].captured_by = None;
 
         // A live target changing sides is seen only on a phase change.
-        assert!(step(&mut state, &world, 2, &[]).ended.is_empty());
+        assert_empty!(step(&mut state, &world, 2, &[]).ended);
         let advance = step(&mut state, &world, 7, &[0.0]);
 
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         assert_eq!(advance.ended[0].end_code, 8);
     }
 
@@ -6243,7 +6254,7 @@ mod tests {
 
         let advance = step(&mut state, &world, 7, &[0.0]);
 
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         assert_eq!(advance.ended[0].end_code, 6);
     }
 
@@ -6256,7 +6267,7 @@ mod tests {
 
         let advance = step(&mut state, &world, 5, &[0.0]);
 
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         assert_eq!(advance.ended[0].end_code, 0xf);
     }
 
@@ -6408,7 +6419,7 @@ mod tests {
             None,
         );
 
-        assert!(recruits(&result).is_empty());
+        assert_empty!(recruits(&result));
     }
 
     #[test]
@@ -6428,8 +6439,8 @@ mod tests {
             None,
         );
 
-        assert!(recruits(&result).is_empty());
-        assert!(raised(&result).is_empty());
+        assert_empty!(recruits(&result));
+        assert_empty!(raised(&result));
         assert_eq!(result.outcome, MissionOutcome::Failure);
     }
 
@@ -6489,12 +6500,12 @@ mod tests {
         held_by(&mut world, here, crate::dat::Faction::Alliance);
         world.mission_records = vec![recruitment_record()];
         let mut state = waiting_recruitment(&mut world, here);
-        assert!(step(&mut state, &world, 2, &[0.0]).ended.is_empty());
+        assert_empty!(step(&mut state, &world, 2, &[0.0]).ended);
         world.set_recruit_pool_empty(crate::dat::Faction::Alliance);
 
         let advance = step(&mut state, &world, 5, &[0.0]);
 
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         assert_eq!(advance.ended[0].end_code, 0x10);
     }
 
@@ -6662,7 +6673,7 @@ mod tests {
             let first = step(&mut state, &world, 1, &[0.0; 3]);
             let ended = if repeats {
                 // Back in phase 8; the lost target ends it on leaving.
-                assert!(first.ended.is_empty());
+                assert_empty!(first.ended);
                 world.manufacturing_facilities.remove(yard);
                 world.systems[here].manufacturing_facilities.clear();
                 step(&mut state, &world, 2, &[0.0; 3]).ended
@@ -7178,13 +7189,13 @@ mod tests {
             assert!(target.state(&world).is_none(), "{target:?} is gone");
         }
         let sys = &world.systems[here];
-        assert!(sys.manufacturing_facilities.is_empty());
-        assert!(sys.defense_facilities.is_empty());
-        assert!(sys.production_facilities.is_empty());
-        assert!(sys.ground_units.is_empty());
-        assert!(sys.special_forces.is_empty());
-        assert!(world.manufacturing_facilities.is_empty());
-        assert!(world.troops.is_empty());
+        assert_empty!(sys.manufacturing_facilities);
+        assert_empty!(sys.defense_facilities);
+        assert_empty!(sys.production_facilities);
+        assert_empty!(sys.ground_units);
+        assert_empty!(sys.special_forces);
+        assert_empty!(world.manufacturing_facilities);
+        assert_empty!(world.troops);
     }
 
     #[test]
@@ -7218,7 +7229,7 @@ mod tests {
         let target = death_star_of(&world, fleet);
         destroy_target(&mut world, target);
 
-        assert!(world.death_star_sectors.is_empty());
+        assert_empty!(world.death_star_sectors);
     }
 
     /// A Sabotage of `target` at `here`, waiting in its timer phase.
@@ -7234,7 +7245,7 @@ mod tests {
             .dispatch_validated(request, world, &crate::uprising::UprisingState::default())
             .expect("a free saboteur");
         step(&mut state, world, 1, &[0.0]);
-        assert!(step(&mut state, world, 2, &[0.0]).ended.is_empty());
+        assert_empty!(step(&mut state, world, 2, &[0.0]).ended);
         state
     }
 
@@ -7260,7 +7271,7 @@ mod tests {
 
         let advance = step(&mut state, &world, 5, &[0.0]);
 
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         assert_eq!(advance.ended[0].end_code, 6);
     }
 
@@ -7304,10 +7315,10 @@ mod tests {
             crate::world::ControlKind::Controlled(crate::dat::Faction::Empire);
 
         // The validator runs only on a phase change: the mission waits on.
-        assert!(step(&mut state, &world, 2, &[]).ended.is_empty());
+        assert_empty!(step(&mut state, &world, 2, &[]).ended);
         let advance = step(&mut state, &world, 5, &[0.0]);
 
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         assert_eq!(advance.ended[0].end_code, 8);
     }
 
@@ -7323,7 +7334,7 @@ mod tests {
 
         let advance = step(&mut state, &world, 2, &[0.0]);
 
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         assert_eq!(advance.ended[0].end_code, 7);
     }
 
@@ -7451,9 +7462,9 @@ mod tests {
 
         move_member(&mut world, MissionMember::Character(pilot), to);
         move_member(&mut world, MissionMember::SpecialForce(unit), to);
-        assert!(world.fleets[fleet].characters.is_empty());
+        assert_empty!(world.fleets[fleet].characters);
         assert_eq!(world.characters[pilot].current_fleet, None);
-        assert!(world.systems[from].special_forces.is_empty());
+        assert_empty!(world.systems[from].special_forces);
         assert_eq!(world.characters[pilot].current_system, Some(to));
         assert_eq!(world.systems[to].special_forces, vec![unit]);
     }
@@ -7522,7 +7533,7 @@ mod tests {
 
         let advance = step(&mut state, &world, 3, &[]);
 
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         assert_eq!(
             advance
                 .ended
@@ -7544,7 +7555,7 @@ mod tests {
 
         let advance = step(&mut state, &world, 3, &[]);
 
-        assert!(advance.ended.is_empty());
+        assert_empty!(advance.ended);
         assert_eq!(state.missions()[0].end_code, 0);
     }
 
@@ -7643,7 +7654,7 @@ mod tests {
 
         let advance = step(&mut state, &world, 11, &[0.0]);
 
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         assert_eq!(advance.ended[0].end_code, 6);
     }
 
@@ -7674,7 +7685,7 @@ mod tests {
 
         let advance = step(&mut state, &world, 5, &[0.99, 0.0]);
 
-        assert!(advance.results.is_empty());
+        assert_empty!(advance.results);
         assert_eq!(advance.ended[0].end_code, 5);
     }
 
@@ -7750,6 +7761,16 @@ mod tests {
             .collect()
     }
 
+    fn assert_first_mission_ends_with_code(
+        state: &mut MissionState,
+        world: &GameWorld,
+        tick: u64,
+        end_code: u8,
+    ) {
+        let advance = step(state, world, tick, &[]);
+        assert_eq!(advance.ended[0].end_code, end_code);
+    }
+
     #[test]
     fn a_container_destroyed_while_the_members_travel_never_gives_code_seven() {
         // FUN_00545240.c:100-104 gives code 7 only when FUN_00520ae0 holds:
@@ -7759,11 +7780,11 @@ mod tests {
         let (mut state, to) = travelling_rescue(&mut world);
         world.systems[to].is_destroyed = true;
 
-        assert!(step(&mut state, &world, 2, &[]).ended.is_empty());
+        assert_empty!(step(&mut state, &world, 2, &[]).ended);
         step(&mut state, &world, 20, &[1.0]);
         let advance = step(&mut state, &world, 21, &[]);
 
-        assert!(advance.ended.is_empty());
+        assert_empty!(advance.ended);
         let mission = &state.missions()[0];
         assert_eq!((mission.phase, mission.end_code), (PHASE_TIMER, 0));
     }
@@ -7776,12 +7797,14 @@ mod tests {
         let (mut state, _) = waiting_rescue(&mut world);
         destroy_mission_system(&mut world, &state);
 
-        let advance = step(&mut state, &world, 2, &[]);
-
-        assert_eq!(advance.ended[0].end_code, 7);
+        assert_first_mission_ends_with_code(&mut state, &world, 2, 7);
     }
 
     #[test]
+    #[allow(
+        clippy::similar_names,
+        reason = "the test distinguishes `here` from its `hero`"
+    )]
     fn a_systems_destruction_sets_its_missions_end_codes_at_once() {
         // Event 0x300 -> FUN_00545240 runs the validator in the step of the
         // destruction (death-star-strategic.md, "Missions, builds and
@@ -7806,11 +7829,14 @@ mod tests {
 
         let codes = mission_codes(&state);
         assert_eq!(codes, vec![(0, 7, true), (9, 0, false)]);
-        let advance = step(&mut state, &world, 2, &[]);
-        assert_eq!(advance.ended[0].end_code, 7);
+        assert_first_mission_ends_with_code(&mut state, &world, 2, 7);
     }
 
     #[test]
+    #[allow(
+        clippy::similar_names,
+        reason = "the test distinguishes `here` from its `hero`"
+    )]
     fn the_at_once_validator_skips_seen_unstarted_and_ended_missions_and_keeps_a_rule_code() {
         // FUN_00545240 runs once per destruction, on live missions; a
         // validator code stands (a freed prisoner's 8), and code 7 needs a
@@ -7872,6 +7898,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::similar_names,
+        reason = "the test distinguishes `here` from its `hero`"
+    )]
     fn a_live_target_s_change_waits_for_the_next_phase_change() {
         // FUN_00545240 runs the validator only for a destroyed container or
         // target; a freed prisoner is seen when the timer fires.
@@ -7892,7 +7922,7 @@ mod tests {
         let mut state = MissionState::new();
         state.push_timed(rescue);
 
-        assert!(step(&mut state, &world, 2, &[]).ended.is_empty());
+        assert_empty!(step(&mut state, &world, 2, &[]).ended);
         assert_eq!(step(&mut state, &world, 7, &[]).ended[0].end_code, 8);
     }
 
@@ -7960,8 +7990,8 @@ mod tests {
 
         let advance = step(&mut state, &world, 1, &[0.0]);
 
-        assert!(advance.effects.is_empty());
-        assert!(state.en_route().is_empty());
+        assert_empty!(advance.effects);
+        assert_empty!(state.en_route());
         let mission = &state.missions()[0];
         assert_eq!((mission.origin, mission.phase), (None, PHASE_TIMER));
     }
@@ -8094,7 +8124,7 @@ mod tests {
             (prisoner.current_system, prisoner.current_fleet),
             (Some(here), None)
         );
-        assert!(world.fleets[fleet].characters.is_empty());
+        assert_empty!(world.fleets[fleet].characters);
         assert!(!world.special_forces.contains_key(lost));
         assert_eq!(world.systems[here].special_forces, vec![kept]);
         assert!(world.special_forces.contains_key(kept));
@@ -8255,7 +8285,7 @@ mod tests {
         );
 
         assert_eq!(refused, Err(MissionRefusal::MembersNotAllowed));
-        assert!(state.is_empty());
+        assert_empty!(state);
         assert!(!world.characters[envoy.character().unwrap()].on_mission);
     }
 
@@ -8389,7 +8419,7 @@ mod tests {
             None,
         );
 
-        assert!(with_decoy.is_empty());
+        assert_empty!(with_decoy);
         assert_eq!(alone, vec![MissionKind::Diplomacy]);
     }
 
@@ -8412,6 +8442,6 @@ mod tests {
             None,
         );
 
-        assert!(kinds.is_empty());
+        assert_empty!(kinds);
     }
 }

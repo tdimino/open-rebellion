@@ -110,7 +110,7 @@ impl FleetRegistryState {
 
     /// Scroll each unpaused row by the time since the last frame.
     fn advance(&mut self, now: f64, paused: [bool; 2]) {
-        #[expect(
+        #[allow(
             clippy::cast_possible_truncation,
             reason = "A frame's elapsed seconds fit an f32 offset."
         )]
@@ -163,7 +163,7 @@ fn font(scale: f32, size: f32) -> FontId {
 }
 
 /// A mode row: a lamp, lit when `lit`, and its label.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "A row's paint needs its geometry, state and both texts."
 )]

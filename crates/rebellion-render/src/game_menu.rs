@@ -105,7 +105,7 @@ impl ManagedMenuState {
         prepared
     }
 
-    fn prepare_open_for(&self, owner: WindowOwner) -> PreparedMenuOpen {
+    fn prepare_open_for(self, owner: WindowOwner) -> PreparedMenuOpen {
         PreparedMenuOpen {
             spec: crate::windowing_policy::singleton_spec(WindowKind::Menu, owner),
             replacing: self.window,
@@ -484,7 +484,7 @@ fn measure(
             let icon = entry.icon.and_then(|id| {
                 cache
                     .get(ctx, DllSource::Strategy, id)
-                    .map(|texture| texture.size_vec2())
+                    .map(egui_macroquad::egui::TextureHandle::size_vec2)
             });
             (
                 entry_icon_width(entry, icon.map(|size| size.x)),
@@ -539,7 +539,7 @@ fn row_under(
 /// Paint one menu window at canvas `origin` (`FUN_004aab50`'s `WM_PAINT`):
 /// the rows, the icon or check mark at (6, row top) (`FUN_004aba60`), the
 /// submenu arrow at the same place (highlighted or normal), and the frame.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep the window's area, faction, layout and rows explicit at this drawing boundary."
 )]
@@ -653,7 +653,7 @@ fn paint_menu(
 /// (`FUN_00442cf0`).
 /// port: the timer fires whatever input is pending; the original skips a
 /// tick while a message waits for the window.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep the menu's owner, faction, placement and entries explicit at this drawing boundary."
 )]

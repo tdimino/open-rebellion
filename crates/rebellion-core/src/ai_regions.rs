@@ -1185,6 +1185,10 @@ impl RegionalRecord {
     /// Step 6: the flagship (`FUN_00479560`), the staging system
     /// (`FUN_004799d0`), the objective (posture slot 8) and the
     /// satisfaction (`FUN_00479a00`).
+    #[allow(
+        clippy::verbose_bit_mask,
+        reason = "the masks preserve the original routine's named flag groups"
+    )]
     fn flagship_and_objective(&mut self, round: &mut Round<'_>, marks: &mut Marks) {
         self.choose_flagship(round, marks);
         self.choose_staging(round);
@@ -1202,7 +1206,7 @@ impl RegionalRecord {
         }
     }
 
-    fn mark_flagship(&self, round: &mut Round<'_>, marks: &mut Marks, tag: u32, on: bool) {
+    fn mark_flagship(round: &mut Round<'_>, marks: &mut Marks, tag: u32, on: bool) {
         let m = marks.ship_mut(tag);
         if on {
             m.flags |= ship::FLAGSHIP;
@@ -1223,7 +1227,7 @@ impl RegionalRecord {
     fn choose_flagship(&mut self, round: &mut Round<'_>, marks: &mut Marks) {
         if self.satisfaction & 0x200_0000 == 0 {
             if self.flagship != 0 && self.ships.contains(&self.flagship) {
-                self.mark_flagship(round, marks, self.flagship, false);
+                Self::mark_flagship(round, marks, self.flagship, false);
             }
             self.flagship = 0;
         } else {
@@ -1234,7 +1238,7 @@ impl RegionalRecord {
                 self.ships.contains(&f) && s.record == self.id && s.flags & ship::FLAGSHIP != 0
             }) {
                 if s.flags & ship::DEMOTE != 0 {
-                    self.mark_flagship(round, marks, f, false);
+                    Self::mark_flagship(round, marks, f, false);
                 } else {
                     valid = true;
                     if s.flags & ship::EN_ROUTE == 0 && self.fleets.contains(&s.fleet) {
@@ -1242,8 +1246,8 @@ impl RegionalRecord {
                             .or_else(|| best_ship(round, s.fleet, 0x4000, 0x280_3800));
                         if let Some((tag, shield)) = candidate {
                             if s.shield < shield || s.flags & ship::COMBAT == 0 {
-                                self.mark_flagship(round, marks, tag, true);
-                                self.mark_flagship(round, marks, f, false);
+                                Self::mark_flagship(round, marks, tag, true);
+                                Self::mark_flagship(round, marks, f, false);
                                 self.flagship = tag;
                             }
                         }
@@ -1261,7 +1265,7 @@ impl RegionalRecord {
                     }
                 }
                 if let Some((tag, _)) = best {
-                    self.mark_flagship(round, marks, tag, true);
+                    Self::mark_flagship(round, marks, tag, true);
                     self.flagship = tag;
                 }
             }
@@ -1565,9 +1569,7 @@ fn sector<'r>(round: &'r Round<'_>, key: SectorKey) -> Option<&'r SectorRecord> 
 }
 
 fn systems_of(round: &Round<'_>, key: SectorKey) -> Vec<SystemKey> {
-    sector(round, key)
-        .map(|s| s.systems.clone())
-        .unwrap_or_default()
+    sector(round, key).map_or_default(|s| s.systems.clone())
 }
 
 /// `FUN_004317d0`: the sector's record, in the marks and the round. The
@@ -1723,6 +1725,10 @@ pub(crate) fn sabotage_system(
 /// port: the headquarters, a squadron and a capital ship other than the
 /// Death Star have no identity a mission can name
 /// ([`crate::missions::MissionTarget`]), so their draw gives `Some(None)`.
+#[allow(
+    clippy::option_option,
+    reason = "the outer option is the draw; the inner option is target representability"
+)]
 pub(crate) fn sabotage_object(
     round: &mut Round<'_>,
     system: SystemKey,
@@ -2223,7 +2229,7 @@ impl RegionalRecord {
             })
             .collect();
         // The largest first, the earlier on a tie.
-        own.sort_by(|a, b| b.1.cmp(&a.1));
+        own.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         let troops: Vec<_> = own.into_iter().take(n).map(|(t, _)| t).collect();
         (!troops.is_empty()).then_some(AIAction::MoveRegiments {
             troops,
@@ -3252,14 +3258,14 @@ mod tests {
             };
             let mut marks = Marks::default();
             with_round(side, -1, |round| {
-                regions.create_or_delete(round, &mut marks)
+                regions.create_or_delete(round, &mut marks);
             });
             assert_eq!(regions.records.len(), 1, "{side:?}");
             assert_eq!(regions.records[0].id, 5, "{side:?}");
             assert_eq!(regions.next_id, 6, "{side:?}");
             regions.records[0].satisfaction |= 0x400_0000;
             with_round(side, -1, |round| {
-                regions.create_or_delete(round, &mut marks)
+                regions.create_or_delete(round, &mut marks);
             });
             let ids: Vec<u32> = regions.records.iter().map(|record| record.id).collect();
             assert_eq!(ids, vec![5, 6], "{side:?}");
@@ -3267,7 +3273,7 @@ mod tests {
             // A record still lacking bit 0x4000000 holds the next back
             // (FUN_004cf700.c:10-14), and a sum of 0 changes nothing.
             with_round(side, -1, |round| {
-                regions.create_or_delete(round, &mut marks)
+                regions.create_or_delete(round, &mut marks);
             });
             assert_eq!(regions.records.len(), 2, "{side:?}");
             let mut empty = Regions::default();
@@ -3296,7 +3302,7 @@ mod tests {
             };
             let sectors = [(calm, 0), (short, -1), (surplus, 2)];
             with_sectors(side, &sectors, |round| {
-                regions.create_or_delete(round, &mut marks)
+                regions.create_or_delete(round, &mut marks);
             });
             let ids: Vec<u32> = regions.records.iter().map(|record| record.id).collect();
             assert_eq!(ids, vec![1, 2], "{side:?}");
@@ -3307,7 +3313,7 @@ mod tests {
             };
             let balanced = [(short, -2), (surplus, 2)];
             with_sectors(side, &balanced, |round| {
-                regions.create_or_delete(round, &mut marks)
+                regions.create_or_delete(round, &mut marks);
             });
             assert_eq!(regions.records.len(), 1, "{side:?}");
         }

@@ -65,7 +65,7 @@ pub struct Controller {
 }
 
 /// One side's module 13 (`FUN_004bf0d0`) and the context fields it owns.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct StrategyState {
     /// `m+0x5c`: the mode, 0 before the first pick.
     pub mode: u8,
@@ -77,18 +77,6 @@ pub struct StrategyState {
     pub flags: u32,
     /// `c+0x28`: the Alliance's tagged headquarters system.
     pub tagged_hq: Option<SystemKey>,
-}
-
-impl Default for StrategyState {
-    fn default() -> Self {
-        Self {
-            mode: 0,
-            controller: None,
-            plan: Vec::new(),
-            flags: 0,
-            tagged_hq: None,
-        }
-    }
 }
 
 /// The context sums module 13 reads (`FUN_0041b7e0`, `FUN_0041ba80`).
@@ -316,7 +304,7 @@ impl StrategyState {
     /// `FUN_004bf490`: keep the mode while its test holds, else pick a
     /// fresh one; a changed mode rebuilds the controller.
     fn pick_mode(&mut self, s: &Sums, goals: u8) {
-        #[expect(clippy::cast_precision_loss, reason = "the original compares floats")]
+        #[allow(clippy::cast_precision_loss, reason = "the original compares floats")]
         let r = if s.foreign_attack > 0 {
             s.attack as f32 / s.foreign_attack as f32
         } else {
@@ -557,8 +545,7 @@ impl StrategyState {
                 .sectors
                 .iter()
                 .find(|s| s.key == sector)
-                .map(|s| s.systems.clone())
-                .unwrap_or_default()
+                .map_or_default(|s| s.systems.clone())
                 .into_iter()
                 .filter_map(|k| round.records.get(&k))
                 .filter(|r| r.s & sys::HQ != 0)
@@ -727,11 +714,7 @@ impl Plan {
     }
 
     /// One pick from fresh lists.
-    fn pick(
-        &self,
-        round: &mut Round<'_>,
-        lists: Vec<(Vec<(SectorKey, i64)>, Dir)>,
-    ) -> Option<SectorKey> {
+    fn pick(round: &mut Round<'_>, lists: Vec<(Vec<(SectorKey, i64)>, Dir)>) -> Option<SectorKey> {
         Holder::new(lists, &mut round.rng).pick()
     }
 
@@ -745,7 +728,7 @@ impl Plan {
             Some(filter),
             Some(filter),
         );
-        self.pick(round, lists)
+        Self::pick(round, lists)
     }
 
     /// The common tail's stage: picks from one holder until the plan is
@@ -771,7 +754,7 @@ impl Plan {
     fn lead_expand(&mut self, round: &mut Round<'_>) {
         let f = Filter::b(0, 2);
         let lists = self.lists(round, Self::q(round, f, 4, Dir::Smallest), Some(f), Some(f));
-        if let Some(s) = self.pick(round, lists) {
+        if let Some(s) = Self::pick(round, lists) {
             self.add(s, 5, 0);
         }
     }
@@ -809,11 +792,11 @@ impl Plan {
             Some(f),
             Some(f),
         );
-        let mut pick = self.pick(round, lists);
+        let mut pick = Self::pick(round, lists);
         if pick.is_none() {
             let f = Filter::b(0x408, 0);
             let lists = self.lists(round, Self::q(round, f, 0x48, Dir::Smallest), None, Some(f));
-            pick = self.pick(round, lists);
+            pick = Self::pick(round, lists);
         }
         let mut kind = 6;
         if pick.is_none() {
@@ -834,11 +817,11 @@ impl Plan {
             Some(f),
             Some(f),
         );
-        let mut pick = self.pick(round, lists);
+        let mut pick = Self::pick(round, lists);
         if pick.is_none() {
             let f = Filter::b(8, 0x2000_0000);
             let lists = self.lists(round, Self::qs(round, f, Dir::Largest), Some(f), Some(f));
-            pick = self.pick(round, lists);
+            pick = Self::pick(round, lists);
         }
         if let Some(s) = pick {
             self.add(s, 2, 0);
@@ -851,7 +834,7 @@ impl Plan {
         let mut pick = None;
         if round.inputs.side == Faction::Empire && round_flags(round) & ctx::HQ_SECTOR != 0 {
             let f = Filter::b(0x8000_0408, 0);
-            pick = self.pick(round, vec![Self::q(round, f, 0x4b, Dir::Largest)]);
+            pick = Self::pick(round, vec![Self::q(round, f, 0x4b, Dir::Largest)]);
         }
         if pick.is_none() {
             let f = Filter::b(0x408, 0);
@@ -861,7 +844,7 @@ impl Plan {
                 Some(f),
                 Some(f),
             );
-            pick = self.pick(round, lists);
+            pick = Self::pick(round, lists);
         }
         if pick.is_none() {
             let f = Filter::b(0x408, 0);
@@ -871,13 +854,13 @@ impl Plan {
                 Some(Filter::b(8, 0)),
                 Some(f),
             );
-            pick = self.pick(round, lists);
+            pick = Self::pick(round, lists);
         }
         if pick.is_none() {
             kind = 1;
             let f = Filter::b(0x8_0100, 0);
             let lists = self.lists(round, Self::q(round, f, 4, Dir::Largest), Some(f), Some(f));
-            pick = self.pick(round, lists);
+            pick = Self::pick(round, lists);
         }
         if pick.is_none() {
             kind = 5;

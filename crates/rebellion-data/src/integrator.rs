@@ -1585,7 +1585,7 @@ impl PerceptionIntegrator {
 // Mission effects helper (moved from simulation.rs)
 // ---------------------------------------------------------------------------
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -1608,7 +1608,9 @@ fn apply_mission_effects_inner(
                 amount,
             } => rebellion_core::missions::raise_skill(world, *character, *skill, *amount),
             // Credited by ResearchSystem::apply_mission_points.
-            MissionEffect::ResearchPoints { .. } => {}
+            MissionEffect::ResearchPoints { .. }
+            | MissionEffect::CharacterInjured { .. }
+            | MissionEffect::CharacterEscaped { .. } => {}
             MissionEffect::UprisingIncident(event) => {
                 rebellion_core::uprising::apply_uprising_event(world, event);
             }
@@ -1667,8 +1669,6 @@ fn apply_mission_effects_inner(
             MissionEffect::SpecialForceDestroyed { unit } => {
                 rebellion_core::missions::destroy_special_force(world, *unit);
             }
-            // port: the port stores no injury (F-026).
-            MissionEffect::CharacterInjured { .. } => {}
             MissionEffect::CharacterRescued {
                 character,
                 returned_to,
@@ -1703,9 +1703,6 @@ fn apply_mission_effects_inner(
             MissionEffect::EnRoute { member, en_route } => {
                 rebellion_core::missions::set_en_route(world, *member, *en_route);
             }
-            // The escape step's own release (death_star::free_escapee); no
-            // mission result carries one.
-            MissionEffect::CharacterEscaped { .. } => {}
             MissionEffect::UprisingSubdued {
                 system,
                 side,
@@ -1770,11 +1767,11 @@ pub fn apply_mission_state_effects(
 ///   originating event on `CharacterAtSystem OR CharacterAssignedToFleet`
 ///   to guarantee resolution success (SF-#7).
 #[inline]
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -2307,7 +2304,7 @@ fn transport_constraints(
 
 /// Apply one AI order to the world: the side's order executed in phase 5
 /// (`FUN_0051df30`). Strikes go to [`resolve_ai_strike`].
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep the existing explicit simulation state inputs at this integration boundary."
 )]
@@ -2470,17 +2467,13 @@ pub fn apply_ai_order(
             .map_or_else(|refusal| refused(AiRefusal::Mission(refusal)), |_| applied),
         AIAction::GiveCommand { character, kind } => {
             let is_alliance = mission_faction == MissionFaction::Alliance;
-            match rebellion_core::officer_rank::command_refusal(
-                world,
-                *character,
-                is_alliance,
-                *kind,
-            ) {
-                Some(refusal) => refused(AiRefusal::Command(refusal)),
-                None => {
-                    rebellion_core::officer_rank::give_command(world, *character, *kind);
-                    applied
-                }
+            if let Some(refusal) =
+                rebellion_core::officer_rank::command_refusal(world, *character, is_alliance, *kind)
+            {
+                refused(AiRefusal::Command(refusal))
+            } else {
+                rebellion_core::officer_rank::give_command(world, *character, *kind);
+                applied
             }
         }
         AIAction::JoinFleet {
@@ -3048,7 +3041,7 @@ pub fn order_strike(
         .collect())
 }
 
-/// Resolve an AI strike, a Bombard or a DestroySystem, through the player's
+/// Resolve an AI strike, a Bombard or a `DestroySystem`, through the player's
 /// order (`order_strike`). It writes no record; the caller emits from the
 /// effects.
 pub fn resolve_ai_strike(
@@ -5048,7 +5041,7 @@ mod tests {
                 )
             ))
         );
-        assert!(fixture.transport.cargo(fleet).is_empty());
+        assert_empty!(fixture.transport.cargo(fleet));
         assert!(world.systems[origin].ground_units.contains(&troop));
     }
 
@@ -5122,7 +5115,7 @@ mod tests {
             class,
             1,
         );
-        assert!(world.death_star_sectors.is_empty());
+        assert_empty!(world.death_star_sectors);
     }
 
     // A fleet-bound squadron or regiment was created aboard the ship its
@@ -5686,7 +5679,7 @@ mod tests {
             fleet,
             rebellion_core::bombardment::BombardKind::General,
         );
-        assert!(runs.is_empty());
+        assert_empty!(runs);
         assert!(!world.fleets[fleet].bombarding);
         assert!(world.troops.contains_key(troop));
         let _ = system;
@@ -5836,7 +5829,7 @@ mod tests {
             );
             assert_eq!(report.fleets, [fleet]);
             assert_eq!(names(&report.fleet_operational), ["Cruiser"]);
-            assert!(report.fleet_destroyed.is_empty());
+            assert_empty!(report.fleet_destroyed);
             assert_eq!(names(&report.system_operational), ["Shipyard"]);
             assert_eq!(names(&report.system_destroyed), ["Regiment"]);
             assert_eq!(report.picture(), 0x2b9b, "{bombarder:?}");
@@ -5868,7 +5861,7 @@ mod tests {
             assert!(!world.troops.contains_key(aboard));
             let report = runs[0].operation.as_ref().expect("the Operation Report");
             assert!(report.fleets.is_empty(), "the emptied fleet is gone");
-            assert!(report.fleet_operational.is_empty());
+            assert_empty!(report.fleet_operational);
             assert_eq!(names(&report.fleet_destroyed), ["Cruiser", "Regiment"]);
             assert_eq!(report.picture(), 0x2b9c, "{bombarder:?}");
         }
@@ -6286,9 +6279,9 @@ mod tests {
     /// The Kill branch's report and records (`FUN_0058d990`): the cascade
     /// first, then the minor-character roll (GNPRTB `0x606`, here 100, so
     /// the adrift character dies), the finalize flags for a kill; the
-    /// strike's records are EVT_CONTROL_CHANGED for the turn to neutral,
-    /// EVT_DS_FIRED with the cascade's counts and one
-    /// EVT_CHARACTER_KILLED per rolled character.
+    /// strike's records are `EVT_CONTROL_CHANGED` for the turn to neutral,
+    /// `EVT_DS_FIRED` with the cascade's counts and one
+    /// `EVT_CHARACTER_KILLED` per rolled character.
     #[test]
     fn a_destroy_system_reports_its_run_and_records_the_cascade_and_the_dead() {
         let (mut world, system, _, _) = strike_world();
@@ -6447,7 +6440,7 @@ mod tests {
             }],
         );
 
-        assert!(transport.cargo(fleet).is_empty());
+        assert_empty!(transport.cargo(fleet));
         assert!(!world.troops.contains_key(troop));
         let events = integrator.finish();
         assert_eq!(events.len(), 1);
@@ -6520,7 +6513,7 @@ mod tests {
             );
         }
 
-        assert!(world.fleets[enemy].fighters.is_empty());
+        assert_empty!(world.fleets[enemy].fighters);
         assert_eq!(world.systems[system].fleets, [enemy]);
         assert_eq!(world.systems[system].squadron_count(false), 2);
         assert_eq!(world.systems[system].squadron_count(true), 0);
@@ -6752,7 +6745,7 @@ mod tests {
             );
             assert_eq!(alliance_points(&world, system), expected, "{captor:?}");
             assert_eq!(alliance_points(&world, other), other_expected, "{captor:?}");
-            assert!(world.support_events.is_empty());
+            assert_empty!(world.support_events);
         }
     }
 
@@ -6778,8 +6771,8 @@ mod tests {
     fn a_space_force_summary_counts_its_sides_held_squadrons_and_each_fleets_living_ships() {
         let mut world = GameWorld::default();
         let mut sys = System::default();
-        sys.add_squadrons(Default::default(), 3, true);
-        sys.add_squadrons(Default::default(), 2, false);
+        sys.add_squadrons(rebellion_core::ids::FighterKey::default(), 3, true);
+        sys.add_squadrons(rebellion_core::ids::FighterKey::default(), 2, false);
         let system = world.systems.insert(sys);
         assert_eq!(
             summarize_space_force(&world, system, true, &[]).fighter_squadrons,
@@ -6791,7 +6784,11 @@ mod tests {
         );
         // Each fleet adds its living ships, their hull and its squadrons.
         let ship = |hull, alive| {
-            let mut ship = rebellion_core::world::ShipInstance::new(Default::default(), hull, true);
+            let mut ship = rebellion_core::world::ShipInstance::new(
+                rebellion_core::ids::CapitalShipKey::default(),
+                hull,
+                true,
+            );
             ship.alive = alive;
             ship
         };
@@ -6801,7 +6798,7 @@ mod tests {
                 world.fleets.insert(rebellion_core::world::Fleet {
                     capital_ships: vec![ship(hull, true), ship(50, false)],
                     fighters: vec![rebellion_core::world::FighterEntry {
-                        class: Default::default(),
+                        class: rebellion_core::ids::FighterKey::default(),
                         count: 2,
                         carrier: 0,
                     }],
@@ -7162,7 +7159,7 @@ mod tests {
             .unwrap();
             let report = first[0].report.as_ref().unwrap();
             assert_eq!(report.defenders_lost.len(), 1, "{captor:?}");
-            assert!(report.landed.is_empty());
+            assert_empty!(report.landed);
             assert_eq!(
                 world.systems[system].control,
                 ControlKind::Controlled(holder)
@@ -7249,7 +7246,7 @@ mod tests {
         let effects = land_one(&mut world, system, Faction::Empire);
         assert!(!world.systems[system].is_headquarters);
         assert_eq!(alliance_points(&world, other), 40);
-        assert!(!effects.shifts.is_empty());
+        assert_not_empty!(effects.shifts);
         let (mut world, system, other) = shift_sector(Faction::Empire);
         land_one(&mut world, system, Faction::Alliance);
         assert_eq!(
@@ -7488,7 +7485,7 @@ mod tests {
         );
         assert!(!world.systems[system].is_headquarters);
         assert_eq!(alliance_points(&world, other), 40);
-        assert!(world.support_events.is_empty());
+        assert_empty!(world.support_events);
     }
 
     #[test]
@@ -8053,7 +8050,7 @@ pub fn resolve_system_space_combat(
 /// (`FUN_004865b0`), a computer side's `FUN_004e6110`'s. `products` is the
 /// room squadron and regiment products hold aboard each ship
 /// (`tactical::apply::apply_results`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The battle reads the world, the transport, movement and product states and its seed."
 )]

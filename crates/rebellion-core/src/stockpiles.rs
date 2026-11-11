@@ -396,18 +396,18 @@ fn assign_yards(
                     })
                 })
                 .collect();
-            let stage = |state: &StockpileState, key| {
+            let yard_stage = |state: &StockpileState, key| {
                 state.yards.get(&key).map_or(CycleStage::Idle, |c| c.stage)
             };
             let mut active = yards
                 .iter()
-                .filter(|&&key| stage(state, key) != CycleStage::Idle)
+                .filter(|&&key| yard_stage(state, key) != CycleStage::Idle)
                 .count();
             while active < work {
                 // The fastest idle yard; the first in walk order on a tie.
                 let Some(&key) = yards
                     .iter()
-                    .filter(|&&key| stage(state, key) == CycleStage::Idle)
+                    .filter(|&&key| yard_stage(state, key) == CycleStage::Idle)
                     .min_by_key(|&&key| rate(key))
                 else {
                     break;
@@ -422,7 +422,7 @@ fn assign_yards(
                     // The slowest yard in this stage; the first on a tie.
                     let Some(&key) = yards
                         .iter()
-                        .filter(|&&key| stage(state, key) == stopping)
+                        .filter(|&&key| yard_stage(state, key) == stopping)
                         .min_by_key(|&&key| std::cmp::Reverse(rate(key)))
                     else {
                         break;
@@ -529,7 +529,7 @@ fn diversion(world: &GameWorld, system: SystemKey, draws: &mut impl Draws) -> bo
 }
 
 /// The working delay of a mine or refinery (`FUN_0055e2b0`):
-/// `(ceil(load / k) + processing_rate) × efficiency / 100`, with
+/// `(ceil(load / k) + ``processing_rate``) × efficiency / 100`, with
 /// `k = max(1, capacity × GNPRTB 4096 / 100)`; a first cycle draws
 /// `rand(0..=d) + d / 2`. port: at least one day, as the port's clock
 /// counts whole days.
@@ -576,7 +576,7 @@ pub fn efficiency(world: &GameWorld, system: &crate::world::System) -> i64 {
             .value(GNPRTB_EFFICIENCY_BASE, world.difficulty_index)
             .max(1),
     );
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "support is a fraction in [0, 1]"
     )]
@@ -750,7 +750,7 @@ mod tests {
 
     /// One Alliance-held system at full support, with the shipped
     /// parameters (GNPRTB 4096 = 20, 7168 = 10, 7763 = 100) and the
-    /// classes: PROFACSD mine and refinery (processing_rate 5), MANFACSD
+    /// classes: PROFACSD mine and refinery (`processing_rate` 5), MANFACSD
     /// shipyards (rates 4 and 2), and a regiment costing 10 refined and 25
     /// maintenance.
     fn world() -> (GameWorld, SystemKey) {
@@ -759,9 +759,9 @@ mod tests {
             ..GameWorld::default()
         };
         let class = |processing_rate, refined_material_cost, maintenance_cost| BuildableClass {
-            processing_rate,
             refined_material_cost,
             maintenance_cost,
+            processing_rate,
             ..BuildableClass::default()
         };
         world
@@ -908,6 +908,7 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy)]
     enum Supply {
         Raw,
         Refined,

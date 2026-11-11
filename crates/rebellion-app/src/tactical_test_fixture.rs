@@ -114,6 +114,10 @@ extern "C" {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The browser fixture wire format records independent requested proof flags."
+)]
 pub(crate) struct TacticalFixtureRequest {
     pub faction: CockpitFaction,
     pub code: u32,
@@ -250,17 +254,6 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             false,
             TacticalLodFixture::CameraJourney,
         ),
-        PRODUCTION_PARTICIPANTS_SCENARIO => (
-            false,
-            true,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            TacticalLodFixture::Default,
-        ),
         PRODUCTION_PARTICIPANTS_CONTROL_SCENARIO => (
             false,
             false,
@@ -327,29 +320,10 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             true,
             TacticalLodFixture::Default,
         ),
-        SUBSYSTEM_FIELD_COMMAND_PRESENTATION_SCENARIO => (
-            false,
-            true,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            TacticalLodFixture::Default,
-        ),
-        LIVE_SUBSYSTEM_DAMAGE_PRESENTATION_SCENARIO => (
-            false,
-            true,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            TacticalLodFixture::Default,
-        ),
-        SUBSYSTEM_REPAIR_MOBILITY_PRESENTATION_SCENARIO
+        PRODUCTION_PARTICIPANTS_SCENARIO
+        | SUBSYSTEM_FIELD_COMMAND_PRESENTATION_SCENARIO
+        | LIVE_SUBSYSTEM_DAMAGE_PRESENTATION_SCENARIO
+        | SUBSYSTEM_REPAIR_MOBILITY_PRESENTATION_SCENARIO
         | MANEUVER_MOVEMENT_PRESENTATION_SCENARIO
         | COMMAND_ASSIGNMENT_PRESENTATION_SCENARIO
         | COMMAND_EXECUTION_PRESENTATION_SCENARIO
@@ -464,7 +438,7 @@ pub(crate) fn requested() -> Option<TacticalFixtureRequest> {
 
 /// Add a minimal opposing encounter and enter it through the same function as
 /// campaign-triggered battles. This function is not compiled into production.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep every mutated campaign state explicit at this test-only bridge."
 )]
@@ -777,20 +751,18 @@ fn synthetic_encounter(
                     ShipInstance::new(ship, i32::try_from(hull).unwrap_or(i32::MAX), is_alliance)
                 })
                 .collect(),
-            fighters: fighter
-                .map(|class| {
-                    (0..fighter_count)
-                        // `FighterEntry::count` is the number of strategic
-                        // squadrons. `FIGHTSD.squadron_size` supplies the
-                        // twelve craft inside each tactical object.
-                        .map(|_| FighterEntry {
-                            class,
-                            count: 1,
-                            carrier: 0,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
+            fighters: fighter.map_or_else(Vec::new, |class| {
+                (0..fighter_count)
+                    // `FighterEntry::count` is the number of strategic
+                    // squadrons. `FIGHTSD.squadron_size` supplies the
+                    // twelve craft inside each tactical object.
+                    .map(|_| FighterEntry {
+                        class,
+                        count: 1,
+                        carrier: 0,
+                    })
+                    .collect()
+            }),
             characters: vec![],
             is_alliance,
             bombarding: false,
@@ -1189,6 +1161,10 @@ fn coruscant_transit_day149_encounter(
 }
 
 #[derive(Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The serialized fixture record reports independent observed proof flags."
+)]
 struct FixtureRecord<'a> {
     schema_version: u32,
     status: &'a str,
@@ -1682,7 +1658,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             class_dat_id: ship.identity.class_dat_id.index(),
             hud_resource: ship
                 .tactical_resource
-                .map(|resource| resource.hud_resource()),
+                .map(rebellion_render::TacticalCapitalShipResource::hud_resource),
             hull_current: ship.hull_current,
             hull_max: ship.hull_max,
             shield_current: ship.shield,

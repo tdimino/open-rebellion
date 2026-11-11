@@ -594,10 +594,10 @@ impl FleetTask {
         let key = self.fleet?;
         let f = round.fleets.get(&key)?;
         if f.regiments_active <= 0
-            || !round
+            || round
                 .records
                 .get(&f.location)
-                .is_some_and(|r| r.s & sys::OWN != 0)
+                .is_none_or(|r| r.s & sys::OWN == 0)
         {
             return None;
         }
@@ -634,10 +634,10 @@ impl FleetTask {
         let f = round.fleets.get(&key)?;
         if f.flags & fleet::OWN_CHARACTER == 0
             || f.flags & fleet::EN_ROUTE != 0
-            || !round
+            || round
                 .records
                 .get(&f.location)
-                .is_some_and(|r| r.s & sys::OWN != 0)
+                .is_none_or(|r| r.s & sys::OWN == 0)
         {
             return None;
         }

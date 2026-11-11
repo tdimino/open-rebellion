@@ -897,7 +897,7 @@ mod tests {
             system,
             FacilityPage::Shipyards,
         );
-        assert!(none.is_empty());
+        assert_empty!(none);
     }
 
     // FUN_004568a0 case 0x6c: the mines page fills its system's deposits

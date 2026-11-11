@@ -294,8 +294,7 @@ impl GameEffect {
             | Self::SpecialForceSpawned { .. }
             | Self::StoryMessageDisplayed { .. } => EffectPhase::Command,
 
-            Self::VictoryReached { .. }
-            | Self::CampaignSnapshot { .. } => EffectPhase::Endgame,
+            Self::VictoryReached { .. } | Self::CampaignSnapshot { .. } => EffectPhase::Endgame,
         }
     }
 

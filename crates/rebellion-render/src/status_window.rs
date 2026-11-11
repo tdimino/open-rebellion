@@ -501,7 +501,7 @@ fn row_tops(heights: &[(f32, f32)]) -> (Vec<(f32, f32)>, f32) {
 
 /// The picture's top-left in the window: centred on (307, 64) with integer
 /// halves (`FUN_00443130`).
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
@@ -595,9 +595,9 @@ pub fn draw_managed_status_window(
     frame: &RoutingSnapshot,
 ) -> Option<(WindowId, StatusWindowAction)> {
     let id = state.window_id()?;
-    if !frame
+    if frame
         .key(id)
-        .is_some_and(|key| key.kind == WindowKind::Status)
+        .is_none_or(|key| key.kind != WindowKind::Status)
     {
         return None;
     }
@@ -614,7 +614,7 @@ pub fn draw_managed_status_window(
     .map(|action| (id, action))
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Shared implementation for production snapshots and fixture-only direct content."
 )]
@@ -2137,6 +2137,27 @@ mod tests {
         world: &GameWorld,
         state: &mut StatusWindowState,
     ) -> (Vec<Text>, Vec<(u32, egui::Pos2)>) {
+        fn collect(shape: &egui::Shape, out: &mut Vec<Text>) {
+            match shape {
+                egui::Shape::Text(text) => out.push((
+                    text.galley.text().to_owned(),
+                    text.pos,
+                    text.galley.size(),
+                    text.galley
+                        .job
+                        .sections
+                        .first()
+                        .map_or(0.0, |section| section.format.font_id.size),
+                )),
+                egui::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        collect(shape, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         cache.set_base_path(staged_portrait());
@@ -2161,26 +2182,6 @@ mod tests {
                     &mut cache,
                 );
             }));
-        }
-        fn collect(shape: &egui::Shape, out: &mut Vec<Text>) {
-            match shape {
-                egui::Shape::Text(text) => out.push((
-                    text.galley.text().to_owned(),
-                    text.pos,
-                    text.galley.size(),
-                    text.galley
-                        .job
-                        .sections
-                        .first()
-                        .map_or(0.0, |section| section.format.font_id.size),
-                )),
-                egui::Shape::Vec(shapes) => {
-                    for shape in shapes {
-                        collect(shape, out);
-                    }
-                }
-                _ => {}
-            }
         }
         let mut texts = Vec::new();
         for clipped in &output.expect("a frame").shapes {

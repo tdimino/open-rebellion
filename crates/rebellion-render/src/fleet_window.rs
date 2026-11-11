@@ -398,7 +398,7 @@ impl PreparedFleetWindow {
     }
 }
 
-/// A Rename's edit field (`+0x138`, a CoolStringField) over the entry it
+/// A Rename's edit field (`+0x138`, a `CoolStringField`) over the entry it
 /// renames, with the order pending at `+0x13c`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RenameEdit {
@@ -1250,7 +1250,7 @@ impl FleetWindowState {
     /// `None` where the window gives its system. port: only a Death Star
     /// ship and a regiment have a [`MissionTarget`]; a fleet entry, another
     /// ship, a squadron or a character gives the system.
-    #[expect(
+    #[allow(
         clippy::too_many_arguments,
         reason = "The hit test reads the lists the window paints from these states."
     )]
@@ -2278,8 +2278,11 @@ fn rename_outcome_permitted(
     keyboard_permitted: bool,
 ) -> bool {
     match outcome {
-        Some(RenameOutcome::Typed(_) | RenameOutcome::Commit(_))
-        | Some(RenameOutcome::Cancel(RenameCancelCause::Escape)) => keyboard_permitted,
+        Some(
+            RenameOutcome::Typed(_)
+            | RenameOutcome::Commit(_)
+            | RenameOutcome::Cancel(RenameCancelCause::Escape),
+        ) => keyboard_permitted,
         Some(RenameOutcome::Cancel(RenameCancelCause::FocusLost)) => pointer_permitted,
         Some(RenameOutcome::Cancel(RenameCancelCause::EntryRemoved)) => true,
         None => false,
@@ -2293,7 +2296,7 @@ struct RenameInputLease {
 }
 
 /// Draw every open Fleet window.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit state and rendering inputs at this UI boundary, as the system window does."
 )]
@@ -2344,6 +2347,7 @@ pub struct ManagedFleetDraw<'a> {
     pub shown: &'a dyn Fn(GalaxyChild) -> bool,
 }
 
+#[must_use]
 pub fn draw_managed_fleet_windows(draw: ManagedFleetDraw<'_>) -> Vec<FleetWindowAction> {
     let ManagedFleetDraw {
         ctx,
@@ -2379,7 +2383,7 @@ pub fn draw_managed_fleet_windows(draw: ManagedFleetDraw<'_>) -> Vec<FleetWindow
     )
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Shared implementation for production snapshots and fixture-only direct content."
 )]
@@ -2681,7 +2685,7 @@ fn draw_fleet_windows_with_snapshot(
     actions
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
     reason = "Keep the window's ordered paint and input pass together, as the system window does."
@@ -3320,7 +3324,7 @@ fn select_all_text(ctx: &egui::Context, id: egui::Id, char_count: usize) {
 /// The rename edit over its entry: the entry's name line, white on the
 /// list. hyp: the selection rectangle (`vtable+0x88`) is the entry's name
 /// line; the field's font is font 10 (`vtable+0x18(10)`, unmapped).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The edit needs the window's frame, list clip and font."
 )]
@@ -3401,11 +3405,11 @@ fn draw_rename_edit(
 
 /// Blit a bitmap at its native size at a logical offset in `parent`
 /// (`FUN_00602d30`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "A blit names its painter, source, resource and position."
 )]
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Bitmap sizes are small integers."
 )]
@@ -3985,7 +3989,7 @@ pub(crate) mod tests {
                 "{faction:?}"
             );
             manager.apply(WindowCommand::Minimize(id)).unwrap();
-            assert!(state.saved_windows(&world, minimized(&manager)).is_empty());
+            assert_empty!(state.saved_windows(&world, minimized(&manager)));
             assert_eq!(state.saved_tab(id), Some(0x68));
 
             let SavedWindowKind::Fleet { tab, .. } = saved[0].1.kind else {
@@ -4528,7 +4532,7 @@ pub(crate) mod tests {
         let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
         let fleet = add_fleet(&mut world, system, true, 0);
         let mut manager = WindowManager::new();
-        let owner = match manager
+        let WindowTransition::Opened { id: owner } = manager
             .apply(WindowCommand::Open(contextual_spec(
                 WindowKind::Fleet,
                 SubjectId::new(2, 1),
@@ -4536,11 +4540,10 @@ pub(crate) mod tests {
             )))
             .unwrap()
             .transition
-        {
-            WindowTransition::Opened { id } => id,
-            _ => panic!(),
+        else {
+            panic!();
         };
-        let other = match manager
+        let WindowTransition::Opened { id: other } = manager
             .apply(WindowCommand::Open(contextual_spec(
                 WindowKind::Fleet,
                 SubjectId::new(2, 2),
@@ -4548,9 +4551,8 @@ pub(crate) mod tests {
             )))
             .unwrap()
             .transition
-        {
-            WindowTransition::Opened { id } => id,
-            _ => panic!(),
+        else {
+            panic!();
         };
         let mut state = FleetWindowState {
             drag: Some(ItemDrag {
@@ -5160,7 +5162,7 @@ pub(crate) mod tests {
                     &mut cache,
                 ));
             });
-            result.painted = PAINTED.with(|painted| painted.take());
+            result.painted = PAINTED.with(std::cell::RefCell::take);
             result.texts.clear();
             result.dots.clear();
             for clipped in output.shapes {
@@ -5389,7 +5391,7 @@ pub(crate) mod tests {
                 to,
             );
             assert!(held);
-            assert!(regiment_drops(&actions).is_empty());
+            assert_empty!(regiment_drops(&actions));
         }
     }
 
@@ -5417,7 +5419,7 @@ pub(crate) mod tests {
         );
 
         assert!(!held);
-        assert!(regiment_drops(&actions).is_empty());
+        assert_empty!(regiment_drops(&actions));
     }
 
     #[test]
@@ -5457,7 +5459,7 @@ pub(crate) mod tests {
         );
 
         assert!(held);
-        assert!(regiment_drops(&actions).is_empty());
+        assert_empty!(regiment_drops(&actions));
         assert_eq!(
             actions
                 .iter()
@@ -5488,7 +5490,9 @@ pub(crate) mod tests {
             });
             let (mut world, transport, system, fleet, _troop) =
                 fleet_with_regiment_for_side(control, is_alliance);
-            let fighters = world.fighter_classes.insert(Default::default());
+            let fighters = world
+                .fighter_classes
+                .insert(rebellion_core::world::FighterClass::default());
             world.fleets[fleet]
                 .fighters
                 .push(rebellion_core::world::FighterEntry {
@@ -5719,7 +5723,9 @@ pub(crate) mod tests {
         // with FUN_0051d990's Encyclopedia and Status.
         let (mut world, transport, system, fleet, _) = fleet_with_regiment();
         for _ in 0..2 {
-            let fighter = world.fighter_classes.insert(Default::default());
+            let fighter = world
+                .fighter_classes
+                .insert(rebellion_core::world::FighterClass::default());
             world.fleets[fleet]
                 .fighters
                 .push(rebellion_core::world::FighterEntry {
@@ -6724,7 +6730,7 @@ pub(crate) mod tests {
             false,
         );
         assert_eq!(state.windows[0].rename.as_ref().unwrap().text, before_text);
-        assert!(renames(&owner_routed).is_empty());
+        assert_empty!(renames(&owner_routed));
     }
 
     #[test]
@@ -6794,7 +6800,7 @@ pub(crate) mod tests {
             vec![],
             false,
         );
-        assert!(renames(&later).is_empty());
+        assert_empty!(renames(&later));
         assert_eq!(state.window_count(), 1);
     }
 
@@ -6821,7 +6827,7 @@ pub(crate) mod tests {
             true,
         );
         assert_eq!(state.windows[0].rename.as_ref().unwrap().text, before);
-        assert!(renames(&actions).is_empty());
+        assert_empty!(renames(&actions));
         assert!(!actions
             .iter()
             .any(|action| matches!(action, FleetWindowAction::FocusControl(_))));
@@ -7021,7 +7027,7 @@ pub(crate) mod tests {
         frames.push(vec![key(egui::Key::Enter)]);
         frames.push(vec![]);
         let run = run_alliance(&world, &transport, &mut state, frames);
-        assert!(renames(&run.actions).is_empty());
+        assert_empty!(renames(&run.actions));
         assert!(state.renaming(), "the field stays open");
 
         let mut frames = hover(at(-50.0, 0.0));
@@ -7034,7 +7040,7 @@ pub(crate) mod tests {
             CockpitFaction::Alliance,
             frames,
         );
-        assert!(renames(&run_escape.actions).is_empty());
+        assert_empty!(renames(&run_escape.actions));
         assert!(!state.renaming());
         assert!(
             state.is_open(system),
@@ -7172,7 +7178,9 @@ pub(crate) mod tests {
         assert!(!lit(&world, FleetWindowTab::Fighters));
         assert!(!lit(&world, FleetWindowTab::Personnel));
 
-        let squadron = world.fighter_classes.insert(Default::default());
+        let squadron = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass::default());
         world.fleets[fleet]
             .fighters
             .push(rebellion_core::world::FighterEntry {
@@ -7183,7 +7191,9 @@ pub(crate) mod tests {
         assert!(!lit(&world, FleetWindowTab::Fighters));
         world.fleets[fleet].fighters[0].count = 1;
         assert!(lit(&world, FleetWindowTab::Fighters));
-        let character = world.characters.insert(Default::default());
+        let character = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
         world.fleets[fleet].characters.push(character);
         assert!(lit(&world, FleetWindowTab::Personnel));
     }
@@ -7237,8 +7247,10 @@ pub(crate) mod tests {
         let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
         let fleet = add_fleet(&mut world, system, true, 1);
         let mut transport = TroopTransportState::default();
-        assert!(fleet_indicators(&world, &transport, fleet).is_empty());
-        let fighters = world.fighter_classes.insert(Default::default());
+        assert_empty!(fleet_indicators(&world, &transport, fleet));
+        let fighters = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass::default());
         // The squadron rides the fleet's ship (FUN_005039d0).
         let carrier = carriage::tag_ship(&mut world, fleet, 0).unwrap();
         world.fleets[fleet]
@@ -7248,7 +7260,9 @@ pub(crate) mod tests {
                 count: 1,
                 carrier,
             });
-        let character = world.characters.insert(Default::default());
+        let character = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
         world.fleets[fleet].characters.push(character);
         let class = world.fleets[fleet].capital_ships[0].class;
         world.capital_ship_classes[class].hyperdrive = 0;
@@ -7277,8 +7291,12 @@ pub(crate) mod tests {
         world.fleets[fleet]
             .capital_ships
             .push(ShipInstance::new(class, 100, true));
-        let fighters = world.fighter_classes.insert(Default::default());
-        let character = world.characters.insert(Default::default());
+        let fighters = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass::default());
+        let character = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
         world.fleets[fleet].characters.push(character);
         // Both ships have room for two; the earlier one wins the tie.
         let tag = rebellion_core::carriage::tag_ship(&mut world, fleet, 0).unwrap();

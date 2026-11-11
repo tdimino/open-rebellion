@@ -369,8 +369,9 @@ impl GameOptionsState {
             }
             // FUN_00407180 never disables Restart (0x91): it is built with
             // its normal and pressed art only, in every context.
-            GameOptionsAction::Restart => true,
-            GameOptionsAction::Return | GameOptionsAction::Exit => true,
+            GameOptionsAction::Restart | GameOptionsAction::Return | GameOptionsAction::Exit => {
+                true
+            }
             GameOptionsAction::None => false,
         }
     }
@@ -1219,7 +1220,7 @@ mod tests {
                         pos,
                         button: egui::PointerButton::Primary,
                         pressed,
-                        modifiers: Default::default(),
+                        modifiers: egui::Modifiers::default(),
                     });
                 }
                 let _ = ctx.run(

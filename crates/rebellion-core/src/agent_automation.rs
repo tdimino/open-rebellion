@@ -16,7 +16,7 @@
 //! - `FUN_00439950` (initialization — creates modules, sets state 2)
 //! - `FUN_00439a10` (agent tick — state 4/5/6 cycle)
 //! - `FUN_00439d60` (toggle mechanism)
-//! - `FUN_00439e30` (is_running query)
+//! - `FUN_00439e30` (`is_running` query)
 //! - `FUN_004cc990` (VT\[4\] ready check)
 //! - `FUN_004c6ce0` / `FUN_004c6f00` (Production decision logic)
 //! - `FUN_004c7580` / `FUN_004c7650` / `FUN_004c7860` / `FUN_004c79e0`
@@ -51,7 +51,7 @@ use crate::world::GameWorld;
 // -------------------------------------------------------------------------
 
 /// Maximum orders between resets of `agent+0x188` (`agent+0x18c`,
-/// `FUN_00439950`). FUN_00439a10: `orders_issued < orders_limit` gates
+/// `FUN_00439950`). `FUN_00439a10`: `orders_issued < orders_limit` gates
 /// dispatch.
 const ORDERS_LIMIT: u32 = 5; // FUN_00439950 line: param_1[99] = 5
 
@@ -96,7 +96,7 @@ pub enum ModuleState {
 }
 
 impl Default for ModuleState {
-    /// All modules start suspended (off). FUN_00439950.
+    /// All modules start suspended (off). `FUN_00439950`.
     fn default() -> Self {
         ModuleState::Suspended
     }
@@ -203,7 +203,7 @@ pub enum AgentOrder {
 /// through [`apply_orders`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerAgent {
-    /// Per-module state. FUN_00439950: all start `Suspended`.
+    /// Per-module state. `FUN_00439950`: all start `Suspended`.
     production_state: ModuleState,
     garrison_state: ModuleState,
 
@@ -211,15 +211,15 @@ pub struct PlayerAgent {
     /// ON (Suspended→Disabled); decremented when turned OFF. If it exceeds
     /// 3 during an ON toggle, `TOO_MANY_TOGGLES` fires instead of the
     /// per-module ON bit.
-    /// FUN_00439d60.
+    /// `FUN_00439d60`.
     toggle_counter: i32,
 
     /// Advisor message flags (`DAT_006b28b0` bits relevant to automation).
-    /// FUN_00439d60 sets these; the app reads and clears them.
+    /// `FUN_00439d60` sets these; the app reads and clears them.
     pub advisor_flags: AdvisorFlags,
 
     /// Orders issued since the last reset (`agent+0x188`, [`Self::end_day`]).
-    /// FUN_00439a10 gates dispatch on `orders_issued < ORDERS_LIMIT`.
+    /// `FUN_00439a10` gates dispatch on `orders_issued < ORDERS_LIMIT`.
     orders_issued: u32,
 
     /// The module the round-robin last took (`agent+0x18`'s cursor `+0x10`,
@@ -243,7 +243,7 @@ pub struct PlayerAgent {
 }
 
 impl Default for PlayerAgent {
-    /// FUN_00439950: all modules start suspended (OFF).
+    /// `FUN_00439950`: all modules start suspended (OFF).
     fn default() -> Self {
         Self {
             production_state: ModuleState::Suspended,
@@ -260,7 +260,7 @@ impl Default for PlayerAgent {
 
 impl PlayerAgent {
     /// Create a new agent with both automations OFF (suspended).
-    /// FUN_00439950.
+    /// `FUN_00439950`.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -394,9 +394,9 @@ impl PlayerAgent {
         }
         let order = match module {
             AutomationModule::Production => {
-                self.run_production(world, mfg, economy, player_is_alliance)
+                Self::run_production(world, mfg, economy, player_is_alliance)
             }
-            AutomationModule::Garrisons => self.run_garrisons(world, mfg, player_is_alliance),
+            AutomationModule::Garrisons => Self::run_garrisons(world, mfg, player_is_alliance),
         };
         if order.is_some() {
             self.orders_issued += 1;
@@ -469,7 +469,6 @@ impl PlayerAgent {
     ///
     /// Evidence: `FUN_004c6ce0.c`, `FUN_004c6f00.c`.
     fn run_production(
-        &self,
         world: &GameWorld,
         mfg: &ManufacturingState,
         economy: &EconomyState,
@@ -555,13 +554,12 @@ impl PlayerAgent {
     /// the target.
     ///
     /// Phase 3 (`FUN_004c79e0`): calculate troop deficit =
-    /// `garrison_need(+0x80) - current_troops(+0x84)`, clamped by available
+    /// `garrison_need(+0x80) - ``current_troops``(+0x84)`, clamped by available
     /// training capacity.
     ///
     /// Evidence: `FUN_004c7580.c`, `FUN_004c7650.c`, `FUN_004c7860.c`,
     /// `FUN_004c79e0.c`.
     fn run_garrisons(
-        &self,
         world: &GameWorld,
         mfg: &ManufacturingState,
         player_is_alliance: bool,
@@ -784,7 +782,7 @@ fn has_room(world: &GameWorld, mfg: &ManufacturingState, site: SystemKey, mine: 
 /// Returns `(system_key, deficit)` where `deficit > 0`, or `None` if no
 /// system has a garrison deficit.
 ///
-/// FUN_004c7650: queries for owned systems needing garrisons, sorted by
+/// `FUN_004c7650`: queries for owned systems needing garrisons, sorted by
 /// deficit (sort priority 0x19).
 ///
 /// Evidence: `FUN_004c7650.c`, `FUN_004c79e0.c`.
@@ -837,7 +835,7 @@ fn find_most_undergarrisoned(
 /// Find a system with a training facility (non-shipyard manufacturing
 /// facility) controlled by the player.
 ///
-/// FUN_004c7860: queries for entities with flag 0x22000, sorted by distance
+/// `FUN_004c7860`: queries for entities with flag 0x22000, sorted by distance
 /// to the target. port: we simply find any owned system with a training
 /// facility.
 ///
@@ -884,7 +882,7 @@ fn find_troop_class(world: &GameWorld, player_is_alliance: bool) -> Option<DatId
 /// a mine or refinery.
 ///
 /// port: picks the first owned production facility of the requested type
-/// (mine or refinery). The original uses DatId 0x2c (mine) or 0x2d
+/// (mine or refinery). The original uses `DatId` 0x2c (mine) or 0x2d
 /// (refinery) entity type lookups.
 ///
 /// Evidence: `FUN_004c6f00.c` (entity types 0x2c, 0x2d).
@@ -1064,7 +1062,7 @@ mod tests {
         world.systems[sys_key].manufacturing_facilities.push(mfk);
     }
 
-    /// The facility a BuildFacility order builds, and where.
+    /// The facility a `BuildFacility` order builds, and where.
     fn built(orders: &[AgentOrder]) -> Option<(SystemKey, SystemKey, bool)> {
         orders.iter().find_map(|order| match *order {
             AgentOrder::BuildFacility {
@@ -1124,7 +1122,7 @@ mod tests {
     // Toggle semantics — FUN_00439d60
     // -----------------------------------------------------------------
 
-    /// Both automations start suspended (OFF). FUN_00439950 sets all module
+    /// Both automations start suspended (OFF). `FUN_00439950` sets all module
     /// states to 2 (Suspended).
     #[test]
     fn both_automations_start_off() {
@@ -1135,7 +1133,7 @@ mod tests {
     }
 
     /// Toggling a suspended module turns it on (Suspended → Disabled).
-    /// FUN_00439d60: state 2 → state 0.
+    /// `FUN_00439d60`: state 2 → state 0.
     #[test]
     fn agent_advice_starts_on_at_easy_only_and_its_menu_item_flips_it() {
         // FUN_00439320: bit 0x8000 (advice off) unless the mode is 1;
@@ -1162,7 +1160,7 @@ mod tests {
     }
 
     /// Toggling a running module suspends it (not-Suspended → Suspended).
-    /// FUN_00439d60: state != 2 → state 2.
+    /// `FUN_00439d60`: state != 2 → state 2.
     #[test]
     fn toggle_running_module_turns_it_off() {
         // FUN_00439d60: when state != 2, set state = 2 (turn OFF).
@@ -1173,7 +1171,7 @@ mod tests {
         assert!(!agent.is_running(AutomationModule::Garrisons));
     }
 
-    /// The toggle counter tracks ON toggles. FUN_00439d60:
+    /// The toggle counter tracks ON toggles. `FUN_00439d60`:
     /// counter++ on ON, counter-- on OFF.
     #[test]
     fn toggle_counter_tracks_on_off_toggles() {
@@ -1192,9 +1190,9 @@ mod tests {
         assert_eq!(agent.toggle_counter, 1);
     }
 
-    /// When the toggle counter exceeds 3, the TOO_MANY_TOGGLES flag fires
+    /// When the toggle counter exceeds 3, the `TOO_MANY_TOGGLES` flag fires
     /// instead of the per-module ON flag.
-    /// FUN_00439d60: `if (3 < uVar3) DAT_006b28b0 |= 0x1000000`.
+    /// `FUN_00439d60`: `if (3 < uVar3) DAT_006b28b0 |= 0x1000000`.
     #[test]
     fn too_many_toggles_fires_after_counter_exceeds_three() {
         // FUN_00439d60: after 4th ON toggle, counter > 3 → TOO_MANY_TOGGLES.
@@ -1214,7 +1212,7 @@ mod tests {
     }
 
     /// Toggle ON sets the correct per-module advisor flag.
-    /// FUN_00439d60: ON sets uVar4 (0x10 for Garrisons, 0x20 for Production).
+    /// `FUN_00439d60`: ON sets uVar4 (0x10 for Garrisons, 0x20 for Production).
     #[test]
     fn toggle_on_sets_correct_advisor_flag() {
         // FUN_00439d60: toggle ON → set on_bit (uVar4).
@@ -1230,7 +1228,7 @@ mod tests {
     }
 
     /// Toggle OFF sets the correct per-module advisor flag.
-    /// FUN_00439d60: OFF sets param_1 (0x100 for Garrisons, 0x200 for Production).
+    /// `FUN_00439d60`: OFF sets `param_1` (0x100 for Garrisons, 0x200 for Production).
     #[test]
     fn toggle_off_sets_correct_advisor_flag() {
         // FUN_00439d60: toggle OFF → set off_bit (param_1).
@@ -1247,7 +1245,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     /// A suspended module never becomes ready and produces no orders.
-    /// FUN_004cc990: skips state 2; FUN_00439a10: only executes ready modules.
+    /// `FUN_004cc990`: skips state 2; `FUN_00439a10`: only executes ready modules.
     #[test]
     fn suspended_module_issues_no_orders() {
         // FUN_004cc990: VT[4] skips Suspended(2), so it never becomes Ready(1).
@@ -1255,7 +1253,7 @@ mod tests {
         let mut agent = PlayerAgent::new(); // both Suspended
         let (world, _sys_key, eco, mfg) = minimal_world(true);
         let orders = run_modules(&mut agent, &world, &mfg, &eco);
-        assert!(orders.is_empty());
+        assert_empty!(orders);
     }
 
     // -----------------------------------------------------------------
@@ -1263,7 +1261,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     /// Production picks a mine when raw output < refined output.
-    /// FUN_004c6f00: `if (agent_context+0xa8 < agent_context+0xac)` → mine.
+    /// `FUN_004c6f00`: `if (agent_context+0xa8 < agent_context+0xac)` → mine.
     #[test]
     fn production_picks_mine_when_raw_less_than_refined() {
         // FUN_004c6f00: raw < refined → build mine (entity type 0x2c).
@@ -1282,7 +1280,7 @@ mod tests {
     }
 
     /// Production picks a refinery when raw output >= refined output.
-    /// FUN_004c6f00: `if (agent_context+0xa8 >= agent_context+0xac)` → refinery.
+    /// `FUN_004c6f00`: `if (agent_context+0xa8 >= agent_context+0xac)` → refinery.
     #[test]
     fn production_picks_refinery_when_raw_gte_refined() {
         // FUN_004c6f00: raw >= refined → build refinery (entity type 0x2d).
@@ -1301,7 +1299,7 @@ mod tests {
     }
 
     /// port: production stops where a site has no room under the economy's
-    /// caps (FUN_0050ad60 energy, FUN_0050b0b0 raw deposits), counting the
+    /// caps (`FUN_0050ad60` energy, `FUN_0050b0b0` raw deposits), counting the
     /// facilities already queued for it, and the yard delivers to the site.
     #[test]
     fn production_builds_only_where_there_is_room_and_delivers_there() {
@@ -1323,7 +1321,7 @@ mod tests {
         mfg.enqueue(system, crate::manufacturing::QueueItem::new(kind, work));
 
         // Three facilities, built or queued, fill the three energy slots.
-        assert!(run_modules(&mut agent, &world, &mfg, &eco).is_empty());
+        assert_empty!(run_modules(&mut agent, &world, &mfg, &eco));
     }
 
     #[test]
@@ -1358,7 +1356,7 @@ mod tests {
     }
 
     /// port: regiments already training for a system count against its
-    /// deficit (FUN_004c79e0's +0x84), so none are ordered twice.
+    /// deficit (`FUN_004c79e0`'s +0x84), so none are ordered twice.
     #[test]
     fn garrisons_do_not_order_regiments_already_in_training() {
         let (mut world, sys_key, eco, mut mfg) = minimal_world(true);
@@ -1394,7 +1392,7 @@ mod tests {
                 .delivered_to(crate::manufacturing::Destination::System(target_system)),
             );
         }
-        assert!(run_modules(&mut agent, &world, &mfg, &eco).is_empty());
+        assert_empty!(run_modules(&mut agent, &world, &mfg, &eco));
     }
 
     // -----------------------------------------------------------------
@@ -1403,8 +1401,8 @@ mod tests {
 
     /// Garrisons targets the system with the largest troop deficit and caps
     /// the training count.
-    /// FUN_004c7650: sort by deficit (0x19).
-    /// FUN_004c79e0: deficit = garrison_need - current_troops.
+    /// `FUN_004c7650`: sort by deficit (0x19).
+    /// `FUN_004c79e0`: deficit = `garrison_need` - `current_troops`.
     #[test]
     fn garrisons_targets_largest_deficit_and_caps_count() {
         // FUN_004c7650: finds most under-garrisoned system.
@@ -1477,11 +1475,11 @@ mod tests {
                 // Count should be 3 (the deficit), capped at ORDERS_LIMIT.
                 assert_eq!(*count, 3);
             }
-            _ => panic!("expected TrainTroops order"),
+            AgentOrder::BuildFacility { .. } => panic!("expected TrainTroops order"),
         }
     }
 
-    /// FUN_004c6f00: a mine only while raw < refined, so a tie builds a
+    /// `FUN_004c6f00`: a mine only while raw < refined, so a tie builds a
     /// refinery.
     #[test]
     fn production_picks_a_refinery_when_raw_equals_refined() {
@@ -1521,7 +1519,7 @@ mod tests {
     }
 
     /// port: mines built and queued for a site fill its raw deposits
-    /// (FUN_0050b0b0).
+    /// (`FUN_0050b0b0`).
     #[test]
     fn queued_mines_fill_a_sites_deposits() {
         let (mut world, sys_key, eco, mut mfg) = minimal_world(true);
@@ -1541,7 +1539,7 @@ mod tests {
                 30,
             ),
         );
-        assert!(run_modules(&mut producing(), &world, &mfg, &eco).is_empty());
+        assert_empty!(run_modules(&mut producing(), &world, &mfg, &eco));
         world.systems[sys_key].raw_materials = 3;
         assert_eq!(
             built(&run_modules(&mut producing(), &world, &mfg, &eco)),
@@ -1579,7 +1577,7 @@ mod tests {
         assert!(built(&run_modules(&mut producing(), &world, &mfg, &eco)).is_some());
     }
 
-    /// FUN_004c7650 sorts by deficit: the larger wins wherever it is
+    /// `FUN_004c7650` sorts by deficit: the larger wins wherever it is
     /// listed, and a tie keeps the first.
     #[test]
     fn garrisons_take_the_larger_deficit_and_the_first_of_a_tie() {
@@ -1654,8 +1652,8 @@ mod tests {
 
     /// Each running module issues its order at its own step, and a module
     /// that ran returns to state 0: state 4 runs one module a step
-    /// (FUN_00439a10.c:60-61), and the next step's state 6 readies every
-    /// module again (FUN_00439a10.c:73-87, FUN_004cc990), so each module is
+    /// (`FUN_00439a10.c:60-61`), and the next step's state 6 readies every
+    /// module again (`FUN_00439a10.c:73-87`, `FUN_004cc990`), so each module is
     /// checked after its own step. port: two modules of one order each never
     /// reach the cap of 5, so the cap does not bind.
     #[test]
@@ -1673,7 +1671,7 @@ mod tests {
         assert_eq!(agent.garrison_state, ModuleState::Disabled);
     }
 
-    /// FUN_004cc990 readies only state 0: a suspended module stays
+    /// `FUN_004cc990` readies only state 0: a suspended module stays
     /// suspended while the other runs.
     #[test]
     fn a_suspended_module_stays_out_while_the_other_runs() {

@@ -694,10 +694,10 @@ fn fold(f: &mut FleetRecord, s: &ShipRecord) {
 /// informants, espionage, mission ends), is not followed, since the port
 /// keeps no per-side intelligence. port: counts at a non-own system are
 /// its owner's objects, which `FUN_00433e40` counts as everything there.
-pub fn fill_system(
+pub fn fill_system<S: std::hash::BuildHasher>(
     r: &mut crate::ai_production::SystemRecord,
     inputs: &RecordWorld<'_>,
-    fleets: &HashMap<FleetKey, FleetRecord>,
+    fleets: &HashMap<FleetKey, FleetRecord, S>,
     day: i64,
 ) {
     use crate::ai_production::bit;
@@ -867,7 +867,14 @@ pub fn fill_system(
             r.squadron_attack += node.n30 * n;
             r.squadron_manoeuvre += node.n34 * n;
         }
-        if !r.own {
+        if r.own {
+            if r.a & bit::UPRISING != 0 && s & sys::FOREIGN_FLEET == 0 {
+                r.q |= 0x20;
+            }
+            if r.q & 0x1000_0000 != 0 && s & sys::FOREIGN_FLEET == 0 && r.a & bit::UPRISING == 0 {
+                r.q |= 0x40;
+            }
+        } else {
             let regiments = r.regiments_present;
             if r.enemy {
                 // `FUN_00433e40.c:639-641`: at a system the other side
@@ -923,13 +930,6 @@ pub fn fill_system(
                 if r.a & bit::HQ != 0 {
                     r.hq_count += 1;
                 }
-            }
-        } else {
-            if r.a & bit::UPRISING != 0 && s & sys::FOREIGN_FLEET == 0 {
-                r.q |= 0x20;
-            }
-            if r.q & 0x1000_0000 != 0 && s & sys::FOREIGN_FLEET == 0 && r.a & bit::UPRISING == 0 {
-                r.q |= 0x40;
             }
         }
     } else if !r.own {

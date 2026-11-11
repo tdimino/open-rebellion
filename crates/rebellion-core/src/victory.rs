@@ -161,15 +161,15 @@ impl VictorySystem {
         if tick_events.is_empty() || state.resolved {
             return None;
         }
-        let word = Self::word(state, world, victory_conditions)?;
+        let victory_bits = Self::word(state, world, victory_conditions)?;
         let coruscant = Self::coruscant(world)?;
-        if word & AW != 0 {
+        if victory_bits & AW != 0 {
             Some(VictoryOutcome::HqCaptured {
                 winner: Faction::Alliance,
                 loser: Faction::Empire,
                 hq_system: coruscant,
             })
-        } else if word & EW != 0 {
+        } else if victory_bits & EW != 0 {
             let destroyed = world
                 .systems
                 .get(state.alliance_hq)
@@ -220,41 +220,42 @@ impl VictorySystem {
 
         // A prisoner counts whoever holds it, a jailed one too (+0xac bit 0,
         // FUN_00549580).
-        let mut word = leaders
+        let mut victory_bits = leaders
             .into_iter()
             .filter(|&(prisoner, _)| prisoner)
-            .fold(0, |word, (_, bit)| word | bit);
+            .fold(0, |bits, (_, bit)| bits | bit);
         // AD: the HQ object is gone, whoever holds its system.
         if world
             .systems
             .get(state.alliance_hq)
             .is_none_or(|system| system.is_destroyed || !system.is_headquarters)
         {
-            word |= AD;
+            victory_bits |= AD;
         }
         // CA: Coruscant's holder bits (+0x24 & 0xc0 == 0x40), which keep the
         // earlier holder through a stalemate (FUN_0050b610).
         if crate::bombardment::holder(world, coruscant_key) == Faction::Alliance {
-            word |= CA;
+            victory_bits |= CA;
         }
         if coruscant.is_destroyed {
-            word |= CD;
+            victory_bits |= CD;
         }
 
-        let all = |bits: u32| word & bits == bits;
+        let all = |bits: u32| victory_bits & bits == bits;
         let (empire, alliance) = match victory_conditions {
-            VictoryConditions::Standard => {
-                (all(AD | LC | MC), all(DC | EC) && word & (CA | CD) != 0)
-            }
-            VictoryConditions::HeadquartersOnly => (all(AD), word & (CA | CD) != 0),
+            VictoryConditions::Standard => (
+                all(AD | LC | MC),
+                all(DC | EC) && victory_bits & (CA | CD) != 0,
+            ),
+            VictoryConditions::HeadquartersOnly => (all(AD), victory_bits & (CA | CD) != 0),
         };
-        word |= match (empire, alliance) {
+        victory_bits |= match (empire, alliance) {
             (true, true) if state.word & AW == 0 && state.word & EW != 0 => EW | GO,
             (_, true) => AW | GO,
             (true, false) => EW | GO,
             (false, false) => 0,
         };
-        Some(word)
+        Some(victory_bits)
     }
 
     /// Coruscant, by its id (`FUN_005180e0`).

@@ -92,13 +92,17 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
         // fact: the four Finder openers, Message Index, and Encyclopedia use
         // canonical subjectless keys, no-op on duplicate, and bit-0 dialog
         // policy. The manual and retained Wine runs corroborate the strategic
-        // modal boundary for the reachable families.
+        // modal boundary for the reachable families. port: current Build
+        // Selection content is likewise a subjectless singleton; native
+        // duplicate behavior remains unresolved, while its strategic-modal
+        // boundary is corroborated by the 2026-10-12 runtime closeout.
         WindowKind::SystemFinder
         | WindowKind::FleetFinder
         | WindowKind::TroopFinder
         | WindowKind::PersonnelFinder
         | WindowKind::MessageIndex
-        | WindowKind::Encyclopedia => policy(
+        | WindowKind::Encyclopedia
+        | WindowKind::BuildSelection => policy(
             Cardinality::Singleton,
             StackBand::Normal,
             OpenPlacement::TopOfBand,
@@ -110,60 +114,17 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
 
         // fact: the 2026-10-12 retained original-runtime closeout confirms the
         // blocking boundary for Status, Mission, and Move on both factions.
-        // Their per-open logical context remains app-owned.
+        // Their per-open logical context remains app-owned. Scrap conservatively
+        // uses that whole-view modal boundary. Battle Alert has native bit-0
+        // dialog policy but a conservatively bounded pointer scope; the manual
+        // and native type 0x1c bit-0 path classify Battle Results as modal.
         WindowKind::Status
         | WindowKind::MissionDialog
         | WindowKind::MoveConfirmation
-        | WindowKind::StopConfirmation => policy(
-            Cardinality::Subject { max_open: None },
-            StackBand::Normal,
-            OpenPlacement::TopOfBand,
-            ExistingOpenPolicy::NoOp,
-            InputPolicy::StrategicModal,
-            PresentationPolicy::None,
-            FocusRestoration::PreviousEligible,
-        ),
-
-        // port: current Build Selection content is a subjectless singleton;
-        // native duplicate behavior remains unresolved. Its strategic-modal
-        // boundary is corroborated by the 2026-10-12 runtime closeout.
-        WindowKind::BuildSelection => policy(
-            Cardinality::Singleton,
-            StackBand::Normal,
-            OpenPlacement::TopOfBand,
-            ExistingOpenPolicy::NoOp,
-            InputPolicy::StrategicModal,
-            PresentationPolicy::None,
-            FocusRestoration::PreviousEligible,
-        ),
-
-        // port: Scrap uses the same conservative whole-strategic-view modal
-        // safety boundary as the other command confirmations.
-        WindowKind::ScrapConfirmation => policy(
-            Cardinality::Subject { max_open: None },
-            StackBand::Normal,
-            OpenPlacement::TopOfBand,
-            ExistingOpenPolicy::NoOp,
-            InputPolicy::StrategicModal,
-            PresentationPolicy::None,
-            FocusRestoration::PreviousEligible,
-        ),
-
-        // port: Battle Alert has native bit-0 dialog policy, but its complete
-        // pointer scope remains an explicit conservative choice.
-        WindowKind::BattleAlert => policy(
-            Cardinality::Subject { max_open: None },
-            StackBand::Normal,
-            OpenPlacement::TopOfBand,
-            ExistingOpenPolicy::NoOp,
-            InputPolicy::StrategicModal,
-            PresentationPolicy::None,
-            FocusRestoration::PreviousEligible,
-        ),
-
-        // fact: the manual and native type 0x1c bit-0 path classify Battle
-        // Results/Summary as modal; visible original-runtime capture is open.
-        WindowKind::BattleResults => policy(
+        | WindowKind::StopConfirmation
+        | WindowKind::ScrapConfirmation
+        | WindowKind::BattleAlert
+        | WindowKind::BattleResults => policy(
             Cardinality::Subject { max_open: None },
             StackBand::Normal,
             OpenPlacement::TopOfBand,
@@ -665,8 +626,14 @@ mod tests {
             system_subject(&world, system),
             Some(SubjectId::new(SUBJECT_SYSTEM, 0x9000_0123))
         );
-        assert_eq!(sector_subject(&world, Default::default()), None);
-        assert_eq!(system_subject(&world, Default::default()), None);
+        assert_eq!(
+            sector_subject(&world, rebellion_core::ids::SectorKey::default()),
+            None
+        );
+        assert_eq!(
+            system_subject(&world, rebellion_core::ids::SystemKey::default()),
+            None
+        );
     }
 
     fn fixture_world() -> (

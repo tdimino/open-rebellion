@@ -33,10 +33,6 @@ use logger::EventLogger;
     name = "rebellion-playtest",
     about = "Headless playtest runner for Open Rebellion"
 )]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "These independent flags preserve the existing state and serialization model."
-)]
 struct Args {
     /// Path to game data directory (containing .DAT files)
     data_dir: PathBuf,
@@ -102,7 +98,7 @@ struct Args {
     save_out: Option<PathBuf>,
 
     /// Game speed: very-slow, slow, medium or fast. It sets the rounds the
-    /// AI runs a day (the per-day count, FUN_0051dea0). A new campaign
+    /// AI runs a day (the per-day count, `FUN_0051dea0`). A new campaign
     /// starts at fast; --load keeps the save's speed unless given.
     #[arg(long, value_enum)]
     speed: Option<Speed>,
@@ -159,14 +155,6 @@ fn write_save_out(
 
 /// Dispatch a single command against the current world/simulation state.
 /// Returns a human-readable result string.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Keep the existing explicit simulation state inputs at this integration boundary."
-)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-)]
 #[expect(
     clippy::cast_possible_truncation,
     reason = "Elapsed milliseconds cannot approach the u64 limit during a playtest."
@@ -343,10 +331,9 @@ fn readout(
                 side,
             ))
         })
-    } else if lower.starts_with("show system") {
-        readouts::show_system(world, &lower["show system".len()..])
     } else {
-        return None;
+        let system = lower.strip_prefix("show system")?;
+        readouts::show_system(world, system)
     };
     Some(text.unwrap_or_else(|why| why))
 }

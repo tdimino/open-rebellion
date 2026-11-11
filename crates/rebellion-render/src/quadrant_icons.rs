@@ -99,8 +99,7 @@ pub(crate) fn visible_members(
     system: SystemKey,
 ) -> Vec<(MissionMember, u8, bool)> {
     SystemContents::new(world, fog, player, system)
-        .map(|contents| contents.members().collect())
-        .unwrap_or_default()
+        .map_or_default(|contents| contents.members().collect())
 }
 
 /// `FUN_004a1f60(system, player side)` over what the player sees: the other

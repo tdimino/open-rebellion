@@ -188,7 +188,7 @@ pub struct BlockadeState {
     /// Last observed position and withdraw percent of each embarked regiment.
     ///
     /// Saved, so a regiment keeps its orbit and withdraw percent across a
-    /// load (FUN_00504960 resets it to 100 on activation).
+    /// load (`FUN_00504960` resets it to 100 on activation).
     #[serde(
         serialize_with = "crate::serde_ordered::serialize_hash_map",
         deserialize_with = "crate::serde_ordered::deserialize_hash_map"
@@ -581,10 +581,10 @@ impl BlockadeSystem {
             if timer.due_tick.is_none() && timer.min_delay > 0 {
                 timer.due_tick = Some(tick + u64::from(timer.min_delay));
             }
-            let Some(blockader) = Self::blockader(world, sys) else {
+            let Some(blockading_side) = Self::blockader(world, sys) else {
                 continue;
             };
-            let with_majority = Self::support_majority(sys) == Some(blockader);
+            let with_majority = Self::support_majority(sys) == Some(blockading_side);
             let want = u32::try_from(value(if with_majority {
                 GNPRTB_DELAY_WITH_MAJORITY
             } else {
@@ -610,7 +610,7 @@ impl BlockadeSystem {
                 if sys.is_populated && delta != 0 {
                     events.push(BlockadeEvent::SupportShift {
                         system,
-                        side: blockader,
+                        side: blockading_side,
                         delta,
                         tick: due,
                     });
@@ -768,7 +768,7 @@ impl BlockadeSystem {
             .iter()
             .zip(rolls)
             .filter_map(|(regiment, &roll)| {
-                #[expect(
+                #[allow(
                     clippy::cast_possible_truncation,
                     reason = "roll is in [0, 1], so the floored product fits in i32"
                 )]
@@ -991,7 +991,7 @@ mod tests {
         add_fleet(&mut world, sys, false);
         let mut state = BlockadeState::new();
         let events = BlockadeSystem::advance(&mut state, &world, &[]);
-        assert!(events.is_empty());
+        assert_empty!(events);
     }
 
     #[test]
@@ -1043,7 +1043,7 @@ mod tests {
         let (world, _sys) = make_world();
         let mut state = BlockadeState::new();
         let events = BlockadeSystem::advance(&mut state, &world, &[tick(1)]);
-        assert!(events.is_empty());
+        assert_empty!(events);
     }
 
     #[test]
@@ -1424,10 +1424,10 @@ mod tests {
 
         /// Carry the regiment from the origin into the target and observe it.
         fn carry_into_target(&mut self) {
-            assert!(self.observe_orbiting().is_empty());
-            assert!(self.observe_departing(self.origin, self.target).is_empty());
+            assert_empty!(self.observe_orbiting());
+            assert_empty!(self.observe_departing(self.origin, self.target));
             self.arrive(self.target);
-            assert!(self.observe_orbiting().is_empty());
+            assert_empty!(self.observe_orbiting());
         }
     }
 
@@ -1483,7 +1483,7 @@ mod tests {
         run.world.systems[run.target].defense_facilities.push(kdy);
         run.carry_into_target();
 
-        assert!(run.observe_departing(run.target, run.origin).is_empty());
+        assert_empty!(run.observe_departing(run.target, run.origin));
     }
 
     #[test]
@@ -1496,14 +1496,14 @@ mod tests {
         run.world.systems[origin].fleets.retain(|&key| key != fleet);
         run.arrive(run.target);
 
-        assert!(run.observe_orbiting().is_empty());
+        assert_empty!(run.observe_orbiting());
         assert_eq!(
             run.state
                 .embarked_regiment(run.troop)
                 .map(|r| r.withdraw_percent),
             Some(FULL_WITHDRAW_PERCENT)
         );
-        assert!(run.observe_departing(run.target, run.origin).is_empty());
+        assert_empty!(run.observe_departing(run.target, run.origin));
     }
 
     #[test]
@@ -1516,7 +1516,7 @@ mod tests {
             .disembark_all(&mut run.world, run.fleet, run.target)
             .unwrap();
         assert_eq!(landed, vec![run.troop]);
-        assert!(run.observe_orbiting().is_empty());
+        assert_empty!(run.observe_orbiting());
         assert_eq!(run.state.embarked_regiment(run.troop), None);
 
         run.transport
@@ -1527,8 +1527,8 @@ mod tests {
                 &[run.troop],
             )
             .unwrap();
-        assert!(run.observe_orbiting().is_empty());
-        assert!(run.observe_departing(run.target, run.origin).is_empty());
+        assert_empty!(run.observe_orbiting());
+        assert_empty!(run.observe_departing(run.target, run.origin));
     }
 
     #[test]
@@ -1537,7 +1537,7 @@ mod tests {
         // An Alliance defender at the target means no blockade.
         add_fleet(&mut run.world, run.target, true);
         run.carry_into_target();
-        assert!(run.observe_departing(run.target, run.origin).is_empty());
+        assert_empty!(run.observe_departing(run.target, run.origin));
     }
 
     #[test]
@@ -1551,7 +1551,7 @@ mod tests {
             system,
             withdraw_percent: 40,
         }];
-        assert!(BlockadeSystem::resolve_running(&running, &[0.605], 7).is_empty());
+        assert_empty!(BlockadeSystem::resolve_running(&running, &[0.605], 7));
         assert_eq!(
             BlockadeSystem::resolve_running(&running, &[0.595], 7),
             vec![BlockadeEvent::TroopDestroyed {
@@ -1561,15 +1561,15 @@ mod tests {
             }]
         );
         // The roll pool pads with 1.0, which must never destroy a regiment.
-        assert!(BlockadeSystem::resolve_running(&running, &[1.0], 7).is_empty());
-        assert!(BlockadeSystem::resolve_running(&running, &[], 7).is_empty());
+        assert_empty!(BlockadeSystem::resolve_running(&running, &[1.0], 7));
+        assert_empty!(BlockadeSystem::resolve_running(&running, &[], 7));
     }
 
     #[test]
     fn destroying_a_running_regiment_removes_it_from_cargo_and_the_arena() {
         let mut run = setup_run(1, 0);
         assert!(run.transport.destroy_embarked(&mut run.world, run.troop));
-        assert!(run.transport.cargo(run.fleet).is_empty());
+        assert_empty!(run.transport.cargo(run.fleet));
         assert!(!run.world.troops.contains_key(run.troop));
         assert!(!run.transport.destroy_embarked(&mut run.world, run.troop));
     }
@@ -1608,15 +1608,15 @@ mod tests {
     ) -> Vec<(u64, Faction, i32)> {
         ticks
             .flat_map(|n| BlockadeSystem::advance(state, world, &[tick(n)]))
-            .filter_map(shift_of)
+            .filter_map(|event| shift_of(&event))
             .collect()
     }
 
-    fn shift_of(event: BlockadeEvent) -> Option<(u64, Faction, i32)> {
+    fn shift_of(event: &BlockadeEvent) -> Option<(u64, Faction, i32)> {
         match event {
             BlockadeEvent::SupportShift {
                 side, delta, tick, ..
-            } => Some((tick, side, delta)),
+            } => Some((*tick, *side, *delta)),
             _ => None,
         }
     }
@@ -1699,7 +1699,7 @@ mod tests {
             fired.extend(
                 BlockadeSystem::advance(&mut state, &world, &frame)
                     .into_iter()
-                    .filter_map(shift_of),
+                    .filter_map(|event| shift_of(&event)),
             );
             fired.extend(shifts(&mut state, &world, 34..=61));
             assert_eq!(
@@ -1753,7 +1753,7 @@ mod tests {
         for blockader in [Faction::Empire, Faction::Alliance] {
             let (mut world, sys) = shift_world(blockader, 0.5, 0.5);
             let mut state = BlockadeState::new();
-            assert!(shifts(&mut state, &world, 1..=20).is_empty());
+            assert_empty!(shifts(&mut state, &world, 1..=20));
             let fleets = std::mem::take(&mut world.systems[sys].fleets);
             assert!(
                 shifts(&mut state, &world, 21..=40).is_empty(),

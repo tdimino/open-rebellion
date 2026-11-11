@@ -203,7 +203,7 @@ type FighterIndex = HashMap<u32, FighterKey>;
 ///
 /// # Errors
 /// Returns an error if a present seed table cannot be read or parsed.
-#[expect(
+#[allow(
     clippy::implicit_hasher,
     reason = "This API uses the same concrete map type as the loaded world and callers."
 )]
@@ -264,11 +264,11 @@ fn insert_seed_fleet(
 ///
 /// # Errors
 /// Returns an error if a present seed table cannot be read or parsed.
-#[expect(
+#[allow(
     clippy::implicit_hasher,
     reason = "This API uses the same concrete map type as the loaded world and callers."
 )]
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -408,7 +408,7 @@ fn make_seed_rng(seed_options: &SeedOptions) -> Xoshiro256PlusPlus {
     Xoshiro256PlusPlus::seed_from_u64(seed_options.rng_seed.unwrap_or_else(default_seed))
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
@@ -763,7 +763,7 @@ enum ControlBucket {
 /// 5. Shuffles all systems, then drains buckets in order.
 ///
 /// Returns the bucket assignment map so `initialize_support` can use it.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
@@ -898,7 +898,7 @@ fn population_info(world: &GameWorld) -> Vec<(SystemKey, SectorGroup, bool)> {
 /// Original: core systems have param 7730 = 100 (always populated).
 /// Rim systems have param 7731 = 31 (31% chance of populated).
 /// Special systems are already marked populated by `initialize_special_systems`.
-#[expect(
+#[allow(
     clippy::cast_sign_loss,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
@@ -952,11 +952,11 @@ fn initialize_population<R: Rng + ?Sized>(
 /// - Rim populated:          `random(0..spread(7765)) + 50` → 50 (7765=0 in stock;
 ///   hyp: no recovered reader of GNPRTB 7765 besides the loader `FUN_00558bb0`)
 /// - Unpopulated:            50 (hard-coded neutral)
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     clippy::cast_sign_loss,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -1112,7 +1112,7 @@ fn load_syfc_table(gdata_path: &Path, filename: &str) -> anyhow::Result<Option<S
 ///
 /// Stock values: core energy base=10, rand=4; core raw base=5, rand=9;
 /// rim energy base=1, rand1=4, rand2=9.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -1236,7 +1236,7 @@ fn pick_weighted_facility<R: Rng + ?Sized>(weights: &[FacilityWeight], rng: &mut
 /// 2. If random(0..100) < `mine_chance`, place a mine (production facility).
 /// 3. Otherwise, pick a weighted random facility from SYFCCRTB (core) or SYFCRMTB (rim).
 /// 4. Post-adjust: ensure energy >= `used_energy`, raw >= `mine_count`.
-#[expect(
+#[allow(
     clippy::cast_sign_loss,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
@@ -1558,7 +1558,7 @@ fn seed_maintenance_budget_units<R: Rng + ?Sized>(
 /// Original formula: if support < threshold (GNPRTB 7761 = 60),
 /// add `ceil((threshold - support) / -divisor)` troops (GNPRTB 7762 = -10).
 /// i.e., `floor((threshold - support + 9) / 10)` troops.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
@@ -1905,8 +1905,10 @@ mod tests {
             empire_sp_hard: value,
             multiplayer: value,
         };
-        let mut world = GameWorld::default();
-        world.gnprtb = GnprtbParams::new(vec![entry(7764, 18), entry(7765, 10)]);
+        let mut world = GameWorld {
+            gnprtb: GnprtbParams::new(vec![entry(7764, 18), entry(7765, 10)]),
+            ..GameWorld::default()
+        };
         let mut sector = |group| {
             world.sectors.insert(Sector {
                 dat_id: DatId::new(0x8000_0001),
@@ -2051,7 +2053,7 @@ mod tests {
             ]
         );
         assert_eq!(here.defense_facilities.len(), 1);
-        assert!(here.production_facilities.is_empty());
+        assert_empty!(here.production_facilities);
     }
 
     /// A seed group of `items`, each a compound item id.
@@ -2989,7 +2991,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires original data/base DAT files"]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]

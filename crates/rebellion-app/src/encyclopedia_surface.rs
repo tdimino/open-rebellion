@@ -269,7 +269,6 @@ impl EncyclopediaSurfaceController {
         )))?;
         let mut events = commit.events;
         let id = match commit.transition {
-            WindowTransition::Opened { id } => id,
             WindowTransition::Existing {
                 id,
                 effect: ExistingEffect::NoOp,
@@ -277,7 +276,7 @@ impl EncyclopediaSurfaceController {
                 self.manager_events.append(&mut events);
                 return Ok(id);
             }
-            WindowTransition::Existing { id, .. } => id,
+            WindowTransition::Opened { id } | WindowTransition::Existing { id, .. } => id,
             transition => {
                 unreachable!("an Encyclopedia singleton open cannot commit {transition:?}")
             }
@@ -330,9 +329,9 @@ impl EncyclopediaSurfaceController {
     ) -> Option<egui::Rect> {
         let id = self.window_id?;
         let audience = self.audience?;
-        if !frame
+        if frame
             .key(id)
-            .is_some_and(|key| key.kind == WindowKind::Encyclopedia)
+            .is_none_or(|key| key.kind != WindowKind::Encyclopedia)
             || !frame.allows_input(id)
         {
             return None;

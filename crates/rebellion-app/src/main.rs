@@ -1,3 +1,19 @@
+// Native input and renderer bridges intentionally cross platform fixed-width
+// integers and f32 screen coordinates. These conversions preserve the host
+// APIs' established truncation and wrapping semantics.
+#![allow(
+    clippy::borrow_as_ptr,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+// This integration crate keeps renderer, window-manager, and simulation state
+// visible together; their domain names are intentionally similar. Fixture
+// emptiness assertions use the predicate directly because many returned types
+// are opaque handles without useful Debug output.
+#![allow(clippy::assert_is_empty, clippy::similar_names)]
+
 mod assault_orders;
 mod audio;
 #[cfg(not(target_arch = "wasm32"))]
@@ -1643,7 +1659,7 @@ impl StrategicRootKeyBatch {
     }
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "One frozen event is matched against each manager-owned child."
 )]
@@ -1922,10 +1938,12 @@ impl StrategicPointerBatch {
         self.events.iter().any(|event| {
             matches!(
                 event.phase,
-                PointerPhase::Press(PointerButtonId::Primary)
-                    | PointerPhase::Press(PointerButtonId::Secondary)
-                    | PointerPhase::Press(PointerButtonId::Middle)
-                    | PointerPhase::Press(PointerButtonId::Extra(_))
+                PointerPhase::Press(
+                    PointerButtonId::Primary
+                        | PointerButtonId::Secondary
+                        | PointerButtonId::Middle
+                        | PointerButtonId::Extra(_)
+                )
             ) && router.pointer_recipient(event.id) == InputRecipient::Blocked
         })
     }
@@ -2265,7 +2283,7 @@ fn commit_pending_tactical_window_action(
     live_battle_session: Option<u64>,
     live_phase: TacticalWindowPhase,
 ) -> Result<Option<CommittedTacticalWindowAction>, rebellion_windowing::WindowError> {
-    let Some(prepared) = pending.as_ref().cloned() else {
+    let Some(prepared) = pending.clone() else {
         return Ok(None);
     };
     let Some((_, next_phase)) = prepared.phases() else {
@@ -2326,7 +2344,7 @@ fn collect_strategic_pointer_batch(
 
 /// Production counterpart of [`collect_strategic_pointer_batch`] that also
 /// routes keyboard events through the same physical-order projection.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The production routing seam receives the frozen manager surfaces and their hit-test adapters together."
 )]
@@ -2547,9 +2565,9 @@ fn queue_routed_sector_release_receipt(
         let InputRecipient::Window(window) = router.pointer_recipient(event.id) else {
             continue;
         };
-        if !snapshot
+        if snapshot
             .key(window)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Sector)
+            .is_none_or(|key| key.kind != rebellion_windowing::WindowKind::Sector)
         {
             continue;
         }
@@ -2611,7 +2629,7 @@ impl RoutedEguiInputFilter {
         router: &FrameInputRouter,
         suppress_all_input: bool,
         suppress_escape: bool,
-    ) -> Option<egui_macroquad::egui::InputState> {
+    ) -> egui_macroquad::egui::InputState {
         let saved = target.input(Clone::clone);
         let has_blocked = batch.has_blocked_pointer_input(router);
         let mut raw = saved.raw.clone();
@@ -2655,7 +2673,7 @@ impl RoutedEguiInputFilter {
         });
         let filtered = filtered.expect("the retained input filter runs one egui pass");
         target.input_mut(|input| *input = filtered);
-        Some(saved)
+        saved
     }
 }
 
@@ -2915,7 +2933,7 @@ impl LinuxX11FocusObserver {
             utf8_string_atom,
             window_name_atom,
             expected_title: expected_title.as_bytes().to_vec(),
-            process_id: std::process::id() as std::ffi::c_ulong,
+            process_id: std::ffi::c_ulong::from(std::process::id()),
         })
     }
 
@@ -3000,11 +3018,11 @@ impl LinuxX11FocusObserver {
                     requested_items,
                     0,
                     requested_type,
-                    &mut actual_type,
-                    &mut actual_format,
-                    &mut item_count,
-                    &mut bytes_after,
-                    &mut property,
+                    &raw mut actual_type,
+                    &raw mut actual_format,
+                    &raw mut item_count,
+                    &raw mut bytes_after,
+                    &raw mut property,
                 )
             }
         });
@@ -3060,7 +3078,7 @@ impl LinuxX11FocusObserver {
         // window carrying _NET_WM_PID, with a hard bound against malformed trees.
         for _ in 0..16 {
             if let Some(pid) = self.focused_window_pid(window) {
-                if pid as std::ffi::c_ulong == self.process_id {
+                if std::ffi::c_ulong::from(pid) == self.process_id {
                     return Some(true);
                 }
             }
@@ -3083,10 +3101,10 @@ impl LinuxX11FocusObserver {
                     (self.query_tree)(
                         self.display,
                         window,
-                        &mut root,
-                        &mut parent,
-                        &mut children,
-                        &mut child_count,
+                        &raw mut root,
+                        &raw mut parent,
+                        &raw mut children,
+                        &raw mut child_count,
                     )
                 }
             });
@@ -3095,9 +3113,7 @@ impl LinuxX11FocusObserver {
                 // released with XFree whether the synchronized request passed.
                 unsafe { (self.free)(children.cast()) };
             }
-            let Some(status) = status else {
-                return None;
-            };
+            let status = status?;
             if status == 0 || parent == 0 || parent == window {
                 // The game window always exposes its PID or title. If the
                 // focus chain is valid but neither identifies this app, it
@@ -3114,7 +3130,9 @@ impl LinuxX11FocusObserver {
         let mut focused = 0;
         let mut revert_to = 0;
         // SAFETY: output pointers are valid and the display is owned by self.
-        if unsafe { (self.get_input_focus)(self.display, &mut focused, &mut revert_to) } == 0 {
+        if unsafe { (self.get_input_focus)(self.display, &raw mut focused, &raw mut revert_to) }
+            == 0
+        {
             return None;
         }
         if focused <= 1 {
@@ -3356,8 +3374,8 @@ fn remove_managed_menu_content(
 
 fn active_managed_menu_layer_ids(
     ctx: &egui_macroquad::egui::Context,
-    managed: &ManagedMenuState,
-    object: &Option<ObjectMenuState>,
+    managed: ManagedMenuState,
+    object: Option<&ObjectMenuState>,
     gid: &rebellion_render::cockpit::GidUiState,
     speed: &GameSpeedUiState,
     agent: &rebellion_render::agent_menu::AgentMenuState,
@@ -3655,7 +3673,7 @@ const fn managed_confirmation_escape_requested(
 }
 
 /// Whether Escape closes the focused System, Defenses or Missions window
-/// (FUN_00458980, FUN_004aa2b0, FUN_004a0e00). A band rename's field takes
+/// (`FUN_00458980`, `FUN_004aa2b0`, `FUN_004a0e00`). A band rename's field takes
 /// the Escape of the window it edits (`rename_window`); a rename open in
 /// another window leaves the focused window's Escape to it.
 fn managed_detail_escape_requested(
@@ -3709,7 +3727,7 @@ fn cockpit_button_passes_fence(
 }
 
 /// Stops a production area and lets the stopped products go with their
-/// entries (FUN_0052a2c0).
+/// entries (`FUN_0052a2c0`).
 fn stop_production(
     world: &mut GameWorld,
     mfg_state: &mut rebellion_core::manufacturing::ManufacturingState,
@@ -3729,7 +3747,7 @@ fn stop_production(
 }
 
 /// Applies a confirmed Stop on its exact Close receipt, before the next
-/// day can run. FUN_0044f5e0's checkmark submits the order through
+/// day can run. `FUN_0044f5e0`'s checkmark submits the order through
 /// `FUN_0041ce20(order, 1)` on the click, then closes the window
 /// (move-order.md), so no tick falls between the choice and the stop.
 fn commit_stop_confirmation(
@@ -5289,7 +5307,9 @@ mod frame_input_tests {
     fn queued_duplicate_sector_releases_each_dependent_after_its_own_receipt() {
         let (mut world, system) = sector_fixture_world();
         let member = rebellion_core::missions::MissionMember::Character(
-            world.characters.insert(Default::default()),
+            world
+                .characters
+                .insert(rebellion_core::world::Character::default()),
         );
         let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
         let mut sectors = SectorWindowState::default();
@@ -6191,9 +6211,7 @@ mod frame_input_tests {
             ..egui::RawInput::default()
         };
         let _ = ctx.run(modal_input, |ctx| {
-            let saved = routed_filter
-                .install(ctx, &modal_batch, &router, true, false)
-                .expect("a modal installs filtered routed input");
+            let saved = routed_filter.install(ctx, &modal_batch, &router, true, false);
             assert!(!ctx.input(|input| input.pointer.secondary_down()));
             assert_eq!(
                 ctx.input(|input| input.smooth_scroll_delta),
@@ -6260,9 +6278,7 @@ mod frame_input_tests {
         let mut routed_saw_press = false;
         let mut managed_seam_saw_both = false;
         let _ = ctx.run(input, |ctx| {
-            let saved = routed_filter
-                .install(ctx, &mixed, &router, false, false)
-                .expect("the blocked release installs event-filtered routed input");
+            let saved = routed_filter.install(ctx, &mixed, &router, false, false);
             routed_saw_release = ctx.input(|input| input.pointer.secondary_released());
             routed_saw_press = ctx.input(|input| input.pointer.primary_pressed());
             restore_egui_input(ctx, saved);
@@ -6287,9 +6303,7 @@ mod frame_input_tests {
                 ..egui::RawInput::default()
             },
             |ctx| {
-                let saved = routed_filter
-                    .install(ctx, &empty, &router, false, false)
-                    .expect("clean frames retain the filtered input history");
+                let saved = routed_filter.install(ctx, &empty, &router, false, false);
                 retained_state_is_clean = ctx.input(|input| {
                     input.pointer.primary_down()
                         && !input.pointer.secondary_down()
@@ -6330,9 +6344,7 @@ mod frame_input_tests {
         let mut modal_input_remained_blocked = false;
 
         let _ = ctx.run(input, |ctx| {
-            let saved = filter
-                .install(ctx, &batch, &router, true, false)
-                .expect("fixture modal installs its application input barrier");
+            let saved = filter.install(ctx, &batch, &router, true, false);
             assert!(!ctx.input(|state| state.pointer.primary_down()));
 
             with_visual_fixture_pointer(ctx, &saved, || {
@@ -6386,9 +6398,7 @@ mod frame_input_tests {
         let mut original_input_restored_after_frame = false;
 
         let _ = ctx.run(input, |ctx| {
-            let saved = filter
-                .install(ctx, &batch, &router, true, false)
-                .expect("fixture modal installs its application input barrier");
+            let saved = filter.install(ctx, &batch, &router, true, false);
             quarantined_before_paint = ctx.input(|state| {
                 !state.pointer.primary_down()
                     && state.events.is_empty()
@@ -7283,8 +7293,10 @@ mod frame_input_tests {
             .window
             .unwrap()
             .id;
-        let mut collector = StrategicRawInputCollector::default();
-        collector.pointer = (401.0, 402.0);
+        let mut collector = StrategicRawInputCollector {
+            pointer: (401.0, 402.0),
+            ..StrategicRawInputCollector::default()
+        };
         collector.mouse_wheel_event(0.25, -1.0);
         collector.mouse_wheel_event(-0.5, -2.0);
         let raw = collector.take();
@@ -7926,7 +7938,9 @@ mod panel_toggle_tests {
         let encyclopedia = opened_encyclopedia(&mut coordinator);
         let mut status = StatusWindowState::default();
         let mut world = rebellion_core::world::GameWorld::default();
-        let character = world.characters.insert(Default::default());
+        let character = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
         let missions = rebellion_core::missions::MissionState::new();
         let movement = rebellion_core::movement::MovementState::new();
         let transport = rebellion_core::troop_transport::TroopTransportState::new();
@@ -8093,7 +8107,9 @@ mod panel_toggle_tests {
         let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
         let mut status = StatusWindowState::default();
         let mut world = rebellion_core::world::GameWorld::default();
-        let character = world.characters.insert(Default::default());
+        let character = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
         let missions = rebellion_core::missions::MissionState::new();
         let movement = rebellion_core::movement::MovementState::new();
         let transport = rebellion_core::troop_transport::TroopTransportState::new();
@@ -9402,7 +9418,9 @@ mod panel_toggle_tests {
             MissionFaction::Alliance,
             SystemKey::default(),
             None,
-            vec![MissionMember::Character(Default::default())],
+            vec![MissionMember::Character(
+                rebellion_core::ids::CharacterKey::default(),
+            )],
             vec![MissionKind::Diplomacy],
         ));
         state
@@ -9639,7 +9657,7 @@ mod panel_toggle_tests {
         use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember};
         use rebellion_render::mission_dialog::MissionDialogState;
 
-        let member = MissionMember::Character(Default::default());
+        let member = MissionMember::Character(rebellion_core::ids::CharacterKey::default());
         let mut managed = MissionDialogState::default();
         let mut coordinator = crate::strategic_windowing::StrategicWindowing::new();
         coordinator
@@ -9861,7 +9879,9 @@ mod panel_toggle_tests {
                         MissionFaction::Alliance,
                         SystemKey::default(),
                         None,
-                        vec![MissionMember::Character(Default::default())],
+                        vec![MissionMember::Character(
+                            rebellion_core::ids::CharacterKey::default(),
+                        )],
                         vec![MissionKind::Diplomacy],
                     )
                     .unwrap(),
@@ -10273,7 +10293,7 @@ mod panel_toggle_tests {
         let raw = collector.take();
         let pointers =
             StrategicPointerBatch::collect_from_raw(12, &mut router, &raw.pointers, |_| {
-                Default::default()
+                std::collections::BTreeSet::default()
             });
         let keys = StrategicRootKeyBatch::collect_from_indexed_raw(12, &mut router, &raw.keys);
 
@@ -10309,7 +10329,7 @@ mod panel_toggle_tests {
         later_router.begin_frame(13, &frame);
         let later_pointers =
             StrategicPointerBatch::collect_from_raw(13, &mut later_router, &later.pointers, |_| {
-                Default::default()
+                std::collections::BTreeSet::default()
             });
         let later_keys =
             StrategicRootKeyBatch::collect_from_indexed_raw(13, &mut later_router, &later.keys);
@@ -10533,7 +10553,7 @@ mod panel_toggle_tests {
             &raw,
             &mut routing,
             None,
-            |_| Default::default(),
+            |_| std::collections::BTreeSet::default(),
         );
         assert!(pointers.has_blocked_press(&router));
         assert_eq!(
@@ -11778,7 +11798,9 @@ async fn main() {
 
         #[cfg(not(target_arch = "wasm32"))]
         rebellion_data::telemetry::set_native_seq(
-            command_script.as_ref().and_then(|script| script.last_seq()),
+            command_script
+                .as_ref()
+                .and_then(dev_commands::CommandScript::last_seq),
         );
         if !tick_events.is_empty() {
             // Every prisoner and where it is held, for the release messages
@@ -11887,7 +11909,7 @@ async fn main() {
                 &mut troop_transport_state,
                 stockpile_events.iter().filter_map(|event| match *event {
                     StockpileEvent::OverdraftScrap { target, .. } => Some(target),
-                    _ => None,
+                    StockpileEvent::Diverted { .. } => None,
                 }),
             );
             for loss in &overdraft.losses {
@@ -13078,7 +13100,7 @@ async fn main() {
                                 .includes(player_faction == MissionFaction::Alliance)
                             && message.rail.is_some_and(|rail| {
                                 rebellion_render::message_index::category_rail(category)
-                                    .map_or(true, |wanted| rail == wanted)
+                                    .is_none_or(|wanted| rail == wanted)
                             })
                     }),
                     WaitCondition::PauseAlert => clock.pause_requested(),
@@ -13378,10 +13400,7 @@ async fn main() {
                                 dev_channel.note(&format!("row {row} of {}: {title}", rows.len()));
                                 prepared = prepared.with_initial_row(row);
                             }
-                            None => {
-                                dev_channel.refuse(&format!("row {row} of {} rows", rows.len()));
-                            }
-                            Some(_) => {
+                            None | Some(_) => {
                                 dev_channel.refuse(&format!("row {row} of {} rows", rows.len()));
                             }
                         },
@@ -13750,7 +13769,7 @@ async fn main() {
                         &mission_state,
                         &movement_state,
                         side,
-                    ))
+                    ));
                 }
                 DevCommand::ListMissions(side) => {
                     dev_channel.note(&rebellion_data::readouts::list_missions(
@@ -13758,7 +13777,7 @@ async fn main() {
                         &mission_state,
                         clock.tick,
                         side,
-                    ))
+                    ));
                 }
                 DevCommand::ShowResearch => dev_channel.note(
                     &rebellion_data::readouts::show_research(&world, &research_state),
@@ -13766,7 +13785,7 @@ async fn main() {
                 DevCommand::ListProduction(side) => {
                     dev_channel.note(&rebellion_data::readouts::list_production(
                         &world, &mfg_state, clock.tick, side,
-                    ))
+                    ));
                 }
                 DevCommand::ShowSide(side) => {
                     dev_channel.note(&rebellion_data::readouts::show_side(
@@ -13775,7 +13794,7 @@ async fn main() {
                         &mfg_state,
                         &mission_state,
                         side,
-                    ))
+                    ));
                 }
                 DevCommand::ShowSystem(ref name) => {
                     match rebellion_data::readouts::show_system(&world, name) {
@@ -15462,9 +15481,10 @@ async fn main() {
 
                     let recipient = strategic_input_router.keyboard_recipient(*event);
                     let window = match (*command, recipient) {
-                        (WindowCommand::Close(window), _) => Some(window),
+                        (WindowCommand::Close(window), _) | (_, InputRecipient::Window(window)) => {
+                            Some(window)
+                        }
                         (WindowCommand::InvalidateControl(target), _) => Some(target.window),
-                        (_, InputRecipient::Window(window)) => Some(window),
                         _ => None,
                     };
                     match *command {
@@ -15517,7 +15537,6 @@ async fn main() {
                         WindowCommand::InvalidateControl(target) => {
                             let _ = fleet_window_state.cancel_rename_for_escape(target);
                         }
-                        WindowCommand::RestoreFocus => {}
                         _ => {}
                     }
                     if let Some(child) = (*revealed).and_then(|window| {
@@ -15783,9 +15802,7 @@ async fn main() {
                     if let Some(request) = interface_fixture_request.filter(|request| {
                         request.scenario == interface_test_fixture::Scenario::MessageIndexShell
                     }) {
-                        let original = routed_egui_input
-                            .as_ref()
-                            .expect("the fixture modal captures original egui input");
+                        let original = &routed_egui_input;
                         with_visual_fixture_pointer(ctx, original, || {
                             rebellion_render::draw_message_index_fixture(
                                 ctx,
@@ -15805,9 +15822,7 @@ async fn main() {
                                 request.faction,
                             )
                         });
-                        let original = routed_egui_input
-                            .as_ref()
-                            .expect("the fixture modal captures original egui input");
+                        let original = &routed_egui_input;
                         let action = with_visual_fixture_pointer(ctx, original, || {
                             rebellion_render::draw_operation_report_fixture(
                                 ctx,
@@ -15861,9 +15876,7 @@ async fn main() {
                     }
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                     if let Some(fixture) = encyclopedia_surface_fixture.as_mut() {
-                        let original = routed_egui_input
-                            .as_ref()
-                            .expect("the Encyclopedia fixture captures original egui input");
+                        let original = &routed_egui_input;
                         with_visual_fixture_pointer(ctx, original, || {
                             fixture.draw(
                                 ctx,
@@ -16223,7 +16236,7 @@ async fn main() {
                                     .enqueue(rebellion_windowing::WindowCommand::Close(window));
                             }
                             SystemWindowAction::MinimizeManaged { window, .. } => {
-                                strategic_windowing.enqueue_system_minimize(window)
+                                strategic_windowing.enqueue_system_minimize(window);
                             }
                             SystemWindowAction::RestoreReferenceWindow(window) => {
                                 enqueue_system_reference_restore(
@@ -16363,7 +16376,7 @@ async fn main() {
                                 }
                             }
                             FleetWindowAction::MinimizeManaged { window, .. } => {
-                                strategic_windowing.enqueue_fleet_minimize(window)
+                                strategic_windowing.enqueue_fleet_minimize(window);
                             }
                             // FUN_00422ce0: a drop from the Fleet window
                             // (type 4) moves the selection against the
@@ -16687,7 +16700,7 @@ async fn main() {
                             }
                             DefensesWindowAction::Minimize { .. } => {}
                             DefensesWindowAction::MinimizeManaged { window, .. } => {
-                                strategic_windowing.enqueue_defenses_minimize(window)
+                                strategic_windowing.enqueue_defenses_minimize(window);
                             }
                             DefensesWindowAction::OpenObjectMenu {
                                 owner,
@@ -16861,7 +16874,7 @@ async fn main() {
                                     .enqueue(rebellion_windowing::WindowCommand::Close(window));
                             }
                             MissionsWindowAction::MinimizeManaged { window, .. } => {
-                                strategic_windowing.enqueue_missions_minimize(window)
+                                strategic_windowing.enqueue_missions_minimize(window);
                             }
                             MissionsWindowAction::Minimize {
                                 system,
@@ -16880,9 +16893,8 @@ async fn main() {
                     // The menu commits on the release that starts targeting;
                     // only a later release may end the order.
                     let targeting_held = targeting.is_some();
-                    let object_menu_choice = object_menu
-                        .as_ref()
-                        .map(|menu| {
+                    let object_menu_choice =
+                        object_menu.as_ref().map_or(OwnedMenuOutcome::Open, |menu| {
                             draw_owned_object_menu(
                                 ctx,
                                 menu,
@@ -16891,8 +16903,7 @@ async fn main() {
                                 cockpit_state.faction,
                                 managed_menu_input_enabled,
                             )
-                        })
-                        .unwrap_or(OwnedMenuOutcome::Open);
+                        });
                     let object_menu_choice = match object_menu_choice {
                         OwnedMenuOutcome::Open => None,
                         OwnedMenuOutcome::Dismissed => {
@@ -17717,9 +17728,7 @@ async fn main() {
                         .flatten();
                     // Manager-owned modal content paints after this restore;
                     // retained detail surfaces above were input-muted.
-                    if let Some(saved) = routed_egui_input {
-                        restore_egui_input(ctx, saved);
-                    }
+                    restore_egui_input(ctx, routed_egui_input);
                     // Manager-owned surfaces paint in the manager's immutable
                     // bottom-to-top order. Lower modals still paint, but their
                     // input is muted; only the active modal receives this
@@ -18432,8 +18441,8 @@ async fn main() {
                                 .or_else(|| {
                                     active_managed_menu_layer_ids(
                                         ctx,
-                                        &managed_menu,
-                                        &object_menu,
+                                        managed_menu,
+                                        object_menu.as_ref(),
                                         &cockpit_state.gid_ui,
                                         &game_speed_ui,
                                         &agent_menu_state,
@@ -19103,23 +19112,21 @@ async fn main() {
             ) {
                 pending_tactical_window_action = Some(prepared);
                 TacticalAction::None
+            } else if matches!(
+                &rendered_tac_action,
+                TacticalAction::BeginCombat
+                    | TacticalAction::AutoResolve
+                    | TacticalAction::RetreatBeforeBattle
+                    | TacticalAction::ReturnToGalaxy
+                    | TacticalAction::OpenBattleSystem(_)
+                    | TacticalAction::OpenBattleFleet(_)
+            ) {
+                macroquad::logging::error!(
+                    "[windowing] refused tactical action without its live identity"
+                );
+                TacticalAction::None
             } else {
-                if matches!(
-                    &rendered_tac_action,
-                    TacticalAction::BeginCombat
-                        | TacticalAction::AutoResolve
-                        | TacticalAction::RetreatBeforeBattle
-                        | TacticalAction::ReturnToGalaxy
-                        | TacticalAction::OpenBattleSystem(_)
-                        | TacticalAction::OpenBattleFleet(_)
-                ) {
-                    macroquad::logging::error!(
-                        "[windowing] refused tactical action without its live identity"
-                    );
-                    TacticalAction::None
-                } else {
-                    rendered_tac_action
-                }
+                rendered_tac_action
             };
             if manager_approved_action
                 && matches!(
@@ -19597,7 +19604,7 @@ async fn main() {
                                 &mission_state,
                                 cockpit_state.faction,
                                 cockpit_state.layout(),
-                                RestoredWindows {
+                                &mut RestoredWindows {
                                     sectors: &mut sector_window_state,
                                     systems: &mut system_window_state,
                                     fleets: &fleet_window_state,
@@ -20824,14 +20831,14 @@ async fn main() {
                 if fleet_finder_state.commit_open(prepared, &commit.transition) == Some(id) {
                     let committed = strategic_windowing.has_content(id)
                         || strategic_windowing.acknowledge_fleet_finder_publication(id);
-                    if !committed {
-                        fleet_finder_state.remove_content(&[id]);
-                        removed_content
-                            .extend(strategic_windowing.rollback_fleet_finder_publication(id));
-                    } else {
+                    if committed {
                         macroquad::logging::info!(
                             "[interface] command=0x12e destination=fleet_finder status=opened_managed identity={id:?}"
                         );
+                    } else {
+                        fleet_finder_state.remove_content(&[id]);
+                        removed_content
+                            .extend(strategic_windowing.rollback_fleet_finder_publication(id));
                     }
                 } else {
                     macroquad::logging::error!(
@@ -20953,10 +20960,7 @@ async fn main() {
                 if status_window_state.commit_open(prepared, &commit.transition) == Some(id) {
                     let committed = strategic_windowing.has_content(id)
                         || strategic_windowing.acknowledge_status_publication(id);
-                    if !committed {
-                        status_window_state.remove_content(&[id]);
-                        removed_content.extend(strategic_windowing.rollback_status_publication(id));
-                    } else {
+                    if committed {
                         let rect = rebellion_render::status_window::window_rect(publication_layout);
                         macroquad::logging::info!(
                             "{}",
@@ -20965,6 +20969,9 @@ async fn main() {
                                 (rect.min.x, rect.min.y, rect.width(), rect.height()),
                             )
                         );
+                    } else {
+                        status_window_state.remove_content(&[id]);
+                        removed_content.extend(strategic_windowing.rollback_status_publication(id));
                     }
                 } else {
                     macroquad::logging::error!(
@@ -21467,7 +21474,7 @@ fn issue_fleet_move(
 /// container is its fleet, so its Move never asks. The window lists each
 /// ship's name (`FUN_004f6270`) and days (`fleet_join::ship_move_days`).
 /// Whether the window opened.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The release hands over the order and every window it may open."
 )]
@@ -21603,7 +21610,7 @@ fn mover_move_action(
 /// unit aboard a fleet has the ship for its container. The window lists the
 /// unit's name (`FUN_004f6270`) and days (`FUN_0053d200`). Whether the
 /// window opened.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The release hands over the order, the transport state and every window it may open."
 )]
@@ -21750,7 +21757,7 @@ fn unit_move_action(unit: UnitMover, target: RegimentTarget) -> PanelAction {
 /// for Confirmed Move, or when the first member stands in a blockaded
 /// system, whose window warns of the evacuation (0x7056, `FUN_0049a350`).
 /// The window lists each member's name and days (`FUN_004f4850`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The release hands over the order and every window it may open."
 )]
@@ -22260,7 +22267,7 @@ fn saved_window_key(
 /// `+0x110`) and so comes back on the rail: under Wine Coruscant's System
 /// window, hidden by the menu at the save, came back minimized (Empire day-2
 /// start, played on to day 8).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The interface reads every galaxy window family."
 )]
@@ -22318,7 +22325,7 @@ fn saved_interface(
 
 /// Production save seam: freeze manager identity, visibility, and serialized
 /// z-order together before joining them to retained renderer content.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The interface reads every galaxy window family."
 )]
@@ -22351,7 +22358,7 @@ struct RestoredWindows<'a> {
 /// Rebuild a load's windows from saved records. Sector content is admitted
 /// through its serialized pending-publication receipt; all other details are
 /// prepared for manager-owned publication here.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The restore reads the world, the player's fog and missions, and the layout."
 )]
@@ -22362,7 +22369,7 @@ fn restore_interface(
     mission_state: &MissionState,
     faction: CockpitFaction,
     layout: rebellion_render::CockpitLayout,
-    windows: RestoredWindows<'_>,
+    windows: &mut RestoredWindows<'_>,
     pending_sectors: &mut Vec<PendingSectorPublication>,
     strategic_windowing: &mut strategic_windowing::StrategicWindowing,
 ) {
@@ -22497,8 +22504,8 @@ fn finish_interface_restore(
                 strategic_windowing.enqueue(rebellion_windowing::WindowCommand::Raise(id));
                 load_focus = Some(id);
             }
-            Some(_child) if !window.shown => {
-                hidden.push(_child);
+            Some(child) if !window.shown => {
+                hidden.push(child);
                 if !matches!(
                     window.kind,
                     rebellion_data::save::SavedWindowKind::Sector { .. }
@@ -22512,23 +22519,7 @@ fn finish_interface_restore(
                     }
                 }
             }
-            Some(GalaxyChild::System(_)) => {
-                if let Some(id) =
-                    saved_window_manager_id(world, window, &strategic_windowing.begin_frame())
-                {
-                    strategic_windowing.enqueue(rebellion_windowing::WindowCommand::Raise(id));
-                    load_focus = Some(id);
-                }
-            }
-            Some(GalaxyChild::Defenses(_)) => {
-                if let Some(id) =
-                    saved_window_manager_id(world, window, &strategic_windowing.begin_frame())
-                {
-                    strategic_windowing.enqueue(rebellion_windowing::WindowCommand::Raise(id));
-                    load_focus = Some(id);
-                }
-            }
-            Some(GalaxyChild::Missions(_)) => {
+            Some(GalaxyChild::System(_) | GalaxyChild::Defenses(_) | GalaxyChild::Missions(_)) => {
                 if let Some(id) =
                     saved_window_manager_id(world, window, &strategic_windowing.begin_frame())
                 {
@@ -22538,8 +22529,7 @@ fn finish_interface_restore(
             }
             // Sector identities are handled by the manager-owned publication
             // path above; never synthesize renderer-local restore state here.
-            Some(GalaxyChild::Sector(_)) => {}
-            None => {}
+            Some(GalaxyChild::Sector(_)) | None => {}
         }
         if !window.shown {
             slot += 1;
@@ -22582,7 +22572,7 @@ fn saved_gid_mode(interface: &rebellion_data::save::SavedInterface) -> rebellion
 }
 
 /// Whether each order of `selection`'s menu passes its own rule (`+0x18`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The gates read every state an order's rule reaches."
 )]
@@ -23105,7 +23095,7 @@ fn message_choice_sector_dependent(
 /// Queues the one manager publication for the report currently at the head of
 /// `state`. A dismissible Menu must retire before a fresh strategic modal can
 /// open; an existing Message Index is instead atomically replaced.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The report payload, exact manager identities, and pending receipt state stay explicit at this lifecycle boundary."
 )]
@@ -23146,7 +23136,7 @@ fn enqueue_operation_report_publication(
 /// publication is already in flight, the Index's exact identity is replaced;
 /// otherwise the already queued head report retains that manager publication
 /// and this report waits behind it.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The Index identity and report publication state must remain explicit at their shared lifecycle boundary."
 )]
@@ -23221,7 +23211,7 @@ fn enqueue_operation_report_action(
 /// Applies only the exact Operation Report manager receipt. An accepted Close
 /// advances the renderer FIFO once, then either queues the next report or
 /// restores the Message Index route that produced the completed report.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The report payload and each manager/pending identity are checked together at the receipt boundary."
 )]
@@ -23457,15 +23447,15 @@ fn apply_agent_command(
 // Panel action handler
 // ---------------------------------------------------------------------------
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit state and UI inputs at this existing integration boundary."
 )]
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
@@ -23644,7 +23634,7 @@ fn apply_panel_action(
                 "[interface] command=0x214 destination=production_destination status={} areas={} to={}",
                 if refusal.is_some() { "refused" } else { "set" },
                 area.map_or(3, |_| 1),
-                rebellion_data::integrator::destination_name(&world, destination)
+                rebellion_data::integrator::destination_name(world, destination)
             );
         }
         PanelAction::Rename { fleet, ship, name } => {
@@ -23752,8 +23742,7 @@ fn apply_panel_action(
                         let origin = world
                             .fleets
                             .get(fleet)
-                            .map(|value| value.location)
-                            .unwrap_or_default();
+                            .map_or_default(|value| value.location);
                         if let Err(rollback) =
                             troop_transport_state.disembark_selected(world, fleet, origin, &troops)
                         {
@@ -23862,7 +23851,8 @@ fn apply_panel_action(
         | PanelAction::Assault { .. }
         | PanelAction::SaveGame { .. }
         | PanelAction::LoadGame { .. }
-        | PanelAction::OpenModManager => {
+        | PanelAction::OpenModManager
+        | PanelAction::SetGameSpeed(_) => {
             // Handled by UI state toggle (not a world mutation)
         }
         PanelAction::ToggleMod { ref name } => match mod_runtime.toggle_mod(name) {
@@ -23927,8 +23917,6 @@ fn apply_panel_action(
             // with the old day's step count, until the next tick closes it.
             clock.tick += n;
         }
-        // The caller routes speed through the clock's pause stop.
-        PanelAction::SetGameSpeed(_) => {}
         PanelAction::ToggleDualAI => {
             *dual_ai_mode = !*dual_ai_mode;
             if *dual_ai_mode {
@@ -24128,7 +24116,7 @@ fn push_research_reports(
     }
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -24230,8 +24218,11 @@ fn apply_mission_result(
                 skill,
                 amount,
             } => rebellion_core::missions::raise_skill(world, *character, *skill, *amount),
-            // Credited by ResearchSystem::apply_mission_points.
-            MissionEffect::ResearchPoints { .. } => {}
+            // Research points are credited by ResearchSystem; injury state is
+            // not stored yet (F-026), and the escape step releases its actor.
+            MissionEffect::ResearchPoints { .. }
+            | MissionEffect::CharacterInjured { .. }
+            | MissionEffect::CharacterEscaped { .. } => {}
             MissionEffect::UprisingIncident(event) => {
                 rebellion_core::uprising::apply_uprising_event(world, event);
             }
@@ -24292,8 +24283,6 @@ fn apply_mission_result(
             MissionEffect::SpecialForceDestroyed { unit } => {
                 rebellion_core::missions::destroy_special_force(world, *unit);
             }
-            // port: the port stores no injury (F-026).
-            MissionEffect::CharacterInjured { .. } => {}
             MissionEffect::CharacterRescued {
                 character,
                 returned_to,
@@ -24329,9 +24318,6 @@ fn apply_mission_result(
             MissionEffect::EnRoute { member, en_route } => {
                 rebellion_core::missions::set_en_route(world, *member, *en_route);
             }
-            // The escape step's own release (death_star::free_escapee); no
-            // mission result carries one.
-            MissionEffect::CharacterEscaped { .. } => {}
             MissionEffect::UprisingSubdued {
                 system,
                 side,
@@ -24426,7 +24412,7 @@ fn held_at(
 }
 
 /// The systems where both sides are present, each a battle the next combat
-/// pass fights (FUN_00509710 / FUN_0050b8e0).
+/// pass fights (`FUN_00509710` / `FUN_0050b8e0`).
 fn contested_systems(world: &GameWorld) -> Vec<SystemKey> {
     world
         .systems
@@ -24595,7 +24581,7 @@ fn evacuation_losses_messages(
 /// Write the blockade events and show their messages: a blockade started
 /// or lifted, and the regiments a run destroyed aboard a departing fleet;
 /// then fire the support shifts posted on `tick`.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The events, the world, the states a holder change moves, the blockade and the message templates and log."
 )]
@@ -25093,7 +25079,7 @@ fn commit_missions_window_publication(
     (false, strategic_windowing.rollback_detail_publication(id))
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The lifecycle adapter carries the existing Missions opener's complete content context."
 )]
@@ -25123,7 +25109,7 @@ fn enqueue_missions_window(
     true
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Finder publication carries member selection in the same prepared Missions content."
 )]
@@ -25176,7 +25162,7 @@ fn enqueue_system_reference_restore(
 /// Publishes a prepared Fleet candidate and retires a stale Fleet rail entry
 /// only from the manager's exact restore receipt. Ordinary semantic reopen and
 /// a direct reference-rail Restore converge here without recreating content.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Fleet publication and its System rail projection share one exact manager receipt boundary."
 )]
@@ -25215,7 +25201,7 @@ fn commit_fleet_window_receipt(
     restored_fleet.is_some_and(|window| systems.restore_fleet_window(window))
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The lifecycle adapter carries the existing Fleet opener's complete content context."
 )]
@@ -25238,7 +25224,7 @@ fn enqueue_fleet_window(
     true
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The Results adapter carries the existing Fleet opener's complete content context."
 )]
@@ -25287,7 +25273,7 @@ mod missions_publication_tests {
         let system = world.systems.insert(System {
             dat_id: DatId::new(100),
             name: "Sluis Van".into(),
-            sector: Default::default(),
+            sector: rebellion_core::ids::SectorKey::default(),
             x: 320,
             y: 250,
             exploration_status: ExplorationStatus::Explored,
@@ -25905,7 +25891,7 @@ fn control_change_messages(
 /// Each holder change's autoscrap requests for what is bound for the
 /// system follow (event `0x307`,
 /// `rebellion_core::death_star::serve_holder_requests`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Phase 5 reads the world, the states a holder change moves, the message templates and log, and the step."
 )]
@@ -27152,8 +27138,12 @@ mod tactical_ground_tests {
         let mut world = GameWorld::default();
         let ship_class = CapitalShipKey::default();
         let fighter_a = FighterKey::default();
-        let fighter_b = world.fighter_classes.insert(Default::default());
-        let fighter_c = world.fighter_classes.insert(Default::default());
+        let fighter_b = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass::default());
+        let fighter_c = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass::default());
         let mut first_ship = ShipInstance::new(ship_class, 100, true);
         first_ship.tag = 101;
         let mut second_ship = ShipInstance::new(ship_class, 100, true);
@@ -27241,7 +27231,7 @@ mod tactical_ground_tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::too_many_lines,
         reason = "The tactical result regression keeps its opposing fleets and exact roster assertions together."
     )]
@@ -27922,7 +27912,7 @@ mod fleet_move_tests {
     fn confirmation_managed_modes_compose_and_escape_exactly() {
         let move_content = MoveConfirmation {
             faction: MissionFaction::Alliance,
-            fleets: vec![Default::default()],
+            fleets: vec![FleetKey::default()],
             members: Vec::new(),
             ships: None,
             units: Vec::new(),
@@ -27949,8 +27939,10 @@ mod fleet_move_tests {
 
         let scrap_content = ScrapConfirmation {
             faction: MissionFaction::Alliance,
-            order: rebellion_core::scrap::ScrapOrder::Troop(Default::default()),
-            targets: vec![rebellion_core::scrap::ScrapTarget::Troop(Default::default())],
+            order: rebellion_core::scrap::ScrapOrder::Troop(TroopKey::default()),
+            targets: vec![rebellion_core::scrap::ScrapTarget::Troop(
+                TroopKey::default(),
+            )],
             names: vec!["Army Regiment".into()],
         };
         let mut managed_scrap = ScrapConfirmationState::default();
@@ -29467,9 +29459,9 @@ mod mission_end_message_tests {
 
     /// Each filed message as (title, body, background, overlay, sound,
     /// advice, audience).
-    fn shown(
-        messages: &[GameMessage],
-    ) -> Vec<(String, String, u16, u16, u16, Option<u8>, RailAudience)> {
+    type ShownMessage = (String, String, u16, u16, u16, Option<u8>, RailAudience);
+
+    fn shown(messages: &[GameMessage]) -> Vec<ShownMessage> {
         messages
             .iter()
             .map(|message| {
@@ -29701,8 +29693,8 @@ mod mission_end_message_tests {
                 detection_phases: true,
                 can_resign: true,
                 return_policy: 1,
-                rules: Default::default(),
-                members: Default::default(),
+                rules: rebellion_core::world::MissionTargetRules::default(),
+                members: rebellion_core::world::MissionMemberRules::default(),
             }];
             assert_eq!(filed(&world, &foiled), 0, "{is_alliance}");
         }
@@ -30131,7 +30123,7 @@ mod managed_interface_save_tests {
             &missions,
             faction,
             cockpit.layout_for(1280.0, 960.0),
-            RestoredWindows {
+            &mut RestoredWindows {
                 sectors: &mut sectors,
                 systems: &mut systems,
                 fleets: &fleets,
@@ -30664,7 +30656,7 @@ mod managed_interface_save_tests {
                 &missions,
                 faction,
                 layout,
-                RestoredWindows {
+                &mut RestoredWindows {
                     sectors: &mut restored_sectors,
                     systems: &mut restored_systems,
                     fleets: &restored_fleets,

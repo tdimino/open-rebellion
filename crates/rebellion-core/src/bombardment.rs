@@ -635,8 +635,7 @@ fn class_stats(world: &GameWorld, class: crate::ids::DatId) -> crate::world::Cla
     world
         .buildable_classes
         .get(&class)
-        .map(|value| value.stats)
-        .unwrap_or_default()
+        .map_or_default(|value| value.stats)
 }
 
 /// The ALLFACSD record of the Alliance HQ (family `0x20`, record 1), whose
@@ -849,24 +848,20 @@ pub fn bombard(
         + 1;
     let mut kdy = vec![0_i32; ships.len()];
     let mut lnr = vec![0_i32; ships.len()];
-    let batteries: Vec<(u8, i32)> = world
-        .systems
-        .get(system)
-        .map(|sys| {
-            sys.defense_facilities
-                .iter()
-                .filter_map(|&key| world.defense_facilities.get(key))
-                .map(|facility| {
-                    (
-                        facility.class_dat_id.family(),
-                        class_stats(world, facility.class_dat_id)
-                            .attack_strength
-                            .cast_signed(),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let batteries: Vec<(u8, i32)> = world.systems.get(system).map_or_default(|sys| {
+        sys.defense_facilities
+            .iter()
+            .filter_map(|&key| world.defense_facilities.get(key))
+            .map(|facility| {
+                (
+                    facility.class_dat_id.family(),
+                    class_stats(world, facility.class_dat_id)
+                        .attack_strength
+                        .cast_signed(),
+                )
+            })
+            .collect()
+    });
     if !ships.is_empty() {
         let last = i32::try_from(ships.len() - 1).unwrap_or(i32::MAX);
         for (family, accumulator) in [(KDY_FAMILY, &mut kdy), (LNR_FAMILY, &mut lnr)] {
@@ -993,7 +988,7 @@ pub fn bombard(
 
 /// The effect phase (`FUN_0058df60`): the hits, collateral and each hit's
 /// roll.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The phase reads the run's ships, their overflow, its draws and its report."
 )]
@@ -1026,24 +1021,20 @@ fn effect_phase(
         let lead = admiral(world, fleet).map_or(0, |key| leadership(world, key));
         hits += strength * (lead / divisor + 1);
     }
-    let shield_defence: i32 = world
-        .systems
-        .get(system)
-        .map(|sys| {
-            sys.defense_facilities
-                .iter()
-                .filter_map(|&key| world.defense_facilities.get(key))
-                .filter(|facility| {
-                    facility.side == holder && facility.class_dat_id.family() == SHIELD_FAMILY
-                })
-                .map(|facility| {
-                    class_stats(world, facility.class_dat_id)
-                        .shield_strength
-                        .cast_signed()
-                })
-                .sum()
-        })
-        .unwrap_or(0);
+    let shield_defence: i32 = world.systems.get(system).map_or(0, |sys| {
+        sys.defense_facilities
+            .iter()
+            .filter_map(|&key| world.defense_facilities.get(key))
+            .filter(|facility| {
+                facility.side == holder && facility.class_dat_id.family() == SHIELD_FAMILY
+            })
+            .map(|facility| {
+                class_stats(world, facility.class_dat_id)
+                    .shield_strength
+                    .cast_signed()
+            })
+            .sum()
+    });
     hits = (hits - shield_defence).max(0);
     report.hits = hits;
     if hits == 0 {
@@ -1091,7 +1082,7 @@ fn effect_phase(
     }
 }
 
-/// The seed a run mixes with its roll: the system's DatId.
+/// The seed a run mixes with its roll: the system's `DatId`.
 pub(crate) fn system_seed(world: &GameWorld, system: SystemKey) -> u64 {
     world
         .systems
@@ -1137,8 +1128,7 @@ pub fn clear_flags(world: &mut GameWorld, system: SystemKey, bombarder: Faction)
     let fleets = world
         .systems
         .get(system)
-        .map(|sys| sys.fleets.clone())
-        .unwrap_or_default();
+        .map_or_default(|sys| sys.fleets.clone());
     for fleet in fleets {
         if let Some(value) = world.fleets.get_mut(fleet) {
             if side_of(value.is_alliance) == bombarder {
@@ -3008,7 +2998,7 @@ mod tests {
             let troop_class = world.troops[troop].class_dat_id;
             let report = run(&mut world, system, BombardKind::Military, &[attacker]);
             assert_eq!(destroyed_dat_ids(&report), [troop_class], "{bombarder:?}");
-            assert!(report.fleet_destroyed.is_empty());
+            assert_empty!(report.fleet_destroyed);
 
             let report = run_civilian_after_yard(&mut world, system, holder, bombarder, attacker);
             assert_eq!(
@@ -3063,8 +3053,8 @@ mod tests {
                 .map(|unit| unit.name.as_str())
                 .collect();
             assert_eq!(lost, ["Cruiser", "Wing", "Wing"], "{bombarder:?}");
-            assert!(report.system_destroyed.is_empty());
-            assert!(world.fleets[attacker].fighters.is_empty());
+            assert_empty!(report.system_destroyed);
+            assert_empty!(world.fleets[attacker].fighters);
         }
     }
 

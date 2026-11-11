@@ -108,6 +108,9 @@ fn reports(
 }
 
 #[test]
+// This deliberately exercises one continuous stateful contract sequence; splitting
+// it would hide the authority handoffs that the test is intended to verify.
+#[allow(clippy::too_many_lines)]
 fn contract_sequence_preserves_all_authorities() {
     // Port: deterministic fixture permutations compose the replacement, lifecycle,
     // and reconciliation contracts.
@@ -148,7 +151,7 @@ fn contract_sequence_preserves_all_authorities() {
         );
         assert_eq!(captured.owner(child), Some(WindowOwner::Window(root)));
         checked(&mut manager, WindowCommand::Restore(child));
-        assert!(manager.presentation_history().is_empty());
+        assert_eq!(manager.presentation_history(), []);
         checked(&mut manager, WindowCommand::Focus(control));
         let menu_id = open(&mut manager, menu(root));
         let menu_lease = manager.begin_frame();
@@ -186,10 +189,10 @@ fn contract_sequence_preserves_all_authorities() {
         let ids = [root, peer, child, modal_id, modal_menu, fresh];
         let frame = manager.begin_frame();
         let retained = manager.reconcile(&frame, &reports(&frame, &ids, None));
-        assert!(retained.removed.is_empty());
-        assert!(retained.invalid_reports.is_empty());
-        assert!(retained.events.is_empty());
-        assert!(retained.blocking_unpainted.is_empty());
+        assert_eq!(retained.removed, Vec::new());
+        assert_eq!(retained.invalid_reports, Vec::new());
+        assert_eq!(retained.events, Vec::new());
+        assert_eq!(retained.blocking_unpainted, Vec::new());
         assert_eq!(manager.validate(), Ok(()));
 
         checked(
@@ -203,7 +206,7 @@ fn contract_sequence_preserves_all_authorities() {
         let frame = manager.begin_frame();
         let absent = manager.reconcile(&frame, &reports(&frame, &ids, Some(peer)));
         assert_eq!(absent.removed, vec![peer]);
-        assert!(absent.invalid_reports.is_empty());
+        assert_eq!(absent.invalid_reports, Vec::new());
         assert_eq!(
             absent.events[0],
             WindowEvent::CaptureCancelled {
@@ -268,8 +271,8 @@ fn contract_sequence_preserves_all_authorities() {
             status: ContentStatus::Absent,
         });
         let late = manager.reconcile(&before_replace, &late_reports);
-        assert!(late.removed.is_empty());
-        assert!(late.events.is_empty());
+        assert_eq!(late.removed, Vec::new());
+        assert_eq!(late.events, Vec::new());
         assert_eq!(
             late.invalid_reports,
             vec![root.min(child), root.max(child), replacement]
@@ -295,7 +298,7 @@ fn contract_sequence_preserves_all_authorities() {
             }
         );
         assert_eq!(manager.validate(), Ok(()));
-        assert!(manager.begin_frame().paint_order().is_empty());
+        assert_eq!(manager.begin_frame().paint_order(), []);
         let reopened = open(&mut manager, replacement_spec);
         assert!(reopened.get() > replacement.get());
         let before = format!("{manager:?}");
@@ -319,7 +322,7 @@ fn contract_sequence_preserves_all_authorities() {
                 },
             ],
         );
-        assert!(late.removed.is_empty());
+        assert_eq!(late.removed, Vec::new());
         assert!(late.invalid_reports.contains(&reopened));
         assert_eq!(manager.id_for(replacement_spec.key), Some(reopened));
         assert_eq!(format!("{manager:?}"), before);
@@ -350,6 +353,9 @@ fn contract_sequence_preserves_all_authorities() {
 }
 
 #[test]
+// Every rejection is checked against the same live manager so allocator and
+// state-preservation regressions remain observable across commands.
+#[allow(clippy::too_many_lines)]
 fn contract_rejected_commands_preserve_complete_state() {
     // Port: semantic failures must not publish partial teardown or consume allocation.
     let mut manager = WindowManager::new();
@@ -482,8 +488,8 @@ fn contract_dormant_normal_restore_preserves_scene_membership_and_focus() {
     let lease = manager.begin_frame();
     let commit = checked(&mut manager, WindowCommand::Restore(child));
     assert_eq!(commit.transition, WindowTransition::Restored { id: child });
-    assert!(commit.events.is_empty());
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(commit.events, Vec::new());
+    assert_eq!(manager.presentation_history(), []);
     assert_eq!(manager.begin_frame().paint_order(), &[peer]);
     assert_eq!(manager.focused(), focus_before);
     assert_eq!(manager.id_for(spec.key), Some(child));

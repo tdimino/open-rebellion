@@ -64,7 +64,7 @@ impl ControlKind {
     pub fn faction(&self) -> Option<crate::dat::Faction> {
         match self {
             ControlKind::Controlled(f) | ControlKind::Uprising(f) => Some(*f), // still nominally controlled
-            _ => None,
+            ControlKind::Uncontrolled => None,
         }
     }
 
@@ -646,7 +646,7 @@ impl Abode {
 /// Their skills are stored as `SkillPair` (base + variance) to support
 /// both fixed major characters and procedurally-generated minors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
 )]
@@ -971,7 +971,7 @@ pub struct Fleet {
 impl Fleet {
     /// Total number of alive capital ships in this fleet.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -1630,7 +1630,7 @@ impl MstbTable {
     /// - If `skill_score` is above the highest threshold, returns the highest value.
     /// - Otherwise interpolates between the two bracketing entries.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -2697,7 +2697,7 @@ mod facility_ownership_tests {
         let here = system(&mut world, ControlKind::Controlled(Faction::Empire));
         let shipyard = class(&mut world, 0x2800_0001, true, true);
         let facility = yard(&mut world, here, shipyard, Faction::Alliance);
-        assert!(world.hand_over_facilities(here).is_empty());
+        assert_empty!(world.hand_over_facilities(here));
         assert_eq!(side_of(&world, facility), Some(Faction::Empire));
     }
 
@@ -2712,7 +2712,7 @@ mod facility_ownership_tests {
         let facility = yard(&mut world, here, hq, Faction::Alliance);
         assert_eq!(world.hand_over_facilities(here), vec![facility]);
         assert_eq!(side_of(&world, facility), None);
-        assert!(world.systems[here].manufacturing_facilities.is_empty());
+        assert_empty!(world.systems[here].manufacturing_facilities);
     }
 
     #[test]
@@ -2736,7 +2736,7 @@ mod facility_ownership_tests {
         let here = system(&mut world, ControlKind::Controlled(Faction::Alliance));
         let imperial = class(&mut world, 0x2800_0004, false, true);
         let facility = yard(&mut world, here, imperial, Faction::Alliance);
-        assert!(world.hand_over_facilities(here).is_empty());
+        assert_empty!(world.hand_over_facilities(here));
         assert_eq!(side_of(&world, facility), Some(Faction::Alliance));
     }
 
@@ -3473,9 +3473,9 @@ mod tests {
             capital_ships: vec![ShipInstance::new(death_star, 500, false)],
             ..Default::default()
         };
-        assert!(!fleet.is_empty());
+        assert_not_empty!(fleet);
         fleet.capital_ships[0].alive = false;
-        assert!(fleet.is_empty());
+        assert_empty!(fleet);
         assert!(!fleet.has_death_star(&classes));
     }
 

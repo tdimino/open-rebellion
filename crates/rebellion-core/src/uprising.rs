@@ -237,7 +237,7 @@ impl<'a> Rolls<'a> {
 
     /// `FUN_0053e290(n)`: uniform over `0..=n`, or `-(0..=-n)` for negative
     /// `n`. An exhausted slice yields `n`.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "the roll is in [0, 1], so the product fits the draw range"
     )]
@@ -506,10 +506,11 @@ pub(crate) fn holder(sys: &System) -> Option<Faction> {
 }
 
 /// `FUN_00507270`: a side's support at a system, in points.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
+#[must_use]
 pub fn support_points(sys: &System, side: Faction) -> i32 {
     let fraction = if side == Faction::Alliance {
         sys.popularity_alliance
@@ -1017,7 +1018,7 @@ fn shift_support(world: &mut GameWorld, system: SystemKey, side: Faction, points
 /// Shift `side`'s support at `sys` by `points`, the other side's by the
 /// opposite. port: the port keeps support as a `0..=1` fraction; the
 /// original keeps points at `+0x58` (`FUN_00507270`).
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "support changes are at most 100 points"
 )]
@@ -1425,7 +1426,7 @@ mod tests {
             &at(1),
             &[],
         );
-        assert!(quiet.is_empty());
+        assert_empty!(quiet);
         assert!(!state.is_uprising(system));
 
         let events = UprisingSystem::advance(
@@ -1465,7 +1466,7 @@ mod tests {
             &at(1),
             &[],
         );
-        assert!(kept.is_empty());
+        assert_empty!(kept);
         assert!(state.is_uprising(system));
 
         world.systems[system].control = ControlKind::Uncontrolled;
@@ -1512,7 +1513,7 @@ mod tests {
             &at(39),
             &[],
         );
-        assert!(early.is_empty());
+        assert_empty!(early);
         // Two score draws, then the next delay draws the maximum 70.
         let fired = UprisingSystem::advance(
             &mut state,
@@ -1664,7 +1665,7 @@ mod tests {
             apply_uprising_event(&mut world, event);
         }
         assert!(!world.troops.contains_key(regiment));
-        assert!(world.systems[system].ground_units.is_empty());
+        assert_empty!(world.systems[system].ground_units);
         assert!(!world.characters[held].is_captive);
         assert!(!world.characters[also_held].is_captive);
         assert!(world.characters[other].is_captive);
@@ -1889,8 +1890,8 @@ mod tests {
 
         apply_uprising_event(&mut world, &events[0]);
         assert_eq!(world.systems[system].total_energy, 0);
-        assert!(world.systems[system].production_facilities.is_empty());
-        assert!(world.systems[system].defense_facilities.is_empty());
+        assert_empty!(world.systems[system].production_facilities);
+        assert_empty!(world.systems[system].defense_facilities);
     }
 
     #[test]
@@ -1992,7 +1993,7 @@ mod tests {
         ));
 
         apply_uprising_event(&mut world, &event);
-        assert!(world.systems[system].manufacturing_facilities.is_empty());
+        assert_empty!(world.systems[system].manufacturing_facilities);
         assert!(!world.manufacturing_facilities.contains_key(shipyard));
         assert_eq!(world.systems[system].production_facilities, vec![mine]);
     }
@@ -2338,7 +2339,7 @@ mod tests {
             &[],
             &[0.0],
         );
-        assert!(events.is_empty());
+        assert_empty!(events);
         assert_eq!(state.active_uprisings[&system].next_incident_tick, Some(0));
         assert_eq!(state.next_disaster_tick, Some(u64::MAX));
     }

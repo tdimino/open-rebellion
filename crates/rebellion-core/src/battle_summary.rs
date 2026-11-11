@@ -682,7 +682,7 @@ mod tests {
                 ["Cruiser 1", "Cruiser 2", "Cruiser 4"]
             );
             assert_eq!(names(&side.destroyed), ["Cruiser 3"]);
-            assert!(side.captured.is_empty());
+            assert_empty!(side.captured);
             assert_eq!(
                 side.operational
                     .iter()
@@ -975,9 +975,9 @@ mod tests {
                 .collect::<Vec<_>>()
         };
 
-        assert!(side(10, 100.0).is_empty());
+        assert_empty!(side(10, 100.0));
         // The station alone keeps the fleet, and its own regiment.
-        assert!(side(0, 100.0).is_empty());
+        assert_empty!(side(0, 100.0));
         // The station's regiment goes with it; the cruiser keeps the fleet.
         assert_eq!(side(10, 0.0), ["Army 3"]);
         // Tag 9 names no ship of the battle.

@@ -400,7 +400,7 @@ mod tests {
     }
 
     // Build a minimal GameWorld with N systems and M alliance fleets.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Fixture sizes and coordinates are deliberately small and fit their encoded fields."
     )]
@@ -475,7 +475,7 @@ mod tests {
         let mut fog = FogState::new(Faction::Alliance);
         FogSystem::seed(&mut fog, &world);
         assert_eq!(fog.known_facilities(systems[0]), [core]);
-        assert!(fog.known_facilities(systems[1]).is_empty());
+        assert_empty!(fog.known_facilities(systems[1]));
     }
 
     // Manual p. 69: only the core systems' facilities are known at the
@@ -492,7 +492,7 @@ mod tests {
         add_mine(&mut world, systems[0]);
         let mut fog = FogState::new(Faction::Empire);
         FogSystem::seed(&mut fog, &world);
-        assert!(fog.known_facilities(systems[0]).is_empty());
+        assert_empty!(fog.known_facilities(systems[0]));
     }
 
     // Manual p. 69: "you won't know when things on that system change".
@@ -505,7 +505,7 @@ mod tests {
         let movement = MovementState::new();
         add_mine(&mut world, systems[0]);
         FogSystem::advance(&mut fog, &world, &movement);
-        assert!(fog.known_facilities(systems[0]).is_empty());
+        assert_empty!(fog.known_facilities(systems[0]));
         world.fleets[fleets[0]].location = systems[0];
         FogSystem::advance(&mut fog, &world, &movement);
         assert_eq!(fog.known_facilities(systems[0]).len(), 1);
@@ -601,7 +601,7 @@ mod tests {
     #[test]
     fn new_fog_is_empty() {
         let fog = FogState::new(Faction::Alliance);
-        assert!(fog.is_empty());
+        assert_empty!(fog);
     }
 
     #[test]
@@ -655,7 +655,7 @@ mod tests {
         fog.reveal(sys_keys[0]);
         let ms = MovementState::new();
         let events = FogSystem::advance(&mut fog, &world, &ms);
-        assert!(events.is_empty());
+        assert_empty!(events);
     }
 
     #[test]
@@ -678,7 +678,7 @@ mod tests {
         assert!(!fog.is_visible(sys_keys[1]));
         // The stationary fleet at sys 0 is already known, so no stationary
         // reveal event either.
-        assert!(events.is_empty());
+        assert_empty!(events);
 
         // At 5 ticks elapsed (50%) — destination revealed.
         ms.orders_mut()
@@ -700,7 +700,7 @@ mod tests {
 
         let events = FogSystem::advance(&mut fog, &world, &movement);
 
-        assert!(events.is_empty());
+        assert_empty!(events);
         assert!(!fog.is_visible(sys_keys[0]));
         assert!(!fog.is_visible(sys_keys[1]));
     }
@@ -718,7 +718,7 @@ mod tests {
             .ticks_elapsed = 8;
 
         let events = FogSystem::advance(&mut fog, &world, &ms);
-        assert!(events.is_empty());
+        assert_empty!(events);
         assert!(!fog.is_visible(sys_keys[1]));
     }
 
@@ -732,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
@@ -784,6 +784,6 @@ mod tests {
             !fog.is_visible(sys_near),
             "detection=0 should not reveal nearby systems"
         );
-        assert!(events.is_empty());
+        assert_empty!(events);
     }
 }

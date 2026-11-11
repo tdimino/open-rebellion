@@ -1,5 +1,46 @@
 //! Galaxy map rendering and egui UI panels.
 
+// Renderer coordinates intentionally cross integer asset indices and f32
+// screen-space geometry. Checked conversions would change established pixel
+// placement and hit-testing semantics. Exact recovered geometry also compares
+// authored floating-point constants directly.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::float_cmp
+)]
+// Public renderer APIs describe fallible asset and window operations in their
+// type signatures. Repeating generic error/panic sections would obscure the
+// recovered-behaviour documentation that explains each operation.
+#![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+// Nested options represent explicit tri-state UI values, and renderer record
+// names intentionally retain the vocabulary of the original game structures.
+#![allow(
+    clippy::option_option,
+    clippy::struct_field_names,
+    clippy::similar_names
+)]
+
+#[cfg(test)]
+#[allow(clippy::assert_is_empty)]
+macro_rules! assert_empty {
+    ($value:expr $(,)?) => {{
+        let length = ($value).len();
+        assert_eq!(length, 0, "expected an empty value, got length {length}");
+    }};
+}
+
+#[cfg(test)]
+#[allow(clippy::assert_is_empty)]
+macro_rules! assert_not_empty {
+    ($value:expr $(,)?) => {{
+        let length = ($value).len();
+        assert_ne!(length, 0, "expected a non-empty value");
+    }};
+}
+
 pub mod advice_topics;
 pub mod advisor;
 pub mod advisor_script;
@@ -540,7 +581,7 @@ pub fn draw_gid_caption(
     );
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit state and rendering inputs at this existing UI boundary."
 )]
@@ -642,7 +683,7 @@ fn gid_marker_for_system(
     gid_marker_resource_for_size(system.control, true, size)
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     clippy::cast_possible_truncation,
     reason = "Preserve upstream metric count conversion and keep the GID mode table together."
@@ -969,7 +1010,7 @@ fn gid_marker_resource_for_size(control: ControlKind, explored: bool, size: usiz
     }
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Popularity is clamped to 0..=1 and rounded to a 0..=100 marker percentage."
@@ -1028,7 +1069,7 @@ fn in_map_viewport(sx: f32, sy: f32, cam: &CameraView) -> bool {
 /// Scale with zoom up to a cap so they stay readable without dominating.
 ///
 /// Pass the `CameraView` returned by `draw_galaxy_map`.
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -1168,7 +1209,7 @@ fn sector_boundary_color(group: rebellion_core::dat::SectorGroup) -> Color {
 /// labels are hidden, boundaries are also hidden.
 ///
 /// Pass the `CameraView` returned by `draw_galaxy_map`.
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -1309,7 +1350,7 @@ mod interaction_tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -1382,7 +1423,7 @@ mod interaction_tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -1415,7 +1456,7 @@ mod interaction_tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -1503,7 +1544,7 @@ mod interaction_tests {
         assert!((text.pos.x + text.galley.size().x / 2.0 - 720.0).abs() < 0.01);
         assert_eq!(text.pos.y, 82.0);
         assert_eq!(text.fallback_color, egui::Color32::from_rgb(0, 255, 0));
-        assert!(shapes(GidMode::DisplayOff).is_empty());
+        assert_empty!(shapes(GidMode::DisplayOff));
     }
 
     #[test]

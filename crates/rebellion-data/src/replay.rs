@@ -344,7 +344,7 @@ impl ReplayManifest {
     /// # Errors
     /// Returns an error if the manifest violates its schema, identity, ordering,
     /// or checkpoint consistency requirements.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Checkpoint counts are validated against the command list before indexing."
     )]
@@ -1036,7 +1036,7 @@ fn canonical_data_name(name: &str) -> anyhow::Result<String> {
     Ok(canonical)
 }
 
-#[expect(
+#[allow(
     clippy::case_sensitive_file_extension_comparisons,
     reason = "Replay manifests require canonical uppercase DAT names for stable identity."
 )]
@@ -1168,10 +1168,10 @@ mod tests {
         }
     }
 
-    fn recorded_fixture<'a, I>(
-        data: &'a SimulationDataManifest,
+    fn recorded_fixture<I>(
+        data: &SimulationDataManifest,
         commands: I,
-    ) -> (ReplayEnvironment<'a>, SaveState, ReplayRecording)
+    ) -> (ReplayEnvironment<'_>, SaveState, ReplayRecording)
     where
         I: IntoIterator<Item = (ReplayActor, ReplayCommand)>,
     {

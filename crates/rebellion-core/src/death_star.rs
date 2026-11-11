@@ -221,7 +221,7 @@ const fn product_mover(kind: BuildableKind) -> Mover {
 /// with the most room, as the move's leg does (`FUN_00556390` ->
 /// `FUN_00552300`), and holds that room from then (`products`); the
 /// result's tag is that ship's, 0 for a system.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The request reads the world, the transport, movement and product states and the product."
 )]
@@ -353,7 +353,7 @@ enum Walk {
 /// ships from the yard to its new place. port: a queued special force
 /// whose class serves both sides keeps the side the port reads from its
 /// class.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The requests read and move the world, the transport, movement, production and delivery states."
 )]
@@ -741,7 +741,7 @@ pub fn sweep_adrift(
 ///
 /// port: the port has no Bounty mission (MISSNSD family `0x65`), so the
 /// Jabba's Palace destination of `FUN_00543040` never applies.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The pass reads the chain's states and writes the missions and the started list."
 )]
@@ -864,7 +864,7 @@ fn sweep_groups(
 ///
 /// port: the Return is the port's hidden Move, as Autorouting is; a port
 /// character rides its fleet, not a ship, so a `+0x70` ship is its fleet.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The return reads the chain's states and the battle bits and writes the missions."
 )]
@@ -1091,7 +1091,7 @@ const YAVIN: u32 = 0x9200_0121;
 /// hyp: the sweep of an abode was not traced (`jail.md`, "Escape"); a
 /// jailed escapee is swept from `FUN_005431e0`'s origin away from any
 /// system, Yavin for the Alliance and Coruscant for the Empire.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The release reads the chain's states and the battle bit and writes the missions."
 )]
@@ -1170,7 +1170,7 @@ pub fn free_escapee(
 /// with its en route bit clear, which no reader of an abode occupant sees
 /// (the Personnel Finder row of a family-`0x98` container shows no state,
 /// `jail.md`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The member's retry reads the chain's states and writes the missions and the started list."
 )]
@@ -1344,7 +1344,7 @@ mod tests {
             10
         ));
         refresh_sectors(&mut world);
-        assert!(world.death_star_sectors.is_empty());
+        assert_empty!(world.death_star_sectors);
     }
 
     // ── The destroy cascade ──────────────────────────────────────────────────
@@ -1608,7 +1608,7 @@ mod tests {
     ) {
         let before = deliveries.en_route().to_vec();
         let report = destroy_deliveries(world, system, deliveries);
-        assert!(report.autoscrapped.is_empty());
+        assert_empty!(report.autoscrapped);
         assert_eq!(deliveries.en_route(), before.as_slice());
     }
 
@@ -1668,7 +1668,7 @@ mod tests {
         assert_eq!(transport.cargo(rebels), &[regiment]);
         assert!(world.troops.contains_key(regiment));
         assert!(!world.characters[pilot].adrift);
-        assert!(report.regiments.is_empty());
+        assert_empty!(report.regiments);
         refresh_sectors(&mut world);
         assert!(world.death_star_in_sector(&world.systems[sys]));
     }
@@ -1712,11 +1712,13 @@ mod tests {
         let report = destroy_plain(&mut world, sys);
 
         let value = &world.systems[sys];
-        assert!(value.ground_units.is_empty() && world.troops.is_empty());
-        assert!(value.fighters.is_empty());
-        assert!(value.defense_facilities.is_empty() && world.defense_facilities.is_empty());
-        assert!(value.manufacturing_facilities.is_empty());
-        assert!(value.production_facilities.is_empty());
+        assert_empty!(value.ground_units);
+        assert_empty!(world.troops);
+        assert_empty!(value.fighters);
+        assert_empty!(value.defense_facilities);
+        assert_empty!(world.defense_facilities);
+        assert_empty!(value.manufacturing_facilities);
+        assert_empty!(value.production_facilities);
         assert!(!value.is_headquarters && report.headquarters);
         assert!(!value.is_populated);
         assert_eq!(value.control, ControlKind::Controlled(Faction::Alliance));
@@ -1846,9 +1848,9 @@ mod tests {
                 shield,
             ]
         );
-        assert!(report.autoscrapped.is_empty());
+        assert_empty!(report.autoscrapped);
         assert_eq!(manufacturing.queued_at(sys), 0);
-        assert!(world.systems[refuge].fleets.is_empty());
+        assert_empty!(world.systems[refuge].fleets);
     }
 
     /// Another yard's products bound for the destroyed system
@@ -1904,14 +1906,13 @@ mod tests {
         let queued = |area| {
             manufacturing
                 .queue(yard, area)
-                .map(|queue| {
+                .map_or_else(Vec::new, |queue| {
                     queue
                         .items()
                         .iter()
                         .map(|item| (item.kind, item.destination))
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         assert_eq!(
             queued(ProductionArea::Shipyard),
@@ -1967,7 +1968,7 @@ mod tests {
         assert_eq!(regiment_transit.leg, RegimentLeg::Surface(refuge));
         assert_eq!(world.squadron_transits[0].leg, RegimentLeg::Surface(refuge));
         assert_eq!(deliveries.en_route()[0].destination, refuge);
-        assert!(world.systems[refuge].ground_units.is_empty());
+        assert_empty!(world.systems[refuge].ground_units);
     }
 
     /// A regiment or squadron relocated on its way keeps its arrival day T
@@ -2038,14 +2039,15 @@ mod tests {
 
         let tick = |n| [crate::tick::TickEvent { tick: n }];
         let on_due = deliveries.advance(&world, &tick(due));
-        assert!(on_due.arrivals.is_empty() && on_due.lost.is_empty());
+        assert_empty!(on_due.arrivals);
+        assert_empty!(on_due.lost);
         let second = u64::from(crate::delivery::transit_days(&world, shield, sys, refuge));
         assert_eq!(deliveries.en_route()[0].arrival_tick, due + second);
 
         let arrived = deliveries.advance(&world, &tick(due + second));
         assert_eq!(arrived.arrivals.len(), 1);
         assert_eq!(arrived.arrivals[0].system, refuge);
-        assert!(deliveries.en_route().is_empty());
+        assert_empty!(deliveries.en_route());
     }
 
     /// With no system of its side left, the request destroys a travelling
@@ -2059,7 +2061,7 @@ mod tests {
 
         let report = destroy_transport(&mut world, sys, &mut transport);
 
-        assert!(transport.transits().is_empty());
+        assert_empty!(transport.transits());
         assert!(!world.troops.contains_key(regiment));
         assert_eq!(
             report.autoscrapped,
@@ -2156,8 +2158,9 @@ mod tests {
                 9,
             );
 
-            assert!(started.is_empty() && missions.is_empty());
-            assert!(world.fleets[fleet].characters.is_empty());
+            assert_empty!(started);
+            assert_empty!(missions);
+            assert_empty!(world.fleets[fleet].characters);
             assert_eq!(world.characters[aboard].current_fleet, None);
             assert!(world.characters[aboard].adrift);
         }
@@ -2296,7 +2299,8 @@ mod tests {
             destroy_plain(&mut world, sys);
             let (missions, started) = sweep_new(&mut world, sys);
 
-            assert!(started.is_empty() && missions.is_empty());
+            assert_empty!(started);
+            assert_empty!(missions);
             let character = &world.characters[stranded];
             assert_eq!(character.abode, Some(jail), "{is_alliance}");
             assert!(character.is_captive && character.captured_by.is_none());
@@ -2526,7 +2530,7 @@ mod tests {
             blockade.refresh_battle(&world, sys);
             assert!(blockade.in_battle(sys));
             let mut missions = MissionState::new();
-            assert!(sweep_all(&mut world, &mut missions, &blockade).is_empty());
+            assert_empty!(sweep_all(&mut world, &mut missions, &blockade));
             assert!(world.characters[officer].adrift, "{is_alliance}");
         }
     }
@@ -2619,7 +2623,7 @@ mod tests {
         }
         let mut missions = MissionState::new();
         let blockade = crate::blockade::BlockadeState::new();
-        assert!(sweep_all(&mut world, &mut missions, &blockade).is_empty());
+        assert_empty!(sweep_all(&mut world, &mut missions, &blockade));
         assert_eq!(world.characters[aboard].current_fleet, Some(fleet));
     }
 
@@ -3072,7 +3076,8 @@ mod tests {
                 Some(crate::mission_detection::faction_of(!is_alliance));
             let (missions, started) = sweep_new(&mut world, sys);
 
-            assert!(started.is_empty() && missions.is_empty());
+            assert_empty!(started);
+            assert_empty!(missions);
             let character = &world.characters[held];
             assert!(character.adrift && character.is_captive, "{is_alliance}");
             assert_eq!(character.current_system, Some(sys));
@@ -3166,7 +3171,7 @@ mod tests {
                 sweep_changes(world, missions, &mut blockade)
             };
             let _ = sweep(&mut world, &mut missions);
-            assert!(missions.is_empty());
+            assert_empty!(missions);
             world.systems[sys].fleets.retain(|&fleet| fleet != theirs);
 
             let swept = sweep(&mut world, &mut missions);
@@ -3208,7 +3213,8 @@ mod tests {
             let (mut world, sys, home) = intact_world_with_adrift_character(is_alliance);
             let (missions, started) = sweep_new(&mut world, sys);
 
-            assert!(started.is_empty() && missions.is_empty());
+            assert_empty!(started);
+            assert_empty!(missions);
             let character = &world.characters[home];
             assert!(!character.adrift, "{is_alliance}");
             assert_eq!(character.current_system, Some(sys));
@@ -3547,11 +3553,11 @@ mod tests {
     }
 
     /// The holder change's walk flags another manager's unfinished product
-    /// in the system (FUN_004f8680.c:14-17), and event 0x307 runs the chain
-    /// (FUN_00515480): the new holder's own product stays (stage 1), the old
-    /// holder's goes to its producer's system, the hint (FUN_00515480.c:
+    /// in the system (`FUN_004f8680.c:14-17`), and event 0x307 runs the chain
+    /// (`FUN_00515480`): the new holder's own product stays (stage 1), the old
+    /// holder's goes to its producer's system, the hint (`FUN_00515480.c`:
     /// 82-124), keeping its queue slot; a capital ship sits in a fleet, which
-    /// the walk leaves (FUN_0051ebb0).
+    /// the walk leaves (`FUN_0051ebb0`).
     #[test]
     fn a_holder_change_sends_the_old_holders_products_to_their_yards_and_keeps_the_new_holders_for_either_side(
     ) {
@@ -3594,8 +3600,9 @@ mod tests {
             let destinations = |at: SystemKey, area: ProductionArea| -> Vec<Option<Destination>> {
                 manufacturing
                     .queue(at, area)
-                    .map(|queue| queue.items().iter().map(|item| item.destination).collect())
-                    .unwrap_or_default()
+                    .map_or_else(Vec::new, |queue| {
+                        queue.items().iter().map(|item| item.destination).collect()
+                    })
             };
             let none: Vec<Option<Destination>> = vec![None];
             let here = vec![Some(Destination::System(sys))];
@@ -3618,8 +3625,8 @@ mod tests {
         }
     }
 
-    /// A special force's slot +0xb0 is FUN_00503d90, not the request: it
-    /// takes the system's new side when its class serves it (FUN_004f27d0),
+    /// A special force's slot +0xb0 is `FUN_00503d90`, not the request: it
+    /// takes the system's new side when its class serves it (`FUN_004f27d0`),
     /// else dies with reason 3.
     #[test]
     fn a_holder_change_ends_a_special_force_product_its_class_cannot_serve_for_either_side() {
@@ -3660,17 +3667,18 @@ mod tests {
             );
             let kept: Vec<BuildableKind> = manufacturing
                 .queue(yard, ProductionArea::TrainingFacility)
-                .map(|queue| queue.items().iter().map(|item| item.kind).collect())
-                .unwrap_or_default();
+                .map_or_else(Vec::new, |queue| {
+                    queue.items().iter().map(|item| item.kind).collect()
+                });
             assert_eq!(kept, [BuildableKind::SpecialForce(both)], "{own:?}");
         }
     }
 
     /// A completed product or regiment on its way to the system is its
     /// child, en route (+0x50 0x20), and takes the request as well
-    /// (FUN_004f8680.c:14-17); the hint is its transit origin
-    /// (FUN_00515480.c:125-153), and the relocation keeps its arrival day
-    /// (FUN_00556390.c:17-21).
+    /// (`FUN_004f8680.c:14-17`); the hint is its transit origin
+    /// (`FUN_00515480.c:125-153`), and the relocation keeps its arrival day
+    /// (`FUN_00556390.c:17-21`).
     #[test]
     fn a_holder_change_sends_the_old_holders_travellers_back_to_their_origins_for_either_side() {
         for own in [Faction::Alliance, Faction::Empire] {
@@ -3710,8 +3718,8 @@ mod tests {
     }
 
     /// The new holder's own regiment and squadron on their way stay bound
-    /// for the system: its stage 1 accepts them (FUN_005073d0,
-    /// FUN_00553410), so nothing moves and their legs stand.
+    /// for the system: its stage 1 accepts them (`FUN_005073d0`,
+    /// `FUN_00553410`), so nothing moves and their legs stand.
     #[test]
     fn a_holder_change_keeps_the_new_holders_travellers_bound_for_the_system_for_either_side() {
         for own in [Faction::Alliance, Faction::Empire] {

@@ -156,7 +156,7 @@ const TEXT_AREA_HEIGHT: f32 = 80.0;
 const BODY_LINE_HEIGHT: f32 = 16.0;
 
 /// Visible rows the list shows at once: `194 / 21 = 9`.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Nine whole rows of 21 in a list 194 tall."
@@ -933,7 +933,7 @@ impl MessageIndexState {
     }
 
     /// Publishes prepared content only for a new manager identity. A duplicate
-    /// NoOp acknowledges the existing identity without rebuilding rows,
+    /// `NoOp` acknowledges the existing identity without rebuilding rows,
     /// selection, scroll, display state, or focus.
     pub fn commit_open(
         &mut self,
@@ -1129,6 +1129,7 @@ impl MessageIndexState {
     ///
     /// `FUN_0046a6a0`: restore speed (`FUN_0041d410`) and mark the active
     /// category read (`FUN_0048a530`).
+    #[must_use]
     pub fn close(&self) -> Vec<MessageIndexAction> {
         vec![
             MessageIndexAction::AdviceHidden,
@@ -1295,7 +1296,7 @@ pub struct MessageIndexReport {
 #[must_use]
 pub const fn category_filter_mask(command: u16) -> u16 {
     match command {
-        0x79 => 0,     // All Messages
+        // All Messages and unknown commands do not apply a category mask.
         0x7a => 0x001, // Popular Support
         0x7b => 0x080, // Fleet
         0x7c => 0x010, // Mission
@@ -1363,7 +1364,7 @@ pub fn filtered_messages(
 ///
 /// Returns actions the app must handle (speed changes, mark read, delete,
 /// message displayed).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The window needs context, cache, faction, origin, scale, log, state, and side."
 )]
@@ -1648,7 +1649,7 @@ fn draw_list_rows(
                 cache,
                 window_rect,
                 scale,
-                &bar.blits(range, &state.list_drag, pointer),
+                &bar.blits(range, state.list_drag, pointer),
             );
 
             // Scroll wheel over the list.
@@ -1923,7 +1924,7 @@ fn draw_single_message(
             cache,
             window_rect,
             scale,
-            &bar.blits(ScrollRange { first, ..range }, &state.body_drag, pointer),
+            &bar.blits(ScrollRange { first, ..range }, state.body_drag, pointer),
         );
 
         // The arrows FUN_00468fb0 shows in mode 2.
@@ -2575,7 +2576,7 @@ mod tests {
                 state.view_row(&rows, 1),
                 Some(MessageIndexAction::MessageDisplayed(plain))
             );
-            assert!(state.route_report(&rows).is_empty());
+            assert_empty!(state.route_report(&rows));
             assert_eq!(state.mode(), IndexMode::SingleMessage);
             state.view_row(&rows, 2);
             assert_eq!(
@@ -2586,7 +2587,7 @@ mod tests {
                 ]
             );
             assert_eq!(state.mode(), IndexMode::List);
-            assert!(state.route_report(&rows).is_empty());
+            assert_empty!(state.route_report(&rows));
         }
     }
 
@@ -2683,7 +2684,7 @@ mod tests {
     fn switching_to_same_category_emits_nothing() {
         let mut state = MessageIndexState::new();
         let actions = state.set_category(0x79);
-        assert!(actions.is_empty());
+        assert_empty!(actions);
     }
 
     #[test]
@@ -2829,7 +2830,7 @@ mod tests {
         let action = state.delete_selected();
 
         assert!(matches!(action, Some(MessageIndexAction::DeleteSelected(ids)) if ids.len() == 2));
-        assert!(state.selected.is_empty());
+        assert_empty!(state.selected);
     }
 
     #[test]
@@ -2876,7 +2877,7 @@ mod tests {
         state.set_category(0x7a);
         assert_eq!(state.mode(), IndexMode::List);
         assert_eq!(state.viewing, None);
-        assert!(state.selected().is_empty());
+        assert_empty!(state.selected());
     }
 
     #[test]
@@ -2983,7 +2984,7 @@ mod tests {
 
         state.set_category(0x7b);
 
-        assert!(state.selected.is_empty());
+        assert_empty!(state.selected);
         assert_eq!(state.scroll_offset, 0);
         assert_eq!(state.anchor, None);
     }
@@ -3253,7 +3254,7 @@ mod tests {
         let actions = state.set_category(0x82);
 
         assert!(actions.contains(&MessageIndexAction::AdviceShown));
-        assert!(state.selected.is_empty());
+        assert_empty!(state.selected);
         assert_eq!(state.category, 0x82);
     }
 }

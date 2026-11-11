@@ -609,7 +609,7 @@ impl AudioEngine {
     /// Play a one-shot SFX at the current SFX volume.
     ///
     /// No-op when the SFX was not loaded or the effective volume is zero.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -630,7 +630,7 @@ impl AudioEngine {
     }
 
     /// Play one concrete original tactical event variant.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -655,7 +655,7 @@ impl AudioEngine {
     /// Play the sound of the message the Message Index now shows, stopping
     /// the last one first (`FUN_0046a6e0`, then `FUN_00610c30`). False when
     /// the sound is not loaded.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -698,7 +698,7 @@ impl AudioEngine {
 
     /// Play a message's voice line, a loaded sprite DLL sound (module 9),
     /// at the current SFX volume. False when the sound is not loaded.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -721,7 +721,7 @@ impl AudioEngine {
     }
 
     /// Play a loaded droid sound at the current SFX volume.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -744,7 +744,7 @@ impl AudioEngine {
     }
 
     /// Play one exact tactical voice at the current SFX volume.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -777,7 +777,7 @@ impl AudioEngine {
     /// If the same track is already playing, this is a no-op.
     /// Play `track` once from `mdata_dir` (`FUN_00417520`): a playing track
     /// stops first, which clears the forced flag.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -896,7 +896,7 @@ impl AudioEngine {
     /// Apply volume changes to the currently playing music.
     ///
     /// Call when `AudioVolumeState::dirty` is true, then clear `dirty`.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -914,7 +914,7 @@ impl AudioEngine {
     }
 
     /// Always returns `true` — `quad-snd` initialises unconditionally.
-    #[expect(
+    #[allow(
         clippy::unused_self,
         reason = "Keep the same instance API as the audio backend on other platforms."
     )]

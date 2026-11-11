@@ -209,7 +209,7 @@ mod tests {
     fn high_loyalty_no_betrayal() {
         // Loyalty 80 → score = 80 - 50 = 30 → >= 0 → skip
         let (_, events) = advance_character(default_test_character("Loyal", 80), 0.0);
-        assert!(events.is_empty());
+        assert_empty!(events);
     }
 
     #[test]
@@ -234,7 +234,7 @@ mod tests {
         let mut c = default_test_character("Luke", 10); // low loyalty but immune
         c.is_unable_to_betray = true;
         let (_, events) = advance_character(c, 0.0);
-        assert!(events.is_empty());
+        assert_empty!(events);
     }
 
     #[test]
@@ -249,12 +249,12 @@ mod tests {
 
         // First check at tick 1 — roll 0.9 > 0.8 → no betrayal, but last_check updated
         let events = BetrayalSystem::advance(&mut state, &world, &ticks(1), &[0.9], &table);
-        assert!(events.is_empty());
+        assert_empty!(events);
 
         // Second check at tick 2 — within cooldown (50 ticks), should skip
         let tick2 = vec![TickEvent { tick: 2 }];
         let events = BetrayalSystem::advance(&mut state, &world, &tick2, &[0.0], &table);
-        assert!(events.is_empty());
+        assert_empty!(events);
 
         // Third check at tick 51 — past cooldown, should check again
         let tick51 = vec![TickEvent { tick: 51 }];

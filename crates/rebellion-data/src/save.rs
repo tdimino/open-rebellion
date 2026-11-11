@@ -441,7 +441,7 @@ mod native {
     ///
     /// # Errors
     /// As [`save_file`].
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Keep the existing fixed-width save encoding; changing overflow handling is outside this lint cleanup."
     )]
@@ -1288,7 +1288,7 @@ mod tests {
         assert_eq!(meta.slot, 0);
         assert_eq!(meta.name, "Test Save");
         assert_eq!(meta.game_tick, loaded.clock.tick);
-        assert!(meta.mod_names.is_empty());
+        assert_empty!(meta.mod_names);
         assert_eq!(meta.mod_hash, compute_mod_hash(&[]));
         assert_eq!(
             meta.state_fingerprint,
@@ -1367,7 +1367,7 @@ mod tests {
             &[rebellion_core::tick::TickEvent { tick: 1 }],
             &[],
         );
-        assert!(!repair_events.is_empty());
+        assert_not_empty!(repair_events);
         assert!(state.repair.is_repairing(fleet));
 
         let troop = embark_test_troop(&mut state, system, fleet);
@@ -1492,7 +1492,7 @@ mod tests {
     fn list_saves_empty_dir() {
         let saves_dir = tmp_dir("list_empty");
         let metas = list_saves(&saves_dir);
-        assert!(metas.is_empty());
+        assert_empty!(metas);
     }
 
     #[test]

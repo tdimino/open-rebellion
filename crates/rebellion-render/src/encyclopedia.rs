@@ -1053,7 +1053,7 @@ fn bind_search_to_selection(
     surface: &EncyclopediaSurface<'_>,
     selection: Option<u32>,
 ) {
-    state.search_text = selected_surface_title(surface, selection).to_owned();
+    selected_surface_title(surface, selection).clone_into(&mut state.search_text);
     state.search_binding = Some((
         surface.texture_generation,
         surface.category.command_id,
@@ -1108,7 +1108,7 @@ fn reconcile_surface_search(
     if state.preserve_search_for_selection {
         state.preserve_search_for_selection = false;
     } else if !ctx.memory(|memory| memory.has_focus(surface_search_focus_id())) {
-        state.search_text = selected_surface_title(surface, selection).to_owned();
+        selected_surface_title(surface, selection).clone_into(&mut state.search_text);
     }
     None
 }
@@ -1353,7 +1353,7 @@ fn draw_surface_topic(
     }
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "the recovered control geometry and renderer state stay explicit"
 )]
@@ -1537,8 +1537,7 @@ pub fn draw_encyclopedia_index_catalog(
     let selected_name = entries
         .iter()
         .find(|entry| Some(entry.object_id) == state.original_selected_object_id)
-        .map(|entry| entry.name.as_str())
-        .unwrap_or("");
+        .map_or("", |entry| entry.name.as_str());
     let category_label = catalog
         .category_label(state.original_category_command)
         .unwrap_or("");
@@ -2484,7 +2483,7 @@ mod tests {
             frozen.pointer_route(&BTreeSet::new()).target,
             RouteTarget::BlockedBy(id)
         );
-        assert!(manager.begin_frame().paint_order().is_empty());
+        assert_empty!(manager.begin_frame().paint_order());
     }
 
     const TEST_TOPIC_TITLES: [&str; 18] = [
@@ -2737,7 +2736,7 @@ mod tests {
         fn collect(shape: &egui::Shape, rects: &mut Vec<egui::Rect>) {
             match shape {
                 egui::Shape::Rect(rect) if rect.fill != Color32::TRANSPARENT => {
-                    rects.push(rect.rect)
+                    rects.push(rect.rect);
                 }
                 egui::Shape::Vec(shapes) => {
                     for shape in shapes {
@@ -3086,9 +3085,8 @@ mod tests {
         let mut artwork = artwork_view("EDATA.014", "digest-14", &bytes);
         artwork.height = 199;
 
-        let error = match cache.resolve(7, Some(&artwork)) {
-            Ok(_) => panic!("a height mismatch must be rejected"),
-            Err(error) => error,
+        let Err(error) = cache.resolve(7, Some(&artwork)) else {
+            panic!("a height mismatch must be rejected");
         };
 
         assert!(error.contains("400x200 do not match validated 400x199"));
@@ -3522,7 +3520,7 @@ mod tests {
 
         state.set_asset_profile(AssetRenderProfile::FaithfulHd);
 
-        assert!(state.textures.is_empty());
+        assert_empty!(state.textures);
         assert_eq!(state.asset_profile, AssetRenderProfile::FaithfulHd);
     }
 
@@ -3682,7 +3680,7 @@ mod tests {
         let catalog = original_catalog_fixture();
 
         assert_eq!(catalog.len(), 4);
-        assert!(!catalog.is_empty());
+        assert_not_empty!(catalog);
         assert_eq!(catalog.category_label(0x6f), Some("All Databases"));
         assert_eq!(catalog.category_label(0x75), Some("Personnel Database"));
         assert_eq!(catalog.entries_for(0x6f).len(), 4);

@@ -457,15 +457,15 @@ pub enum NetMessage {
     // handlers, not combat phases (cpp-class-hierarchy.md, "Flag-Word
     // Handler Slots").
     // -----------------------------------------------------------------------
-    /// vtable +0x1c4: MissionMgr bit 2 LukeDagobah (setter `FUN_00543b60`)
+    /// vtable +0x1c4: `MissionMgr` bit 2 `LukeDagobah` (setter `FUN_00543b60`)
     CombatPhaseWeaponFire,
-    /// vtable +0x1c8: MissionMgr bit 5 LukePalace (setter `FUN_00543bd0`)
+    /// vtable +0x1c8: `MissionMgr` bit 5 `LukePalace` (setter `FUN_00543bd0`)
     CombatPhaseShieldAbsorb,
-    /// vtable +0x1d0: MissionMgr bit 7 LeiaPalace (setter `FUN_00543cb0`)
+    /// vtable +0x1d0: `MissionMgr` bit 7 `LeiaPalace` (setter `FUN_00543cb0`)
     CombatPhaseHullDamage,
-    /// vtable +0x1d4: MissionMgr bit 8 ChewbaccaPalace (setter `FUN_00543d20`)
+    /// vtable +0x1d4: `MissionMgr` bit 8 `ChewbaccaPalace` (setter `FUN_00543d20`)
     CombatPhaseFighterEngage,
-    /// vtable +0x1d8: called by `FUN_0055f650`, which writes the CharacterMgr
+    /// vtable +0x1d8: called by `FUN_0055f650`, which writes the `CharacterMgr`
     /// Emperor-at-Coruscant flag; on the Dagobah mission, the state-8 slot
     CombatPhaseShieldAlt,
     /// vtable +0x1f4: called by the bit-2 broadcaster `FUN_0054a1d0`
@@ -511,7 +511,7 @@ impl NetMessage {
 
     /// Human-readable category for grouping in telemetry and debug output.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]

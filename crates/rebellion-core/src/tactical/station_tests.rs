@@ -337,9 +337,9 @@ fn trench_session(fighters: Vec<TacticalFighter>, seed: u32) -> BattleSession {
 // rand(1,100).
 #[test]
 fn a_maneuver_miss_takes_one_to_n_craft_and_a_last_craft_dies_without_a_draw() {
-    let seed = (0..)
+    let seed = (0..100_000)
         .find(|&seed| OriginalTacticalRng::new(seed).inclusive(1, 10) >= 2)
-        .unwrap();
+        .expect("a maneuver-miss seed exists in the bounded search");
     let mut single = trench_squadron(1);
     single.sublight_engine_power = 0.0;
     let mut session = trench_session(vec![single], seed);
@@ -398,12 +398,12 @@ fn the_trench_roll_pops_the_lowest_squadron_first_and_a_success_restores_every_h
         let _ = rng.inclusive(1, 100);
         (first_pops, second_holds, rng)
     };
-    let seed = (0..)
+    let seed = (0..100_000)
         .find(|&seed| {
             let (first_pops, second_holds, _) = oracle(seed);
             first_pops > 0 && second_holds
         })
-        .unwrap();
+        .expect("a two-squadron ordering seed exists in the bounded search");
     let mut doomed = trench_squadron(1);
     doomed.maneuverability = 8;
     let mut striker = trench_squadron(1);
@@ -901,7 +901,8 @@ fn the_headless_empire_fires_its_full_charge_once_at_its_first_ranked_capital_sh
     assert!(session.fighters[1].alive, "a squadron out of it flies on");
     assert_eq!(session.death_star.unwrap().laser_charge, 0.0);
     assert!(session.death_star_beam.is_none());
-    assert!(session.pending_voice_cues.is_empty() && session.pending_audio_cues.is_empty());
+    assert_empty!(session.pending_voice_cues);
+    assert_empty!(session.pending_audio_cues);
 
     session.headless_death_star(false);
     assert_eq!(session.death_star.unwrap().laser_charge, 1.0 / 3.0 * 0.001);

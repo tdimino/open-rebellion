@@ -369,7 +369,7 @@ impl Default for SystemWindowState {
     }
 }
 
-/// A band's in-place name edit (window `+0x170`, a CoolStringField), which
+/// A band's in-place name edit (window `+0x170`, a `CoolStringField`), which
 /// the band menu's Rename opens over the band's product name
 /// (`FUN_00458b50` → `FUN_00458640`), the Rename order pending at `+0x268`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -848,7 +848,7 @@ impl SystemWindowState {
         open
     }
 
-    /// The shown System content; saved order is supplied by WindowManager.
+    /// The shown System content; saved order is supplied by `WindowManager`.
     #[must_use]
     pub fn saved_windows(&self, world: &GameWorld) -> Vec<SavedWindow> {
         self.windows
@@ -1290,7 +1290,7 @@ pub struct SystemWindowInputEvent {
 }
 
 #[derive(Default)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
     reason = "Each flag is one independent title-bar or list outcome of a frame."
 )]
@@ -1342,7 +1342,7 @@ struct SystemDraw<'a> {
 ///
 /// port: the window's keys (`FUN_00458980`) are not ported; the galaxy
 /// view's windows keep no shared keyboard focus to route them by.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit state and rendering inputs at this UI boundary; the rail's Missions icon reads the mission state."
 )]
@@ -1404,6 +1404,7 @@ pub struct ManagedSystemDraw<'a> {
     pub shown: &'a dyn Fn(GalaxyChild) -> bool,
 }
 
+#[must_use]
 pub fn draw_managed_system_windows(draw: ManagedSystemDraw<'_>) -> Vec<SystemWindowAction> {
     let ManagedSystemDraw {
         ctx,
@@ -1755,7 +1756,7 @@ fn draw_system_windows_with_snapshot(
     actions
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The shared rail presents four existing detail families and consumes the frame router's root lease."
 )]
@@ -1851,11 +1852,11 @@ fn draw_reference_rail(
     actions
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep the window's ordered paint and input pass together, as the Defenses window does."
 )]
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The window reads its sources, its edit and the frame's layout."
 )]
@@ -1996,229 +1997,219 @@ fn draw_system_window(
                     input.pointer.button_pressed(egui::PointerButton::Secondary),
                 )
             });
-            match window.tab.page() {
-                None => {
-                    // FUN_00457690: the yard column and its counts.
-                    paint(
-                        cache,
-                        DllSource::Strategy,
-                        YARD_COLUMN.0,
-                        YARD_COLUMN.1,
-                        YARD_COLUMN.2,
-                    );
-                    for (index, area) in BAND_AREAS.into_iter().enumerate() {
-                        let cells = pages[SystemWindowTab::ALL
-                            .iter()
-                            .position(|tab| tab.page() == Some(yard_page(area)))
-                            .unwrap_or_default()]
-                        .as_deref()
-                        .unwrap_or_default();
-                        let (x, y) = COUNT_ORIGINS[index];
-                        painter.text(
-                            logical_point(local, scale, x + COUNT_WIDTH / 2.0, y),
-                            egui::Align2::CENTER_TOP,
-                            yard_count(cells),
-                            font.clone(),
-                            egui::Color32::WHITE,
-                        );
-
-                        // FUN_00458080: the band's frame, its strip and its
-                        // lines.
-                        let shown =
-                            band(world, sources.manufacturing, visible, window.system, area);
-                        let (bx, by, _, _) = BAND_RECTS[index];
-                        let selected = window.selected_band == Some(area);
-                        paint(cache, DllSource::Strategy, BAND_FRAME, bx, by);
-                        paint(
-                            cache,
-                            DllSource::Strategy,
-                            band_strip(side, selected),
-                            bx,
-                            by,
-                        );
-                        let line_in = |text: &str, (x, y): (f32, f32), color| {
-                            painter.text(
-                                logical_point(local, scale, bx + x, by + y),
-                                egui::Align2::LEFT_TOP,
-                                text,
-                                font.clone(),
-                                color,
-                            );
-                        };
-                        let line = |text: &str, at: (f32, f32)| {
-                            line_in(text, at, egui::Color32::WHITE);
-                        };
-                        // The title keeps the label's default colour, black
-                        // (no FUN_00601c90, FUN_00458080.c:76-78).
-                        line_in(
-                            crate::manufacturing_window::band_title(area),
-                            BAND_TITLE,
-                            egui::Color32::BLACK,
-                        );
-                        // The portrait, keyed, then the units, the name
-                        // and the destination over it (FUN_00457690.c:76-82).
-                        if let Some(portrait) = shown.portrait {
-                            paint(
-                                cache,
-                                DllSource::Gokres,
-                                portrait,
-                                bx + BAND_PORTRAIT.0,
-                                by + BAND_PORTRAIT.1,
-                            );
-                        }
-                        if let Some(units) = &shown.units {
-                            line(units, BAND_UNITS);
-                        }
-                        match rename.filter(|edit| edit.area == area) {
-                            Some(edit) => {
-                                let field = band_rename_rect(
-                                    ui,
-                                    local,
-                                    scale,
-                                    (bx, by),
-                                    &edit.original,
-                                    &font,
-                                );
-                                rename_field = Some((field, edit));
-                            }
-                            None => line(&shown.status, BAND_STATUS),
-                        }
-                        line(&shown.destination, BAND_DESTINATION);
-
-                        // FUN_004acec0: the progress bar, light gray over
-                        // black.
-                        let (px, py, width, height) = PROGRESS_RECTS[index];
-                        let bar = logical_rect(local, scale, px, py, width, height);
-                        painter.rect_filled(bar, 0.0, egui::Color32::BLACK);
-                        if let Some(progress) = shown.progress {
-                            let mut done = bar;
-                            done.set_width(bar.width() * progress.clamp(0.0, 1.0));
-                            painter.rect_filled(done, 0.0, egui::Color32::from_gray(240));
-                        }
-
-                        // A press selects the band; a right release opens
-                        // its manager's menu (FUN_00453ee0, FUN_004ac5c0).
-                        let rect = band_rect(local, scale, area);
-                        let response = ui.interact(
-                            rect,
-                            ui.id().with((window.system, "band", index)),
-                            egui::Sense::click(),
-                        );
-                        if any_pressed && response.is_pointer_button_down_on() {
-                            result.band = Some(area);
-                            result.focus = true;
-                        }
-                        if response.secondary_clicked() {
-                            if let Some(point) = response
-                                .interact_pointer_pos()
-                                .filter(|point| rect_contains(rect, *point))
-                            {
-                                result.object_menu = Some((
-                                    Some(MenuObject::Producer {
-                                        system: window.system,
-                                        area,
-                                    }),
-                                    canvas_point(layout, point),
-                                ));
-                            }
-                        }
-                    }
-                    // The edit lies over its band and takes the pointer
-                    // there. A press anywhere else in the window ends it as
-                    // Enter does (FUN_004534f0, 0x201 and 0x204 →
-                    // FUN_00458780).
-                    if let Some((field, edit)) = rename_field {
-                        result.rename_field = Some(field);
-                        result.rename = draw_band_rename(ui, field, edit, &font);
-                        let elsewhere = pointer.is_some_and(|point| {
-                            rect_contains(local, point) && !rect_contains(field, point)
-                        });
-                        // Direct renderer fixtures have no manager identity or
-                        // routed event stream. Production content must claim
-                        // its owning window's exact admitted press above.
-                        if window.id.is_none() && any_pressed && elsewhere {
-                            result.rename = Some(BandRenameOutcome::Commit(match result.rename {
-                                Some(BandRenameOutcome::Typed(ref text)) => text.clone(),
-                                _ => edit.text.clone(),
-                            }));
-                        }
-                    }
-                }
-                Some(_) => {
-                    // The page label, then the list (FUN_004568a0).
-                    painter.text(
-                        logical_point(local, scale, SYSTEM_WINDOW_WIDTH / 2.0, PAGE_LABEL_Y),
-                        egui::Align2::CENTER_TOP,
-                        window.tab.name(),
-                        egui::FontId::proportional((10.0 * scale).max(7.0)),
-                        egui::Color32::WHITE,
-                    );
+            if window.tab.page().is_none() {
+                // FUN_00457690: the yard column and its counts.
+                paint(
+                    cache,
+                    DllSource::Strategy,
+                    YARD_COLUMN.0,
+                    YARD_COLUMN.1,
+                    YARD_COLUMN.2,
+                );
+                for (index, area) in BAND_AREAS.into_iter().enumerate() {
                     let cells = pages[SystemWindowTab::ALL
                         .iter()
-                        .position(|tab| *tab == window.tab)
+                        .position(|tab| tab.page() == Some(yard_page(area)))
                         .unwrap_or_default()]
                     .as_deref()
                     .unwrap_or_default();
-                    let list =
-                        logical_rect(local, scale, LIST.0, LIST.1, LIST.2, LIST.3).intersect(local);
-                    let list_painter = painter.with_clip_rect(list);
-                    // A press on the list's empty space clears the
-                    // selection (FUN_006094b0).
-                    let list_response = ui.interact(
-                        list,
-                        ui.id().with((window.system, "list")),
+                    let (x, y) = COUNT_ORIGINS[index];
+                    painter.text(
+                        logical_point(local, scale, x + COUNT_WIDTH / 2.0, y),
+                        egui::Align2::CENTER_TOP,
+                        yard_count(cells),
+                        font.clone(),
+                        egui::Color32::WHITE,
+                    );
+
+                    // FUN_00458080: the band's frame, its strip and its
+                    // lines.
+                    let shown = band(world, sources.manufacturing, visible, window.system, area);
+                    let (bx, by, _, _) = BAND_RECTS[index];
+                    let selected = window.selected_band == Some(area);
+                    paint(cache, DllSource::Strategy, BAND_FRAME, bx, by);
+                    paint(
+                        cache,
+                        DllSource::Strategy,
+                        band_strip(side, selected),
+                        bx,
+                        by,
+                    );
+                    let line_in = |text: &str, (x, y): (f32, f32), color| {
+                        painter.text(
+                            logical_point(local, scale, bx + x, by + y),
+                            egui::Align2::LEFT_TOP,
+                            text,
+                            font.clone(),
+                            color,
+                        );
+                    };
+                    let line = |text: &str, at: (f32, f32)| {
+                        line_in(text, at, egui::Color32::WHITE);
+                    };
+                    // The title keeps the label's default colour, black
+                    // (no FUN_00601c90, FUN_00458080.c:76-78).
+                    line_in(
+                        crate::manufacturing_window::band_title(area),
+                        BAND_TITLE,
+                        egui::Color32::BLACK,
+                    );
+                    // The portrait, keyed, then the units, the name
+                    // and the destination over it (FUN_00457690.c:76-82).
+                    if let Some(portrait) = shown.portrait {
+                        paint(
+                            cache,
+                            DllSource::Gokres,
+                            portrait,
+                            bx + BAND_PORTRAIT.0,
+                            by + BAND_PORTRAIT.1,
+                        );
+                    }
+                    if let Some(units) = &shown.units {
+                        line(units, BAND_UNITS);
+                    }
+                    match rename.filter(|edit| edit.area == area) {
+                        Some(edit) => {
+                            let field =
+                                band_rename_rect(ui, local, scale, (bx, by), &edit.original, &font);
+                            rename_field = Some((field, edit));
+                        }
+                        None => line(&shown.status, BAND_STATUS),
+                    }
+                    line(&shown.destination, BAND_DESTINATION);
+
+                    // FUN_004acec0: the progress bar, light gray over
+                    // black.
+                    let (px, py, width, height) = PROGRESS_RECTS[index];
+                    let bar = logical_rect(local, scale, px, py, width, height);
+                    painter.rect_filled(bar, 0.0, egui::Color32::BLACK);
+                    if let Some(progress) = shown.progress {
+                        let mut done = bar;
+                        done.set_width(bar.width() * progress.clamp(0.0, 1.0));
+                        painter.rect_filled(done, 0.0, egui::Color32::from_gray(240));
+                    }
+
+                    // A press selects the band; a right release opens
+                    // its manager's menu (FUN_00453ee0, FUN_004ac5c0).
+                    let rect = band_rect(local, scale, area);
+                    let response = ui.interact(
+                        rect,
+                        ui.id().with((window.system, "band", index)),
                         egui::Sense::click(),
                     );
-                    if any_pressed && list_response.is_pointer_button_down_on() {
-                        result.item = Some(None);
+                    if any_pressed && response.is_pointer_button_down_on() {
+                        result.band = Some(area);
                         result.focus = true;
                     }
-                    result.painted = cells.iter().map(|cell| cell.item).collect();
-                    for (index, cell) in cells.iter().enumerate() {
-                        let rect = cell_rect(local, scale, index);
-                        if !rect.intersects(list) {
-                            break;
+                    if response.secondary_clicked() {
+                        if let Some(point) = response
+                            .interact_pointer_pos()
+                            .filter(|point| rect_contains(rect, *point))
+                        {
+                            result.object_menu = Some((
+                                Some(MenuObject::Producer {
+                                    system: window.system,
+                                    area,
+                                }),
+                                canvas_point(layout, point),
+                            ));
                         }
+                    }
+                }
+                // The edit lies over its band and takes the pointer
+                // there. A press anywhere else in the window ends it as
+                // Enter does (FUN_004534f0, 0x201 and 0x204 →
+                // FUN_00458780).
+                if let Some((field, edit)) = rename_field {
+                    result.rename_field = Some(field);
+                    result.rename = draw_band_rename(ui, field, edit, &font);
+                    let elsewhere = pointer.is_some_and(|point| {
+                        rect_contains(local, point) && !rect_contains(field, point)
+                    });
+                    // Direct renderer fixtures have no manager identity or
+                    // routed event stream. Production content must claim
+                    // its owning window's exact admitted press above.
+                    if window.id.is_none() && any_pressed && elsewhere {
+                        result.rename = Some(BandRenameOutcome::Commit(match result.rename {
+                            Some(BandRenameOutcome::Typed(ref text)) => text.clone(),
+                            _ => edit.text.clone(),
+                        }));
+                    }
+                }
+            } else {
+                // The page label, then the list (FUN_004568a0).
+                painter.text(
+                    logical_point(local, scale, SYSTEM_WINDOW_WIDTH / 2.0, PAGE_LABEL_Y),
+                    egui::Align2::CENTER_TOP,
+                    window.tab.name(),
+                    egui::FontId::proportional((10.0 * scale).max(7.0)),
+                    egui::Color32::WHITE,
+                );
+                let cells = pages[SystemWindowTab::ALL
+                    .iter()
+                    .position(|tab| *tab == window.tab)
+                    .unwrap_or_default()]
+                .as_deref()
+                .unwrap_or_default();
+                let list =
+                    logical_rect(local, scale, LIST.0, LIST.1, LIST.2, LIST.3).intersect(local);
+                let list_painter = painter.with_clip_rect(list);
+                // A press on the list's empty space clears the
+                // selection (FUN_006094b0).
+                let list_response = ui.interact(
+                    list,
+                    ui.id().with((window.system, "list")),
+                    egui::Sense::click(),
+                );
+                if any_pressed && list_response.is_pointer_button_down_on() {
+                    result.item = Some(None);
+                    result.focus = true;
+                }
+                result.painted = cells.iter().map(|cell| cell.item).collect();
+                for (index, cell) in cells.iter().enumerate() {
+                    let rect = cell_rect(local, scale, index);
+                    if !rect.intersects(list) {
+                        break;
+                    }
+                    paint_native(
+                        &list_painter,
+                        ctx,
+                        cache,
+                        DllSource::Strategy,
+                        cell.picture,
+                        rect,
+                        scale,
+                        PICTURE_OFFSET.0,
+                        PICTURE_OFFSET.1,
+                    );
+                    if window.selected_item == Some(cell.item) {
                         paint_native(
                             &list_painter,
                             ctx,
                             cache,
                             DllSource::Strategy,
-                            cell.picture,
+                            item_frame(side),
                             rect,
                             scale,
                             PICTURE_OFFSET.0,
                             PICTURE_OFFSET.1,
                         );
-                        if window.selected_item == Some(cell.item) {
-                            paint_native(
-                                &list_painter,
-                                ctx,
-                                cache,
-                                DllSource::Strategy,
-                                item_frame(side),
-                                rect,
-                                scale,
-                                PICTURE_OFFSET.0,
-                                PICTURE_OFFSET.1,
-                            );
-                        }
-                        // A left or right press selects the item
-                        // (FUN_006083c0). port: a facility's class menu
-                        // (Encyclopedia, Status, Scrap) is not ported, so a
-                        // right release opens none.
-                        let response = ui.interact(
-                            rect.intersect(list),
-                            ui.id().with((window.system, "cell", index)),
-                            egui::Sense::click(),
-                        );
-                        if (exact_clicked(&response, rect)
-                            || (right_pressed && response.is_pointer_button_down_on()))
-                            && result.item.is_none()
-                        {
-                            result.item = Some(Some(cell.item));
-                            result.focus = true;
-                        }
+                    }
+                    // A left or right press selects the item
+                    // (FUN_006083c0). port: a facility's class menu
+                    // (Encyclopedia, Status, Scrap) is not ported, so a
+                    // right release opens none.
+                    let response = ui.interact(
+                        rect.intersect(list),
+                        ui.id().with((window.system, "cell", index)),
+                        egui::Sense::click(),
+                    );
+                    if (exact_clicked(&response, rect)
+                        || (right_pressed && response.is_pointer_button_down_on()))
+                        && result.item.is_none()
+                    {
+                        result.item = Some(Some(cell.item));
+                        result.focus = true;
                     }
                 }
             }
@@ -2261,7 +2252,7 @@ fn band_rect(window: egui::Rect, scale: f32, area: ProductionArea) -> egui::Rect
 /// The index of the grid cell (`FUN_00609ae0`) holding a window-local
 /// point: `list` is the list's rect, `cell` each cell's size, row-major
 /// with `columns` to a row from the list's corner. `None` off the list.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "The point lies inside the list, so the column and row are small and non-negative."
@@ -2282,7 +2273,7 @@ pub(crate) fn grid_cell(
 
 /// The `index`th cell of a facility page (`FUN_00609ae0`): row-major from
 /// the list's corner, three to a row.
-#[expect(clippy::cast_precision_loss, reason = "Cell indexes are small.")]
+#[allow(clippy::cast_precision_loss, reason = "Cell indexes are small.")]
 fn cell_rect(window: egui::Rect, scale: f32, index: usize) -> egui::Rect {
     let column = (index % COLUMNS) as f32;
     let row = (index / COLUMNS) as f32;
@@ -2298,7 +2289,7 @@ fn cell_rect(window: egui::Rect, scale: f32, index: usize) -> egui::Rect {
 
 /// A screen point in 640 by 480 canvas coordinates, truncated as a Win32
 /// `POINT` is.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Canvas coordinates fit an i16, as the original's POINT words do."
 )]
@@ -2587,7 +2578,7 @@ fn clamp_to_galaxy(position: (i16, i16), layout: CockpitLayout) -> (i16, i16) {
 
 /// Clamp a window of `width` by `height` logical pixels into the galaxy
 /// view (`FUN_0045aac0`, the view's `+0xcc..+0xd8` rect).
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -2845,7 +2836,7 @@ mod tests {
         }
     }
 
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
@@ -3228,8 +3219,8 @@ mod tests {
                 &[],
             );
         });
-        assert!(actions.is_empty());
-        let painted = PAINTED.with(|painted| painted.take());
+        assert_empty!(actions);
+        let painted = PAINTED.with(std::cell::RefCell::take);
         let defenses_icon = crate::defenses_window::rail_icon(&world, systems[2]);
         assert!(
             painted
@@ -3458,6 +3449,7 @@ mod tests {
         ]
     }
 
+    #[derive(Clone, Copy)]
     struct RailTestFrame<'a> {
         faction: CockpitFaction,
         layout: CockpitLayout,
@@ -3468,6 +3460,7 @@ mod tests {
         overlay: Option<egui::Rect>,
     }
 
+    #[derive(Clone, Copy)]
     struct RailClickTest {
         layout: CockpitLayout,
         point: egui::Pos2,
@@ -3657,7 +3650,7 @@ mod tests {
         );
         let restored = manager.apply(WindowCommand::Restore(id)).unwrap();
         assert_eq!(restored.transition, WindowTransition::Restored { id });
-        assert!(manager.begin_frame().presentation_history().is_empty());
+        assert_empty!(manager.begin_frame().presentation_history());
         assert_eq!(manager.begin_frame().paint_order(), [id]);
         assert_eq!(state.window_id(system), Some(id));
         assert_eq!(state.window_count(), 1);
@@ -3705,16 +3698,14 @@ mod tests {
             let _ = ctx.run(
                 frame_input(vec![egui::Event::PointerMoved(rail_point)]),
                 |ctx| {
-                    assert!(rail
-                        .draw(
-                            ctx,
-                            &world,
-                            CockpitFaction::Alliance,
-                            layout,
-                            &snapshot,
-                            &[],
-                        )
-                        .is_empty());
+                    assert_empty!(rail.draw(
+                        ctx,
+                        &world,
+                        CockpitFaction::Alliance,
+                        layout,
+                        &snapshot,
+                        &[],
+                    ));
                 },
             );
         }
@@ -3733,20 +3724,18 @@ mod tests {
             InputRecipient::Root
         );
         let _ = ctx.run(frame_input(vec![pointer_button(rail_point, true)]), |ctx| {
-            assert!(rail
-                .draw(
-                    ctx,
-                    &world,
-                    CockpitFaction::Alliance,
-                    layout,
-                    &snapshot,
-                    &[SystemWindowInputEvent {
-                        id: press,
-                        point: (rail_point.x, rail_point.y),
-                        phase: PointerPhase::Press(PointerButtonId::Primary),
-                    }],
-                )
-                .is_empty());
+            assert_empty!(rail.draw(
+                ctx,
+                &world,
+                CockpitFaction::Alliance,
+                layout,
+                &snapshot,
+                &[SystemWindowInputEvent {
+                    id: press,
+                    point: (rail_point.x, rail_point.y),
+                    phase: PointerPhase::Press(PointerButtonId::Primary),
+                }],
+            ));
         });
 
         let causal_release = InputEventId {
@@ -3872,7 +3861,7 @@ mod tests {
                 ..egui::RawInput::default()
             },
             |ctx| {
-                assert!(draw_reference_rail(
+                assert_empty!(draw_reference_rail(
                     ctx,
                     &world,
                     &rebellion_core::movement::MovementState::default(),
@@ -3884,8 +3873,7 @@ mod tests {
                     &snapshot,
                     &[],
                     &mut router,
-                )
-                .is_empty());
+                ));
             },
         );
 
@@ -3991,7 +3979,7 @@ mod tests {
                     &|_| true,
                 ));
             });
-            run.painted = PAINTED.with(|painted| painted.take());
+            run.painted = PAINTED.with(std::cell::RefCell::take);
             run.shapes = output
                 .shapes
                 .iter()
@@ -4375,7 +4363,7 @@ mod tests {
         let (world, systems) = fixture_world(1);
         let (run, state) = run_rename_key(&world, systems[0], egui::Key::Escape);
         assert_eq!(renamed(&run.actions), []);
-        assert!(state.windows.is_empty());
+        assert_empty!(state.windows);
         assert!(!state.band_rename_open());
     }
 
@@ -4903,7 +4891,8 @@ mod tests {
             ..elsewhere
         };
         assert!(!other.restore_saved(&world, CockpitFaction::Empire, &shown_missions));
-        assert!(other.windows.is_empty() && other.rail.is_empty());
+        assert_empty!(other.windows);
+        assert_empty!(other.rail);
     }
 
     #[test]
@@ -5708,7 +5697,7 @@ mod tests {
         let slot = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 1));
         assert_eq!(state.rail_slot_screen_rect(layout, 1), Some(slot));
         assert_eq!(state.rail_slot_screen_rect(layout, 1), Some(slot));
-        assert!(state.rail[1].system() == systems[0]);
+        assert_eq!(state.rail[1].system(), systems[0]);
         // Painting and restore routing are exercised with real manager IDs
         // by `reference_rail_displays_manager_history_across_detail_families`.
     }
@@ -5731,7 +5720,7 @@ mod tests {
 
         let slot = cockpit_rect(layout, rail_slot_rect(CockpitFaction::Alliance, 1));
         assert_eq!(state.rail_slot_screen_rect(layout, 1), Some(slot));
-        assert!(state.rail[1].system() == systems[0]);
+        assert_eq!(state.rail[1].system(), systems[0]);
         // The manager-owned renderer test covers icon and activation behavior.
     }
 

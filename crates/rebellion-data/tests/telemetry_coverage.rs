@@ -50,7 +50,7 @@ const ALL_SYSTEMS: &[&str] = &[
 /// fixture injections cannot reliably guarantee. These emit events in real
 /// games but are hard to trigger deterministically in a 393-tick test.
 const OPTIONAL_SYSTEMS: &[&str] = &[
-    SYS_VICTORY,  // Requires HQ capture or DS fire at enemy HQ — not guaranteed
+    SYS_VICTORY, // Requires HQ capture or DS fire at enemy HQ — not guaranteed
     // Requires a Destroy System (order 0x223), which the AI orders only with a
     // Death Star and a Coruscant or HQ target; the integrator's strike tests
     // check its EVT_DS_FIRED record.
@@ -74,7 +74,7 @@ fn data_dir() -> PathBuf {
 
 #[test]
 #[ignore = "requires data/base/ DAT files"]
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]

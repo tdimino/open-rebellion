@@ -110,6 +110,7 @@ pub fn seat_morale(
 
 /// Summarize a completed tactical session without mutating strategic state.
 /// Auto-resolve uses this after its result has already been integrated.
+#[must_use]
 pub fn summarize_results(session: &BattleSession) -> BattleReturn {
     BattleReturn {
         winner: session.winner,
@@ -135,6 +136,10 @@ pub fn summarize_results(session: &BattleSession) -> BattleReturn {
 /// docked in the other side's carrier falls to the system (the side bits
 /// `+0x24 & 0xc0` differ). Docked carriers without a tag get one
 /// ([`crate::carriage::tag_ship`]).
+#[allow(
+    clippy::option_option,
+    reason = "destroyed, system-bound, and carrier-bound are three distinct outcomes"
+)]
 pub(super) fn squadron_homes(
     session: &BattleSession,
     world: &mut GameWorld,

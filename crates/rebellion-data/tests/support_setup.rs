@@ -121,7 +121,11 @@ fn the_loaded_world_resolves_the_victory_records_and_the_escapee_seats() {
         VictoryConditions::Standard,
         VictoryConditions::HeadquartersOnly,
     ] {
-        let word = VictorySystem::word(&state, &world, conditions);
-        assert_eq!(word.map(|word| word & found), Some(found), "{conditions:?}");
+        let victory_bits = VictorySystem::word(&state, &world, conditions);
+        assert_eq!(
+            victory_bits.map(|bits| bits & found),
+            Some(found),
+            "{conditions:?}"
+        );
     }
 }

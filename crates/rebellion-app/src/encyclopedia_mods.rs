@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(
             layers
                 .iter()
-                .map(|layer| layer.mod_name())
+                .map(rebellion_data::encyclopedia_overlay::EncyclopediaOverlayLayer::mod_name)
                 .collect::<Vec<_>>(),
             ["zulu-base", "alpha-dependent"]
         );

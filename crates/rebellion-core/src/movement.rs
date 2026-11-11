@@ -90,7 +90,7 @@ pub fn original_isqrt(value: i64) -> i64 {
     let mut upper = high;
     let mut previous = high;
     loop {
-        let mid = (low + upper) / 2;
+        let mid = i64::midpoint(low, upper);
         let square = mid * mid;
         let mut next_upper = mid;
         if square <= value {
@@ -295,7 +295,7 @@ impl MovementOrder {
 
     /// Progress fraction in [0.0, 1.0] — 0.0 = just departed, 1.0 = arrived.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_precision_loss,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -539,9 +539,9 @@ pub fn fleet_move_enabled(
 /// equal the fleet's. port: an uprising keeps its faction's side, as
 /// [`ControlKind::is_controlled_by`](crate::world::ControlKind::is_controlled_by) reads it.
 #[must_use]
-pub fn fleet_move_confirms(
+pub fn fleet_move_confirms<S: std::hash::BuildHasher>(
     world: &GameWorld,
-    blockaded: &HashSet<SystemKey>,
+    blockaded: &HashSet<SystemKey, S>,
     fleet: FleetKey,
     confirmed: bool,
 ) -> bool {
@@ -781,10 +781,10 @@ pub fn validate_fleets_dispatch(
 /// # Errors
 /// Returns [`FleetDispatchError::Blockaded`] for a fleet in a blockaded
 /// system, or any error [`validate_fleet_dispatch`] returns.
-pub fn validate_fleet_destination(
+pub fn validate_fleet_destination<S: std::hash::BuildHasher>(
     state: &MovementState,
     world: &GameWorld,
-    blockaded: &HashSet<SystemKey>,
+    blockaded: &HashSet<SystemKey, S>,
     fleet: FleetKey,
     destination: SystemKey,
     expected_is_alliance: bool,
@@ -916,8 +916,7 @@ pub fn listed_fleets(state: &MovementState, world: &GameWorld, system: SystemKey
     let mut fleets: Vec<FleetKey> = world
         .systems
         .get(system)
-        .map(|value| value.fleets.clone())
-        .unwrap_or_default();
+        .map_or_default(|value| value.fleets.clone());
     fleets.extend(
         state
             .orders
@@ -1048,7 +1047,7 @@ impl MovementSystem {
     /// Returns one `ArrivalEvent` per fleet that completes transit this frame.
     /// The caller applies each event through [`apply_fleet_arrival`] so world
     /// fleet records and system orbit indexes remain canonical.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -1178,7 +1177,7 @@ mod tests {
         state.order(fleet, origin, dest, 10);
         let removed = state.cancel(fleet);
         assert!(removed.is_some());
-        assert!(state.is_empty());
+        assert_empty!(state);
     }
 
     #[test]
@@ -1207,7 +1206,7 @@ mod tests {
         let mut state = MovementState::new();
         state.order(fleet, origin, dest, 5);
         let arrivals = MovementSystem::advance(&mut state, &[]);
-        assert!(arrivals.is_empty());
+        assert_empty!(arrivals);
         assert_eq!(state.len(), 1); // order still active
     }
 
@@ -1217,7 +1216,7 @@ mod tests {
         let mut state = MovementState::new();
         state.order(fleet, origin, dest, 10);
         let arrivals = MovementSystem::advance(&mut state, &ticks(5));
-        assert!(arrivals.is_empty());
+        assert_empty!(arrivals);
         assert_eq!(state.get(fleet).unwrap().ticks_elapsed, 5);
     }
 
@@ -1233,7 +1232,7 @@ mod tests {
         assert_eq!(arrivals[0].origin, origin);
         assert_eq!(arrivals[0].tick, 5);
         // Order removed on arrival
-        assert!(state.is_empty());
+        assert_empty!(state);
     }
 
     #[test]
@@ -1244,7 +1243,7 @@ mod tests {
         // 10 ticks for a 3-tick journey
         let arrivals = MovementSystem::advance(&mut state, &ticks(10));
         assert_eq!(arrivals.len(), 1);
-        assert!(state.is_empty());
+        assert_empty!(state);
     }
 
     #[test]
@@ -1591,7 +1590,7 @@ mod tests {
         assert!(movement.order(transit, origin, destination, 5));
         reconcile_fleet_orbits(&movement, &mut world);
 
-        assert!(world.systems[origin].fleets.is_empty());
+        assert_empty!(world.systems[origin].fleets);
         assert_eq!(world.systems[destination].fleets, vec![stationary]);
     }
 
@@ -1919,7 +1918,9 @@ mod tests {
         let fleet = add_test_fleet(&mut world, origin, ship_key);
         world.fleets[fleet].capital_ships.clear();
         world.fleets[fleet].fighters.push(FighterEntry {
-            class: world.fighter_classes.insert(FighterClass::default()),
+            class: world
+                .fighter_classes
+                .insert(crate::world::FighterClass::default()),
             count: 1,
             carrier: 0,
         });
@@ -2210,7 +2211,9 @@ mod tests {
         let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320);
         let mut fleet = fleet_of(&mut world, origin, &[]);
         fleet.fighters.push(FighterEntry {
-            class: world.fighter_classes.insert(Default::default()),
+            class: world
+                .fighter_classes
+                .insert(crate::world::FighterClass::default()),
             count: 1,
             carrier: 0,
         });

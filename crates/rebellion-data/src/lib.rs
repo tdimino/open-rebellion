@@ -1,5 +1,32 @@
 //! Data loading: converts .DAT binary structs into rebellion-core world types.
 
+// DAT conversion and replay code intentionally preserves the source formats'
+// fixed-width truncation and wrapping behavior.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+
+#[cfg(test)]
+#[allow(clippy::assert_is_empty)]
+macro_rules! assert_empty {
+    ($value:expr $(,)?) => {{
+        let value = &$value;
+        assert!(value.is_empty(), "expected an empty value, got {value:?}");
+    }};
+}
+
+#[cfg(test)]
+#[allow(clippy::assert_is_empty)]
+macro_rules! assert_not_empty {
+    ($value:expr $(,)?) => {{
+        let value = &$value;
+        assert!(!value.is_empty(), "expected a non-empty value");
+    }};
+}
+
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -83,7 +110,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
 /// # Errors
 /// Returns an error for unreadable or invalid game data, unsupported sector
 /// groups, or references to missing sectors.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -848,7 +875,7 @@ fn special_force_class(family_id: u32, dat: &SpecialForce) -> (DatId, SpecialFor
     (class_dat_id, class)
 }
 
-/// A MISSNSD record: its DatId is `family << 24 | id`, and the timer and flag
+/// A MISSNSD record: its `DatId` is `family << 24 | id`, and the timer and flag
 /// fields are the in-memory record `+0x50..+0x64`
 /// (ghidra/notes/mission-lifecycle.md, "The mission record").
 fn mission_record(m: &Mission) -> MissionRecord {

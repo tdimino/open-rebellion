@@ -191,7 +191,7 @@ fn take<'a>(
 mod tests {
     use super::*;
 
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "The test pack contains small literal entries that fit its fixed-width header."
     )]

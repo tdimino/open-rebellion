@@ -473,11 +473,7 @@ pub fn control_assault_payload(
     system: SystemKey,
     previous: ControlKind,
 ) -> serde_json::Value {
-    let current = world
-        .systems
-        .get(system)
-        .map(|sys| sys.control)
-        .unwrap_or_default();
+    let current = world.systems.get(system).map_or_default(|sys| sys.control);
     control_change_payload(world, system, previous, current, "assault")
 }
 
@@ -1008,6 +1004,7 @@ pub fn native_assault(tick: u64, world: &GameWorld, assault: &crate::integrator:
 }
 
 /// A space battle's strength before the native game resolves it.
+#[derive(Clone, Copy)]
 pub struct NativeBattleBefore {
     alliance: crate::integrator::SpaceForceSummary,
     empire: crate::integrator::SpaceForceSummary,
@@ -1018,6 +1015,7 @@ pub struct NativeBattleBefore {
 /// Note a battle's strength just before the native game applies it, and
 /// trace it as `pre_battle` (no `rng_seed`: the session holds its own
 /// stream). `None` while telemetry is off.
+#[must_use]
 pub fn native_battle_begin(
     tick: u64,
     world: &GameWorld,

@@ -243,7 +243,7 @@ fn original_effect_frames_advance_at_ten_hertz_and_expire_exactly() {
     session.advance_presentational_effects(0.001_1);
     assert_eq!(session.impact_effects[0].frame, 1);
     session.advance_presentational_effects(0.5);
-    assert!(session.impact_effects.is_empty());
+    assert_empty!(session.impact_effects);
 }
 
 // Source: FUN_005d3de0 / FUN_005b1ea0 / FUN_005b1f60 projectile profiles.
@@ -333,7 +333,7 @@ fn retained_projectile_interpolates_and_expires_by_source_duration() {
     session.advance_presentational_effects(0.499);
     assert_eq!(session.weapon_effects.len(), 1);
     session.advance_presentational_effects(0.002);
-    assert!(session.weapon_effects.is_empty());
+    assert_empty!(session.weapon_effects);
 }
 
 // Source: FUN_005b24d0 through FUN_005b2550 field effects.
@@ -388,7 +388,7 @@ fn gravity_field_preempts_tractor_then_restores_it_at_ten_hertz() {
         OriginalTacticalFieldKind::Tractor,
         false,
     ));
-    assert!(session.field_effects.is_empty());
+    assert_empty!(session.field_effects);
 }
 
 // Source: FUN_005b24d0 through FUN_005b2550 field source limits.
@@ -808,7 +808,7 @@ fn fighter_recovery_completion_waits_for_the_last_live_group_member() {
 
     assert!(!session.fighters[0].alive);
     assert!(session.fighters[1].alive);
-    assert!(session.take_pending_voice_cues().is_empty());
+    assert_empty!(session.take_pending_voice_cues());
 
     session.fighters[1].recovery_state = TacticalFighterRecoveryState::Docking;
     session.advance_original_fighter_recovery(250.0);
@@ -911,7 +911,7 @@ fn attack_target_lifecycle_reacquires_same_class_and_clears_exhausted_lists() {
         session.ships[0].attack_target, None,
         "an exhausted fighter list must not fall through to a capital target"
     );
-    assert!(session.take_pending_voice_cues().is_empty());
+    assert_empty!(session.take_pending_voice_cues());
 }
 
 // Source: FUN_005cf980 recovery state reset.
@@ -960,9 +960,9 @@ fn recovered_fighter_clears_attack_fighters_without_capital_fire_or_audio() {
         (ordered.ships[1].hull_current, ordered.ships[1].shield),
         ordered_capital_before
     );
-    assert!(ordered.weapon_effects.is_empty());
-    assert!(ordered.impact_effects.is_empty());
-    assert!(ordered.pending_audio_cues.is_empty());
+    assert_empty!(ordered.weapon_effects);
+    assert_empty!(ordered.impact_effects);
+    assert_empty!(ordered.pending_audio_cues);
 
     let mut autonomous = session_with_source_order(TacticalOrder::None);
     let autonomous_capital_before = (autonomous.ships[1].hull_current, autonomous.ships[1].shield);
@@ -975,7 +975,7 @@ fn recovered_fighter_clears_attack_fighters_without_capital_fire_or_audio() {
     );
     assert_eq!(autonomous.weapon_effects.len(), 1);
     assert_eq!(autonomous.impact_effects.len(), 1);
-    assert!(!autonomous.pending_audio_cues.is_empty());
+    assert_not_empty!(autonomous.pending_audio_cues);
 }
 
 // Source: FUN_005d0bb0 / FUN_005a8fc0 explicit attack targeting.
@@ -993,9 +993,9 @@ fn explicit_attack_order_never_redirects_an_invalid_target() {
     let fired = fire_test_side(&mut ships, &[0], &[2], true);
 
     assert_eq!(ships[2].hull_current, original_hull);
-    assert!(fired.projectiles.is_empty());
-    assert!(fired.impacts.is_empty());
-    assert!(fired.audio.is_empty());
+    assert_empty!(fired.projectiles);
+    assert_empty!(fired.impacts);
+    assert_empty!(fired.audio);
 }
 
 // Source: FUN_005b5100 / FUN_005b5b60 / FUN_005b5f50 hull damage selection.
@@ -1170,7 +1170,7 @@ fn destroyed_tractor_subsystem_clears_its_live_field_source() {
     );
     assert_eq!(ships[0].subsystem_damage.tractor, 4);
     assert_eq!(ships[0].subsystem_condition.tractor, 0);
-    assert!(fields.is_empty());
+    assert_empty!(fields);
 }
 
 // Source: FUN_005b6530 weapon arc classifier.
@@ -1401,7 +1401,7 @@ fn destroyed_weapon_subsystem_disables_and_repair_recharges_live_arcs() {
     ship.advance_original_recharge(4.0);
     assert!(ship.weapon_arcs[0].ready);
     assert_eq!(ship.weapon_arcs[0].energy, 10.0);
-    assert!(ship.weapon_recharge_queue.is_empty());
+    assert_empty!(ship.weapon_recharge_queue);
 }
 
 // Source: FUN_005b3a40 / FUN_005b3f10 fire; FUN_005b5100's subsystem
@@ -2132,7 +2132,7 @@ fn fighter_roster_expands_each_strategic_squadron_with_exact_dat_stats() {
 
     BattleSession::expand_fleet(&world, fleet, true, &mut ships, &mut fighters);
 
-    assert!(ships.is_empty());
+    assert_empty!(ships);
     assert_eq!(fighters.len(), 2);
     assert_eq!(fighters[0].fleet_squadron_index, 0);
     assert_eq!(fighters[1].fleet_squadron_index, 1);
@@ -2368,7 +2368,7 @@ fn ordered_navigation_route_advances_without_losing_the_next_waypoint() {
     session.advance_original_tactical_movement(10.0);
     assert_eq!(session.ships[0].source_position, second);
     assert_eq!(session.ships[0].source_waypoint, None);
-    assert!(session.ships[0].navigation_route.is_empty());
+    assert_empty!(session.ships[0].navigation_route);
 }
 
 // Source: FUN_005d0b10 / FUN_005d0bb0 manual target list.
@@ -2403,7 +2403,7 @@ fn ordered_manual_targets_advance_and_clear_as_hostiles_are_destroyed() {
 
     session.ships[2].alive = false;
     refresh_original_attack_targets(&mut session);
-    assert!(session.ships[0].manual_targets.is_empty());
+    assert_empty!(session.ships[0].manual_targets);
     assert_eq!(session.ships[0].attack_target, None);
 }
 
@@ -2516,7 +2516,7 @@ fn death_star_ready_voice_fires_once_only_when_the_players_laser_crosses_full_ch
     );
     assert!(!session.step());
     assert_eq!(session.combat_tick, 2);
-    assert!(session.take_pending_voice_cues().is_empty());
+    assert_empty!(session.take_pending_voice_cues());
 
     let attacker = test_ship(64, 0, true, true);
     let defender = test_ship(128, 0, false, true);
@@ -2677,7 +2677,7 @@ fn attack_death_star_order_uses_the_timed_native_result_producer() {
     assert_eq!(death_star.hull, 0.0);
     assert_eq!(death_star.laser_charge, 0.0);
     assert_eq!(death_star.resource_id(), 5010);
-    assert!(session.weapon_effects.is_empty());
+    assert_empty!(session.weapon_effects);
     assert_eq!(
         session.trench_run_outcome,
         Some(TacticalTrenchRunOutcome::Success)

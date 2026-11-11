@@ -319,7 +319,7 @@ impl FocusLossWatch {
 }
 
 /// Running count of focus losses for a host that reports focus as a state
-/// sampled each frame (AppKit's `-[NSApplication isActive]`) rather than as
+/// sampled each frame (`AppKit`'s `-[NSApplication isActive]`) rather than as
 /// an event. Each active-to-inactive change is one loss.
 #[derive(Debug, Default)]
 #[cfg_attr(
@@ -409,11 +409,12 @@ impl PhysicalInputRoutingCursor {
             {
                 WindowCommand::Activate(target.window)
             }
-            RouteTarget::Window(_) => return None,
             RouteTarget::BlockedBy(window) if snapshot.active_modal() != Some(window) => {
                 WindowCommand::Close(window)
             }
-            RouteTarget::StrategicRoot | RouteTarget::BlockedBy(_) => return None,
+            RouteTarget::Window(_) | RouteTarget::StrategicRoot | RouteTarget::BlockedBy(_) => {
+                return None
+            }
         };
         self.apply(command).then_some(command)
     }
@@ -696,7 +697,7 @@ impl StrategicWindowing {
         let command = WindowCommand::Close(prepared.window_id());
         self.pending
             .push(QueuedWindowCommand::new(command).with_payload(|queued| {
-                queued.prepared_scrap_confirmation_confirm = Some(prepared)
+                queued.prepared_scrap_confirmation_confirm = Some(prepared);
             }));
     }
 
@@ -1538,9 +1539,10 @@ impl StrategicWindowing {
             let commit = self.manager.apply(command)?;
             self.record_transition(&commit.transition, &commit.events);
             let removed_content = self.release_matching_content(&commit.events);
-            let id = match commit.transition {
-                WindowTransition::Opened { id } | WindowTransition::Replaced { new: id, .. } => id,
-                _ => unreachable!("tactical phase sync only opens or replaces"),
+            let (WindowTransition::Opened { id } | WindowTransition::Replaced { new: id, .. }) =
+                commit.transition
+            else {
+                unreachable!("tactical phase sync only opens or replaces");
             };
             if let Some((_, next)) = allocated_subject {
                 self.next_battle_subject = next;
@@ -1634,9 +1636,10 @@ impl StrategicWindowing {
     ) -> Result<Option<CommittedTacticalPhase>, WindowError> {
         let valid_transition = matches!(
             (window.kind, next_phase),
-            (WindowKind::BattleAlert, TacticalWindowPhase::Combat)
-                | (WindowKind::BattleAlert, TacticalWindowPhase::Results)
-                | (WindowKind::BattleResults, TacticalWindowPhase::Inactive)
+            (
+                WindowKind::BattleAlert,
+                TacticalWindowPhase::Combat | TacticalWindowPhase::Results
+            ) | (WindowKind::BattleResults, TacticalWindowPhase::Inactive)
         );
         if !valid_transition
             || self.battle_session_token != Some(battle_session)
@@ -1905,8 +1908,8 @@ mod tests {
 
         ScrapConfirmation {
             faction: MissionFaction::Alliance,
-            order: ScrapOrder::Troop(Default::default()),
-            targets: vec![ScrapTarget::Troop(Default::default())],
+            order: ScrapOrder::Troop(rebellion_core::ids::TroopKey::default()),
+            targets: vec![ScrapTarget::Troop(rebellion_core::ids::TroopKey::default())],
             names: vec!["Army Regiment".into()],
         }
     }
@@ -2311,7 +2314,9 @@ mod tests {
                                     MissionFaction::Alliance,
                                     system,
                                     None,
-                                    vec![MissionMember::Character(Default::default())],
+                                    vec![MissionMember::Character(
+                                        rebellion_core::ids::CharacterKey::default(),
+                                    )],
                                     vec![MissionKind::Diplomacy],
                                 )
                                 .unwrap(),
@@ -2743,7 +2748,9 @@ mod tests {
                         MissionFaction::Alliance,
                         SystemKey::default(),
                         None,
-                        vec![MissionMember::Character(Default::default())],
+                        vec![MissionMember::Character(
+                            rebellion_core::ids::CharacterKey::default(),
+                        )],
                         vec![MissionKind::Diplomacy],
                     )
                     .unwrap(),
@@ -2956,7 +2963,7 @@ mod tests {
 
         let mut coordinator = StrategicWindowing::new();
         let mut state = MissionDialogState::default();
-        let member = MissionMember::Character(Default::default());
+        let member = MissionMember::Character(rebellion_core::ids::CharacterKey::default());
         coordinator
             .enqueue_mission_dialog_open(
                 state
@@ -3858,7 +3865,7 @@ mod tests {
         assert!(coordinator.begin_frame().presentation_history().is_empty());
 
         close_detail_content(&mut coordinator, id, |removed| {
-            state.remove_content(removed)
+            state.remove_content(removed);
         });
         assert!(!state.contains_window(id));
     }
@@ -3885,7 +3892,7 @@ mod tests {
         assert!(coordinator.begin_frame().presentation_history().is_empty());
 
         close_detail_content(&mut coordinator, id, |removed| {
-            state.remove_content(removed)
+            state.remove_content(removed);
         });
         assert_eq!(state.window_count(), 0);
 
@@ -4241,8 +4248,12 @@ mod tests {
         let mut coordinator = StrategicWindowing::new();
         let mut state = StatusWindowState::default();
         let mut world = GameWorld::default();
-        let first = world.characters.insert(Default::default());
-        let second = world.characters.insert(Default::default());
+        let first = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
+        let second = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
         let missions = rebellion_core::missions::MissionState::new();
         let movement = rebellion_core::movement::MovementState::new();
         let transport = rebellion_core::troop_transport::TroopTransportState::new();

@@ -1,9 +1,14 @@
 //! Battle fixtures shared by the engine tests and rebellion-render's view tests.
 
 use super::resource_ids::{capital_ship_tactical_resource, fighter_tactical_resource};
+#[allow(
+    clippy::wildcard_imports,
+    reason = "the shared fixture builders intentionally mirror the tactical module's data model"
+)]
 use super::*;
 
 /// port: test fixture values, not rules.
+#[must_use]
 pub fn test_ship(dat_id: u32, roster: usize, is_alliance: bool, alive: bool) -> TacticalShip {
     TacticalShip {
         class_key: CapitalShipKey::default(),
@@ -93,6 +98,7 @@ pub fn test_ship(dat_id: u32, roster: usize, is_alliance: bool, alive: bool) -> 
 }
 
 /// port: test fixture values, not rules.
+#[must_use]
 pub fn test_fighter(dat_id: u32, is_alliance: bool) -> TacticalFighter {
     TacticalFighter {
         held_by_system: false,
@@ -142,6 +148,7 @@ pub fn test_fighter(dat_id: u32, is_alliance: bool) -> TacticalFighter {
 }
 
 /// port: test fixture values, not rules.
+#[must_use]
 pub fn test_session(
     ships: Vec<TacticalShip>,
     fighters: Vec<TacticalFighter>,
@@ -207,6 +214,7 @@ pub fn test_session(
 
 /// port: an Imperial station of the side `is_attacker`, completed, with a
 /// 100-point hull, no charge, no shield and no hangar.
+#[must_use]
 pub fn test_death_star(is_attacker: bool) -> TacticalDeathStar {
     TacticalDeathStar {
         resource: DEATH_STAR_TACTICAL_RESOURCE,

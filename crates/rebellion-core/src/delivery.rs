@@ -539,7 +539,7 @@ mod tests {
                 kind,
             }]
         );
-        assert!(state.en_route().is_empty());
+        assert_empty!(state.en_route());
     }
 
     // FUN_004f63f0: a regiment travels at the GNPRTB 1 default, 100;
@@ -553,7 +553,8 @@ mod tests {
         assert_eq!(state.en_route()[0].arrival_tick, 17);
 
         let early = state.advance(&world, &[TickEvent { tick: 16 }]);
-        assert!(early.arrivals.is_empty() && early.lost.is_empty());
+        assert_empty!(early.arrivals);
+        assert_empty!(early.lost);
         let arrived = state.advance(&world, &[TickEvent { tick: 17 }]);
         assert_eq!(
             arrived.arrivals,
@@ -563,7 +564,7 @@ mod tests {
                 kind
             }]
         );
-        assert!(state.en_route().is_empty());
+        assert_empty!(state.en_route());
     }
 
     // FUN_00500820: a capital ship travels at its class hyperdrive.
@@ -601,10 +602,10 @@ mod tests {
         state.depart(&world, &[departure(systems[0], systems[1], 0, kind)]);
         world.systems[systems[1]].is_destroyed = true;
         let result = state.advance(&world, &[TickEvent { tick: 10 }]);
-        assert!(result.lost.is_empty());
+        assert_empty!(result.lost);
         assert_eq!(result.arrivals.len(), 1);
         assert_eq!(result.arrivals[0].system, systems[1]);
-        assert!(state.en_route().is_empty());
+        assert_empty!(state.en_route());
     }
 
     #[test]
@@ -650,7 +651,7 @@ mod tests {
             result.arrivals.iter().map(|arrival| arrival.kind).collect();
         assert_eq!(kinds, [moved, plain]);
         assert!(result.arrivals.iter().all(|arrival| arrival.tick == 10));
-        assert!(state.en_route().is_empty());
+        assert_empty!(state.en_route());
     }
 
     #[test]

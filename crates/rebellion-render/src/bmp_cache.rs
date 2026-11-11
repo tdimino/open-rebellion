@@ -1422,7 +1422,7 @@ pub mod resources {
         /// The galaxy view's targeting cursor: `LoadCursorA(.., 0x3ea)` in
         /// `FUN_00422ce0`'s `WM_CREATE`, a 32 by 32 crosshair.
         pub const TARGETING_CURSOR: u32 = 1002;
-        /// The targeting cursor's hotspot, from its RT_CURSOR header.
+        /// The targeting cursor's hotspot, from its `RT_CURSOR` header.
         pub const TARGETING_CURSOR_HOTSPOT: (f32, f32) = (12.0, 12.0);
     }
 }
@@ -1447,7 +1447,7 @@ pub struct BmpCache {
     macroquad_textures: HashMap<(DllSource, u32), Option<Texture2D>>,
     /// Native-style per-pixel hit masks decoded from the original BMPs.
     hit_masks: HashMap<(DllSource, u32), Option<BitmapHitMask>>,
-    /// Original bitmaps keyed as a CoolStrobeButton draws them.
+    /// Original bitmaps keyed as a `CoolStrobeButton` draws them.
     button_textures: HashMap<(DllSource, u32), Option<TextureHandle>>,
     macroquad_button_textures: HashMap<(DllSource, u32), Option<Texture2D>>,
 }
@@ -1671,6 +1671,7 @@ impl BmpCache {
     /// TACTICAL 1000 shell palette as an explicit test palette without
     /// converting or recoloring its indexed pixels. Runtime palette activation
     /// remains an original-executable A/B gate.
+    #[must_use]
     pub fn original_palette_rgba(
         &self,
         source: DllSource,
@@ -1708,7 +1709,7 @@ impl BmpCache {
         self.macroquad_textures.get(&key)?.as_ref()
     }
 
-    /// An original bitmap as a CoolStrobeButton draws it
+    /// An original bitmap as a `CoolStrobeButton` draws it
     /// ([`button_color_image`]), for the egui interface layers.
     pub fn get_button(
         &mut self,
@@ -2076,7 +2077,7 @@ fn uses_black_transparency(source: DllSource, resource_id: u32) -> bool {
     source == DllSource::Strategy && resource_id == 10240
 }
 
-/// Bitmaps keyed on their first stored pixel outside the CoolStrobeButton
+/// Bitmaps keyed on their first stored pixel outside the `CoolStrobeButton`
 /// painters ([`BmpCache::get_button`] keys every button): the burn marks GOKRES `0x2640`-`0x278f` (`(id & 0xfff) + 0x2000`, which
 /// `FUN_0042c3b0.c:350-356` composes keyed over a damaged craft's portrait)
 /// and the Battle Summary's and Operation Report's filter tabs STRATEGY
@@ -2120,7 +2121,7 @@ fn decode_bmp_palette(bytes: &[u8]) -> Option<[[u8; 4]; 256]> {
     let palette_start = 14_usize.checked_add(dib_size)?;
     let palette_bytes = bytes.get(palette_start..palette_start.checked_add(256 * 4)?)?;
     let mut palette = [[0_u8; 4]; 256];
-    for (index, entry) in palette_bytes.chunks_exact(4).enumerate() {
+    for (index, entry) in palette_bytes.as_chunks::<4>().0.iter().enumerate() {
         palette[index] = [entry[2], entry[1], entry[0], 255];
     }
     Some(palette)
@@ -2128,7 +2129,7 @@ fn decode_bmp_palette(bytes: &[u8]) -> Option<[[u8; 4]; 256]> {
 
 /// Decode a staged image and apply the original game's palette-blue
 /// transparency to resources whose extracted bitmaps contain that matte.
-/// A CoolStrobeButton's bitmap as `FUN_00602d30` draws it: unless the
+/// A `CoolStrobeButton`'s bitmap as `FUN_00602d30` draws it: unless the
 /// button's `+0xc4` bit `0x80` is set (`FUN_006030c0(.., 0x80)`, as the
 /// Message Index and the Fleet window do), it composes the window background
 /// (`+0xa4`) and blits the bitmap keyed over it (`FUN_005fd0f0`), the key
@@ -2343,7 +2344,7 @@ mod tests {
             .unwrap()
             .pixels
             .iter()
-            .map(|pixel| pixel.a())
+            .map(egui::Color32::a)
             .collect()
     }
 
@@ -2466,7 +2467,7 @@ mod tests {
 
         cache.set_render_profile(AssetRenderProfile::FaithfulHd);
 
-        assert!(cache.textures.is_empty());
+        assert_empty!(cache.textures);
         assert_eq!(cache.render_profile(), AssetRenderProfile::FaithfulHd);
     }
 
@@ -2688,7 +2689,7 @@ mod tests {
         // first stored pixel's palette index; index 2 shares the colour and
         // stays.
         let image = button_color_image(&button_bmp(), DllSource::Tactical, 1).unwrap();
-        let alpha: Vec<u8> = image.pixels.iter().map(|pixel| pixel.a()).collect();
+        let alpha: Vec<u8> = image.pixels.iter().map(egui::Color32::a).collect();
         // Top row (index 2, 3), then the bottom row (index 1, 3).
         assert_eq!(alpha, vec![255, 255, 0, 255]);
         let plain = decode_color_image(&button_bmp(), DllSource::Tactical, 1).unwrap();
@@ -2980,7 +2981,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."

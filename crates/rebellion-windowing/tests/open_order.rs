@@ -581,7 +581,7 @@ fn replacement_of_a_hidden_root_is_fresh_and_stale_roots_are_rejected() {
     let (_commit, new) = replace_window(&mut manager, old, spec);
     assert_eq!(new.get(), 2);
     assert_eq!(manager.visible_order(), &[new]);
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(manager.presentation_history(), []);
     assert_eq!(manager.id_for(spec.key), Some(new));
     let before = format!("{manager:?}");
     assert_eq!(

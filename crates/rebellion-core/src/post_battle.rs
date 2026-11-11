@@ -88,7 +88,7 @@ pub enum Mover {
 /// (`pass_winner`). A squadron that boards a fleet takes a ship with room
 /// besides the squadron `products` built for it. Log lines go to `log`.
 /// Returns what became of each of the loser's fleets.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The pass threads the world's movement, transport and product state through each object."
 )]
@@ -194,7 +194,7 @@ pub fn run_pass(
 /// port: stage 4 (an en-route squadron, or one whose origin `+0x38` lies
 /// elsewhere, in a system the other side blockades) has no counterpart: the
 /// port keeps no origin for a squadron the system holds.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The pass threads the world's movement and transport state through each object."
 )]
@@ -327,7 +327,7 @@ fn relocate_fleet(
 
 /// `FUN_00515480` for one squadron the system holds. A squadron's speed is
 /// `FUN_004f63f0`'s 100, so it always travels to an accepted place.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The move threads the world's movement, transport and product state."
 )]
@@ -426,7 +426,7 @@ fn relocate_squadron(
 /// `from`.
 /// "Nearest" is the straight-line distance the original's nearness table
 /// sorts by (`FUN_00554150` → `FUN_0058afd0`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The chain reads the world, the transport and movement states and the object's place."
 )]
@@ -1058,7 +1058,7 @@ mod tests {
             world.characters[crew].current_fleet = Some(fleet);
             destroy_fleet(&mut world, &mut TroopTransportState::default(), fleet, 7);
             assert!(!world.fleets.contains_key(fleet));
-            assert!(world.systems[here].fleets.is_empty());
+            assert_empty!(world.systems[here].fleets);
             let character = &world.characters[crew];
             assert!(character.is_captive);
             assert_eq!(character.captured_by, Some(side(!is_alliance)));
@@ -1160,7 +1160,7 @@ mod tests {
     /// Stage 6 (`FUN_005551e0`) takes the systems whose side bits are 3,
     /// nearest first, before stage 7 (`FUN_005552e0`) takes the other side's;
     /// a fleet is accepted at a system of any side (`FUN_005073d0.c:103-113`).
-    /// FUN_00516730 runs the same chain from stage 3, so the withdrawal's
+    /// `FUN_00516730` runs the same chain from stage 3, so the withdrawal's
     /// retreat system follows it too.
     #[test]
     fn a_side_holding_only_the_battle_system_retreats_to_the_nearest_neutral_system() {

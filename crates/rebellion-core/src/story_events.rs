@@ -29,7 +29,7 @@ fn find_character(world: &GameWorld, needle: &str) -> Option<CharacterKey> {
 /// Characters are looked up by name from `world`. If a required character
 /// is not found, that chain is silently skipped (graceful degradation for
 /// mods or scenarios without those characters).
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -1002,7 +1002,7 @@ mod tests {
         define_story_events(&mut state, &world);
         // No characters found — no story events registered
         // (notification events removed in Phase 3b — they belong in economy tick)
-        assert!(state.events().is_empty());
+        assert_empty!(state.events());
     }
 
     #[test]

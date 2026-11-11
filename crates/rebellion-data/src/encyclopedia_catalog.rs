@@ -398,8 +398,8 @@ mod tests {
         assert_eq!(catalog.entries_for(0x70)[0].name, "Allyuen");
         assert_eq!(catalog.entries_for(0x71)[0].name, "Alliance Dreadnaught");
         assert_eq!(catalog.entries_for(0x74)[0].name, "Alliance Army Regiment");
-        assert!(catalog.entries_for(0x75).is_empty());
-        assert!(catalog.entries_for(0xff).is_empty());
+        assert_empty!(catalog.entries_for(0x75));
+        assert_empty!(catalog.entries_for(0xff));
     }
 
     #[test]

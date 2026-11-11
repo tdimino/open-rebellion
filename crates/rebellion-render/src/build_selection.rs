@@ -321,7 +321,7 @@ impl BuildSelectionState {
         })
     }
 
-    /// Publishes prepared content only for a newly accepted singleton. A NoOp
+    /// Publishes prepared content only for a newly accepted singleton. A `NoOp`
     /// duplicate acknowledges the old identity and preserves its context and
     /// control state exactly.
     pub fn commit_open(
@@ -615,11 +615,11 @@ pub fn days_text(value: u32, valid: bool) -> String {
 }
 
 /// Draw the open window, if any, and report what the player asked for.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The window paints in the original's control order; splitting it hides that order."
 )]
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The validator reads the queues, the cargo aboard and the products on their way."
 )]
@@ -985,7 +985,7 @@ fn name_top(bounds: egui::Rect, picture: Option<egui::Rect>) -> f32 {
 /// One class: its GOKRES portrait centered in the box (`FUN_00437880.c:
 /// 128-133`) and its name from [`name_top`], centered across the item
 /// (`DT_CENTER | DT_NOCLIP`, `0x101`, `FUN_00437f80.c:55`), in `color`.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit painter, cache and geometry inputs at this drawing boundary."
 )]
@@ -2031,7 +2031,10 @@ mod tests {
         let name = product(&world, state.dialog().unwrap().kind()).0;
         click_at(&mut state, (111.0, 99.0));
         let (_, texts) = drive_at(&world, &mut state, 1.0, (100.0, 190.0), vec![]);
-        assert_eq!(list_rows(&texts, &[name.clone()]), vec![(name, GREY)]);
+        assert_eq!(
+            list_rows(&texts, std::slice::from_ref(&name)),
+            vec![(name, GREY)]
+        );
         click_at(&mut state, (100.0, 190.0));
         assert!(state.dialog().unwrap().list_open());
     }

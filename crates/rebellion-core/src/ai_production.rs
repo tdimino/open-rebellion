@@ -603,7 +603,7 @@ impl SystemRecord {
             } else {
                 system.popularity_empire
             };
-            #[expect(clippy::cast_possible_truncation, reason = "a share in 0..=1")]
+            #[allow(clippy::cast_possible_truncation, reason = "a share in 0..=1")]
             {
                 r.popularity = (f64::from(popularity) * 100.0).round() as i64;
             }
@@ -760,9 +760,9 @@ impl SystemRecord {
                 + r.ds_shields
                 + r.shields
                 + i64::from(r.a & bit::HQ != 0);
-            let site = (!r.populated && r.a & bit::FREE_ENERGY != 0)
+            let has_build_site = (!r.populated && r.a & bit::FREE_ENERGY != 0)
                 || (r.populated && r.a & role::ANY == 0 && !blocked && used < r.energy);
-            if site {
+            if has_build_site {
                 r.a |= bit::REFINERY_SITE;
                 if r.free_raw > 0 {
                     r.a |= bit::MINE_SITE;
@@ -1038,7 +1038,7 @@ impl SectorRecord {
     }
 
     /// `FUN_00432350`: one system's record into the sector's.
-    #[expect(clippy::too_many_lines, reason = "one decompiled fold")]
+    #[allow(clippy::too_many_lines, reason = "one decompiled fold")]
     fn fold(&mut self, r: &SystemRecord) {
         use crate::ai_records::sys;
         let add = |rec: &mut Self, k: u32, v: i64| *rec.slots.entry(k).or_insert(0) += v;
@@ -1686,6 +1686,7 @@ impl ProductionState {
 impl<'a> Round<'a> {
     /// The round's census and records (`FUN_00418500`, `FUN_00433e40`,
     /// `FUN_00432350`) and its stream.
+    #[must_use]
     pub fn new(state: &ProductionState, inputs: &'a RoundInputs<'a>) -> Self {
         let census = Census::take(
             inputs.world,
@@ -2096,20 +2097,19 @@ impl ClassNode {
         match (self.node, key) {
             (_, 1) => self.maintenance,
             (_, 4) => self.cost,
-            (NodeKind::CapitalShip, 0x200) => self.n30,
+            (NodeKind::CapitalShip, 0x200)
+            | (NodeKind::Regiment, 0x1000)
+            | (NodeKind::Defence, 0x4_0000)
+            | (NodeKind::Facility, 0x4000) => self.n30,
             (NodeKind::CapitalShip, 0x8_0000) => self.n58,
-            (NodeKind::CapitalShip | NodeKind::Fighter, 0x400) => self.n34,
+            (NodeKind::CapitalShip | NodeKind::Fighter, 0x400)
+            | (NodeKind::Regiment, 0x2000)
+            | (NodeKind::Defence, 0x1_0000) => self.n34,
             (NodeKind::CapitalShip, 0x800) => self.n38,
             (NodeKind::CapitalShip, 0x80) => self.n44,
-            (NodeKind::CapitalShip, 0x100) => self.n48,
-            (NodeKind::CapitalShip, 2) | (NodeKind::Regiment, 2) => self.n4c,
+            (NodeKind::CapitalShip, 0x100) | (NodeKind::Fighter, 0x8000) => self.n48,
+            (NodeKind::CapitalShip | NodeKind::Regiment, 2) => self.n4c,
             (NodeKind::CapitalShip, 0x1_0000) => self.n3c,
-            (NodeKind::Fighter, 0x8000) => self.n48,
-            (NodeKind::Regiment, 0x1000) => self.n30,
-            (NodeKind::Regiment, 0x2000) => self.n34,
-            (NodeKind::Defence, 0x1_0000) => self.n34,
-            (NodeKind::Defence, 0x4_0000) => self.n30,
-            (NodeKind::Facility, 0x4000) => self.n30,
             _ => 0,
         }
     }
@@ -2743,11 +2743,10 @@ impl ProductionState {
     /// (`sys+0xd8`), as read.
     fn facility_budget(&mut self, module: Module, round: &Round<'_>) -> i64 {
         let (pct, family) = match module {
-            Module::CapitalShips => (10, YardFamily::ConstructionYard),
+            Module::CapitalShips | Module::Defences => (10, YardFamily::ConstructionYard),
             Module::FleetFighters | Module::SystemFighters => (20, YardFamily::Shipyard),
             Module::SpecialForces => (30, YardFamily::TrainingFacility),
             Module::Regiments => (20, YardFamily::TrainingFacility),
-            Module::Defences => (10, YardFamily::ConstructionYard),
             Module::Yards | Module::DeficitRelief => (100, YardFamily::ConstructionYard),
         };
         let list = self.module(module).list.clone();
@@ -2885,7 +2884,7 @@ impl ProductionState {
             orders.extend(round.make_room(target, MakeRoom::ConstructionYards));
             let budget = round.census.budget(M, 90, round.census.system_defences);
             if budget < 0 {
-                orders.extend(self.defence_overdraft(round));
+                orders.extend(Self::defence_overdraft(round));
                 return Some(orders);
             }
             if budget > 0 {
@@ -2975,28 +2974,27 @@ impl ProductionState {
                 );
             }
         }
-        match target.and_then(|t| round.record(t)) {
-            Some(r) => (Some(r.key), r.defence_balance < 0),
-            None => {
-                if round
-                    .census
-                    .budget(Module::Defences, 90, round.census.system_defences)
-                    > 0
-                    && self.targets[4] < 2
-                {
-                    self.targets[4] += 1;
-                    // FUN_00418240 -> FUN_004311d0 marks every system record
-                    // (FUN_004d4370.c:121-123).
-                    round.dirty = true;
-                }
-                (None, false)
+        if let Some(r) = target.and_then(|t| round.record(t)) {
+            (Some(r.key), r.defence_balance < 0)
+        } else {
+            if round
+                .census
+                .budget(Module::Defences, 90, round.census.system_defences)
+                > 0
+                && self.targets[4] < 2
+            {
+                self.targets[4] += 1;
+                // FUN_00418240 -> FUN_004311d0 marks every system record
+                // (FUN_004d4370.c:121-123).
+                round.dirty = true;
             }
+            (None, false)
         }
     }
 
     /// `FUN_004d8520` ("F3.5"): scrap one defence where the side has a
     /// surplus, else where it has shields and batteries both.
-    fn defence_overdraft(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn defence_overdraft(round: &mut Round<'_>) -> Option<Order> {
         let own = SystemFilter {
             own: true,
             ..SystemFilter::default()
@@ -3313,7 +3311,7 @@ impl ProductionState {
             // FUN_004c8ba0: step 2's order sets done and raises m+0x34
             // (:10-15), so the phase resumes at step 3 next turn.
             if self.module(M).step == 0 {
-                if let Some(order) = self.repair_move(round) {
+                if let Some(order) = Self::repair_move(round) {
                     self.module(M).step = 3;
                     return vec![order];
                 }
@@ -3333,14 +3331,14 @@ impl ProductionState {
             round,
         ) else {
             if budget < 0 {
-                return self.scrap_ship(round).into_iter().collect();
+                return Self::scrap_ship(round).into_iter().collect();
             }
             return self.capital_ships(round);
         };
         let (mask, key, blocker) = self.ship_request(round);
         self.module(M).blockers &= 0x80ff_ffff;
         if budget < 0 {
-            return self.scrap_ship(round).into_iter().collect();
+            return Self::scrap_ship(round).into_iter().collect();
         }
         if budget > 0 {
             let ranked = round.classes(
@@ -3366,7 +3364,7 @@ impl ProductionState {
     /// system, the fleet's own included (`FUN_004c8e90.c:189-201`), where
     /// `FUN_00556390` changes the ships' container in place
     /// (`fleet_join::move_ships_to_system`).
-    fn repair_move(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn repair_move(round: &mut Round<'_>) -> Option<Order> {
         use crate::ai_records::{fleet, ship};
         // FUN_0041a4c0(c, 0x1005, 0x802, 0, largest): own, unadopted,
         // holding a damaged ship, neither en route nor holding a ship en route;
@@ -3551,7 +3549,7 @@ impl ProductionState {
     /// A fleet a regional record or task holds is never scrapped. hyp: ship
     /// `+0x70` is its class maintenance, which the census sums as
     /// `c+0x24c`.
-    fn scrap_ship(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn scrap_ship(round: &mut Round<'_>) -> Option<Order> {
         use crate::ai_records::{fleet, ship};
         let world = round.inputs.world;
         let maintenance = |tag: &u32| {
@@ -3623,12 +3621,12 @@ impl ProductionState {
         let target = producer.and_then(|_| Self::hangar_target(round));
         let (Some(producer), Some(target)) = (producer, target) else {
             if budget < 0 {
-                return Self::optional_order(self.scrap_fighter_aboard(round));
+                return Self::optional_order(Self::scrap_fighter_aboard(round));
             }
             return self.fleet_fighters(round);
         };
         if budget < 0 {
-            return self.scrap_fighter_aboard(round).into_iter().collect();
+            return Self::scrap_fighter_aboard(round).into_iter().collect();
         }
         if budget == 0 {
             return Vec::new();
@@ -3698,7 +3696,7 @@ impl ProductionState {
     /// `FUN_004cd310`: scrap a fighter squadron aboard the own fleet with
     /// the most fighter maintenance. hyp: the squadron with the least
     /// maintenance stands for the smallest vtable `+500` value.
-    fn scrap_fighter_aboard(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn scrap_fighter_aboard(round: &mut Round<'_>) -> Option<Order> {
         let world = round.inputs.world;
         let is_alliance = round.inputs.side == Faction::Alliance;
         let cost = |class| {
@@ -3762,13 +3760,13 @@ impl ProductionState {
         };
         let (Some(producer), Some(target)) = (producer, target) else {
             if round.census.budget(M, 90, round.census.system_fighters) < 0 {
-                return Self::optional_order(self.scrap_system_fighter(round));
+                return Self::optional_order(Self::scrap_system_fighter(round));
             }
             return self.system_fighters(round);
         };
         let budget = round.census.budget(M, 80, round.census.system_fighters);
         if budget < 0 {
-            return Self::optional_order(self.scrap_system_fighter(round));
+            return Self::optional_order(Self::scrap_system_fighter(round));
         }
         if budget == 0 {
             return Vec::new();
@@ -3820,8 +3818,8 @@ impl ProductionState {
             .budget(Module::SystemFighters, 80, round.census.system_fighters)
             > 0
         {
-            for index in 9..=11 {
-                self.targets[index] += 1;
+            for target in self.targets.iter_mut().take(12).skip(9) {
+                *target += 1;
             }
             // FUN_00418240 -> FUN_004311d0 (FUN_004d76f0.c:138).
             round.dirty = true;
@@ -3832,7 +3830,7 @@ impl ProductionState {
     /// `FUN_004d4800`: over budget, a squadron leaves a system with a
     /// surplus. hyp: `FUN_0041a600` and the Move it may issue are not
     /// read; the squadron is scrapped where the surplus is largest.
-    fn scrap_system_fighter(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn scrap_system_fighter(round: &mut Round<'_>) -> Option<Order> {
         let is_alliance = round.inputs.side == Faction::Alliance;
         // The records are walked in the world's system order: rank_pick
         // draws per entry, so a hash map's order would reach the stream.
@@ -3881,12 +3879,12 @@ impl ProductionState {
         let mask = producer.and_then(|_| self.special_force_need(round));
         let (Some(producer), Some(mask)) = (producer, mask) else {
             if budget < 0 {
-                return Self::optional_order(self.retire_special_force(round));
+                return Self::optional_order(Self::retire_special_force(round));
             }
             return self.special_forces(round);
         };
         if budget < 0 {
-            return Self::optional_order(self.retire_special_force(round));
+            return Self::optional_order(Self::retire_special_force(round));
         }
         if budget == 0 {
             return Vec::new();
@@ -3939,7 +3937,7 @@ impl ProductionState {
 
     /// `FUN_004d0610`: retire the special force with the most maintenance.
     /// hyp: a Retire removes the unit as a Scrap does.
-    fn retire_special_force(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn retire_special_force(round: &mut Round<'_>) -> Option<Order> {
         let world = round.inputs.world;
         let is_alliance = round.inputs.side == Faction::Alliance;
         let units: Vec<(crate::ids::SpecialForceKey, i64)> = world
@@ -3995,7 +3993,7 @@ impl ProductionState {
             }
         }
         if budget < 0 {
-            return Self::optional_order(self.scrap_regiment(round));
+            return Self::optional_order(Self::scrap_regiment(round));
         }
         if budget == 0 {
             return Vec::new();
@@ -4020,17 +4018,18 @@ impl ProductionState {
         producer: SystemKey,
         round: &mut Round<'_>,
     ) -> Option<(SystemKey, i64, u32, u32, Dir)> {
+        const A: u8 = 0;
+        const B: u8 = 1;
+        const C: u8 = 2;
+        const D: u8 = 3;
+        const E: u8 = 4;
+
         let state = self.module(Module::Regiments);
         let rotation = state.cursor;
         state.cursor = if rotation >= 4 { 1 } else { rotation + 1 };
         if rotation == 0 {
             return None;
         }
-        const A: u8 = 0;
-        const B: u8 = 1;
-        const C: u8 = 2;
-        const D: u8 = 3;
-        const E: u8 = 4;
         let order: &[u8] = match rotation {
             1 => &[A, B, D, E, C],
             2 => &[B, D, D, E, C, A],
@@ -4119,7 +4118,7 @@ impl ProductionState {
     }
 
     /// `FUN_004dfa80`: scrap a regiment where the side has a surplus.
-    fn scrap_regiment(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn scrap_regiment(round: &mut Round<'_>) -> Option<Order> {
         let world = round.inputs.world;
         let is_alliance = round.inputs.side == Faction::Alliance;
         let sector = round.sector(0x8_0000, &[(0x1f, Dir::Smallest)])?;
@@ -4574,11 +4573,11 @@ mod tests {
 
     /// Module 11's repair move (`repair_move`) for `side` over `world`.
     fn repair_order(world: &GameWorld, side: Faction) -> Option<Order> {
-        let mut state = ProductionState::default();
+        let state = ProductionState::default();
         let manufacturing = ManufacturingState::new();
         let marks = crate::ai_records::Marks::default();
         test_round!(mut round, &state, world, &manufacturing, &marks, side);
-        state.repair_move(&mut round)
+        ProductionState::repair_move(&mut round)
     }
 
     fn assert_repair_move(
@@ -4762,7 +4761,6 @@ mod tests {
                 world.troops.insert(TroopUnit {
                     class_dat_id: DatId::new(id),
                     is_alliance,
-                    ..Default::default()
                 })
             };
             let aboard = troop(&mut world, 0x1000_0001, mine);
@@ -4850,7 +4848,7 @@ mod tests {
         let state = ProductionState::default();
         test_round!(mut round, &state, world, &manufacturing, marks, side);
         edit(&mut round);
-        ProductionState::default().scrap_ship(&mut round)
+        ProductionState::scrap_ship(&mut round)
     }
 
     // FUN_004cd040 with no regional record asks
@@ -5215,7 +5213,7 @@ mod tests {
     fn the_defence_overdraft_scraps_only_at_the_side_s_own_system_for_either_side() {
         for side in [Faction::Empire, Faction::Alliance] {
             let (order, shield, _) = two_system_round(side, surplus, |round| {
-                ProductionState::default().defence_overdraft(round)
+                ProductionState::defence_overdraft(round)
             });
 
             assert_eq!(order, Some(Order::Scrap(vec![shield])), "{side:?}");

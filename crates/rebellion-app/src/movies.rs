@@ -102,7 +102,7 @@ pub const fn ending_movie(code: u8) -> Option<u8> {
 /// The intro, the first movie at the start of the program (`FUN_00414830`,
 /// state 1).
 pub const INTRO: u8 = 0x65;
-/// The Credits movie the main menu's LucasArts logo plays (`FUN_00406000`,
+/// The Credits movie the main menu's `LucasArts` logo plays (`FUN_00406000`,
 /// control `0x73`).
 pub const CREDITS: u8 = 0x6e;
 
@@ -270,7 +270,7 @@ pub fn clear_for_movie(
 }
 
 /// The movie window's caption field (`FUN_00421790`, `WM_CREATE`): a
-/// TextScrollField at (4, 404), 580 by 70, in the 640 by 480 window, white
+/// `TextScrollField` at (4, 404), 580 by 70, in the 640 by 480 window, white
 /// (`0x2ffffff`) font 4, made only for a caption.
 const CAPTION: (f32, f32, f32, f32) = (4.0, 404.0, 580.0, 70.0);
 /// The movie window's logical size.

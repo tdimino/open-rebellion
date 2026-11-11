@@ -6,6 +6,8 @@
 //! checkmark submits the order without asking again; the X destroys it.
 //! Enter and Escape press them (`FUN_0044f640`).
 
+use std::fmt::Write as _;
+
 use egui_macroquad::egui;
 use rebellion_core::fleet_join::FleetMover;
 use rebellion_core::ids::{FleetKey, SystemKey};
@@ -149,7 +151,7 @@ fn commit_managed_confirm<T, A: PartialEq>(
     Some(prepared_action)
 }
 
-fn contains_confirmation<T>(window: &Option<T>, layout: CockpitLayout, point: (f32, f32)) -> bool {
+fn contains_confirmation<T>(window: Option<&T>, layout: CockpitLayout, point: (f32, f32)) -> bool {
     window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
 }
 
@@ -243,7 +245,7 @@ impl MoveConfirmation {
         }
         .to_string();
         for (name, days) in &self.lines {
-            text.push_str(&format!("\n{name}:  {days}"));
+            let _ = write!(text, "\n{name}:  {days}");
         }
         text
     }
@@ -438,7 +440,7 @@ impl MoveConfirmationState {
     /// takes no input.
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        contains_confirmation(&self.window, layout, point)
+        contains_confirmation(self.window.as_ref(), layout, point)
     }
 
     /// Either control closes the window (`+0x30`) after acting.
@@ -508,7 +510,7 @@ const TEXT_EM: f32 = 13.4;
 const TEXT_LINE_HEIGHT: f32 = 16.0;
 const TEXT_ASCENT: f32 = 13.0;
 
-/// The checkmark or X: a CoolStrobeButton (`FUN_00602150`) that
+/// The checkmark or X: a `CoolStrobeButton` (`FUN_00602150`) that
 /// `FUN_0044f180` builds 51 by 35, its bitmaps' own size, without a last
 /// argument (`FUN_0044f180.c:129-130`). That sets `+0xc4` bit 0x10
 /// (`FUN_00602150.c:115-117`), so a press and its release count only on an
@@ -833,7 +835,7 @@ impl ScrapConfirmationState {
     /// Whether `point` falls on the open window.
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        contains_confirmation(&self.window, layout, point)
+        contains_confirmation(self.window.as_ref(), layout, point)
     }
 }
 
@@ -924,7 +926,7 @@ impl StopConfirmation {
     pub fn text(&self) -> String {
         let mut text = STOP_QUESTION.to_string();
         for (units, name) in &self.lines {
-            text.push_str(&format!("\n{units}  {name}"));
+            let _ = write!(text, "\n{units}  {name}");
         }
         text
     }
@@ -1022,7 +1024,7 @@ impl StopConfirmationState {
     /// Whether `point` falls on the open window.
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        contains_confirmation(&self.window, layout, point)
+        contains_confirmation(self.window.as_ref(), layout, point)
     }
 }
 
@@ -1644,8 +1646,8 @@ mod tests {
     fn scrap_confirmation(faction: MissionFaction) -> ScrapConfirmation {
         ScrapConfirmation {
             faction,
-            order: ScrapOrder::Troop(Default::default()),
-            targets: vec![ScrapTarget::Troop(Default::default())],
+            order: ScrapOrder::Troop(rebellion_core::ids::TroopKey::default()),
+            targets: vec![ScrapTarget::Troop(rebellion_core::ids::TroopKey::default())],
             names: vec!["Army Regiment".into()],
         }
     }
@@ -1816,7 +1818,9 @@ mod tests {
     #[test]
     fn move_confirmation_managed_adapter_enforces_exact_content_and_routes() {
         let mut invalid_both = confirmation(MissionFaction::Alliance);
-        invalid_both.members = vec![MissionMember::Character(Default::default())];
+        invalid_both.members = vec![MissionMember::Character(
+            rebellion_core::ids::CharacterKey::default(),
+        )];
         invalid_both.lines.push(("Leia".into(), 2));
         assert!(MoveConfirmationState::default()
             .prepare_open(invalid_both)
@@ -1824,7 +1828,9 @@ mod tests {
 
         let valid_member = MoveConfirmation {
             fleets: Vec::new(),
-            members: vec![MissionMember::Character(Default::default())],
+            members: vec![MissionMember::Character(
+                rebellion_core::ids::CharacterKey::default(),
+            )],
             lines: vec![("Leia".into(), 2)],
             ..confirmation(MissionFaction::Alliance)
         };
@@ -1859,7 +1865,7 @@ mod tests {
                 fleets: Vec::new(),
                 members: Vec::new(),
                 ships: None,
-                units: vec![UnitMover::Regiment(Default::default())],
+                units: vec![UnitMover::Regiment(rebellion_core::ids::TroopKey::default())],
                 destination: SystemKey::default(),
                 join: None,
                 blockaded: true,
@@ -2166,8 +2172,8 @@ mod tests {
         let prepared = state
             .prepare_open(ScrapConfirmation {
                 faction: MissionFaction::Alliance,
-                order: ScrapOrder::Troop(Default::default()),
-                targets: vec![ScrapTarget::Troop(Default::default())],
+                order: ScrapOrder::Troop(rebellion_core::ids::TroopKey::default()),
+                targets: vec![ScrapTarget::Troop(rebellion_core::ids::TroopKey::default())],
                 names: vec!["Army Regiment".into()],
             })
             .unwrap();
@@ -2559,7 +2565,7 @@ mod tests {
                 assert_eq!(
                     manufacturing
                         .queue(system, ProductionArea::Shipyard)
-                        .map(|queue| queue.len()),
+                        .map(rebellion_core::manufacturing::ProductionQueue::len),
                     Some(2),
                     "{faction:?}"
                 );

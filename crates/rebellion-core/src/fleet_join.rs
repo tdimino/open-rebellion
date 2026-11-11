@@ -517,9 +517,9 @@ pub fn validate_join(
 /// blockaded system of its side (`FUN_00487cc0`, [`fleet_move_confirms`]).
 /// A join within the fleet's own system departs nowhere.
 #[must_use]
-pub fn join_confirms(
+pub fn join_confirms<S: std::hash::BuildHasher>(
     world: &GameWorld,
-    blockaded: &HashSet<SystemKey>,
+    blockaded: &HashSet<SystemKey, S>,
     fleet: FleetKey,
     target: FleetKey,
     confirmed: bool,
@@ -545,7 +545,7 @@ pub fn join_confirms(
 ///
 /// # Errors
 /// As [`create_fleet`], and a refused departure.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The order's state, its ships with their roster, and its destination and side."
 )]
@@ -713,7 +713,7 @@ fn ship_indices_with_tags(fleet: &Fleet, tags: &[u32]) -> Vec<usize> {
 /// # Errors
 /// As [`move_ships_to_system`]; a tag no ship of the fleet carries is
 /// left out.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The order's state, its fleet and tags, and its destination, side and day."
 )]
@@ -1010,7 +1010,7 @@ mod tests {
         setup: &mut Setup,
         movement: &mut MovementState,
         transport: &mut TroopTransportState,
-        mover: FleetMover,
+        mover: &FleetMover,
         target: FleetKey,
         is_alliance: bool,
         now: u64,
@@ -1019,7 +1019,7 @@ mod tests {
             &mut setup.world,
             movement,
             transport,
-            &mover,
+            mover,
             target,
             is_alliance,
             now,
@@ -1038,7 +1038,7 @@ mod tests {
             setup,
             &mut movement,
             &mut TroopTransportState::default(),
-            FleetMover::Fleet(mover),
+            &FleetMover::Fleet(mover),
             target,
             is_alliance,
             now,
@@ -1114,7 +1114,10 @@ mod tests {
         let here = setup.here;
         let mover = fleet(&mut setup, here, &[10, 20], true);
         let target = fleet(&mut setup, here, &[30], true);
-        let fighter = setup.world.fighter_classes.insert(Default::default());
+        let fighter = setup
+            .world
+            .fighter_classes
+            .insert(crate::world::FighterClass::default());
         setup.world.fleets[mover].fighters.push(FighterEntry {
             class: fighter,
             count: 2,
@@ -1158,7 +1161,7 @@ mod tests {
         assert_eq!(world.characters[admiral].current_fleet, Some(target));
         assert!(world.fleet_has_death_star(target));
         assert_eq!(transport.cargo(target), [troop]);
-        assert!(movement.is_empty());
+        assert_empty!(movement);
     }
 
     // port: fleet_name_bank's signature names follow their flagship class.
@@ -1212,7 +1215,7 @@ mod tests {
             &mut setup,
             &mut MovementState::new(),
             &mut transport,
-            FleetMover::Ships {
+            &FleetMover::Ships {
                 fleet: mover,
                 ships: vec![2, 0],
                 roster: chosen,
@@ -1228,7 +1231,7 @@ mod tests {
         // The regiment boarded the first of the equal ships (FUN_00552b10)
         // and, a child of that ship, goes where it goes.
         assert_eq!(transport.cargo(target), [troop]);
-        assert!(transport.cargo(mover).is_empty());
+        assert_empty!(transport.cargo(mover));
     }
 
     // FUN_004fe630: a fleet whose last ship leaves disbands, so moving every
@@ -1242,7 +1245,7 @@ mod tests {
             &mut setup,
             &mut MovementState::new(),
             &mut transport,
-            FleetMover::Ships {
+            &FleetMover::Ships {
                 fleet: mover,
                 ships: vec![0, 1],
                 roster: chosen,
@@ -1583,11 +1586,9 @@ mod tests {
         let created = create_selected(&mut setup, &mut transport, source, &[1, 2], true).unwrap();
 
         assert_eq!(hulls(&setup.world, source), [10]);
-        assert!(transport.cargo(source).is_empty());
+        assert_empty!(transport.cargo(source));
         assert_eq!(transport.cargo(created), troops.as_slice());
-        assert!(transport
-            .destroy_untransportable_cargo(&mut setup.world)
-            .is_empty());
+        assert_empty!(transport.destroy_untransportable_cargo(&mut setup.world));
     }
 
     // FUN_00552b10: each regiment boards the ship with the most room, the
@@ -1613,7 +1614,10 @@ mod tests {
         let here = setup.here;
         let source = fleet(&mut setup, here, &[10, 20], true);
         setup.world.capital_ship_classes[setup.class].fighter_capacity = 1;
-        let fighter = setup.world.fighter_classes.insert(Default::default());
+        let fighter = setup
+            .world
+            .fighter_classes
+            .insert(crate::world::FighterClass::default());
         // Each ship has room for one, so a squadron boards each.
         for index in 0..2 {
             let tag = crate::carriage::tag_ship(&mut setup.world, source, index).unwrap();
@@ -1644,7 +1648,7 @@ mod tests {
             [world.fleets[source].capital_ships[0].tag]
         );
         assert_eq!(world.fleets[created].characters, [admiral]);
-        assert!(world.fleets[source].characters.is_empty());
+        assert_empty!(world.fleets[source].characters);
         assert_eq!(world.characters[admiral].current_fleet, Some(created));
     }
 
@@ -1917,7 +1921,7 @@ mod tests {
         assert_eq!(hulls(&setup.world, mover), [10, 20, 30]);
         assert_eq!(setup.world.fleets.len(), fleets_before);
         assert_eq!(setup.world.systems[here].fleets, [mover]);
-        assert!(movement.is_empty());
+        assert_empty!(movement);
     }
 
     // FUN_00580b00 → FUN_00509b40: Create Fleet puts the selected ships in a
@@ -1943,7 +1947,7 @@ mod tests {
         assert_eq!(world.systems[here].fleets, expected);
         // The regiment rides ship 0 (FUN_00552b10), which leaves.
         assert_eq!(transport.cargo(created), [troop]);
-        assert!(transport.cargo(source).is_empty());
+        assert_empty!(transport.cargo(source));
     }
 
     // FUN_004fe630: when every ship leaves, the old fleet disbands and its
@@ -2429,7 +2433,7 @@ mod tests {
             panic!("the ship forms a fleet: {outcome:?}");
         };
         assert_eq!(hulls(&setup.world, created), [20]);
-        assert!(movement.is_empty());
+        assert_empty!(movement);
     }
 
     #[test]
@@ -2457,7 +2461,7 @@ mod tests {
                 FleetDispatchError::MissingDestination
             ))
         );
-        assert!(movement.is_empty());
+        assert_empty!(movement);
         assert_eq!(setup.world.systems[here].fleets, [mover]);
     }
 
@@ -2532,7 +2536,7 @@ mod tests {
                 &mut setup,
                 &mut movement,
                 &mut transport,
-                FleetMover::Fleet(mover),
+                &FleetMover::Fleet(mover),
                 target,
                 is_alliance,
                 0,
@@ -2551,7 +2555,7 @@ mod tests {
                 &mut setup,
                 &mut movement,
                 &mut transport,
-                FleetMover::Ships {
+                &FleetMover::Ships {
                     fleet: lone,
                     ships: vec![0],
                     roster: chosen,

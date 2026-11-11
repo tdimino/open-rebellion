@@ -1,3 +1,31 @@
+// The original simulation mixes fixed-width counters with f32 calculations.
+// These casts preserve the game's truncation, wrapping and precision semantics;
+// replacing them with checked conversions would change recovered behavior.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+
+#[cfg(test)]
+#[allow(clippy::assert_is_empty)]
+macro_rules! assert_empty {
+    ($value:expr $(,)?) => {{
+        let value = &$value;
+        assert!(value.is_empty(), "expected an empty value, got {value:?}");
+    }};
+}
+
+#[cfg(test)]
+#[allow(clippy::assert_is_empty)]
+macro_rules! assert_not_empty {
+    ($value:expr $(,)?) => {{
+        let value = &$value;
+        assert!(!value.is_empty(), "expected a non-empty value");
+    }};
+}
+
 pub mod agent_automation;
 pub mod ai;
 pub mod ai_production;

@@ -40,16 +40,16 @@ const RAIL: [u32; 2] = [10586, 10590];
 const RAIL_AT: (f32, f32) = (412.0, 0.0);
 const PANEL_AT: (f32, f32) = (12.0, 13.0);
 
-/// Panel bitmaps indexed by `[view][side]` (FUN_004637a0 / FUN_00464e10).
+/// Panel bitmaps indexed by `[view][side]` (`FUN_004637a0` / `FUN_00464e10`).
 ///
 /// Characters + Alliance = 10538, Characters + Imperial = 10539,
-/// SpecForces + Alliance = 10536, SpecForces + Imperial = 10537.
+/// `SpecForces` + Alliance = 10536, `SpecForces` + Imperial = 10537.
 const PANELS: [[u32; 2]; 2] = [
     [10538, 10539], // Characters view: Alliance, Imperial
     [10536, 10537], // SpecForces view: Alliance, Imperial
 ];
 
-/// The side tab (FUN_004637a0's control 100, TEXTSTRA 0x1893/0x1894).
+/// The side tab (`FUN_004637a0`'s control 100, TEXTSTRA 0x1893/0x1894).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PersonnelTab {
     #[default]
@@ -82,7 +82,7 @@ impl PersonnelTab {
     }
 }
 
-/// The view tab (FUN_004637a0's control 0x6e, values 2 and 3).
+/// The view tab (`FUN_004637a0`'s control 0x6e, values 2 and 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PersonnelView {
     Characters,
@@ -100,8 +100,8 @@ impl PersonnelView {
         }
     }
 
-    /// The tab label y: Characters → 119, SpecForces → 115
-    /// (FUN_00464e10 lines 294–300).
+    /// The tab label y: Characters → 119, `SpecForces` → 115
+    /// (`FUN_00464e10` lines 294–300).
     const fn label_y(self) -> f32 {
         match self {
             Self::Characters => 119.0,
@@ -110,7 +110,7 @@ impl PersonnelView {
     }
 }
 
-/// The side's Close and Display controls (FUN_004637a0).
+/// The side's Close and Display controls (`FUN_004637a0`).
 struct SideControls {
     close: Control,
     display: Control,
@@ -154,8 +154,8 @@ const CONTROLS: [SideControls; 2] = [
     },
 ];
 
-/// View tab art: `[side][view]` (FUN_004637a0).
-/// SpecForces: Alliance 10542/10543, Empire 10544/10545.
+/// View tab art: `[side][view]` (`FUN_004637a0`).
+/// `SpecForces`: Alliance 10542/10543, Empire 10544/10545.
 /// Characters: Alliance 10546/10547, Empire 10548/10549.
 const VIEW_TAB_ART: [[(u32, u32); 2]; 2] = [
     // Alliance: [SpecForces, Characters]
@@ -182,7 +182,7 @@ const NAME_BOX: (f32, f32, f32, f32) = (143.0, 45.0, 250.0, 18.0);
 const LIST: (f32, f32, f32, f32) = (37.0, 143.0, 349.0, 161.0);
 const ROW_HEIGHT: f32 = 20.0;
 
-/// Four Special Forces DatIds per side (FUN_00465540).
+/// Four Special Forces `DatIds` per side (`FUN_00465540`).
 const ALLIANCE_SF_CLASSES: [u32; 4] = [0x3c00_0004, 0x3c00_0002, 0x3c00_0001, 0x3c00_0003];
 const EMPIRE_SF_CLASSES: [u32; 4] = [0x3c00_0007, 0x3c00_0006, 0x3c00_0008, 0x3c00_0005];
 
@@ -193,7 +193,7 @@ fn sf_classes(tab: PersonnelTab) -> &'static [u32; 4] {
     }
 }
 
-/// One count cell in a SpecForces row.
+/// One count cell in a `SpecForces` row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SfCount {
     pub count: u32,
@@ -204,7 +204,7 @@ pub struct SfCount {
 /// One list row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PersonnelFinderRow {
-    /// A character: "Name - Location (state)" (FUN_00465bb0).
+    /// A character: "Name - Location (state)" (`FUN_00465bb0`).
     Character {
         key: CharacterKey,
         name: String,
@@ -212,7 +212,7 @@ pub enum PersonnelFinderRow {
         state: String,
         system: Option<SystemKey>,
     },
-    /// A system (or fleet) with SpecForces counts (FUN_00465540).
+    /// A system (or fleet) with `SpecForces` counts (`FUN_00465540`).
     SpecForces {
         name: String,
         system: SystemKey,
@@ -224,13 +224,12 @@ pub enum PersonnelFinderRow {
 impl PersonnelFinderRow {
     fn display_name(&self) -> &str {
         match self {
-            Self::Character { name, .. } => name,
-            Self::SpecForces { name, .. } => name,
+            Self::Character { name, .. } | Self::SpecForces { name, .. } => name,
         }
     }
 }
 
-/// A typed name chooses the first row it best begins (FUN_00609650).
+/// A typed name chooses the first row it best begins (`FUN_00609650`).
 #[must_use]
 pub fn prefix_choice(rows: &[PersonnelFinderRow], text: &str) -> Option<usize> {
     let typed: Vec<char> = text.chars().map(|c| c.to_ascii_lowercase()).collect();
@@ -357,8 +356,8 @@ fn character_text(world: &GameWorld, character: &rebellion_core::world::Characte
     }
 }
 
-/// Build the Characters view rows for `tab` (FUN_00464e10 view==3,
-/// FUN_00465bb0).
+/// Build the Characters view rows for `tab` (`FUN_00464e10` view==3,
+/// `FUN_00465bb0`).
 #[must_use]
 pub fn character_rows(
     world: &GameWorld,
@@ -390,8 +389,8 @@ pub fn character_rows(
     rows
 }
 
-/// Build the SpecForces view rows for `tab` (FUN_00464e10 view==2,
-/// FUN_00465540).
+/// Build the `SpecForces` view rows for `tab` (`FUN_00464e10` view==2,
+/// `FUN_00465540`).
 #[must_use]
 pub fn specforces_rows(
     world: &GameWorld,
@@ -454,15 +453,15 @@ pub fn rows(
 /// What the Personnel Finder asks of the galaxy view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PersonnelFinderAction {
-    /// Character row: open the character window (FUN_00429440 family 0x30).
+    /// Character row: open the character window (`FUN_00429440` family 0x30).
     OpenCharacter {
         character: CharacterKey,
         system: Option<SystemKey>,
     },
-    /// SpecForces system row: open the Sector and System windows
-    /// (FUN_00429440 family 0x90).
+    /// `SpecForces` system row: open the Sector and System windows
+    /// (`FUN_00429440` family 0x90).
     OpenSystem { system: SystemKey },
-    /// SpecForces fleet row: open the Fleet window.
+    /// `SpecForces` fleet row: open the Fleet window.
     OpenFleet { system: SystemKey, fleet: FleetKey },
 }
 
@@ -496,7 +495,7 @@ struct OpenFinder {
     last_clicked: Option<(usize, f64)>,
 }
 
-/// The Personnel Finder, one at most (FUN_0042a4d0).
+/// The Personnel Finder, one at most (`FUN_0042a4d0`).
 #[derive(Debug, Clone, Default)]
 pub struct PersonnelFinderState {
     window: Option<OpenFinder>,
@@ -520,7 +519,7 @@ impl PreparedPersonnelFinder {
 }
 
 /// Rows visible at once: 161 / 20 = 8.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Eight whole rows of 20 in a list 161 tall."
@@ -559,7 +558,7 @@ fn at(frame: egui::Rect, scale: f32, (x, y, w, h): (f32, f32, f32, f32)) -> egui
     logical_rect(frame, scale, x, y, w, h)
 }
 
-/// Cell colours for SpecForces counts (FUN_00465540): same as the troop
+/// Cell colours for `SpecForces` counts (`FUN_00465540`): same as the troop
 /// finder. Alliance tab → white on red; Imperial tab → black on green.
 fn sf_cell_colours(tab: PersonnelTab) -> (egui::Color32, egui::Color32) {
     match tab {
@@ -576,7 +575,7 @@ impl PersonnelFinderState {
     }
 
     /// Publishes prepared content only for a new manager identity. A duplicate
-    /// NoOp acknowledges the existing identity without rebuilding its state.
+    /// `NoOp` acknowledges the existing identity without rebuilding its state.
     pub fn commit_open(
         &mut self,
         prepared: PreparedPersonnelFinder,
@@ -702,8 +701,8 @@ impl PersonnelFinderState {
         self.window.as_ref().map(|_| window_rect(layout))
     }
 
-    /// Open the Finder on the player's side tab, SpecForces view
-    /// (FUN_004637a0). An open Finder stays as it is.
+    /// Open the Finder on the player's side tab, `SpecForces` view
+    /// (`FUN_004637a0`). An open Finder stays as it is.
     pub fn open(&mut self, faction: CockpitFaction) -> bool {
         if self.window.is_some() {
             return false;
@@ -817,7 +816,7 @@ pub fn draw_personnel_finder_focused(
     }
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The window carries its existing render context plus semantic focus; splitting it hides the original control order."
 )]
@@ -1169,12 +1168,12 @@ fn draw_personnel_finder_outcome(
         open_window.last_clicked = Some((row, at_time));
         open_window.chosen = Some(row);
         // Copy the display name into the name box.
-        open_window.name = list[row].display_name().to_owned();
+        list[row].display_name().clone_into(&mut open_window.name);
     }
     if focused_control == Some(PERSONNEL_FINDER_NAME_CONTROL) && arrow_down && !list.is_empty() {
         let row = open_window.chosen.unwrap_or(0).min(list.len() - 1);
         open_window.chosen = Some(row);
-        open_window.name = list[row].display_name().to_owned();
+        list[row].display_name().clone_into(&mut open_window.name);
         open_window.first_row = scrolled_to(open_window.first_row, row);
         focus_request = Some(PERSONNEL_FINDER_LIST_CONTROL);
     }
@@ -1196,7 +1195,7 @@ fn draw_personnel_finder_outcome(
                 focus_request = Some(PERSONNEL_FINDER_NAME_CONTROL);
             } else if arrow_up || arrow_down {
                 open_window.chosen = Some(next);
-                open_window.name = list[next].display_name().to_owned();
+                list[next].display_name().clone_into(&mut open_window.name);
                 open_window.first_row = scrolled_to(open_window.first_row, next);
             }
             if managed_enter {
@@ -2331,7 +2330,10 @@ mod tests {
         let fog = FogState::new(Faction::Alliance);
 
         let listed = specforces_rows(&world, &fog, Faction::Alliance, PersonnelTab::Alliance);
-        let names: Vec<&str> = listed.iter().map(|r| r.display_name()).collect();
+        let names: Vec<&str> = listed
+            .iter()
+            .map(PersonnelFinderRow::display_name)
+            .collect();
         assert_eq!(names, ["Alpha", "beta"]);
     }
 

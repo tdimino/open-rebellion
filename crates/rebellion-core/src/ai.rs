@@ -411,7 +411,7 @@ impl AISystem {
         if actions.len() >= stop {
             return false;
         }
-        let planned = planner.plan(kind);
+        let mission_plan = planner.plan(kind);
         crate::trace::record(crate::trace::TraceMask::AI, "dispatch", || {
             let world = planner.world;
             serde_json::json!({
@@ -421,12 +421,12 @@ impl AISystem {
                     .1
                     .and_then(|key| world.characters.get(key))
                     .map(|c| c.name.clone()),
-                "chosen": planned.is_some(),
-                "team": planned.as_ref().map(|(team, _)| team.len()),
-                "decoys": planned.as_ref().map(|(_, decoys)| decoys.len()),
+                "chosen": mission_plan.is_some(),
+                "team": mission_plan.as_ref().map(|(team, _)| team.len()),
+                "decoys": mission_plan.as_ref().map(|(_, decoys)| decoys.len()),
             })
         });
-        let Some((team, decoys)) = planned else {
+        let Some((team, decoys)) = mission_plan else {
             return false;
         };
         actions.push(AIAction::DispatchMission {
@@ -668,7 +668,7 @@ impl AISystem {
     /// plans Death Star Sabotage: `FUN_004e8290.c:90-99` requests `0x6a`
     /// only for the Alliance with an own Death Star hull, which no Alliance
     /// class is.
-    #[expect(
+    #[allow(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
@@ -1016,7 +1016,7 @@ impl AISystem {
     /// original's posture-recommended Recon planner (module 4 state 3,
     /// `FUN_004d2690`; br `or-3m5f`). The per-system recommendation itself
     /// (`FUN_004b7150`) is ported in `ai_regions.rs` `missions_and_tasks`.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -1970,9 +1970,9 @@ mod tests {
             });
             world.systems[system].is_headquarters = false;
             with_round(&world, side, |round| {
-                assert!(
-                    crate::ai_regions::sabotage_candidates(round, system, 0x200_0000).is_empty()
-                );
+                assert_empty!(crate::ai_regions::sabotage_candidates(
+                    round, system, 0x200_0000
+                ));
             });
         }
     }
@@ -2064,7 +2064,7 @@ mod tests {
         world.systems[system].is_headquarters = true;
         let _ = add_commando(&mut world, false, 80, 80);
 
-        assert!(sabotage_orders(&world, AiFaction::Empire, &[(sector, 1)]).is_empty());
+        assert_empty!(sabotage_orders(&world, AiFaction::Empire, &[(sector, 1)]));
     }
 
     #[test]
@@ -2082,7 +2082,7 @@ mod tests {
         );
         let _ = add_commando(&mut world, false, 90, 90);
 
-        assert!(sabotage_orders(&world, AiFaction::Empire, &[]).is_empty());
+        assert_empty!(sabotage_orders(&world, AiFaction::Empire, &[]));
     }
 
     #[test]
@@ -2130,9 +2130,7 @@ mod tests {
             tick: 0,
         });
 
-        assert!(regions
-            .sabotage_requests(&world, &missions, empire)
-            .is_empty());
+        assert_empty!(regions.sabotage_requests(&world, &missions, empire));
         assert_eq!(regions.records[0].missions[3], 1);
         assert!(regions
             .sabotage_requests(&world, &missions, crate::dat::Faction::Alliance)
@@ -2341,7 +2339,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -2884,7 +2882,7 @@ mod tests {
         add_character(&mut world, true, false, 90);
         let actions = uprising_prevention_actions(&world, AiFaction::Alliance);
 
-        assert!(orders(&actions, MissionKind::Diplomacy).is_empty());
+        assert_empty!(orders(&actions, MissionKind::Diplomacy));
     }
 
     #[test]

@@ -48,7 +48,7 @@ use rebellion_render::quadrant_icons::Quadrant;
 use rebellion_render::system_window::reference_rail_slots;
 use rebellion_render::{
     strategic_primary_controls, CockpitButton, CockpitFaction, CockpitState, GalaxyMapState,
-    GameMessage, GidMode, SectorWindowState, SystemWindowState,
+    GameMessage, GidMode, MessageCategory, SectorWindowState, SystemWindowState,
 };
 use rebellion_render::{DefensesPage, DefensesWindowState, MissionsTab, MissionsWindowState};
 use rebellion_windowing::{RoutingSnapshot, WindowKind};
@@ -369,7 +369,7 @@ pub fn requested() -> Option<FixtureRequest> {
 }
 
 #[allow(clippy::too_many_arguments)]
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep the deterministic browser fixture setup in its existing order."
 )]
@@ -875,24 +875,21 @@ fn fixture_ship_class(
     wanted: impl Fn(&rebellion_core::world::CapitalShipClass) -> bool,
     template: rebellion_core::world::CapitalShipClass,
 ) -> rebellion_core::ids::CapitalShipKey {
-    world
-        .capital_ship_classes
-        .iter()
-        .find(|(_, class)| {
-            class.is_alliance == player_is_alliance
-                && class.hyperdrive > 0
-                && !class.is_death_star()
-                && wanted(class)
-        })
-        .map(|(key, _)| key)
-        .unwrap_or_else(|| {
-            world
-                .capital_ship_classes
-                .insert(rebellion_core::world::CapitalShipClass {
-                    is_alliance: player_is_alliance,
-                    ..template
-                })
-        })
+    if let Some((key, _)) = world.capital_ship_classes.iter().find(|(_, class)| {
+        class.is_alliance == player_is_alliance
+            && class.hyperdrive > 0
+            && !class.is_death_star()
+            && wanted(class)
+    }) {
+        key
+    } else {
+        world
+            .capital_ship_classes
+            .insert(rebellion_core::world::CapitalShipClass {
+                is_alliance: player_is_alliance,
+                ..template
+            })
+    }
 }
 
 /// A regiment class of the side: the class of one of its regiments, else
@@ -946,22 +943,23 @@ fn fixture_bombing_squadron(
     world: &mut GameWorld,
     player_is_alliance: bool,
 ) -> rebellion_core::ids::FighterKey {
-    world
+    if let Some((key, _)) = world
         .fighter_classes
         .iter()
         .find(|(_, class)| class.is_alliance == player_is_alliance && class.bombardment_defense > 0)
-        .map(|(key, _)| key)
-        .unwrap_or_else(|| {
-            world
-                .fighter_classes
-                .insert(rebellion_core::world::FighterClass {
-                    name: "Bomber Squadron".into(),
-                    is_alliance: player_is_alliance,
-                    is_empire: !player_is_alliance,
-                    bombardment_defense: 2,
-                    ..rebellion_core::world::FighterClass::default()
-                })
-        })
+    {
+        key
+    } else {
+        world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass {
+                name: "Bomber Squadron".into(),
+                is_alliance: player_is_alliance,
+                is_empire: !player_is_alliance,
+                bombardment_defense: 2,
+                ..rebellion_core::world::FighterClass::default()
+            })
+    }
 }
 
 /// The regiment-loading target: another system in the primary system's
@@ -1108,27 +1106,22 @@ fn place_loading_fleet(
         }
     }
     // One carrier of the player's side that can enter hyperspace.
-    let carrier = world
-        .capital_ship_classes
-        .iter()
-        .find(|(_, class)| {
-            class.is_alliance == player_is_alliance
-                && class.troop_capacity > 0
-                && class.hyperdrive > 0
-        })
-        .map(|(key, _)| key)
-        .unwrap_or_else(|| {
-            world
-                .capital_ship_classes
-                .insert(rebellion_core::world::CapitalShipClass {
-                    name: "Transport".into(),
-                    is_alliance: player_is_alliance,
-                    hull: 100,
-                    hyperdrive: 80,
-                    troop_capacity: 2,
-                    ..Default::default()
-                })
-        });
+    let carrier = if let Some((key, _)) = world.capital_ship_classes.iter().find(|(_, class)| {
+        class.is_alliance == player_is_alliance && class.troop_capacity > 0 && class.hyperdrive > 0
+    }) {
+        key
+    } else {
+        world
+            .capital_ship_classes
+            .insert(rebellion_core::world::CapitalShipClass {
+                name: "Transport".into(),
+                is_alliance: player_is_alliance,
+                hull: 100,
+                hyperdrive: 80,
+                troop_capacity: 2,
+                ..Default::default()
+            })
+    };
     let value = &mut world.fleets[fleet];
     value.location = primary;
     value.is_alliance = player_is_alliance;
@@ -1644,8 +1637,9 @@ fn production_report(
                 queued: queue.map_or(0, rebellion_core::manufacturing::ProductionQueue::len),
                 product: queue
                     .and_then(rebellion_core::manufacturing::ProductionQueue::active)
-                    .map(|item| rebellion_render::manufacturing_window::product(world, item.kind).0)
-                    .unwrap_or_default(),
+                    .map_or_else(String::new, |item| {
+                        rebellion_render::manufacturing_window::product(world, item.kind).0
+                    }),
             })
         })
         .collect();
@@ -2291,35 +2285,31 @@ fn fleet_load_observation(
         enabled: report.as_ref().map_or([false; 4], |report| report.enabled),
         items: report
             .as_ref()
-            .map(|report| report.items.clone())
-            .unwrap_or_default(),
+            .map_or_else(Vec::new, |report| report.items.clone()),
         counts: report.as_ref().and_then(|report| report.counts),
         fleet_entry: report.as_ref().and_then(|_| {
             fleets
                 .entry_screen_rect(layout, primary, 0)
                 .map(screen_center)
         }),
-        fleets: report
-            .as_ref()
-            .map(|report| {
-                report
-                    .fleet_rows
-                    .iter()
-                    .filter_map(|&(listed, row)| {
-                        Some(FleetEntryObservation {
-                            ships: world
-                                .fleets
-                                .get(listed)?
-                                .capital_ships
-                                .iter()
-                                .filter(|ship| ship.alive)
-                                .count(),
-                            entry: screen_center(fleets.entry_screen_rect(layout, primary, row)?),
-                        })
+        fleets: report.as_ref().map_or_else(Vec::new, |report| {
+            report
+                .fleet_rows
+                .iter()
+                .filter_map(|&(listed, row)| {
+                    Some(FleetEntryObservation {
+                        ships: world
+                            .fleets
+                            .get(listed)?
+                            .capital_ships
+                            .iter()
+                            .filter(|ship| ship.alive)
+                            .count(),
+                        entry: screen_center(fleets.entry_screen_rect(layout, primary, row)?),
                     })
-                    .collect()
-            })
-            .unwrap_or_default(),
+                })
+                .collect()
+        }),
         troops_tab: report.as_ref().and_then(|_| {
             fleets
                 .tab_screen_rect(layout, primary, FleetWindowTab::Troops)
@@ -3200,7 +3190,7 @@ mod tests {
             for (faction_byte, faction) in
                 [(1, CockpitFaction::Alliance), (2, CockpitFaction::Empire)]
             {
-                let external_code = u32::from(scenario_value) + 1 | (faction_byte << 8);
+                let external_code = (u32::from(scenario_value) + 1) | (faction_byte << 8);
                 let decoded = decode_request(external_code).expect("valid fixture request");
                 assert_eq!(decoded.scenario, scenario);
                 assert_eq!(decoded.faction, faction);
@@ -3209,11 +3199,11 @@ mod tests {
         }
 
         assert_eq!(
-            decode_request(66 | (1 << 8)).map(|request| request.scenario),
+            decode_request(0x42 | (1 << 8)).map(|request| request.scenario),
             Some(Scenario::WindowingContract)
         );
-        assert!(decode_request(66 | (3 << 8)).is_none());
-        assert!(decode_request(66 | (1 << 8) | (1 << 16)).is_none());
+        assert!(decode_request(0x42 | (3 << 8)).is_none());
+        assert!(decode_request(0x42 | (1 << 8) | (1 << 16)).is_none());
     }
 
     #[test]
@@ -4305,7 +4295,6 @@ mod tests {
         assert!(travelling.regiment_travelling);
         assert_eq!(travelling.troop_system_dat_id, None);
 
-        use rebellion_render::MessageCategory;
         let line = |text: &str| GameMessage::new(0, text.to_string(), MessageCategory::Event);
         let messages = [
             line("Regiment move rejected: the destination is blockaded"),
@@ -5557,7 +5546,7 @@ mod tests {
                     .fleet_destroyed
                     .iter()
                     .filter(|unit| matches!(unit.object, Some(ReportObject::Destroyed { .. })))
-                    .map(|unit| unit.object.clone())
+                    .map(|unit| unit.object)
                     .collect::<Vec<_>>(),
                 [Some(ReportObject::Destroyed { damaged: true })],
                 "{faction:?}"

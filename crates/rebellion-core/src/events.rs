@@ -621,7 +621,7 @@ fn evaluate_conditions(
     true // empty condition list always fires
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -970,7 +970,7 @@ mod tests {
         let mut state = state_with(event(1, vec![], vec![]));
 
         let fired = EventSystem::advance(&mut state, &world, &[], &[]);
-        assert!(fired.is_empty());
+        assert_empty!(fired);
     }
 
     // --- TickReached ---
@@ -980,11 +980,11 @@ mod tests {
         let world = make_world();
         let mut state = condition_state(1, EventCondition::TickReached { tick: 5 });
 
-        assert!(EventSystem::advance(&mut state, &world, &tick(4), &[]).is_empty());
+        assert_empty!(EventSystem::advance(&mut state, &world, &tick(4), &[]));
         let fired = EventSystem::advance(&mut state, &world, &tick(5), &[]);
         assert_eq!(fired.len(), 1);
         // After firing (one-shot), tick 5 again should not re-fire.
-        assert!(EventSystem::advance(&mut state, &world, &tick(5), &[]).is_empty());
+        assert_empty!(EventSystem::advance(&mut state, &world, &tick(5), &[]));
     }
 
     #[test]
@@ -994,7 +994,7 @@ mod tests {
 
         // Jump directly to tick 6 — already past target, never fires.
         let fired = EventSystem::advance(&mut state, &world, &tick(6), &[]);
-        assert!(fired.is_empty());
+        assert_empty!(fired);
     }
 
     // --- TickAtLeast ---
@@ -1009,7 +1009,7 @@ mod tests {
             vec![],
         ));
 
-        assert!(EventSystem::advance(&mut state, &world, &tick(2), &[]).is_empty());
+        assert_empty!(EventSystem::advance(&mut state, &world, &tick(2), &[]));
         let fired = EventSystem::advance(&mut state, &world, &tick(3), &[]);
         assert_eq!(fired.len(), 1);
     }
@@ -1057,7 +1057,7 @@ mod tests {
         ));
 
         // Tick 7: first condition met, second not.
-        assert!(EventSystem::advance(&mut state, &world, &tick(7), &[]).is_empty());
+        assert_empty!(EventSystem::advance(&mut state, &world, &tick(7), &[]));
         // Tick 10: both met.
         let fired = EventSystem::advance(&mut state, &world, &tick(10), &[]);
         assert_eq!(fired.len(), 1);
@@ -1081,7 +1081,7 @@ mod tests {
 
         // Roll 0.7 >= 0.5 → does not fire.
         let not_fired = EventSystem::advance(&mut state, &world, &tick(2), &[0.7]);
-        assert!(not_fired.is_empty());
+        assert_empty!(not_fired);
     }
 
     #[test]
@@ -1118,7 +1118,7 @@ mod tests {
         state.define(event(2, vec![EventCondition::EventFired { id: 1 }], vec![]));
 
         // Tick 4: neither fires.
-        assert!(EventSystem::advance(&mut state, &world, &tick(4), &[]).is_empty());
+        assert_empty!(EventSystem::advance(&mut state, &world, &tick(4), &[]));
 
         // Tick 5: event 1 fires; event 2 also evaluates in the same call.
         // Event 1 fires, its id is added to fired_ids, then event 2 is checked.
@@ -1186,7 +1186,7 @@ mod tests {
         });
 
         let fired = EventSystem::advance(&mut state, &world, &tick(1), &[]);
-        assert!(fired.is_empty());
+        assert_empty!(fired);
     }
 
     // --- New condition variants ---
