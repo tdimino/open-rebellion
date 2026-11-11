@@ -19,8 +19,8 @@ use rebellion_core::missions::{
 use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
 use rebellion_core::world::GameWorld;
 use rebellion_windowing::{
-    ContentReport, ContentStatus, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner,
-    WindowSpec, WindowTransition,
+    ContentReport, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner, WindowSpec,
+    WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
@@ -31,11 +31,11 @@ use crate::mission_dialog::{kind_icon, kind_name};
 use crate::panels::fleets::capital_ship_mini_id;
 use crate::quadrant_icons::{mission_keys, missions_side, visible_members};
 use crate::sector_window::planet_resource_id;
+use crate::strategic_window_common;
 use crate::system_window::{
     character_mini_resource_id, clamp_window_to_galaxy, defense_facility_mini, exact_clicked,
     logical_rect, manufacturing_facility_mini, production_facility_mini, rect_contains,
-    special_force_mini, surface_drag_grab, system_by_dat_id, title_drag_step, troop_mini,
-    TitleDrag,
+    special_force_mini, surface_drag_grab, system_by_dat_id, troop_mini, TitleDrag,
 };
 use crate::windowing::GalaxyChild;
 use crate::windowing_input::{
@@ -182,6 +182,8 @@ struct OpenMissionsWindow {
     release_target_visible: bool,
 }
 
+strategic_window_common::impl_strategic_window_record!(OpenMissionsWindow);
+
 /// Validated Missions content held aside until the manager accepts its stable
 /// `(Missions, system DAT ID)` identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,10 +241,7 @@ impl MissionsWindowState {
     /// Egui layer attached to one manager-issued Missions identity.
     #[must_use]
     pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        self.windows
-            .iter()
-            .find(|window| window.id == Some(id))
-            .map(|window| egui::LayerId::new(egui::Order::Foreground, area_id(window)))
+        strategic_window_common::managed_layer_id(&self.windows, id, area_id)
     }
 
     /// Validates and prepares Missions content without mutating the live
@@ -331,48 +330,29 @@ impl MissionsWindowState {
         transition: &WindowTransition,
     ) -> Option<WindowId> {
         let subject = prepared.spec.key.subject?;
-        match *transition {
-            WindowTransition::Opened { id } => {
-                if self.windows.iter().any(|window| {
-                    window.id == Some(id)
-                        || window.subject == Some(subject)
-                        || window.system == prepared.system
-                }) {
-                    return None;
-                }
-                if self.windows.is_empty() {
-                    self.faction = prepared.faction;
-                } else if self.faction != prepared.faction {
-                    return None;
-                }
-                self.windows.push(OpenMissionsWindow {
-                    id: Some(id),
-                    subject: Some(subject),
-                    system: prepared.system,
-                    logical_position: prepared.logical_position,
-                    selected: prepared.selected,
-                    tab: prepared.tab,
-                    release_target_visible: false,
-                });
-                Some(id)
-            }
-            WindowTransition::Existing { id, .. } => {
-                if self.faction != prepared.faction {
-                    return None;
-                }
-                let window = self.windows.iter_mut().find(|window| {
-                    window.id == Some(id)
-                        && window.subject == Some(subject)
-                        && window.system == prepared.system
-                })?;
+        strategic_window_common::commit_open(
+            &mut self.windows,
+            &mut self.faction,
+            prepared.faction,
+            prepared.system,
+            subject,
+            transition,
+            |id, subject| OpenMissionsWindow {
+                id: Some(id),
+                subject: Some(subject),
+                system: prepared.system,
+                logical_position: prepared.logical_position,
+                selected: prepared.selected,
+                tab: prepared.tab,
+                release_target_visible: false,
+            },
+            |window| {
                 if let Some((selected, tab)) = prepared.member_selection {
                     window.selected = Some(selected);
                     window.tab = tab;
                 }
-                Some(id)
-            }
-            _ => None,
-        }
+            },
+        )
     }
 
     /// Open `system`'s Missions window at a logical point, clamped into the
@@ -435,19 +415,14 @@ impl MissionsWindowState {
     /// Exact manager identity attached to `system`'s committed content.
     #[must_use]
     pub fn window_id(&self, system: SystemKey) -> Option<WindowId> {
-        self.windows
-            .iter()
-            .find(|window| window.system == system)
-            .and_then(|window| window.id)
+        strategic_window_common::window_id(&self.windows, system)
     }
 
     /// Whether `system`'s exact content identity participates in this frozen
     /// frame. Direct fixture content has no manager identity and stays visible.
     #[must_use]
     pub fn window_is_visible(&self, snapshot: &RoutingSnapshot, system: SystemKey) -> bool {
-        self.windows.iter().any(|window| {
-            window.system == system && window.id.is_none_or(|id| snapshot.is_visible(id))
-        })
+        strategic_window_common::window_is_visible(&self.windows, snapshot, system)
     }
 
     /// Whether exact Missions content participates visibly in this frozen
@@ -471,8 +446,7 @@ impl MissionsWindowState {
 
     /// Removes only content named by manager teardown receipts.
     pub fn remove_content(&mut self, removed: &[WindowId]) {
-        self.windows
-            .retain(|window| window.id.is_none_or(|id| !removed.contains(&id)));
+        strategic_window_common::remove_content(&mut self.windows, removed);
     }
 
     /// Reports every active Missions identity in the frozen snapshot,
@@ -483,30 +457,12 @@ impl MissionsWindowState {
         snapshot: &RoutingSnapshot,
         world: &GameWorld,
     ) -> Vec<ContentReport> {
-        snapshot
-            .paint_order()
-            .iter()
-            .chain(snapshot.presentation_history())
-            .copied()
-            .filter(|&id| {
-                snapshot
-                    .key(id)
-                    .is_some_and(|key| key.kind == WindowKind::Missions)
-            })
-            .map(|id| {
-                let ready = self.windows.iter().any(|window| {
-                    window.id == Some(id) && committed_window_matches(snapshot, world, window, id)
-                });
-                ContentReport {
-                    window: id,
-                    status: if ready {
-                        ContentStatus::Ready
-                    } else {
-                        ContentStatus::Absent
-                    },
-                }
-            })
-            .collect()
+        strategic_window_common::content_reports(
+            &self.windows,
+            snapshot,
+            WindowKind::Missions,
+            |window, id| committed_window_matches(snapshot, world, window, id),
+        )
     }
 
     #[must_use]
@@ -533,11 +489,12 @@ impl MissionsWindowState {
         point: (f32, f32),
         shown: &dyn Fn(GalaxyChild) -> bool,
     ) -> bool {
-        let point = egui::pos2(point.0, point.1);
-        self.windows
-            .iter()
-            .filter(|window| shown(GalaxyChild::Missions(window.system)))
-            .any(|window| rect_contains(window_screen_rect(window, layout), point))
+        strategic_window_common::contains_shown_screen_point(
+            &self.windows,
+            point,
+            |system| shown(GalaxyChild::Missions(system)),
+            |window| window_screen_rect(window, layout),
+        )
     }
 
     /// Whether visible Missions content covers `point`. Minimized manager
@@ -549,11 +506,13 @@ impl MissionsWindowState {
         layout: CockpitLayout,
         point: (f32, f32),
     ) -> bool {
-        let point = egui::pos2(point.0, point.1);
-        self.windows.iter().any(|window| {
-            window.id.is_none_or(|id| snapshot.is_visible(id))
-                && rect_contains(window_screen_rect(window, layout), point)
-        })
+        strategic_window_common::contains_visible_screen_point_where(
+            &self.windows,
+            snapshot,
+            point,
+            |_| true,
+            |window| window_screen_rect(window, layout),
+        )
     }
 
     /// Exact visible manager identity whose Missions rectangle covers
@@ -566,17 +525,15 @@ impl MissionsWindowState {
         point: (f32, f32),
         top_layer: Option<egui::LayerId>,
     ) -> std::collections::BTreeSet<WindowId> {
-        let point = egui::pos2(point.0, point.1);
-        self.windows
-            .iter()
-            .filter(|window| top_layer.is_some_and(|layer| layer.id == area_id(window)))
-            .filter_map(|window| {
-                window.id.filter(|id| {
-                    snapshot.is_visible(*id)
-                        && rect_contains(window_screen_rect(window, layout), point)
-                })
-            })
-            .collect()
+        strategic_window_common::hit_window_ids_where(
+            &self.windows,
+            snapshot,
+            point,
+            top_layer,
+            |_| true,
+            area_id,
+            |window| window_screen_rect(window, layout),
+        )
     }
 
     /// The screen rect of `system`'s window.
@@ -795,55 +752,31 @@ impl MissionsWindowState {
     /// Close `system`'s window, as its keyed close does (slot `+0x30`).
     /// False when it is not open.
     pub fn close_window(&mut self, system: SystemKey) -> bool {
-        let open = self.windows.iter().any(|window| window.system == system);
-        self.close(system);
-        open
+        self.close(system).is_some()
     }
 
     fn focus(&mut self, system: SystemKey) -> bool {
-        let Some(index) = self
-            .windows
-            .iter()
-            .position(|window| window.system == system)
-        else {
-            return false;
-        };
-        let window = self.windows.remove(index);
-        self.windows.push(window);
-        true
+        strategic_window_common::focus(&mut self.windows, system)
     }
 
     fn close(&mut self, system: SystemKey) -> Option<OpenMissionsWindow> {
-        let index = self
-            .windows
-            .iter()
-            .position(|window| window.system == system)?;
-        Some(self.windows.remove(index))
+        strategic_window_common::close(&mut self.windows, system)
     }
 
     /// Carry a window drag one frame ([`TitleDrag`]): the window follows
     /// the pointer while the button is down, and the release lets go.
     fn update_title_drag(&mut self, ctx: &egui::Context, layout: CockpitLayout) {
-        if let Some(drag) = self.title_drag {
-            let window = self
-                .windows
-                .iter_mut()
-                .find(|window| area_id(window) == drag.area);
-            match (window, title_drag_step(ctx, layout, drag)) {
-                (Some(window), Ok(place)) => {
-                    if let Some(place) = place {
-                        window.logical_position = place;
-                    }
-                }
-                _ => self.title_drag = None,
-            }
-        }
+        strategic_window_common::update_title_drag(
+            &mut self.windows,
+            &mut self.title_drag,
+            ctx,
+            layout,
+            area_id,
+        );
     }
 
     fn window_mut(&mut self, system: SystemKey) -> Option<&mut OpenMissionsWindow> {
-        self.windows
-            .iter_mut()
-            .find(|window| window.system == system)
+        strategic_window_common::window_mut(&mut self.windows, system)
     }
 }
 

@@ -24,8 +24,8 @@ use rebellion_core::missions::{MissionMember, MissionState, MissionTarget};
 use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
 use rebellion_core::world::GameWorld;
 use rebellion_windowing::{
-    ContentReport, ContentStatus, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner,
-    WindowSpec, WindowTransition,
+    ContentReport, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner, WindowSpec,
+    WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
@@ -38,10 +38,11 @@ use crate::object_menu::MenuObject;
 use crate::panels::fleets::fighter_mini_id;
 use crate::quadrant_icons::{mission_keys, system_members};
 use crate::scroll_bar::{egui_pointer, ScrollBar, ScrollDrag, ScrollRange, LIST_BAR_29CC};
+use crate::strategic_window_common;
 use crate::system_window::{
     canvas_point, character_mini_resource_id, clamp_window_to_galaxy, defense_facility_mini,
     exact_clicked, logical_rect, opposing_contents_visible, rect_contains, special_force_mini,
-    surface_drag_grab, system_by_dat_id, title_drag_step, troop_mini, TitleDrag,
+    surface_drag_grab, system_by_dat_id, troop_mini, TitleDrag,
 };
 use crate::windowing::GalaxyChild;
 use crate::windowing_input::{
@@ -228,6 +229,8 @@ struct OpenDefensesWindow {
     painted: Vec<DefensesItem>,
 }
 
+strategic_window_common::impl_strategic_window_record!(OpenDefensesWindow);
+
 /// Validated Defenses content held aside until the manager accepts its stable
 /// `(Defenses, system DAT ID)` identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -302,10 +305,7 @@ impl DefensesWindowState {
     /// Egui layer attached to one manager-issued Defenses identity.
     #[must_use]
     pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        self.windows
-            .iter()
-            .find(|window| window.id == Some(id))
-            .map(|window| egui::LayerId::new(egui::Order::Foreground, area_id(window)))
+        strategic_window_common::managed_layer_id(&self.windows, id, area_id)
     }
 
     /// Validates and prepares Defenses content without mutating the live
@@ -341,76 +341,51 @@ impl DefensesWindowState {
         transition: &WindowTransition,
     ) -> Option<WindowId> {
         let subject = prepared.spec.key.subject?;
-        match *transition {
-            WindowTransition::Opened { id } => {
-                // Dedicated interface fixtures predate manager publication and
-                // may seed one exact Defenses content record before the app
-                // queues its semantic open. Attach only that unmanaged record
-                // after the manager accepts the identity; preserve every
-                // content field and reject any ambiguous or conflicting state.
-                #[cfg(feature = "interface-test-fixtures")]
-                if let Some(index) = self.windows.iter().position(|window| {
-                    window.id.is_none()
-                        && window.subject.is_none()
-                        && window.system == prepared.system
-                }) {
-                    if self.faction != prepared.faction
-                        || self.windows.iter().enumerate().any(|(candidate, window)| {
-                            candidate != index
-                                && (window.id == Some(id)
-                                    || window.subject == Some(subject)
-                                    || window.system == prepared.system)
-                        })
-                    {
-                        return None;
-                    }
-                    let window = &mut self.windows[index];
-                    window.id = Some(id);
-                    window.subject = Some(subject);
-                    window.release_target_visible = false;
-                    return Some(id);
-                }
-                if self.windows.iter().any(|window| {
-                    window.id == Some(id)
-                        || window.subject == Some(subject)
-                        || window.system == prepared.system
-                }) {
-                    return None;
-                }
-                if self.windows.is_empty() {
-                    self.faction = prepared.faction;
-                } else if self.faction != prepared.faction {
-                    return None;
-                }
-                self.windows.push(OpenDefensesWindow {
-                    id: Some(id),
-                    subject: Some(subject),
-                    system: prepared.system,
-                    logical_position: prepared.logical_position,
-                    page: DefensesPage::Personnel,
-                    selected: None,
-                    first_row: 0,
-                    scroll: ScrollDrag::default(),
-                    release_target_visible: false,
-                    painted: Vec::new(),
-                });
-                Some(id)
-            }
-            WindowTransition::Existing { id, .. } => {
-                if self.faction != prepared.faction {
-                    return None;
-                }
-                self.windows
-                    .iter()
-                    .any(|window| {
-                        window.id == Some(id)
-                            && window.subject == Some(subject)
-                            && window.system == prepared.system
+        // Dedicated interface fixtures predate manager publication and may
+        // seed one exact Defenses record before the app queues its open.
+        #[cfg(feature = "interface-test-fixtures")]
+        if let WindowTransition::Opened { id } = *transition {
+            if let Some(index) = self.windows.iter().position(|window| {
+                window.id.is_none() && window.subject.is_none() && window.system == prepared.system
+            }) {
+                if self.faction != prepared.faction
+                    || self.windows.iter().enumerate().any(|(candidate, window)| {
+                        candidate != index
+                            && (window.id == Some(id)
+                                || window.subject == Some(subject)
+                                || window.system == prepared.system)
                     })
-                    .then_some(id)
+                {
+                    return None;
+                }
+                let window = &mut self.windows[index];
+                window.id = Some(id);
+                window.subject = Some(subject);
+                window.release_target_visible = false;
+                return Some(id);
             }
-            _ => None,
         }
+        strategic_window_common::commit_open(
+            &mut self.windows,
+            &mut self.faction,
+            prepared.faction,
+            prepared.system,
+            subject,
+            transition,
+            |id, subject| OpenDefensesWindow {
+                id: Some(id),
+                subject: Some(subject),
+                system: prepared.system,
+                logical_position: prepared.logical_position,
+                page: DefensesPage::Personnel,
+                selected: None,
+                first_row: 0,
+                scroll: ScrollDrag::default(),
+                release_target_visible: false,
+                painted: Vec::new(),
+            },
+            |_| {},
+        )
     }
 
     /// Open `system`'s Defenses window at a logical point, clamped into the
@@ -454,19 +429,14 @@ impl DefensesWindowState {
     /// Exact manager identity attached to `system`'s committed content.
     #[must_use]
     pub fn window_id(&self, system: SystemKey) -> Option<WindowId> {
-        self.windows
-            .iter()
-            .find(|window| window.system == system)
-            .and_then(|window| window.id)
+        strategic_window_common::window_id(&self.windows, system)
     }
 
     /// Whether `system`'s exact content identity participates in this frozen
     /// frame. Direct fixture content has no manager identity and stays visible.
     #[must_use]
     pub fn window_is_visible(&self, snapshot: &RoutingSnapshot, system: SystemKey) -> bool {
-        self.windows.iter().any(|window| {
-            window.system == system && window.id.is_none_or(|id| snapshot.is_visible(id))
-        })
+        strategic_window_common::window_is_visible(&self.windows, snapshot, system)
     }
 
     /// Whether exact Defenses content participates visibly in this frozen
@@ -487,8 +457,7 @@ impl DefensesWindowState {
 
     /// Removes only content named by manager teardown receipts.
     pub fn remove_content(&mut self, removed: &[WindowId]) {
-        self.windows
-            .retain(|window| window.id.is_none_or(|id| !removed.contains(&id)));
+        strategic_window_common::remove_content(&mut self.windows, removed);
         if self.drag.as_ref().is_some_and(|drag| {
             !self
                 .windows
@@ -508,32 +477,15 @@ impl DefensesWindowState {
         snapshot: &RoutingSnapshot,
         world: &GameWorld,
     ) -> Vec<ContentReport> {
-        snapshot
-            .paint_order()
-            .iter()
-            .chain(snapshot.presentation_history())
-            .copied()
-            .filter(|&id| {
-                snapshot
-                    .key(id)
-                    .is_some_and(|key| key.kind == WindowKind::Defenses)
-            })
-            .map(|id| {
-                let ready = self.windows.iter().any(|window| {
-                    window.id == Some(id)
-                        && world.systems.contains_key(window.system)
-                        && system_subject(world, window.system) == window.subject
-                });
-                ContentReport {
-                    window: id,
-                    status: if ready {
-                        ContentStatus::Ready
-                    } else {
-                        ContentStatus::Absent
-                    },
-                }
-            })
-            .collect()
+        strategic_window_common::content_reports(
+            &self.windows,
+            snapshot,
+            WindowKind::Defenses,
+            |window, _| {
+                world.systems.contains_key(window.system)
+                    && system_subject(world, window.system) == window.subject
+            },
+        )
     }
 
     #[must_use]
@@ -560,11 +512,12 @@ impl DefensesWindowState {
         point: (f32, f32),
         shown: &dyn Fn(GalaxyChild) -> bool,
     ) -> bool {
-        let point = egui::pos2(point.0, point.1);
-        self.windows
-            .iter()
-            .filter(|window| shown(GalaxyChild::Defenses(window.system)))
-            .any(|window| rect_contains(window_screen_rect(window, layout), point))
+        strategic_window_common::contains_shown_screen_point(
+            &self.windows,
+            point,
+            |system| shown(GalaxyChild::Defenses(system)),
+            |window| window_screen_rect(window, layout),
+        )
     }
 
     /// Whether visible Defenses content covers `point`. Minimized manager
@@ -576,11 +529,13 @@ impl DefensesWindowState {
         layout: CockpitLayout,
         point: (f32, f32),
     ) -> bool {
-        let point = egui::pos2(point.0, point.1);
-        self.windows.iter().any(|window| {
-            window.id.is_none_or(|id| snapshot.is_visible(id))
-                && rect_contains(window_screen_rect(window, layout), point)
-        })
+        strategic_window_common::contains_visible_screen_point_where(
+            &self.windows,
+            snapshot,
+            point,
+            |_| true,
+            |window| window_screen_rect(window, layout),
+        )
     }
 
     /// Exact visible manager identity whose Defenses rectangle covers
@@ -593,17 +548,15 @@ impl DefensesWindowState {
         point: (f32, f32),
         top_layer: Option<egui::LayerId>,
     ) -> std::collections::BTreeSet<WindowId> {
-        let point = egui::pos2(point.0, point.1);
-        self.windows
-            .iter()
-            .filter(|window| top_layer.is_some_and(|layer| layer.id == area_id(window)))
-            .filter_map(|window| {
-                window.id.filter(|id| {
-                    snapshot.is_visible(*id)
-                        && rect_contains(window_screen_rect(window, layout), point)
-                })
-            })
-            .collect()
+        strategic_window_common::hit_window_ids_where(
+            &self.windows,
+            snapshot,
+            point,
+            top_layer,
+            |_| true,
+            area_id,
+            |window| window_screen_rect(window, layout),
+        )
     }
 
     /// The screen rect of `system`'s window.
@@ -940,55 +893,31 @@ impl DefensesWindowState {
     /// Close `system`'s window, as its keyed close does (slot `+0x30`).
     /// False when it is not open.
     pub fn close_window(&mut self, system: SystemKey) -> bool {
-        let open = self.windows.iter().any(|window| window.system == system);
-        self.close(system);
-        open
+        self.close(system).is_some()
     }
 
     fn focus(&mut self, system: SystemKey) -> bool {
-        let Some(index) = self
-            .windows
-            .iter()
-            .position(|window| window.system == system)
-        else {
-            return false;
-        };
-        let window = self.windows.remove(index);
-        self.windows.push(window);
-        true
+        strategic_window_common::focus(&mut self.windows, system)
     }
 
     fn close(&mut self, system: SystemKey) -> Option<OpenDefensesWindow> {
-        let index = self
-            .windows
-            .iter()
-            .position(|window| window.system == system)?;
-        Some(self.windows.remove(index))
+        strategic_window_common::close(&mut self.windows, system)
     }
 
     /// Carry a window drag one frame ([`TitleDrag`]): the window follows
     /// the pointer while the button is down, and the release lets go.
     fn update_title_drag(&mut self, ctx: &egui::Context, layout: CockpitLayout) {
-        if let Some(drag) = self.title_drag {
-            let window = self
-                .windows
-                .iter_mut()
-                .find(|window| area_id(window) == drag.area);
-            match (window, title_drag_step(ctx, layout, drag)) {
-                (Some(window), Ok(place)) => {
-                    if let Some(place) = place {
-                        window.logical_position = place;
-                    }
-                }
-                _ => self.title_drag = None,
-            }
-        }
+        strategic_window_common::update_title_drag(
+            &mut self.windows,
+            &mut self.title_drag,
+            ctx,
+            layout,
+            area_id,
+        );
     }
 
     fn window_mut(&mut self, system: SystemKey) -> Option<&mut OpenDefensesWindow> {
-        self.windows
-            .iter_mut()
-            .find(|window| window.system == system)
+        strategic_window_common::window_mut(&mut self.windows, system)
     }
 }
 
@@ -2113,7 +2042,7 @@ mod tests {
         Character, ControlKind, DefenseFacilityInstance, Sector, SpecialForceUnit, System,
         TroopUnit,
     };
-    use rebellion_windowing::{WindowCommand, WindowManager, WindowTransition};
+    use rebellion_windowing::{ContentStatus, WindowCommand, WindowManager, WindowTransition};
 
     const KDY: u32 = 0x2200_0001;
     const LNR: u32 = 0x2300_0002;
