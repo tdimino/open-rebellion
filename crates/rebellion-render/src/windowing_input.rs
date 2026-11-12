@@ -527,6 +527,27 @@ mod tests {
         );
     }
 
+    fn assert_primary_gesture_routes_to_window(
+        router: &mut FrameInputRouter,
+        frame: u64,
+        window: WindowId,
+    ) {
+        assert_pointer(
+            router,
+            event(frame, 0),
+            &BTreeSet::from([window]),
+            PointerPhase::Press(PointerButtonId::Primary),
+            InputRecipient::Window(window),
+        );
+        assert_pointer(
+            router,
+            event(frame, 1),
+            &BTreeSet::new(),
+            PointerPhase::Release(PointerButtonId::Primary),
+            InputRecipient::Window(window),
+        );
+    }
+
     #[test]
     fn windowing_input_handled_child_key_never_reaches_root() {
         let (_manager, window, mut router) = modeless_router();
@@ -610,20 +631,7 @@ mod tests {
         );
 
         router.begin_frame(3, &manager.begin_frame());
-        assert_pointer(
-            &mut router,
-            event(3, 0),
-            &BTreeSet::from([window]),
-            PointerPhase::Press(PointerButtonId::Primary),
-            InputRecipient::Window(window),
-        );
-        assert_pointer(
-            &mut router,
-            event(3, 1),
-            &BTreeSet::new(),
-            PointerPhase::Release(PointerButtonId::Primary),
-            InputRecipient::Window(window),
-        );
+        assert_primary_gesture_routes_to_window(&mut router, 3, window);
     }
 
     #[test]
@@ -632,20 +640,7 @@ mod tests {
 
         // The physical release occurred while no input batch was collected.
         router.begin_frame(2, &manager.begin_frame());
-        assert_pointer(
-            &mut router,
-            event(2, 0),
-            &BTreeSet::from([window]),
-            PointerPhase::Press(PointerButtonId::Primary),
-            InputRecipient::Window(window),
-        );
-        assert_pointer(
-            &mut router,
-            event(2, 1),
-            &BTreeSet::new(),
-            PointerPhase::Release(PointerButtonId::Primary),
-            InputRecipient::Window(window),
-        );
+        assert_primary_gesture_routes_to_window(&mut router, 2, window);
     }
 
     #[test]
@@ -653,29 +648,26 @@ mod tests {
         let (manager, window, mut router) = cancelled_primary_gesture();
 
         router.begin_frame(2, &manager.begin_frame());
-        assert_eq!(
-            router.collect_pointer(
-                event(2, 0),
-                &BTreeSet::from([window]),
-                PointerPhase::Press(PointerButtonId::Secondary),
-            ),
-            InputRecipient::Window(window)
+        assert_pointer(
+            &mut router,
+            event(2, 0),
+            &BTreeSet::from([window]),
+            PointerPhase::Press(PointerButtonId::Secondary),
+            InputRecipient::Window(window),
         );
-        assert_eq!(
-            router.collect_pointer(
-                event(2, 1),
-                &BTreeSet::new(),
-                PointerPhase::Release(PointerButtonId::Primary),
-            ),
-            InputRecipient::Blocked
+        assert_pointer(
+            &mut router,
+            event(2, 1),
+            &BTreeSet::new(),
+            PointerPhase::Release(PointerButtonId::Primary),
+            InputRecipient::Blocked,
         );
-        assert_eq!(
-            router.collect_pointer(
-                event(2, 2),
-                &BTreeSet::new(),
-                PointerPhase::Release(PointerButtonId::Secondary),
-            ),
-            InputRecipient::Window(window)
+        assert_pointer(
+            &mut router,
+            event(2, 2),
+            &BTreeSet::new(),
+            PointerPhase::Release(PointerButtonId::Secondary),
+            InputRecipient::Window(window),
         );
     }
 
@@ -686,37 +678,33 @@ mod tests {
         let secondary_owner = open(&mut manager, 2, InputPolicy::Modeless);
         let mut router = FrameInputRouter::default();
         router.begin_frame(1, &manager.begin_frame());
-        assert_eq!(
-            router.collect_pointer(
-                event(1, 0),
-                &BTreeSet::from([primary_owner]),
-                PointerPhase::Press(PointerButtonId::Primary),
-            ),
-            InputRecipient::Window(primary_owner)
+        assert_pointer(
+            &mut router,
+            event(1, 0),
+            &BTreeSet::from([primary_owner]),
+            PointerPhase::Press(PointerButtonId::Primary),
+            InputRecipient::Window(primary_owner),
         );
-        assert_eq!(
-            router.collect_pointer(
-                event(1, 1),
-                &BTreeSet::from([secondary_owner]),
-                PointerPhase::Press(PointerButtonId::Secondary),
-            ),
-            InputRecipient::Window(secondary_owner)
+        assert_pointer(
+            &mut router,
+            event(1, 1),
+            &BTreeSet::from([secondary_owner]),
+            PointerPhase::Press(PointerButtonId::Secondary),
+            InputRecipient::Window(secondary_owner),
         );
-        assert_eq!(
-            router.collect_pointer(
-                event(1, 2),
-                &BTreeSet::new(),
-                PointerPhase::Motion(PointerButtonId::Secondary),
-            ),
-            InputRecipient::Window(secondary_owner)
+        assert_pointer(
+            &mut router,
+            event(1, 2),
+            &BTreeSet::new(),
+            PointerPhase::Motion(PointerButtonId::Secondary),
+            InputRecipient::Window(secondary_owner),
         );
-        assert_eq!(
-            router.collect_pointer(
-                event(1, 3),
-                &BTreeSet::new(),
-                PointerPhase::Motion(PointerButtonId::Primary),
-            ),
-            InputRecipient::Window(primary_owner)
+        assert_pointer(
+            &mut router,
+            event(1, 3),
+            &BTreeSet::new(),
+            PointerPhase::Motion(PointerButtonId::Primary),
+            InputRecipient::Window(primary_owner),
         );
     }
 
@@ -757,13 +745,12 @@ mod tests {
         let mut router = FrameInputRouter::default();
         router.begin_frame(1, &manager.begin_frame());
         let id = event(1, 0);
-        assert_eq!(
-            router.collect_pointer(
-                id,
-                &BTreeSet::from([first]),
-                PointerPhase::Press(PointerButtonId::Primary),
-            ),
-            InputRecipient::Window(first)
+        assert_pointer(
+            &mut router,
+            id,
+            &BTreeSet::from([first]),
+            PointerPhase::Press(PointerButtonId::Primary),
+            InputRecipient::Window(first),
         );
         assert_ne!(router.pointer_recipient(id), InputRecipient::Window(second));
     }

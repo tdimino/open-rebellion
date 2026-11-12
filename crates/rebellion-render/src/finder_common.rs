@@ -463,6 +463,50 @@ pub(crate) enum FinderDrawOutcome<Action> {
     Close,
 }
 
+/// Manager-owned Finder intent shared by the finder families whose selected
+/// destination must remain paired with the exact Finder identity being closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManagedFinderAction<Action> {
+    Close(WindowId),
+    Open {
+        finder: WindowId,
+        destination: Action,
+    },
+}
+
+/// Consume a fixture-opened Finder result. Direct Finders own their lifecycle,
+/// so either Open or Close tears down the content immediately.
+pub(crate) fn consume_direct_outcome<Action>(
+    outcome: Option<FinderDrawOutcome<Action>>,
+    mut close: impl FnMut(),
+) -> Option<Action> {
+    match outcome? {
+        FinderDrawOutcome::Open(action) => {
+            close();
+            Some(action)
+        }
+        FinderDrawOutcome::Close => {
+            close();
+            None
+        }
+    }
+}
+
+/// Pair a manager-owned Finder result with the identity whose close receipt
+/// gates any dependent window publication.
+pub(crate) fn manage_outcome<Action>(
+    finder: WindowId,
+    outcome: Option<FinderDrawOutcome<Action>>,
+) -> Option<ManagedFinderAction<Action>> {
+    match outcome? {
+        FinderDrawOutcome::Open(destination) => Some(ManagedFinderAction::Open {
+            finder,
+            destination,
+        }),
+        FinderDrawOutcome::Close => Some(ManagedFinderAction::Close(finder)),
+    }
+}
+
 #[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,

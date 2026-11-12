@@ -790,6 +790,18 @@ pub struct CockpitLayout {
     pub scale: f32,
 }
 
+impl CockpitLayout {
+    /// Convert one screen-space point into the original 640 by 480 cockpit
+    /// canvas. Callers retain the recovered control's own rounding rule.
+    pub(crate) fn logical_canvas_point(self, point: egui::Pos2) -> egui::Pos2 {
+        let scale = self.scale.max(f32::EPSILON);
+        egui::pos2(
+            (point.x - self.canvas.x) / scale,
+            (point.y - self.canvas.y) / scale,
+        )
+    }
+}
+
 /// All mutable state owned by the cockpit module.
 pub struct CockpitState {
     /// Which faction's chrome to render.

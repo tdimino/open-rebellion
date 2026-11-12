@@ -361,16 +361,7 @@ pub enum PersonnelFinderAction {
 
 /// Manager-owned Personnel Finder intent. Dependent opens retain the exact
 /// Finder identity whose accepted close receipt gates their publication.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ManagedPersonnelFinderAction {
-    /// Close or Escape requests teardown of this exact manager identity.
-    Close(WindowId),
-    /// A selected destination paired with the Finder identity that must close.
-    Open {
-        finder: WindowId,
-        destination: PersonnelFinderAction,
-    },
-}
+pub type ManagedPersonnelFinderAction = finder_common::ManagedFinderAction<PersonnelFinderAction>;
 
 #[derive(Debug, Clone)]
 struct OpenFinder {
@@ -472,17 +463,8 @@ pub fn draw_personnel_finder(
     layout: CockpitLayout,
     cache: &mut BmpCache,
 ) -> Option<PersonnelFinderAction> {
-    match draw_personnel_finder_outcome(ctx, world, fog, state, None, layout, cache) {
-        Some(PersonnelFinderDrawOutcome::Open(action)) => {
-            state.close();
-            Some(action)
-        }
-        Some(PersonnelFinderDrawOutcome::Close) => {
-            state.close();
-            None
-        }
-        None => None,
-    }
+    let outcome = draw_personnel_finder_outcome(ctx, world, fog, state, None, layout, cache);
+    finder_common::consume_direct_outcome(outcome, || state.close())
 }
 
 /// Draw the open manager-owned Personnel Finder using the frozen semantic focus.
@@ -496,18 +478,8 @@ pub fn draw_personnel_finder_focused(
     cache: &mut BmpCache,
 ) -> Option<ManagedPersonnelFinderAction> {
     let finder = state.window_id()?;
-    match draw_personnel_finder_outcome(ctx, world, fog, state, focus, layout, cache) {
-        Some(PersonnelFinderDrawOutcome::Open(destination)) => {
-            Some(ManagedPersonnelFinderAction::Open {
-                finder,
-                destination,
-            })
-        }
-        Some(PersonnelFinderDrawOutcome::Close) => {
-            Some(ManagedPersonnelFinderAction::Close(finder))
-        }
-        None => None,
-    }
+    let outcome = draw_personnel_finder_outcome(ctx, world, fog, state, focus, layout, cache);
+    finder_common::manage_outcome(finder, outcome)
 }
 
 #[allow(

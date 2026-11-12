@@ -201,16 +201,7 @@ pub enum TroopFinderAction {
 
 /// Manager-owned Troop Finder intent. Dependent opens retain the exact Finder
 /// identity whose accepted close receipt gates their publication.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ManagedTroopFinderAction {
-    /// Close or Escape requests teardown of this exact manager identity.
-    Close(WindowId),
-    /// A selected destination paired with the Finder identity that must close.
-    Open {
-        finder: WindowId,
-        destination: TroopFinderAction,
-    },
-}
+pub type ManagedTroopFinderAction = finder_common::ManagedFinderAction<TroopFinderAction>;
 
 #[derive(Debug, Clone)]
 struct OpenFinder {
@@ -310,17 +301,8 @@ pub fn draw_troop_finder(
     cache: &mut BmpCache,
     transport: &TroopTransportState,
 ) -> Option<TroopFinderAction> {
-    match draw_troop_finder_outcome(ctx, world, state, None, layout, cache, transport) {
-        Some(TroopFinderDrawOutcome::Open(action)) => {
-            state.close();
-            Some(action)
-        }
-        Some(TroopFinderDrawOutcome::Close) => {
-            state.close();
-            None
-        }
-        None => None,
-    }
+    let outcome = draw_troop_finder_outcome(ctx, world, state, None, layout, cache, transport);
+    finder_common::consume_direct_outcome(outcome, || state.close())
 }
 
 /// Draw the open manager-owned Troop Finder using the frozen semantic focus.
@@ -334,14 +316,8 @@ pub fn draw_troop_finder_focused(
     transport: &TroopTransportState,
 ) -> Option<ManagedTroopFinderAction> {
     let finder = state.window_id()?;
-    match draw_troop_finder_outcome(ctx, world, state, focus, layout, cache, transport) {
-        Some(TroopFinderDrawOutcome::Open(destination)) => Some(ManagedTroopFinderAction::Open {
-            finder,
-            destination,
-        }),
-        Some(TroopFinderDrawOutcome::Close) => Some(ManagedTroopFinderAction::Close(finder)),
-        None => None,
-    }
+    let outcome = draw_troop_finder_outcome(ctx, world, state, focus, layout, cache, transport);
+    finder_common::manage_outcome(finder, outcome)
 }
 
 #[allow(

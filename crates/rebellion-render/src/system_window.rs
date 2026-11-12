@@ -1937,11 +1937,8 @@ strategic_window_common::impl_strategic_window_cell_rect!(
     reason = "Canvas coordinates fit an i16, as the original's POINT words do."
 )]
 pub(crate) fn canvas_point(layout: CockpitLayout, point: egui::Pos2) -> (i16, i16) {
-    let scale = layout.scale.max(f32::EPSILON);
-    (
-        ((point.x - layout.canvas.x) / scale).floor() as i16,
-        ((point.y - layout.canvas.y) / scale).floor() as i16,
-    )
+    let point = layout.logical_canvas_point(point);
+    (point.x.floor() as i16, point.y.floor() as i16)
 }
 
 /// Whether the player sees the other side's objects at `system`: it holds
@@ -2009,46 +2006,52 @@ pub(crate) fn production_facility_mini(dat_id: DatId) -> Option<(u32, &'static s
     }
 }
 
-pub(crate) fn troop_mini(dat_id: DatId) -> Option<(u32, &'static str)> {
-    if dat_id.family() != 0x10 {
+const TROOP_MINIS: [(u32, &str); 10] = [
+    (17_472, "Alliance Fleet Regiment"),
+    (17_473, "Alliance Army Regiment"),
+    (17_474, "Sullustan Regiment"),
+    (17_475, "Wookiee Regiment"),
+    (17_476, "Mon Calamari Regiment"),
+    (17_536, "Stormtrooper Regiment"),
+    (17_537, "Imperial Fleet Regiment"),
+    (17_538, "Imperial Army Regiment"),
+    (17_539, "War Droid Regiment"),
+    (17_540, "Dark Trooper Regiment"),
+];
+
+const SPECIAL_FORCE_MINIS: [(u32, &str); 9] = [
+    (17_728, "Guerrillas"),
+    (17_729, "Infiltrators"),
+    (17_730, "Longprobe Y-wing Recon Team"),
+    (17_731, "Bothan Spies"),
+    (17_792, "Imperial Probe Droid"),
+    (17_793, "Imperial Espionage Droid"),
+    (17_794, "Imperial Commandos"),
+    (17_795, "Noghri Death Commandos"),
+    (17_796, "Bounty Hunters"),
+];
+
+fn family_mini<const N: usize>(
+    dat_id: DatId,
+    family: u8,
+    minis: &'static [(u32, &'static str); N],
+) -> Option<(u32, &'static str)> {
+    if dat_id.family() != family {
         return None;
     }
-    let (resource_id, label) = match dat_id.index() {
-        1 => (17_472, "Alliance Fleet Regiment"),
-        2 => (17_473, "Alliance Army Regiment"),
-        3 => (17_474, "Sullustan Regiment"),
-        4 => (17_475, "Wookiee Regiment"),
-        5 => (17_476, "Mon Calamari Regiment"),
-        6 => (17_536, "Stormtrooper Regiment"),
-        7 => (17_537, "Imperial Fleet Regiment"),
-        8 => (17_538, "Imperial Army Regiment"),
-        9 => (17_539, "War Droid Regiment"),
-        10 => (17_540, "Dark Trooper Regiment"),
-        _ => return None,
-    };
-    Some((resource_id, label))
+    let index = usize::try_from(dat_id.index().checked_sub(1)?).ok()?;
+    minis.get(index).copied()
+}
+
+pub(crate) fn troop_mini(dat_id: DatId) -> Option<(u32, &'static str)> {
+    family_mini(dat_id, 0x10, &TROOP_MINIS)
 }
 
 /// A special force's GOKRES mini, `(TEXTSTRA id & 0xfff) + 0x4000`
 /// (`FUN_0042c3b0`, slot `+0x30` = `FUN_004f63d0`), and its class name.
 #[must_use]
 pub fn special_force_mini(dat_id: DatId) -> Option<(u32, &'static str)> {
-    if dat_id.family() != 0x3c {
-        return None;
-    }
-    let (resource_id, label) = match dat_id.index() {
-        1 => (17_728, "Guerrillas"),
-        2 => (17_729, "Infiltrators"),
-        3 => (17_730, "Longprobe Y-wing Recon Team"),
-        4 => (17_731, "Bothan Spies"),
-        5 => (17_792, "Imperial Probe Droid"),
-        6 => (17_793, "Imperial Espionage Droid"),
-        7 => (17_794, "Imperial Commandos"),
-        8 => (17_795, "Noghri Death Commandos"),
-        9 => (17_796, "Bounty Hunters"),
-        _ => return None,
-    };
-    Some((resource_id, label))
+    family_mini(dat_id, 0x3c, &SPECIAL_FORCE_MINIS)
 }
 
 fn relationship(control: ControlKind, player: Faction) -> Relationship {
@@ -4623,6 +4626,15 @@ mod tests {
 
     #[test]
     fn maps_original_system_item_resource_families_without_fallbacks() {
+        fn assert_mini_cases(
+            lookup: fn(DatId) -> Option<(u32, &'static str)>,
+            cases: &[(u32, u32, &str)],
+        ) {
+            for &(raw, resource_id, label) in cases {
+                assert_eq!(lookup(DatId::new(raw)), Some((resource_id, label)));
+            }
+        }
+
         // Source: GOKRES.DLL mini-icon resource blocks and DAT record families.
         assert_eq!(
             character_mini_resource_id(DatId::new(576), true),
@@ -4641,49 +4653,41 @@ mod tests {
             Some(19_099)
         );
 
-        assert_eq!(
-            manufacturing_facility_mini(DatId::new(0x2800_0001)),
-            Some((16_640, "Orbital Shipyard"))
+        assert_mini_cases(
+            manufacturing_facility_mini,
+            &[
+                (0x2800_0001, 16_640, "Orbital Shipyard"),
+                (0x2a00_0006, 16_645, "Advanced Construction Yard"),
+                (0x2000_0001, 17_216, "Alliance Headquarters"),
+            ],
         );
-        assert_eq!(
-            manufacturing_facility_mini(DatId::new(0x2a00_0006)),
-            Some((16_645, "Advanced Construction Yard"))
+        assert_mini_cases(
+            defense_facility_mini,
+            &[
+                (0x2400_0003, 16_898, "GenCore Level I"),
+                (0x2500_0004, 17_024, "Death Star Shield"),
+            ],
         );
-        assert_eq!(
-            manufacturing_facility_mini(DatId::new(0x2000_0001)),
-            Some((17_216, "Alliance Headquarters"))
+        assert_mini_cases(
+            production_facility_mini,
+            &[
+                (0x2c00_0001, 16_385, "Mine"),
+                (0x2d00_0002, 16_386, "Refinery"),
+            ],
         );
-        assert_eq!(
-            defense_facility_mini(DatId::new(0x2400_0003)),
-            Some((16_898, "GenCore Level I"))
+        assert_mini_cases(
+            troop_mini,
+            &[
+                (0x1000_0001, 17_472, "Alliance Fleet Regiment"),
+                (0x1000_000a, 17_540, "Dark Trooper Regiment"),
+            ],
         );
-        assert_eq!(
-            defense_facility_mini(DatId::new(0x2500_0004)),
-            Some((17_024, "Death Star Shield"))
-        );
-        assert_eq!(
-            production_facility_mini(DatId::new(0x2c00_0001)),
-            Some((16_385, "Mine"))
-        );
-        assert_eq!(
-            production_facility_mini(DatId::new(0x2d00_0002)),
-            Some((16_386, "Refinery"))
-        );
-        assert_eq!(
-            troop_mini(DatId::new(0x1000_0001)),
-            Some((17_472, "Alliance Fleet Regiment"))
-        );
-        assert_eq!(
-            troop_mini(DatId::new(0x1000_000a)),
-            Some((17_540, "Dark Trooper Regiment"))
-        );
-        assert_eq!(
-            special_force_mini(DatId::new(0x3c00_0001)),
-            Some((17_728, "Guerrillas"))
-        );
-        assert_eq!(
-            special_force_mini(DatId::new(0x3c00_0009)),
-            Some((17_796, "Bounty Hunters"))
+        assert_mini_cases(
+            special_force_mini,
+            &[
+                (0x3c00_0001, 17_728, "Guerrillas"),
+                (0x3c00_0009, 17_796, "Bounty Hunters"),
+            ],
         );
 
         assert_eq!(character_mini_resource_id(DatId::new(575), true), None);

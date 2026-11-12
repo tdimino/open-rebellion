@@ -2322,11 +2322,8 @@ fn window_screen_rect(
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
 fn screen_to_logical(layout: CockpitLayout, point: egui::Pos2) -> (i16, i16) {
-    let scale = layout.scale.max(f32::EPSILON);
-    (
-        ((point.x - layout.canvas.x) / scale).round() as i16,
-        ((point.y - layout.canvas.y) / scale).round() as i16,
-    )
+    let point = layout.logical_canvas_point(point);
+    (point.x.round() as i16, point.y.round() as i16)
 }
 
 fn exact_clicked(response: &egui::Response, rect: egui::Rect) -> bool {
@@ -6233,46 +6230,47 @@ mod tests {
             window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout).center();
         let upper_point =
             window_screen_rect(CockpitFaction::Alliance, WindowColumn::Secondary, layout).center();
-        let upper_press = input_event(25, 0);
-        let upper_release = input_event(25, 1);
-        let lower_press = input_event(25, 2);
-        let lower_release = input_event(25, 3);
-        let upper_press_again = input_event(25, 4);
-        let upper_release_again = input_event(25, 5);
+        let gestures = [
+            (
+                input_event(25, 0),
+                upper,
+                upper_point,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            (
+                input_event(25, 1),
+                upper,
+                upper_point,
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+            (
+                input_event(25, 2),
+                lower,
+                lower_point,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            (
+                input_event(25, 3),
+                lower,
+                lower_point,
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+            (
+                input_event(25, 4),
+                upper,
+                upper_point,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            (
+                input_event(25, 5),
+                upper,
+                upper_point,
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+        ];
         let mut router = FrameInputRouter::default();
         router.begin_frame(25, &snapshot);
-        for (id, owner, phase) in [
-            (
-                upper_press,
-                upper,
-                PointerPhase::Press(PointerButtonId::Secondary),
-            ),
-            (
-                upper_release,
-                upper,
-                PointerPhase::Release(PointerButtonId::Secondary),
-            ),
-            (
-                lower_press,
-                lower,
-                PointerPhase::Press(PointerButtonId::Secondary),
-            ),
-            (
-                lower_release,
-                lower,
-                PointerPhase::Release(PointerButtonId::Secondary),
-            ),
-            (
-                upper_press_again,
-                upper,
-                PointerPhase::Press(PointerButtonId::Secondary),
-            ),
-            (
-                upper_release_again,
-                upper,
-                PointerPhase::Release(PointerButtonId::Secondary),
-            ),
-        ] {
+        for &(id, owner, _, phase) in &gestures {
             assert_test_pointer(
                 &mut router,
                 id,
@@ -6281,38 +6279,8 @@ mod tests {
                 phase,
             );
         }
-        let pointer_events = sector_input_events([
-            (
-                upper_press,
-                upper_point,
-                PointerPhase::Press(PointerButtonId::Secondary),
-            ),
-            (
-                upper_release,
-                upper_point,
-                PointerPhase::Release(PointerButtonId::Secondary),
-            ),
-            (
-                lower_press,
-                lower_point,
-                PointerPhase::Press(PointerButtonId::Secondary),
-            ),
-            (
-                lower_release,
-                lower_point,
-                PointerPhase::Release(PointerButtonId::Secondary),
-            ),
-            (
-                upper_press_again,
-                upper_point,
-                PointerPhase::Press(PointerButtonId::Secondary),
-            ),
-            (
-                upper_release_again,
-                upper_point,
-                PointerPhase::Release(PointerButtonId::Secondary),
-            ),
-        ]);
+        let pointer_events =
+            sector_input_events(gestures.map(|(id, _, point, phase)| (id, point, phase)));
         let mut fog = FogState::new(Faction::Alliance);
         fog.reveal(first);
         fog.reveal(second);
