@@ -1,55 +1,21 @@
+mod common;
+
 use std::collections::BTreeSet;
 
+use common::{menu, open};
+
 use rebellion_windowing::{
-    BubblePolicy, CaptureCancelReason, Cardinality, ControlId, ExistingOpenPolicy, FocusOnOpen,
-    FocusRestoration, FocusTarget, InputPolicy, KeyboardRoute, OpenPlacement, PresentationPolicy,
+    BubblePolicy, CaptureCancelReason, ControlId, FocusTarget, KeyboardRoute, OpenPlacement,
     RouteTarget, StackBand, SubjectId, WindowCommand, WindowError, WindowEvent, WindowId,
-    WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
+    WindowKey, WindowKind, WindowManager, WindowOwner, WindowSpec, WindowTransition,
 };
 
 fn detail(subject: u64) -> WindowSpec {
-    WindowSpec {
-        key: WindowKey::contextual(WindowKind::System, SubjectId::new(2, subject)),
-        owner: WindowOwner::StrategicRoot,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Subject { max_open: None },
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::RaiseRestore,
-            input: InputPolicy::Modeless,
-            presentation: PresentationPolicy::History,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
-    }
+    common::root_detail(WindowKind::System, subject)
 }
 
 fn modal() -> WindowSpec {
-    let mut spec = detail(0);
-    spec.key = WindowKey::singleton(WindowKind::Encyclopedia);
-    spec.policy.cardinality = Cardinality::Singleton;
-    spec.policy.existing = ExistingOpenPolicy::NoOp;
-    spec.policy.input = InputPolicy::StrategicModal;
-    spec.policy.presentation = PresentationPolicy::None;
-    spec
-}
-
-fn menu(owner: WindowId) -> WindowSpec {
-    let mut spec = modal();
-    spec.key = WindowKey::singleton(WindowKind::Menu);
-    spec.owner = WindowOwner::Window(owner);
-    spec.policy.band = StackBand::Transient;
-    spec.policy.placement = OpenPlacement::AboveOwner;
-    spec.policy.input = InputPolicy::DismissOnOutsidePress;
-    spec.policy.restoration = FocusRestoration::SavedMenuTarget;
-    spec
-}
-
-fn open(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
-    match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
-        WindowTransition::Opened { id } => id,
-        other => panic!("expected a fresh window: {other:?}"),
-    }
+    common::modal(WindowKind::Encyclopedia)
 }
 
 fn focus(window: WindowId) -> FocusTarget {

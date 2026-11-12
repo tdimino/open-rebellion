@@ -917,6 +917,7 @@ fn draw_registry_chip(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::immediate_click_frames;
 
     fn viewport(width: f32, height: f32) -> Rect {
         Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height))
@@ -1238,18 +1239,7 @@ mod tests {
     }
 
     fn click_at(x: f32, y: f32) -> Vec<Vec<egui::Event>> {
-        let pos = Pos2::new(x, y);
-        let press = |pressed| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        vec![
-            vec![egui::Event::PointerMoved(pos)],
-            vec![press(true)],
-            vec![press(false)],
-        ]
+        immediate_click_frames(Pos2::new(x, y))
     }
 
     #[test]

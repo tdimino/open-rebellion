@@ -73,6 +73,7 @@ pub mod message_log;
 pub mod mission_dialog;
 pub mod missions_window;
 pub mod move_confirmation;
+mod native_geometry;
 pub mod object_menu;
 pub mod operation_report;
 pub mod panels;
@@ -81,6 +82,7 @@ pub mod quadrant_icons;
 mod scroll_bar;
 pub mod sector_hover;
 pub mod sector_window;
+mod singleton_window_common;
 pub mod status_rows;
 pub mod status_window;
 mod strategic_window_common;
@@ -89,6 +91,9 @@ mod tactical_asset_cache;
 mod tactical_assets;
 pub mod tactical_view;
 pub mod targeting;
+#[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(all(feature = "test-support", not(test)), allow(dead_code))]
+pub mod test_support;
 pub mod theme;
 pub mod tooltip;
 pub mod troop_finder;
@@ -1586,27 +1591,15 @@ mod interaction_tests {
         });
         let key = world.systems.insert(System {
             dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
-            name: "Naboo".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.2,
             popularity_empire: 0.8,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(rebellion_core::dat::Faction::Empire),
+            ..rebellion_core::test_support::system_at(
+                "Naboo",
+                sector,
+                0,
+                0,
+                ControlKind::Controlled(rebellion_core::dat::Faction::Empire),
+            )
         });
         let movement = rebellion_core::movement::MovementState::new();
         let manufacturing = rebellion_core::manufacturing::ManufacturingState::new();
@@ -1717,27 +1710,9 @@ mod interaction_tests {
         let mut world = GameWorld::default();
         let key = world.systems.insert(System {
             dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
-            name: "Yaga Minor".into(),
-            sector: rebellion_core::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
             is_populated: false,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
             is_destroyed: true,
-            control: ControlKind::Uncontrolled,
+            ..rebellion_core::test_support::system("Yaga Minor", ControlKind::Uncontrolled)
         });
         let fixture = GidFixture::new(ManufacturingState::new());
         let gid = fixture.context();

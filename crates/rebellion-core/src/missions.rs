@@ -492,6 +492,16 @@ pub enum MissionTarget {
     Fleet(crate::ids::FleetKey),
 }
 
+impl From<crate::world::FacilityRef> for MissionTarget {
+    fn from(facility: crate::world::FacilityRef) -> Self {
+        match facility {
+            crate::world::FacilityRef::Defense(key) => Self::DefenseFacility(key),
+            crate::world::FacilityRef::Manufacturing(key) => Self::ManufacturingFacility(key),
+            crate::world::FacilityRef::Production(key) => Self::ProductionFacility(key),
+        }
+    }
+}
+
 /// What the validator reads about a target object.
 struct ObjectState {
     side: crate::dat::Faction,
@@ -3362,7 +3372,6 @@ impl MissionSystem {
         let Some(from) = mission.origin else {
             return;
         };
-        let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
         let to = mission.target_system;
         let fleet = match mission.target_object {
             Some(MissionTarget::Fleet(fleet)) if mission.kind == MissionKind::Move => Some(fleet),
@@ -3372,12 +3381,8 @@ impl MissionSystem {
             if member_state(world, member).is_none() {
                 continue;
             }
-            let days = crate::movement::transit_ticks_between(
-                world,
-                position(from),
-                position(to),
-                mission.speed,
-            );
+            let days =
+                crate::movement::transit_ticks_between_systems(world, from, to, mission.speed);
             // The member stands in its destination container from the order
             // on, en route until it arrives (`move-order.md`).
             out.effects.push(MissionEffect::MemberMoved { member, to });
@@ -3934,6 +3939,7 @@ fn escapes(world: &GameWorld, key: CharacterKey, draws: &mut impl crate::uprisin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::diplomacy_mission_record as diplomacy_record;
 
     fn dispatch_single(
         state: &mut MissionState,
@@ -5926,40 +5932,6 @@ mod tests {
     /// A system at `(x, 0)`, populated, held by no one.
     fn system_at(world: &mut GameWorld, x: u16) -> SystemKey {
         world.systems.insert(test_system("System", x, Vec::new()))
-    }
-
-    /// The shipped MISSNSD Diplomacy record `0x51000010`: timer (5, 10),
-    /// repeating, detection phases and resign on, columns 11..21 =
-    /// 1 1 1 1 1 0 0 1 0 0.
-    fn diplomacy_record() -> crate::world::MissionRecord {
-        crate::world::MissionRecord {
-            dat_id: crate::ids::DatId::new(0x5100_0010),
-            timer_min_days: 5,
-            timer_spread_days: 10,
-            repeats: true,
-            hidden: false,
-            detection_phases: true,
-            can_resign: true,
-            return_policy: 1,
-            rules: crate::world::MissionTargetRules {
-                container_loss_ends: true,
-                needs_populated_container: true,
-                target_loss_ends: true,
-                own_side_target: true,
-                other_side_target: true,
-                opponent_target: false,
-                revolting_target: false,
-                calm_target: true,
-                prisoner_target: false,
-                free_target: false,
-            },
-            members: crate::world::MissionMemberRules {
-                alliance: true,
-                empire: true,
-                special_force_mask: 0,
-                character_mask: 0x1_0000,
-            },
-        }
     }
 
     /// The shipped MISSNSD Rescue record `0x61000011`: timer (1, 6), not

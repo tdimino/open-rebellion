@@ -12,8 +12,8 @@
 
 use egui_macroquad::egui;
 use rebellion_windowing::{
-    ContentReport, ContentStatus, RoutingSnapshot, WindowCommand, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
+    ContentReport, RoutingSnapshot, WindowCommand, WindowId, WindowKind, WindowOwner, WindowSpec,
+    WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
@@ -161,24 +161,9 @@ impl ManagedMenuState {
     /// Explicit Menu content state for conservative reconciliation.
     #[must_use]
     pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::Menu)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
+        crate::singleton_window_common::content_reports(frame, WindowKind::Menu, |id| {
+            self.window == Some(id)
+        })
     }
 
     /// Exact close target while content remains attached through this frame.
@@ -367,6 +352,22 @@ pub enum OwnedMenuOutcome<T> {
     Dismissed,
     /// One enabled row selected a feature-owned command payload.
     Chosen(T),
+}
+
+/// Map the common lifecycle response of a flat owned menu to its payload.
+pub(crate) fn flat_menu_outcome<T>(
+    response: GameMenuResponse,
+    selected: impl FnOnce(usize) -> Option<T>,
+) -> OwnedMenuOutcome<T> {
+    match response {
+        GameMenuResponse::Open => OwnedMenuOutcome::Open,
+        GameMenuResponse::Dismissed | GameMenuResponse::ChosenChild { .. } => {
+            OwnedMenuOutcome::Dismissed
+        }
+        GameMenuResponse::Chosen(index) => {
+            selected(index).map_or(OwnedMenuOutcome::Open, OwnedMenuOutcome::Chosen)
+        }
+    }
 }
 
 /// Submenu arrows, highlighted and normal: 10117 and 10118 for side 1, else
@@ -813,6 +814,7 @@ pub fn draw_game_menu(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::pointer_button;
 
     fn entry(enabled: bool, submenu: bool) -> GameMenuEntry<'static> {
         GameMenuEntry {
@@ -900,21 +902,9 @@ mod tests {
         let window = egui::Id::new("raising_window");
         let entries = [labelled("Mission", true)];
         for _ in 0..3 {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(640.0, 480.0),
-                )),
-                ..Default::default()
-            };
+            let input = crate::test_support::raw_input(Vec::new(), egui::vec2(640.0, 480.0));
             let _ = ctx.run(input, |ctx| {
-                ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, window));
-                egui::Area::new(window)
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(egui::Pos2::ZERO)
-                    .show(ctx, |ui| {
-                        ui.allocate_response(egui::vec2(400.0, 400.0), egui::Sense::click());
-                    });
+                crate::test_support::show_self_raising_area(ctx, window, egui::vec2(400.0, 400.0));
                 let _ = draw_game_menu(
                     ctx,
                     egui::Id::new(MENU_ID),
@@ -937,15 +927,6 @@ mod tests {
             enabled,
             submenu: false,
             children: &[],
-        }
-    }
-
-    fn pointer_button(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
         }
     }
 

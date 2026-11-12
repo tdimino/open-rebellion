@@ -21,7 +21,10 @@ use serde::{Deserialize, Serialize};
 use crate::carriage::ProductRoom;
 use crate::dat::Faction;
 use crate::ids::{FighterKey, FleetKey, SystemKey, TroopKey};
-use crate::movement::{default_speed, fighter_speed, transit_ticks_between, MovementState};
+use crate::movement::{
+    default_speed, fighter_speed, transit_ticks_between, transit_ticks_between_systems,
+    MovementState,
+};
 use crate::world::GameWorld;
 
 /// Persistent regiment cargo keyed by its carrying fleet.
@@ -1725,11 +1728,7 @@ fn leg_system(world: &GameWorld, leg: RegimentLeg) -> Result<SystemKey, TroopTra
 /// `FUN_0055d8c0`'s ticks from `from` to `to` at `speed`; none within one
 /// system (`FUN_00556430.c:40-51`).
 fn leg_ticks(world: &GameWorld, from: SystemKey, to: SystemKey, speed: i64) -> u32 {
-    if from == to {
-        return 0;
-    }
-    let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
-    transit_ticks_between(world, position(from), position(to), speed)
+    transit_ticks_between_systems(world, from, to, speed)
 }
 
 fn insert_sorted(keys: &mut Vec<TroopKey>, troop: TroopKey) {
@@ -1752,8 +1751,9 @@ pub fn regiment_system(world: &GameWorld, troop: TroopKey) -> Option<SystemKey> 
 mod tests {
     use super::*;
     use crate::dat::Faction;
-    use crate::dat::{ExplorationStatus, SectorGroup};
+    use crate::dat::SectorGroup;
     use crate::ids::DatId;
+    use crate::test_support::add_fleet_with_class;
     use crate::world::{
         CapitalShipClass, ControlKind, Fleet, Sector, ShipInstance, System, TroopUnit,
     };
@@ -1788,27 +1788,7 @@ mod tests {
         });
         let make_system = |name: &str| System {
             dat_id: DatId::new(2),
-            name: name.into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+            ..crate::test_support::system_at(name, sector, 0, 0, ControlKind::Uncontrolled)
         };
         let origin = world.systems.insert(make_system("Origin"));
         let destination = world.systems.insert(make_system("Destination"));
@@ -2137,16 +2117,7 @@ mod tests {
             hull: 100,
             ..CapitalShipClass::default()
         });
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 100, true)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            bombarding: false,
-        });
-        world.systems[system].fleets.push(fleet);
-        fleet
+        add_fleet_with_class(world, system, class, true)
     }
 
     fn fleet_target_world(

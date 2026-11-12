@@ -513,37 +513,22 @@ pub fn destination_refusal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dat::{ExplorationStatus, Faction};
+    use crate::dat::Faction;
     use crate::world::{
         BuildableClass, CapitalShipClass, ControlKind, Fleet, ManufacturingFacilityInstance,
-        ShipInstance, System,
+        ShipInstance,
     };
 
     fn system(world: &mut GameWorld, x: u16) -> SystemKey {
-        world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: "Bortras".into(),
-            sector: crate::ids::SectorKey::default(),
+        let mut system = crate::test_support::system_at(
+            "Bortras",
+            crate::ids::SectorKey::default(),
             x,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
-        })
+            0,
+            ControlKind::Controlled(Faction::Alliance),
+        );
+        system.dat_id = DatId::new(0x9000_0001);
+        world.systems.insert(system)
     }
 
     fn class(

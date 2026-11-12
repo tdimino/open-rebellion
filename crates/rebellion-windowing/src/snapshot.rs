@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    FocusTarget, InputPolicy, WindowEvent, WindowId, WindowKey, WindowOwner, WindowPolicy,
-    WindowSpec,
+    FocusTarget, InputPolicy, WindowEvent, WindowId, WindowKey, WindowKind, WindowOwner,
+    WindowPolicy, WindowSpec,
 };
 
 /// One semantic recipient selected for an input event.
@@ -148,6 +148,35 @@ impl RoutingSnapshot {
             .contains(&id)
             .then(|| self.records.get(&id).map(|record| record.key))
             .flatten()
+    }
+
+    /// Content reports for every visible member of `kind`, in paint order.
+    #[must_use]
+    pub fn content_reports_for(
+        &self,
+        kind: WindowKind,
+        status: impl Fn(WindowId) -> ContentStatus,
+    ) -> Vec<ContentReport> {
+        self.paint_order
+            .iter()
+            .copied()
+            .filter(|id| self.key(*id).is_some_and(|key| key.kind == kind))
+            .map(|window| ContentReport {
+                window,
+                status: status(window),
+            })
+            .collect()
+    }
+
+    /// Return `current` only while it owns this snapshot's keyboard route.
+    #[must_use]
+    pub fn keyboard_owner_for(&self, current: Option<WindowId>) -> Option<WindowId> {
+        let id = current?;
+        matches!(
+            self.keyboard_route().target,
+            RouteTarget::Window(target) if target.window == id
+        )
+        .then_some(id)
     }
 
     /// Lifecycle owner captured for an identity in this snapshot.

@@ -13,7 +13,7 @@ use rebellion_core::manufacturing::{
 };
 use rebellion_core::world::{FacilityRef, GameWorld};
 
-use crate::fleet_window::{control_side, fleet_side};
+use crate::fleet_window::{control_side, faction_side, fleet_side};
 use crate::panels::fleets::{capital_ship_mini_id, fighter_mini_id};
 use crate::system_window::{
     defense_facility_mini, manufacturing_facility_mini, opposing_contents_visible,
@@ -348,6 +348,20 @@ fn built_facility_cell(
         .map(|picture| FacilityCell { item, picture })
 }
 
+fn append_built_facilities<K: Copy>(
+    cells: &mut Vec<FacilityCell>,
+    keys: &[K],
+    lookup: impl Fn(K) -> Option<(DatId, u8)>,
+    item: impl Fn(K) -> FacilityItem,
+    wanted_family: u8,
+    wanted_side: u8,
+) {
+    cells.extend(keys.iter().filter_map(|&key| {
+        let (class, owner) = lookup(key)?;
+        built_facility_cell(item(key), class, owner, wanted_family, wanted_side)
+    }));
+}
+
 /// The cells of `page` at `system`, in walk order: its built facilities of
 /// the shown side and family, then those queued for it, then those en route
 /// to it; on the mines page, one empty deposit per raw-material deposit
@@ -399,36 +413,32 @@ pub fn page_cells(
                 .collect(),
         )
     };
-    for &key in &manufacturing_keys {
-        let Some(facility) = world.manufacturing_facilities.get(key) else {
-            continue;
-        };
-        let owner = crate::fleet_window::faction_side(facility.side);
-        if let Some(cell) = built_facility_cell(
-            FacilityItem::Manufacturing(key),
-            facility.class_dat_id,
-            owner,
-            family,
-            side,
-        ) {
-            cells.push(cell);
-        }
-    }
-    for &key in &production_keys {
-        let Some(facility) = world.production_facilities.get(key) else {
-            continue;
-        };
-        let owner = crate::fleet_window::faction_side(facility.side);
-        if let Some(cell) = built_facility_cell(
-            FacilityItem::Production(key),
-            facility.class_dat_id,
-            owner,
-            family,
-            side,
-        ) {
-            cells.push(cell);
-        }
-    }
+    append_built_facilities(
+        &mut cells,
+        &manufacturing_keys,
+        |key| {
+            world
+                .manufacturing_facilities
+                .get(key)
+                .map(|facility| (facility.class_dat_id, faction_side(facility.side)))
+        },
+        FacilityItem::Manufacturing,
+        family,
+        side,
+    );
+    append_built_facilities(
+        &mut cells,
+        &production_keys,
+        |key| {
+            world
+                .production_facilities
+                .get(key)
+                .map(|facility| (facility.class_dat_id, faction_side(facility.side)))
+        },
+        FacilityItem::Production,
+        family,
+        side,
+    );
     if !visible {
         return cells;
     }
@@ -538,34 +548,10 @@ mod tests {
     use rebellion_core::manufacturing::{FacilityBuild, QueueItem};
     use rebellion_core::world::{
         CapitalShipClass, ControlKind, ManufacturingFacilityInstance, ProductionFacilityInstance,
-        System,
     };
 
     fn add_system(world: &mut GameWorld, name: &str, control: ControlKind) -> SystemKey {
-        world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: name.into(),
-            sector: rebellion_core::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        })
+        crate::test_support::add_standalone_system(world, name, control)
     }
 
     fn yard(

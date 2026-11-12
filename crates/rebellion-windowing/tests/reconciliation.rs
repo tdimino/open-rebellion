@@ -1,45 +1,17 @@
+mod common;
+
 use std::collections::BTreeSet;
 
+use common::{open, root_detail as detail};
+
 use rebellion_windowing::{
-    CaptureCancelReason, Cardinality, CloseReason, ContentReport, ContentStatus,
-    ExistingOpenPolicy, FocusOnOpen, FocusRestoration, FocusTarget, InputPolicy, OpenPlacement,
-    PresentationPolicy, ReconcileReport, RouteTarget, StackBand, SubjectId, WindowCommand,
-    WindowEvent, WindowId, WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy,
+    CaptureCancelReason, CloseReason, ContentReport, ContentStatus, FocusTarget, ReconcileReport,
+    RouteTarget, WindowCommand, WindowEvent, WindowId, WindowKind, WindowManager, WindowOwner,
     WindowSpec, WindowTransition,
 };
 
-fn detail(kind: WindowKind, subject: u64) -> WindowSpec {
-    WindowSpec {
-        key: WindowKey::contextual(kind, SubjectId::new(2, subject)),
-        owner: WindowOwner::StrategicRoot,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Subject { max_open: None },
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::RaiseRestore,
-            input: InputPolicy::Modeless,
-            presentation: PresentationPolicy::History,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
-    }
-}
-
 fn modal() -> WindowSpec {
-    let mut spec = detail(WindowKind::Encyclopedia, 0);
-    spec.key = WindowKey::singleton(WindowKind::Encyclopedia);
-    spec.policy.cardinality = Cardinality::Singleton;
-    spec.policy.existing = ExistingOpenPolicy::NoOp;
-    spec.policy.input = InputPolicy::StrategicModal;
-    spec.policy.presentation = PresentationPolicy::None;
-    spec
-}
-
-fn open(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
-    match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
-        WindowTransition::Opened { id } => id,
-        other => panic!("expected fresh identity, got {other:?}"),
-    }
+    common::modal(WindowKind::Encyclopedia)
 }
 
 fn report(window: WindowId, status: ContentStatus) -> ContentReport {

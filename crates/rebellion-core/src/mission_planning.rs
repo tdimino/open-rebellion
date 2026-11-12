@@ -978,14 +978,7 @@ mod tests {
         // tie without it and the first in the combat list, the weakest
         // fighter, leads; nearness lifts the agent at the staging system.
         let mut world = world();
-        let sector = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
+        let sector = world.sectors.insert(crate::test_support::sector("Sector"));
         let at = |world: &mut GameWorld, x| {
             world.systems.insert(crate::world::System {
                 sector,

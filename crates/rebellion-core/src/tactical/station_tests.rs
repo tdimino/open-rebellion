@@ -33,22 +33,17 @@ fn station_world(
     let death_star = class(0x18, owner_is_alliance, 4);
     let destroyer = class(0x14, owner_is_alliance, 0);
     let cruiser = class(0x14, !owner_is_alliance, 0);
-    let owner = world.fleets.insert(Fleet {
-        location: system,
-        capital_ships: vec![
+    let owner = crate::test_support::add_fleet_with_ships(
+        &mut world,
+        system,
+        vec![
             ShipInstance::new(destroyer, 100, owner_is_alliance),
             ShipInstance::new(death_star, 100 - damage, owner_is_alliance),
         ],
-        is_alliance: owner_is_alliance,
-        ..Fleet::default()
-    });
-    let enemy = world.fleets.insert(Fleet {
-        location: system,
-        capital_ships: vec![ShipInstance::new(cruiser, 100, !owner_is_alliance)],
-        is_alliance: !owner_is_alliance,
-        ..Fleet::default()
-    });
-    world.systems[system].fleets = vec![owner, enemy];
+        owner_is_alliance,
+    );
+    let enemy =
+        crate::test_support::add_fleet_with_class(&mut world, system, cruiser, !owner_is_alliance);
     world.systems[system].fleets.sort_unstable();
     (world, system, owner, enemy)
 }
@@ -760,12 +755,7 @@ fn a_trench_group_flies_to_its_entry_point_and_starts_the_run_on_arrival() {
 fn a_death_star_at_the_head_of_its_queue_is_an_uncompleted_station_for_either_role() {
     use crate::manufacturing::{BuildableKind, ManufacturingState, QueueItem};
     let (world, system, _, _) = station_world(false, 0);
-    let death_star_class = world
-        .capital_ship_classes
-        .iter()
-        .find(|(_, class)| class.is_death_star())
-        .map(|(key, _)| key)
-        .unwrap();
+    let death_star_class = world.death_star_class().map(|(key, _)| key).unwrap();
     let other_class = world
         .capital_ship_classes
         .iter()

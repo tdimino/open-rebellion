@@ -1789,7 +1789,7 @@ mod tests {
 
     use super::*;
     use egui_macroquad::egui;
-    use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
+    use rebellion_core::dat::{Faction, SectorGroup};
     use rebellion_core::delivery::DeliveryState;
     use rebellion_core::economy::EconomyState;
     use rebellion_core::fog::FogState;
@@ -1846,40 +1846,7 @@ mod tests {
     }
 
     fn fleet_world() -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(36),
-            name: "Sesswenna".into(),
-            group: SectorGroup::Core,
-            x: 317,
-            y: 248,
-            systems: Vec::new(),
-        });
-        let system = world.systems.insert(System {
-            dat_id: DatId::new(100),
-            name: "Sluis Van".into(),
-            sector,
-            x: 320,
-            y: 250,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        });
-        (world, system)
+        rebellion_render::test_support::world(ControlKind::Uncontrolled)
     }
 
     fn move_confirmation(
@@ -1903,15 +1870,7 @@ mod tests {
     }
 
     fn scrap_confirmation() -> rebellion_render::move_confirmation::ScrapConfirmation {
-        use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
-        use rebellion_render::move_confirmation::ScrapConfirmation;
-
-        ScrapConfirmation {
-            faction: MissionFaction::Alliance,
-            order: ScrapOrder::Troop(rebellion_core::ids::TroopKey::default()),
-            targets: vec![ScrapTarget::Troop(rebellion_core::ids::TroopKey::default())],
-            names: vec!["Army Regiment".into()],
-        }
+        rebellion_render::test_support::scrap_confirmation()
     }
 
     fn coordinator_with_fleet_capture() -> (StrategicWindowing, WindowId) {
@@ -1941,29 +1900,6 @@ mod tests {
             }));
     }
 
-    fn route_pointer_phases(
-        router: &mut FrameInputRouter,
-        frame: u64,
-        window: WindowId,
-        phases: Vec<PointerPhase>,
-    ) -> Vec<(InputEventId, PointerPhase)> {
-        phases
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, phase)| {
-                let event = InputEventId {
-                    frame,
-                    ordinal: u32::try_from(ordinal).unwrap(),
-                };
-                assert_eq!(
-                    router.collect_pointer(event, &BTreeSet::from([window]), phase),
-                    InputRecipient::Window(window)
-                );
-                (event, phase)
-            })
-            .collect()
-    }
-
     fn begin_routed_frame(
         coordinator: &StrategicWindowing,
         router: &mut FrameInputRouter,
@@ -1973,8 +1909,9 @@ mod tests {
     ) -> (RoutingSnapshot, Vec<(InputEventId, PointerPhase)>) {
         let frame = u64::try_from(index + 1).unwrap();
         let snapshot = coordinator.begin_frame();
-        router.begin_frame(frame, &snapshot);
-        let routed = route_pointer_phases(router, frame, window, phases);
+        let routed = rebellion_render::test_support::route_window_pointer_events(
+            router, frame, &snapshot, window, phases,
+        );
         (snapshot, routed)
     }
 

@@ -11,13 +11,14 @@ use egui_macroquad::egui::{self, Color32};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::finder_common::{row_click, RowClick};
 use crate::message_log::{
     GameMessage, MessageId, MessageLog, MessageRail, MessageTarget, POST_SILENTLY,
 };
 use crate::scroll_bar::{ScrollBar, ScrollDrag, ScrollRange, TEXT_BAR_299D};
 use rebellion_windowing::{
-    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
+    ContentReport, ExistingEffect, RoutingSnapshot, WindowId, WindowKind, WindowOwner, WindowSpec,
+    WindowTransition,
 };
 
 // ---------------------------------------------------------------------------
@@ -1003,12 +1004,7 @@ impl MessageIndexState {
     /// Exact manager identity that owns this frame's keyboard lease.
     #[must_use]
     pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
+        crate::singleton_window_common::keyboard_owner(self.window_id, frame)
     }
 
     /// Retains the modal identity while recording a failed paint attempt.
@@ -1024,24 +1020,9 @@ impl MessageIndexState {
     /// Explicit Message Index content state for the immutable manager frame.
     #[must_use]
     pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::MessageIndex)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id == Some(id) && self.paintable {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
+        crate::singleton_window_common::content_reports(frame, WindowKind::MessageIndex, |id| {
+            self.window_id == Some(id) && self.paintable
+        })
     }
 
     /// Returns the exact manager close target without releasing the frozen
@@ -1581,48 +1562,18 @@ fn draw_list_rows(
                 }
 
                 // Click interaction.
-                let response = ui.interact(
+                match row_click(
+                    ui,
+                    ctx,
                     row_rect,
                     ui.id().with(("msg-index-row", row_index)),
-                    egui::Sense::click(),
-                );
-                let batched_same_row_double_click = ui.input(|input| {
-                    input
-                        .events
-                        .iter()
-                        .filter(|event| {
-                            matches!(
-                                event,
-                                egui::Event::PointerButton {
-                                    pos,
-                                    button: egui::PointerButton::Primary,
-                                    pressed: false,
-                                    ..
-                                } if row_rect.contains(*pos)
-                            )
-                        })
-                        .take(2)
-                        .count()
-                        == 2
-                });
-                if batched_same_row_double_click && response.double_clicked() {
-                    // A slow renderer may receive both physical clicks in
-                    // one frame. egui retains that raw-event sequence even
-                    // though `Response::clicked` represents it once.
-                    display_message = Some(msg.id);
-                } else if response.clicked() {
-                    let now = ui.input(|input| input.time);
-                    let delay = ctx.options(|options| options.input_options.max_double_click_delay);
-
-                    if state
-                        .last_clicked
-                        .is_some_and(|(last, at)| last == row_index && now - at <= delay)
-                    {
-                        // Double click: display message (manual p. 43).
-                        display_message = Some(msg.id);
-                    } else {
-                        clicked_row = Some((row_index, now));
-                    }
+                    state.last_clicked,
+                    row_index,
+                    true,
+                ) {
+                    RowClick::Open => display_message = Some(msg.id),
+                    RowClick::Select(now) => clicked_row = Some((row_index, now)),
+                    RowClick::None => {}
                 }
             }
 

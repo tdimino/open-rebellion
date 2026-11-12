@@ -23,10 +23,9 @@ use rebellion_core::ids::{
 use rebellion_core::missions::{MissionMember, MissionState, MissionTarget};
 use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
 use rebellion_core::world::GameWorld;
-use rebellion_windowing::{
-    ContentReport, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner, WindowSpec,
-    WindowTransition,
-};
+#[cfg(test)]
+use rebellion_windowing::{ContentReport, WindowOwner};
+use rebellion_windowing::{RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowTransition};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
@@ -34,32 +33,24 @@ use crate::fleet_window::{
     control_side, faction_side, fleet_side, mini_layers, paint_native, MiniObject,
     DRAG_DISTANCE_SQUARED,
 };
+use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::object_menu::MenuObject;
 use crate::panels::fleets::fighter_mini_id;
 use crate::quadrant_icons::{mission_keys, system_members};
 use crate::scroll_bar::{egui_pointer, ScrollBar, ScrollDrag, ScrollRange, LIST_BAR_29CC};
-use crate::strategic_window_common;
+use crate::strategic_window_common::{self, draw_frame};
 use crate::system_window::{
     canvas_point, character_mini_resource_id, clamp_window_to_galaxy, defense_facility_mini,
-    exact_clicked, logical_rect, opposing_contents_visible, rect_contains, special_force_mini,
-    surface_drag_grab, system_by_dat_id, troop_mini, TitleDrag,
+    opposing_contents_visible, special_force_mini, surface_drag_grab, troop_mini, TitleDrag,
 };
 use crate::windowing::GalaxyChild;
-use crate::windowing_input::{
-    FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
-};
-use crate::windowing_policy::{contextual_spec, system_subject};
+use crate::windowing_input::{FrameInputRouter, InputEventId, PointerButtonId, PointerPhase};
+use crate::windowing_policy::system_subject;
 
 pub const DEFENSES_WINDOW_WIDTH: f32 = 235.0;
 pub const DEFENSES_WINDOW_HEIGHT: f32 = 304.0;
 
 const BACKGROUND: u32 = 10577;
-const CLOSE_NORMAL: u32 = 10108;
-const CLOSE_PRESSED: u32 = 10109;
-const MINIMIZE_NORMAL: u32 = 10253;
-const MINIMIZE_PRESSED: u32 = 10254;
-const SECTOR_NORMAL: u32 = 10209;
-const SECTOR_PRESSED: u32 = 10208;
 /// The row frame `+0x5d` keyed over a selected row's mini (`FUN_004a9ce0`):
 /// 10578 for side 1, 10579 otherwise.
 const ROW_FRAME: [u32; 2] = [10578, 10579];
@@ -229,31 +220,11 @@ struct OpenDefensesWindow {
     painted: Vec<DefensesItem>,
 }
 
-strategic_window_common::impl_strategic_window_record!(OpenDefensesWindow);
-
-/// Validated Defenses content held aside until the manager accepts its stable
-/// `(Defenses, system DAT ID)` identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PreparedDefensesWindow {
-    spec: WindowSpec,
-    faction: CockpitFaction,
-    system: SystemKey,
-    logical_position: (i16, i16),
-}
-
-impl PreparedDefensesWindow {
-    /// Complete manager declaration for this content candidate.
-    #[must_use]
-    pub const fn spec(&self) -> WindowSpec {
-        self.spec
-    }
-
-    /// Runtime system identity retained beside the stable DAT subject.
-    #[must_use]
-    pub const fn system(&self) -> SystemKey {
-        self.system
-    }
-}
+strategic_window_common::impl_strategic_window_record!(
+    OpenDefensesWindow,
+    area_id,
+    window_screen_rect
+);
 
 /// A left press held on a squadron, character or special-force row until
 /// its release (`CoolDragList`, `FUN_006083c0`).
@@ -264,6 +235,16 @@ struct RowDrag {
     is_alliance: bool,
     press: egui::Pos2,
     list: egui::Rect,
+}
+
+impl strategic_window_common::RoutedDragPayload for RowDrag {
+    fn press(&self) -> egui::Pos2 {
+        self.press
+    }
+
+    fn list(&self) -> egui::Rect {
+        self.list
+    }
 }
 
 /// The open Defenses windows. The last is focused and paints on top.
@@ -277,62 +258,40 @@ pub struct DefensesWindowState {
     title_drag: Option<TitleDrag>,
 }
 
-impl Default for DefensesWindowState {
-    fn default() -> Self {
-        Self {
-            faction: CockpitFaction::Alliance,
-            windows: Vec::new(),
-            drag: None,
-            drag_owner: None,
-            title_drag: None,
-        }
-    }
-}
+strategic_window_common::impl_strategic_window_state_core!(
+    DefensesWindowState,
+    OpenDefensesWindow,
+    area_id,
+    drag = None,
+    drag_owner = None,
+);
+strategic_window_common::impl_strategic_window_collection_accessors!(
+    DefensesWindowState,
+    window_screen_rect
+);
+strategic_window_common::impl_system_keyed_window_routing!(
+    DefensesWindowState,
+    GalaxyChild::Defenses,
+    area_id,
+    window_screen_rect
+);
+strategic_window_common::impl_fixture_window_order!(DefensesWindowState, OpenDefensesWindow);
+strategic_window_common::impl_admitted_release_target!(DefensesWindowState, area_id);
+strategic_window_common::define_basic_prepared_detail!(
+    /// Validated Defenses content held aside until the manager accepts its
+    /// stable `(Defenses, system DAT ID)` identity.
+    PreparedDefensesWindow for DefensesWindowState,
+    kind: WindowKind::Defenses,
+    size: (DEFENSES_WINDOW_WIDTH, DEFENSES_WINDOW_HEIGHT),
+);
+strategic_window_common::impl_system_content_reports!(DefensesWindowState, WindowKind::Defenses);
+strategic_window_common::impl_saved_system_windows!(DefensesWindowState, |system| {
+    SavedWindowKind::Defenses { system }
+});
 
-#[derive(Default)]
-struct EndDragResult {
-    actions: Vec<DefensesWindowAction>,
-    claimed_primary_release_by: Option<WindowId>,
-}
+type EndDragResult = strategic_window_common::RoutedDragResult<DefensesWindowAction, RowDrag>;
 
 impl DefensesWindowState {
-    /// Whether any window of this kind is open.
-    #[must_use]
-    pub fn any_open(&self) -> bool {
-        !self.windows.is_empty()
-    }
-
-    /// Egui layer attached to one manager-issued Defenses identity.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        strategic_window_common::managed_layer_id(&self.windows, id, area_id)
-    }
-
-    /// Validates and prepares Defenses content without mutating the live
-    /// store. The stable subject is the system's original DAT identity.
-    #[must_use]
-    pub fn prepare_open(
-        &self,
-        world: &GameWorld,
-        system: SystemKey,
-        logical_position: (i16, i16),
-        faction: CockpitFaction,
-        layout: CockpitLayout,
-    ) -> Option<PreparedDefensesWindow> {
-        let subject = system_subject(world, system)?;
-        Some(PreparedDefensesWindow {
-            spec: contextual_spec(WindowKind::Defenses, subject, WindowOwner::StrategicRoot),
-            faction,
-            system,
-            logical_position: clamp_window_to_galaxy(
-                logical_position,
-                layout,
-                DEFENSES_WINDOW_WIDTH,
-                DEFENSES_WINDOW_HEIGHT,
-            ),
-        })
-    }
-
     /// Publishes new Defenses content, or confirms the exact preserved
     /// content, only after a successful manager open commit.
     pub fn commit_open(
@@ -399,44 +358,25 @@ impl DefensesWindowState {
         faction: CockpitFaction,
         layout: CockpitLayout,
     ) -> bool {
-        self.prepare_faction(faction);
-        if !world.systems.contains_key(system) {
-            return false;
-        }
-        if self.focus(system) {
-            return true;
-        }
-        self.windows.push(OpenDefensesWindow {
-            id: None,
-            subject: None,
-            system,
-            logical_position: clamp_window_to_galaxy(
-                logical_position,
-                layout,
-                DEFENSES_WINDOW_WIDTH,
-                DEFENSES_WINDOW_HEIGHT,
-            ),
-            page: DefensesPage::Personnel,
-            selected: None,
-            first_row: 0,
-            scroll: ScrollDrag::default(),
-            release_target_visible: true,
-            painted: Vec::new(),
-        });
-        true
-    }
-
-    /// Exact manager identity attached to `system`'s committed content.
-    #[must_use]
-    pub fn window_id(&self, system: SystemKey) -> Option<WindowId> {
-        strategic_window_common::window_id(&self.windows, system)
-    }
-
-    /// Whether `system`'s exact content identity participates in this frozen
-    /// frame. Direct fixture content has no manager identity and stays visible.
-    #[must_use]
-    pub fn window_is_visible(&self, snapshot: &RoutingSnapshot, system: SystemKey) -> bool {
-        strategic_window_common::window_is_visible(&self.windows, snapshot, system)
+        self.open_direct(world.systems.contains_key(system), system, faction, || {
+            OpenDefensesWindow {
+                id: None,
+                subject: None,
+                system,
+                logical_position: clamp_window_to_galaxy(
+                    logical_position,
+                    layout,
+                    DEFENSES_WINDOW_WIDTH,
+                    DEFENSES_WINDOW_HEIGHT,
+                ),
+                page: DefensesPage::Personnel,
+                selected: None,
+                first_row: 0,
+                scroll: ScrollDrag::default(),
+                release_target_visible: true,
+                painted: Vec::new(),
+            }
+        })
     }
 
     /// Whether exact Defenses content participates visibly in this frozen
@@ -447,12 +387,6 @@ impl DefensesWindowState {
         self.windows
             .iter()
             .any(|window| window_is_visible(window, snapshot, world))
-    }
-
-    /// Whether exact manager-owned Defenses content remains attached.
-    #[must_use]
-    pub fn contains_window(&self, id: WindowId) -> bool {
-        self.windows.iter().any(|window| window.id == Some(id))
     }
 
     /// Removes only content named by manager teardown receipts.
@@ -471,101 +405,6 @@ impl DefensesWindowState {
 
     /// Reports every active Defenses identity in the frozen snapshot,
     /// including minimized history entries whose content remains attached.
-    #[must_use]
-    pub fn content_reports(
-        &self,
-        snapshot: &RoutingSnapshot,
-        world: &GameWorld,
-    ) -> Vec<ContentReport> {
-        strategic_window_common::content_reports(
-            &self.windows,
-            snapshot,
-            WindowKind::Defenses,
-            |window, _| {
-                world.systems.contains_key(window.system)
-                    && system_subject(world, window.system) == window.subject
-            },
-        )
-    }
-
-    #[must_use]
-    pub fn window_count(&self) -> usize {
-        self.windows.len()
-    }
-
-    #[must_use]
-    pub fn is_open(&self, system: SystemKey) -> bool {
-        self.windows.iter().any(|window| window.system == system)
-    }
-
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.contains_shown_screen_point(layout, point, &|_| true)
-    }
-
-    /// [`contains_screen_point`](Self::contains_screen_point) over the
-    /// windows `shown` passes.
-    #[must_use]
-    pub fn contains_shown_screen_point(
-        &self,
-        layout: CockpitLayout,
-        point: (f32, f32),
-        shown: &dyn Fn(GalaxyChild) -> bool,
-    ) -> bool {
-        strategic_window_common::contains_shown_screen_point(
-            &self.windows,
-            point,
-            |system| shown(GalaxyChild::Defenses(system)),
-            |window| window_screen_rect(window, layout),
-        )
-    }
-
-    /// Whether visible Defenses content covers `point`. Minimized manager
-    /// content stays attached but cannot block the strategic root.
-    #[must_use]
-    pub fn contains_visible_screen_point(
-        &self,
-        snapshot: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> bool {
-        strategic_window_common::contains_visible_screen_point_where(
-            &self.windows,
-            snapshot,
-            point,
-            |_| true,
-            |window| window_screen_rect(window, layout),
-        )
-    }
-
-    /// Exact visible manager identity whose Defenses rectangle covers
-    /// `point` when egui reports that content layer as topmost.
-    #[must_use]
-    pub fn hit_window_ids(
-        &self,
-        snapshot: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-        top_layer: Option<egui::LayerId>,
-    ) -> std::collections::BTreeSet<WindowId> {
-        strategic_window_common::hit_window_ids_where(
-            &self.windows,
-            snapshot,
-            point,
-            top_layer,
-            |_| true,
-            area_id,
-            |window| window_screen_rect(window, layout),
-        )
-    }
-
-    /// The screen rect of `system`'s window.
-    #[must_use]
-    pub fn screen_rect(&self, layout: CockpitLayout, system: SystemKey) -> Option<egui::Rect> {
-        let window = self.windows.iter().find(|window| window.system == system)?;
-        Some(window_screen_rect(window, layout))
-    }
-
     /// Show `page` in `system`'s open window, as a click on its tab does
     /// (`FUN_004a90d0` refills only for a different page).
     pub fn show_page(&mut self, system: SystemKey, page: DefensesPage) -> bool {
@@ -596,22 +435,6 @@ impl DefensesWindowState {
         ))
     }
 
-    /// The screen rect of the `index`th cell of `system`'s list.
-    #[must_use]
-    pub fn cell_screen_rect(
-        &self,
-        layout: CockpitLayout,
-        system: SystemKey,
-        index: usize,
-    ) -> Option<egui::Rect> {
-        let window = self.windows.iter().find(|window| window.system == system)?;
-        Some(cell_rect(
-            window_screen_rect(window, layout),
-            layout.scale,
-            index,
-        ))
-    }
-
     /// What `system`'s window shows, for the interface fixture.
     #[must_use]
     pub fn report(
@@ -622,7 +445,7 @@ impl DefensesWindowState {
         system: SystemKey,
     ) -> Option<DefensesWindowReport> {
         let window = self.windows.iter().find(|window| window.system == system)?;
-        let player = cockpit_faction(self.faction);
+        let player = self.faction.player();
         let rows = page_rows(world, fog, missions, player, system, window.page);
         let selected = window
             .selected
@@ -638,17 +461,6 @@ impl DefensesWindowState {
             selected,
             garrison: garrison_line(world, player, system, window.page),
         })
-    }
-
-    /// The system a move released over the Defenses window egui draws as
-    /// `layer` takes (`+0x70`, `FUN_004aa470`: the subject wherever the point
-    /// is), or `None` when `layer` is none of them.
-    #[must_use]
-    pub fn release_target(&self, layer: egui::LayerId) -> Option<SystemKey> {
-        self.windows
-            .iter()
-            .find(|window| window.release_target_visible && area_id(window) == layer.id)
-            .map(|window| window.system)
     }
 
     /// Refreshes which retained egui layers may resolve a gameplay release.
@@ -672,15 +484,14 @@ impl DefensesWindowState {
         layer: egui::LayerId,
         point: egui::Pos2,
     ) -> Option<MissionTarget> {
-        let window = self
-            .windows
-            .iter()
-            .find(|window| area_id(window) == layer.id)?;
-        let rect = window_screen_rect(window, layout);
-        let local = (
-            (point.x - rect.min.x) / layout.scale,
-            (point.y - rect.min.y) / layout.scale,
-        );
+        let (window, local) = strategic_window_common::local_point_for_layer(
+            &self.windows,
+            layout,
+            layer,
+            point,
+            area_id,
+            window_screen_rect,
+        )?;
         let index = crate::system_window::grid_cell(local, LIST, (CELL, CELL), COLUMNS)?;
         match *window.painted.get(index)? {
             DefensesItem::Defense(key) => Some(MissionTarget::DefenseFacility(key)),
@@ -728,10 +539,7 @@ impl DefensesWindowState {
 
     /// Applies a manager capture-cancellation receipt to renderer payload.
     pub fn cancel_pointer_capture(&mut self, window: WindowId) {
-        if self.drag_owner == Some(window) {
-            self.drag = None;
-            self.drag_owner = None;
-        }
+        strategic_window_common::cancel_owned_capture(&mut self.drag, &mut self.drag_owner, window);
     }
 
     /// End a held drag on the left release: far enough from the press and
@@ -750,49 +558,21 @@ impl DefensesWindowState {
         router: Option<&mut FrameInputRouter>,
         pointer_events: &[(InputEventId, PointerPhase)],
     ) -> EndDragResult {
-        let (released, down, point, ctrl) = ctx.input(|input| {
-            (
-                input.pointer.primary_released(),
-                input.pointer.primary_down(),
-                input.pointer.latest_pos(),
-                input.modifiers.ctrl,
-            )
-        });
-        if !released {
-            if !down && self.drag_owner.is_none() {
-                self.drag = None;
-            }
-            return EndDragResult::default();
-        }
-        let mut result = EndDragResult::default();
-        if let (Some(owner), Some(router)) = (self.drag_owner, router) {
-            if claim_defenses_pointer_event(
-                router,
-                pointer_events,
-                owner,
-                PointerPhase::Release(PointerButtonId::Primary),
-            )
-            .is_none()
-            {
-                return result;
-            }
-            result.claimed_primary_release_by = Some(owner);
-        }
-        let Some(drag) = self.drag.take() else {
+        let mut result = strategic_window_common::complete_routed_drag(
+            &mut self.drag,
+            &mut self.drag_owner,
+            ctx,
+            router,
+            pointer_events.iter().copied(),
+            DefensesWindowAction::ReleasePointer,
+            scale,
+            DRAG_DISTANCE_SQUARED,
+        )
+        .unwrap_or_default();
+        let Some(drop) = result.drop.take() else {
             return result;
         };
-        result.actions.extend(
-            self.drag_owner
-                .take()
-                .map(DefensesWindowAction::ReleasePointer),
-        );
-        let Some(point) = point else {
-            return result;
-        };
-        let moved = (point - drag.press) / scale;
-        if moved.length_sq() <= DRAG_DISTANCE_SQUARED || rect_contains(drag.list, point) {
-            return result;
-        }
+        let (drag, point, ctrl) = (drop.payload, drop.point, drop.ctrl);
         let action = match drag.item {
             DefensesItem::Squadron { class, .. } => DefensesWindowAction::DragSquadron {
                 system: drag.system,
@@ -831,23 +611,6 @@ impl DefensesWindowState {
             .map(|window| GalaxyChild::Defenses(window.system))
     }
 
-    /// The open Defenses content; saved order is supplied by `WindowManager`.
-    #[must_use]
-    pub fn saved_windows(&self, world: &GameWorld) -> Vec<SavedWindow> {
-        self.windows
-            .iter()
-            .filter_map(|window| {
-                Some(SavedWindow {
-                    kind: SavedWindowKind::Defenses {
-                        system: world.systems.get(window.system)?.dat_id,
-                    },
-                    position: window.logical_position,
-                    shown: true,
-                })
-            })
-            .collect()
-    }
-
     /// Rebuild a shown saved Defenses window (`FUN_00441190` type 10,
     /// `FUN_004a7790`) at its saved place, above the windows rebuilt before
     /// it, on the personnel page: the page is not saved (`FUN_004aa6d0`). A
@@ -860,14 +623,9 @@ impl DefensesWindowState {
         faction: CockpitFaction,
         saved: &SavedWindow,
     ) -> bool {
-        let SavedWindowKind::Defenses { system } = saved.kind else {
-            return false;
-        };
-        let Some(system) = system_by_dat_id(world, system).filter(|_| saved.shown) else {
-            return false;
-        };
-        self.prepare_faction(faction);
-        self.close(system);
+        let system = strategic_window_common::restore_shown_detail_system!(
+            self, world, faction, saved, Defenses
+        );
         self.windows.push(OpenDefensesWindow {
             id: None,
             subject: None,
@@ -881,43 +639,6 @@ impl DefensesWindowState {
             painted: Vec::new(),
         });
         true
-    }
-
-    /// Bring `system`'s window to the top of the galaxy view's z-order, as
-    /// its activation does (`FUN_00422ce0` 0x467: `BringWindowToTop`).
-    /// False when it is not open.
-    pub fn raise(&mut self, system: SystemKey) -> bool {
-        self.focus(system)
-    }
-
-    /// Close `system`'s window, as its keyed close does (slot `+0x30`).
-    /// False when it is not open.
-    pub fn close_window(&mut self, system: SystemKey) -> bool {
-        self.close(system).is_some()
-    }
-
-    fn focus(&mut self, system: SystemKey) -> bool {
-        strategic_window_common::focus(&mut self.windows, system)
-    }
-
-    fn close(&mut self, system: SystemKey) -> Option<OpenDefensesWindow> {
-        strategic_window_common::close(&mut self.windows, system)
-    }
-
-    /// Carry a window drag one frame ([`TitleDrag`]): the window follows
-    /// the pointer while the button is down, and the release lets go.
-    fn update_title_drag(&mut self, ctx: &egui::Context, layout: CockpitLayout) {
-        strategic_window_common::update_title_drag(
-            &mut self.windows,
-            &mut self.title_drag,
-            ctx,
-            layout,
-            area_id,
-        );
-    }
-
-    fn window_mut(&mut self, system: SystemKey) -> Option<&mut OpenDefensesWindow> {
-        strategic_window_common::window_mut(&mut self.windows, system)
     }
 }
 
@@ -1016,17 +737,6 @@ pub fn rail_icon(world: &GameWorld, system: SystemKey) -> u32 {
 /// `FUN_004a9800`/`FUN_004a9ce0`: the title strips, by the shown side and
 /// whether the window is the galaxy view's focused child. The Fleet window
 /// and the Missions window (`FUN_004a2200`) use the same art.
-pub(crate) fn title_resource(side: u8, focused: bool) -> u32 {
-    match (side, focused) {
-        (1, true) => 10299,
-        (1, false) => 10200,
-        (2, true) => 10201,
-        (2, false) => 10302,
-        (_, true) => 10303,
-        (_, false) => 10304,
-    }
-}
-
 /// A selected row's text colour (`+0xdc`, `FUN_004a9ce0`): `0x20000ff`
 /// (red) for side 1, `0x200ff00` (green) for side 2, `0x2ffff00` (cyan)
 /// otherwise. Unselected rows are white (`+0xd8`, `0x2ffffff`).
@@ -1174,13 +884,6 @@ fn garrison_line(
     Some(format!("Garrison Requirement: {requirement}"))
 }
 
-fn cockpit_faction(faction: CockpitFaction) -> Faction {
-    match faction {
-        CockpitFaction::Alliance => Faction::Alliance,
-        CockpitFaction::Empire => Faction::Empire,
-    }
-}
-
 fn area_id(window: &OpenDefensesWindow) -> egui::Id {
     egui::Id::new(("original-defenses-window", window.id, window.system))
 }
@@ -1202,45 +905,35 @@ fn window_is_visible(
     }
 }
 
-fn window_screen_rect(window: &OpenDefensesWindow, layout: CockpitLayout) -> egui::Rect {
-    egui::Rect::from_min_size(
-        egui::pos2(
-            layout.canvas.x + f32::from(window.logical_position.0) * layout.scale,
-            layout.canvas.y + f32::from(window.logical_position.1) * layout.scale,
-        ),
-        egui::vec2(
-            DEFENSES_WINDOW_WIDTH * layout.scale,
-            DEFENSES_WINDOW_HEIGHT * layout.scale,
-        ),
-    )
-}
+strategic_window_common::define_record_screen_rect!(
+    window_screen_rect,
+    OpenDefensesWindow,
+    DEFENSES_WINDOW_WIDTH,
+    DEFENSES_WINDOW_HEIGHT
+);
 
 fn tab_rect(window: egui::Rect, scale: f32, page: DefensesPage) -> egui::Rect {
-    logical_rect(
-        window,
-        scale,
-        TAB_STRIP.0 + page.x(),
-        TAB_STRIP.1,
-        TAB_SIZE.0,
-        TAB_SIZE.1,
-    )
+    strategic_window_common::tab_strip_rect(window, scale, TAB_STRIP, TAB_SIZE, page.x())
 }
 
 /// The `index`th grid cell (`FUN_00609ae0`): row-major from the list's
 /// corner, three to a row.
-#[allow(clippy::cast_precision_loss, reason = "Cell indexes are small.")]
 fn cell_rect(window: egui::Rect, scale: f32, index: usize) -> egui::Rect {
-    let column = (index % COLUMNS) as f32;
-    let row = (index / COLUMNS) as f32;
-    logical_rect(
+    strategic_window_common::grid_cell_rect(
         window,
         scale,
-        LIST.0 + column * CELL,
-        LIST.1 + row * CELL,
-        CELL,
-        CELL,
+        index,
+        COLUMNS,
+        (LIST.0, LIST.1),
+        (CELL, CELL),
     )
 }
+
+strategic_window_common::impl_strategic_window_cell_rect!(
+    DefensesWindowState,
+    window_screen_rect,
+    cell_rect
+);
 
 #[derive(Default)]
 struct WindowDrawResult {
@@ -1404,20 +1097,6 @@ pub fn draw_managed_defenses_windows_shown(
     )
 }
 
-fn claim_defenses_pointer_event(
-    router: &mut FrameInputRouter,
-    events: &[(InputEventId, PointerPhase)],
-    window: WindowId,
-    phase: PointerPhase,
-) -> Option<InputEventId> {
-    events.iter().find_map(|(event, candidate)| {
-        (*candidate == phase
-            && router.pointer_recipient(*event) == InputRecipient::Window(window)
-            && router.claim(*event, InputRecipient::Window(window)))
-        .then_some(*event)
-    })
-}
-
 #[allow(
     clippy::too_many_arguments,
     reason = "Shared implementation for production snapshots and fixture-only direct content."
@@ -1441,51 +1120,21 @@ fn draw_defenses_windows_with_snapshot(
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
     }
-    if let Some(snapshot) = snapshot {
-        state.refresh_release_targets(snapshot, world);
-    } else {
-        for window in &mut state.windows {
-            window.release_target_visible =
-                window.id.is_none() && world.systems.contains_key(window.system);
-        }
-    }
-    let mut windows = Vec::new();
-    let mut stale_manager_windows = Vec::new();
-    if let Some(snapshot) = snapshot {
-        for &id in snapshot.paint_order() {
-            let Some(key) = snapshot
-                .key(id)
-                .filter(|key| key.kind == WindowKind::Defenses)
-            else {
-                continue;
-            };
-            match state
-                .windows
-                .iter()
-                .find(|window| window.id == Some(id))
-                .cloned()
-            {
-                Some(window) if !shown(GalaxyChild::Defenses(window.system)) => {}
-                Some(window) if window.release_target_visible && key.subject == window.subject => {
-                    windows.push(window);
-                }
-                Some(_) | None => stale_manager_windows.push(id),
-            }
-        }
-    }
-    // Direct content exists only in renderer tests and explicit fixtures.
-    windows.extend(
-        state
-            .windows
-            .iter()
-            .filter(|window| window.id.is_none())
-            .cloned(),
+    let strategic_window_common::WindowPaintSet {
+        windows,
+        stale_manager_windows,
+        focused_manager,
+        focused_fixture_system,
+    } = strategic_window_common::refreshed_window_paint_set(
+        &mut state.windows,
+        snapshot,
+        WindowKind::Defenses,
+        |system| shown(GalaxyChild::Defenses(system)),
+        |window, snapshot| window_is_visible(window, snapshot, world),
+        |window| window.id.is_none() && world.systems.contains_key(window.system),
+        |window, visible| window.release_target_visible = visible,
+        |window| window.release_target_visible,
     );
-    let focused_manager = snapshot.and_then(|frame| frame.focused().map(|focus| focus.window));
-    let focused_fixture_system = windows
-        .last()
-        .filter(|window| window.id.is_none())
-        .map(|window| window.system);
     for &id in &stale_manager_windows {
         state.cancel_pointer_capture(id);
     }
@@ -1496,19 +1145,16 @@ fn draw_defenses_windows_with_snapshot(
         .collect::<Vec<_>>();
     actions.extend(ended_drag.actions);
     for window in &windows {
-        let focused = match window.id {
-            Some(id) => focused_manager == Some(id),
-            None => focused_fixture_system == Some(window.system),
-        };
+        let focused =
+            strategic_window_common::is_focused(window, focused_manager, focused_fixture_system);
         let result = draw_defenses_window(
             ctx, world, fog, missions, window, focused, faction, layout, cache,
         );
-        if let Some(grab) = result.drag_grab {
-            state.title_drag = Some(TitleDrag {
-                area: area_id(window),
-                grab,
-            });
-        }
+        strategic_window_common::start_title_drag(
+            &mut state.title_drag,
+            area_id(window),
+            result.drag_grab,
+        );
         let system = window.system;
         let scroll_changed = result
             .scroll
@@ -1524,19 +1170,17 @@ fn draw_defenses_windows_with_snapshot(
             || result.object_menu.is_some()
             || result.drag.is_some()
             || scroll_changed;
-        let pointer_permitted = match (window.id, pointer_mutation, router.as_deref_mut()) {
-            (Some(id), true, Some(router)) => {
-                !result.causal_pointer_phases.is_empty()
-                    && result.causal_pointer_phases.iter().all(|&phase| {
-                        (phase == PointerPhase::Release(PointerButtonId::Primary)
-                            && ended_drag.claimed_primary_release_by == Some(id))
-                            || claim_defenses_pointer_event(router, pointer_events, id, phase)
-                                .is_some()
-                    })
-            }
-            (Some(_), true, None) => false,
-            _ => true,
-        };
+        let pointer_permitted = strategic_window_common::pointer_mutation_permitted(
+            window.id,
+            pointer_mutation,
+            &result.causal_pointer_phases,
+            router.as_deref_mut(),
+            pointer_events,
+            |phase| {
+                phase == PointerPhase::Release(PointerButtonId::Primary)
+                    && ended_drag.claimed_primary_release_by == window.id
+            },
+        );
         if pointer_permitted {
             if let Some(drag) = result.drag {
                 state.drag = Some(drag);
@@ -1546,27 +1190,16 @@ fn draw_defenses_windows_with_snapshot(
                 }
             }
         }
-        if (result.close && pointer_permitted) || !world.systems.contains_key(system) {
-            if let Some(id) = window.id {
-                actions.push(DefensesWindowAction::Close(id));
-            } else {
-                state.close(system);
-            }
-            continue;
-        }
-        if result.minimize && pointer_permitted {
-            if let Some(id) = window.id {
-                actions.push(DefensesWindowAction::MinimizeManaged {
-                    window: id,
-                    system,
-                    logical_position: window.logical_position,
-                });
-            } else if let Some(closed) = state.close(system) {
-                actions.push(DefensesWindowAction::Minimize {
-                    system,
-                    logical_position: closed.logical_position,
-                });
-            }
+        if strategic_window_common::apply_minimizable_detail_exit! {
+            (state, actions, window, system),
+            (
+                result.close && pointer_permitted,
+                result.minimize,
+                pointer_permitted,
+                world.systems.contains_key(system)
+            ),
+            DefensesWindowAction,
+        } {
             continue;
         }
         if result.open_sector && pointer_permitted {
@@ -1595,14 +1228,11 @@ fn draw_defenses_windows_with_snapshot(
                 open.selected = Some(item);
             }
         }
-        if result.focus && pointer_permitted {
-            if let Some(id) = window.id {
-                actions.push(DefensesWindowAction::Activate(id));
-            } else {
-                state.focus(system);
-            }
-            actions.push(DefensesWindowAction::SelectSystem(system));
-        }
+        strategic_window_common::apply_detail_focus! {
+            (state, actions, window, system),
+            (result.focus, pointer_permitted),
+            DefensesWindowAction,
+        };
         if pointer_permitted {
             if let Some((selection, point)) = result.object_menu {
                 actions.push(DefensesWindowAction::OpenObjectMenu {
@@ -1634,386 +1264,337 @@ fn draw_defenses_window(
     cache: &mut BmpCache,
 ) -> WindowDrawResult {
     let mut result = WindowDrawResult::default();
-    let Some(system) = world.systems.get(window.system) else {
-        result.close = true;
-        return result;
-    };
-    let player = cockpit_faction(faction);
+    draw_frame!(result, system, scale, screen_rect, id; world, window, layout);
+    let player = faction.player();
     let side = shown_side(world, window.system);
     let rows = page_rows(world, fog, missions, player, window.system, window.page);
-    let scale = layout.scale;
-    let screen_rect = window_screen_rect(window, layout);
-    let id = area_id(window);
-    let area = egui::Area::new(id)
-        .fixed_pos(screen_rect.min)
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            let (pointer, primary_down) = ctx.input(|input| {
-                (
-                    input.pointer.interact_pos(),
-                    input.pointer.button_down(egui::PointerButton::Primary),
-                )
-            });
-            let (local, window_response) =
-                ui.allocate_exact_size(screen_rect.size(), egui::Sense::click());
-            let painter = ui.painter().clone();
-            let paint = |cache: &mut BmpCache, id: u32, x: f32, y: f32| {
-                paint_native(
-                    &painter,
-                    ctx,
-                    cache,
-                    DllSource::Strategy,
-                    id,
-                    local,
-                    scale,
-                    x,
-                    y,
-                );
-            };
-
-            painter.rect_filled(local, 0.0, egui::Color32::BLACK);
-            paint(cache, BACKGROUND, 0.0, 0.0);
-            paint(cache, title_resource(side, focused), 2.0, 2.0);
-            // The title label `+0x49` starts after the sector button, in
-            // font 5 with format `0x24`: one line, left-aligned and
-            // vertically centred (`FUN_004a8790`).
-            painter.text(
-                logical_rect(local, scale, TITLE.0, TITLE.1 + TITLE.2 / 2.0, 0.0, 0.0).min,
-                egui::Align2::LEFT_CENTER,
+    let area = strategic_window_common::show_canvas(ctx, id, screen_rect, scale, |ui, canvas| {
+        let local = canvas.local;
+        let window_response = canvas.response.clone();
+        let painter = canvas.painter.clone();
+        // The title label `+0x49` starts after the sector button, in
+        // font 5 with format `0x24`: one line, left-aligned and
+        // vertically centred (`FUN_004a8790`).
+        canvas.paint_background(cache, BACKGROUND);
+        let clicked = canvas.paint_title_bar(
+            ui,
+            cache,
+            side,
+            focused,
+            strategic_window_common::TitleLabel::left_centered(
                 &system.name,
-                egui::FontId::proportional((11.0 * scale).max(7.0)),
-                egui::Color32::BLACK,
-            );
-
-            let buttons = [
-                (SECTOR_NORMAL, SECTOR_PRESSED, 3.0, "sector"),
-                (MINIMIZE_NORMAL, MINIMIZE_PRESSED, 204.0, "minimize"),
-                (CLOSE_NORMAL, CLOSE_PRESSED, 218.0, "close"),
-            ];
-            let mut clicked = [false; 3];
-            for (index, (normal, pressed, x, name)) in buttons.into_iter().enumerate() {
-                let rect = logical_rect(local, scale, x, 3.0, 14.0, 14.0);
+                TITLE.0,
+                TITLE.1,
+                TITLE.2,
+            ),
+            strategic_window_common::TITLE_BUTTONS,
+            window.system,
+            |index, rect| {
                 crate::control_registry::register_screen(
                     "Defenses",
                     ["Sector", "Minimize", "Close"][index],
                     rect,
                 );
-                let response = ui.interact(
-                    rect,
-                    ui.id().with((window.system, name)),
-                    egui::Sense::click(),
-                );
-                let down = primary_down && pointer.is_some_and(|point| rect_contains(rect, point));
-                paint(cache, if down { pressed } else { normal }, x, 3.0);
-                clicked[index] = exact_clicked(&response, rect);
-            }
-            result.open_sector = clicked[0];
-            result.minimize = clicked[1];
-            result.close = clicked[2];
-            if clicked.into_iter().any(|clicked| clicked) {
+            },
+        );
+        result.open_sector = clicked[0];
+        result.minimize = clicked[1];
+        result.close = clicked[2];
+        if clicked.into_iter().any(|clicked| clicked) {
+            result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+        }
+
+        // The tabs. No tab is ever disabled; an empty one opens its
+        // empty page. port: the help messages (`FUN_00600a40`) are not
+        // shown.
+        for page in DefensesPage::ALL {
+            let rect = tab_rect(local, scale, page);
+            let empty = page_rows(world, fog, missions, player, window.system, page).is_empty();
+            crate::control_registry::register_screen("Defenses", page.name(), rect);
+            paint_native(
+                &painter,
+                ctx,
+                cache,
+                DllSource::Strategy,
+                tab_resource(page, side, page == window.page, empty),
+                rect,
+                scale,
+                0.0,
+                0.0,
+            );
+            let response = ui.interact(
+                rect,
+                ui.id().with((window.system, page)),
+                egui::Sense::click(),
+            );
+            if exact_clicked(&response, rect) {
+                result.page = Some(page);
+                result.focus = true;
                 result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
             }
+        }
 
-            // The tabs. No tab is ever disabled; an empty one opens its
-            // empty page. port: the help messages (`FUN_00600a40`) are not
-            // shown.
-            for page in DefensesPage::ALL {
-                let rect = tab_rect(local, scale, page);
-                let empty = page_rows(world, fog, missions, player, window.system, page).is_empty();
-                crate::control_registry::register_screen("Defenses", page.name(), rect);
-                paint_native(
-                    &painter,
-                    ctx,
-                    cache,
-                    DllSource::Strategy,
-                    tab_resource(page, side, page == window.page, empty),
-                    rect,
-                    scale,
-                    0.0,
-                    0.0,
-                );
-                let response = ui.interact(
-                    rect,
-                    ui.id().with((window.system, page)),
-                    egui::Sense::click(),
-                );
-                if exact_clicked(&response, rect) {
-                    result.page = Some(page);
-                    result.focus = true;
-                    result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
-                }
-            }
-
-            // `+0x5b` and `+0x5c`: white, font 4, format `0x25`: one line,
-            // centred both ways in its rect.
-            let label_font = egui::FontId::proportional((10.0 * scale).max(7.0));
+        // `+0x5b` and `+0x5c`: white, font 4, format `0x25`: one line,
+        // centred both ways in its rect.
+        let label_font = egui::FontId::proportional((10.0 * scale).max(7.0));
+        painter.text(
+            logical_rect(
+                local,
+                scale,
+                TAB_NAME.0 + TAB_NAME.2 / 2.0,
+                TAB_NAME.1 + TAB_NAME.3 / 2.0,
+                0.0,
+                0.0,
+            )
+            .min,
+            egui::Align2::CENTER_CENTER,
+            window.page.name(),
+            label_font.clone(),
+            egui::Color32::WHITE,
+        );
+        if let Some(line) = garrison_line(world, player, window.system, window.page) {
             painter.text(
                 logical_rect(
                     local,
                     scale,
-                    TAB_NAME.0 + TAB_NAME.2 / 2.0,
-                    TAB_NAME.1 + TAB_NAME.3 / 2.0,
+                    GARRISON.0 + GARRISON.2 / 2.0,
+                    GARRISON.1 + GARRISON.3 / 2.0,
                     0.0,
                     0.0,
                 )
                 .min,
                 egui::Align2::CENTER_CENTER,
-                window.page.name(),
-                label_font.clone(),
+                line,
+                label_font,
                 egui::Color32::WHITE,
             );
-            if let Some(line) = garrison_line(world, player, window.system, window.page) {
-                painter.text(
-                    logical_rect(
-                        local,
-                        scale,
-                        GARRISON.0 + GARRISON.2 / 2.0,
-                        GARRISON.1 + GARRISON.3 / 2.0,
-                        0.0,
-                        0.0,
-                    )
-                    .min,
-                    egui::Align2::CENTER_CENTER,
-                    line,
-                    label_font,
-                    egui::Color32::WHITE,
+        }
+
+        // The list: each row's image keyed at its cell's corner, the
+        // frame over the mini while selected (`FUN_0060bd00`), and its
+        // name word-wrapped from (1, 27). FUN_004a8790 gives it the bar
+        // of RCDATA 0x29cc (FUN_0060a490); a unit is a row of three
+        // cells. port: the list's wheel is untraced and not handled.
+        let list = logical_rect(local, scale, LIST.0, LIST.1, LIST.2, LIST.3);
+        let bar = ScrollBar::new(LIST_BAR_29CC, LIST.0, LIST.1, LIST.2, LIST.3);
+        let range = ScrollRange {
+            first: window.first_row,
+            visible: VISIBLE_ROWS as f32,
+            total: rows.len().div_ceil(COLUMNS),
+        };
+        let pointer = egui_pointer(ctx, local, scale);
+        let mut scroll = window.scroll;
+        let first_row = bar.update(&mut scroll, range, VISIBLE_ROWS, pointer);
+        result.scroll = Some((first_row, scroll));
+        if first_row != window.first_row || scroll != window.scroll {
+            result.focus = true;
+            if pointer.pressed {
+                result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
+            }
+            if pointer.down && !pointer.pressed {
+                result.note_pointer_phase(PointerPhase::Motion(PointerButtonId::Primary));
+            }
+            if pointer.released {
+                result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+            }
+        }
+        let range = scroll_range_after_input(range, first_row);
+        let bar_left = LIST.0 + LIST.2 - bar.width();
+        let on_bar = range.overflows()
+            && pointer.at.is_some_and(|(x, y)| {
+                (bar_left..LIST.0 + LIST.2).contains(&x) && (LIST.1..LIST.1 + LIST.3).contains(&y)
+            });
+        let list_painter = painter.with_clip_rect(list);
+        // The list control under the rows (FUN_006083c0): a left or
+        // right press on its empty space clears the selection
+        // (FUN_006094b0), and a right release there opens the menu for
+        // the empty selection.
+        let list_response = ui.interact(
+            list,
+            ui.id().with((window.system, "list")),
+            egui::Sense::click(),
+        );
+        let (primary_pressed, right_pressed, release_point) = ctx.input(|input| {
+            (
+                input.pointer.button_pressed(egui::PointerButton::Primary),
+                input.pointer.button_pressed(egui::PointerButton::Secondary),
+                input.pointer.interact_pos(),
+            )
+        });
+        let any_pressed = primary_pressed || right_pressed;
+        if any_pressed && list_response.is_pointer_button_down_on() && !on_bar {
+            result.deselect = true;
+            result.focus = true;
+            result.note_pointer_phase(PointerPhase::Press(if right_pressed {
+                PointerButtonId::Secondary
+            } else {
+                PointerButtonId::Primary
+            }));
+        }
+        if list_response.secondary_clicked() {
+            if let Some(point) = release_point.filter(|point| rect_contains(list, *point)) {
+                result.object_menu = Some((None, canvas_point(layout, point)));
+                result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
+            }
+        }
+        let font = egui::FontId::proportional((9.0 * scale).max(6.0));
+        let frame = if side == 1 {
+            ROW_FRAME[0]
+        } else {
+            ROW_FRAME[1]
+        };
+        let shown = rows
+            .iter()
+            .enumerate()
+            .skip(first_row * COLUMNS)
+            .take(COLUMNS * VISIBLE_ROWS);
+        result.painted = shown.clone().map(|(_, row)| row.item).collect();
+        for (cell_index, (index, row)) in shown.enumerate() {
+            let cell = cell_rect(local, scale, cell_index);
+            if let (DefensesItem::Character(key), true) =
+                (row.item, crate::control_registry::enabled())
+            {
+                if let Some(character) = world.characters.get(key) {
+                    crate::control_registry::register_screen(
+                        "Personnel",
+                        &character.name,
+                        cell.intersect(list),
+                    );
+                }
+            }
+            let selected = window.selected == Some(row.item);
+            // The list image (`FUN_004a9ab0` -> `FUN_0042c3b0(.., 0, 1)`):
+            // the backdrop, a member's en route mark, then the mini.
+            let (object, en_route) = match row.item {
+                DefensesItem::Character(key) => (
+                    MiniObject::Character,
+                    world.characters.get(key).is_some_and(|c| c.en_route),
+                ),
+                DefensesItem::SpecialForce(key) => world
+                    .special_forces
+                    .get(key)
+                    .map_or((MiniObject::Craft, false), |force| {
+                        (MiniObject::SpecialForce(force.class_dat_id), force.en_route)
+                    }),
+                DefensesItem::Troop(key) => (
+                    world.troops.get(key).map_or(MiniObject::Craft, |troop| {
+                        MiniObject::Regiment(troop.class_dat_id)
+                    }),
+                    false,
+                ),
+                DefensesItem::Squadron { .. } | DefensesItem::Defense(_) => {
+                    (MiniObject::Craft, false)
+                }
+            };
+            for (source, bitmap) in mini_layers(object, row.mini, en_route, None) {
+                paint_native(
+                    &list_painter,
+                    ctx,
+                    cache,
+                    source,
+                    bitmap,
+                    cell,
+                    scale,
+                    0.0,
+                    0.0,
                 );
             }
-
-            // The list: each row's image keyed at its cell's corner, the
-            // frame over the mini while selected (`FUN_0060bd00`), and its
-            // name word-wrapped from (1, 27). FUN_004a8790 gives it the bar
-            // of RCDATA 0x29cc (FUN_0060a490); a unit is a row of three
-            // cells. port: the list's wheel is untraced and not handled.
-            let list = logical_rect(local, scale, LIST.0, LIST.1, LIST.2, LIST.3);
-            let bar = ScrollBar::new(LIST_BAR_29CC, LIST.0, LIST.1, LIST.2, LIST.3);
-            let range = ScrollRange {
-                first: window.first_row,
-                visible: VISIBLE_ROWS as f32,
-                total: rows.len().div_ceil(COLUMNS),
-            };
-            let pointer = egui_pointer(ctx, local, scale);
-            let mut scroll = window.scroll;
-            let first_row = bar.update(&mut scroll, range, VISIBLE_ROWS, pointer);
-            result.scroll = Some((first_row, scroll));
-            if first_row != window.first_row || scroll != window.scroll {
-                result.focus = true;
-                if pointer.pressed {
-                    result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
-                }
-                if pointer.down && !pointer.pressed {
-                    result.note_pointer_phase(PointerPhase::Motion(PointerButtonId::Primary));
-                }
-                if pointer.released {
-                    result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
-                }
+            if selected {
+                paint_native(
+                    &list_painter,
+                    ctx,
+                    cache,
+                    DllSource::Strategy,
+                    frame,
+                    cell,
+                    scale,
+                    0.0,
+                    0.0,
+                );
             }
-            let range = scroll_range_after_input(range, first_row);
-            let bar_left = LIST.0 + LIST.2 - bar.width();
-            let on_bar = range.overflows()
-                && pointer.at.is_some_and(|(x, y)| {
-                    (bar_left..LIST.0 + LIST.2).contains(&x)
-                        && (LIST.1..LIST.1 + LIST.3).contains(&y)
-                });
-            let list_painter = painter.with_clip_rect(list);
-            // The list control under the rows (FUN_006083c0): a left or
-            // right press on its empty space clears the selection
-            // (FUN_006094b0), and a right release there opens the menu for
-            // the empty selection.
-            let list_response = ui.interact(
-                list,
-                ui.id().with((window.system, "list")),
+            let color = if selected {
+                selected_color(side)
+            } else {
+                egui::Color32::WHITE
+            };
+            let galley = list_painter.layout(
+                row.label.clone(),
+                font.clone(),
+                color,
+                (CELL - TEXT_RIGHT_TRIM) * scale,
+            );
+            list_painter.galley(
+                logical_rect(cell, scale, TEXT_OFFSET.0, TEXT_OFFSET.1, 0.0, 0.0).min,
+                galley,
+                color,
+            );
+            let response = ui.interact(
+                cell.intersect(list),
+                ui.id().with((window.system, "row", index)),
                 egui::Sense::click(),
             );
-            let (primary_pressed, right_pressed, release_point) = ctx.input(|input| {
-                (
-                    input.pointer.button_pressed(egui::PointerButton::Primary),
-                    input.pointer.button_pressed(egui::PointerButton::Secondary),
-                    input.pointer.interact_pos(),
-                )
-            });
-            let any_pressed = primary_pressed || right_pressed;
-            if any_pressed && list_response.is_pointer_button_down_on() && !on_bar {
-                result.deselect = true;
-                result.focus = true;
-                result.note_pointer_phase(PointerPhase::Press(if right_pressed {
-                    PointerButtonId::Secondary
-                } else {
-                    PointerButtonId::Primary
-                }));
-            }
-            if list_response.secondary_clicked() {
-                if let Some(point) = release_point.filter(|point| rect_contains(list, *point)) {
-                    result.object_menu = Some((None, canvas_point(layout, point)));
-                    result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
-                }
-            }
-            let font = egui::FontId::proportional((9.0 * scale).max(6.0));
-            let frame = if side == 1 {
-                ROW_FRAME[0]
-            } else {
-                ROW_FRAME[1]
-            };
-            let shown = rows
-                .iter()
-                .enumerate()
-                .skip(first_row * COLUMNS)
-                .take(COLUMNS * VISIBLE_ROWS);
-            result.painted = shown.clone().map(|(_, row)| row.item).collect();
-            for (cell_index, (index, row)) in shown.enumerate() {
-                let cell = cell_rect(local, scale, cell_index);
-                if let (DefensesItem::Character(key), true) =
-                    (row.item, crate::control_registry::enabled())
-                {
-                    if let Some(character) = world.characters.get(key) {
-                        crate::control_registry::register_screen(
-                            "Personnel",
-                            &character.name,
-                            cell.intersect(list),
-                        );
-                    }
-                }
-                let selected = window.selected == Some(row.item);
-                // The list image (`FUN_004a9ab0` -> `FUN_0042c3b0(.., 0, 1)`):
-                // the backdrop, a member's en route mark, then the mini.
-                let (object, en_route) = match row.item {
-                    DefensesItem::Character(key) => (
-                        MiniObject::Character,
-                        world.characters.get(key).is_some_and(|c| c.en_route),
-                    ),
-                    DefensesItem::SpecialForce(key) => world
-                        .special_forces
-                        .get(key)
-                        .map_or((MiniObject::Craft, false), |force| {
-                            (MiniObject::SpecialForce(force.class_dat_id), force.en_route)
-                        }),
-                    DefensesItem::Troop(key) => (
-                        world.troops.get(key).map_or(MiniObject::Craft, |troop| {
-                            MiniObject::Regiment(troop.class_dat_id)
-                        }),
-                        false,
-                    ),
-                    DefensesItem::Squadron { .. } | DefensesItem::Defense(_) => {
-                        (MiniObject::Craft, false)
-                    }
-                };
-                for (source, bitmap) in mini_layers(object, row.mini, en_route, None) {
-                    paint_native(
-                        &list_painter,
-                        ctx,
-                        cache,
-                        source,
-                        bitmap,
-                        cell,
-                        scale,
-                        0.0,
-                        0.0,
-                    );
-                }
-                if selected {
-                    paint_native(
-                        &list_painter,
-                        ctx,
-                        cache,
-                        DllSource::Strategy,
-                        frame,
-                        cell,
-                        scale,
-                        0.0,
-                        0.0,
-                    );
-                }
-                let color = if selected {
-                    selected_color(side)
-                } else {
-                    egui::Color32::WHITE
-                };
-                let galley = list_painter.layout(
-                    row.label.clone(),
-                    font.clone(),
-                    color,
-                    (CELL - TEXT_RIGHT_TRIM) * scale,
-                );
-                list_painter.galley(
-                    logical_rect(cell, scale, TEXT_OFFSET.0, TEXT_OFFSET.1, 0.0, 0.0).min,
-                    galley,
-                    color,
-                );
-                let response = ui.interact(
-                    cell.intersect(list),
-                    ui.id().with((window.system, "row", index)),
-                    egui::Sense::click(),
-                );
-                if exact_clicked(&response, cell) {
-                    result.select = Some(row.item);
-                    result.focus = true;
-                    result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
-                }
-                // A right press selects the row as a left press does
-                // (FUN_006083c0 shares the WM_LBUTTONDOWN path); the release
-                // opens its menu.
-                if right_pressed && response.is_pointer_button_down_on() {
-                    result.select = Some(row.item);
-                    result.focus = true;
-                    result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Secondary));
-                }
-                // A left press on a squadron, character or special force
-                // captures the mouse for a drag (FUN_006083c0).
-                let draggable = matches!(
-                    row.item,
-                    DefensesItem::Squadron { .. }
-                        | DefensesItem::Character(_)
-                        | DefensesItem::SpecialForce(_)
-                );
-                if let (true, Some(press)) = (
-                    draggable,
-                    ctx.input(|input| {
-                        input
-                            .pointer
-                            .button_pressed(egui::PointerButton::Primary)
-                            .then(|| input.pointer.press_origin())
-                            .flatten()
-                    }),
-                ) {
-                    if response.is_pointer_button_down_on() && rect_contains(cell, press) {
-                        result.drag = Some(RowDrag {
-                            system: window.system,
-                            item: row.item,
-                            is_alliance: side == 1,
-                            press,
-                            list,
-                        });
-                        result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
-                    }
-                }
-                if response.secondary_clicked() {
-                    if let Some(point) = response
-                        .interact_pointer_pos()
-                        .filter(|point| rect_contains(cell.intersect(list), *point))
-                    {
-                        let object = row.item.menu_object(window.system, side);
-                        result.object_menu = Some((Some(object), canvas_point(layout, point)));
-                        result
-                            .note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
-                    }
-                }
-            }
-
-            crate::scroll_bar::paint_egui(
-                &painter,
-                ctx,
-                cache,
-                local,
-                scale,
-                &bar.blits(range, scroll, pointer),
-            );
-
-            result.drag_grab = surface_drag_grab(ctx, &window_response, local, scale, &[]);
-            if window_response.clicked() || clicked.iter().any(|&value| value) {
+            if exact_clicked(&response, cell) {
+                result.select = Some(row.item);
                 result.focus = true;
                 result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
             }
-        });
+            // A right press selects the row as a left press does
+            // (FUN_006083c0 shares the WM_LBUTTONDOWN path); the release
+            // opens its menu.
+            if right_pressed && response.is_pointer_button_down_on() {
+                result.select = Some(row.item);
+                result.focus = true;
+                result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Secondary));
+            }
+            // A left press on a squadron, character or special force
+            // captures the mouse for a drag (FUN_006083c0).
+            let draggable = matches!(
+                row.item,
+                DefensesItem::Squadron { .. }
+                    | DefensesItem::Character(_)
+                    | DefensesItem::SpecialForce(_)
+            );
+            if let (true, Some(press)) =
+                (draggable, crate::native_geometry::primary_press_origin(ctx))
+            {
+                if response.is_pointer_button_down_on() && rect_contains(cell, press) {
+                    result.drag = Some(RowDrag {
+                        system: window.system,
+                        item: row.item,
+                        is_alliance: side == 1,
+                        press,
+                        list,
+                    });
+                    result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
+                }
+            }
+            if response.secondary_clicked() {
+                if let Some(point) = response
+                    .interact_pointer_pos()
+                    .filter(|point| rect_contains(cell.intersect(list), *point))
+                {
+                    let object = row.item.menu_object(window.system, side);
+                    result.object_menu = Some((Some(object), canvas_point(layout, point)));
+                    result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
+                }
+            }
+        }
+
+        crate::scroll_bar::paint_egui(
+            &painter,
+            ctx,
+            cache,
+            local,
+            scale,
+            &bar.blits(range, scroll, pointer),
+        );
+
+        result.drag_grab = surface_drag_grab(ctx, &window_response, local, scale, &[]);
+        if strategic_window_common::interaction_requests_focus(&window_response, &clicked) {
+            result.focus = true;
+            result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+        }
+    });
     if area.response.clicked() {
         result.focus = true;
         result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
@@ -2032,16 +1613,14 @@ fn scroll_range_after_input(range: ScrollRange, first_row: usize) -> ScrollRange
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cockpit::CockpitViewport;
-    use crate::fleet_window::tests::PAINTED;
-    use rebellion_core::dat::SectorGroup;
+    use crate::test_support::{
+        add_character, click_frames as click, hover_frames as hover, pointer_button as press,
+        right_click_frames as right_click, scaled_full_layout as scaled, send_on_mission,
+        title_drag_frames as title_drag, world,
+    };
     use rebellion_core::economy::SupportValues;
     use rebellion_core::ids::{DatId, FighterKey};
-    use rebellion_core::missions::{MissionFaction, MissionKind, MissionRequest};
-    use rebellion_core::world::{
-        Character, ControlKind, DefenseFacilityInstance, Sector, SpecialForceUnit, System,
-        TroopUnit,
-    };
+    use rebellion_core::world::{ControlKind, DefenseFacilityInstance, System, TroopUnit};
     use rebellion_windowing::{ContentStatus, WindowCommand, WindowManager, WindowTransition};
 
     const KDY: u32 = 0x2200_0001;
@@ -2050,43 +1629,6 @@ mod tests {
     const DEATH_STAR_SHIELD: u32 = 0x2500_0004;
     const ALLIANCE_ARMY: u32 = 0x1000_0002;
     const STORMTROOPERS: u32 = 0x1000_0006;
-
-    fn world(control: ControlKind) -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(36),
-            name: "Sesswenna".into(),
-            group: SectorGroup::Core,
-            x: 317,
-            y: 248,
-            systems: Vec::new(),
-        });
-        let system = world.systems.insert(System {
-            dat_id: DatId::new(100),
-            name: "Sluis Van".into(),
-            sector,
-            x: 320,
-            y: 250,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        });
-        (world, system)
-    }
 
     fn fighter_drag_fixture(
         faction: CockpitFaction,
@@ -2128,34 +1670,6 @@ mod tests {
         world.systems[system].ground_units.push(key);
     }
 
-    fn add_character(
-        world: &mut GameWorld,
-        system: SystemKey,
-        name: &str,
-        is_alliance: bool,
-    ) -> CharacterKey {
-        world.characters.insert(Character {
-            dat_id: DatId::new(832),
-            name: name.into(),
-            is_alliance,
-            is_empire: !is_alliance,
-            current_system: Some(system),
-            recruited: true,
-            ..Default::default()
-        })
-    }
-
-    fn send_on_mission(missions: &mut MissionState, member: CharacterKey, system: SystemKey) {
-        missions.dispatch(MissionRequest::single(
-            MissionKind::Diplomacy,
-            MissionFaction::Alliance,
-            member,
-            system,
-            None,
-            0,
-        ));
-    }
-
     fn seen(system: SystemKey) -> FogState {
         let mut fog = FogState::new(Faction::Alliance);
         fog.reveal(system);
@@ -2190,15 +1704,7 @@ mod tests {
         let hidden = add_character(&mut world, system, "Hidden", true);
         world.characters[hidden].on_hidden_mission = true;
         add_character(&mut world, system, "Enemy", false);
-        let force = world.special_forces.insert(SpecialForceUnit {
-            class_dat_id: DatId::new(0x3c00_0001),
-            is_alliance: true,
-            skills: [0; 8],
-            on_mission: false,
-            en_route: false,
-            on_hidden_mission: false,
-        });
-        world.systems[system].special_forces.push(force);
+        crate::test_support::add_special_force(&mut world, system, 0x3c00_0001, true);
         let mut missions = MissionState::new();
         send_on_mission(&mut missions, away, system);
         send_on_mission(&mut missions, hidden, system);
@@ -2367,28 +1873,10 @@ mod tests {
         world.systems[system].control = ControlKind::Uncontrolled;
         assert_eq!(rail_icon(&world, system), 11535);
 
-        assert_eq!(
-            [1, 2, 3].map(|side| [title_resource(side, true), title_resource(side, false)]),
-            [[10299, 10200], [10201, 10302], [10303, 10304]]
-        );
+        crate::test_support::assert_strategic_title_resources();
         assert_eq!(selected_color(1), egui::Color32::from_rgb(255, 0, 0));
         assert_eq!(selected_color(2), egui::Color32::from_rgb(0, 255, 0));
         assert_eq!(selected_color(0), egui::Color32::from_rgb(0, 255, 255));
-    }
-
-    /// The canvas 10 by 20 pixels in and twice the original size.
-    fn scaled() -> CockpitLayout {
-        let viewport = CockpitViewport {
-            x: 10.0,
-            y: 20.0,
-            width: 1280.0,
-            height: 960.0,
-        };
-        CockpitLayout {
-            canvas: viewport,
-            galaxy: viewport,
-            scale: 2.0,
-        }
     }
 
     const ORIGIN: (i16, i16) = (20, 30);
@@ -2474,34 +1962,29 @@ mod tests {
                 scaled(),
             )
             .unwrap();
-        let (reopened_id, transition) =
-            commit_prepared_defenses_window(&mut manager, &mut state, reopened);
-        assert_eq!(reopened_id, id);
-        assert!(matches!(
-            transition,
-            WindowTransition::Existing { id: existing, .. } if existing == id
-        ));
+        crate::test_support::assert_existing_detail_reopen(id, || {
+            commit_prepared_defenses_window(&mut manager, &mut state, reopened)
+        });
         assert_preserved_content(&mut state, system, selected);
 
-        manager.apply(WindowCommand::Minimize(id)).unwrap();
-        assert!(!state.window_is_visible(&manager.begin_frame(), system));
-        let restored = state
-            .prepare_open(
-                &world,
-                system,
-                (500, 350),
-                CockpitFaction::Alliance,
-                scaled(),
-            )
-            .unwrap();
-        let (restored_id, transition) =
-            commit_prepared_defenses_window(&mut manager, &mut state, restored);
-        assert_eq!(restored_id, id);
-        assert!(matches!(
-            transition,
-            WindowTransition::Existing { id: existing, .. } if existing == id
-        ));
-        assert!(state.window_is_visible(&manager.begin_frame(), system));
+        crate::test_support::assert_simple_minimized_reopen(
+            &mut manager,
+            &mut state,
+            id,
+            |state, frame| state.window_is_visible(frame, system),
+            |manager, state| {
+                let restored = state
+                    .prepare_open(
+                        &world,
+                        system,
+                        (500, 350),
+                        CockpitFaction::Alliance,
+                        scaled(),
+                    )
+                    .unwrap();
+                commit_prepared_defenses_window(manager, state, restored)
+            },
+        );
         assert_preserved_content(&mut state, system, selected);
     }
 
@@ -2672,27 +2155,17 @@ mod tests {
                 .unwrap();
             ids.push(commit_prepared_defenses_window(&mut manager, &mut state, prepared).0);
         }
-        assert_eq!(
-            state
-                .windows
-                .iter()
-                .filter_map(|window| window.id)
-                .collect::<Vec<_>>(),
-            ids
+        crate::test_support::assert_manager_activation_preserves_content_order(
+            &mut manager,
+            &ids,
+            || {
+                state
+                    .windows
+                    .iter()
+                    .filter_map(|window| window.id)
+                    .collect()
+            },
         );
-
-        manager.apply(WindowCommand::Activate(ids[0])).unwrap();
-
-        assert_eq!(
-            state
-                .windows
-                .iter()
-                .filter_map(|window| window.id)
-                .collect::<Vec<_>>(),
-            ids,
-            "local content order must not emulate a manager raise"
-        );
-        assert_eq!(manager.begin_frame().paint_order(), &[ids[1], ids[0]]);
     }
 
     #[test]
@@ -2700,26 +2173,14 @@ mod tests {
         let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
         let (mut manager, state) = opened_managed_window(&world, system);
         let id = state.window_id(system).unwrap();
-        assert!(state.has_visible_content(&manager.begin_frame(), &world));
-
-        manager.apply(WindowCommand::Minimize(id)).unwrap();
-        assert!(!state.has_visible_content(&manager.begin_frame(), &world));
-
-        manager.apply(WindowCommand::Restore(id)).unwrap();
-        assert!(state.has_visible_content(&manager.begin_frame(), &world));
-
-        world.systems[system].dat_id = DatId::new(101);
-        assert!(
-            !state.has_visible_content(&manager.begin_frame(), &world),
-            "same-key replacement content is not the committed Defenses subject"
-        );
-
-        world.systems[system].dat_id = DatId::new(100);
-        assert!(state.has_visible_content(&manager.begin_frame(), &world));
-        manager.apply(WindowCommand::Close(id)).unwrap();
-        assert!(
-            !state.has_visible_content(&manager.begin_frame(), &world),
-            "attached content stops contributing when its manager identity closes"
+        crate::test_support::assert_system_subject_visibility(
+            &mut manager,
+            &mut world,
+            system,
+            id,
+            DatId::new(101),
+            "Defenses",
+            |world, snapshot| state.has_visible_content(snapshot, world),
         );
     }
 
@@ -2730,37 +2191,20 @@ mod tests {
         let id = state.window_id(system).unwrap();
         let snapshot = manager.begin_frame();
         let rect = state.screen_rect(scaled(), system).unwrap();
-        let inside = (rect.center().x, rect.center().y);
-        let outside = (rect.max.x + 1.0, rect.max.y + 1.0);
         let content = state
             .windows
             .iter()
             .find(|window| window.id == Some(id))
             .unwrap();
         let own = egui::LayerId::new(egui::Order::Foreground, area_id(content));
-        let other = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("other-window"));
-
-        assert_eq!(
-            state.hit_window_ids(&snapshot, scaled(), inside, Some(own)),
-            std::collections::BTreeSet::from([id])
-        );
-        assert!(state
-            .hit_window_ids(&snapshot, scaled(), inside, Some(other))
-            .is_empty());
-        assert!(state
-            .hit_window_ids(&snapshot, scaled(), inside, None)
-            .is_empty());
-        assert!(state
-            .hit_window_ids(&snapshot, scaled(), outside, Some(own))
-            .is_empty());
+        crate::test_support::assert_detail_window_hits(id, rect, own, |point, layer| {
+            state.hit_window_ids(&snapshot, scaled(), point, layer)
+        });
     }
 
     /// A logical point in the window opened at `ORIGIN` on [`scaled`].
     fn at(x: f32, y: f32) -> egui::Pos2 {
-        egui::pos2(
-            10.0 + (f32::from(ORIGIN.0) + x) * 2.0,
-            20.0 + (f32::from(ORIGIN.1) + y) * 2.0,
-        )
+        crate::test_support::window_point(scaled(), ORIGIN, (x, y))
     }
 
     fn opened(world: &GameWorld, system: SystemKey) -> DefensesWindowState {
@@ -2800,9 +2244,11 @@ mod tests {
                 egui::vec2(140.0, 140.0)
             ))
         );
-        let point = |p: egui::Pos2| (p.x, p.y);
-        assert!(state.contains_screen_point(scaled(), point(at(234.0, 303.0))));
-        assert!(!state.contains_screen_point(scaled(), point(at(235.5, 150.0))));
+        crate::test_support::assert_detail_canvas_bounds(
+            at(234.0, 303.0),
+            at(235.5, 150.0),
+            |point| state.contains_screen_point(scaled(), point),
+        );
 
         let layer = egui::LayerId::new(
             egui::Order::Foreground,
@@ -2814,67 +2260,25 @@ mod tests {
                     .unwrap(),
             ),
         );
-        assert_eq!(state.release_target(layer), Some(system));
-        let elsewhere = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("elsewhere"));
-        assert_eq!(state.release_target(elsewhere), None);
+        crate::test_support::assert_system_release_target(system, layer, |layer| {
+            state.release_target(layer)
+        });
 
-        assert!(state.open(&world, system, ORIGIN, CockpitFaction::Empire, scaled()));
-        assert_eq!(state.faction, CockpitFaction::Empire);
-        state.clear();
-        assert_eq!(state.window_count(), 0);
-        assert!(!state.is_open(system));
+        crate::test_support::assert_detail_fixture_reset!(
+            state,
+            system,
+            state.open(&world, system, ORIGIN, CockpitFaction::Empire, scaled()),
+        );
     }
 
-    #[derive(Debug, Clone, PartialEq)]
-    struct Text {
-        text: String,
-        pos: egui::Pos2,
-        color: egui::Color32,
-        font: f32,
-        size: egui::Vec2,
-        wrap: f32,
-    }
-
-    #[derive(Default)]
-    struct Run {
-        actions: Vec<DefensesWindowAction>,
-        texts: Vec<Text>,
-        painted: Vec<(u32, egui::Pos2)>,
-    }
+    type Run = crate::test_support::RenderRun<DefensesWindowAction>;
 
     fn raw_input(
         index: usize,
         events: Vec<egui::Event>,
         modifiers: egui::Modifiers,
     ) -> egui::RawInput {
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1400.0, 1000.0),
-            )),
-            time: Some(index as f64 * 0.05),
-            events,
-            modifiers,
-            ..Default::default()
-        }
-    }
-
-    fn record_frame(result: &mut Run, output: egui::FullOutput) {
-        result.painted = PAINTED.with(std::cell::RefCell::take);
-        result.texts.clear();
-        for clipped in output.shapes {
-            if let egui::Shape::Text(text) = clipped.shape {
-                let format = &text.galley.job.sections[0].format;
-                result.texts.push(Text {
-                    text: text.galley.text().to_owned(),
-                    pos: text.pos,
-                    color: format.color,
-                    font: format.font_id.size,
-                    size: text.galley.size(),
-                    wrap: text.galley.job.wrap.max_width,
-                });
-            }
-        }
+        crate::test_support::timed_raw_input(index, events, modifiers, egui::vec2(1400.0, 1000.0))
     }
 
     /// Draw the windows once per frame of events, on [`scaled`] for the
@@ -2902,7 +2306,6 @@ mod tests {
         frames: Vec<Vec<egui::Event>>,
         (faction, modifiers): (CockpitFaction, egui::Modifiers),
     ) -> Run {
-        let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let side = if faction == CockpitFaction::Alliance {
             Faction::Alliance
@@ -2927,12 +2330,11 @@ mod tests {
                 },
             );
         }
-        let mut result = Run::default();
-        for (index, events) in frames.into_iter().enumerate() {
-            let input = raw_input(index, events, modifiers);
-            PAINTED.with(|painted| painted.borrow_mut().clear());
-            let output = ctx.run(input, |ctx| {
-                result.actions.extend(draw_defenses_windows(
+        crate::test_support::run_painted_render_frames(
+            frames,
+            |index, events| raw_input(index, events, modifiers),
+            |ctx| {
+                draw_defenses_windows(
                     ctx,
                     &world,
                     &fog,
@@ -2942,11 +2344,9 @@ mod tests {
                     faction,
                     scaled(),
                     &mut cache,
-                ));
-            });
-            record_frame(&mut result, output);
-        }
-        result
+                )
+            },
+        )
     }
 
     /// Draw manager-owned content once per frame while feeding the exact
@@ -2958,7 +2358,6 @@ mod tests {
         manager: &WindowManager,
         frames: Vec<(Vec<egui::Event>, Vec<PointerPhase>)>,
     ) -> Run {
-        let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let fog = world
             .systems
@@ -2973,32 +2372,13 @@ mod tests {
             .iter()
             .find_map(|window| window.id)
             .expect("managed test content has an identity");
-        let mut router = FrameInputRouter::default();
-        let mut result = Run::default();
-        for (index, (events, phases)) in frames.into_iter().enumerate() {
-            let frame = u64::try_from(index + 1).unwrap();
-            let snapshot = manager.begin_frame();
-            router.begin_frame(frame, &snapshot);
-            let mut routed = Vec::new();
-            for (ordinal, phase) in phases.into_iter().enumerate() {
-                let event = InputEventId {
-                    frame,
-                    ordinal: u32::try_from(ordinal).unwrap(),
-                };
-                assert_eq!(
-                    router.collect_pointer(
-                        event,
-                        &std::collections::BTreeSet::from([window]),
-                        phase,
-                    ),
-                    InputRecipient::Window(window)
-                );
-                routed.push((event, phase));
-            }
-            let input = raw_input(index, events, egui::Modifiers::default());
-            PAINTED.with(|painted| painted.borrow_mut().clear());
-            let output = ctx.run(input, |ctx| {
-                result.actions.extend(draw_managed_defenses_windows(
+        crate::test_support::run_painted_routed_render_frames(
+            manager,
+            window,
+            frames,
+            |index, events| raw_input(index, events, egui::Modifiers::default()),
+            |ctx, snapshot, routed, router| {
+                draw_managed_defenses_windows(
                     ctx,
                     world,
                     &fog,
@@ -3008,14 +2388,12 @@ mod tests {
                     CockpitFaction::Alliance,
                     scaled(),
                     &mut cache,
-                    &snapshot,
-                    &routed,
-                    &mut router,
-                ));
-            });
-            record_frame(&mut result, output);
-        }
-        result
+                    snapshot,
+                    routed,
+                    router,
+                )
+            },
+        )
     }
 
     fn run_managed_idle(
@@ -3030,22 +2408,6 @@ mod tests {
             manager,
             vec![(vec![egui::Event::PointerMoved(at(100.0, 100.0))], vec![])],
         )
-    }
-
-    fn hover(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        vec![
-            vec![egui::Event::PointerMoved(point)],
-            vec![egui::Event::PointerMoved(point)],
-        ]
-    }
-
-    fn press(point: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
     }
 
     fn begin_squadron_drag(
@@ -3066,19 +2428,6 @@ mod tests {
         let _ = run_as(world, missions, state, frames, plain);
     }
 
-    fn click(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        let mut frames = hover(point);
-        frames.extend([vec![press(point, true)], vec![press(point, false)], vec![]]);
-        frames
-    }
-
-    fn text<'a>(run: &'a Run, text: &str) -> &'a Text {
-        run.texts
-            .iter()
-            .find(|value| value.text == text)
-            .unwrap_or_else(|| panic!("no {text:?} in {:?}", run.texts))
-    }
-
     #[test]
     fn the_window_paints_its_chrome_tabs_and_the_personnel_page_first() {
         // FUN_004a8790 selects tab 1; 10577 at (0, 0), the focused side 1
@@ -3092,9 +2441,9 @@ mod tests {
         for (id, point) in [
             (BACKGROUND, at(0.0, 0.0)),
             (10299, at(2.0, 2.0)),
-            (SECTOR_NORMAL, at(3.0, 3.0)),
-            (MINIMIZE_NORMAL, at(204.0, 3.0)),
-            (CLOSE_NORMAL, at(218.0, 3.0)),
+            (strategic_window_common::SECTOR_ART.0, at(3.0, 3.0)),
+            (strategic_window_common::MINIMIZE_ART.0, at(204.0, 3.0)),
+            (strategic_window_common::CLOSE_ART.0, at(218.0, 3.0)),
             (10571, at(28.0, 20.0)),
             (10563, at(64.0, 20.0)),
             (10558, at(100.0, 20.0)),
@@ -3111,17 +2460,17 @@ mod tests {
             );
         }
         assert!(!run.painted.iter().any(|(id, _)| ROW_FRAME.contains(id)));
-        let idle = text(&run, "Idle");
+        let idle = run.text("Idle");
         assert_eq!(idle.pos, at(8.0, 108.0));
         // The cell less 3 (FUN_00609ae0's text rect), at scale 2.
         assert_eq!((idle.font, idle.wrap), (18.0, 134.0));
-        assert_eq!(text(&run, "Hidden").color, egui::Color32::WHITE);
+        assert_eq!(run.text("Hidden").color, egui::Color32::WHITE);
         // `+0x49` at (19, 2), 16 high: left-aligned, vertically centred.
-        let title = text(&run, "Sluis Van");
+        let title = run.text("Sluis Van");
         assert_eq!((title.pos.x, title.font), (at(19.0, 0.0).x, 22.0));
         assert_eq!(title.pos.y + title.size.y / 2.0, at(0.0, 10.0).y);
         // `+0x5b` at (2, 51), 231 by 16: centred both ways.
-        let name = text(&run, "Personnel");
+        let name = run.text("Personnel");
         assert_eq!(name.font, 20.0);
         assert_eq!(name.pos + name.size / 2.0, at(117.5, 59.0));
         assert!(!run
@@ -3141,7 +2490,7 @@ mod tests {
         let selected = run(&world, &missions, &mut state, click(at(100.0, 100.0)));
         assert!(selected.painted.contains(&(ROW_FRAME[0], at(77.0, 81.0))));
         assert_eq!(
-            text(&selected, "Hidden").color,
+            selected.text("Hidden").color,
             egui::Color32::from_rgb(255, 0, 0)
         );
         assert_eq!(
@@ -3172,7 +2521,7 @@ mod tests {
         assert_eq!(state.windows[0].selected, None);
         // The regiment page of the player's own system shows the garrison.
         // `+0x5c` at (2, 63), 228 by 17: centred both ways.
-        let garrison = text(&regiments, "Garrison Requirement: 2");
+        let garrison = regiments.text("Garrison Requirement: 2");
         assert_eq!(garrison.pos + garrison.size / 2.0, at(116.0, 71.5));
         assert!(regiments.painted.contains(&(10564, at(64.0, 20.0))));
         assert!(regiments.painted.contains(&(17_473, at(7.0, 81.0))));
@@ -3183,30 +2532,15 @@ mod tests {
         // 0xca opens the sector window (FUN_00429ce0); 0xc9 posts 0x466;
         // 200 closes.
         let (world, system, missions) = stocked();
-        let mut state = opened(&world, system);
-        let sector = run(&world, &missions, &mut state, click(at(9.0, 9.0)));
-        assert_eq!(
-            sector.actions,
-            [
-                DefensesWindowAction::OpenSector(system),
-                DefensesWindowAction::SelectSystem(system)
-            ]
+        crate::test_support::assert_detail_title_buttons!(
+            at,
+            || opened(&world, system),
+            |state, frames| run(&world, &missions, state, frames),
+            DefensesWindowAction,
+            DefensesWindowState,
+            system,
+            ORIGIN,
         );
-
-        let minimized = run(&world, &missions, &mut state, click(at(210.0, 9.0)));
-        assert_eq!(
-            minimized.actions,
-            [DefensesWindowAction::Minimize {
-                system,
-                logical_position: ORIGIN,
-            }]
-        );
-        assert_eq!(state.window_count(), 0);
-
-        let mut state = opened(&world, system);
-        let closed = run(&world, &missions, &mut state, click(at(224.0, 9.0)));
-        assert_empty!(closed.actions);
-        assert_eq!(state.window_count(), 0);
     }
 
     #[test]
@@ -3215,15 +2549,10 @@ mod tests {
         // pointer only.
         let (world, system, missions) = stocked();
         let mut state = opened(&world, system);
-        let hovered = run(&world, &missions, &mut state, hover(at(210.0, 9.0)));
-        assert!(hovered.painted.contains(&(MINIMIZE_NORMAL, at(204.0, 3.0))));
-
-        let mut frames = hover(at(224.0, 9.0));
-        frames.push(vec![press(at(224.0, 9.0), true)]);
-        let held = run(&world, &missions, &mut state, frames);
-        assert!(held.painted.contains(&(CLOSE_PRESSED, at(218.0, 3.0))));
-        assert!(held.painted.contains(&(MINIMIZE_NORMAL, at(204.0, 3.0))));
-        assert_eq!(state.window_count(), 1);
+        crate::test_support::assert_strategic_title_button_press(at, |frames| {
+            let result = run(&world, &missions, &mut state, frames);
+            (result, state.window_count())
+        });
     }
 
     // FUN_00422ce0 issues a type 10 (Defenses window) list drop as 0x202
@@ -3307,18 +2636,6 @@ mod tests {
                 "{faction:?}: far and outside"
             );
         }
-    }
-
-    fn right_click(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        let button = |pressed| egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Secondary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        let mut frames = hover(point);
-        frames.extend([vec![button(true)], vec![button(false)], vec![]]);
-        frames
     }
 
     fn menus(run: &Run) -> Vec<(Option<MenuObject>, (i16, i16))> {
@@ -3445,26 +2762,13 @@ mod tests {
     fn managed_secondary_press_selects_and_clears_with_its_exact_phase() {
         let (world, system, missions) = stocked();
         let (manager, mut state) = opened_managed_window(&world, system);
-        let secondary = |point, pressed| egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Secondary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
         let row = at(100.0, 100.0);
         run_managed(
             &world,
             &missions,
             &mut state,
             &manager,
-            vec![
-                (vec![egui::Event::PointerMoved(row)], vec![]),
-                (vec![egui::Event::PointerMoved(row)], vec![]),
-                (
-                    vec![secondary(row, true)],
-                    vec![PointerPhase::Press(PointerButtonId::Secondary)],
-                ),
-            ],
+            crate::test_support::routed_secondary_press_frames(row),
         );
         let hidden = world
             .characters
@@ -3484,14 +2788,7 @@ mod tests {
             &missions,
             &mut state,
             &manager,
-            vec![
-                (vec![egui::Event::PointerMoved(empty)], vec![]),
-                (vec![egui::Event::PointerMoved(empty)], vec![]),
-                (
-                    vec![secondary(empty, true)],
-                    vec![PointerPhase::Press(PointerButtonId::Secondary)],
-                ),
-            ],
+            crate::test_support::routed_secondary_press_frames(empty),
         );
         assert_eq!(
             state.windows[0].selected, None,
@@ -3503,7 +2800,7 @@ mod tests {
     fn managed_scroll_thumb_motion_commits_with_motion_phase() {
         let (mut world, system, missions) = stocked();
         for index in 0..8 {
-            add_character(&mut world, system, &format!("Extra {index}"), true);
+            add_character(&mut world, system, format!("Extra {index}"), true);
         }
         let (manager, mut state) = opened_managed_window(&world, system);
         let thumb = at(220.0, 100.0);
@@ -3513,18 +2810,7 @@ mod tests {
             &missions,
             &mut state,
             &manager,
-            vec![
-                (vec![egui::Event::PointerMoved(thumb)], vec![]),
-                (vec![egui::Event::PointerMoved(thumb)], vec![]),
-                (
-                    vec![press(thumb, true)],
-                    vec![PointerPhase::Press(PointerButtonId::Primary)],
-                ),
-                (
-                    vec![egui::Event::PointerMoved(dragged)],
-                    vec![PointerPhase::Motion(PointerButtonId::Primary)],
-                ),
-            ],
+            crate::test_support::routed_primary_drag_frames(thumb, dragged),
         );
         assert_eq!(state.windows[0].first_row, 1);
     }
@@ -3572,7 +2858,7 @@ mod tests {
         // sits at (147, 221).
         let (mut world, system, missions) = stocked();
         for index in 0..8 {
-            add_character(&mut world, system, &format!("Extra {index}"), true);
+            add_character(&mut world, system, format!("Extra {index}"), true);
         }
         let mut state = opened(&world, system);
         let run = run(&world, &missions, &mut state, hover(at(150.0, 10.0)));
@@ -3604,12 +2890,9 @@ mod tests {
             assert!(saved.iter().all(|window| window.shown));
 
             let mut restored = DefensesWindowState::default();
-            for window in &saved {
-                assert!(
-                    restored.restore_saved(&world, faction, window),
-                    "{faction:?}"
-                );
-            }
+            crate::test_support::assert_saved_windows_restore(&saved, faction, |window| {
+                restored.restore_saved(&world, faction, window)
+            });
 
             let back: Vec<_> = restored
                 .windows
@@ -3637,52 +2920,25 @@ mod tests {
     #[test]
     fn a_keyed_close_closes_that_window_and_leaves_the_rest_for_either_side() {
         // FUN_004ac3a0: WM_KEYDOWN 0x1b calls slot +0x30 on the focused window.
-        let (mut world, first) = world(ControlKind::Uncontrolled);
-        let second = world.systems.insert(world.systems[first].clone());
-        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
-            let mut state = DefensesWindowState::default();
-            for system in [first, second] {
-                assert!(state.open(&world, system, ORIGIN, faction, scaled()));
-            }
-            assert!(state.close_window(second));
-            assert!(
-                state.is_open(first) && !state.is_open(second),
-                "{faction:?}"
-            );
-            assert!(state.close_window(first));
-            assert_eq!(state.window_count(), 0);
-            assert!(!state.close_window(first));
-        }
+        crate::test_support::assert_strategic_keyed_close(
+            DefensesWindowState::default,
+            |state, world, system, faction| state.open(world, system, ORIGIN, faction, scaled()),
+            DefensesWindowState::close_window,
+            DefensesWindowState::is_open,
+            DefensesWindowState::window_count,
+        );
     }
 
     #[test]
     fn the_view_raises_one_window_of_the_kind_above_the_rest_for_either_side() {
         // FUN_00422ce0 0x467: BringWindowToTop on the window it activates.
-        let (mut world, first) = world(ControlKind::Uncontrolled);
-        let second = world.systems.insert(world.systems[first].clone());
-        let missing = world.systems.insert(world.systems[first].clone());
-        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
-            let mut state = DefensesWindowState::default();
-            assert!(state.open(&world, first, ORIGIN, faction, scaled()));
-            assert!(state.open(&world, second, ORIGIN, faction, scaled()));
-            assert_eq!(state.children().count(), 2, "{faction:?}");
-            assert!(state.raise(first), "{faction:?}");
-            assert_eq!(state.window_count(), 2, "{faction:?}");
-            assert!(!state.raise(missing), "{faction:?}");
-        }
-    }
-
-    /// Press at `from`, move to `to` with the button held, and release.
-    fn title_drag(from: egui::Pos2, to: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        let mut frames = hover(from);
-        frames.extend([
-            vec![press(from, true)],
-            vec![egui::Event::PointerMoved(from.lerp(to, 0.5))],
-            vec![egui::Event::PointerMoved(to)],
-            vec![press(to, false)],
-            vec![egui::Event::PointerMoved(to + egui::vec2(30.0, 30.0))],
-        ]);
-        frames
+        crate::test_support::assert_strategic_raise(
+            DefensesWindowState::default,
+            |state, world, system, faction| state.open(world, system, ORIGIN, faction, scaled()),
+            DefensesWindowState::raise,
+            |state| state.children().count(),
+            DefensesWindowState::window_count,
+        );
     }
 
     #[test]

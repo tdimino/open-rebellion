@@ -488,8 +488,7 @@ mod tests {
     use crate::tactical::test_support::{test_death_star, test_fighter, test_session, test_ship};
     use crate::tactical::{CombatWinner, TacticalDock};
     use crate::world::{
-        BuildableClass, CapitalShipClass, Character, FighterClass, Fleet, ShipInstance, System,
-        TroopUnit,
+        BuildableClass, CapitalShipClass, Character, Fleet, ShipInstance, System, TroopUnit,
     };
 
     /// port: test fixture values, not rules.
@@ -504,18 +503,7 @@ mod tests {
     fn battle(alliance: bool, tags: &[u32]) -> Battle {
         let mut world = GameWorld::default();
         let system = world.systems.insert(System::default());
-        let cruiser = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1400_0040),
-            name: "Cruiser".into(),
-            troop_capacity: 4,
-            ..CapitalShipClass::default()
-        });
-        let wing = world.fighter_classes.insert(FighterClass {
-            dat_id: DatId::new(0x1c00_0001),
-            name: "Wing".into(),
-            squadron_size: 12,
-            ..FighterClass::default()
-        });
+        let (cruiser, wing) = crate::test_support::add_cruiser_and_wing(&mut world, 4, 12);
         let ships = tags
             .iter()
             .map(|&tag| {

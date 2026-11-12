@@ -1073,6 +1073,27 @@ pub struct SystemSquadrons {
 }
 
 impl System {
+    /// All fixed facilities in the original child-list order: defense,
+    /// manufacturing, then production.
+    pub fn facilities(&self) -> impl Iterator<Item = FacilityRef> + '_ {
+        self.defense_facilities
+            .iter()
+            .copied()
+            .map(FacilityRef::Defense)
+            .chain(
+                self.manufacturing_facilities
+                    .iter()
+                    .copied()
+                    .map(FacilityRef::Manufacturing),
+            )
+            .chain(
+                self.production_facilities
+                    .iter()
+                    .copied()
+                    .map(FacilityRef::Production),
+            )
+    }
+
     /// Add `count` squadrons of `class` for a side to the system's own.
     pub fn add_squadrons(&mut self, class: FighterKey, count: u32, is_alliance: bool) {
         if count == 0 {
@@ -2296,6 +2317,15 @@ impl GameWorld {
         recruit_side_index(side).is_some_and(|index| self.recruit_pool_empty[index])
     }
 
+    /// Fleets still present in `system`'s orbit list, in container order.
+    pub fn fleets_at(&self, system: SystemKey) -> impl Iterator<Item = (FleetKey, &Fleet)> + '_ {
+        self.systems
+            .get(system)
+            .into_iter()
+            .flat_map(|system| system.fleets.iter().copied())
+            .filter_map(|key| self.fleets.get(key).map(|fleet| (key, fleet)))
+    }
+
     /// Whether `fleet` exists and holds a usable Death Star
     /// ([`Fleet::has_usable_death_star`]).
     #[must_use]
@@ -2312,6 +2342,21 @@ impl GameWorld {
         self.fleets
             .get(fleet)
             .is_some_and(|value| value.has_death_star(&self.capital_ship_classes))
+    }
+
+    /// The loaded Death Star capital-ship class (family `0x18`), if any.
+    #[must_use]
+    pub fn death_star_class(&self) -> Option<(CapitalShipKey, &CapitalShipClass)> {
+        self.capital_ship_classes
+            .iter()
+            .find(|(_, class)| class.is_death_star())
+    }
+
+    /// The loaded Death Star class and its signed completed hull value.
+    #[must_use]
+    pub fn death_star_class_and_hull(&self) -> Option<(CapitalShipKey, i32)> {
+        self.death_star_class()
+            .map(|(key, class)| (key, class.hull.cast_signed()))
     }
 
     /// The side's spare fleet at `system` (`FUN_005097d0`): its first fleet
@@ -2634,27 +2679,9 @@ mod facility_ownership_tests {
     fn system(world: &mut GameWorld, control: ControlKind) -> SystemKey {
         world.systems.insert(System {
             dat_id: DatId::new(0x9000_0001),
-            name: "Here".into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
             total_energy: 4,
             raw_materials: 2,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
+            ..crate::test_support::system("Here", control)
         })
     }
 
@@ -3337,27 +3364,7 @@ mod tests {
         });
         let dummy_sys = world.systems.insert(System {
             dat_id: DatId::new(0),
-            name: "Sys".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+            ..crate::test_support::system_at("Sys", sector_key, 0, 0, ControlKind::Uncontrolled)
         });
         let dummy_fleet = world.fleets.insert(Fleet {
             location: dummy_sys,

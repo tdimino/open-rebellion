@@ -734,12 +734,11 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::dat::{ExplorationStatus, SectorGroup};
     use crate::ids::DatId;
     use crate::manufacturing::{BuildableKind, ManufacturingSystem, QueueItem};
     use crate::world::{
         BuildableClass, ControlKind, GnprtbParams, ManufacturingFacilityInstance,
-        ProductionFacilityInstance, Sector, System, TroopUnit,
+        ProductionFacilityInstance, System, TroopUnit,
     };
 
     const MINE: u32 = 0x2c00_0001;
@@ -779,38 +778,15 @@ mod tests {
         world
             .buildable_classes
             .insert(DatId::new(REGIMENT), class(0, 10, 25));
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(0x8000_0001),
-            name: "Core".into(),
-            group: SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let system = world.systems.insert(System {
+        let system_fixture = System {
             dat_id: DatId::new(0x9000_0001),
-            name: "Bortras".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
             popularity_alliance: 1.0,
             popularity_empire: 0.0,
-            is_populated: true,
             total_energy: 10,
             raw_materials: 10,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
-        });
+            ..crate::test_support::system("Bortras", ControlKind::Controlled(Faction::Alliance))
+        };
+        let system = crate::test_support::insert_system(&mut world, system_fixture);
         (world, system)
     }
 

@@ -588,7 +588,9 @@ fn read_i32(bytes: &[u8], offset: usize) -> Result<i32> {
     Ok(i32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]))
 }
 
-fn combined_logical_fingerprint(
+/// Bind both audience catalogs into one deterministic session fingerprint.
+#[must_use]
+pub fn combined_logical_fingerprint(
     catalog: &EncyclopediaCatalog,
     alliance: &EncyclopediaTopicCatalog,
     empire: &EncyclopediaTopicCatalog,
@@ -634,11 +636,12 @@ mod tests {
     use rebellion_core::world::GameWorld;
 
     use super::*;
-    use crate::encyclopedia_catalog::{
-        EncyclopediaCatalog, EncyclopediaCatalogEntry, EncyclopediaCategory,
-    };
+    use crate::encyclopedia_catalog::{EncyclopediaCatalog, EncyclopediaCatalogEntry};
     use crate::encyclopedia_overlay::{parse_encyclopedia_overlay, EncyclopediaOverlayLayer};
     use crate::encyclopedia_topics::EncyclopediaAudience;
+    use crate::test_support::{
+        encyclopedia_catalog, encyclopedia_entry, indexed_encyclopedia_artwork,
+    };
 
     const SHARED_SOURCE: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json");
@@ -646,97 +649,23 @@ mod tests {
         include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json.manifest.json");
 
     fn fixture_index() -> EncyclopediaCatalog {
-        let category = |command_id, label_resource_id, family_range| EncyclopediaCategory {
-            command_id,
-            label_resource_id,
-            label: format!("Category {command_id}"),
-            family_range,
-        };
-        EncyclopediaCatalog {
-            title: "Galactic Encyclopedia".into(),
-            topic_label: "Topic".into(),
-            categories: [
-                category(0x6f, 0x1850, None),
-                category(0x70, 0x1855, Some(0x90..0x98)),
-                category(0x71, 0x1854, Some(0x14..0x20)),
-                category(0x72, 0x1852, Some(0x20..0x30)),
-                category(0x73, 0x1851, Some(0x40..0x80)),
-                category(0x74, 0x1856, Some(0x10..0x14)),
-                category(0x75, 0x1853, Some(0x30..0x40)),
-            ],
-            entries: vec![
-                EncyclopediaCatalogEntry {
-                    object_id: 0x9200_0064,
-                    text_resource_id: 0x2e00,
-                    name: "Abregado-rae".into(),
-                },
-                EncyclopediaCatalogEntry {
-                    object_id: 0x5100_0010,
-                    text_resource_id: 0x2c50,
-                    name: "Diplomacy".into(),
-                },
-                EncyclopediaCatalogEntry {
-                    object_id: 0x1400_0040,
-                    text_resource_id: 0x2740,
-                    name: "Mon Calamari Cruiser".into(),
-                },
-            ],
-        }
-    }
-
-    fn bmp_header(pixel_offset: u32, pixel_bytes: u32, bits: u16, colors: u32) -> Vec<u8> {
-        const WIDTH: u32 = 400;
-        const HEIGHT: u32 = 200;
-        let file_bytes = pixel_offset + pixel_bytes;
-        let mut bytes = Vec::with_capacity(file_bytes as usize);
-        bytes.extend_from_slice(b"BM");
-        bytes.extend_from_slice(&file_bytes.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        bytes.extend_from_slice(&pixel_offset.to_le_bytes());
-        bytes.extend_from_slice(&40_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH as i32).to_le_bytes());
-        bytes.extend_from_slice(&(HEIGHT as i32).to_le_bytes());
-        bytes.extend_from_slice(&1_u16.to_le_bytes());
-        bytes.extend_from_slice(&bits.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend_from_slice(&pixel_bytes.to_le_bytes());
-        bytes.extend_from_slice(&[0; 8]);
-        bytes.extend_from_slice(&colors.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes
+        encyclopedia_catalog(vec![
+            encyclopedia_entry(0x9200_0064, 0x2e00, "Abregado-rae"),
+            encyclopedia_entry(0x5100_0010, 0x2c50, "Diplomacy"),
+            encyclopedia_entry(0x1400_0040, 0x2740, "Mon Calamari Cruiser"),
+        ])
     }
 
     fn bmp(pixel: [u8; 3]) -> Arc<[u8]> {
-        const WIDTH: u32 = 400;
-        const HEIGHT: u32 = 200;
-        const PIXEL_BYTES: u32 = WIDTH * HEIGHT * 3;
-        let mut bytes = bmp_header(54, PIXEL_BYTES, 24, 0);
-        for _ in 0..WIDTH * HEIGHT {
-            bytes.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
-        }
-        bytes.into()
+        crate::test_support::rgb_encyclopedia_bmp(pixel).into()
     }
 
     fn indexed_bmp(pixel: [u8; 3]) -> Arc<[u8]> {
-        const WIDTH: u32 = 400;
-        const HEIGHT: u32 = 200;
-        const PIXEL_OFFSET: u32 = 14 + 40 + 1024;
-        const PIXEL_BYTES: u32 = WIDTH * HEIGHT;
-        const FILE_BYTES: u32 = PIXEL_OFFSET + PIXEL_BYTES;
-        let mut bytes = bmp_header(PIXEL_OFFSET, PIXEL_BYTES, 8, 256);
-        bytes.resize(PIXEL_OFFSET as usize, 0);
-        bytes[58..62].copy_from_slice(&[pixel[2], pixel[1], pixel[0], 0]);
-        bytes.resize(FILE_BYTES as usize, 1);
-        bytes.into()
+        crate::test_support::indexed_encyclopedia_bmp(pixel).into()
     }
 
     fn indexed_resources() -> EncyclopediaResourceBytes {
-        BTreeMap::from([
-            ("EDATA.001".into(), indexed_bmp([1, 2, 3])),
-            ("EDATA.014".into(), indexed_bmp([14, 15, 16])),
-            ("EDATA.015".into(), indexed_bmp([15, 16, 17])),
-            ("EDATA.115".into(), indexed_bmp([115, 116, 117])),
-        ])
+        indexed_encyclopedia_artwork()
     }
 
     fn resources() -> EncyclopediaResourceBytes {
@@ -1231,11 +1160,8 @@ mod tests {
             text_resource_id: 0x2740,
             name: "Twin Cruiser".into(),
         });
-        base.catalog.entries.sort_by(|left, right| {
-            left.name
-                .to_lowercase()
-                .cmp(&right.name.to_lowercase())
-                .then(left.object_id.cmp(&right.object_id))
+        rebellion_core::ordering::sort_by_case_folded_name(&mut base.catalog.entries, |entry| {
+            (entry.name.to_lowercase(), entry.object_id)
         });
         let remove = overlay_layer(
             "remove-one-twin",

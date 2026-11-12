@@ -365,12 +365,7 @@ impl EncyclopediaSurfaceController {
     /// Exact manager identity that owns this frame's keyboard lease.
     #[must_use]
     pub(crate) fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
+        frame.keyboard_owner_for(self.window_id)
     }
 
     /// Retains the modal identity while recording a failed paint attempt.
@@ -386,24 +381,13 @@ impl EncyclopediaSurfaceController {
     /// Explicit Encyclopedia content state for the immutable manager frame.
     #[must_use]
     pub(crate) fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::Encyclopedia)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id == Some(id) && self.paintable {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
+        frame.content_reports_for(WindowKind::Encyclopedia, |id| {
+            if self.window_id == Some(id) && self.paintable {
+                ContentStatus::Ready
+            } else {
+                ContentStatus::Unpaintable
+            }
+        })
     }
 
     /// Returns the exact close target without releasing its current-frame lease.
@@ -578,6 +562,7 @@ pub(crate) mod fixture {
         EncyclopediaSessionStore,
     };
     use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
+    use rebellion_data::test_support::indexed_encyclopedia_bmp;
     use rebellion_render::{
         draw_encyclopedia_surface, BmpCache, EncyclopediaSurfaceAction, EncyclopediaSurfaceState,
     };
@@ -1069,29 +1054,7 @@ pub(crate) mod fixture {
     }
 
     fn indexed_bmp(pixel: [u8; 3]) -> Arc<[u8]> {
-        const WIDTH: u32 = 400;
-        const HEIGHT: u32 = 200;
-        const PIXEL_OFFSET: u32 = 14 + 40 + 1024;
-        const FILE_BYTES: u32 = PIXEL_OFFSET + WIDTH * HEIGHT;
-        let mut bytes = Vec::with_capacity(FILE_BYTES as usize);
-        bytes.extend_from_slice(b"BM");
-        bytes.extend_from_slice(&FILE_BYTES.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        bytes.extend_from_slice(&PIXEL_OFFSET.to_le_bytes());
-        bytes.extend_from_slice(&40_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH as i32).to_le_bytes());
-        bytes.extend_from_slice(&(HEIGHT as i32).to_le_bytes());
-        bytes.extend_from_slice(&1_u16.to_le_bytes());
-        bytes.extend_from_slice(&8_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH * HEIGHT).to_le_bytes());
-        bytes.extend_from_slice(&[0; 8]);
-        bytes.extend_from_slice(&256_u32.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.resize(PIXEL_OFFSET as usize, 0);
-        bytes[58..62].copy_from_slice(&[pixel[2], pixel[1], pixel[0], 0]);
-        bytes.resize(FILE_BYTES as usize, 1);
-        bytes.into()
+        indexed_encyclopedia_bmp(pixel).into()
     }
 
     #[cfg(test)]
@@ -1274,30 +1237,7 @@ pub(crate) mod fixture {
         #[test]
         #[ignore = "requires the owned ignored P66A source and EData directory"]
         fn owned_native_session_covers_the_canonical_e30_state_matrix() {
-            let source = std::path::PathBuf::from(
-                std::env::var_os("REBELLION_ENCYCLOPEDIA_TEST_SOURCE")
-                    .expect("set REBELLION_ENCYCLOPEDIA_TEST_SOURCE"),
-            );
-            let gdata = source
-                .parent()
-                .and_then(std::path::Path::parent)
-                .expect("source path is GData/encyclopedia/source.json");
-            let edata = std::path::PathBuf::from(
-                std::env::var_os("REBELLION_EDATA_DIR").expect("set REBELLION_EDATA_DIR"),
-            );
-            let payload = crate::encyclopedia_content::read_native_encyclopedia(gdata, &edata)
-                .unwrap()
-                .expect("owned native Encyclopedia is published");
-            let catalog =
-                rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog(gdata).unwrap();
-            let system_pictures =
-                rebellion_data::encyclopedia_topics::load_encyclopedia_system_pictures(gdata)
-                    .unwrap();
-            let mut store = EncyclopediaSessionStore::default();
-            store
-                .replace(payload.into_session_input(catalog, system_pictures))
-                .unwrap();
-            let session = store.current().unwrap();
+            let session = crate::encyclopedia_content::owned_native_session_from_env();
             assert_eq!(
                 session.logical_fingerprint(),
                 "20c342868cee50e80ef3b94b9f81a898c48f4b593ddd0d83ab69b67d755ae9ea"
@@ -1372,20 +1312,19 @@ pub use fixture::{CanonicalFixtureStart, FixtureStart};
 #[cfg(test)]
 pub(crate) mod tests {
     use egui_macroquad::egui;
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::HashMap;
     use std::sync::Arc;
 
-    use rebellion_data::encyclopedia_catalog::{
-        EncyclopediaCatalog, EncyclopediaCatalogEntry, EncyclopediaCategory,
-    };
+    use rebellion_data::encyclopedia_catalog::EncyclopediaCatalog;
     use rebellion_data::encyclopedia_presenter::{
         EncyclopediaContextCaller, EncyclopediaEntryIntent, EncyclopediaPresentationMode,
         EncyclopediaPresenter, EncyclopediaReturnRoute,
     };
     use rebellion_data::encyclopedia_session::{
-        EncyclopediaResourceBytes, EncyclopediaSessionInput, EncyclopediaSessionStore,
+        EncyclopediaSessionInput, EncyclopediaSessionStore,
     };
     use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
+    use rebellion_data::test_support::{encyclopedia_catalog, encyclopedia_entry};
     use rebellion_render::{
         windowing_policy::contextual_spec, EncyclopediaSurfaceAudience, EncyclopediaSurfaceMode,
         ENCYCLOPEDIA_TOPIC_CONTROL,
@@ -1431,73 +1370,12 @@ pub(crate) mod tests {
         );
     }
 
-    fn category(
-        command_id: u16,
-        label_resource_id: u16,
-        family_range: Option<std::ops::Range<u8>>,
-    ) -> EncyclopediaCategory {
-        EncyclopediaCategory::new(
-            command_id,
-            label_resource_id,
-            format!("Category {command_id}"),
-            family_range,
-        )
-    }
-
     fn catalog() -> EncyclopediaCatalog {
-        EncyclopediaCatalog {
-            title: "Galactic Encyclopedia".into(),
-            topic_label: "Topic".into(),
-            categories: [
-                category(0x6f, 0x1850, None),
-                category(0x70, 0x1855, Some(0x90..0x98)),
-                category(0x71, 0x1854, Some(0x14..0x20)),
-                category(0x72, 0x1852, Some(0x20..0x30)),
-                category(0x73, 0x1851, Some(0x40..0x80)),
-                category(0x74, 0x1856, Some(0x10..0x14)),
-                category(0x75, 0x1853, Some(0x30..0x40)),
-            ],
-            entries: vec![EncyclopediaCatalogEntry {
-                object_id: 0x5100_0010,
-                text_resource_id: 0x2c50,
-                name: "Diplomacy".into(),
-            }],
-        }
-    }
-
-    fn indexed_bmp() -> Arc<[u8]> {
-        const WIDTH: u32 = 400;
-        const HEIGHT: u32 = 200;
-        const PIXEL_OFFSET: u32 = 14 + 40 + 1024;
-        const FILE_BYTES: u32 = PIXEL_OFFSET + WIDTH * HEIGHT;
-        let mut bytes = Vec::with_capacity(FILE_BYTES as usize);
-        bytes.extend_from_slice(b"BM");
-        bytes.extend_from_slice(&FILE_BYTES.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        bytes.extend_from_slice(&PIXEL_OFFSET.to_le_bytes());
-        bytes.extend_from_slice(&40_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH as i32).to_le_bytes());
-        bytes.extend_from_slice(&(HEIGHT as i32).to_le_bytes());
-        bytes.extend_from_slice(&1_u16.to_le_bytes());
-        bytes.extend_from_slice(&8_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH * HEIGHT).to_le_bytes());
-        bytes.extend_from_slice(&[0; 8]);
-        bytes.extend_from_slice(&256_u32.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.resize(PIXEL_OFFSET as usize, 0);
-        bytes[58..62].copy_from_slice(&[17, 16, 15, 0]);
-        bytes.resize(FILE_BYTES as usize, 1);
-        bytes.into()
+        encyclopedia_catalog(vec![encyclopedia_entry(0x5100_0010, 0x2c50, "Diplomacy")])
     }
 
     fn session_input() -> EncyclopediaSessionInput {
-        let artwork: EncyclopediaResourceBytes = BTreeMap::from([
-            ("EDATA.001".into(), indexed_bmp()),
-            ("EDATA.014".into(), indexed_bmp()),
-            ("EDATA.015".into(), indexed_bmp()),
-            ("EDATA.115".into(), indexed_bmp()),
-        ]);
+        let artwork = crate::test_support::uniform_encyclopedia_artwork([15, 16, 17]);
         EncyclopediaSessionInput {
             catalog: catalog(),
             source_catalog_bytes: Arc::from(SOURCE),

@@ -7,13 +7,12 @@ use anyhow::{ensure, Context, Result};
 use rebellion_data::encyclopedia_catalog::{
     load_encyclopedia_catalog, ENCYCLOPEDIA_EXCLUDED_MISSION_OBJECT_IDS,
 };
+use rebellion_data::encyclopedia_session::combined_logical_fingerprint;
 use rebellion_data::encyclopedia_topics::{
-    encyclopedia_logical_fingerprint, load_encyclopedia_topics,
-    parse_encyclopedia_source_with_manifest, EncyclopediaAudience, EncyclopediaMissingPart,
-    EncyclopediaTopicCatalog,
+    load_encyclopedia_topics, parse_encyclopedia_source_with_manifest, EncyclopediaAudience,
+    EncyclopediaMissingPart, EncyclopediaTopicCatalog,
 };
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 #[derive(Clone, Serialize)]
 struct AudienceSummary {
@@ -139,20 +138,6 @@ fn main() -> Result<()> {
     validate_owned_english_profile(&summary)?;
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
-}
-
-fn combined_logical_fingerprint(
-    catalog: &rebellion_data::encyclopedia_catalog::EncyclopediaCatalog,
-    alliance: &EncyclopediaTopicCatalog,
-    empire: &EncyclopediaTopicCatalog,
-) -> String {
-    let alliance = encyclopedia_logical_fingerprint(catalog, alliance);
-    let empire = encyclopedia_logical_fingerprint(catalog, empire);
-    let mut digest = Sha256::new();
-    digest.update(b"open-rebellion:encyclopedia-session-logical:v1\0");
-    digest.update(alliance.as_bytes());
-    digest.update(empire.as_bytes());
-    format!("{:x}", digest.finalize())
 }
 
 fn validate_owned_english_profile(summary: &AuditSummary) -> Result<()> {

@@ -25,8 +25,8 @@ use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::fleet_window::{mini_layers, paint_native, portrait_layers, MiniObject};
 use crate::message_log::{GameMessage, MessageId};
 use crate::mission_dialog::{button, galaxy_centered_rect, paint_button};
+use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::scroll_bar::{ScrollBar, ScrollDrag, ScrollRange, LIST_BAR_29FC};
-use crate::system_window::{logical_rect, rect_contains};
 
 pub const OPERATION_REPORT_WIDTH: f32 = 470.0;
 pub const OPERATION_REPORT_HEIGHT: f32 = 331.0;
@@ -713,7 +713,11 @@ impl OperationReportState {
 
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
+        crate::singleton_window_common::contains_screen_point(
+            self.window.is_some(),
+            window_rect(layout),
+            point,
+        )
     }
 
     /// `FUN_0044e3d0`: the rail's radio; the list keeps its tab and starts
@@ -1037,12 +1041,8 @@ fn draw_at(
                         ReportCell::Object(unit) => {
                             let layers =
                                 cell_layers(unit, window.tab, cell_status(world, movement, unit));
-                            let size = layers
-                                .first()
-                                .and_then(|&(source, id)| cache.original_resource_size(source, id))
-                                .map_or((0.0, 0.0), |[w, h]| (w as f32, h as f32));
-                            let left = ((cell_w - size.0) / 2.0).floor();
-                            let top = ((cell_h - size.1) / 2.0).floor();
+                            let (size, (left, top)) =
+                                cache.centered_original_resource(&layers, (cell_w, cell_h));
                             for (source, id) in layers {
                                 paint_native(
                                     &list_painter,
@@ -1155,7 +1155,7 @@ fn draw_at(
                         galley,
                         egui::Color32::WHITE,
                     );
-                    if crate::system_window::exact_clicked(&response, button_rect) {
+                    if exact_clicked(&response, button_rect) {
                         action = Some(if control == "GotoSystem" {
                             OperationReportAction::GotoSystem {
                                 system: report.system,
@@ -1206,8 +1206,8 @@ fn theme_font(ctx: &egui::Context, entry: u8, scale: f32) -> egui::FontId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fleet_window::tests::PAINTED;
     use crate::message_log::{MessageCategory, MessageDisplay, MessageRail, RailAudience};
+    use crate::test_support::key_frame as key;
     use rebellion_core::ids::DatId;
     use rebellion_core::world::System;
 
@@ -1314,7 +1314,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            PAINTED.with(|painted| painted.borrow_mut().clear());
+            crate::test_support::clear_painted_trace();
             let output = ctx.run(input, |ctx| {
                 result.actions.extend(draw_at(
                     ctx,
@@ -1327,7 +1327,7 @@ mod tests {
                     DISPLAY_TEXT,
                 ));
             });
-            result.painted = PAINTED.with(std::cell::RefCell::take);
+            result.painted = crate::test_support::take_painted_trace();
             result.texts.clear();
             result.rows.clear();
             for clipped in output.shapes {
@@ -1348,36 +1348,11 @@ mod tests {
     }
 
     fn hover(point: (f32, f32)) -> Vec<Vec<egui::Event>> {
-        let point = egui::pos2(point.0, point.1);
-        vec![
-            vec![egui::Event::PointerMoved(point)],
-            vec![egui::Event::PointerMoved(point)],
-        ]
-    }
-
-    fn press(point: (f32, f32), pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos: egui::pos2(point.0, point.1),
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
+        crate::test_support::hover_frames(egui::pos2(point.0, point.1))
     }
 
     fn click(point: (f32, f32)) -> Vec<Vec<egui::Event>> {
-        let mut frames = hover(point);
-        frames.extend([vec![press(point, true)], vec![press(point, false)], vec![]]);
-        frames
-    }
-
-    fn key(key: egui::Key) -> Vec<Vec<egui::Event>> {
-        vec![vec![egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }]]
+        crate::test_support::click_frames(egui::pos2(point.0, point.1))
     }
 
     /// The centre of the rail's button for `view` on `side`.

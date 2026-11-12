@@ -1,10 +1,14 @@
+mod common;
+
 use std::collections::BTreeSet;
+
+use common::{menu as menu_spec, open};
 
 use rebellion_windowing::{
     BubblePolicy, Cardinality, ContentReport, ContentStatus, ExistingOpenPolicy, FocusOnOpen,
     FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy, ReconcileReport,
     RouteTarget, RoutingSnapshot, StackBand, SubjectId, WindowCommand, WindowError, WindowId,
-    WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
+    WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec,
 };
 
 fn policy(input: InputPolicy) -> WindowPolicy {
@@ -25,30 +29,6 @@ fn spec(kind: WindowKind, subject: u64, input: InputPolicy) -> WindowSpec {
         key: rebellion_windowing::WindowKey::contextual(kind, SubjectId::new(2, subject)),
         owner: WindowOwner::StrategicRoot,
         policy: policy(input),
-    }
-}
-
-fn menu_spec(owner: rebellion_windowing::WindowId) -> WindowSpec {
-    WindowSpec {
-        key: rebellion_windowing::WindowKey::singleton(WindowKind::Menu),
-        owner: WindowOwner::Window(owner),
-        policy: WindowPolicy {
-            cardinality: Cardinality::Singleton,
-            band: StackBand::Transient,
-            placement: OpenPlacement::AboveOwner,
-            existing: ExistingOpenPolicy::NoOp,
-            input: InputPolicy::DismissOnOutsidePress,
-            presentation: PresentationPolicy::None,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::SavedMenuTarget,
-        },
-    }
-}
-
-fn open(manager: &mut WindowManager, spec: WindowSpec) -> rebellion_windowing::WindowId {
-    match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
-        WindowTransition::Opened { id } => id,
-        other => panic!("expected a fresh window, got {other:?}"),
     }
 }
 

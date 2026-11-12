@@ -183,31 +183,14 @@ impl EguiWindowSurfaces {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_windowing::{
-        Cardinality, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, InputPolicy, OpenPlacement,
-        PresentationPolicy, StackBand, SubjectId, WindowCommand, WindowKey, WindowKind,
-        WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
-    };
+    use rebellion_windowing::{InputPolicy, WindowCommand, WindowManager};
 
     fn open(manager: &mut WindowManager, subject: u64) -> WindowId {
-        let spec = WindowSpec {
-            key: WindowKey::contextual(WindowKind::System, SubjectId::new(2, subject)),
-            owner: WindowOwner::StrategicRoot,
-            policy: WindowPolicy {
-                cardinality: Cardinality::Subject { max_open: None },
-                band: StackBand::Normal,
-                placement: OpenPlacement::TopOfBand,
-                existing: ExistingOpenPolicy::RaiseRestore,
-                input: InputPolicy::Modeless,
-                presentation: PresentationPolicy::History,
-                focus_on_open: FocusOnOpen::Window,
-                restoration: FocusRestoration::PreviousEligible,
-            },
-        };
-        match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected open, got {other:?}"),
-        }
+        crate::test_support::open_window(
+            manager,
+            crate::test_support::routing_window_spec(subject, InputPolicy::Modeless),
+            "system",
+        )
     }
 
     fn surfaces_with_hit_rect(window: WindowId) -> EguiWindowSurfaces {

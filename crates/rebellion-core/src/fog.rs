@@ -323,7 +323,7 @@ mod tests {
     use super::*;
     use crate::ids::{CapitalShipKey, DatId, FleetKey, SectorKey, SystemKey};
     use crate::movement::MovementState;
-    use crate::world::{CapitalShipClass, ControlKind, Fleet, GameWorld, ShipInstance, System};
+    use crate::world::{CapitalShipClass, ControlKind, Fleet, GameWorld, ShipInstance};
 
     fn test_sector(world: &mut GameWorld) -> SectorKey {
         world.sectors.insert(crate::world::Sector {
@@ -344,30 +344,10 @@ mod tests {
         x: u16,
         y: u16,
     ) -> SystemKey {
-        world.systems.insert(System {
-            dat_id: DatId(id),
-            name: name.into(),
-            sector,
-            x,
-            y,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        })
+        let mut system =
+            crate::test_support::system_at(name, sector, x, y, ControlKind::Uncontrolled);
+        system.dat_id = DatId(id);
+        world.systems.insert(system)
     }
 
     fn sensor_class(

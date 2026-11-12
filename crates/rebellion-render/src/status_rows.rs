@@ -1038,13 +1038,12 @@ pub fn status_view(sources: StatusSources<'_>, object: StatusObject) -> Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::dat::ExplorationStatus;
-    use rebellion_core::ids::{CharacterKey, SectorKey};
+    use rebellion_core::ids::CharacterKey;
     use rebellion_core::manufacturing::{BuildableKind, QueueItem};
     use rebellion_core::missions::{MissionKind, MissionRequest};
     use rebellion_core::world::{
         BuildableClass, ClassStats, ControlKind, DefenseFacilityInstance, FighterClass,
-        FighterEntry, Fleet, ManufacturingFacilityInstance, SpecialForceUnit, System, TroopUnit,
+        FighterEntry, Fleet, ManufacturingFacilityInstance, SpecialForceUnit, TroopUnit,
     };
 
     /// The states a Status window reads, all idle.
@@ -1093,30 +1092,7 @@ mod tests {
     }
 
     fn system(world: &mut GameWorld, name: &str, control: ControlKind) -> SystemKey {
-        world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: name.into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        })
+        crate::test_support::add_standalone_system(world, name, control)
     }
 
     fn catalog(world: &mut GameWorld, id: u32, name: &str, class: &BuildableClass) -> DatId {
@@ -1132,9 +1108,7 @@ mod tests {
     }
 
     fn rows(rows: &[StatusRow]) -> Vec<(&str, &str)> {
-        rows.iter()
-            .map(|row| (row.label.as_str(), row.value.as_str()))
-            .collect()
+        crate::test_support::status_pairs(rows)
     }
 
     /// An Alliance fleet at `at` of two carriers (2 and 3 squadrons, 1

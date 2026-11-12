@@ -117,6 +117,33 @@ impl WindowKind {
         Self::BattleResults,
         Self::Menu,
     ];
+
+    /// Stable kebab-case name used by diagnostics and interface observations.
+    #[must_use]
+    pub const fn slug(self) -> &'static str {
+        match self {
+            Self::Sector => "sector",
+            Self::System => "system",
+            Self::Fleet => "fleet",
+            Self::Defenses => "defenses",
+            Self::Missions => "missions",
+            Self::SystemFinder => "system-finder",
+            Self::FleetFinder => "fleet-finder",
+            Self::TroopFinder => "troop-finder",
+            Self::PersonnelFinder => "personnel-finder",
+            Self::MessageIndex => "message-index",
+            Self::Encyclopedia => "encyclopedia",
+            Self::Status => "status",
+            Self::BuildSelection => "build-selection",
+            Self::MissionDialog => "mission-dialog",
+            Self::MoveConfirmation => "move-confirmation",
+            Self::StopConfirmation => "stop-confirmation",
+            Self::ScrapConfirmation => "scrap-confirmation",
+            Self::BattleAlert => "battle-alert",
+            Self::BattleResults => "battle-results",
+            Self::Menu => "menu",
+        }
+    }
 }
 
 /// Stable semantic lookup key for a singleton or contextual window.

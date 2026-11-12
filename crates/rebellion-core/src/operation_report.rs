@@ -446,21 +446,7 @@ fn system_units(world: &GameWorld, system: SystemKey) -> Vec<(ReportUnit, Child)
             out.extend(squadron(world, entry.class).map(|unit| (unit, Child::Other)));
         }
     }
-    let facilities = sys
-        .defense_facilities
-        .iter()
-        .map(|&key| FacilityRef::Defense(key))
-        .chain(
-            sys.manufacturing_facilities
-                .iter()
-                .map(|&key| FacilityRef::Manufacturing(key)),
-        )
-        .chain(
-            sys.production_facilities
-                .iter()
-                .map(|&key| FacilityRef::Production(key)),
-        );
-    for key in facilities {
+    for key in sys.facilities() {
         out.extend(facility(world, key).map(|unit| (unit, Child::Other)));
     }
     for (key, value) in &world.characters {
@@ -528,17 +514,7 @@ mod tests {
     ) {
         let mut world = GameWorld::default();
         let system = world.systems.insert(System::default());
-        let cruiser = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1400_0040),
-            name: "Cruiser".into(),
-            troop_capacity: 1,
-            ..CapitalShipClass::default()
-        });
-        let wing = world.fighter_classes.insert(FighterClass {
-            dat_id: DatId::new(0x1c00_0001),
-            name: "Wing".into(),
-            ..FighterClass::default()
-        });
+        let (cruiser, wing) = crate::test_support::add_cruiser_and_wing(&mut world, 1, 0);
         (world, system, cruiser, wing)
     }
 

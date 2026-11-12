@@ -8,7 +8,9 @@
     clippy::cast_sign_loss
 )]
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+#[macro_export]
 #[allow(clippy::assert_is_empty)]
 macro_rules! assert_empty {
     ($value:expr $(,)?) => {{
@@ -17,7 +19,9 @@ macro_rules! assert_empty {
     }};
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+#[macro_export]
 #[allow(clippy::assert_is_empty)]
 macro_rules! assert_not_empty {
     ($value:expr $(,)?) => {{
@@ -65,6 +69,7 @@ pub mod movement;
 pub mod net_protocol;
 pub mod officer_rank;
 pub mod operation_report;
+pub mod ordering;
 pub mod post_battle;
 pub mod repair;
 pub mod research;
@@ -77,6 +82,9 @@ pub mod stockpiles;
 pub mod story_events;
 pub mod support_shift;
 pub mod tactical;
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support;
 pub mod tick;
 pub mod trace;
 pub mod troop_transport;

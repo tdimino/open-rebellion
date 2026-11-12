@@ -5,8 +5,6 @@ use std::collections::BTreeMap;
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
 #[cfg(not(target_arch = "wasm32"))]
-use std::io::{Read, Take};
-#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
@@ -24,6 +22,9 @@ use rebellion_data::encyclopedia_session::{
 use rebellion_data::mods::ModManifest;
 #[cfg(not(target_arch = "wasm32"))]
 use rebellion_data::mods::{ModContent, ModContentTarget, ModRuntime};
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::encyclopedia_native_io::{read_open_file_bounded, BoundedReadError};
 
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_MOD_ARTWORK_BYTES: usize = 128 * 1024 * 1024;
@@ -245,18 +246,17 @@ fn read_confined_artwork(root: &Path, relative: &str) -> Result<Vec<u8>, String>
     }
     let file =
         File::open(&path).map_err(|error| format!("cannot open {}: {error}", path.display()))?;
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    let mut bounded: Take<File> = file.take(MAX_ENCYCLOPEDIA_IMAGE_BYTES as u64 + 1);
-    bounded
-        .read_to_end(&mut bytes)
-        .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
-    if bytes.len() > MAX_ENCYCLOPEDIA_IMAGE_BYTES {
-        return Err(format!(
-            "{} grew beyond its image byte limit",
-            path.display()
-        ));
-    }
-    Ok(bytes)
+    read_open_file_bounded(file, metadata.len() as usize, MAX_ENCYCLOPEDIA_IMAGE_BYTES).map_err(
+        |error| match error {
+            BoundedReadError::Read(error) => format!("cannot read {}: {error}", path.display()),
+            BoundedReadError::Exceeded => {
+                format!("{} grew beyond its image byte limit", path.display())
+            }
+            BoundedReadError::LimitDoesNotFitU64 | BoundedReadError::LimitOverflow => {
+                "configured image byte limit is invalid".to_owned()
+            }
+        },
+    )
 }
 
 #[cfg(not(target_arch = "wasm32"))]

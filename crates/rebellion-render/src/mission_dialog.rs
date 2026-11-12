@@ -14,16 +14,17 @@ use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember, Missi
 use rebellion_core::research::TechType;
 use rebellion_core::world::GameWorld;
 use rebellion_windowing::{
-    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, SubjectId, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
+    ExistingEffect, SubjectId, WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
+use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::sector_window::planet_resource_id;
-use crate::system_window::{
-    character_mini_resource_id, exact_clicked, logical_rect, rect_contains, special_force_mini,
+use crate::singleton_window_common::{
+    self, impl_singleton_content_reports, impl_singleton_window_routing,
 };
+use crate::system_window::{character_mini_resource_id, special_force_mini};
 
 pub const MISSION_DIALOG_WIDTH: f32 = 259.0;
 pub const MISSION_DIALOG_HEIGHT: f32 = 355.0;
@@ -307,68 +308,6 @@ impl MissionDialogState {
         self.dialog.as_ref().and_then(|dialog| dialog.window_id)
     }
 
-    /// Egui layer attached to the exact manager-issued Mission Dialog.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id() == Some(id)).then(|| {
-            egui::LayerId::new(
-                egui::Order::Tooltip,
-                egui::Id::new("original-mission-dialog"),
-            )
-        })
-    }
-
-    /// Manager-owned Mission hit for event-local pointer routing.
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id()?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::MissionDialog)
-            && frame.allows_input(id)
-            && rect_contains(dialog_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    /// Exact manager identity holding this frame's keyboard lease.
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id()?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
-
-    /// Explicit content state for fail-closed manager reconciliation.
-    #[must_use]
-    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::MissionDialog)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id() == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
-    }
-
     #[must_use]
     pub fn request_close(&self) -> Option<WindowId> {
         self.window_id()
@@ -467,7 +406,11 @@ impl MissionDialogState {
     /// dialogs derive modal blocking from the frame routing snapshot instead.
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.dialog.is_some() && rect_contains(dialog_rect(layout), egui::pos2(point.0, point.1))
+        crate::singleton_window_common::contains_screen_point(
+            self.dialog.is_some(),
+            dialog_rect(layout),
+            point,
+        )
     }
 
     /// "Begin Mission" (`0x66`): the order's mission becomes the selected
@@ -481,6 +424,14 @@ impl MissionDialogState {
         Some(dialog.begin_action())
     }
 }
+
+impl_singleton_window_routing!(
+    MissionDialogState,
+    WindowKind::MissionDialog,
+    "original-mission-dialog",
+    dialog_rect
+);
+impl_singleton_content_reports!(MissionDialogState, WindowKind::MissionDialog);
 
 impl MissionDialog {
     fn begin_action(&self) -> MissionDialogAction {
@@ -556,7 +507,10 @@ pub fn kind_icon(kind: MissionKind, faction: MissionFaction) -> u32 {
 /// A member's list image and name: the GOKRES mini `FUN_0042c3b0(.., 0, 1)`
 /// draws first. port: its status overlays (STRATEGY 11500..11502, 11570,
 /// 11572, GOKRES `+0x7000`) are not drawn.
-fn member_item(world: &GameWorld, member: MissionMember) -> Option<(Option<u32>, String)> {
+pub(crate) fn member_item(
+    world: &GameWorld,
+    member: MissionMember,
+) -> Option<(Option<u32>, String)> {
     match member {
         MissionMember::Character(key) => {
             let character = world.characters.get(key)?;
@@ -637,9 +591,7 @@ fn paint_resource(
     button: bool,
 ) {
     #[cfg(test)]
-    crate::fleet_window::tests::PAINTED.with(|painted| {
-        painted.borrow_mut().push((resource_id, rect.min));
-    });
+    crate::test_support::record_painted(resource_id, rect.min);
     let texture = if button {
         cache.get_button(ctx, DllSource::Strategy, resource_id)
     } else {
@@ -750,13 +702,15 @@ pub fn draw_mission_dialog(
 
     // Above the modeless windows, which share Foreground and raise the
     // focused one each frame (`system_window.rs`).
-    egui::Area::new(egui::Id::new("original-mission-dialog"))
-        .fixed_pos(window.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(window.size(), egui::Sense::hover());
-            let painter = ui.painter().with_clip_rect(frame);
-            let at = |x: f32, y: f32, w: f32, h: f32| logical_rect(frame, scale, x, y, w, h);
+    singleton_window_common::show_popup_canvas(
+        ctx,
+        egui::Id::new("original-mission-dialog"),
+        window,
+        scale,
+        |ui, canvas| {
+            let frame = canvas.frame;
+            let painter = canvas.painter.clone();
+            let at = |x: f32, y: f32, w: f32, h: f32| canvas.rect(x, y, w, h);
             let name = |control: &str, rect: egui::Rect| {
                 crate::control_registry::register_screen("MissionDialog", control, rect);
             };
@@ -1041,7 +995,8 @@ pub fn draw_mission_dialog(
                     dialog.list_open = false;
                 }
             }
-        });
+        },
+    );
 
     if begin {
         return if managed {
@@ -1192,9 +1147,13 @@ fn draw_list(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{
+        offset_strategic_layout, pointer_button as press, pointer_raw_input, raw_input,
+    };
     use rebellion_core::world::Character;
     use rebellion_windowing::{
-        SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
+        ContentReport, ContentStatus, SubjectId, WindowCommand, WindowKind, WindowManager,
+        WindowOwner, WindowTransition,
     };
 
     fn members(n: usize) -> Vec<MissionMember> {
@@ -1326,19 +1285,12 @@ mod tests {
             )
             .unwrap();
         assert_eq!(replacement.replacing(), Some(id));
-        let stale_id = match manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap()
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            transition => panic!("expected unrelated open, got {transition:?}"),
-        };
+        let stale_id = crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+            "unrelated window",
+        );
         assert_ne!(stale_id, id);
         assert!(manager.apply(WindowCommand::Close(stale_id)).is_ok());
         assert!(manager
@@ -1451,17 +1403,12 @@ mod tests {
         let team = members(1);
         let mut empty = MissionDialogState::default();
         let mut manager = WindowManager::new();
-        let unrelated = manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::FleetFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let WindowTransition::Opened { id: unrelated_id } = unrelated.transition else {
-            panic!("expected unrelated identity")
-        };
+        let unrelated_id = crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::FleetFinder,
+            WindowOwner::StrategicRoot,
+            "unrelated window",
+        );
         let opened = manager
             .apply(WindowCommand::Open(
                 empty
@@ -1612,14 +1559,12 @@ mod tests {
             }]
         );
 
-        manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::FleetFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
+        crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::FleetFinder,
+            WindowOwner::StrategicRoot,
+            "modal cover",
+        );
         let covered = manager.begin_frame();
         assert_eq!(
             state.hit_window(&covered, layout, (inside.x, inside.y)),
@@ -1780,31 +1725,7 @@ mod tests {
     }
 
     fn layout(scale: f32) -> CockpitLayout {
-        use crate::cockpit::CockpitViewport;
-        CockpitLayout {
-            canvas: CockpitViewport {
-                x: 10.0,
-                y: 20.0,
-                width: 640.0 * scale,
-                height: 480.0 * scale,
-            },
-            galaxy: CockpitViewport {
-                x: 10.0 + 55.0 * scale,
-                y: 20.0 + 40.0 * scale,
-                width: 485.0 * scale,
-                height: 350.0 * scale,
-            },
-            scale,
-        }
-    }
-
-    fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
+        offset_strategic_layout(scale)
     }
 
     /// Run one frame per entry of `frames` with the pointer at dialog pixel
@@ -1821,19 +1742,7 @@ mod tests {
         let mut cache = BmpCache::new();
         let mut emitted = None;
         for extra in [vec![], vec![]].into_iter().chain(frames) {
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
+            let input = pointer_raw_input(pos, extra, egui::vec2(700.0, 520.0));
             let _ = ctx.run(input, |ctx| {
                 if let Some(action) = draw_mission_dialog(ctx, world, state, layout, &mut cache) {
                     emitted = Some(action);
@@ -1961,21 +1870,9 @@ mod tests {
         let mut cache = BmpCache::new();
         let window = egui::Id::new("raising_window");
         for _ in 0..3 {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                ..Default::default()
-            };
+            let input = raw_input(vec![], egui::vec2(700.0, 520.0));
             let _ = ctx.run(input, |ctx| {
-                ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, window));
-                egui::Area::new(window)
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(egui::Pos2::ZERO)
-                    .show(ctx, |ui| {
-                        ui.allocate_response(egui::vec2(700.0, 520.0), egui::Sense::click());
-                    });
+                crate::test_support::show_self_raising_area(ctx, window, egui::vec2(700.0, 520.0));
                 let _ = draw_mission_dialog(ctx, &world, &mut state, layout, &mut cache);
             });
         }

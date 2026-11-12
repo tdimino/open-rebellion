@@ -743,18 +743,7 @@ pub fn native_ai_records(
     if native_enabled() {
         let mut integrator =
             crate::integrator::PerceptionIntegrator::new(tick, native_sink::wall_ms());
-        for record in records {
-            integrator.emit_ai_order(
-                world,
-                &record.issued.action,
-                &record.origin(),
-                &record.outcome,
-            );
-            integrator.emit_strike(world, &record.strike);
-            integrator.emit_assault(world, &record.assault);
-            integrator.emit_fired(world, &record.fired.shifts, &record.fired.controls);
-            integrator.emit_swept(world, &record.swept);
-        }
+        integrator.emit_ai_records(world, records);
         for event in integrator.finish() {
             native_sink::write(event);
         }
@@ -1112,7 +1101,8 @@ fn native_battle_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::world::{CapitalShipClass, Fleet, ShipInstance, System};
+    use rebellion_core::test_support::add_usable_fleet;
+    use rebellion_core::world::System;
 
     /// A system holding a usable fleet of each side in `present`.
     /// port: test fixture values, not rules.
@@ -1120,19 +1110,7 @@ mod tests {
         let mut world = GameWorld::default();
         let system = world.systems.insert(System::default());
         for &is_alliance in present {
-            let class = world.capital_ship_classes.insert(CapitalShipClass {
-                is_alliance,
-                is_empire: !is_alliance,
-                hull: 100,
-                ..CapitalShipClass::default()
-            });
-            let fleet = world.fleets.insert(Fleet {
-                location: system,
-                capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
-                is_alliance,
-                ..Fleet::default()
-            });
-            world.systems[system].fleets.push(fleet);
+            add_usable_fleet(&mut world, system, is_alliance);
         }
         (world, system)
     }

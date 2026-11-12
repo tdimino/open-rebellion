@@ -2089,25 +2089,13 @@ pub enum WindowError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        ExistingOpenPolicy, FocusOnOpen, FocusRestoration, PresentationPolicy, SubjectId,
-        WindowPolicy,
-    };
+    use crate::{FocusOnOpen, FocusRestoration, PresentationPolicy, SubjectId, WindowPolicy};
 
     fn modeless_spec(kind: WindowKind, subject: u64) -> WindowSpec {
         WindowSpec {
             key: WindowKey::contextual(kind, SubjectId::new(2, subject)),
             owner: WindowOwner::StrategicRoot,
-            policy: WindowPolicy {
-                cardinality: Cardinality::Subject { max_open: None },
-                band: StackBand::Normal,
-                placement: OpenPlacement::TopOfBand,
-                existing: ExistingOpenPolicy::RaiseRestore,
-                input: InputPolicy::Modeless,
-                presentation: PresentationPolicy::History,
-                focus_on_open: FocusOnOpen::Window,
-                restoration: FocusRestoration::PreviousEligible,
-            },
+            policy: WindowPolicy::restorable_modeless_history(FocusOnOpen::Window),
         }
     }
 

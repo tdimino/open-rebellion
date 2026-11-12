@@ -914,38 +914,16 @@ mod tests {
         let sys_key = if let Some((k, _)) = world.systems.iter().next() {
             k
         } else {
-            let sector_key = world.sectors.insert(crate::world::Sector {
-                dat_id: crate::ids::DatId::new(0),
-                name: "HanSector".into(),
-                group: crate::dat::SectorGroup::Core,
-                x: 0,
-                y: 0,
-                systems: vec![],
-            });
-            world.systems.insert(crate::world::System {
-                dat_id: crate::ids::DatId::new(0),
-                name: "HanSystem".into(),
-                sector: sector_key,
-                x: 0,
-                y: 0,
-                exploration_status: crate::dat::ExplorationStatus::Explored,
-                popularity_alliance: 0.5,
-                popularity_empire: 0.5,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: vec![],
-                ground_units: vec![],
-                special_forces: vec![],
-                fighters: Vec::new(),
-                defense_facilities: vec![],
-                manufacturing_facilities: vec![],
-                production_facilities: vec![],
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Uncontrolled,
-            })
+            let sector_key = world
+                .sectors
+                .insert(crate::test_support::sector("HanSector"));
+            world.systems.insert(crate::test_support::system_at(
+                "HanSystem",
+                sector_key,
+                0,
+                0,
+                ControlKind::Uncontrolled,
+            ))
         };
         let fleet_key = world.fleets.insert(Fleet {
             location: sys_key,
@@ -959,14 +937,7 @@ mod tests {
     }
 
     fn add_empire_systems(world: &mut GameWorld, count: u32) {
-        let sector_key = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
+        let sector_key = world.sectors.insert(crate::test_support::sector("Sector"));
         for i in 0..count {
             world.systems.insert(crate::world::System {
                 dat_id: crate::ids::DatId::new(i),

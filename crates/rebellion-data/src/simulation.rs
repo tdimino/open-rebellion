@@ -5,10 +5,11 @@
 //! instead of pushing to a `MessageLog`.
 
 use crate::integrator::{resolve_system_space_combat_for, PerceptionIntegrator};
-use rebellion_core::ai::{AIAction, AIState, AISystem};
+use rebellion_core::ai::{AIAction, AIState, AISystem, AiFaction};
 use rebellion_core::betrayal::{BetrayalState, BetrayalSystem};
 use rebellion_core::blockade::{BlockadeState, BlockadeSystem};
 use rebellion_core::combat::side_present;
+use rebellion_core::dat::Faction;
 use rebellion_core::delivery::DeliveryState;
 use rebellion_core::economy::{EconomyState, EconomySystem};
 use rebellion_core::events::{EventState, EventSystem};
@@ -30,6 +31,7 @@ use rebellion_core::world::{CampaignConfig, GameWorld, MstbTable};
 /// Bundles all mutable simulation state needed for a tick.
 ///
 /// Mirrors the set of `*State` locals in `rebellion-app/src/main.rs`.
+#[derive(Clone)]
 pub struct SimulationStates {
     pub clock: GameClock,
     pub manufacturing: ManufacturingState,
@@ -55,6 +57,38 @@ pub struct SimulationStates {
     pub stockpiles: StockpileState,
     /// Original new-game choices that continue to govern this campaign.
     pub campaign_config: CampaignConfig,
+}
+
+impl SimulationStates {
+    /// Build the common baseline for a newly seeded campaign or focused test.
+    ///
+    /// Callers can then customize the few states their scenario actually
+    /// needs instead of repeating every simulation-state default.
+    #[must_use]
+    pub fn new(ai_faction: AiFaction, fog_faction: Faction, victory: VictoryState) -> Self {
+        Self {
+            clock: GameClock::new(),
+            manufacturing: ManufacturingState::new(),
+            missions: MissionState::new(),
+            events: EventState::new(),
+            ai: AIState::new(ai_faction),
+            ai2: None,
+            movement: MovementState::new(),
+            fog: FogState::new(fog_faction),
+            blockade: BlockadeState::new(),
+            uprising: UprisingState::new(),
+            research: ResearchState::new(),
+            jedi: JediState::new(),
+            victory,
+            betrayal: BetrayalState::new(),
+            economy: EconomyState::default(),
+            repair: RepairState::default(),
+            troop_transport: TroopTransportState::default(),
+            deliveries: DeliveryState::default(),
+            stockpiles: StockpileState::default(),
+            campaign_config: CampaignConfig::default(),
+        }
+    }
 }
 
 /// port: the `index`th roll of `tick`'s derived stream, one `SplitMix64` step
@@ -382,18 +416,7 @@ fn ai_step_emitting(
         ..
     } = ctx;
     integrator.at_tick(day, |integrator| {
-        for record in &records {
-            integrator.emit_ai_order(
-                world,
-                &record.issued.action,
-                &record.origin(),
-                &record.outcome,
-            );
-            integrator.emit_strike(world, &record.strike);
-            integrator.emit_assault(world, &record.assault);
-            integrator.emit_fired(world, &record.fired.shifts, &record.fired.controls);
-            integrator.emit_swept(world, &record.swept);
-        }
+        integrator.emit_ai_records(world, &records);
         integrator.apply_blockade_events(world, manufacturing, transport, blockade, &runs);
         rebellion_core::death_star::serve_holder_requests(
             world,
@@ -1098,13 +1121,13 @@ mod tests {
     use rebellion_core::ai::AiFaction;
     use rebellion_core::carriage::ProductRoom;
     use rebellion_core::dat::Faction;
-    use rebellion_core::fog::FogState;
     use rebellion_core::game_events::{
         EVT_ASSAULT, EVT_BOMBARDMENT, EVT_CONTROL_CHANGED, EVT_FLEET_ARRIVED, EVT_VICTORY,
     };
     use rebellion_core::ids::SectorKey;
     use rebellion_core::ids::{DatId, FleetKey, SystemKey, TroopKey};
     use rebellion_core::movement::begin_fleet_transit;
+    use rebellion_core::test_support::{add_fleet_with_class, gnprtb_entry};
     use rebellion_core::world::{
         CapitalShipClass, Character, ControlKind, Fleet, ShipInstance, System, TroopUnit,
         VictoryConditions,
@@ -1113,18 +1136,7 @@ mod tests {
     /// GNPRTB 7760 (60 at every difficulty), the support a side needs to
     /// hold a system without regiments (`FUN_0055a080`).
     fn support_control_threshold() -> rebellion_core::world::GnprtbParams {
-        let entry = rebellion_core::world::GnprtbEntry {
-            parameter_id: 7760,
-            development: 60,
-            alliance_sp_easy: 60,
-            alliance_sp_medium: 60,
-            alliance_sp_hard: 60,
-            empire_sp_easy: 60,
-            empire_sp_medium: 60,
-            empire_sp_hard: 60,
-            multiplayer: 60,
-        };
-        rebellion_core::world::GnprtbParams::new(vec![entry])
+        rebellion_core::world::GnprtbParams::new(vec![gnprtb_entry(7760, 60)])
     }
 
     fn add_test_system(
@@ -1152,28 +1164,11 @@ mod tests {
     }
 
     fn simulation_states(first: SystemKey, second: SystemKey) -> SimulationStates {
-        SimulationStates {
-            clock: GameClock::new(),
-            manufacturing: ManufacturingState::new(),
-            missions: MissionState::new(),
-            events: EventState::new(),
-            ai: AIState::new(AiFaction::Empire),
-            ai2: None,
-            movement: MovementState::new(),
-            fog: FogState::new(Faction::Alliance),
-            blockade: BlockadeState::new(),
-            uprising: UprisingState::new(),
-            research: ResearchState::new(),
-            jedi: JediState::new(),
-            victory: VictoryState::new(first, second),
-            betrayal: BetrayalState::new(),
-            economy: EconomyState::default(),
-            repair: RepairState::default(),
-            troop_transport: TroopTransportState::default(),
-            deliveries: DeliveryState::default(),
-            stockpiles: StockpileState::default(),
-            campaign_config: CampaignConfig::default(),
-        }
+        SimulationStates::new(
+            AiFaction::Empire,
+            Faction::Alliance,
+            VictoryState::new(first, second),
+        )
     }
 
     fn make_test_states() -> (GameWorld, SimulationStates) {
@@ -1214,15 +1209,7 @@ mod tests {
             troop_capacity: 1,
             ..CapitalShipClass::default()
         });
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 100, true)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            bombarding: false,
-        });
-        world.systems[system].fleets.push(fleet);
+        let fleet = add_fleet_with_class(&mut world, system, class, true);
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(20),
             is_alliance: true,
@@ -1356,20 +1343,13 @@ mod tests {
     /// `FUN_00507d00`); with `threshold`, also GNPRTB 7760 (60),
     /// the support that holds a system without regiments (`FUN_0055a080`).
     fn assault_gnprtb(threshold: bool) -> rebellion_core::world::GnprtbParams {
-        let entry = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
-            parameter_id: id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
-        let mut entries = vec![entry(7761, 60), entry(7762, -10), entry(0x1e03, 2)];
+        let mut entries = vec![
+            gnprtb_entry(7761, 60),
+            gnprtb_entry(7762, -10),
+            gnprtb_entry(0x1e03, 2),
+        ];
         if threshold {
-            entries.push(entry(7760, 60));
+            entries.push(gnprtb_entry(7760, 60));
         }
         rebellion_core::world::GnprtbParams::new(entries)
     }

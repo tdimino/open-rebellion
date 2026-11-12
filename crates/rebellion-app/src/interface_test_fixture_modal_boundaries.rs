@@ -7,10 +7,12 @@
 use rebellion_core::dat::Faction;
 use rebellion_core::world::{GameWorld, ManufacturingFacilityInstance};
 use rebellion_render::{strategic_primary_controls, CockpitLayout, GalaxyMapState};
-use rebellion_windowing::{RoutingSnapshot, WindowId, WindowKind};
+use rebellion_windowing::RoutingSnapshot;
 use serde_json::{json, Value};
 
-use super::{FixtureRequest, Scenario};
+use super::{
+    capture_window_id, focused_window_json, strategic_control_center, FixtureRequest, Scenario,
+};
 
 /// Stocks one idle local agent plus a legitimate producer of every
 /// manufacturing family so Mission and Build use real live entry paths.
@@ -71,31 +73,6 @@ pub(super) fn prepare(request: FixtureRequest, world: &mut GameWorld) {
     }
 }
 
-fn kind_name(kind: WindowKind) -> &'static str {
-    match kind {
-        WindowKind::Sector => "sector",
-        WindowKind::System => "system",
-        WindowKind::Fleet => "fleet",
-        WindowKind::Defenses => "defenses",
-        WindowKind::Missions => "missions",
-        WindowKind::SystemFinder => "system-finder",
-        WindowKind::FleetFinder => "fleet-finder",
-        WindowKind::TroopFinder => "troop-finder",
-        WindowKind::PersonnelFinder => "personnel-finder",
-        WindowKind::MessageIndex => "message-index",
-        WindowKind::Encyclopedia => "encyclopedia",
-        WindowKind::Status => "status",
-        WindowKind::BuildSelection => "build-selection",
-        WindowKind::MissionDialog => "mission-dialog",
-        WindowKind::MoveConfirmation => "move-confirmation",
-        WindowKind::StopConfirmation => "stop-confirmation",
-        WindowKind::ScrapConfirmation => "scrap-confirmation",
-        WindowKind::BattleAlert => "battle-alert",
-        WindowKind::BattleResults => "battle-results",
-        WindowKind::Menu => "menu",
-    }
-}
-
 /// Read-only sources used by [`ModalBoundaryWatch`].
 pub struct ModalBoundaryWindows<'a> {
     pub snapshot: &'a RoutingSnapshot,
@@ -125,7 +102,7 @@ impl ModalBoundaryWatch {
         let snapshot = windows.snapshot;
         let active_modal = snapshot.active_modal().map(|id| {
             let key = snapshot.key(id).expect("active modal has a live key");
-            json!({ "id": id.get(), "kind": kind_name(key.kind) })
+            json!({ "id": id.get(), "kind": key.kind.slug() })
         });
         let map_points = world
             .systems
@@ -159,20 +136,15 @@ impl ModalBoundaryWatch {
             "selected_system_dat_id": selected_system,
             "paint_order": snapshot.paint_order().iter().map(|id| id.get()).collect::<Vec<_>>(),
             "history": snapshot.presentation_history().iter().map(|id| id.get()).collect::<Vec<_>>(),
-            "focused": snapshot.focused().map(|focus| json!({
-                "window": focus.window.get(),
-                "control": focus.control.map(|control| control.0),
-            })),
-            "capture": snapshot.capture_owner().map(WindowId::get),
+            "focused": focused_window_json(snapshot),
+            "capture": capture_window_id(snapshot),
             "map_points": map_points,
             "cockpit": strategic_primary_controls(windows.faction)
                 .iter()
-                .map(|control| (format!("{:?}", control.button).to_lowercase(), [
-                    windows.layout.canvas.x
-                        + (control.rect.x + control.rect.width / 2.0) * windows.layout.scale,
-                    windows.layout.canvas.y
-                        + (control.rect.y + control.rect.height / 2.0) * windows.layout.scale,
-                ]))
+                .map(|control| (
+                    format!("{:?}", control.button).to_lowercase(),
+                    strategic_control_center(windows.layout, control),
+                ))
                 .collect::<Vec<_>>(),
         });
         if self.last_state.as_ref() == Some(&state) {

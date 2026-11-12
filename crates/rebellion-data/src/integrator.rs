@@ -350,6 +350,26 @@ impl PerceptionIntegrator {
         self.events.push(record);
     }
 
+    /// Emit the complete telemetry envelope for each AI order record.
+    pub fn emit_ai_records(
+        &mut self,
+        world: &GameWorld,
+        records: &[crate::simulation::AiOrderRecord],
+    ) {
+        for record in records {
+            self.emit_ai_order(
+                world,
+                &record.issued.action,
+                &record.origin(),
+                &record.outcome,
+            );
+            self.emit_strike(world, &record.strike);
+            self.emit_assault(world, &record.assault);
+            self.emit_fired(world, &record.fired.shifts, &record.fired.controls);
+            self.emit_swept(world, &record.swept);
+        }
+    }
+
     /// Serve the support shifts (event `0x373`), regiment reruns and holder
     /// changes (event `0x31b`) the day's operation raised, in the day's
     /// first step (`FUN_0051df30`), and record each one; a holder change's
@@ -3191,22 +3211,7 @@ pub fn resolve_assault(
     let facilities: Vec<(FacilityRef, operation_report::ReportUnit)> = world
         .systems
         .get(system)
-        .map_or_else(Vec::new, |sys| {
-            sys.defense_facilities
-                .iter()
-                .map(|&key| FacilityRef::Defense(key))
-                .chain(
-                    sys.manufacturing_facilities
-                        .iter()
-                        .map(|&key| FacilityRef::Manufacturing(key)),
-                )
-                .chain(
-                    sys.production_facilities
-                        .iter()
-                        .map(|&key| FacilityRef::Production(key)),
-                )
-                .collect()
-        })
+        .map_or_else(Vec::new, |system| system.facilities().collect())
         .into_iter()
         .filter_map(|key| operation_report::facility(world, key).map(|unit| (key, unit)))
         .collect();
@@ -5003,15 +5008,12 @@ mod tests {
                 matches!(outcome, AiOutcome::Applied { .. }),
                 "{is_alliance}: {outcome:?}"
             );
-            assert!(!fixture.movement.is_in_transit(fleet), "{is_alliance}");
-            assert_eq!(world.fleets[fleet].location, destination, "{is_alliance}");
-            assert!(
-                world.systems[destination].fleets.contains(&fleet),
-                "{is_alliance}"
-            );
-            assert!(
-                !world.systems[origin].fleets.contains(&fleet),
-                "{is_alliance}"
+            rebellion_core::test_support::assert_fleet_arrived(
+                &world,
+                &fixture.movement,
+                fleet,
+                origin,
+                destination,
             );
         }
     }
@@ -6618,25 +6620,7 @@ mod tests {
     /// [`shift_sector`] with GNPRTB 7760, the support a side needs to hold
     /// a system without regiments (`FUN_0055a080`), at `threshold`.
     fn shift_sector_at(holder: Faction, threshold: i32) -> (GameWorld, SystemKey, SystemKey) {
-        let sd = |id: u32, value: i32| rebellion_core::world::SdprtbEntry {
-            parameter_id: id,
-            dev_alliance: value,
-            dev_empire: value,
-            alliance_sp_easy_alliance: value,
-            alliance_sp_easy_empire: value,
-            alliance_sp_medium_alliance: value,
-            alliance_sp_medium_empire: value,
-            alliance_sp_hard_alliance: value,
-            alliance_sp_hard_empire: value,
-            empire_sp_easy_alliance: value,
-            empire_sp_easy_empire: value,
-            empire_sp_medium_alliance: value,
-            empire_sp_medium_empire: value,
-            empire_sp_hard_alliance: value,
-            empire_sp_hard_empire: value,
-            multiplayer_alliance: value,
-            multiplayer_empire: value,
-        };
+        let sd = rebellion_core::test_support::sdprtb_entry;
         let mut world = GameWorld {
             gnprtb: rebellion_core::world::GnprtbParams::new(gnprtb_entries([
                 (0x1407, -10),
@@ -7539,17 +7523,15 @@ mod tests {
 
     /// A Death Star ship added to `fleet` (family 0x18).
     fn arm_with_death_star(world: &mut GameWorld, fleet: FleetKey) {
-        let is_alliance = world.fleets[fleet].is_alliance;
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(rebellion_core::world::DEATH_STAR_CLASS_ID),
-            family: 0x18,
-            hull: 25_000,
-            bombardment_modifier: 15,
-            ..Default::default()
-        });
-        world.fleets[fleet]
-            .capital_ships
-            .push(ShipInstance::new(class, 25_000, is_alliance));
+        rebellion_core::test_support::add_death_star_ship(
+            world,
+            fleet,
+            CapitalShipClass {
+                hull: 25_000,
+                bombardment_modifier: 15,
+                ..Default::default()
+            },
+        );
     }
 
     fn destroy_with_fleet(
@@ -8152,34 +8134,12 @@ pub fn resolve_system_space_combat_for(
 #[cfg(test)]
 mod combat_application_tests {
     use super::*;
-    use rebellion_core::dat::ExplorationStatus;
-    use rebellion_core::ids::SectorKey;
     use rebellion_core::world::{CapitalShipClass, Fleet, ShipInstance, System};
 
     fn add_combat_system(world: &mut GameWorld) -> SystemKey {
         world.systems.insert(System {
             dat_id: DatId::new(0x9000_0001),
-            name: "Test System".into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+            ..rebellion_core::test_support::system("Test System", ControlKind::Uncontrolled)
         })
     }
 

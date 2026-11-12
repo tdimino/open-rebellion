@@ -569,19 +569,10 @@ pub enum ScrapOrder {
 
 /// The side's fleets orbiting `system`.
 fn side_fleets(world: &GameWorld, system: crate::ids::SystemKey, side: Faction) -> Vec<FleetKey> {
-    world.systems.get(system).map_or_else(Vec::new, |value| {
-        value
-            .fleets
-            .iter()
-            .copied()
-            .filter(|&fleet| {
-                world
-                    .fleets
-                    .get(fleet)
-                    .is_some_and(|value| Faction::of_alliance(value.is_alliance) == side)
-            })
-            .collect()
-    })
+    world
+        .fleets_at(system)
+        .filter_map(|(key, fleet)| (Faction::of_alliance(fleet.is_alliance) == side).then_some(key))
+        .collect()
 }
 
 /// A fleet's members: each squadron, then its ships, so a ship's scrap
@@ -853,38 +844,16 @@ mod tests {
     use crate::world::{BuildableClass, ProductionFacilityInstance, System, TroopUnit};
 
     fn world() -> (GameWorld, crate::ids::SystemKey) {
-        let mut world = GameWorld::default();
-        let sector = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId::new(0x8000_0001),
-            name: "Core".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let system = world.systems.insert(System {
+        let (mut world, system) = crate::test_support::world_with_system(System {
             dat_id: DatId::new(0x9000_0001),
-            name: "Bortras".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 1.0,
             popularity_empire: 0.0,
-            is_populated: true,
             total_energy: 10,
             raw_materials: 10,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: crate::world::ControlKind::Controlled(Faction::Alliance),
+            ..crate::test_support::system(
+                "Bortras",
+                crate::world::ControlKind::Controlled(Faction::Alliance),
+            )
         });
         world.buildable_classes.insert(
             DatId::new(0x1000_0001),

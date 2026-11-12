@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ai_production::{Dir, Round, SectorRecord};
+use crate::ai_production::{ranked_ids, Dir, Round, SectorRecord};
 use crate::ai_records::{fleet, sys, Marks};
 use crate::dat::Faction;
 use crate::ids::{SectorKey, SystemKey};
@@ -211,15 +211,7 @@ impl<T: Copy + Eq + std::hash::Hash> Holder<T> {
     pub(crate) fn new(lists: Vec<(Vec<(T, i64)>, Dir)>, rng: &mut impl Draws) -> Self {
         let mut sorted: Vec<Vec<T>> = Vec::new();
         for (items, dir) in lists {
-            let mut keyed: Vec<(i64, i32, T)> = items
-                .into_iter()
-                .map(|(id, key)| (key, rng.draw(9), id))
-                .collect();
-            keyed.sort_by(|a, b| match dir {
-                Dir::Largest => a.0.cmp(&b.0).then(a.1.cmp(&b.1)),
-                Dir::Smallest => b.0.cmp(&a.0).then(a.1.cmp(&b.1)),
-            });
-            sorted.push(keyed.into_iter().map(|(_, _, id)| id).collect());
+            sorted.push(ranked_ids(items, dir, rng));
         }
         let first = sorted.first().cloned().unwrap_or_default();
         let positions = sorted

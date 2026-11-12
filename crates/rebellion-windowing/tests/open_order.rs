@@ -1,6 +1,13 @@
+mod common;
+
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::hash::Hash;
+
+use common::{
+    menu as transient_menu_spec, modal as singleton_spec, open as open_window,
+    root_detail as modeless_subject_spec,
+};
 
 use rebellion_windowing::{
     CaptureCancelReason, Cardinality, CloseReason, ControlId, ExistingEffect, ExistingOpenPolicy,
@@ -10,23 +17,6 @@ use rebellion_windowing::{
 };
 
 fn assert_opaque_id_traits<T: Copy + Debug + Eq + Hash + Ord>() {}
-
-fn modeless_subject_spec(kind: WindowKind, subject: u64) -> WindowSpec {
-    WindowSpec {
-        key: WindowKey::contextual(kind, SubjectId::new(2, subject)),
-        owner: WindowOwner::StrategicRoot,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Subject { max_open: None },
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::RaiseRestore,
-            input: InputPolicy::Modeless,
-            presentation: PresentationPolicy::History,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
-    }
-}
 
 fn sector_spec(subject: u64) -> WindowSpec {
     WindowSpec {
@@ -45,49 +35,11 @@ fn sector_spec(subject: u64) -> WindowSpec {
     }
 }
 
-fn singleton_spec(kind: WindowKind) -> WindowSpec {
-    WindowSpec {
-        key: WindowKey::singleton(kind),
-        owner: WindowOwner::StrategicRoot,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Singleton,
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::NoOp,
-            input: InputPolicy::StrategicModal,
-            presentation: PresentationPolicy::None,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
-    }
-}
-
-fn transient_menu_spec(owner: WindowId) -> WindowSpec {
-    WindowSpec {
-        key: WindowKey::singleton(WindowKind::Menu),
-        owner: WindowOwner::Window(owner),
-        policy: WindowPolicy {
-            cardinality: Cardinality::Singleton,
-            band: StackBand::Transient,
-            placement: OpenPlacement::AboveOwner,
-            existing: ExistingOpenPolicy::NoOp,
-            input: InputPolicy::DismissOnOutsidePress,
-            presentation: PresentationPolicy::None,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::SavedMenuTarget,
-        },
-    }
-}
-
 fn opened_id(transition: WindowTransition) -> WindowId {
     match transition {
         WindowTransition::Opened { id } => id,
         other => panic!("expected a new window, got {other:?}"),
     }
-}
-
-fn open_window(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
-    opened_id(manager.apply(WindowCommand::Open(spec)).unwrap().transition)
 }
 
 fn replaced_id(transition: WindowTransition, expected_old: WindowId) -> WindowId {

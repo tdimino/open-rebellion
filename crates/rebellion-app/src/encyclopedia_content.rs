@@ -231,6 +231,42 @@ pub(crate) fn read_native_encyclopedia(
     )
 }
 
+/// Load the canonical owned-source fixture named by the ignored-test
+/// environment variables and publish one immutable session.
+#[cfg(test)]
+fn owned_native_paths_from_env() -> (std::path::PathBuf, std::path::PathBuf) {
+    let source = std::path::PathBuf::from(
+        std::env::var_os("REBELLION_ENCYCLOPEDIA_TEST_SOURCE")
+            .expect("set REBELLION_ENCYCLOPEDIA_TEST_SOURCE"),
+    );
+    let gdata = source
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("source path is GData/encyclopedia/source.json")
+        .to_owned();
+    let edata = std::path::PathBuf::from(
+        std::env::var_os("REBELLION_EDATA_DIR").expect("set REBELLION_EDATA_DIR"),
+    );
+    (gdata, edata)
+}
+
+#[cfg(test)]
+pub(crate) fn owned_native_session_from_env(
+) -> std::sync::Arc<rebellion_data::encyclopedia_session::EncyclopediaSession> {
+    let (gdata, edata) = owned_native_paths_from_env();
+    let payload = read_native_encyclopedia(&gdata, &edata)
+        .unwrap()
+        .expect("owned native Encyclopedia is published");
+    let catalog = rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog(&gdata).unwrap();
+    let system_pictures =
+        rebellion_data::encyclopedia_topics::load_encyclopedia_system_pictures(&gdata).unwrap();
+    let mut store = rebellion_data::encyclopedia_session::EncyclopediaSessionStore::default();
+    store
+        .replace(payload.into_session_input(catalog, system_pictures))
+        .unwrap();
+    store.current().unwrap()
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn read_native_encyclopedia_with_artwork_limit(
     gdata_path: &Path,
@@ -322,88 +358,34 @@ fn read_regular_bounded(path: &Path, limit: usize, description: &str) -> Result<
 mod tests {
     use std::collections::HashMap;
 
-    use rebellion_data::encyclopedia_catalog::{
-        EncyclopediaCatalog, EncyclopediaCatalogEntry, EncyclopediaCategory,
-    };
     use rebellion_data::encyclopedia_session::EncyclopediaSessionStore;
     use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
+    use rebellion_data::test_support::{
+        encyclopedia_catalog, encyclopedia_entry, indexed_encyclopedia_bmp,
+    };
     use tempfile::tempdir;
 
     use super::{
-        checked_artwork_transfer_total, parse_encyclopedia_source_with_manifest,
-        parse_loose_pointer, read_native_encyclopedia, read_native_encyclopedia_with_artwork_limit,
-        safe_relative_key, EncyclopediaContentPayload, CATALOG_BYTES_LIMIT, MANIFEST_BYTES_LIMIT,
-        MAX_ENCYCLOPEDIA_ARTWORK_BYTES, MAX_ENCYCLOPEDIA_IMAGE_BYTES,
+        checked_artwork_transfer_total, owned_native_paths_from_env,
+        parse_encyclopedia_source_with_manifest, parse_loose_pointer, read_native_encyclopedia,
+        read_native_encyclopedia_with_artwork_limit, safe_relative_key, EncyclopediaContentPayload,
+        CATALOG_BYTES_LIMIT, MANIFEST_BYTES_LIMIT, MAX_ENCYCLOPEDIA_ARTWORK_BYTES,
+        MAX_ENCYCLOPEDIA_IMAGE_BYTES,
     };
 
     const SOURCE: &[u8] = include_bytes!("../../../tests/fixtures/encyclopedia/w4/source.json");
     const MANIFEST: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/w4/source.json.manifest.json");
 
-    fn category(
-        command_id: u16,
-        label_resource_id: u16,
-        family_range: Option<std::ops::Range<u8>>,
-    ) -> EncyclopediaCategory {
-        EncyclopediaCategory::new(
-            command_id,
-            label_resource_id,
-            format!("Category {command_id}"),
-            family_range,
-        )
-    }
-
-    fn catalog() -> EncyclopediaCatalog {
-        EncyclopediaCatalog {
-            title: "Galactic Encyclopedia".into(),
-            topic_label: "Topic".into(),
-            categories: [
-                category(0x6f, 0x1850, None),
-                category(0x70, 0x1855, Some(0x90..0x98)),
-                category(0x71, 0x1854, Some(0x14..0x20)),
-                category(0x72, 0x1852, Some(0x20..0x30)),
-                category(0x73, 0x1851, Some(0x40..0x80)),
-                category(0x74, 0x1856, Some(0x10..0x14)),
-                category(0x75, 0x1853, Some(0x30..0x40)),
-            ],
-            entries: vec![
-                EncyclopediaCatalogEntry {
-                    object_id: 0x5100_0010,
-                    text_resource_id: 0x2c50,
-                    name: "Diplomacy".into(),
-                },
-                EncyclopediaCatalogEntry {
-                    object_id: 0x1400_0040,
-                    text_resource_id: 0x2740,
-                    name: "Mon Calamari Cruiser".into(),
-                },
-            ],
-        }
+    fn catalog() -> rebellion_data::encyclopedia_catalog::EncyclopediaCatalog {
+        encyclopedia_catalog(vec![
+            encyclopedia_entry(0x5100_0010, 0x2c50, "Diplomacy"),
+            encyclopedia_entry(0x1400_0040, 0x2740, "Mon Calamari Cruiser"),
+        ])
     }
 
     fn indexed_bmp() -> Vec<u8> {
-        const WIDTH: u32 = 400;
-        const HEIGHT: u32 = 200;
-        const PIXEL_OFFSET: u32 = 14 + 40 + 1024;
-        const FILE_BYTES: u32 = PIXEL_OFFSET + WIDTH * HEIGHT;
-        let mut bytes = Vec::with_capacity(FILE_BYTES as usize);
-        bytes.extend_from_slice(b"BM");
-        bytes.extend_from_slice(&FILE_BYTES.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        bytes.extend_from_slice(&PIXEL_OFFSET.to_le_bytes());
-        bytes.extend_from_slice(&40_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH as i32).to_le_bytes());
-        bytes.extend_from_slice(&(HEIGHT as i32).to_le_bytes());
-        bytes.extend_from_slice(&1_u16.to_le_bytes());
-        bytes.extend_from_slice(&8_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH * HEIGHT).to_le_bytes());
-        bytes.extend_from_slice(&[0; 8]);
-        bytes.extend_from_slice(&256_u32.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.resize(PIXEL_OFFSET as usize, 0);
-        bytes.resize(FILE_BYTES as usize, 1);
-        bytes
+        indexed_encyclopedia_bmp([0, 0, 0])
     }
 
     fn namespaced_entries() -> HashMap<String, Vec<u8>> {
@@ -646,17 +628,7 @@ mod tests {
     #[test]
     #[ignore = "requires an owned ignored P66A source, EData directory, ORPK, and loose mirror"]
     fn owned_native_packed_and_loose_publications_match_exactly() {
-        let source = std::path::PathBuf::from(
-            std::env::var_os("REBELLION_ENCYCLOPEDIA_TEST_SOURCE")
-                .expect("set REBELLION_ENCYCLOPEDIA_TEST_SOURCE"),
-        );
-        let gdata = source
-            .parent()
-            .and_then(std::path::Path::parent)
-            .expect("source path is GData/encyclopedia/source.json");
-        let edata = std::path::PathBuf::from(
-            std::env::var_os("REBELLION_EDATA_DIR").expect("set REBELLION_EDATA_DIR"),
-        );
+        let (gdata, edata) = owned_native_paths_from_env();
         let pack_path = std::path::PathBuf::from(
             std::env::var_os("REBELLION_ENCYCLOPEDIA_TEST_PACK")
                 .expect("set REBELLION_ENCYCLOPEDIA_TEST_PACK"),
@@ -666,7 +638,7 @@ mod tests {
                 .expect("set REBELLION_ENCYCLOPEDIA_TEST_MIRROR"),
         );
 
-        let native = read_native_encyclopedia(gdata, &edata).unwrap().unwrap();
+        let native = read_native_encyclopedia(&gdata, &edata).unwrap().unwrap();
         let mut runtime_pack =
             crate::runtime_pack::parse_runtime_pack(&std::fs::read(pack_path).unwrap()).unwrap();
         let packed =
@@ -705,9 +677,9 @@ mod tests {
         assert_eq!(native.artwork, loose.artwork);
 
         let catalog =
-            rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog(gdata).unwrap();
+            rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog(&gdata).unwrap();
         let system_pictures =
-            rebellion_data::encyclopedia_topics::load_encyclopedia_system_pictures(gdata).unwrap();
+            rebellion_data::encyclopedia_topics::load_encyclopedia_system_pictures(&gdata).unwrap();
         let mut fingerprints = Vec::new();
         for payload in [native, packed, loose] {
             let mut store = EncyclopediaSessionStore::default();

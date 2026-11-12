@@ -23,7 +23,7 @@ use rebellion_windowing::{
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
 use crate::mission_dialog::{button, galaxy_centered_rect, paint};
-use crate::system_window::{logical_rect, rect_contains};
+use crate::native_geometry::{logical_rect, rect_contains};
 
 pub const MOVE_CONFIRMATION_WIDTH: f32 = 424.0;
 pub const MOVE_CONFIRMATION_HEIGHT: f32 = 331.0;
@@ -1063,6 +1063,7 @@ pub fn draw_stop_confirmation(
 mod tests {
     use super::*;
     use crate::cockpit::CockpitViewport;
+    use crate::test_support::{key_press as key, offset_strategic_layout, pointer_button as press};
     use rebellion_core::scrap::ScrapOrder;
     use rebellion_windowing::{
         CaptureCancelReason, InputPolicy, SubjectId, WindowCommand, WindowKind, WindowManager,
@@ -1090,40 +1091,7 @@ mod tests {
     }
 
     fn layout() -> CockpitLayout {
-        CockpitLayout {
-            canvas: CockpitViewport {
-                x: 10.0,
-                y: 20.0,
-                width: 640.0,
-                height: 480.0,
-            },
-            galaxy: CockpitViewport {
-                x: 65.0,
-                y: 60.0,
-                width: 485.0,
-                height: 350.0,
-            },
-            scale: 1.0,
-        }
-    }
-
-    fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
-    }
-
-    fn key(key: egui::Key) -> egui::Event {
-        egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }
+        offset_strategic_layout(1.0)
     }
 
     fn run_confirmation_frames<S, A>(
@@ -1228,15 +1196,7 @@ mod tests {
         let dir = root.join("strategy-dll/BMP");
         std::fs::create_dir_all(&dir).unwrap();
         let (width, height, stride, offset) = (51usize, 35usize, 52usize, 1078usize);
-        let mut bmp = vec![0u8; offset + stride * height];
-        bmp[..2].copy_from_slice(b"BM");
-        bmp[10..14].copy_from_slice(&u32::try_from(offset).unwrap().to_le_bytes());
-        bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
-        bmp[18..22].copy_from_slice(&i32::try_from(width).unwrap().to_le_bytes());
-        bmp[22..26].copy_from_slice(&i32::try_from(height).unwrap().to_le_bytes());
-        bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
-        bmp[28..30].copy_from_slice(&8u16.to_le_bytes());
-        bmp[offset..].fill(3);
+        let mut bmp = crate::test_support::bitmap_fixture(width, height, stride, offset, 8, 3);
         // The bottom row, stored first: its first pixels are the key.
         bmp[offset..offset + 4].fill(252);
         for id in [10_926, 10_929] {
@@ -2170,12 +2130,7 @@ mod tests {
 
         let state = ScrapConfirmationState::default();
         let prepared = state
-            .prepare_open(ScrapConfirmation {
-                faction: MissionFaction::Alliance,
-                order: ScrapOrder::Troop(rebellion_core::ids::TroopKey::default()),
-                targets: vec![ScrapTarget::Troop(rebellion_core::ids::TroopKey::default())],
-                names: vec!["Army Regiment".into()],
-            })
+            .prepare_open(crate::test_support::scrap_confirmation())
             .unwrap();
         let spec = prepared.spec(SubjectId::new(
             crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
@@ -2282,21 +2237,19 @@ mod tests {
         rebellion_core::manufacturing::ManufacturingState,
         SystemKey,
     ) {
-        use rebellion_core::manufacturing::{BuildableKind, ManufacturingState, QueueItem};
-        use rebellion_core::world::{CapitalShipClass, GameWorld, System};
+        use rebellion_core::manufacturing::ManufacturingState;
+        use rebellion_core::world::{GameWorld, System};
         let mut world = GameWorld::default();
         let system = world.systems.insert(System::default());
         let is_alliance = faction == MissionFaction::Alliance;
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            name: "Death Star".into(),
-            is_alliance,
-            is_empire: !is_alliance,
-            ..CapitalShipClass::default()
-        });
         let mut manufacturing = ManufacturingState::new();
-        manufacturing.build(
+        rebellion_core::test_support::queue_capital_ship_build(
+            &mut world,
+            &mut manufacturing,
             system,
-            &QueueItem::new(BuildableKind::CapitalShip(class), 10),
+            "Death Star",
+            is_alliance,
+            !is_alliance,
             count,
         );
         (world, manufacturing, system)

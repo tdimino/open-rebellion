@@ -10,22 +10,8 @@
 )]
 
 #[cfg(test)]
-#[allow(clippy::assert_is_empty)]
-macro_rules! assert_empty {
-    ($value:expr $(,)?) => {{
-        let value = &$value;
-        assert!(value.is_empty(), "expected an empty value, got {value:?}");
-    }};
-}
-
-#[cfg(test)]
-#[allow(clippy::assert_is_empty)]
-macro_rules! assert_not_empty {
-    ($value:expr $(,)?) => {{
-        let value = &$value;
-        assert!(!value.is_empty(), "expected a non-empty value");
-    }};
-}
+#[macro_use]
+extern crate rebellion_core;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -73,6 +59,9 @@ pub mod save;
 pub mod seeds;
 pub mod simulation;
 pub mod telemetry;
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support;
 pub mod text_templates;
 
 /// Load selected named `WAVE` resources from an original Win32 DLL.
@@ -968,31 +957,11 @@ fn convert_character(
         } else {
             rebellion_core::world::ForceTier::None
         },
-        force_experience: 0,
-        is_discovered_jedi: false,
         is_unable_to_betray: dat.is_unable_to_betray != 0,
         is_jedi_trainer: dat.is_jedi_trainer != 0,
         is_known_jedi: dat.is_known_jedi != 0,
-        hyperdrive_modifier: 0,
-        enhanced_loyalty: 0,
-        on_mission: false,
-        on_hidden_mission: false,
-        on_mandatory_mission: false,
-        captured_by: None,
-        capture_tick: None,
-        is_captive: false,
-        current_system: None,
-        current_fleet: None,
-        en_route: false,
-        adrift: false,
-        abode: None,
-        escape_due: None,
-        heritage_known: false,
-        is_killed: false,
-        recruited: false,
-        command_kind: rebellion_core::officer_rank::CommandKind::None,
-        command_post: None,
         ranked_names,
+        ..Character::default()
     }
 }
 

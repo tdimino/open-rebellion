@@ -3834,6 +3834,85 @@ fn move_fighter_toward(
 }
 
 impl BattleSession {
+    /// Common session shell shared by the live importer and focused fixtures.
+    ///
+    /// Callers override only source-derived identities, tactical managers and
+    /// side state. Keeping every transient collection here makes a new battle
+    /// field a one-site initialization change.
+    ///
+    /// port: transient session defaults are port-owned initialization state.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "The shell owns distinct battle inputs."
+    )]
+    pub(crate) fn baseline(
+        system: SystemKey,
+        ships: Vec<TacticalShip>,
+        fighters: Vec<TacticalFighter>,
+        player_is_attacker: bool,
+        source_layout: OriginalTacticalLayout,
+        start_tick: u64,
+        rng_seed: u32,
+        battle_rng: OriginalBattleRng,
+    ) -> Self {
+        Self {
+            system,
+            system_name: String::new(),
+            system_picture_id: 0,
+            attacker_fleet: None,
+            defender_fleet: None,
+            attacker_is_alliance: true,
+            player_is_attacker,
+            phase: BattlePhase::Combat,
+            ships,
+            fighters,
+            death_star: None,
+            death_star_beam: None,
+            trench_run_outcome: None,
+            trench_run_remaining_ms: None,
+            trench_run_group: None,
+            trench_run_commander: None,
+            trench_run_pending_outcome: None,
+            trench_run_participants: Vec::new(),
+            trench_run_snapshot: Vec::new(),
+            trench_run_chatter: [ORIGINAL_TRENCH_RUN_SILENT_EVENT; 9],
+            trench_run_chatter_cursor: 0,
+            trench_run_cinematic_pending: false,
+            navigation_sets: original_navigation_point_sets(source_layout),
+            source_layout,
+            selected_ship: None,
+            selected_fighter_group: None,
+            selected_task_force: None,
+            player_command: true,
+            placement_confirmed: true,
+            start_tick,
+            combat_tick: 0,
+            tactical_rng: OriginalTacticalRng::new(rng_seed),
+            battle_rng,
+            settled_crew: None,
+            weapon_effects: Vec::new(),
+            impact_effects: Vec::new(),
+            pending_audio_cues: Vec::new(),
+            pending_voice_cues: Vec::new(),
+            pending_log_lines: Vec::new(),
+            field_effects: Vec::new(),
+            subsystem_repairs: Vec::new(),
+            paused: true,
+            combat_speed: 1,
+            step_accumulator: 0.0,
+            winner: None,
+            stalemate: TacticalStalemateWatch::default(),
+            death_star_ai: TacticalDeathStarAi::default(),
+            hangars: TacticalHangars::default(),
+            morale: TacticalMorale::default(),
+            engagement: TacticalEngagementState::default(),
+            holder_is_alliance: None,
+            arrival_holder_is_alliance: None,
+            blockaded_at_start: false,
+            withdrawal_destination: None,
+        }
+    }
+
     /// Create a new battle session from two opposing fleets.
     ///
     /// Expands fleet composition into individual ship hulls and positions them
@@ -3978,7 +4057,6 @@ impl BattleSession {
                     .is_some_and(|class| class.gravity_well_projector > 0)
             })
             .collect();
-        let navigation_sets = original_navigation_point_sets(source_layout);
         Self::assign_original_task_forces(&mut ships);
         Self::assign_original_fighter_groups(&mut fighters);
 
@@ -3987,61 +4065,19 @@ impl BattleSession {
         // the child `FUN_005c5800` places at (0, 0) (original capture
         // 2026-10-11). The Battle Alert's Take Command choice is the entry
         // action, not a second invented placement phase.
-        let selected_ship = None;
-
         BattleSession {
-            system,
             system_name,
             system_picture_id,
             attacker_fleet: attacker,
             defender_fleet: defender,
             attacker_is_alliance: attacker_force.is_alliance,
-            player_is_attacker,
-            phase: BattlePhase::Combat,
-            ships,
-            fighters,
             death_star,
-            death_star_beam: None,
-            trench_run_outcome: None,
-            trench_run_remaining_ms: None,
-            trench_run_group: None,
             trench_run_commander: TacticalTrenchCommander::of_battle(
                 world,
                 system,
                 &side_fleets,
                 attacker_force.is_alliance,
             ),
-            trench_run_pending_outcome: None,
-            trench_run_participants: Vec::new(),
-            trench_run_snapshot: Vec::new(),
-            trench_run_chatter: [ORIGINAL_TRENCH_RUN_SILENT_EVENT; 9],
-            trench_run_chatter_cursor: 0,
-            trench_run_cinematic_pending: false,
-            navigation_sets,
-            source_layout,
-            selected_ship,
-            selected_fighter_group: None,
-            selected_task_force: None,
-            player_command: true,
-            placement_confirmed: true,
-            start_tick: tick,
-            combat_tick: 0,
-            tactical_rng: OriginalTacticalRng::new(rng_seed),
-            battle_rng: world.battle_rng,
-            settled_crew: None,
-            weapon_effects: Vec::new(),
-            impact_effects: Vec::new(),
-            pending_audio_cues: Vec::new(),
-            pending_voice_cues: Vec::new(),
-            pending_log_lines: Vec::new(),
-            field_effects: Vec::new(),
-            subsystem_repairs: Vec::new(),
-            paused: true,
-            combat_speed: 1,
-            step_accumulator: 0.0,
-            winner: None,
-            stalemate: TacticalStalemateWatch::default(),
-            death_star_ai: TacticalDeathStarAi::default(),
             hangars: TacticalHangars {
                 step: ORIGINAL_HANGAR_FIRST_STEP,
                 ..TacticalHangars::default()
@@ -4055,7 +4091,16 @@ impl BattleSession {
             holder_is_alliance,
             arrival_holder_is_alliance: world.arrival_holders.get(&system).copied(),
             blockaded_at_start,
-            withdrawal_destination: None,
+            ..BattleSession::baseline(
+                system,
+                ships,
+                fighters,
+                player_is_attacker,
+                source_layout,
+                tick,
+                rng_seed,
+                world.battle_rng,
+            )
         }
     }
 

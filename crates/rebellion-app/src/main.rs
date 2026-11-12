@@ -29,6 +29,8 @@ mod dev_policy;
 mod encyclopedia_content;
 mod encyclopedia_hd;
 mod encyclopedia_mods;
+#[cfg(not(target_arch = "wasm32"))]
+mod encyclopedia_native_io;
 mod encyclopedia_surface;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
@@ -54,6 +56,8 @@ mod tactical_flow;
     )
 )]
 mod tactical_test_fixture;
+#[cfg(test)]
+mod test_support;
 #[cfg(target_arch = "wasm32")]
 mod web_accessibility;
 #[cfg(target_arch = "wasm32")]

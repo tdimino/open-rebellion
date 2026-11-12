@@ -2879,7 +2879,7 @@ fn imperial_trench_run_observer_routes_failure_and_success_to_death_star_events(
 // so that ship dies with the station whatever its own ship result says.
 #[test]
 fn a_death_star_destroyed_in_battle_leaves_its_fleet_without_one_and_its_ship_dead() {
-    use crate::world::{Fleet, ShipInstance, System};
+    use crate::world::{ShipInstance, System};
 
     // The rule takes no side: either side's fleet given the class loses it.
     for owner_is_alliance in [false, true] {
@@ -2888,22 +2888,21 @@ fn a_death_star_destroyed_in_battle_leaves_its_fleet_without_one_and_its_ship_de
         let death_star = battle_ship_class(&mut world, 0x18, owner_is_alliance, 0);
         let destroyer = battle_ship_class(&mut world, 0x14, owner_is_alliance, 0);
         let cruiser = battle_ship_class(&mut world, 0x14, !owner_is_alliance, 0);
-        let owner = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![
+        let owner = crate::test_support::add_fleet_with_ships(
+            &mut world,
+            system,
+            vec![
                 ShipInstance::new(destroyer, 100, owner_is_alliance),
                 ShipInstance::new(death_star, 100, owner_is_alliance),
             ],
-            is_alliance: owner_is_alliance,
-            ..Fleet::default()
-        });
-        let enemy = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(cruiser, 100, !owner_is_alliance)],
-            is_alliance: !owner_is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets = vec![owner, enemy];
+            owner_is_alliance,
+        );
+        let enemy = crate::test_support::add_fleet_with_class(
+            &mut world,
+            system,
+            cruiser,
+            !owner_is_alliance,
+        );
         world.systems[system].fleets.sort_unstable();
         assert!(world.fleet_has_death_star(owner));
 
@@ -3160,14 +3159,11 @@ fn a_loser_that_withdrew_leaves_through_the_retreat_chain() {
 // battle's own results leave bit 11 off its sector.
 #[test]
 fn a_death_star_lost_in_battle_clears_its_sector_with_the_results() {
-    use crate::world::{Sector, System};
+    use crate::world::System;
 
     let mut world = GameWorld::default();
-    let sector = world.sectors.insert(Sector::default());
-    let system = world.systems.insert(System {
-        sector,
-        ..System::default()
-    });
+    let system = crate::test_support::insert_system(&mut world, System::default());
+    let sector = world.systems[system].sector;
     let (empire, alliance) = opposed_death_star_fleets(&mut world, system, 0);
     world.death_star_sectors.insert(sector);
 

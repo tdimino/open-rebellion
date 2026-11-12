@@ -102,6 +102,26 @@ pub struct WindowPolicy {
     pub restoration: FocusRestoration,
 }
 
+impl WindowPolicy {
+    /// Subject-keyed modeless detail behavior shared by the original System,
+    /// Fleet, Defenses, and Missions families. Callers choose only whether a
+    /// successful new open takes focus; restoration and minimized history are
+    /// invariant for this policy family.
+    #[must_use]
+    pub const fn restorable_modeless_history(focus_on_open: FocusOnOpen) -> Self {
+        Self {
+            cardinality: Cardinality::Subject { max_open: None },
+            band: StackBand::Normal,
+            placement: OpenPlacement::TopOfBand,
+            existing: ExistingOpenPolicy::RaiseRestore,
+            input: InputPolicy::Modeless,
+            presentation: PresentationPolicy::History,
+            focus_on_open,
+            restoration: FocusRestoration::PreviousEligible,
+        }
+    }
+}
+
 /// Complete semantic request to register a window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowSpec {

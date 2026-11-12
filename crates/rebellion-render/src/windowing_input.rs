@@ -474,31 +474,14 @@ fn route_recipient(target: RouteTarget) -> InputRecipient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_windowing::{
-        Cardinality, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, InputPolicy, OpenPlacement,
-        PresentationPolicy, StackBand, SubjectId, WindowCommand, WindowKey, WindowKind,
-        WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
-    };
+    use rebellion_windowing::{InputPolicy, WindowManager};
 
     fn open(manager: &mut WindowManager, subject: u64, input: InputPolicy) -> WindowId {
-        let spec = WindowSpec {
-            key: WindowKey::contextual(WindowKind::System, SubjectId::new(2, subject)),
-            owner: WindowOwner::StrategicRoot,
-            policy: WindowPolicy {
-                cardinality: Cardinality::Subject { max_open: None },
-                band: StackBand::Normal,
-                placement: OpenPlacement::TopOfBand,
-                existing: ExistingOpenPolicy::RaiseRestore,
-                input,
-                presentation: PresentationPolicy::History,
-                focus_on_open: FocusOnOpen::Window,
-                restoration: FocusRestoration::PreviousEligible,
-            },
-        };
-        match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected open, got {other:?}"),
-        }
+        crate::test_support::open_window(
+            manager,
+            crate::test_support::routing_window_spec(subject, input),
+            "system",
+        )
     }
 
     fn event(frame: u64, ordinal: u32) -> InputEventId {

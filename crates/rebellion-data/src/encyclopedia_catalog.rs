@@ -280,11 +280,8 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
         )?;
     }
 
-    entries.sort_by(|left, right| {
-        left.name
-            .to_lowercase()
-            .cmp(&right.name.to_lowercase())
-            .then_with(|| left.object_id.cmp(&right.object_id))
+    rebellion_core::ordering::sort_by_case_folded_name(&mut entries, |entry| {
+        (entry.name.to_lowercase(), entry.object_id)
     });
     entries.dedup_by_key(|entry| entry.object_id);
 

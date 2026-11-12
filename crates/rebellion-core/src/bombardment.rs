@@ -165,6 +165,49 @@ impl From<ShipsRefusal> for BombardRefusal {
     }
 }
 
+/// Refusals shared by every fleet-command team before an order-specific gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FleetCommandRefusal {
+    NoTeam,
+    FleetRefused,
+    Ships(ShipsRefusal),
+}
+
+impl From<FleetCommandRefusal> for BombardRefusal {
+    fn from(refusal: FleetCommandRefusal) -> Self {
+        match refusal {
+            FleetCommandRefusal::NoTeam => Self::NoTeam,
+            FleetCommandRefusal::FleetRefused => Self::FleetRefused,
+            FleetCommandRefusal::Ships(refusal) => refusal.into(),
+        }
+    }
+}
+
+/// Validate the fleet-command prefix shared by bombardment and assault.
+pub(crate) fn validate_fleet_commands(
+    world: &GameWorld,
+    movement: &crate::movement::MovementState,
+    fleets: &[FleetKey],
+    side: Faction,
+) -> Result<(), FleetCommandRefusal> {
+    if fleets.is_empty() {
+        return Err(FleetCommandRefusal::NoTeam);
+    }
+    for &fleet in fleets {
+        let Some(value) = world
+            .fleets
+            .get(fleet)
+            .filter(|value| side_of(value.is_alliance) == side && !movement.is_in_transit(fleet))
+        else {
+            return Err(FleetCommandRefusal::FleetRefused);
+        };
+        if let Some(refusal) = ships_refusal(value) {
+            return Err(FleetCommandRefusal::Ships(refusal));
+        }
+    }
+    Ok(())
+}
+
 /// `FUN_004ffa70.c:15-60`: walk the fleet's existing capital ships (mode 3,
 /// `FUN_00502db0`, in container order) until one is completed and not en
 /// route, which passes the fleet; otherwise the last ship's status stands:
@@ -334,21 +377,7 @@ pub fn order_enabled(
     kind: BombardKind,
     side: Faction,
 ) -> Result<(), BombardRefusal> {
-    if fleets.is_empty() {
-        return Err(BombardRefusal::NoTeam);
-    }
-    for &fleet in fleets {
-        let Some(value) = world
-            .fleets
-            .get(fleet)
-            .filter(|value| side_of(value.is_alliance) == side && !movement.is_in_transit(fleet))
-        else {
-            return Err(BombardRefusal::FleetRefused);
-        };
-        if let Some(refusal) = ships_refusal(value) {
-            return Err(refusal.into());
-        }
-    }
+    validate_fleet_commands(world, movement, fleets, side).map_err(BombardRefusal::from)?;
     gate(world, fleets, kind)
 }
 
@@ -700,14 +729,7 @@ fn apply_hit(
             report
                 .system_destroyed
                 .extend(crate::operation_report::facility(world, facility));
-            crate::missions::destroy_target(
-                world,
-                match facility {
-                    FacilityRef::Defense(key) => MissionTarget::DefenseFacility(key),
-                    FacilityRef::Manufacturing(key) => MissionTarget::ManufacturingFacility(key),
-                    FacilityRef::Production(key) => MissionTarget::ProductionFacility(key),
-                },
-            );
+            crate::missions::destroy_target(world, facility.into());
         }
         BombardTarget::Headquarters => {
             if crate::support_shift::remove_headquarters(world, system) {
@@ -1266,30 +1288,17 @@ fn shift_sector(
 mod tests {
     use super::*;
     use crate::ids::{CapitalShipKey, DatId};
+    use crate::test_support::{gnprtb_entry as entry, sdprtb_entry};
     use crate::world::{
         BuildableClass, CapitalShipClass, Character, ClassStats, ControlKind,
-        DefenseFacilityInstance, Fleet, GnprtbEntry, GnprtbParams, ManufacturingFacilityInstance,
-        Sector, System, TroopUnit,
+        DefenseFacilityInstance, Fleet, GnprtbParams, ManufacturingFacilityInstance, System,
+        TroopUnit,
     };
 
     const OPPOSING_SIDES: [(Faction, Faction); 2] = [
         (Faction::Alliance, Faction::Empire),
         (Faction::Empire, Faction::Alliance),
     ];
-
-    fn entry(id: u16, value: i32) -> GnprtbEntry {
-        GnprtbEntry {
-            parameter_id: u32::from(id),
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        }
-    }
 
     /// A world with one system held by `holder` and the shipped GNPRTB
     /// `0x600`-`0x606` (40, 40, 1, 10, 9, 9, 50) and 7705 (-20).
@@ -1307,17 +1316,17 @@ mod tests {
             ]),
             ..GameWorld::default()
         };
-        let sector = world.sectors.insert(Sector::default());
-        let system = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0091),
-            sector,
-            is_populated: true,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            control: holder.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
-            ..System::default()
-        });
-        world.sectors[sector].systems.push(system);
+        let system = crate::test_support::insert_system(
+            &mut world,
+            System {
+                dat_id: DatId::new(0x9000_0091),
+                is_populated: true,
+                popularity_alliance: 0.5,
+                popularity_empire: 0.5,
+                control: holder.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
+                ..System::default()
+            },
+        );
         (world, system)
     }
 
@@ -3089,25 +3098,7 @@ mod tests {
         // record's (FUN_00518be0 slot +4), a system with +0x88 bit 3 left
         // out; GNPRTB 7705 (-20) at the system first. Values here: core
         // -4, rim -2, both limits 101.
-        let sd = |id: u16, value: i32| crate::world::SdprtbEntry {
-            parameter_id: u32::from(id),
-            dev_alliance: value,
-            dev_empire: value,
-            alliance_sp_easy_alliance: value,
-            alliance_sp_easy_empire: value,
-            alliance_sp_medium_alliance: value,
-            alliance_sp_medium_empire: value,
-            alliance_sp_hard_alliance: value,
-            alliance_sp_hard_empire: value,
-            empire_sp_easy_alliance: value,
-            empire_sp_easy_empire: value,
-            empire_sp_medium_alliance: value,
-            empire_sp_medium_empire: value,
-            empire_sp_hard_alliance: value,
-            empire_sp_hard_empire: value,
-            multiplayer_alliance: value,
-            multiplayer_empire: value,
-        };
+        let sd = sdprtb_entry;
         for (holder, bombarder) in OPPOSING_SIDES {
             let (mut world, system) = world(Some(holder));
             world.sdprtb = crate::world::SdprtbParams::new(vec![

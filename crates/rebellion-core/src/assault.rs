@@ -119,6 +119,16 @@ impl From<crate::bombardment::ShipsRefusal> for AssaultRefusal {
     }
 }
 
+impl From<crate::bombardment::FleetCommandRefusal> for AssaultRefusal {
+    fn from(refusal: crate::bombardment::FleetCommandRefusal) -> Self {
+        match refusal {
+            crate::bombardment::FleetCommandRefusal::NoTeam => Self::NoTeam,
+            crate::bombardment::FleetCommandRefusal::FleetRefused => Self::FleetRefused,
+            crate::bombardment::FleetCommandRefusal::Ships(refusal) => refusal.into(),
+        }
+    }
+}
+
 const fn side_of(is_alliance: bool) -> Faction {
     if is_alliance {
         Faction::Alliance
@@ -153,22 +163,9 @@ pub fn order_enabled(
     fleets: &[FleetKey],
     side: Faction,
 ) -> Result<(), AssaultRefusal> {
-    if fleets.is_empty() {
-        return Err(AssaultRefusal::NoTeam);
-    }
     // Each fleet command's +0x18 (FUN_004fdf70 -> FUN_004ffa70).
-    for &fleet in fleets {
-        let Some(value) = world
-            .fleets
-            .get(fleet)
-            .filter(|value| side_of(value.is_alliance) == side && !movement.is_in_transit(fleet))
-        else {
-            return Err(AssaultRefusal::FleetRefused);
-        };
-        if let Some(refusal) = crate::bombardment::ships_refusal(value) {
-            return Err(refusal.into());
-        }
-    }
+    crate::bombardment::validate_fleet_commands(world, movement, fleets, side)
+        .map_err(AssaultRefusal::from)?;
     let systems: Vec<SystemKey> = fleets
         .iter()
         .map(|&fleet| world.fleets[fleet].location)
@@ -333,22 +330,10 @@ fn defenders(world: &GameWorld, system: SystemKey, holder: Faction) -> Vec<Troop
 /// the HQ is the system's flag, not one of its facilities, and the port
 /// walks its defence, manufacturing and production lists in turn.
 fn collateral_facilities(world: &GameWorld, system: SystemKey) -> Vec<FacilityRef> {
-    world.systems.get(system).map_or_else(Vec::new, |sys| {
-        sys.defense_facilities
-            .iter()
-            .map(|&key| FacilityRef::Defense(key))
-            .chain(
-                sys.manufacturing_facilities
-                    .iter()
-                    .map(|&key| FacilityRef::Manufacturing(key)),
-            )
-            .chain(
-                sys.production_facilities
-                    .iter()
-                    .map(|&key| FacilityRef::Production(key)),
-            )
-            .collect()
-    })
+    world
+        .systems
+        .get(system)
+        .map_or_else(Vec::new, |system| system.facilities().collect())
 }
 
 /// A regiment class's TROOPSD attack (class `+0x64`, `FUN_00520b90`) and
@@ -548,14 +533,7 @@ fn resolve_with(
         let pick = draws.draw(total - 1);
         if let Some(&facility) = usize::try_from(pick).ok().and_then(|at| facilities.get(at)) {
             report.facilities_lost.push(facility);
-            crate::missions::destroy_target(
-                world,
-                match facility {
-                    FacilityRef::Defense(key) => MissionTarget::DefenseFacility(key),
-                    FacilityRef::Manufacturing(key) => MissionTarget::ManufacturingFacility(key),
-                    FacilityRef::Production(key) => MissionTarget::ProductionFacility(key),
-                },
-            );
+            crate::missions::destroy_target(world, facility.into());
         } else if pick == count && energy {
             let sys = &mut world.systems[system];
             sys.total_energy -= 1;
@@ -656,11 +634,12 @@ mod tests {
     use super::*;
     use crate::carriage::ProductRoom;
     use crate::ids::{CapitalShipKey, DatId};
+    use crate::test_support::gnprtb_entry as entry;
     use crate::tick::TickEvent;
     use crate::world::{
         BuildableClass, CapitalShipClass, Character, ClassStats, ControlKind,
-        DefenseFacilityInstance, Fleet, GnprtbEntry, GnprtbParams, ManufacturingFacilityInstance,
-        Sector, ShipInstance, System, TroopClassDef, TroopUnit,
+        DefenseFacilityInstance, Fleet, GnprtbParams, ManufacturingFacilityInstance, ShipInstance,
+        System, TroopClassDef, TroopUnit,
     };
     use std::collections::VecDeque;
 
@@ -695,20 +674,6 @@ mod tests {
         }
     }
 
-    fn entry(id: u16, value: i32) -> GnprtbEntry {
-        GnprtbEntry {
-            parameter_id: u32::from(id),
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        }
-    }
-
     /// A system held by `holder` with the shipped GNPRTB `0x200`-`0x205`
     /// (5, 30, 10, 4, 6, 8), `0x1e03` (2), 7761 (60) and 7762 (-10).
     fn world(holder: Option<Faction>) -> (GameWorld, SystemKey) {
@@ -726,15 +691,15 @@ mod tests {
             ]),
             ..GameWorld::default()
         };
-        let sector = world.sectors.insert(Sector::default());
-        let system = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0091),
-            sector,
-            is_populated: true,
-            control: holder.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
-            ..System::default()
-        });
-        world.sectors[sector].systems.push(system);
+        let system = crate::test_support::insert_system(
+            &mut world,
+            System {
+                dat_id: DatId::new(0x9000_0091),
+                is_populated: true,
+                control: holder.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
+                ..System::default()
+            },
+        );
         (world, system)
     }
 

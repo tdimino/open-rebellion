@@ -1110,36 +1110,18 @@ fn remove_facility(world: &mut GameWorld, system: SystemKey, facility: FacilityR
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dat::{ExplorationStatus, SectorGroup};
     use crate::ids::{DatId, DefenseFacilityKey, ManufacturingFacilityKey, ProductionFacilityKey};
     use crate::missions::MissionFaction;
     use crate::missions::MissionRequest;
     use crate::world::{
-        Character, ControlKind, DefenseFacilityInstance, Fleet, GnprtbEntry, GnprtbParams,
-        ManufacturingFacilityInstance, MstbEntry, ProductionFacilityInstance, Sector, SkillPair,
-        TroopUnit,
+        Character, ControlKind, DefenseFacilityInstance, GnprtbEntry, GnprtbParams,
+        ManufacturingFacilityInstance, MstbEntry, ProductionFacilityInstance, SkillPair, TroopUnit,
     };
 
     /// A usable Death Star at `system`, setting `+0x88` bit 11 across its
     /// sector (`FUN_005178b0`).
     fn with_death_star(world: &mut GameWorld, system: SystemKey) {
-        let class = world
-            .capital_ship_classes
-            .insert(crate::world::CapitalShipClass {
-                family: 0x18,
-                is_empire: true,
-                hull: 100,
-                ..Default::default()
-            });
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![crate::world::ShipInstance::new(class, 100, false)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        world.systems[system].fleets.push(fleet);
+        crate::test_support::add_death_star_fleet(world, system, false);
         crate::death_star::refresh_sectors(world);
     }
 
@@ -1208,43 +1190,22 @@ mod tests {
             "UPRIS2TB".into(),
             table(&[(1, 0), (9, 3), (11, 4), (12, 5)]),
         );
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(0x9200_0000),
-            name: "Sector".into(),
-            group: SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
         let (alliance, empire) = if side == Faction::Alliance {
             (support, 1.0 - support)
         } else {
             (1.0 - support, support)
         };
-        let system = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: "Naboo".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: alliance,
-            popularity_empire: empire,
-            is_populated: true,
-            total_energy: 4,
-            raw_materials: 4,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(side),
-        });
+        let system = crate::test_support::insert_system(
+            &mut world,
+            System {
+                dat_id: DatId::new(0x9000_0001),
+                popularity_alliance: alliance,
+                popularity_empire: empire,
+                total_energy: 4,
+                raw_materials: 4,
+                ..crate::test_support::system("Naboo", ControlKind::Controlled(side))
+            },
+        );
         (world, system)
     }
 

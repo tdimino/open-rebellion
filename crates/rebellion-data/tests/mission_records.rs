@@ -1,16 +1,8 @@
-use std::path::PathBuf;
+mod common;
 
+use common::data_dir;
 use rebellion_core::ids::DatId;
 use rebellion_core::world::Skill;
-
-fn data_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates directory")
-        .parent()
-        .expect("repository root")
-        .join("data/base")
-}
 
 #[test]
 #[ignore = "requires original data/base DAT files"]

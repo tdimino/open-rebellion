@@ -854,11 +854,9 @@ fn send_ships(
 mod tests {
     use super::*;
     use crate::carriage::ProductRoom;
-    use crate::dat::{ExplorationStatus, SectorGroup};
     use crate::ids::{CapitalShipKey, DatId, TroopKey};
     use crate::world::{
-        CapitalShipClass, Character, ControlKind, FighterEntry, Sector, ShipInstance, System,
-        TroopUnit,
+        CapitalShipClass, Character, ControlKind, FighterEntry, ShipInstance, TroopUnit,
     };
 
     struct Setup {
@@ -868,45 +866,11 @@ mod tests {
         class: CapitalShipKey,
     }
 
-    fn system(sector: crate::ids::SectorKey, x: u16) -> System {
-        System {
-            dat_id: DatId::new(0x9000_0000),
-            name: format!("Sys{x}"),
-            sector,
-            x,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        }
-    }
-
     fn setup() -> Setup {
-        let mut world = GameWorld::default();
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(0x9200_0000),
-            name: "Test".into(),
-            group: SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let here = world.systems.insert(system(sector, 0));
-        let there = world.systems.insert(system(sector, 50));
+        let (mut world, systems) = crate::test_support::world_with_systems(&[(0, 0), (50, 0)]);
+        let [here, there] = systems[..] else {
+            unreachable!("fixture always returns two systems")
+        };
         let class = world.capital_ship_classes.insert(CapitalShipClass {
             name: "Cruiser".into(),
             is_alliance: true,

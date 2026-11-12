@@ -6,6 +6,8 @@ use std::collections::{HashMap, HashSet};
 
 use egui_macroquad::egui;
 
+use crate::test_support::pointer_button;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum ProbeWindow {
     A,
@@ -336,15 +338,6 @@ fn realize_adapter_frame(
             }
         })
         .inner
-}
-
-fn pointer_button(point: egui::Pos2, pressed: bool) -> egui::Event {
-    egui::Event::PointerButton {
-        pos: point,
-        button: egui::PointerButton::Primary,
-        pressed,
-        modifiers: egui::Modifiers::NONE,
-    }
 }
 
 fn specs(order: &[ProbeWindow]) -> Vec<ProbeWindowSpec> {

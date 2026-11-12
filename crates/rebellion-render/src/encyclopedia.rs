@@ -231,11 +231,8 @@ impl OriginalEncyclopediaCatalog {
         category_labels: [String; 7],
         mut entries: Vec<OriginalEncyclopediaEntry>,
     ) -> Self {
-        entries.sort_by(|left, right| {
-            left.name
-                .to_lowercase()
-                .cmp(&right.name.to_lowercase())
-                .then_with(|| left.object_id.cmp(&right.object_id))
+        rebellion_core::ordering::sort_by_case_folded_name(&mut entries, |entry| {
+            (entry.name.to_lowercase(), entry.object_id)
         });
         entries.dedup_by_key(|entry| entry.object_id);
         Self {
@@ -2406,6 +2403,7 @@ mod tests {
     use std::rc::Rc;
 
     use super::*;
+    use crate::test_support::{click_frames, pointer_button};
     use crate::windowing_policy::singleton_spec;
     use rebellion_windowing::{
         ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowKind, WindowManager,
@@ -2594,15 +2592,6 @@ mod tests {
         )
     }
 
-    fn pointer_button(point: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::NONE,
-        }
-    }
-
     fn run_surface_frames(
         state: &mut EncyclopediaSurfaceState,
         surface: &EncyclopediaSurface<'_>,
@@ -2629,16 +2618,6 @@ mod tests {
             }));
         }
         output.expect("at least one frame")
-    }
-
-    fn click_frames(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        vec![
-            vec![egui::Event::PointerMoved(point)],
-            vec![egui::Event::PointerMoved(point)],
-            vec![pointer_button(point, true)],
-            vec![pointer_button(point, false)],
-            vec![],
-        ]
     }
 
     fn text_color(output: &egui::FullOutput, value: &str) -> Color32 {
@@ -2976,20 +2955,10 @@ mod tests {
         const WIDTH: usize = 400;
         const HEIGHT: usize = 200;
         const PIXEL_OFFSET: usize = 1_078;
-        let mut bytes = vec![0_u8; PIXEL_OFFSET + WIDTH * HEIGHT];
-        let file_size = bytes.len() as u32;
-        bytes[0..2].copy_from_slice(b"BM");
-        bytes[2..6].copy_from_slice(&file_size.to_le_bytes());
-        bytes[10..14].copy_from_slice(&(PIXEL_OFFSET as u32).to_le_bytes());
-        bytes[14..18].copy_from_slice(&40_u32.to_le_bytes());
-        bytes[18..22].copy_from_slice(&(WIDTH as i32).to_le_bytes());
-        bytes[22..26].copy_from_slice(&(HEIGHT as i32).to_le_bytes());
-        bytes[26..28].copy_from_slice(&1_u16.to_le_bytes());
-        bytes[28..30].copy_from_slice(&8_u16.to_le_bytes());
-        bytes[34..38].copy_from_slice(&((WIDTH * HEIGHT) as u32).to_le_bytes());
+        let mut bytes =
+            crate::test_support::bitmap_fixture(WIDTH, HEIGHT, WIDTH, PIXEL_OFFSET, 8, 1);
         bytes[46..50].copy_from_slice(&256_u32.to_le_bytes());
         bytes[54 + 4..54 + 8].copy_from_slice(&[0x20, 0x80, 0xe0, 0]);
-        bytes[PIXEL_OFFSET..].fill(1);
         bytes
     }
 

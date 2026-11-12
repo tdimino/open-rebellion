@@ -135,6 +135,21 @@ pub fn transit_ticks_between(
     u32::try_from(ticks.max(1)).unwrap_or(u32::MAX)
 }
 
+/// Transit days between two systems using their galaxy coordinates.
+///
+/// Missing system keys retain the original engine-facing fallback position
+/// `(0, 0)`, shared by fleets, deliveries, missions and carried units.
+#[must_use]
+pub fn transit_ticks_between_systems(
+    world: &GameWorld,
+    from: SystemKey,
+    to: SystemKey,
+    speed: i64,
+) -> u32 {
+    let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
+    transit_ticks_between(world, position(from), position(to), speed)
+}
+
 /// Speed of one capital ship (`FUN_00500820`): the class `hyperdrive`, else
 /// `hyperdrive_if_damaged`, else the GNPRTB 1 default.
 ///
@@ -243,13 +258,7 @@ pub fn fleet_transit_ticks(
     if speed == 0 {
         return None;
     }
-    let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
-    Some(transit_ticks_between(
-        world,
-        position(origin),
-        position(dest),
-        speed,
-    ))
+    Some(transit_ticks_between_systems(world, origin, dest, speed))
 }
 
 // ---------------------------------------------------------------------------
@@ -1290,7 +1299,7 @@ mod tests {
 
     // --- Distance-based transit tests ---
 
-    use crate::dat::{ExplorationStatus, SectorGroup};
+    use crate::dat::SectorGroup;
     use crate::ids::DatId;
     use crate::world::{
         CapitalShipClass, Character, Fleet, GameWorld, Sector, ShipInstance, System, TroopUnit,
@@ -1320,30 +1329,15 @@ mod tests {
     }
 
     fn make_system(sector: crate::ids::SectorKey, x: u16, y: u16) -> System {
-        System {
-            dat_id: DatId::new(0x9000_0000),
-            name: format!("Sys@{x},{y}"),
+        let mut system = crate::test_support::system_at(
+            format!("Sys@{x},{y}"),
             sector,
             x,
             y,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        }
+            ControlKind::Uncontrolled,
+        );
+        system.dat_id = DatId::new(0x9000_0000);
+        system
     }
 
     fn make_transit_world(x1: u16, y1: u16, x2: u16, y2: u16) -> (GameWorld, SystemKey, SystemKey) {
@@ -2342,15 +2336,12 @@ mod tests {
                     }),
                     "{is_alliance}"
                 );
-                assert!(!state.is_in_transit(fleet), "{is_alliance}");
-                assert_eq!(world.fleets[fleet].location, destination, "{is_alliance}");
-                assert!(
-                    world.systems[destination].fleets.contains(&fleet),
-                    "{is_alliance}"
-                );
-                assert!(
-                    !world.systems[origin].fleets.contains(&fleet),
-                    "{is_alliance}"
+                crate::test_support::assert_fleet_arrived(
+                    &world,
+                    &state,
+                    fleet,
+                    origin,
+                    destination,
                 );
             }
         }

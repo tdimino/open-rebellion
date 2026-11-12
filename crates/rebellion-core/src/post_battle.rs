@@ -6,7 +6,7 @@
 
 use crate::blockade::BlockadeSystem;
 use crate::carriage::ProductRoom;
-use crate::combat::side_present;
+use crate::combat::{fighting_fleets, side_present};
 use crate::dat::Faction;
 use crate::ids::{CharacterKey, FighterKey, FleetKey, SystemKey};
 use crate::movement::{begin_faction_fleet_transit, capital_ship_instance_speed, MovementState};
@@ -130,19 +130,7 @@ pub fn run_pass(
     // FUN_004f78e0(obj, 1) on every usable fleet (mode 1, `FUN_004ffef0`,
     // `FUN_00516ef0.c:143`) and system squadron of the loser.
     let loser = !winner_is_alliance;
-    let fleets: Vec<FleetKey> = world.systems.get(system).map_or_else(Vec::new, |value| {
-        value
-            .fleets
-            .iter()
-            .copied()
-            .filter(|&fleet| {
-                world
-                    .fleets
-                    .get(fleet)
-                    .is_some_and(|f| f.is_alliance == loser && f.usable())
-            })
-            .collect()
-    });
+    let fleets = fighting_fleets(world, system, loser);
     let mut relocations = Vec::with_capacity(fleets.len());
     for fleet in fleets {
         let outcome = relocate_fleet(world, movement, troop_transport, system, fleet, tick, log);

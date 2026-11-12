@@ -1237,7 +1237,7 @@ pub fn hold_in_jail(world: &mut GameWorld, key: CharacterKey, tick: u64) {
 mod tests {
     use super::*;
     use crate::carriage::ProductRoom;
-    use crate::dat::{ExplorationStatus, Faction, SectorGroup};
+    use crate::dat::{Faction, SectorGroup};
     use crate::ids::DatId;
     use crate::ids::FleetKey;
     use crate::world::ControlKind;
@@ -1255,52 +1255,22 @@ mod tests {
         });
         let sys = world.systems.insert(System {
             dat_id: DatId::new(0x9000_0000),
-            name: "Alderaan".into(),
-            sector,
-            x: 100,
-            y: 100,
-            exploration_status: ExplorationStatus::Explored,
             popularity_alliance: 0.9,
             popularity_empire: 0.1,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
+            ..crate::test_support::system_at(
+                "Alderaan",
+                sector,
+                100,
+                100,
+                ControlKind::Controlled(Faction::Alliance),
+            )
         });
         (world, sys)
     }
 
     /// An Empire fleet at `sys` holding the Death Star ship (family `0x18`).
     fn add_ds_fleet(world: &mut GameWorld, sys: SystemKey) -> FleetKey {
-        let class = world
-            .capital_ship_classes
-            .insert(crate::world::CapitalShipClass {
-                dat_id: DatId::new(crate::world::DEATH_STAR_CLASS_ID),
-                family: 0x18,
-                is_empire: true,
-                hull: 100,
-                ..Default::default()
-            });
-        let fk = world.fleets.insert(Fleet {
-            location: sys,
-            capital_ships: vec![crate::world::ShipInstance::new(class, 100, false)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        world.systems.get_mut(sys).unwrap().fleets.push(fk);
-        fk
+        crate::test_support::add_death_star_fleet(world, sys, false)
     }
 
     // ── Construction tests ───────────────────────────────────────────────────
@@ -1498,14 +1468,7 @@ mod tests {
 
     fn fleet_with_ship(world: &mut GameWorld, system: SystemKey, is_alliance: bool) -> FleetKey {
         let ship = completed_ship(world, is_alliance);
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ship],
-            is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(fleet);
-        fleet
+        crate::test_support::add_fleet_with_ship(world, system, ship, is_alliance)
     }
 
     fn opposing_fleets(

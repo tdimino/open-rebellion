@@ -972,9 +972,9 @@ mod tests {
     use super::*;
     use crate::blockade::{UnitLoss, REASON_BOMBARDMENT, REASON_GROUND_COMBAT};
     use crate::carriage::ProductRoom;
+    use crate::test_support::{gnprtb_entry as gn, sdprtb_sides as sd};
     use crate::world::{
-        BuildableClass, ClassStats, GnprtbEntry, GnprtbParams, SdprtbEntry, SdprtbParams, Sector,
-        System, TroopUnit,
+        BuildableClass, ClassStats, GnprtbParams, SdprtbParams, Sector, System, TroopUnit,
     };
 
     #[test]
@@ -991,42 +991,6 @@ mod tests {
                 "holder {holder}"
             );
             assert!(loaded.control_change_cap.pass(6, holder), "holder {holder}");
-        }
-    }
-
-    fn gn(id: u16, value: i32) -> GnprtbEntry {
-        GnprtbEntry {
-            parameter_id: u32::from(id),
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        }
-    }
-
-    fn sd(id: u16, alliance: i32, empire: i32) -> SdprtbEntry {
-        SdprtbEntry {
-            parameter_id: u32::from(id),
-            dev_alliance: alliance,
-            dev_empire: empire,
-            alliance_sp_easy_alliance: alliance,
-            alliance_sp_easy_empire: empire,
-            alliance_sp_medium_alliance: alliance,
-            alliance_sp_medium_empire: empire,
-            alliance_sp_hard_alliance: alliance,
-            alliance_sp_hard_empire: empire,
-            empire_sp_easy_alliance: alliance,
-            empire_sp_easy_empire: empire,
-            empire_sp_medium_alliance: alliance,
-            empire_sp_medium_empire: empire,
-            empire_sp_hard_alliance: alliance,
-            empire_sp_hard_empire: empire,
-            multiplayer_alliance: alliance,
-            multiplayer_empire: empire,
         }
     }
 
@@ -1474,24 +1438,16 @@ mod tests {
         let (mut world, systems) = sector_world(1, Faction::Alliance);
         let system = systems[0];
         disband(&mut world, system);
-        let land = |world: &mut GameWorld, is_alliance| {
-            let key = world.troops.insert(TroopUnit {
-                is_alliance,
-                ..TroopUnit::default()
-            });
-            world.systems[system].ground_units.push(key);
-            key
-        };
         assert_eq!(refresh_troop_bits(&mut world, system), (false, false));
-        let alliance = land(&mut world, true);
+        let alliance = crate::test_support::add_ground_troop(&mut world, system, true);
         assert_eq!(refresh_troop_bits(&mut world, system), (false, true));
-        land(&mut world, false);
+        crate::test_support::add_ground_troop(&mut world, system, false);
         assert_eq!(refresh_troop_bits(&mut world, system), (true, true));
         world.systems[system].ground_units.clear();
         assert_eq!(refresh_troop_bits(&mut world, system), (true, false));
         // Both sides landing on a word without bits leaves it without.
         world.systems[system].ground_units.push(alliance);
-        land(&mut world, false);
+        crate::test_support::add_ground_troop(&mut world, system, false);
         assert_eq!(refresh_troop_bits(&mut world, system), (false, false));
         assert!(!world.troop_held.contains(&system));
     }
@@ -1504,11 +1460,7 @@ mod tests {
             disband(&mut world, system);
         }
         for (&system, is_alliance) in systems.iter().zip([true, false]) {
-            let key = world.troops.insert(TroopUnit {
-                is_alliance,
-                ..TroopUnit::default()
-            });
-            world.systems[system].ground_units.push(key);
+            crate::test_support::add_ground_troop(&mut world, system, is_alliance);
         }
         world.troop_held.insert(systems[2]);
         refresh_all_troop_bits(&mut world);

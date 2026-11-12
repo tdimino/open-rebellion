@@ -78,15 +78,7 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
         // fact: FUN_0045aac0 restores/raises system-keyed modeless details;
         // FUN_00428b40/FUN_00429020 supply their shared presentation history.
         WindowKind::System | WindowKind::Fleet | WindowKind::Defenses | WindowKind::Missions => {
-            preserve_focus_policy(
-                Cardinality::Subject { max_open: None },
-                StackBand::Normal,
-                OpenPlacement::TopOfBand,
-                ExistingOpenPolicy::RaiseRestore,
-                InputPolicy::Modeless,
-                PresentationPolicy::History,
-                FocusRestoration::PreviousEligible,
-            )
+            WindowPolicy::restorable_modeless_history(FocusOnOpen::Preserve)
         }
 
         // fact: the four Finder openers, Message Index, and Encyclopedia use
@@ -228,7 +220,7 @@ const fn policy_with_focus(
 mod tests {
     use std::collections::BTreeSet;
 
-    use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
+    use rebellion_core::dat::{Faction, SectorGroup};
     use rebellion_core::ids::DatId;
     use rebellion_core::world::{ControlKind, GameWorld, Sector, System};
     use rebellion_windowing::{
@@ -653,27 +645,15 @@ mod tests {
         });
         let system = world.systems.insert(System {
             dat_id,
-            name: "Fixture System".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
             popularity_alliance: 1.0,
             popularity_empire: 0.0,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
+            ..rebellion_core::test_support::system_at(
+                "Fixture System",
+                sector,
+                0,
+                0,
+                ControlKind::Controlled(Faction::Alliance),
+            )
         });
         world.sectors[sector].systems.push(system);
         (world, sector, system)

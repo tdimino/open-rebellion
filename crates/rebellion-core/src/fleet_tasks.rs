@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::{AIAction, FleetMoveReason};
-use crate::ai_production::{bit, Dir, Round, Turn};
+use crate::ai_production::{bit, resume_or_first_index, Dir, Round, Turn};
 use crate::ai_records::{fleet, ship, sys, Marks};
 use crate::ai_regions::{engaged, own_riders, random_system, set_system_bits, Words};
 use crate::ai_strategy::Holder;
@@ -98,10 +98,7 @@ impl FleetTasks {
             Call::Finished(None) | Call::End | Call::Next => Turn::Finished,
         };
         crate::trace::record(crate::trace::TraceMask::AI, "fleet_task_turn", || {
-            let (order, resume) = match &turn {
-                Turn::Order { action, resume } => (Some(format!("{action:?}")), *resume),
-                Turn::Spent | Turn::Finished => (None, false),
-            };
+            let (order, resume) = turn.debug_order();
             serde_json::json!({
                 "tasks": self.tasks.len(),
                 "attack_class_threshold": threshold,
@@ -142,11 +139,7 @@ impl FleetTasks {
         match self.state {
             2 => {
                 // FUN_004cf350: the task after the last, else the head.
-                let at = self
-                    .tasks
-                    .iter()
-                    .position(|t| t.id == self.next)
-                    .or_else(|| (!self.tasks.is_empty()).then_some(0));
+                let at = resume_or_first_index(&self.tasks, self.next, |task| task.id);
                 let Some(at) = at else {
                     self.current = 0;
                     self.next = 0;

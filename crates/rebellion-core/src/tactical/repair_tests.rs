@@ -2,7 +2,7 @@
 //! `ghidra/notes/tactical-engagement-ai.md`, "Subsystem repair").
 
 use super::*;
-use crate::world::{CapitalShipClass, Fleet, ShipInstance, System};
+use crate::world::{CapitalShipClass, ShipInstance, System};
 
 /// One unarmed ship per side, damage control 100, each carrying `engines`
 /// engine hits and `weapons` weapon hits from the strategic game; the Alliance
@@ -26,13 +26,7 @@ fn carried(player_is_alliance: bool, engines: u8, weapons: u8) -> BattleSession 
         let mut ship = ShipInstance::new(class, 100, is_alliance);
         ship.set_damage_counter(3, engines);
         ship.set_damage_counter(1, weapons);
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ship],
-            is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(fleet);
+        let fleet = crate::test_support::add_fleet_with_ship(&mut world, system, ship, is_alliance);
         fleets.push(fleet);
     }
     let mut session = BattleSession::new(

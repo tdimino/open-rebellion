@@ -365,10 +365,7 @@ pub fn give_death_star(world: &mut GameWorld, name: &str) -> Result<String, Stri
     let fleet = named_fleet(world, name, |fleet| !fleet.is_alliance)
         .ok_or_else(|| format!("no Imperial fleet named {name:?}"))?;
     let (class, hull) = world
-        .capital_ship_classes
-        .iter()
-        .find(|(_, class)| class.is_death_star())
-        .map(|(key, class)| (key, class.hull.cast_signed()))
+        .death_star_class_and_hull()
         .ok_or("no Death Star class is loaded")?;
     world.fleets[fleet]
         .capital_ships
@@ -1408,22 +1405,14 @@ mod tests {
     #[test]
     fn stripping_a_system_destroys_only_its_holders_defenders_and_keeps_its_control() {
         use rebellion_core::world::{
-            ControlKind, DefenseFacilityInstance, ShipInstance, SystemSquadrons, TroopUnit,
+            ControlKind, DefenseFacilityInstance, ShipInstance, SystemSquadrons,
         };
         for holder in [Faction::Alliance, Faction::Empire] {
             let (mut world, system, ours) = controlled_system(holder);
-            let troop = |world: &mut GameWorld, is_alliance| {
-                let key = world.troops.insert(TroopUnit {
-                    is_alliance,
-                    ..TroopUnit::default()
-                });
-                world.systems[system].ground_units.push(key);
-                key
-            };
             let (first, second, visitor) = (
-                troop(&mut world, ours),
-                troop(&mut world, ours),
-                troop(&mut world, !ours),
+                rebellion_core::test_support::add_ground_troop(&mut world, system, ours),
+                rebellion_core::test_support::add_ground_troop(&mut world, system, ours),
+                rebellion_core::test_support::add_ground_troop(&mut world, system, !ours),
             );
             let battery = world.defense_facilities.insert(DefenseFacilityInstance {
                 side: holder,
@@ -1485,18 +1474,13 @@ mod tests {
     // at once, on the ship with room (regiment-unload.md).
     #[test]
     fn embark_boards_the_players_regiments_and_refuses_too_many_with_nothing_moved() {
-        use rebellion_core::world::{ShipInstance, TroopUnit};
+        use rebellion_core::world::ShipInstance;
         for holder in [Faction::Alliance, Faction::Empire] {
             let (mut world, system, ours) = controlled_system(holder);
             let troops: Vec<_> = [ours, ours, !ours]
                 .into_iter()
                 .map(|is_alliance| {
-                    let key = world.troops.insert(TroopUnit {
-                        is_alliance,
-                        ..TroopUnit::default()
-                    });
-                    world.systems[system].ground_units.push(key);
-                    key
+                    rebellion_core::test_support::add_ground_troop(&mut world, system, is_alliance)
                 })
                 .collect();
             let ship = world.capital_ship_classes.insert(CapitalShipClass {

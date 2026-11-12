@@ -41,6 +41,7 @@
 
 use egui_macroquad::egui;
 use macroquad::prelude::*;
+use rebellion_core::dat::Faction;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
 use crate::message_log::MessageRail;
@@ -55,6 +56,17 @@ use crate::windowing::GalaxyChild;
 pub enum CockpitFaction {
     Alliance,
     Empire,
+}
+
+impl CockpitFaction {
+    /// Simulation faction represented by this strategic cockpit.
+    #[must_use]
+    pub const fn player(self) -> Faction {
+        match self {
+            Self::Alliance => Faction::Alliance,
+            Self::Empire => Faction::Empire,
+        }
+    }
 }
 
 /// Logical width of the original strategic command-center surface.
@@ -2129,14 +2141,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let layout = state.layout_for(640.0, 480.0);
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(640.0, 480.0),
-            )),
-            events,
-            ..Default::default()
-        };
+        let input = crate::test_support::raw_input(events, egui::vec2(640.0, 480.0));
         let _ = ctx.run(input, |ctx| {
             let _ = draw_gid_menu(ctx, state, &mut cache, layout, input_enabled);
         });
@@ -2172,13 +2177,7 @@ mod tests {
                 if frame == 1 {
                     state.gid_ui.open_menu();
                 }
-                let input = egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(640.0, 480.0),
-                    )),
-                    ..Default::default()
-                };
+                let input = crate::test_support::raw_input(Vec::new(), egui::vec2(640.0, 480.0));
                 shapes = ctx
                     .run(input, |ctx| {
                         crate::advisor::advisor_painter(ctx).rect_filled(
@@ -3118,17 +3117,15 @@ mod tests {
         use crate::windowing_input::{
             FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
         };
-        use rebellion_windowing::{WindowCommand, WindowKind, WindowOwner};
+        use rebellion_windowing::{WindowKind, WindowOwner};
 
         let mut manager = rebellion_windowing::WindowManager::new();
-        manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::FleetFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .expect("unrelated modal opens");
+        crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::FleetFinder,
+            WindowOwner::StrategicRoot,
+            "unrelated modal",
+        );
         let frame = manager.begin_frame();
         let mut router = FrameInputRouter::default();
         router.begin_frame(1, &frame);

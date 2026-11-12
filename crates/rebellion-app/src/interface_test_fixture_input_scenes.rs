@@ -17,7 +17,10 @@ use serde_json::{json, Value};
 use crate::tactical_flow::{self, BattleEntry};
 use crate::GameMode;
 
-use super::{FixtureRequest, Scenario};
+use super::{
+    active_modal_id, capture_window_id, focused_window_json, registered_window_ids, FixtureRequest,
+    Scenario,
+};
 
 #[cfg(target_arch = "wasm32")]
 extern "C" {
@@ -254,14 +257,7 @@ impl InputScenesFixture {
             return;
         }
         let snapshot = windows.snapshot;
-        let mut registered = snapshot
-            .paint_order()
-            .iter()
-            .chain(snapshot.presentation_history())
-            .copied()
-            .collect::<Vec<_>>();
-        registered.sort_unstable();
-        registered.dedup();
+        let registered = registered_window_ids(snapshot);
         let state = json!({
             "status": "input-scenes-state",
             "code": request.code,
@@ -269,14 +265,11 @@ impl InputScenesFixture {
             "command": self.last_command.map(InputScenesCommand::label),
             "registered": registered.iter().map(|id| id.get()).collect::<Vec<_>>(),
             "record_count": registered.len(),
-            "focused": snapshot.focused().map(|focus| json!({
-                "window": focus.window.get(),
-                "control": focus.control.map(|control| control.0),
-            })),
-            "capture": snapshot.capture_owner().map(WindowId::get),
+            "focused": focused_window_json(snapshot),
+            "capture": capture_window_id(snapshot),
             "fleet_dragging": windows.fleets.is_dragging(),
             "fleet_drag_owner": windows.fleets.drag_owner().map(WindowId::get),
-            "active_modal": snapshot.active_modal().map(WindowId::get),
+            "active_modal": active_modal_id(snapshot),
             "failure_target": self.failure_target.map(WindowId::get),
             "forced_status": self.failure.map(|failure| status_name(failure.status())),
             "blocking_unpainted": windows.reconciliation.blocking_unpainted

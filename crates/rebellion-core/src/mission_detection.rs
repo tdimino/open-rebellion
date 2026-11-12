@@ -849,35 +849,14 @@ mod tests {
     use crate::missions::MissionKind;
     use crate::world::{
         Character, ControlKind, Fleet, MissionRecord, MissionTargetRules, MstbEntry, MstbTable,
-        ShipInstance, SkillPair, SpecialForceUnit, System, TroopClassDef, TroopUnit,
+        ShipInstance, SkillPair, SpecialForceUnit, TroopClassDef, TroopUnit,
     };
 
     /// A populated system held by `control`.
     fn system(world: &mut GameWorld, control: ControlKind) -> SystemKey {
-        world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: "System".into(),
-            sector: crate::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        })
+        let mut system = crate::test_support::system("System", control);
+        system.dat_id = DatId::new(0x9000_0001);
+        world.systems.insert(system)
     }
 
     fn imperial() -> ControlKind {

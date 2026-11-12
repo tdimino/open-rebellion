@@ -940,40 +940,29 @@ mod tests {
         is_alliance: bool,
     ) -> (GameWorld, SystemKey, EconomyState, ManufacturingState) {
         let mut world = GameWorld::default();
+        let sector = world.sectors.insert(crate::world::Sector {
+            dat_id: crate::ids::DatId(0x8000_0001),
+            name: "Core".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        });
         let sys = System {
             dat_id: crate::ids::DatId(0x9000_0001),
-            name: "Coruscant".into(),
-            sector: world.sectors.insert(crate::world::Sector {
-                dat_id: crate::ids::DatId(0x8000_0001),
-                name: "Core".into(),
-                group: crate::dat::SectorGroup::Core,
-                x: 0,
-                y: 0,
-                systems: vec![],
-            }),
-            x: 100,
-            y: 100,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
             total_energy: 10,
             raw_materials: 10,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: if is_alliance {
-                ControlKind::Controlled(crate::dat::Faction::Alliance)
-            } else {
-                ControlKind::Controlled(crate::dat::Faction::Empire)
-            },
+            ..crate::test_support::system_at(
+                "Coruscant",
+                sector,
+                100,
+                100,
+                ControlKind::Controlled(if is_alliance {
+                    crate::dat::Faction::Alliance
+                } else {
+                    crate::dat::Faction::Empire
+                }),
+            )
         };
         let sys_key = world.systems.insert(sys);
         let eco = EconomyState::default();
@@ -1422,27 +1411,17 @@ mod tests {
         // sys2: requirement=2, troops=0 → deficit=2
         let sys2 = world.systems.insert(System {
             dat_id: crate::ids::DatId(0x9000_0002),
-            name: "Hoth".into(),
-            sector: world.sectors.keys().next().unwrap(),
-            x: 50,
-            y: 50,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.3,
             popularity_empire: 0.7,
-            is_populated: true,
             total_energy: 5,
             raw_materials: 5,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(crate::dat::Faction::Alliance),
+            ..crate::test_support::system_at(
+                "Hoth",
+                world.sectors.keys().next().unwrap(),
+                50,
+                50,
+                ControlKind::Controlled(crate::dat::Faction::Alliance),
+            )
         });
         world.support_values.insert(
             sys2,

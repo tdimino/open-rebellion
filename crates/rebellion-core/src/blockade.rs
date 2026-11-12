@@ -879,7 +879,7 @@ impl BlockadeSystem {
 mod tests {
     use super::*;
     use crate::carriage::ProductRoom;
-    use crate::dat::{ExplorationStatus, Faction, SectorGroup};
+    use crate::dat::{Faction, SectorGroup};
     use crate::ids::DatId;
     use crate::tick::TickEvent;
     use crate::world::{ControlKind, Fleet, GameWorld, Sector, System, TroopUnit};
@@ -889,30 +889,15 @@ mod tests {
     }
 
     fn system(dat_id: u32, name: &str, sector: crate::ids::SectorKey, x: u16, y: u16) -> System {
-        System {
-            dat_id: DatId::new(dat_id),
-            name: name.into(),
+        let mut system = crate::test_support::system_at(
+            name,
             sector,
             x,
             y,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
-        }
+            ControlKind::Controlled(Faction::Alliance),
+        );
+        system.dat_id = DatId::new(dat_id);
+        system
     }
 
     fn make_world() -> (GameWorld, SystemKey) {

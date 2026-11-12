@@ -1864,27 +1864,9 @@ mod tests {
     fn bare_system(world: &mut GameWorld, control: ControlKind) -> SystemKey {
         world.systems.insert(rebellion_core::world::System {
             dat_id: DatId::new(0x9000_0001),
-            name: "Here".into(),
-            sector: rebellion_core::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
             total_energy: 4,
             raw_materials: 2,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
+            ..rebellion_core::test_support::system("Here", control)
         })
     }
 

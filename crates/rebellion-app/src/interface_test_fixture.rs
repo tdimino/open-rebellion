@@ -47,11 +47,12 @@ use rebellion_render::object_menu::{ObjectMenuCommand, ObjectMenuState};
 use rebellion_render::quadrant_icons::Quadrant;
 use rebellion_render::system_window::reference_rail_slots;
 use rebellion_render::{
-    strategic_primary_controls, CockpitButton, CockpitFaction, CockpitState, GalaxyMapState,
-    GameMessage, GidMode, MessageCategory, SectorWindowState, SystemWindowState,
+    strategic_primary_controls, CockpitButton, CockpitFaction, CockpitLayout, CockpitState,
+    GalaxyMapState, GameMessage, GidMode, MessageCategory, SectorWindowState, StrategicControlSpec,
+    SystemWindowState,
 };
 use rebellion_render::{DefensesPage, DefensesWindowState, MissionsTab, MissionsWindowState};
-use rebellion_windowing::{RoutingSnapshot, WindowKind};
+use rebellion_windowing::{RoutingSnapshot, WindowId, WindowKind};
 use serde::Serialize;
 
 use crate::encyclopedia_surface::{CanonicalFixtureStart, FixtureStart};
@@ -497,10 +498,7 @@ pub fn apply(
     // (`FUN_005003d0`), so the Death Star scenario gives the first fleet one.
     let death_star = (request.scenario == Scenario::DeathStarIntel).then(|| {
         world
-            .capital_ship_classes
-            .iter()
-            .find(|(_, class)| class.is_death_star())
-            .map(|(key, class)| (key, class.hull.cast_signed()))
+            .death_star_class_and_hull()
             .expect("the Death Star scenario needs a family-0x18 capital ship class")
     });
     if let Some((fleet_key, fleet)) = world.fleets.iter_mut().next() {
@@ -689,10 +687,7 @@ fn place_moving_fleet(
     // ship (`FUN_005003d0`), so Destroy System is listed enabled.
     if request.scenario == Scenario::StrikeDeathStar {
         let (class, hull) = world
-            .capital_ship_classes
-            .iter()
-            .find(|(_, class)| class.is_death_star())
-            .map(|(key, class)| (key, class.hull.cast_signed()))
+            .death_star_class_and_hull()
             .expect("the strike scenario needs a family-0x18 capital ship class");
         world.fleets[player]
             .capital_ships
@@ -1988,6 +1983,42 @@ fn rect_array(rect: egui_macroquad::egui::Rect) -> [f32; 4] {
     [rect.min.x, rect.min.y, rect.width(), rect.height()]
 }
 
+fn registered_window_ids(snapshot: &RoutingSnapshot) -> Vec<WindowId> {
+    let mut registered = snapshot
+        .paint_order()
+        .iter()
+        .chain(snapshot.presentation_history())
+        .copied()
+        .collect::<Vec<_>>();
+    registered.sort_unstable();
+    registered.dedup();
+    registered
+}
+
+fn focused_window_json(snapshot: &RoutingSnapshot) -> Option<serde_json::Value> {
+    snapshot.focused().map(|focus| {
+        serde_json::json!({
+            "window": focus.window.get(),
+            "control": focus.control.map(|control| control.0),
+        })
+    })
+}
+
+fn capture_window_id(snapshot: &RoutingSnapshot) -> Option<u64> {
+    snapshot.capture_owner().map(WindowId::get)
+}
+
+fn active_modal_id(snapshot: &RoutingSnapshot) -> Option<u64> {
+    snapshot.active_modal().map(WindowId::get)
+}
+
+fn strategic_control_center(layout: CockpitLayout, control: &StrategicControlSpec) -> [f32; 2] {
+    [
+        layout.canvas.x + (control.rect.x + control.rect.width / 2.0) * layout.scale,
+        layout.canvas.y + (control.rect.y + control.rect.height / 2.0) * layout.scale,
+    ]
+}
+
 /// Emits the open windows and the rail each time they change.
 #[derive(Debug, Default)]
 pub struct QuadrantWatch {
@@ -3246,33 +3277,11 @@ mod tests {
     /// One system held by `side` with one recruited character of that side
     /// on it, and the shipped MISSNSD Diplomacy record `0x51000010`.
     fn diplomacy_world(side: Faction) -> GameWorld {
-        use rebellion_core::world::{
-            Character, MissionMemberRules, MissionRecord, MissionTargetRules, SkillPair, System,
-        };
+        use rebellion_core::world::{Character, SkillPair, System};
         let mut world = GameWorld::default();
         let here = world.systems.insert(System {
             dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
-            name: "System".into(),
-            sector: rebellion_core::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(side),
+            ..rebellion_core::test_support::system("System", ControlKind::Controlled(side))
         });
         world.characters.insert(Character {
             name: "Agent".into(),
@@ -3286,34 +3295,7 @@ mod tests {
             recruited: true,
             ..Default::default()
         });
-        world.mission_records = vec![MissionRecord {
-            dat_id: rebellion_core::ids::DatId::new(0x5100_0010),
-            timer_min_days: 5,
-            timer_spread_days: 10,
-            repeats: true,
-            hidden: false,
-            detection_phases: true,
-            can_resign: true,
-            return_policy: 1,
-            rules: MissionTargetRules {
-                container_loss_ends: true,
-                needs_populated_container: true,
-                target_loss_ends: true,
-                own_side_target: true,
-                other_side_target: true,
-                opponent_target: false,
-                revolting_target: false,
-                calm_target: true,
-                prisoner_target: false,
-                free_target: false,
-            },
-            members: MissionMemberRules {
-                alliance: true,
-                empire: true,
-                special_force_mask: 0,
-                character_mask: 0x1_0000,
-            },
-        }];
+        world.mission_records = vec![rebellion_core::test_support::diplomacy_mission_record()];
         world
     }
 
@@ -5422,17 +5404,6 @@ mod tests {
     /// 6, 8), the shield limit `0x1e03` (2) and the landing's garrison
     /// figures 7761 (60) and 7762 (-10).
     fn assault_gnprtb(world: &mut GameWorld) {
-        let entry = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
-            parameter_id: id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
         world.gnprtb = rebellion_core::world::GnprtbParams::new(
             [
                 (0x200, 5),
@@ -5446,7 +5417,7 @@ mod tests {
                 (7762, -10),
             ]
             .into_iter()
-            .map(|(id, value)| entry(id, value))
+            .map(|(id, value)| rebellion_core::test_support::gnprtb_entry(id, value))
             .collect(),
         );
     }

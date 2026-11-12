@@ -200,12 +200,10 @@ pub(crate) fn apply_results(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::dat::{ExplorationStatus, SectorGroup};
+    use rebellion_core::dat::SectorGroup;
     use rebellion_core::ids::DatId;
     use rebellion_core::tactical::CombatWinner;
-    use rebellion_core::world::{
-        CapitalShipClass, Character, ControlKind, Fleet, Sector, ShipInstance, System,
-    };
+    use rebellion_core::world::{CapitalShipClass, Character, ControlKind, Fleet, Sector, System};
 
     fn opposing_empty_fleets() -> (GameWorld, SystemKey, FleetKey, FleetKey) {
         let mut world = GameWorld::default();
@@ -219,27 +217,13 @@ mod tests {
         });
         let system = world.systems.insert(System {
             dat_id: DatId::new(2),
-            name: "Test System".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+            ..rebellion_core::test_support::system_at(
+                "Test System",
+                sector,
+                0,
+                0,
+                ControlKind::Uncontrolled,
+            )
         });
         let make_fleet = |is_alliance| Fleet {
             location: system,
@@ -259,17 +243,16 @@ mod tests {
     /// (`FUN_005003d0`).
     fn give_death_star_ship(world: &mut GameWorld, fleet: FleetKey) {
         let is_alliance = world.fleets[fleet].is_alliance;
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(rebellion_core::world::DEATH_STAR_CLASS_ID),
-            family: 0x18,
-            is_alliance,
-            is_empire: !is_alliance,
-            hull: 100,
-            ..CapitalShipClass::default()
-        });
-        world.fleets[fleet]
-            .capital_ships
-            .push(ShipInstance::new(class, 100, is_alliance));
+        rebellion_core::test_support::add_death_star_ship(
+            world,
+            fleet,
+            CapitalShipClass {
+                is_alliance,
+                is_empire: !is_alliance,
+                hull: 100,
+                ..CapitalShipClass::default()
+            },
+        );
     }
 
     fn assert_entry_rejected(world: &GameWorld, entry: BattleEntry, expected: BattleEntryError) {

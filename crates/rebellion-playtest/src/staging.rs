@@ -14,7 +14,7 @@ use rebellion_core::dat::Faction;
 use rebellion_core::fog::{FogState, FogSystem};
 use rebellion_core::tuning::GameConfig;
 use rebellion_core::world::GameWorld;
-use rebellion_data::save::{load_file, save_file, SaveState};
+use rebellion_data::save::{load_file, save_file, LoadedSimulation, SaveState};
 use rebellion_data::simulation::SimulationStates;
 
 /// A loaded save as the playtest holds it, beside its world.
@@ -37,63 +37,18 @@ pub struct Staged {
 /// Returns the save's read, version or fingerprint error.
 pub fn load(path: &Path) -> anyhow::Result<(GameWorld, Staged)> {
     let (_, save) = load_file(path, 0)?;
-    let SaveState {
+    let LoadedSimulation {
         world,
-        clock,
-        manufacturing,
-        missions,
-        events,
-        ai,
-        movement,
-        fog_alliance,
-        fog_empire,
+        states,
+        inactive_fog: _,
         player_is_alliance,
-        blockade,
-        uprising,
-        research,
-        jedi,
-        victory,
-        betrayal,
-        economy,
         sim_rng,
-        ai2,
-        repair,
         game_config,
-        campaign_config,
-        troop_transport,
-        deliveries,
         player_agent: _,
-        stockpiles,
-    } = save;
-    let ai_faction = ai.faction.unwrap_or(AiFaction::Empire);
-    let fog = if player_is_alliance {
-        fog_alliance
-    } else {
-        fog_empire
-    };
+    } = save.into_simulation();
+    let ai_faction = states.ai.faction.unwrap_or(AiFaction::Empire);
     let staged = Staged {
-        states: SimulationStates {
-            clock,
-            manufacturing,
-            missions,
-            events,
-            ai,
-            ai2,
-            movement,
-            fog,
-            blockade,
-            uprising,
-            research,
-            jedi,
-            victory,
-            betrayal,
-            economy,
-            repair,
-            troop_transport,
-            deliveries,
-            stockpiles,
-            campaign_config,
-        },
+        states,
         rng: sim_rng,
         game_config,
         ai_faction,
@@ -122,39 +77,18 @@ pub fn save_out(
         FogSystem::seed(&mut fog, world);
         fog
     };
-    let (fog_alliance, fog_empire) = if states.fog.faction == Faction::Alliance {
-        (states.fog.clone(), other(Faction::Empire))
-    } else {
-        (other(Faction::Alliance), states.fog.clone())
-    };
-    let state = SaveState {
-        world: world.clone(),
-        clock: states.clock.clone(),
-        manufacturing: states.manufacturing.clone(),
-        missions: states.missions.clone(),
-        events: states.events.clone(),
-        ai: states.ai.clone(),
-        movement: states.movement.clone(),
-        fog_alliance,
-        fog_empire,
+    let player_faction = Faction::of_alliance(player_is_alliance);
+    debug_assert_eq!(states.fog.faction, player_faction);
+    let inactive_fog = other(Faction::of_alliance(!player_is_alliance));
+    let state = SaveState::from_simulation(
+        world.clone(),
+        states.clone(),
+        inactive_fog,
         player_is_alliance,
-        blockade: states.blockade.clone(),
-        uprising: states.uprising.clone(),
-        research: states.research.clone(),
-        jedi: states.jedi.clone(),
-        victory: states.victory.clone(),
-        betrayal: states.betrayal.clone(),
-        economy: states.economy.clone(),
-        sim_rng: rng.clone(),
-        ai2: states.ai2.clone(),
-        repair: states.repair.clone(),
-        game_config: game_config.clone(),
-        campaign_config: states.campaign_config,
-        troop_transport: states.troop_transport.clone(),
-        deliveries: states.deliveries.clone(),
-        player_agent: rebellion_core::agent_automation::PlayerAgent::default(),
-        stockpiles: states.stockpiles.clone(),
-    };
+        rng.clone(),
+        game_config.clone(),
+        rebellion_core::agent_automation::PlayerAgent::default(),
+    );
     let name = format!("Playtest day {}", states.clock.tick);
     let fingerprint = save_file(path, &name, &state, &[])?;
     Ok(fingerprint.to_string())

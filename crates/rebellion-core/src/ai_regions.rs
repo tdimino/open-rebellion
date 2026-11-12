@@ -6,7 +6,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ai::AIAction;
-use crate::ai_production::{rank_pick, Dir, Round, SectorRecord, SystemRecord, Turn};
+use crate::ai_production::{
+    rank_pick, resume_or_first_index, Dir, Round, SectorRecord, SystemRecord, Turn,
+};
 use crate::ai_records::{fleet, ship, sys, BestClasses, FleetRecord, Marks, ShipRecord};
 use crate::ai_strategy::{ctx, Holder};
 use crate::ids::{FleetKey, SectorKey, SystemKey};
@@ -364,9 +366,7 @@ impl Regions {
             }
             2 => {
                 // FUN_004cf760: the record after the last, else the head.
-                let at = self
-                    .index(self.next)
-                    .or_else(|| (!self.records.is_empty()).then_some(0));
+                let at = resume_or_first_index(&self.records, self.next, |record| record.id);
                 let Some(at) = at else {
                     self.current = 0;
                     self.next = 0;
@@ -3195,15 +3195,12 @@ mod tests {
     // until they are complete.
     #[test]
     fn a_record_takes_no_unfinished_ship_from_a_free_fleet_for_either_side() {
-        use crate::world::{CapitalShipClass, Fleet, Sector, ShipInstance, System};
+        use crate::world::{CapitalShipClass, Fleet, ShipInstance, System};
         for side in [Faction::Alliance, Faction::Empire] {
             let is_alliance = side == Faction::Alliance;
             let mut world = GameWorld::default();
-            let sector = world.sectors.insert(Sector::default());
-            let system = world.systems.insert(System {
-                sector,
-                ..System::default()
-            });
+            let system = crate::test_support::insert_system(&mut world, System::default());
+            let sector = world.systems[system].sector;
             let class = world.capital_ship_classes.insert(CapitalShipClass {
                 is_alliance,
                 is_empire: !is_alliance,

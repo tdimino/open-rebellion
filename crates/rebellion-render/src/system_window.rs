@@ -20,10 +20,7 @@ use rebellion_core::manufacturing::{ManufacturingState, ProductionArea};
 use rebellion_core::missions::{MissionState, MissionTarget};
 use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
 use rebellion_core::world::{ControlKind, GameWorld};
-use rebellion_windowing::{
-    ContentReport, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner, WindowSpec,
-    WindowTransition,
-};
+use rebellion_windowing::{RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowTransition};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
@@ -34,13 +31,18 @@ use crate::manufacturing_window::{
     BAND_RECTS, BAND_STATUS, BAND_TITLE, BAND_UNITS, CELL, COLUMNS, COUNT_ORIGINS, LIST,
     PROGRESS_RECTS, YARD_COLUMN,
 };
+use crate::native_geometry::{
+    exact_clicked, logical_point, logical_rect, paint_texture_rect, rect_contains,
+};
 use crate::object_menu::MenuObject;
 use crate::strategic_window_common;
 use crate::windowing::GalaxyChild;
 use crate::windowing_input::{
     FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
 };
-use crate::windowing_policy::{contextual_spec, system_subject};
+#[cfg(test)]
+use crate::windowing_policy::contextual_spec;
+use crate::windowing_policy::system_subject;
 
 pub const SYSTEM_WINDOW_CLIENT_WIDTH: f32 = 226.0;
 /// `FUN_0045aac0` creates type 9 at 226 by 304 (`0xe2` by `0x130`).
@@ -49,12 +51,6 @@ pub const SYSTEM_WINDOW_HEIGHT: f32 = 304.0;
 pub const REFERENCE_RAIL_SLOTS: usize = 12;
 
 const WINDOW_BACKGROUND: u32 = 10297;
-const CLOSE_NORMAL: u32 = 10108;
-const CLOSE_PRESSED: u32 = 10109;
-const MINIMIZE_NORMAL: u32 = 10253;
-const MINIMIZE_PRESSED: u32 = 10254;
-const SECTOR_NORMAL: u32 = 10209;
-const SECTOR_PRESSED: u32 = 10208;
 /// The title buttons (`FUN_00455060`): the sector button at (3, 3); close
 /// right-aligned 3 in (226 - 14 - 3), minimize just left of it.
 const SECTOR_X: f32 = 3.0;
@@ -268,17 +264,11 @@ struct OpenSystemWindow {
     selected_band: Option<ProductionArea>,
 }
 
-strategic_window_common::impl_strategic_window_record!(OpenSystemWindow);
-
-/// Validated System content held aside until the manager accepts its stable
-/// `(System, system DAT ID)` identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PreparedSystemWindow {
-    spec: WindowSpec,
-    faction: CockpitFaction,
-    system: SystemKey,
-    logical_position: (i16, i16),
-}
+strategic_window_common::impl_strategic_window_record!(
+    OpenSystemWindow,
+    open_window_area_id,
+    open_window_screen_rect
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RailEntry {
@@ -329,20 +319,6 @@ impl RailEntry {
     }
 }
 
-impl PreparedSystemWindow {
-    /// Complete manager declaration for this content candidate.
-    #[must_use]
-    pub const fn spec(&self) -> WindowSpec {
-        self.spec
-    }
-
-    /// Runtime system identity retained beside the stable DAT subject.
-    #[must_use]
-    pub const fn system(&self) -> SystemKey {
-        self.system
-    }
-}
-
 /// Mutable System-window content. Presentation history belongs exclusively to
 /// the shared manager and is projected by [`reference_rail_slots`].
 #[derive(Debug)]
@@ -359,18 +335,31 @@ pub struct SystemWindowState {
     title_drag: Option<TitleDrag>,
 }
 
-impl Default for SystemWindowState {
-    fn default() -> Self {
-        Self {
-            faction: CockpitFaction::Alliance,
-            windows: Vec::new(),
-            rail: Vec::new(),
-            painted: Vec::new(),
-            band_rename: None,
-            title_drag: None,
-        }
-    }
-}
+strategic_window_common::impl_strategic_window_state_core!(
+    SystemWindowState,
+    OpenSystemWindow,
+    open_window_area_id,
+    rail = Vec::new(),
+    painted = Vec::new(),
+    band_rename = None,
+);
+strategic_window_common::impl_system_keyed_window_routing!(
+    SystemWindowState,
+    GalaxyChild::System,
+    open_window_area_id,
+    open_window_screen_rect
+);
+strategic_window_common::define_basic_prepared_detail!(
+    /// Validated System content held aside until the manager accepts its
+    /// stable `(System, system DAT ID)` identity.
+    PreparedSystemWindow for SystemWindowState,
+    kind: WindowKind::System,
+    size: (SYSTEM_WINDOW_WIDTH, SYSTEM_WINDOW_HEIGHT),
+);
+strategic_window_common::impl_system_content_reports!(SystemWindowState, WindowKind::System);
+strategic_window_common::impl_saved_system_windows!(SystemWindowState, |system| {
+    SavedWindowKind::System { system }
+});
 
 /// A band's in-place name edit (window `+0x170`, a `CoolStringField`), which
 /// the band menu's Rename opens over the band's product name
@@ -402,40 +391,6 @@ enum BandRenameOutcome {
 }
 
 impl SystemWindowState {
-    /// Whether any window of this kind is open.
-    #[must_use]
-    pub fn any_open(&self) -> bool {
-        !self.windows.is_empty()
-    }
-
-    /// Egui layer attached to one manager-issued System identity.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        strategic_window_common::managed_layer_id(&self.windows, id, |window| {
-            window_area_id(*window)
-        })
-    }
-
-    /// Validates and prepares System content without mutating the live store.
-    /// The stable subject is the system's original DAT identity.
-    #[must_use]
-    pub fn prepare_open(
-        &self,
-        world: &GameWorld,
-        system: SystemKey,
-        logical_position: (i16, i16),
-        faction: CockpitFaction,
-        layout: CockpitLayout,
-    ) -> Option<PreparedSystemWindow> {
-        let subject = system_subject(world, system)?;
-        Some(PreparedSystemWindow {
-            spec: contextual_spec(WindowKind::System, subject, WindowOwner::StrategicRoot),
-            faction,
-            system,
-            logical_position: clamp_to_galaxy(logical_position, layout),
-        })
-    }
-
     /// Publishes new System content, or confirms the exact preserved content,
     /// only after a successful manager open commit.
     pub fn commit_open(
@@ -443,13 +398,9 @@ impl SystemWindowState {
         prepared: PreparedSystemWindow,
         transition: &WindowTransition,
     ) -> Option<WindowId> {
-        let subject = prepared.spec.key.subject?;
-        strategic_window_common::commit_open(
-            &mut self.windows,
-            &mut self.faction,
-            prepared.faction,
-            prepared.system,
-            subject,
+        strategic_window_common::commit_prepared_detail!(
+            self,
+            prepared,
             transition,
             |id, subject| OpenSystemWindow {
                 id: Some(id),
@@ -477,42 +428,21 @@ impl SystemWindowState {
         layout: CockpitLayout,
     ) -> bool {
         self.prepare_faction(faction);
-        if !world.systems.contains_key(system) {
-            return false;
-        }
-        if self.focus(system) {
-            return true;
-        }
-        let logical_position = clamp_to_galaxy(logical_position, layout);
-        self.windows.push(OpenSystemWindow {
-            id: None,
-            subject: None,
+        strategic_window_common::open_direct_system(
+            &mut self.windows,
+            world,
             system,
-            logical_position,
-            tab: SystemWindowTab::Overview,
-            selected_item: None,
-            selected_band: None,
-        });
-        true
-    }
-
-    /// Exact manager identity attached to `system`'s committed content.
-    #[must_use]
-    pub fn window_id(&self, system: SystemKey) -> Option<WindowId> {
-        strategic_window_common::window_id(&self.windows, system)
-    }
-
-    /// Whether `system`'s exact content identity participates in this frozen
-    /// frame. Direct fixture content has no manager identity and stays visible.
-    #[must_use]
-    pub fn window_is_visible(&self, snapshot: &RoutingSnapshot, system: SystemKey) -> bool {
-        strategic_window_common::window_is_visible(&self.windows, snapshot, system)
-    }
-
-    /// Whether exact manager-owned System content remains attached.
-    #[must_use]
-    pub fn contains_window(&self, id: WindowId) -> bool {
-        self.windows.iter().any(|window| window.id == Some(id))
+            |window| window.system == system,
+            || OpenSystemWindow {
+                id: None,
+                subject: None,
+                system,
+                logical_position: clamp_to_galaxy(logical_position, layout),
+                tab: SystemWindowTab::Overview,
+                selected_item: None,
+                selected_band: None,
+            },
+        )
     }
 
     /// Removes only content named by manager teardown receipts.
@@ -522,23 +452,6 @@ impl SystemWindowState {
 
     /// Reports every active System identity in the frozen snapshot, including
     /// minimized history entries whose content remains attached.
-    #[must_use]
-    pub fn content_reports(
-        &self,
-        snapshot: &RoutingSnapshot,
-        world: &GameWorld,
-    ) -> Vec<ContentReport> {
-        strategic_window_common::content_reports(
-            &self.windows,
-            snapshot,
-            WindowKind::System,
-            |window, _| {
-                world.systems.contains_key(window.system)
-                    && system_subject(world, window.system) == window.subject
-            },
-        )
-    }
-
     /// Open `system`'s window on `tab`.
     pub fn open_tab(
         &mut self,
@@ -564,9 +477,8 @@ impl SystemWindowState {
         system: SystemKey,
         tab: SystemWindowTab,
     ) -> Option<egui::Rect> {
-        let window = self.windows.iter().find(|window| window.system == system)?;
         Some(tab_rect(
-            window_screen_rect(*window, layout),
+            self.detail_screen_rect(layout, system)?,
             layout.scale,
             tab,
         ))
@@ -581,89 +493,17 @@ impl SystemWindowState {
         system: SystemKey,
         area: ProductionArea,
     ) -> Option<egui::Rect> {
-        let window = self.windows.iter().find(|window| window.system == system)?;
         Some(band_rect(
-            window_screen_rect(*window, layout),
+            self.detail_screen_rect(layout, system)?,
             layout.scale,
             area,
         ))
     }
 
-    /// The screen rect of the `index`th cell of `system`'s facility page.
-    #[must_use]
-    pub fn cell_screen_rect(
-        &self,
-        layout: CockpitLayout,
-        system: SystemKey,
-        index: usize,
-    ) -> Option<egui::Rect> {
-        let window = self.windows.iter().find(|window| window.system == system)?;
-        Some(cell_rect(
-            window_screen_rect(*window, layout),
-            layout.scale,
-            index,
-        ))
-    }
-
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.contains_shown_screen_point(layout, point, &|_| true)
-    }
-
-    /// [`contains_screen_point`](Self::contains_screen_point) over the
-    /// windows `shown` passes.
-    #[must_use]
-    pub fn contains_shown_screen_point(
-        &self,
-        layout: CockpitLayout,
-        point: (f32, f32),
-        shown: &dyn Fn(GalaxyChild) -> bool,
-    ) -> bool {
-        strategic_window_common::contains_shown_screen_point(
-            &self.windows,
-            point,
-            |system| shown(GalaxyChild::System(system)),
-            |window| window_screen_rect(*window, layout),
-        )
-    }
-
-    /// Whether visible System content covers `point`. Minimized manager
-    /// content remains attached but cannot block the strategic root.
-    #[must_use]
-    pub fn contains_visible_screen_point(
-        &self,
-        snapshot: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> bool {
-        strategic_window_common::contains_visible_screen_point_where(
-            &self.windows,
-            snapshot,
-            point,
-            |_| true,
-            |window| window_screen_rect(*window, layout),
-        )
-    }
-
-    /// Exact visible manager identity whose System rectangle covers `point`
-    /// when egui reports that same content layer as topmost.
-    #[must_use]
-    pub fn hit_window_ids(
-        &self,
-        snapshot: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-        top_layer: Option<egui::LayerId>,
-    ) -> std::collections::BTreeSet<WindowId> {
-        strategic_window_common::hit_window_ids_where(
-            &self.windows,
-            snapshot,
-            point,
-            top_layer,
-            |_| true,
-            |window| window_area_id(*window),
-            |window| window_screen_rect(*window, layout),
-        )
+    fn detail_screen_rect(&self, layout: CockpitLayout, system: SystemKey) -> Option<egui::Rect> {
+        strategic_window_common::screen_rect(&self.windows, system, |window| {
+            window_screen_rect(*window, layout)
+        })
     }
 
     #[must_use]
@@ -714,16 +554,15 @@ impl SystemWindowState {
         layer: egui::LayerId,
         point: egui::Pos2,
     ) -> Option<MissionTarget> {
-        let window = self
-            .windows
-            .iter()
-            .find(|window| area_id(window.system) == layer.id)?;
+        let (window, local) = strategic_window_common::local_point_for_layer(
+            &self.windows,
+            layout,
+            layer,
+            point,
+            |window| area_id(window.system),
+            |window, layout| window_screen_rect(*window, layout),
+        )?;
         window.tab.page()?;
-        let rect = window_screen_rect(*window, layout);
-        let local = (
-            (point.x - rect.min.x) / layout.scale,
-            (point.y - rect.min.y) / layout.scale,
-        );
         let index = grid_cell(local, LIST, CELL, COLUMNS)?;
         let (_, cells) = self
             .painted
@@ -796,23 +635,6 @@ impl SystemWindowState {
         let open = self.windows.iter().any(|window| window.system == system);
         self.close(system);
         open
-    }
-
-    /// The shown System content; saved order is supplied by `WindowManager`.
-    #[must_use]
-    pub fn saved_windows(&self, world: &GameWorld) -> Vec<SavedWindow> {
-        self.windows
-            .iter()
-            .filter_map(|window| {
-                Some(SavedWindow {
-                    kind: SavedWindowKind::System {
-                        system: world.systems.get(window.system)?.dat_id,
-                    },
-                    position: window.logical_position,
-                    shown: true,
-                })
-            })
-            .collect()
     }
 
     /// Whether the Fleet window `id` is minimized on the rail.
@@ -1124,22 +946,6 @@ impl SystemWindowState {
         true
     }
 
-    /// Carry a window drag one frame ([`TitleDrag`]): the window follows
-    /// the pointer while the button is down, and the release lets go.
-    fn update_title_drag(&mut self, ctx: &egui::Context, layout: CockpitLayout) {
-        strategic_window_common::update_title_drag(
-            &mut self.windows,
-            &mut self.title_drag,
-            ctx,
-            layout,
-            |window| area_id(window.system),
-        );
-    }
-
-    fn window_mut(&mut self, system: SystemKey) -> Option<&mut OpenSystemWindow> {
-        strategic_window_common::window_mut(&mut self.windows, system)
-    }
-
     /// Show `tab`'s page; a new page clears the item selection
     /// (`FUN_004568a0` refills the list).
     fn select_tab(&mut self, system: SystemKey, tab: SystemWindowTab) {
@@ -1380,20 +1186,6 @@ pub fn draw_managed_system_windows(draw: ManagedSystemDraw<'_>) -> Vec<SystemWin
     )
 }
 
-fn claim_system_pointer_event(
-    router: &mut FrameInputRouter,
-    events: &[SystemWindowInputEvent],
-    window: WindowId,
-    phase: PointerPhase,
-) -> Option<InputEventId> {
-    events.iter().rev().find_map(|event| {
-        (event.phase == phase
-            && router.pointer_recipient(event.id) == InputRecipient::Window(window)
-            && router.claim(event.id, InputRecipient::Window(window)))
-        .then_some(event.id)
-    })
-}
-
 /// Claim the exact press that the owning System window routes through the
 /// live band-name edit (`FUN_004534f0`, 0x201/0x204 -> `FUN_00458780`).
 /// Raw egui pointer state is only a presentation copy; manager-owned content
@@ -1468,51 +1260,23 @@ fn draw_system_windows_with_snapshot(
         fog,
     };
     state.update_title_drag(ctx, layout);
-    let mut windows = Vec::new();
-    if let Some(snapshot) = snapshot {
-        windows.extend(snapshot.paint_order().iter().filter_map(|id| {
-            if snapshot
-                .key(*id)
-                .is_some_and(|key| key.kind == WindowKind::System)
-            {
-                state
-                    .windows
-                    .iter()
-                    .find(|window| window.id == Some(*id))
-                    .copied()
-            } else {
-                None
-            }
-        }));
-    }
-    // Direct content exists only in renderer tests and explicit fixtures.
-    windows.extend(
-        state
-            .windows
-            .iter()
-            .filter(|window| window.id.is_none() && shown(GalaxyChild::System(window.system)))
-            .copied(),
+    let windows = strategic_window_common::presentation_windows(
+        &state.windows,
+        snapshot,
+        WindowKind::System,
+        |window| shown(GalaxyChild::System(window.system)),
     );
-    windows.retain(|window| {
-        window
-            .id
-            .is_none_or(|_| shown(GalaxyChild::System(window.system)))
-    });
-    let focused_manager = snapshot.and_then(|frame| frame.focused().map(|focus| focus.window));
-    let focused_fixture_system = windows
-        .last()
-        .filter(|window| window.id.is_none())
-        .map(|window| window.system);
+    let (focused_manager, focused_fixture_system) =
+        strategic_window_common::presentation_focus(&windows, snapshot, false);
     for window in windows {
         let system = window.system;
         let rename = state
             .band_rename
             .clone()
             .filter(|edit| edit.system == system);
-        let focused = match window.id {
-            Some(id) => focused_manager == Some(id) && front,
-            None => focused_fixture_system == Some(system) && front,
-        };
+        let focused =
+            strategic_window_common::is_focused(&window, focused_manager, focused_fixture_system)
+                && front;
         let mut result = draw_system_window(
             ctx,
             sources,
@@ -1545,12 +1309,11 @@ fn draw_system_windows_with_snapshot(
             }
             _ => None,
         };
-        if let Some(grab) = result.drag_grab {
-            state.title_drag = Some(TitleDrag {
-                area: area_id(window.system),
-                grab,
-            });
-        }
+        strategic_window_common::start_title_drag(
+            &mut state.title_drag,
+            area_id(window.system),
+            result.drag_grab,
+        );
         // Escape goes to the focused window: the field passes it to its own
         // System window (FUN_00605160 -> FUN_00458980) only while that window
         // holds the keyboard focus (gid-legend.md, "Escape and the keyboard
@@ -1600,52 +1363,55 @@ fn draw_system_windows_with_snapshot(
             || result.item.is_some()
             || result.band.is_some()
             || result.object_menu.is_some();
-        let pointer_permitted = match (window.id, pointer_mutation, router.as_deref_mut()) {
-            (Some(id), true, Some(router)) => {
-                let phase = if result.object_menu.is_some() {
-                    PointerPhase::Release(PointerButtonId::Secondary)
-                } else {
-                    PointerPhase::Release(PointerButtonId::Primary)
-                };
-                claim_system_pointer_event(router, pointer_events, id, phase)
-                    .or_else(|| {
-                        (phase == PointerPhase::Release(PointerButtonId::Primary))
-                            .then(|| {
-                                claim_system_pointer_event(
-                                    router,
-                                    pointer_events,
-                                    id,
-                                    PointerPhase::Press(PointerButtonId::Primary),
-                                )
-                            })
-                            .flatten()
-                    })
-                    // The rename already claimed this window's press; the
-                    // same press drives the rest (FUN_004534f0 0x201/0x204).
-                    .or(rename_press)
-                    .is_some()
-            }
-            (Some(_), true, None) => false,
-            _ => true,
-        };
-        if (result.close && pointer_permitted) || !world.systems.contains_key(system) {
-            if let Some(id) = window.id {
-                actions.push(SystemWindowAction::Close(id));
-            } else {
+        let phase = strategic_window_common::pointer_mutation_phase([(
+            result.object_menu.is_some(),
+            PointerPhase::Release(PointerButtonId::Secondary),
+        )]);
+        let pointer_permitted = strategic_window_common::single_phase_pointer_mutation_permitted(
+            window.id,
+            pointer_mutation,
+            router.as_deref_mut(),
+            phase,
+            false,
+            |router, id, phase| {
+                strategic_window_common::claim_pointer_event(
+                    router,
+                    pointer_events
+                        .iter()
+                        .rev()
+                        .map(|event| (event.id, event.phase)),
+                    id,
+                    phase,
+                )
+                // The rename already claimed this window's press; the
+                // same press drives the rest (FUN_004534f0 0x201/0x204).
+                .or(rename_press)
+                .is_some()
+            },
+        );
+        if strategic_window_common::apply_detail_window_exit(
+            strategic_window_common::DetailWindowExit {
+                id: window.id,
+                system,
+                logical_position: window.logical_position,
+                close_requested: result.close && pointer_permitted,
+                minimize_requested: result.minimize,
+                pointer_permitted,
+                system_exists: world.systems.contains_key(system),
+            },
+            &mut actions,
+            |system| {
                 state.close(system);
-            }
-            continue;
-        }
-        if result.minimize && pointer_permitted {
-            if let Some(id) = window.id {
-                actions.push(SystemWindowAction::MinimizeManaged {
-                    window: id,
-                    system,
-                    logical_position: window.logical_position,
-                });
-            } else {
-                state.close(system);
-            }
+                Some(window.logical_position)
+            },
+            SystemWindowAction::Close,
+            |window, system, logical_position| SystemWindowAction::MinimizeManaged {
+                window,
+                system,
+                logical_position,
+            },
+            |_, _| None,
+        ) {
             continue;
         }
         if result.focus_sector && pointer_permitted {
@@ -1668,14 +1434,11 @@ fn draw_system_windows_with_snapshot(
                 state.select_band(system, area);
             }
         }
-        if result.focus && pointer_permitted {
-            if let Some(id) = window.id {
-                actions.push(SystemWindowAction::Activate(id));
-            } else {
-                state.focus(system);
-            }
-            actions.push(SystemWindowAction::SelectSystem(system));
-        }
+        strategic_window_common::apply_detail_focus! {
+            (state, actions, window, system),
+            (result.focus, pointer_permitted),
+            SystemWindowAction,
+        };
         if pointer_permitted {
             if let Some((selection, point)) = result.object_menu {
                 actions.push(SystemWindowAction::OpenObjectMenu {
@@ -1710,7 +1473,7 @@ fn draw_reference_rail(
     let mut actions = Vec::new();
     for slot in reference_rail_slots(snapshot, world, faction, layout) {
         let system = &world.systems[slot.system];
-        let color = relationship_color(relationship(system.control, cockpit_faction(faction)));
+        let color = relationship_color(relationship(system.control, faction.player()));
         egui::Area::new(egui::Id::new(("original-reference-rail", slot.id.get())))
             .fixed_pos(slot.rect.min)
             .order(egui::Order::Foreground)
@@ -1737,7 +1500,7 @@ fn draw_reference_rail(
                             world,
                             movement,
                             fog,
-                            cockpit_faction(faction),
+                            faction.player(),
                             slot.system,
                         ),
                         WindowKind::Defenses => {
@@ -1806,11 +1569,12 @@ fn draw_system_window(
 ) -> WindowDrawResult {
     let mut result = WindowDrawResult::default();
     let world = sources.world;
-    let Some(system) = world.systems.get(window.system) else {
-        result.close = true;
+    let Some(system) =
+        strategic_window_common::system_or_close(world, window.system, &mut result.close)
+    else {
         return result;
     };
-    let player = cockpit_faction(faction);
+    let player = faction.player();
     let side = control_side(system.control);
     let visible = contents_visible(world, sources.fog, player, window.system);
     let known = if sources.fog.faction == player {
@@ -1834,328 +1598,293 @@ fn draw_system_window(
     let scale = layout.scale;
     let screen_rect = window_screen_rect(window, layout);
     let id = window_area_id(window);
-    let area = egui::Area::new(id)
-        .fixed_pos(screen_rect.min)
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            let (pointer, primary_down) = ctx.input(|input| {
-                (
-                    input.pointer.interact_pos(),
-                    input.pointer.button_down(egui::PointerButton::Primary),
-                )
-            });
-            let (local, window_response) =
-                ui.allocate_exact_size(screen_rect.size(), egui::Sense::click());
-            let painter = ui.painter().clone();
-            let paint = |cache: &mut BmpCache, source: DllSource, id: u32, x: f32, y: f32| {
-                paint_native(&painter, ctx, cache, source, id, local, scale, x, y);
-            };
+    let area = strategic_window_common::show_canvas(ctx, id, screen_rect, scale, |ui, canvas| {
+        let pointer = canvas.pointer;
+        let primary_down = canvas.primary_down;
+        let local = canvas.local;
+        let window_response = canvas.response.clone();
+        let painter = canvas.painter.clone();
+        let paint = |cache: &mut BmpCache, source: DllSource, id: u32, x: f32, y: f32| {
+            canvas.paint(cache, source, id, x, y);
+        };
 
-            painter.rect_filled(local, 0.0, egui::Color32::BLACK);
-            paint(cache, DllSource::Strategy, WINDOW_BACKGROUND, 0.0, 0.0);
+        canvas.paint_background(cache, WINDOW_BACKGROUND);
+        let clicked = canvas.paint_title_bar(
+            ui,
+            cache,
+            side,
+            focused,
+            strategic_window_common::TitleLabel::left_centered(
+                &system.name,
+                TITLE.0,
+                TITLE.1,
+                TITLE.2,
+            ),
+            strategic_window_common::title_buttons([SECTOR_X, MINIMIZE_X, CLOSE_X]),
+            window.system,
+            |_, _| {},
+        );
+        result.focus_sector = clicked[0];
+        result.minimize = clicked[1];
+        result.close = clicked[2];
+
+        // The tabs. port: an empty page's tab still opens it, as the
+        // Defenses window's do; its help message is not shown.
+        for (tab, cells) in SystemWindowTab::ALL.into_iter().zip(&pages) {
+            let rect = tab_rect(local, scale, tab);
+            let empty = cells
+                .as_deref()
+                .is_some_and(crate::manufacturing_window::page_is_empty);
+            let response = ui.interact(
+                rect,
+                ui.id().with((window.system, tab)),
+                egui::Sense::click(),
+            );
+            let pressed = tab == window.tab
+                || (primary_down && pointer.is_some_and(|point| rect_contains(rect, point)));
             paint(
                 cache,
                 DllSource::Strategy,
-                crate::defenses_window::title_resource(side, focused),
-                2.0,
-                2.0,
+                tab_resource(tab, side, pressed, empty),
+                tab.x(),
+                TAB_STRIP_Y,
             );
-            painter.text(
-                logical_rect(local, scale, TITLE.0, TITLE.1 + TITLE.2 / 2.0, 0.0, 0.0).min,
-                egui::Align2::LEFT_CENTER,
-                &system.name,
-                egui::FontId::proportional((11.0 * scale).max(7.0)),
-                egui::Color32::BLACK,
+            if exact_clicked(&response, rect) {
+                result.tab = Some(tab);
+                result.focus = true;
+            }
+        }
+
+        let font = egui::FontId::proportional(OVERVIEW_FONT_EM * scale);
+        let mut rename_field = None;
+        let (any_pressed, right_pressed) = ctx.input(|input| {
+            (
+                input.pointer.button_pressed(egui::PointerButton::Primary)
+                    || input.pointer.button_pressed(egui::PointerButton::Secondary),
+                input.pointer.button_pressed(egui::PointerButton::Secondary),
+            )
+        });
+        if window.tab.page().is_none() {
+            // FUN_00457690: the yard column and its counts.
+            paint(
+                cache,
+                DllSource::Strategy,
+                YARD_COLUMN.0,
+                YARD_COLUMN.1,
+                YARD_COLUMN.2,
             );
-
-            let buttons = [
-                (SECTOR_NORMAL, SECTOR_PRESSED, SECTOR_X, "sector"),
-                (MINIMIZE_NORMAL, MINIMIZE_PRESSED, MINIMIZE_X, "minimize"),
-                (CLOSE_NORMAL, CLOSE_PRESSED, CLOSE_X, "close"),
-            ];
-            let mut clicked = [false; 3];
-            for (index, (normal, pressed, x, name)) in buttons.into_iter().enumerate() {
-                let rect = logical_rect(local, scale, x, 3.0, 14.0, 14.0);
-                let response = ui.interact(
-                    rect,
-                    ui.id().with((window.system, name)),
-                    egui::Sense::click(),
-                );
-                let down = primary_down && pointer.is_some_and(|point| rect_contains(rect, point));
-                paint(
-                    cache,
-                    DllSource::Strategy,
-                    if down { pressed } else { normal },
-                    x,
-                    3.0,
-                );
-                clicked[index] = exact_clicked(&response, rect);
-            }
-            result.focus_sector = clicked[0];
-            result.minimize = clicked[1];
-            result.close = clicked[2];
-
-            // The tabs. port: an empty page's tab still opens it, as the
-            // Defenses window's do; its help message is not shown.
-            for (tab, cells) in SystemWindowTab::ALL.into_iter().zip(&pages) {
-                let rect = tab_rect(local, scale, tab);
-                let empty = cells
-                    .as_deref()
-                    .is_some_and(crate::manufacturing_window::page_is_empty);
-                let response = ui.interact(
-                    rect,
-                    ui.id().with((window.system, tab)),
-                    egui::Sense::click(),
-                );
-                let pressed = tab == window.tab
-                    || (primary_down && pointer.is_some_and(|point| rect_contains(rect, point)));
-                paint(
-                    cache,
-                    DllSource::Strategy,
-                    tab_resource(tab, side, pressed, empty),
-                    tab.x(),
-                    TAB_STRIP_Y,
-                );
-                if exact_clicked(&response, rect) {
-                    result.tab = Some(tab);
-                    result.focus = true;
-                }
-            }
-
-            let font = egui::FontId::proportional(OVERVIEW_FONT_EM * scale);
-            let mut rename_field = None;
-            let (any_pressed, right_pressed) = ctx.input(|input| {
-                (
-                    input.pointer.button_pressed(egui::PointerButton::Primary)
-                        || input.pointer.button_pressed(egui::PointerButton::Secondary),
-                    input.pointer.button_pressed(egui::PointerButton::Secondary),
-                )
-            });
-            if window.tab.page().is_none() {
-                // FUN_00457690: the yard column and its counts.
-                paint(
-                    cache,
-                    DllSource::Strategy,
-                    YARD_COLUMN.0,
-                    YARD_COLUMN.1,
-                    YARD_COLUMN.2,
-                );
-                for (index, area) in BAND_AREAS.into_iter().enumerate() {
-                    let cells = pages[SystemWindowTab::ALL
-                        .iter()
-                        .position(|tab| tab.page() == Some(yard_page(area)))
-                        .unwrap_or_default()]
-                    .as_deref()
-                    .unwrap_or_default();
-                    let (x, y) = COUNT_ORIGINS[index];
-                    painter.text(
-                        logical_point(local, scale, x + COUNT_WIDTH / 2.0, y),
-                        egui::Align2::CENTER_TOP,
-                        yard_count(cells),
-                        font.clone(),
-                        egui::Color32::WHITE,
-                    );
-
-                    // FUN_00458080: the band's frame, its strip and its
-                    // lines.
-                    let shown = band(world, sources.manufacturing, visible, window.system, area);
-                    let (bx, by, _, _) = BAND_RECTS[index];
-                    let selected = window.selected_band == Some(area);
-                    paint(cache, DllSource::Strategy, BAND_FRAME, bx, by);
-                    paint(
-                        cache,
-                        DllSource::Strategy,
-                        band_strip(side, selected),
-                        bx,
-                        by,
-                    );
-                    let line_in = |text: &str, (x, y): (f32, f32), color| {
-                        painter.text(
-                            logical_point(local, scale, bx + x, by + y),
-                            egui::Align2::LEFT_TOP,
-                            text,
-                            font.clone(),
-                            color,
-                        );
-                    };
-                    let line = |text: &str, at: (f32, f32)| {
-                        line_in(text, at, egui::Color32::WHITE);
-                    };
-                    // The title keeps the label's default colour, black
-                    // (no FUN_00601c90, FUN_00458080.c:76-78).
-                    line_in(
-                        crate::manufacturing_window::band_title(area),
-                        BAND_TITLE,
-                        egui::Color32::BLACK,
-                    );
-                    // The portrait, keyed, then the units, the name
-                    // and the destination over it (FUN_00457690.c:76-82).
-                    if let Some(portrait) = shown.portrait {
-                        paint(
-                            cache,
-                            DllSource::Gokres,
-                            portrait,
-                            bx + BAND_PORTRAIT.0,
-                            by + BAND_PORTRAIT.1,
-                        );
-                    }
-                    if let Some(units) = &shown.units {
-                        line(units, BAND_UNITS);
-                    }
-                    match rename.filter(|edit| edit.area == area) {
-                        Some(edit) => {
-                            let field =
-                                band_rename_rect(ui, local, scale, (bx, by), &edit.original, &font);
-                            rename_field = Some((field, edit));
-                        }
-                        None => line(&shown.status, BAND_STATUS),
-                    }
-                    line(&shown.destination, BAND_DESTINATION);
-
-                    // FUN_004acec0: the progress bar, light gray over
-                    // black.
-                    let (px, py, width, height) = PROGRESS_RECTS[index];
-                    let bar = logical_rect(local, scale, px, py, width, height);
-                    painter.rect_filled(bar, 0.0, egui::Color32::BLACK);
-                    if let Some(progress) = shown.progress {
-                        let mut done = bar;
-                        done.set_width(bar.width() * progress.clamp(0.0, 1.0));
-                        painter.rect_filled(done, 0.0, egui::Color32::from_gray(240));
-                    }
-
-                    // A press selects the band; a right release opens
-                    // its manager's menu (FUN_00453ee0, FUN_004ac5c0).
-                    let rect = band_rect(local, scale, area);
-                    let response = ui.interact(
-                        rect,
-                        ui.id().with((window.system, "band", index)),
-                        egui::Sense::click(),
-                    );
-                    if any_pressed && response.is_pointer_button_down_on() {
-                        result.band = Some(area);
-                        result.focus = true;
-                    }
-                    if response.secondary_clicked() {
-                        if let Some(point) = response
-                            .interact_pointer_pos()
-                            .filter(|point| rect_contains(rect, *point))
-                        {
-                            result.object_menu = Some((
-                                Some(MenuObject::Producer {
-                                    system: window.system,
-                                    area,
-                                }),
-                                canvas_point(layout, point),
-                            ));
-                        }
-                    }
-                }
-                // The edit lies over its band and takes the pointer
-                // there. A press anywhere else in the window ends it as
-                // Enter does (FUN_004534f0, 0x201 and 0x204 →
-                // FUN_00458780).
-                if let Some((field, edit)) = rename_field {
-                    result.rename_field = Some(field);
-                    result.rename = draw_band_rename(ui, field, edit, &font);
-                    let elsewhere = pointer.is_some_and(|point| {
-                        rect_contains(local, point) && !rect_contains(field, point)
-                    });
-                    // Direct renderer fixtures have no manager identity or
-                    // routed event stream. Production content must claim
-                    // its owning window's exact admitted press above.
-                    if window.id.is_none() && any_pressed && elsewhere {
-                        result.rename = Some(BandRenameOutcome::Commit(match result.rename {
-                            Some(BandRenameOutcome::Typed(ref text)) => text.clone(),
-                            _ => edit.text.clone(),
-                        }));
-                    }
-                }
-            } else {
-                // The page label, then the list (FUN_004568a0).
-                painter.text(
-                    logical_point(local, scale, SYSTEM_WINDOW_WIDTH / 2.0, PAGE_LABEL_Y),
-                    egui::Align2::CENTER_TOP,
-                    window.tab.name(),
-                    egui::FontId::proportional((10.0 * scale).max(7.0)),
-                    egui::Color32::WHITE,
-                );
+            for (index, area) in BAND_AREAS.into_iter().enumerate() {
                 let cells = pages[SystemWindowTab::ALL
                     .iter()
-                    .position(|tab| *tab == window.tab)
+                    .position(|tab| tab.page() == Some(yard_page(area)))
                     .unwrap_or_default()]
                 .as_deref()
                 .unwrap_or_default();
-                let list =
-                    logical_rect(local, scale, LIST.0, LIST.1, LIST.2, LIST.3).intersect(local);
-                let list_painter = painter.with_clip_rect(list);
-                // A press on the list's empty space clears the
-                // selection (FUN_006094b0).
-                let list_response = ui.interact(
-                    list,
-                    ui.id().with((window.system, "list")),
+                let (x, y) = COUNT_ORIGINS[index];
+                painter.text(
+                    logical_point(local, scale, x + COUNT_WIDTH / 2.0, y),
+                    egui::Align2::CENTER_TOP,
+                    yard_count(cells),
+                    font.clone(),
+                    egui::Color32::WHITE,
+                );
+
+                // FUN_00458080: the band's frame, its strip and its
+                // lines.
+                let shown = band(world, sources.manufacturing, visible, window.system, area);
+                let (bx, by, _, _) = BAND_RECTS[index];
+                let selected = window.selected_band == Some(area);
+                paint(cache, DllSource::Strategy, BAND_FRAME, bx, by);
+                paint(
+                    cache,
+                    DllSource::Strategy,
+                    band_strip(side, selected),
+                    bx,
+                    by,
+                );
+                let line_in = |text: &str, (x, y): (f32, f32), color| {
+                    painter.text(
+                        logical_point(local, scale, bx + x, by + y),
+                        egui::Align2::LEFT_TOP,
+                        text,
+                        font.clone(),
+                        color,
+                    );
+                };
+                let line = |text: &str, at: (f32, f32)| {
+                    line_in(text, at, egui::Color32::WHITE);
+                };
+                // The title keeps the label's default colour, black
+                // (no FUN_00601c90, FUN_00458080.c:76-78).
+                line_in(
+                    crate::manufacturing_window::band_title(area),
+                    BAND_TITLE,
+                    egui::Color32::BLACK,
+                );
+                // The portrait, keyed, then the units, the name
+                // and the destination over it (FUN_00457690.c:76-82).
+                if let Some(portrait) = shown.portrait {
+                    paint(
+                        cache,
+                        DllSource::Gokres,
+                        portrait,
+                        bx + BAND_PORTRAIT.0,
+                        by + BAND_PORTRAIT.1,
+                    );
+                }
+                if let Some(units) = &shown.units {
+                    line(units, BAND_UNITS);
+                }
+                match rename.filter(|edit| edit.area == area) {
+                    Some(edit) => {
+                        let field =
+                            band_rename_rect(ui, local, scale, (bx, by), &edit.original, &font);
+                        rename_field = Some((field, edit));
+                    }
+                    None => line(&shown.status, BAND_STATUS),
+                }
+                line(&shown.destination, BAND_DESTINATION);
+
+                // FUN_004acec0: the progress bar, light gray over
+                // black.
+                let (px, py, width, height) = PROGRESS_RECTS[index];
+                let bar = logical_rect(local, scale, px, py, width, height);
+                painter.rect_filled(bar, 0.0, egui::Color32::BLACK);
+                if let Some(progress) = shown.progress {
+                    let mut done = bar;
+                    done.set_width(bar.width() * progress.clamp(0.0, 1.0));
+                    painter.rect_filled(done, 0.0, egui::Color32::from_gray(240));
+                }
+
+                // A press selects the band; a right release opens
+                // its manager's menu (FUN_00453ee0, FUN_004ac5c0).
+                let rect = band_rect(local, scale, area);
+                let response = ui.interact(
+                    rect,
+                    ui.id().with((window.system, "band", index)),
                     egui::Sense::click(),
                 );
-                if any_pressed && list_response.is_pointer_button_down_on() {
-                    result.item = Some(None);
+                if any_pressed && response.is_pointer_button_down_on() {
+                    result.band = Some(area);
                     result.focus = true;
                 }
-                result.painted = cells.iter().map(|cell| cell.item).collect();
-                for (index, cell) in cells.iter().enumerate() {
-                    let rect = cell_rect(local, scale, index);
-                    if !rect.intersects(list) {
-                        break;
+                if response.secondary_clicked() {
+                    if let Some(point) = response
+                        .interact_pointer_pos()
+                        .filter(|point| rect_contains(rect, *point))
+                    {
+                        result.object_menu = Some((
+                            Some(MenuObject::Producer {
+                                system: window.system,
+                                area,
+                            }),
+                            canvas_point(layout, point),
+                        ));
                     }
+                }
+            }
+            // The edit lies over its band and takes the pointer
+            // there. A press anywhere else in the window ends it as
+            // Enter does (FUN_004534f0, 0x201 and 0x204 →
+            // FUN_00458780).
+            if let Some((field, edit)) = rename_field {
+                result.rename_field = Some(field);
+                result.rename = draw_band_rename(ui, field, edit, &font);
+                let elsewhere = pointer.is_some_and(|point| {
+                    rect_contains(local, point) && !rect_contains(field, point)
+                });
+                // Direct renderer fixtures have no manager identity or
+                // routed event stream. Production content must claim
+                // its owning window's exact admitted press above.
+                if window.id.is_none() && any_pressed && elsewhere {
+                    result.rename = Some(BandRenameOutcome::Commit(match result.rename {
+                        Some(BandRenameOutcome::Typed(ref text)) => text.clone(),
+                        _ => edit.text.clone(),
+                    }));
+                }
+            }
+        } else {
+            // The page label, then the list (FUN_004568a0).
+            painter.text(
+                logical_point(local, scale, SYSTEM_WINDOW_WIDTH / 2.0, PAGE_LABEL_Y),
+                egui::Align2::CENTER_TOP,
+                window.tab.name(),
+                egui::FontId::proportional((10.0 * scale).max(7.0)),
+                egui::Color32::WHITE,
+            );
+            let cells = pages[SystemWindowTab::ALL
+                .iter()
+                .position(|tab| *tab == window.tab)
+                .unwrap_or_default()]
+            .as_deref()
+            .unwrap_or_default();
+            let list = logical_rect(local, scale, LIST.0, LIST.1, LIST.2, LIST.3).intersect(local);
+            let list_painter = painter.with_clip_rect(list);
+            // A press on the list's empty space clears the
+            // selection (FUN_006094b0).
+            let list_response = ui.interact(
+                list,
+                ui.id().with((window.system, "list")),
+                egui::Sense::click(),
+            );
+            if any_pressed && list_response.is_pointer_button_down_on() {
+                result.item = Some(None);
+                result.focus = true;
+            }
+            result.painted = cells.iter().map(|cell| cell.item).collect();
+            for (index, cell) in cells.iter().enumerate() {
+                let rect = cell_rect(local, scale, index);
+                if !rect.intersects(list) {
+                    break;
+                }
+                paint_native(
+                    &list_painter,
+                    ctx,
+                    cache,
+                    DllSource::Strategy,
+                    cell.picture,
+                    rect,
+                    scale,
+                    PICTURE_OFFSET.0,
+                    PICTURE_OFFSET.1,
+                );
+                if window.selected_item == Some(cell.item) {
                     paint_native(
                         &list_painter,
                         ctx,
                         cache,
                         DllSource::Strategy,
-                        cell.picture,
+                        item_frame(side),
                         rect,
                         scale,
                         PICTURE_OFFSET.0,
                         PICTURE_OFFSET.1,
                     );
-                    if window.selected_item == Some(cell.item) {
-                        paint_native(
-                            &list_painter,
-                            ctx,
-                            cache,
-                            DllSource::Strategy,
-                            item_frame(side),
-                            rect,
-                            scale,
-                            PICTURE_OFFSET.0,
-                            PICTURE_OFFSET.1,
-                        );
-                    }
-                    // A left or right press selects the item
-                    // (FUN_006083c0). port: a facility's class menu
-                    // (Encyclopedia, Status, Scrap) is not ported, so a
-                    // right release opens none.
-                    let response = ui.interact(
-                        rect.intersect(list),
-                        ui.id().with((window.system, "cell", index)),
-                        egui::Sense::click(),
-                    );
-                    if (exact_clicked(&response, rect)
-                        || (right_pressed && response.is_pointer_button_down_on()))
-                        && result.item.is_none()
-                    {
-                        result.item = Some(Some(cell.item));
-                        result.focus = true;
-                    }
+                }
+                // A left or right press selects the item
+                // (FUN_006083c0). port: a facility's class menu
+                // (Encyclopedia, Status, Scrap) is not ported, so a
+                // right release opens none.
+                let response = ui.interact(
+                    rect.intersect(list),
+                    ui.id().with((window.system, "cell", index)),
+                    egui::Sense::click(),
+                );
+                if (exact_clicked(&response, rect)
+                    || (right_pressed && response.is_pointer_button_down_on()))
+                    && result.item.is_none()
+                {
+                    result.item = Some(Some(cell.item));
+                    result.focus = true;
                 }
             }
+        }
 
-            result.drag_grab = surface_drag_grab(ctx, &window_response, local, scale, &[]);
-            if window_response.clicked() || clicked.iter().any(|&value| value) {
-                result.focus = true;
-            }
-        });
-    if area.response.clicked() {
-        result.focus = true;
-    }
+        result.drag_grab = surface_drag_grab(ctx, &window_response, local, scale, &[]);
+        result.focus |=
+            strategic_window_common::interaction_requests_focus(&window_response, &clicked);
+    });
+    result.focus |= area.response.clicked();
     result
 }
 
@@ -2168,6 +1897,10 @@ fn window_area_id(window: OpenSystemWindow) -> egui::Id {
         || area_id(window.system),
         crate::windowing::managed_child_id,
     )
+}
+
+fn open_window_area_id(window: &OpenSystemWindow) -> egui::Id {
+    window_area_id(*window)
 }
 
 fn tab_rect(window: egui::Rect, scale: f32, tab: SystemWindowTab) -> egui::Rect {
@@ -2207,19 +1940,15 @@ pub(crate) fn grid_cell(
 
 /// The `index`th cell of a facility page (`FUN_00609ae0`): row-major from
 /// the list's corner, three to a row.
-#[allow(clippy::cast_precision_loss, reason = "Cell indexes are small.")]
 fn cell_rect(window: egui::Rect, scale: f32, index: usize) -> egui::Rect {
-    let column = (index % COLUMNS) as f32;
-    let row = (index / COLUMNS) as f32;
-    logical_rect(
-        window,
-        scale,
-        LIST.0 + column * CELL.0,
-        LIST.1 + row * CELL.1,
-        CELL.0,
-        CELL.1,
-    )
+    strategic_window_common::grid_cell_rect(window, scale, index, COLUMNS, (LIST.0, LIST.1), CELL)
 }
+
+strategic_window_common::impl_strategic_window_cell_rect!(
+    SystemWindowState,
+    |window, layout| window_screen_rect(*window, layout),
+    cell_rect
+);
 
 /// A screen point in 640 by 480 canvas coordinates, truncated as a Win32
 /// `POINT` is.
@@ -2358,13 +2087,6 @@ fn relationship_color(relationship: Relationship) -> egui::Color32 {
     }
 }
 
-fn cockpit_faction(faction: CockpitFaction) -> Faction {
-    match faction {
-        CockpitFaction::Alliance => Faction::Alliance,
-        CockpitFaction::Empire => Faction::Empire,
-    }
-}
-
 /// Where a band's name edit lies: over the band's product-name line, as
 /// wide as its text plus 2 and 13 high (`FUN_00458640` takes the label's
 /// rect, `+0x14..+0x20`, two pixels wider). hyp (measured): under Wine the
@@ -2472,14 +2194,7 @@ fn draw_band_rename(
         .inner;
     if edit.fresh {
         response.request_focus();
-        let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
-        state
-            .cursor
-            .set_char_range(Some(egui::text::CCursorRange::two(
-                egui::text::CCursor::new(0),
-                egui::text::CCursor::new(count),
-            )));
-        state.store(ui.ctx(), id);
+        strategic_window_common::select_all_text(ui.ctx(), id, count);
         return Some(BandRenameOutcome::Typed(edit.text.clone()));
     }
     let (enter, escape) = ui.input(|input| {
@@ -2534,17 +2249,15 @@ pub(crate) fn clamp_window_to_galaxy(
 }
 
 fn window_screen_rect(window: OpenSystemWindow, layout: CockpitLayout) -> egui::Rect {
-    egui::Rect::from_min_size(
-        egui::pos2(
-            layout.canvas.x + f32::from(window.logical_position.0) * layout.scale,
-            layout.canvas.y + f32::from(window.logical_position.1) * layout.scale,
-        ),
-        egui::vec2(
-            SYSTEM_WINDOW_WIDTH * layout.scale,
-            SYSTEM_WINDOW_HEIGHT * layout.scale,
-        ),
-    )
+    open_window_screen_rect(&window, layout)
 }
+
+strategic_window_common::define_record_screen_rect!(
+    open_window_screen_rect,
+    OpenSystemWindow,
+    SYSTEM_WINDOW_WIDTH,
+    SYSTEM_WINDOW_HEIGHT
+);
 
 fn rail_slot_rect(faction: CockpitFaction, index: usize) -> (f32, f32, f32, f32) {
     const ALLIANCE_Y: [f32; 12] = [
@@ -2567,35 +2280,6 @@ fn cockpit_rect(layout: CockpitLayout, logical: (f32, f32, f32, f32)) -> egui::R
         ),
         egui::vec2(logical.2 * layout.scale, logical.3 * layout.scale),
     )
-}
-
-pub(crate) fn logical_rect(
-    parent: egui::Rect,
-    scale: f32,
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-) -> egui::Rect {
-    egui::Rect::from_min_size(
-        logical_point(parent, scale, x, y),
-        egui::vec2(width * scale, height * scale),
-    )
-}
-
-fn logical_point(parent: egui::Rect, scale: f32, x: f32, y: f32) -> egui::Pos2 {
-    egui::pos2(parent.min.x + x * scale, parent.min.y + y * scale)
-}
-
-pub(crate) fn exact_clicked(response: &egui::Response, rect: egui::Rect) -> bool {
-    response.clicked()
-        && response
-            .interact_pointer_pos()
-            .is_some_and(|point| rect_contains(rect, point))
-}
-
-pub(crate) fn rect_contains(rect: egui::Rect, point: egui::Pos2) -> bool {
-    point.x >= rect.min.x && point.x < rect.max.x && point.y >= rect.min.y && point.y < rect.max.y
 }
 
 /// A drag of a movable detail window by its own surface (the title bar or
@@ -2694,24 +2378,19 @@ fn paint_resource(
     else {
         return;
     };
-    painter.image(
-        texture_id,
-        rect,
-        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-        egui::Color32::WHITE,
-    );
+    paint_texture_rect(painter, texture_id, rect);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cockpit::CockpitViewport;
-    use crate::fleet_window::tests::PAINTED;
-    use rebellion_core::dat::{ExplorationStatus, SectorGroup};
-    use rebellion_core::manufacturing::{BuildableKind, QueueItem};
-    use rebellion_core::world::{
-        CapitalShipClass, ManufacturingFacilityInstance, ProductionFacilityInstance, Sector, System,
+    use crate::test_support::{
+        click_frames as click, full_raw_input as frame_input, hover_frames as hover,
+        key_press as key, right_click_frames as right_click, title_drag_frames as drag,
     };
+    use rebellion_core::dat::Faction;
+    use rebellion_core::world::{ManufacturingFacilityInstance, ProductionFacilityInstance};
     use rebellion_windowing::{
         SubjectId, WindowCommand, WindowId, WindowKind, WindowManager, WindowOwner,
         WindowTransition,
@@ -2775,43 +2454,29 @@ mod tests {
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
     fn fixture_world(count: usize) -> (GameWorld, Vec<SystemKey>) {
-        let mut world = GameWorld::default();
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(36),
-            name: "Sesswenna".into(),
-            group: SectorGroup::Core,
-            x: 317,
-            y: 248,
-            systems: Vec::new(),
-        });
-        let mut systems = Vec::new();
+        assert!(count > 0, "fixture needs at least one system");
+        let (mut world, first) =
+            crate::test_support::world(ControlKind::Controlled(Faction::Alliance));
+        let sector = world.systems[first].sector;
+        let mut systems = vec![first];
         for index in 0..count {
-            let system = world.systems.insert(System {
-                dat_id: DatId::new(100 + index as u32),
-                name: format!("System {index}"),
-                sector,
-                x: 320 + index as u16,
-                y: 250,
-                exploration_status: ExplorationStatus::Explored,
-                popularity_alliance: 1.0,
-                popularity_empire: 0.0,
-                is_populated: true,
-                total_energy: 8,
-                raw_materials: 6,
-                espionage_rating: 0.0,
-                fleets: Vec::new(),
-                ground_units: Vec::new(),
-                special_forces: Vec::new(),
-                fighters: Vec::new(),
-                defense_facilities: Vec::new(),
-                manufacturing_facilities: Vec::new(),
-                production_facilities: Vec::new(),
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Controlled(Faction::Alliance),
-            });
-            world.sectors[sector].systems.push(system);
-            systems.push(system);
+            let system = if index == 0 {
+                first
+            } else {
+                let system = world.systems[first].clone();
+                let key = world.systems.insert(system);
+                world.sectors[sector].systems.push(key);
+                systems.push(key);
+                key
+            };
+            let fixture = &mut world.systems[system];
+            fixture.dat_id = DatId::new(100 + index as u32);
+            fixture.name = format!("System {index}");
+            fixture.x = 320 + index as u16;
+            fixture.popularity_alliance = 1.0;
+            fixture.popularity_empire = 0.0;
+            fixture.total_energy = 8;
+            fixture.raw_materials = 6;
         }
         (world, systems)
     }
@@ -2822,7 +2487,7 @@ mod tests {
     ) -> (GameWorld, Vec<SystemKey>) {
         let (mut world, systems) = fixture_world(count);
         for system in &systems {
-            world.systems[*system].control = ControlKind::Controlled(cockpit_faction(faction));
+            world.systems[*system].control = ControlKind::Controlled(faction.player());
         }
         (world, systems)
     }
@@ -2854,15 +2519,14 @@ mod tests {
     fn capital_ship_build(name: &str, count: u32) -> (GameWorld, SystemKey, ManufacturingState) {
         let (mut world, systems) = fixture_world(1);
         let system = systems[0];
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1400_0040),
-            name: name.into(),
-            ..CapitalShipClass::default()
-        });
         let mut manufacturing = ManufacturingState::new();
-        manufacturing.build(
+        rebellion_core::test_support::queue_capital_ship_build(
+            &mut world,
+            &mut manufacturing,
             system,
-            &QueueItem::new(BuildableKind::CapitalShip(class), 10),
+            name,
+            false,
+            false,
             count,
         );
         (world, system, manufacturing)
@@ -2914,17 +2578,6 @@ mod tests {
         (manager, state, id)
     }
 
-    fn frame_input(events: Vec<egui::Event>) -> egui::RawInput {
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1400.0, 1000.0),
-            )),
-            events,
-            ..Default::default()
-        }
-    }
-
     #[test]
     fn system_window_shared_identity_preserves_content() {
         // `strategic-windowing-toolkit.md`, Window-family matrix: type 9 is a
@@ -2952,13 +2605,9 @@ mod tests {
         let reopened = state
             .prepare_open(&world, system, (400, 300), CockpitFaction::Alliance, layout)
             .unwrap();
-        let (reopened_id, transition) =
-            commit_prepared_system_window(&mut manager, &mut state, reopened);
-        assert_eq!(reopened_id, id);
-        assert!(matches!(
-            transition,
-            WindowTransition::Existing { id: existing, .. } if existing == id
-        ));
+        crate::test_support::assert_existing_detail_reopen(id, || {
+            commit_prepared_system_window(&mut manager, &mut state, reopened)
+        });
         assert_eq!(state.window_count(), 1);
         assert_eq!(
             state.selection(system),
@@ -2971,19 +2620,18 @@ mod tests {
         assert_eq!(content.logical_position, ORIGIN);
         assert_eq!(content.selected_item, Some(mine));
 
-        manager.apply(WindowCommand::Minimize(id)).unwrap();
-        assert!(!state.window_is_visible(&manager.begin_frame(), system));
-        let restored = state
-            .prepare_open(&world, system, (500, 350), CockpitFaction::Alliance, layout)
-            .unwrap();
-        let (restored_id, transition) =
-            commit_prepared_system_window(&mut manager, &mut state, restored);
-        assert_eq!(restored_id, id);
-        assert!(matches!(
-            transition,
-            WindowTransition::Existing { id: existing, .. } if existing == id
-        ));
-        assert!(state.window_is_visible(&manager.begin_frame(), system));
+        crate::test_support::assert_simple_minimized_reopen(
+            &mut manager,
+            &mut state,
+            id,
+            |state, frame| state.window_is_visible(frame, system),
+            |manager, state| {
+                let restored = state
+                    .prepare_open(&world, system, (500, 350), CockpitFaction::Alliance, layout)
+                    .unwrap();
+                commit_prepared_system_window(manager, state, restored)
+            },
+        );
         assert_eq!(state.window_count(), 1);
         assert_eq!(state.window_mut(system).unwrap().selected_item, Some(mine));
     }
@@ -3125,7 +2773,7 @@ mod tests {
             cockpit_rect(rail_layout, rail_slot_rect(CockpitFaction::Alliance, 3))
         );
 
-        PAINTED.with(|painted| painted.borrow_mut().clear());
+        crate::test_support::clear_painted_trace();
         let ctx = egui::Context::default();
         let mut rail = RailTestState::new(Faction::Alliance);
         rail.router.begin_frame(1, &snapshot);
@@ -3141,7 +2789,7 @@ mod tests {
                 &[],
             );
         });
-        PAINTED.with(|painted| painted.borrow_mut().clear());
+        crate::test_support::clear_painted_trace();
         rail.router.begin_frame(2, &snapshot);
         let output = ctx.run(raw_input(), |ctx| {
             actions = rail.draw(
@@ -3154,7 +2802,7 @@ mod tests {
             );
         });
         assert_empty!(actions);
-        let painted = PAINTED.with(std::cell::RefCell::take);
+        let painted = crate::test_support::take_painted_trace();
         let defenses_icon = crate::defenses_window::rail_icon(&world, systems[2]);
         assert!(
             painted
@@ -3219,7 +2867,7 @@ mod tests {
                 router: FrameInputRouter::default(),
                 cache: BmpCache::new(),
                 movement: rebellion_core::movement::MovementState::default(),
-                fog: FogState::new(cockpit_faction(faction)),
+                fog: FogState::new(faction.player()),
                 missions: MissionState::new(),
                 manufacturing: ManufacturingState::new(),
                 deliveries: DeliveryState::new(),
@@ -3895,7 +3543,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            PAINTED.with(|painted| painted.borrow_mut().clear());
+            crate::test_support::clear_painted_trace();
             let output = ctx.run(input, |ctx| {
                 run.actions.extend(draw_system_windows(
                     ctx,
@@ -3913,7 +3561,7 @@ mod tests {
                     &|_| true,
                 ));
             });
-            run.painted = PAINTED.with(std::cell::RefCell::take);
+            run.painted = crate::test_support::take_painted_trace();
             run.shapes = output
                 .shapes
                 .iter()
@@ -3938,18 +3586,9 @@ mod tests {
                     _ => None,
                 })
                 .collect();
-            run.texts = output
-                .shapes
+            run.texts = crate::test_support::rendered_texts(output)
                 .into_iter()
-                .filter_map(|clipped| match clipped.shape {
-                    egui::Shape::Text(text) => Some((
-                        text.galley.text().to_owned(),
-                        text.pos,
-                        text.galley.size().x,
-                        text.galley.job.sections[0].format.font_id.size,
-                    )),
-                    _ => None,
-                })
+                .map(|text| (text.text, text.pos, text.size.x, text.font))
                 .collect();
         }
         run
@@ -3960,10 +3599,7 @@ mod tests {
     /// A logical point in the window opened at `ORIGIN` on the scale 2
     /// layout.
     fn at(x: f32, y: f32) -> egui::Pos2 {
-        egui::pos2(
-            10.0 + (f32::from(ORIGIN.0) + x) * 2.0,
-            20.0 + (f32::from(ORIGIN.1) + y) * 2.0,
-        )
+        crate::test_support::window_point(layout(CockpitFaction::Alliance, 2.0), ORIGIN, (x, y))
     }
 
     fn opened(world: &GameWorld, system: SystemKey) -> SystemWindowState {
@@ -3980,48 +3616,11 @@ mod tests {
         state
     }
 
-    fn hover(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        vec![
-            vec![egui::Event::PointerMoved(point)],
-            vec![egui::Event::PointerMoved(point)],
-        ]
-    }
-
-    fn click_with(point: egui::Pos2, button: egui::PointerButton) -> Vec<Vec<egui::Event>> {
-        let event = |pressed| egui::Event::PointerButton {
-            pos: point,
-            button,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        let mut frames = hover(point);
-        frames.extend([vec![event(true)], vec![event(false)], vec![]]);
-        frames
-    }
-
-    fn click(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        click_with(point, egui::PointerButton::Primary)
-    }
-
-    fn right_click(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        click_with(point, egui::PointerButton::Secondary)
-    }
-
     fn text<'a>(run: &'a Run, words: &str) -> &'a RailText {
         run.texts
             .iter()
             .find(|value| value.0 == words)
             .unwrap_or_else(|| panic!("no {words:?} in {:?}", run.texts))
-    }
-
-    fn key(key: egui::Key) -> egui::Event {
-        egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }
     }
 
     /// `system`'s window with the ships band's name edit open on "Death
@@ -4492,25 +4091,15 @@ mod tests {
                 PointerButtonId::Secondary => egui::PointerButton::Secondary,
                 PointerButtonId::Middle | PointerButtonId::Extra(_) => unreachable!(),
             };
-            let raw_button_event = |pressed| egui::Event::PointerButton {
-                pos: point,
-                button: raw_button,
-                pressed,
-                modifiers: egui::Modifiers::default(),
-            };
             let snapshot = fixture.begin_frame(4);
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                events: vec![
-                    egui::Event::PointerMoved(point),
-                    raw_button_event(true),
-                    raw_button_event(false),
+            let input = crate::test_support::pointer_raw_input(
+                point,
+                vec![
+                    crate::test_support::pointer_button_with(point, raw_button, true),
+                    crate::test_support::pointer_button_with(point, raw_button, false),
                 ],
-                ..egui::RawInput::default()
-            };
+                egui::vec2(1400.0, 1000.0),
+            );
             actions.extend(fixture.draw_started_input(&world, &snapshot, input, &[]));
             assert!(actions.is_empty(), "an unrouted raw press must not publish");
             assert!(fixture.state.band_rename_open());
@@ -4662,12 +4251,9 @@ mod tests {
                 .collect();
 
             let mut restored = SystemWindowState::default();
-            for window in &saved {
-                assert!(
-                    restored.restore_saved(&world, faction, window),
-                    "{faction:?}"
-                );
-            }
+            crate::test_support::assert_saved_windows_restore(&saved, faction, |window| {
+                restored.restore_saved(&world, faction, window)
+            });
 
             let back: Vec<_> = restored
                 .windows
@@ -4714,12 +4300,9 @@ mod tests {
             );
 
             let mut restored = SystemWindowState::default();
-            for window in &saved {
-                assert!(
-                    restored.restore_saved(&world, faction, window),
-                    "{faction:?}"
-                );
-            }
+            crate::test_support::assert_saved_windows_restore(&saved, faction, |window| {
+                restored.restore_saved(&world, faction, window)
+            });
 
             assert!(restored.windows.is_empty(), "{faction:?}");
             let back: Vec<_> = restored.saved_rail(&world, |_| None).into_iter().collect();
@@ -5146,9 +4729,9 @@ mod tests {
         for (id, point) in [
             (WINDOW_BACKGROUND, at(0.0, 0.0)),
             (10_299, at(2.0, 2.0)),
-            (SECTOR_NORMAL, at(3.0, 3.0)),
-            (MINIMIZE_NORMAL, at(195.0, 3.0)),
-            (CLOSE_NORMAL, at(209.0, 3.0)),
+            (strategic_window_common::SECTOR_ART.0, at(3.0, 3.0)),
+            (strategic_window_common::MINIMIZE_ART.0, at(195.0, 3.0)),
+            (strategic_window_common::CLOSE_ART.0, at(209.0, 3.0)),
             (10_311, at(0.0, 20.0)),
             (10_327, at(39.0, 20.0)),
             (10_331, at(77.0, 20.0)),
@@ -5231,15 +4814,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         // A 122 by 50 portrait, its rows padded to 124 bytes.
         let (width, height, stride, offset) = (122usize, 50usize, 124usize, 1078usize);
-        let mut bmp = vec![0u8; offset + stride * height];
-        bmp[..2].copy_from_slice(b"BM");
-        bmp[10..14].copy_from_slice(&u32::try_from(offset).unwrap().to_le_bytes());
-        bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
-        bmp[18..22].copy_from_slice(&i32::try_from(width).unwrap().to_le_bytes());
-        bmp[22..26].copy_from_slice(&i32::try_from(height).unwrap().to_le_bytes());
-        bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
-        bmp[28..30].copy_from_slice(&8u16.to_le_bytes());
-        bmp[offset..].fill(3);
+        let bmp = crate::test_support::bitmap_fixture(width, height, stride, offset, 8, 3);
         let mini = crate::panels::fleets::capital_ship_mini_id(DatId::new(0x1400_0040)).unwrap();
         std::fs::write(dir.join(format!("{}.bmp", mini - 0x4000)), &bmp).unwrap();
         let mut cache = BmpCache::new();
@@ -5417,26 +4992,6 @@ mod tests {
             state.cell_screen_rect(layout(CockpitFaction::Alliance, 2.0), systems[0], 4),
             Some(egui::Rect::from_min_max(at(77.0, 117.0), at(146.0, 157.0)))
         );
-    }
-
-    /// Press at `from`, move through `to`'s midpoint to `to` with the
-    /// button held, and release there.
-    fn drag(from: egui::Pos2, to: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        let button = |pos, pressed| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        let mut frames = hover(from);
-        frames.extend([
-            vec![button(from, true)],
-            vec![egui::Event::PointerMoved(from.lerp(to, 0.5))],
-            vec![egui::Event::PointerMoved(to)],
-            vec![button(to, false)],
-            vec![egui::Event::PointerMoved(to + egui::vec2(30.0, 30.0))],
-        ]);
-        frames
     }
 
     #[test]

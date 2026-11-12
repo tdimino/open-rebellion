@@ -8,8 +8,6 @@ use std::collections::BTreeMap;
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
 #[cfg(not(target_arch = "wasm32"))]
-use std::io::{Read, Take};
-#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 use std::sync::Arc;
 
@@ -18,6 +16,11 @@ use rebellion_data::encyclopedia_session::{EncyclopediaSession, MAX_ENCYCLOPEDIA
 #[cfg(not(target_arch = "wasm32"))]
 use rebellion_render::{approved_hd_assets_from_bytes, AssetRenderProfile};
 use rebellion_render::{EncyclopediaArtworkView, EncyclopediaTextureSampling};
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::encyclopedia_native_io::{
+    bounded_read_limit, read_open_file_bounded, BoundedReadError as NativeBoundedReadError,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_HD_MANIFEST_BYTES: usize = 8 * 1024 * 1024;
@@ -315,33 +318,40 @@ fn read_bounded_file(path: &Path, max_bytes: usize) -> Result<Vec<u8>, BoundedRe
             path.display()
         )));
     }
-    let max_bytes_u64 = u64::try_from(max_bytes).map_err(|_| {
-        BoundedReadError::ResourceLimit("configured byte limit does not fit u64".to_owned())
+    let take_limit = bounded_read_limit(max_bytes).map_err(|error| match error {
+        NativeBoundedReadError::LimitDoesNotFitU64 => {
+            BoundedReadError::ResourceLimit("configured byte limit does not fit u64".to_owned())
+        }
+        NativeBoundedReadError::LimitOverflow => {
+            BoundedReadError::ResourceLimit("configured read limit overflowed".to_owned())
+        }
+        NativeBoundedReadError::Read(_) | NativeBoundedReadError::Exceeded => {
+            unreachable!("computing a read limit performs no I/O")
+        }
     })?;
+    let max_bytes_u64 = take_limit - 1;
     if metadata.len() > max_bytes_u64 {
         return Err(BoundedReadError::ResourceLimit(format!(
             "{} exceeds the {max_bytes}-byte read limit",
             path.display()
         )));
     }
-    let capacity = usize::try_from(metadata.len())
-        .unwrap_or(max_bytes)
-        .min(max_bytes);
-    let mut bytes = Vec::with_capacity(capacity);
-    let take_limit = max_bytes_u64.checked_add(1).ok_or_else(|| {
-        BoundedReadError::ResourceLimit("configured read limit overflowed".to_owned())
-    })?;
-    let mut bounded: Take<File> = file.take(take_limit);
-    bounded.read_to_end(&mut bytes).map_err(|error| {
-        BoundedReadError::Unavailable(format!("cannot read {}: {error}", path.display()))
-    })?;
-    if bytes.len() > max_bytes {
-        return Err(BoundedReadError::ResourceLimit(format!(
+    let capacity = usize::try_from(metadata.len()).unwrap_or(max_bytes);
+    read_open_file_bounded(file, capacity, max_bytes).map_err(|error| match error {
+        NativeBoundedReadError::Read(error) => {
+            BoundedReadError::Unavailable(format!("cannot read {}: {error}", path.display()))
+        }
+        NativeBoundedReadError::Exceeded => BoundedReadError::ResourceLimit(format!(
             "{} exceeded the {max_bytes}-byte read limit while reading",
             path.display()
-        )));
-    }
-    Ok(bytes)
+        )),
+        NativeBoundedReadError::LimitDoesNotFitU64 => {
+            BoundedReadError::ResourceLimit("configured byte limit does not fit u64".to_owned())
+        }
+        NativeBoundedReadError::LimitOverflow => {
+            BoundedReadError::ResourceLimit("configured read limit overflowed".to_owned())
+        }
+    })
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -368,20 +378,18 @@ fn asset_diagnostic(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::HashMap;
     use std::io::Cursor;
     use std::sync::Arc;
 
     use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
-    use rebellion_data::encyclopedia_catalog::{
-        EncyclopediaCatalog, EncyclopediaCatalogEntry, EncyclopediaCategory,
-    };
+    use rebellion_data::encyclopedia_catalog::EncyclopediaCatalog;
     use rebellion_data::encyclopedia_presenter::{EncyclopediaEntryIntent, EncyclopediaPresenter};
     use rebellion_data::encyclopedia_session::{
-        EncyclopediaResourceBytes, EncyclopediaSession, EncyclopediaSessionInput,
-        EncyclopediaSessionStore,
+        EncyclopediaSession, EncyclopediaSessionInput, EncyclopediaSessionStore,
     };
     use rebellion_data::encyclopedia_topics::EncyclopediaAudience;
+    use rebellion_data::test_support::{encyclopedia_catalog, encyclopedia_entry};
     use rebellion_render::{AssetRenderProfile, EncyclopediaTextureSampling};
     use serde_json::json;
     use sha2::{Digest, Sha256};
@@ -401,80 +409,15 @@ mod tests {
     const APPROVAL_KEY: &str = "edata/EDATA_115";
     const OUTPUT_PATH: &str = "EData/EDATA_115.png";
 
-    fn category(
-        command_id: u16,
-        label_resource_id: u16,
-        family_range: Option<std::ops::Range<u8>>,
-    ) -> EncyclopediaCategory {
-        EncyclopediaCategory::new(
-            command_id,
-            label_resource_id,
-            format!("Category {command_id}"),
-            family_range,
-        )
-    }
-
     fn catalog() -> EncyclopediaCatalog {
-        EncyclopediaCatalog {
-            title: "Galactic Encyclopedia".into(),
-            topic_label: "Topic".into(),
-            categories: [
-                category(0x6f, 0x1850, None),
-                category(0x70, 0x1855, Some(0x90..0x98)),
-                category(0x71, 0x1854, Some(0x14..0x20)),
-                category(0x72, 0x1852, Some(0x20..0x30)),
-                category(0x73, 0x1851, Some(0x40..0x80)),
-                category(0x74, 0x1856, Some(0x10..0x14)),
-                category(0x75, 0x1853, Some(0x30..0x40)),
-            ],
-            entries: vec![
-                EncyclopediaCatalogEntry {
-                    object_id: OBJECT_ID,
-                    text_resource_id: RESOURCE_ID,
-                    name: "Diplomacy".into(),
-                },
-                EncyclopediaCatalogEntry {
-                    object_id: 0x1400_0040,
-                    text_resource_id: 0x2740,
-                    name: "Mon Calamari Cruiser".into(),
-                },
-            ],
-        }
-    }
-
-    fn indexed_bmp() -> Arc<[u8]> {
-        const WIDTH: u32 = 400;
-        const HEIGHT: u32 = 200;
-        const PIXEL_OFFSET: u32 = 14 + 40 + 1024;
-        const FILE_BYTES: u32 = PIXEL_OFFSET + WIDTH * HEIGHT;
-        let mut bytes = Vec::with_capacity(FILE_BYTES as usize);
-        bytes.extend_from_slice(b"BM");
-        bytes.extend_from_slice(&FILE_BYTES.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        bytes.extend_from_slice(&PIXEL_OFFSET.to_le_bytes());
-        bytes.extend_from_slice(&40_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH as i32).to_le_bytes());
-        bytes.extend_from_slice(&(HEIGHT as i32).to_le_bytes());
-        bytes.extend_from_slice(&1_u16.to_le_bytes());
-        bytes.extend_from_slice(&8_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH * HEIGHT).to_le_bytes());
-        bytes.extend_from_slice(&[0; 8]);
-        bytes.extend_from_slice(&256_u32.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.resize(PIXEL_OFFSET as usize, 0);
-        bytes[58..62].copy_from_slice(&[17, 16, 15, 0]);
-        bytes.resize(FILE_BYTES as usize, 1);
-        bytes.into()
+        encyclopedia_catalog(vec![
+            encyclopedia_entry(OBJECT_ID, RESOURCE_ID, "Diplomacy"),
+            encyclopedia_entry(0x1400_0040, 0x2740, "Mon Calamari Cruiser"),
+        ])
     }
 
     fn session() -> Arc<EncyclopediaSession> {
-        let artwork: EncyclopediaResourceBytes = BTreeMap::from([
-            ("EDATA.001".into(), indexed_bmp()),
-            ("EDATA.014".into(), indexed_bmp()),
-            ("EDATA.015".into(), indexed_bmp()),
-            ("EDATA.115".into(), indexed_bmp()),
-        ]);
+        let artwork = crate::test_support::uniform_encyclopedia_artwork([15, 16, 17]);
         let mut store = EncyclopediaSessionStore::default();
         store
             .replace(EncyclopediaSessionInput {
@@ -726,32 +669,10 @@ mod tests {
     #[test]
     #[ignore = "requires owned canonical source/EData and a separately approved faithful-HD pack"]
     fn owned_approved_hd_pack_selects_only_validated_linear_artwork() {
-        let source = std::path::PathBuf::from(
-            std::env::var_os("REBELLION_ENCYCLOPEDIA_TEST_SOURCE")
-                .expect("set REBELLION_ENCYCLOPEDIA_TEST_SOURCE"),
-        );
-        let gdata = source
-            .parent()
-            .and_then(std::path::Path::parent)
-            .expect("source path is GData/encyclopedia/source.json");
-        let edata = std::path::PathBuf::from(
-            std::env::var_os("REBELLION_EDATA_DIR").expect("set REBELLION_EDATA_DIR"),
-        );
         let hd_root = std::path::PathBuf::from(
             std::env::var_os("REBELLION_HD_ROOT").expect("set REBELLION_HD_ROOT"),
         );
-        let payload = crate::encyclopedia_content::read_native_encyclopedia(gdata, &edata)
-            .unwrap()
-            .expect("owned native Encyclopedia is published");
-        let catalog =
-            rebellion_data::encyclopedia_catalog::load_encyclopedia_catalog(gdata).unwrap();
-        let system_pictures =
-            rebellion_data::encyclopedia_topics::load_encyclopedia_system_pictures(gdata).unwrap();
-        let mut store = EncyclopediaSessionStore::default();
-        store
-            .replace(payload.into_session_input(catalog, system_pictures))
-            .unwrap();
-        let session = store.current().unwrap();
+        let session = crate::encyclopedia_content::owned_native_session_from_env();
         let prepared = prepare_native_encyclopedia_hd(
             AssetRenderProfile::FaithfulHd,
             Some(&hd_root),

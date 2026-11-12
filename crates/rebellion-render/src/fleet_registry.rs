@@ -424,6 +424,7 @@ pub fn draw_fleet_registry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{immediate_click_frames, key_frame as key};
 
     #[test]
     fn original_naming_previews_the_sides_first_numbers() {
@@ -492,27 +493,7 @@ mod tests {
 
     fn click(rect: LogicalRect) -> Vec<Vec<egui::Event>> {
         let pos = Pos2::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
-        let press = |pressed| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        vec![
-            vec![egui::Event::PointerMoved(pos)],
-            vec![press(true)],
-            vec![press(false)],
-        ]
-    }
-
-    fn key(key: egui::Key) -> Vec<Vec<egui::Event>> {
-        vec![vec![egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }]]
+        immediate_click_frames(pos)
     }
 
     #[test]

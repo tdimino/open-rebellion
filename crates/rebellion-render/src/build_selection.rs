@@ -16,8 +16,7 @@ use rebellion_core::movement::MovementState;
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::GameWorld;
 use rebellion_windowing::{
-    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
+    ExistingEffect, WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
@@ -26,7 +25,10 @@ use crate::manufacturing_window::product;
 use crate::mission_dialog::{
     button, galaxy_centered_rect, paint, paint_button, paint_centered, scrolled,
 };
-use crate::system_window::{exact_clicked, logical_rect, rect_contains};
+use crate::native_geometry::{exact_clicked, rect_contains};
+use crate::singleton_window_common::{
+    self, impl_singleton_content_reports, impl_singleton_window_routing,
+};
 
 pub const BUILD_SELECTION_WIDTH: f32 = 210.0;
 pub const BUILD_SELECTION_HEIGHT: f32 = 261.0;
@@ -349,68 +351,6 @@ impl BuildSelectionState {
         self.dialog.as_ref().and_then(|dialog| dialog.window_id)
     }
 
-    /// Egui layer attached to the exact manager-issued Build Selection.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id() == Some(id)).then(|| {
-            egui::LayerId::new(
-                egui::Order::Tooltip,
-                egui::Id::new("original-build-selection"),
-            )
-        })
-    }
-
-    /// Manager-owned window hit for event-local pointer routing.
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id()?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::BuildSelection)
-            && frame.allows_input(id)
-            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    /// Exact manager identity that owns this frame's keyboard lease.
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id()?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
-
-    /// Explicit content state for manager reconciliation.
-    #[must_use]
-    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::BuildSelection)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id() == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
-    }
-
     /// Returns the exact close target while content remains attached for this
     /// frame's immutable modal lease.
     #[must_use]
@@ -548,7 +488,11 @@ impl BuildSelectionState {
     /// takes no input.
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.dialog.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
+        crate::singleton_window_common::contains_screen_point(
+            self.dialog.is_some(),
+            window_rect(layout),
+            point,
+        )
     }
 
     /// Confirm (`0x65`, `FUN_00438980`): remember the class for its kind of
@@ -568,6 +512,14 @@ impl BuildSelectionState {
         })
     }
 }
+
+impl_singleton_window_routing!(
+    BuildSelectionState,
+    WindowKind::BuildSelection,
+    "original-build-selection",
+    window_rect
+);
+impl_singleton_content_reports!(BuildSelectionState, WindowKind::BuildSelection);
 
 /// What the window asks of the game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -694,255 +646,252 @@ pub fn draw_build_selection(
     });
 
     let area_id = egui::Id::new("original-build-selection");
-    egui::Area::new(area_id)
-        .fixed_pos(window.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(window.size(), egui::Sense::hover());
-            let painter = ui.painter().with_clip_rect(frame);
-            let at = |x: f32, y: f32, w: f32, h: f32| logical_rect(frame, scale, x, y, w, h);
-            let title_font = egui::FontId::proportional((11.0 * scale).max(7.0));
-            let value_font = egui::FontId::proportional((10.0 * scale).max(7.0));
-            let small = egui::FontId::proportional((9.0 * scale).max(6.0));
+    singleton_window_common::show_popup_canvas(ctx, area_id, window, scale, |ui, canvas| {
+        let frame = canvas.frame;
+        let painter = canvas.painter.clone();
+        let at = |x: f32, y: f32, w: f32, h: f32| canvas.rect(x, y, w, h);
+        let title_font = egui::FontId::proportional((11.0 * scale).max(7.0));
+        let value_font = egui::FontId::proportional((10.0 * scale).max(7.0));
+        let small = egui::FontId::proportional((9.0 * scale).max(6.0));
 
-            paint(&painter, ctx, cache, BACKGROUND, frame, scale);
-            // FUN_00438500: the side's 240-pixel strip at (2, 2), which the
-            // window clips, then the labels.
-            let strip = if dialog.is_alliance {
-                TITLE_ALLIANCE
-            } else {
-                TITLE_EMPIRE
-            };
-            paint(
-                &painter,
-                ctx,
-                cache,
-                strip,
-                at(2.0, 2.0, 208.0, 17.0),
-                scale,
-            );
+        paint(&painter, ctx, cache, BACKGROUND, frame, scale);
+        // FUN_00438500: the side's 240-pixel strip at (2, 2), which the
+        // window clips, then the labels.
+        let strip = if dialog.is_alliance {
+            TITLE_ALLIANCE
+        } else {
+            TITLE_EMPIRE
+        };
+        paint(
+            &painter,
+            ctx,
+            cache,
+            strip,
+            at(2.0, 2.0, 208.0, 17.0),
+            scale,
+        );
+        painter.text(
+            at(2.0, 2.0, 202.0, 14.0).center(),
+            egui::Align2::CENTER_CENTER,
+            TITLE,
+            title_font,
+            egui::Color32::BLACK,
+        );
+        painter.text(
+            at(20.0, 196.0, 118.0, 15.0).right_top(),
+            egui::Align2::RIGHT_TOP,
+            NUMBER_TO_BUILD,
+            value_font.clone(),
+            LABEL,
+        );
+        for (label, y) in [(BEST_COMPLETION, 145.0), (BEST_DEPLOYMENT, 165.0)] {
             painter.text(
-                at(2.0, 2.0, 202.0, 14.0).center(),
-                egui::Align2::CENTER_CENTER,
-                TITLE,
-                title_font,
-                egui::Color32::BLACK,
-            );
-            painter.text(
-                at(20.0, 196.0, 118.0, 15.0).right_top(),
-                egui::Align2::RIGHT_TOP,
-                NUMBER_TO_BUILD,
-                value_font.clone(),
+                at(10.0, y, 125.0, 15.0).left_center(),
+                egui::Align2::LEFT_CENTER,
+                label,
+                small.clone(),
                 LABEL,
             );
-            for (label, y) in [(BEST_COMPLETION, 145.0), (BEST_DEPLOYMENT, 165.0)] {
-                painter.text(
-                    at(10.0, y, 125.0, 15.0).left_center(),
-                    egui::Align2::LEFT_CENTER,
-                    label,
-                    small.clone(),
-                    LABEL,
-                );
-            }
+        }
 
-            // The selected class: its portrait centered in the box, its name
-            // from the portrait's height down (FUN_00437880's 195 by 63 item).
-            let (x, y, w, h) = ITEM_BOX;
-            paint_item(
-                &painter,
-                ctx,
-                cache,
-                world,
-                dialog.kind(),
-                at(x, y, w, h),
-                scale,
-                &small,
-                egui::Color32::WHITE,
-            );
+        // The selected class: its portrait centered in the box, its name
+        // from the portrait's height down (FUN_00437880's 195 by 63 item).
+        let (x, y, w, h) = ITEM_BOX;
+        paint_item(
+            &painter,
+            ctx,
+            cache,
+            world,
+            dialog.kind(),
+            at(x, y, w, h),
+            scale,
+            &small,
+            egui::Color32::WHITE,
+        );
 
-            // FUN_00438dd0 / FUN_00438f30: the values, white, each in its
-            // FUN_00437f80 field. port: clipped to the field, where the
-            // original's aliased GDI text ends; the anti-aliased edge of a
-            // right-aligned value would otherwise cross it.
-            let in_field =
-                |field: egui::Rect| painter.with_clip_rect(field.intersect(painter.clip_rect()));
-            for ((x, y), text) in [
-                (REFINED_FIELD, cost_text(estimate.refined_material, valid)),
-                (MAINTENANCE_FIELD, cost_text(estimate.maintenance, valid)),
-            ] {
-                let field = at(x, y, 64.0, 23.0);
-                in_field(field).text(
-                    field.center(),
-                    egui::Align2::CENTER_CENTER,
-                    text,
-                    value_font.clone(),
-                    egui::Color32::WHITE,
-                );
-            }
-            for ((x, y), text) in [
-                (
-                    COMPLETION_FIELD,
-                    days_text(estimate.completion.unwrap_or(0), valid),
-                ),
-                (DEPLOYMENT_FIELD, days_text(estimate.deployment, valid)),
-            ] {
-                let field = at(x, y, 60.0, 15.0);
-                in_field(field).text(
-                    field.right_center(),
-                    egui::Align2::RIGHT_CENTER,
-                    text,
-                    small.clone(),
-                    egui::Color32::WHITE,
-                );
-            }
-            let (x, y, w, h) = QUANTITY_FIELD;
-            in_field(at(x, y, w, h)).text(
-                at(x, y, w, h).left_center(),
-                egui::Align2::LEFT_CENTER,
-                dialog.quantity.to_string(),
+        // FUN_00438dd0 / FUN_00438f30: the values, white, each in its
+        // FUN_00437f80 field. port: clipped to the field, where the
+        // original's aliased GDI text ends; the anti-aliased edge of a
+        // right-aligned value would otherwise cross it.
+        let in_field =
+            |field: egui::Rect| painter.with_clip_rect(field.intersect(painter.clip_rect()));
+        for ((x, y), text) in [
+            (REFINED_FIELD, cost_text(estimate.refined_material, valid)),
+            (MAINTENANCE_FIELD, cost_text(estimate.maintenance, valid)),
+        ] {
+            let field = at(x, y, 64.0, 23.0);
+            in_field(field).text(
+                field.center(),
+                egui::Align2::CENTER_CENTER,
+                text,
                 value_font.clone(),
                 egui::Color32::WHITE,
             );
+        }
+        for ((x, y), text) in [
+            (
+                COMPLETION_FIELD,
+                days_text(estimate.completion.unwrap_or(0), valid),
+            ),
+            (DEPLOYMENT_FIELD, days_text(estimate.deployment, valid)),
+        ] {
+            let field = at(x, y, 60.0, 15.0);
+            in_field(field).text(
+                field.right_center(),
+                egui::Align2::RIGHT_CENTER,
+                text,
+                small.clone(),
+                egui::Color32::WHITE,
+            );
+        }
+        let (x, y, w, h) = QUANTITY_FIELD;
+        in_field(at(x, y, w, h)).text(
+            at(x, y, w, h).left_center(),
+            egui::Align2::LEFT_CENTER,
+            dialog.quantity.to_string(),
+            value_font.clone(),
+            egui::Color32::WHITE,
+        );
 
-            if button(
-                ui,
-                cache,
-                at(193.0, 3.0, 14.0, 14.0),
-                "close",
-                CLOSE,
-                false,
-                scale,
-            ) {
-                close = true;
+        if button(
+            ui,
+            cache,
+            at(193.0, 3.0, 14.0, 14.0),
+            "close",
+            CLOSE,
+            false,
+            scale,
+        ) {
+            close = true;
+        }
+        if button(
+            ui,
+            cache,
+            at(79.0, 90.0, 65.0, 18.0),
+            "list",
+            LIST,
+            false,
+            scale,
+        ) {
+            dialog.toggle_list();
+        }
+        if button(
+            ui,
+            cache,
+            at(189.0, 196.0, 13.0, 8.0),
+            "more",
+            MORE,
+            false,
+            scale,
+        ) {
+            dialog.step_quantity(true);
+        }
+        if button(
+            ui,
+            cache,
+            at(189.0, 205.0, 13.0, 8.0),
+            "fewer",
+            FEWER,
+            false,
+            scale,
+        ) {
+            dialog.step_quantity(false);
+        }
+        if button(
+            ui,
+            cache,
+            at(5.0, 224.0, 66.0, 33.0),
+            "encyclopedia",
+            ENCYCLOPEDIA,
+            false,
+            scale,
+        ) {
+            action = Some(BuildSelectionAction::Encyclopedia);
+        }
+        // FUN_00439160 disables Confirm for an order that cannot be
+        // built. port: a disabled button keeps its rest art.
+        let confirm_rect = at(73.0, 224.0, 66.0, 33.0);
+        if valid {
+            if button(ui, cache, confirm_rect, "confirm", CONFIRM, false, scale) {
+                confirm = true;
             }
-            if button(
-                ui,
-                cache,
-                at(79.0, 90.0, 65.0, 18.0),
-                "list",
-                LIST,
-                false,
-                scale,
-            ) {
+        } else {
+            paint_button(&painter, ctx, cache, CONFIRM.0, confirm_rect, scale);
+        }
+        if button(
+            ui,
+            cache,
+            at(141.0, 224.0, 66.0, 33.0),
+            "cancel",
+            CANCEL,
+            false,
+            scale,
+        ) {
+            close = true;
+        }
+
+        // The drop-down (FUN_0060cac0): a window under the box, the box's
+        // width and two rows high, its list (FUN_00607ea0) 2 pixels in.
+        // port: its scroll bar (base 0x299a) is not drawn; the wheel
+        // scrolls the rows, as the mission dialog's.
+        if dialog.list_open {
+            // FUN_0060d020 takes the capture: a press off the popup
+            // closes it and reaches no other control. port: on the
+            // release, within the window.
+            let capture = ui.interact(
+                frame,
+                ui.id().with("class-list-capture"),
+                egui::Sense::click(),
+            );
+            let (x, y, w, h) = ITEM_BOX;
+            let rows_height = LIST_ROWS as f32 * LIST_ROW_HEIGHT;
+            let popup = at(x, y + h, w, rows_height + 4.0);
+            let list = at(x + 2.0, y + h + 2.0, w - 4.0, rows_height);
+            painter.rect_filled(popup, 0.0, egui::Color32::BLACK);
+            let response = ui.interact(popup, ui.id().with("class-list"), egui::Sense::click());
+            let len = dialog.kinds.len();
+            let top = dialog.top;
+            let row_at = |point: egui::Pos2| {
+                let row = top + ((point.y - list.min.y) / (LIST_ROW_HEIGHT * scale)) as usize;
+                (row < len).then_some(row)
+            };
+            // The list sees the pointer only over itself.
+            if let Some(point) = ctx
+                .input(|input| input.pointer.hover_pos())
+                .filter(|&point| rect_contains(list, point))
+            {
+                dialog.hover(row_at(point));
+            }
+            if response.hovered() {
+                let wheel = ctx.input(|input| input.raw_scroll_delta.y);
+                dialog.top = scrolled(dialog.top, len.saturating_sub(LIST_ROWS) + 1, wheel);
+            }
+            for (slot, row) in (dialog.top..len).take(LIST_ROWS).enumerate() {
+                paint_item(
+                    &painter,
+                    ctx,
+                    cache,
+                    world,
+                    dialog.kinds[row],
+                    at(
+                        x + 2.0,
+                        y + h + 2.0 + slot as f32 * LIST_ROW_HEIGHT,
+                        w - 4.0,
+                        h,
+                    ),
+                    scale,
+                    &small,
+                    dialog.row_color(row),
+                );
+            }
+            if exact_clicked(&response, list) {
+                let row = response.interact_pointer_pos().and_then(row_at);
+                dialog.click_list(row);
+            } else if capture.clicked() {
                 dialog.toggle_list();
             }
-            if button(
-                ui,
-                cache,
-                at(189.0, 196.0, 13.0, 8.0),
-                "more",
-                MORE,
-                false,
-                scale,
-            ) {
-                dialog.step_quantity(true);
-            }
-            if button(
-                ui,
-                cache,
-                at(189.0, 205.0, 13.0, 8.0),
-                "fewer",
-                FEWER,
-                false,
-                scale,
-            ) {
-                dialog.step_quantity(false);
-            }
-            if button(
-                ui,
-                cache,
-                at(5.0, 224.0, 66.0, 33.0),
-                "encyclopedia",
-                ENCYCLOPEDIA,
-                false,
-                scale,
-            ) {
-                action = Some(BuildSelectionAction::Encyclopedia);
-            }
-            // FUN_00439160 disables Confirm for an order that cannot be
-            // built. port: a disabled button keeps its rest art.
-            let confirm_rect = at(73.0, 224.0, 66.0, 33.0);
-            if valid {
-                if button(ui, cache, confirm_rect, "confirm", CONFIRM, false, scale) {
-                    confirm = true;
-                }
-            } else {
-                paint_button(&painter, ctx, cache, CONFIRM.0, confirm_rect, scale);
-            }
-            if button(
-                ui,
-                cache,
-                at(141.0, 224.0, 66.0, 33.0),
-                "cancel",
-                CANCEL,
-                false,
-                scale,
-            ) {
-                close = true;
-            }
-
-            // The drop-down (FUN_0060cac0): a window under the box, the box's
-            // width and two rows high, its list (FUN_00607ea0) 2 pixels in.
-            // port: its scroll bar (base 0x299a) is not drawn; the wheel
-            // scrolls the rows, as the mission dialog's.
-            if dialog.list_open {
-                // FUN_0060d020 takes the capture: a press off the popup
-                // closes it and reaches no other control. port: on the
-                // release, within the window.
-                let capture = ui.interact(
-                    frame,
-                    ui.id().with("class-list-capture"),
-                    egui::Sense::click(),
-                );
-                let (x, y, w, h) = ITEM_BOX;
-                let rows_height = LIST_ROWS as f32 * LIST_ROW_HEIGHT;
-                let popup = at(x, y + h, w, rows_height + 4.0);
-                let list = at(x + 2.0, y + h + 2.0, w - 4.0, rows_height);
-                painter.rect_filled(popup, 0.0, egui::Color32::BLACK);
-                let response = ui.interact(popup, ui.id().with("class-list"), egui::Sense::click());
-                let len = dialog.kinds.len();
-                let top = dialog.top;
-                let row_at = |point: egui::Pos2| {
-                    let row = top + ((point.y - list.min.y) / (LIST_ROW_HEIGHT * scale)) as usize;
-                    (row < len).then_some(row)
-                };
-                // The list sees the pointer only over itself.
-                if let Some(point) = ctx
-                    .input(|input| input.pointer.hover_pos())
-                    .filter(|&point| rect_contains(list, point))
-                {
-                    dialog.hover(row_at(point));
-                }
-                if response.hovered() {
-                    let wheel = ctx.input(|input| input.raw_scroll_delta.y);
-                    dialog.top = scrolled(dialog.top, len.saturating_sub(LIST_ROWS) + 1, wheel);
-                }
-                for (slot, row) in (dialog.top..len).take(LIST_ROWS).enumerate() {
-                    paint_item(
-                        &painter,
-                        ctx,
-                        cache,
-                        world,
-                        dialog.kinds[row],
-                        at(
-                            x + 2.0,
-                            y + h + 2.0 + slot as f32 * LIST_ROW_HEIGHT,
-                            w - 4.0,
-                            h,
-                        ),
-                        scale,
-                        &small,
-                        dialog.row_color(row),
-                    );
-                }
-                if exact_clicked(&response, list) {
-                    let row = response.interact_pointer_pos().and_then(row_at);
-                    dialog.click_list(row);
-                } else if capture.clicked() {
-                    dialog.toggle_list();
-                }
-            }
-        });
+        }
+    });
 
     if confirm {
         if let Some(dialog) = state.dialog().filter(|dialog| dialog.window_id.is_some()) {
@@ -1015,8 +964,10 @@ fn paint_item(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fleet_window::tests::PAINTED;
-    use rebellion_core::dat::{ExplorationStatus, Faction};
+    use crate::test_support::{
+        key_press as key, offset_strategic_layout, pointer_button as press, pointer_raw_input,
+    };
+    use rebellion_core::dat::Faction;
     use rebellion_core::ids::DatId;
     use rebellion_core::world::{
         BuildableClass, ControlKind, ManufacturingFacilityInstance, System,
@@ -1028,22 +979,7 @@ mod tests {
     }
 
     fn scaled(scale: f32) -> CockpitLayout {
-        use crate::cockpit::CockpitViewport;
-        CockpitLayout {
-            canvas: CockpitViewport {
-                x: 10.0,
-                y: 20.0,
-                width: 640.0 * scale,
-                height: 480.0 * scale,
-            },
-            galaxy: CockpitViewport {
-                x: 10.0 + 55.0 * scale,
-                y: 20.0 + 40.0 * scale,
-                width: 485.0 * scale,
-                height: 350.0 * scale,
-            },
-            scale,
-        }
+        offset_strategic_layout(scale)
     }
 
     /// A drawn text: its string, position and font size.
@@ -1058,27 +994,10 @@ mod tests {
         let mut world = GameWorld::default();
         let system = world.systems.insert(System {
             dat_id: DatId::new(0x9000_0001),
-            name: "Bortras".into(),
-            sector: rebellion_core::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
+            ..rebellion_core::test_support::system(
+                "Bortras",
+                ControlKind::Controlled(Faction::Alliance),
+            )
         });
         let class = |refined, maintenance, rate| BuildableClass {
             is_alliance: true,
@@ -1383,25 +1302,13 @@ mod tests {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let manufacturing = ManufacturingState::new();
-        let lower = egui::Id::new("raising-lower-managed-surface");
         let mut order_projector = crate::windowing::ManagedOrderProjector::default();
 
-        for _ in 0..3 {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
-                ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, lower));
-                egui::Area::new(lower)
-                    .order(egui::Order::Tooltip)
-                    .fixed_pos(window_rect(layout).min)
-                    .show(ctx, |ui| {
-                        ui.allocate_response(window_rect(layout).size(), egui::Sense::click());
-                    });
+        crate::test_support::assert_managed_surface_reasserted(
+            &ctx,
+            window_rect(layout),
+            egui::Id::new("original-build-selection"),
+            |ctx| {
                 assert_eq!(state.keyboard_owner(&frame), state.window_id());
                 let _ = draw_build_selection(
                     ctx,
@@ -1420,33 +1327,8 @@ mod tests {
                     &mut order_projector,
                     |window| state.managed_layer_id(window).map(|layer| vec![layer]),
                 );
-            });
-        }
-
-        assert_eq!(
-            ctx.layer_id_at(window_rect(layout).center())
-                .map(|layer| layer.id),
-            Some(egui::Id::new("original-build-selection"))
+            },
         );
-    }
-
-    fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
-    }
-
-    fn key(key: egui::Key) -> egui::Event {
-        egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }
     }
 
     /// Two idle frames, then one per entry of `frames`, the pointer at
@@ -1476,19 +1358,7 @@ mod tests {
         let mut emitted = None;
         let mut texts = Vec::new();
         for extra in [vec![], vec![]].into_iter().chain(frames) {
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1040.0),
-                )),
-                events,
-                ..Default::default()
-            };
+            let input = pointer_raw_input(pos, extra, egui::vec2(1400.0, 1040.0));
             let output = ctx.run(input, |ctx| {
                 if let Some(action) = draw_build_selection(
                     ctx,
@@ -1504,17 +1374,15 @@ mod tests {
                     emitted = Some(action);
                 }
             });
-            texts = output
-                .shapes
+            texts = crate::test_support::rendered_texts(output)
                 .into_iter()
-                .filter_map(|clipped| match clipped.shape {
-                    egui::Shape::Text(text) => Some((
-                        text.galley.text().to_owned(),
-                        text.pos + egui::vec2(text.galley.size().x / 2.0, 0.0),
-                        text.galley.job.sections[0].format.font_id.size,
-                        text.galley.job.sections[0].format.color,
-                    )),
-                    _ => None,
+                .map(|text| {
+                    (
+                        text.text,
+                        text.pos + egui::vec2(text.size.x / 2.0, 0.0),
+                        text.font,
+                        text.color,
+                    )
                 })
                 .collect();
         }
@@ -1590,11 +1458,11 @@ mod tests {
     fn the_window_paints_its_background_side_strip_and_controls() {
         let (world, system) = galaxy(true);
         for (is_alliance, strip) in [(true, 10_801), (false, 10_802)] {
-            PAINTED.with(|painted| painted.borrow_mut().clear());
+            crate::test_support::clear_painted_trace();
             let mut state = opened(system, is_alliance);
             drive(&world, &mut state, (0.0, 0.0), vec![]);
             let origin = window_rect(layout()).min;
-            let painted = PAINTED.with(|painted| painted.borrow().clone());
+            let painted = crate::test_support::painted_trace();
             for (id, x, y) in [
                 (10_800, 0.0, 0.0),
                 (strip, 2.0, 2.0),

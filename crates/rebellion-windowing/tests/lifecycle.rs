@@ -1,61 +1,12 @@
+mod common;
+
+use common::{detail as modeless_spec, menu as menu_spec, modal as modal_spec, open, opened_id};
 use rebellion_windowing::{
-    CaptureCancelReason, Cardinality, CloseReason, ControlId, ExistingOpenPolicy, FocusOnOpen,
-    FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy, StackBand,
-    SubjectId, TransitionSubject, UnchangedReason, WindowCommand, WindowError, WindowEvent,
-    WindowId, WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec,
-    WindowTransition,
+    CaptureCancelReason, CloseReason, ControlId, ExistingOpenPolicy, FocusOnOpen, FocusRestoration,
+    FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy, StackBand, TransitionSubject,
+    UnchangedReason, WindowCommand, WindowError, WindowEvent, WindowId, WindowKey, WindowKind,
+    WindowManager, WindowOwner, WindowTransition,
 };
-
-fn modeless_spec(kind: WindowKind, subject: u64, owner: WindowOwner) -> WindowSpec {
-    WindowSpec {
-        key: WindowKey::contextual(kind, SubjectId::new(2, subject)),
-        owner,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Subject { max_open: None },
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::RaiseRestore,
-            input: InputPolicy::Modeless,
-            presentation: PresentationPolicy::History,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
-    }
-}
-
-fn menu_spec(owner: WindowId) -> WindowSpec {
-    WindowSpec {
-        key: WindowKey::singleton(WindowKind::Menu),
-        owner: WindowOwner::Window(owner),
-        policy: WindowPolicy {
-            cardinality: Cardinality::Singleton,
-            band: StackBand::Transient,
-            placement: OpenPlacement::AboveOwner,
-            existing: ExistingOpenPolicy::NoOp,
-            input: InputPolicy::DismissOnOutsidePress,
-            presentation: PresentationPolicy::None,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::SavedMenuTarget,
-        },
-    }
-}
-
-fn modal_spec(kind: WindowKind) -> WindowSpec {
-    WindowSpec {
-        key: WindowKey::singleton(kind),
-        owner: WindowOwner::StrategicRoot,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Singleton,
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::NoOp,
-            input: InputPolicy::StrategicModal,
-            presentation: PresentationPolicy::None,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
-    }
-}
 
 #[test]
 fn only_menu_may_request_saved_focus_restoration() {
@@ -76,22 +27,6 @@ fn only_menu_may_request_saved_focus_restoration() {
     );
     assert_eq!(valid.get(), 1, "rejection must not consume an identity");
     assert_eq!(manager.validate(), Ok(()));
-}
-
-fn opened_id(transition: WindowTransition) -> WindowId {
-    match transition {
-        WindowTransition::Opened { id } => id,
-        other => panic!("expected a new window, got {other:?}"),
-    }
-}
-
-fn open(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
-    opened_id(
-        manager
-            .apply(WindowCommand::Open(spec))
-            .expect("window opens")
-            .transition,
-    )
 }
 
 fn system_and_fleet() -> (WindowManager, WindowId, WindowId) {

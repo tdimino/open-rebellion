@@ -1345,6 +1345,25 @@ pub enum Dir {
     Smallest,
 }
 
+/// Sort a ranked list, consuming one tie-break draw per entry.
+///
+/// port: equal-key draws replace the original insertion-sort coin flips.
+pub(crate) fn ranked_ids<T>(
+    items: impl IntoIterator<Item = (T, i64)>,
+    dir: Dir,
+    rng: &mut impl crate::uprising::Draws,
+) -> Vec<T> {
+    let mut keyed: Vec<(i64, i32, T)> = items
+        .into_iter()
+        .map(|(id, key)| (key, rng.draw(9), id))
+        .collect();
+    keyed.sort_by(|a, b| match dir {
+        Dir::Largest => a.0.cmp(&b.0).then(a.1.cmp(&b.1)),
+        Dir::Smallest => b.0.cmp(&a.0).then(a.1.cmp(&b.1)),
+    });
+    keyed.into_iter().map(|(_, _, id)| id).collect()
+}
+
 /// Rank-sum selection (`FUN_00435790` + `FUN_004357b0`): each list is
 /// sorted by its key with equal keys in random order; the pick is the id
 /// present in every list with the largest sum of 1-based positions, the
@@ -1359,17 +1378,7 @@ pub(crate) fn rank_pick<T: Copy + Eq>(
 ) -> Option<T> {
     let sorted: Vec<Vec<T>> = lists
         .iter()
-        .map(|(items, dir)| {
-            let mut keyed: Vec<(i64, i32, T)> = items
-                .iter()
-                .map(|&(id, key)| (key, rng.draw(9), id))
-                .collect();
-            keyed.sort_by(|a, b| match dir {
-                Dir::Largest => a.0.cmp(&b.0).then(a.1.cmp(&b.1)),
-                Dir::Smallest => b.0.cmp(&a.0).then(a.1.cmp(&b.1)),
-            });
-            keyed.into_iter().map(|(_, _, id)| id).collect()
-        })
+        .map(|(items, dir)| ranked_ids(items.iter().copied(), *dir, rng))
         .collect();
     let first = sorted.first()?;
     let mut best: Option<(T, usize)> = None;
@@ -1387,6 +1396,19 @@ pub(crate) fn rank_pick<T: Copy + Eq>(
         }
     }
     best.map(|(id, _)| id)
+}
+
+/// Resume a stable record list at `next`, wrapping to its first entry when
+/// the remembered identity disappeared. Empty lists have no next record.
+pub(crate) fn resume_or_first_index<T>(
+    records: &[T],
+    next: u32,
+    id: impl Fn(&T) -> u32,
+) -> Option<usize> {
+    records
+        .iter()
+        .position(|record| id(record) == next)
+        .or_else(|| (!records.is_empty()).then_some(0))
 }
 
 /// The filters of a system query (`FUN_0041a340`, `FUN_00431830`): A must
@@ -1563,6 +1585,27 @@ pub(crate) enum Turn {
     Finished,
 }
 
+impl Turn {
+    /// Issue the first proposed action, or finish when a planner proposed none.
+    pub(crate) fn first(actions: impl IntoIterator<Item = crate::ai::AIAction>) -> Self {
+        actions
+            .into_iter()
+            .next()
+            .map_or(Self::Finished, |action| Self::Order {
+                action,
+                resume: false,
+            })
+    }
+
+    /// Trace-ready order text and its resume bit.
+    pub(crate) fn debug_order(&self) -> (Option<String>, bool) {
+        match self {
+            Self::Order { action, resume } => (Some(format!("{action:?}")), *resume),
+            Self::Spent | Self::Finished => (None, false),
+        }
+    }
+}
+
 impl ProductionState {
     /// A production module's turn: one phase (`step`), issued an order a
     /// turn. An order before a phase's last step sets done and raises
@@ -1591,10 +1634,7 @@ impl ProductionState {
         };
         let queued = self.module(module).queued.len();
         crate::trace::record(crate::trace::TraceMask::AI, "production_turn", || {
-            let (order, resume) = match &turn {
-                Turn::Order { action, resume } => (Some(format!("{action:?}")), *resume),
-                Turn::Spent | Turn::Finished => (None, false),
-            };
+            let (order, resume) = turn.debug_order();
             serde_json::json!({
                 "module": format!("{module:?}"),
                 "phase": phase,

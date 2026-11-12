@@ -8,7 +8,7 @@ use egui_macroquad::egui;
 use crate::bmp_cache::BmpCache;
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::game_menu::{
-    draw_game_menu, game_menu_rects, GameMenuEntry, GameMenuPlacement, GameMenuResponse,
+    draw_game_menu, flat_menu_outcome, game_menu_rects, GameMenuEntry, GameMenuPlacement,
     OwnedMenuOutcome,
 };
 
@@ -195,21 +195,9 @@ pub fn open_agent_menu_on_right_click(
     layout: CockpitLayout,
     faction: CockpitFaction,
 ) -> bool {
-    if layout.scale <= 0.0 || ctx.is_pointer_over_area() {
-        return false;
-    }
-    let (released, pointer) = ctx.input(|input| {
-        (
-            input
-                .pointer
-                .button_released(egui::PointerButton::Secondary),
-            input.pointer.interact_pos(),
-        )
-    });
-    let Some(pointer) = pointer.filter(|_| released) else {
-        return false;
-    };
-    let Some(anchor) = agent_menu_anchor(layout, faction, (pointer.x, pointer.y)) else {
+    let Some(anchor) = crate::test_support::secondary_release_anchor(ctx, layout, |point| {
+        agent_menu_anchor(layout, faction, point)
+    }) else {
         return false;
     };
     state.anchor = Some(anchor);
@@ -253,24 +241,19 @@ pub fn draw_owned_agent_menu(
         })
         .collect();
     crate::control_registry::name_next_menu("AgentMenu");
-    match draw_game_menu(
-        ctx,
-        egui::Id::new(AGENT_MENU_ID),
-        cache,
-        layout,
-        faction,
-        GameMenuPlacement::in_frame(anchor),
-        &entries,
-        input_enabled,
-    ) {
-        GameMenuResponse::Open => OwnedMenuOutcome::Open,
-        GameMenuResponse::Dismissed | GameMenuResponse::ChosenChild { .. } => {
-            OwnedMenuOutcome::Dismissed
-        }
-        GameMenuResponse::Chosen(index) => items[index]
-            .command
-            .map_or(OwnedMenuOutcome::Open, OwnedMenuOutcome::Chosen),
-    }
+    flat_menu_outcome(
+        draw_game_menu(
+            ctx,
+            egui::Id::new(AGENT_MENU_ID),
+            cache,
+            layout,
+            faction,
+            GameMenuPlacement::in_frame(anchor),
+            &entries,
+            input_enabled,
+        ),
+        |index| items[index].command,
+    )
 }
 
 /// Fixture-only wrapper retaining the original direct content lifecycle.
@@ -378,41 +361,19 @@ mod tests {
 
     /// A right click's release at `screen` on a canvas at (10, 20), scale 2.
     fn right_click(state: &mut AgentMenuState, screen: egui::Pos2, scale: f32) -> bool {
-        use crate::cockpit::CockpitViewport;
-        let layout = CockpitLayout {
-            canvas: CockpitViewport {
-                x: 10.0,
-                y: 20.0,
-                width: 640.0 * scale,
-                height: 480.0 * scale,
-            },
-            galaxy: CockpitViewport {
-                x: 0.0,
-                y: 0.0,
-                width: 0.0,
-                height: 0.0,
-            },
-            scale,
-        };
+        let layout = crate::test_support::offset_canvas_layout(scale);
         let ctx = egui::Context::default();
         let mut opened = false;
         for pressed in [true, false] {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                events: vec![
-                    egui::Event::PointerMoved(screen),
-                    egui::Event::PointerButton {
-                        pos: screen,
-                        button: egui::PointerButton::Secondary,
-                        pressed,
-                        modifiers: egui::Modifiers::NONE,
-                    },
-                ],
-                ..Default::default()
-            };
+            let input = crate::test_support::pointer_raw_input(
+                screen,
+                vec![crate::test_support::pointer_button_with(
+                    screen,
+                    egui::PointerButton::Secondary,
+                    pressed,
+                )],
+                egui::vec2(1400.0, 1000.0),
+            );
             let _ = ctx.run(input, |ctx| {
                 opened |=
                     open_agent_menu_on_right_click(ctx, state, layout, CockpitFaction::Alliance);

@@ -23,8 +23,8 @@ use crate::cockpit::{
     STRATEGIC_LOGICAL_HEIGHT, STRATEGIC_LOGICAL_WIDTH,
 };
 use crate::game_menu::{
-    draw_game_menu, faction_text_color, game_menu_rects, GameMenuEntry, GameMenuPlacement,
-    GameMenuResponse, OwnedMenuOutcome,
+    draw_game_menu, faction_text_color, flat_menu_outcome, game_menu_rects, GameMenuEntry,
+    GameMenuPlacement, OwnedMenuOutcome,
 };
 use crate::theme::game_font_size;
 
@@ -550,21 +550,9 @@ pub fn open_game_speed_menu_on_right_click(
     layout: CockpitLayout,
     faction: CockpitFaction,
 ) -> bool {
-    if layout.scale <= 0.0 || ctx.is_pointer_over_area() {
-        return false;
-    }
-    let (released, pointer) = ctx.input(|input| {
-        (
-            input
-                .pointer
-                .button_released(egui::PointerButton::Secondary),
-            input.pointer.interact_pos(),
-        )
-    });
-    let Some(pointer) = pointer.filter(|_| released) else {
-        return false;
-    };
-    let Some(anchor) = game_speed_menu_anchor(layout, faction, (pointer.x, pointer.y)) else {
+    let Some(anchor) = crate::test_support::secondary_release_anchor(ctx, layout, |point| {
+        game_speed_menu_anchor(layout, faction, point)
+    }) else {
         return false;
     };
     ui_state.menu_anchor = Some(anchor);
@@ -610,22 +598,19 @@ pub fn draw_owned_game_speed_menu(
         children: &[],
     });
     crate::control_registry::name_next_menu("SpeedMenu");
-    match draw_game_menu(
-        ctx,
-        egui::Id::new(SPEED_MENU_ID),
-        cache,
-        layout,
-        faction,
-        GameMenuPlacement::in_frame(anchor),
-        &entries,
-        input_enabled,
-    ) {
-        GameMenuResponse::Open => OwnedMenuOutcome::Open,
-        GameMenuResponse::Dismissed | GameMenuResponse::ChosenChild { .. } => {
-            OwnedMenuOutcome::Dismissed
-        }
-        GameMenuResponse::Chosen(index) => OwnedMenuOutcome::Chosen(items[index].speed),
-    }
+    flat_menu_outcome(
+        draw_game_menu(
+            ctx,
+            egui::Id::new(SPEED_MENU_ID),
+            cache,
+            layout,
+            faction,
+            GameMenuPlacement::in_frame(anchor),
+            &entries,
+            input_enabled,
+        ),
+        |index| Some(items[index].speed),
+    )
 }
 
 /// Fixture-only wrapper retaining direct content lifecycle.
@@ -654,6 +639,7 @@ pub fn draw_game_speed_menu(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{key_press as key, pointer_button as primary};
 
     #[test]
     fn menu_records_match_strategy_rcdata() {
@@ -935,25 +921,6 @@ mod tests {
         assert!(hit(right - 0.5, bottom - 0.5));
         assert!(!hit(right, top));
         assert!(!hit(left, bottom));
-    }
-
-    fn primary(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
-    }
-
-    fn key(key: egui::Key) -> egui::Event {
-        egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }
     }
 
     /// Run one egui frame with the pointer at `pointer` and `events` after it,

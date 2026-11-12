@@ -40,6 +40,7 @@ use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::native_geometry::NativeRect;
 use crate::operation_report::{cell_picture, ReportTab};
 use crate::scroll_bar::{ScrollBar, ScrollPointer, ScrollRange, LIST_BAR_29FC, TEXT_BAR_299D};
 #[cfg(feature = "interface-test-fixtures")]
@@ -142,29 +143,6 @@ const TACTICAL_FIGHTER_TYPE_LABELS: [&str; 8] = [
 
 const TACTICAL_SUBSYSTEM_X: [f32; 5] = [492.0, 519.0, 546.0, 573.0, 600.0];
 const TACTICAL_SUBSYSTEM_Y: f32 = 131.0;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct NativeRect {
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-}
-
-impl NativeRect {
-    const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-
-    fn contains(self, x: f32, y: f32) -> bool {
-        x >= self.x && y >= self.y && x < self.x + self.width && y < self.y + self.height
-    }
-}
 
 /// One uniformly scaled, letterboxed copy of the original tactical canvas.
 #[derive(Debug, Clone, Copy)]
@@ -6582,12 +6560,8 @@ fn draw_battle_result_forces(
                         layers.push((source, portrait + 0x2000));
                     }
                 }
-                let size = layers
-                    .first()
-                    .and_then(|&(source, id)| cache.original_resource_size(source, id))
-                    .map_or((0.0, 0.0), |[w, h]| (w as f32, h as f32));
-                let left = ((cell_w - size.0) / 2.0).floor();
-                let top = ((cell_h - size.1) / 2.0).floor();
+                let (size, (left, top)) =
+                    cache.centered_original_resource(&layers, (cell_w, cell_h));
                 for (source, id) in layers {
                     draw_original_bitmap(cache, source, id, canvas, x + left, y + top, None);
                 }

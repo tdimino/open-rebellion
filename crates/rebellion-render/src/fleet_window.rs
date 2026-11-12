@@ -21,28 +21,31 @@ use rebellion_core::movement::MovementState;
 use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::{ControlKind, Fleet, GameWorld};
+#[cfg(test)]
+use rebellion_windowing::{ContentReport, WindowOwner};
 use rebellion_windowing::{
-    ContentReport, ControlId, FocusTarget, RoutingSnapshot, SubjectId, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
+    ControlId, FocusTarget, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowSpec,
+    WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::object_menu::MenuObject;
 use crate::panels::fleets::{capital_ship_mini_id, fighter_mini_id};
 use crate::quadrant_icons::{quadrant_art, Quadrant};
-use crate::strategic_window_common;
+use crate::strategic_window_common::{self, draw_frame};
 use crate::system_window::{
-    canvas_point, character_mini_resource_id, clamp_window_to_galaxy, exact_clicked, fleet_label,
-    logical_rect, opposing_contents_visible, rect_contains, surface_drag_grab, troop_mini,
-    TitleDrag,
+    canvas_point, character_mini_resource_id, clamp_window_to_galaxy, fleet_label,
+    opposing_contents_visible, surface_drag_grab, troop_mini, TitleDrag,
 };
 use crate::targeting::ReleaseTarget;
 use crate::windowing::GalaxyChild;
 use crate::windowing_input::{
-    EscapeRoute, FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+    EscapeRoute, FrameInputRouter, InputEventId, PointerButtonId, PointerPhase,
 };
-use crate::windowing_policy::{contextual_spec, system_subject};
+#[cfg(test)]
+use crate::windowing_policy::contextual_spec;
 
 pub const FLEET_WINDOW_WIDTH: f32 = 235.0;
 pub const FLEET_WINDOW_HEIGHT: f32 = 304.0;
@@ -54,12 +57,6 @@ pub const FLEET_WINDOW_HEIGHT: f32 = 304.0;
 pub const FLEET_RENAME_CONTROL: ControlId = ControlId(0x203);
 
 const BACKGROUND: u32 = 10770;
-const CLOSE_NORMAL: u32 = 10108;
-const CLOSE_PRESSED: u32 = 10109;
-const MINIMIZE_NORMAL: u32 = 10253;
-const MINIMIZE_PRESSED: u32 = 10254;
-const SECTOR_NORMAL: u32 = 10209;
-const SECTOR_PRESSED: u32 = 10208;
 /// Alliance art; the Empire's is always 50 higher (`(side != 1) * 0x32`).
 const EMPIRE_ART_OFFSET: u32 = 50;
 const FLEET_FRAME: u32 = 10400;
@@ -344,7 +341,11 @@ struct OpenFleetWindow {
     rename: Option<RenameEdit>,
 }
 
-strategic_window_common::impl_strategic_window_record!(OpenFleetWindow);
+strategic_window_common::impl_strategic_window_record!(
+    OpenFleetWindow,
+    area_id,
+    window_screen_rect
+);
 
 /// Validated Fleet content held off to the side until the manager accepts its
 /// stable `(Fleet, system DAT ID)` identity.
@@ -440,6 +441,16 @@ struct ItemDrag {
     list: egui::Rect,
 }
 
+impl strategic_window_common::RoutedDragPayload for ItemDrag {
+    fn press(&self) -> egui::Pos2 {
+        self.press
+    }
+
+    fn list(&self) -> egui::Rect {
+        self.list
+    }
+}
+
 /// The object a list item stands for, which a drag carries and a right
 /// click opens a menu for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -505,7 +516,7 @@ impl ItemObject {
         transport: &TroopTransportState,
         faction: CockpitFaction,
     ) -> bool {
-        let expected_is_alliance = cockpit_faction(faction) == Faction::Alliance;
+        let expected_is_alliance = faction.player() == Faction::Alliance;
         let fleet_at = |fleet: FleetKey, system: SystemKey| {
             world.fleets.get(fleet).is_some_and(|value| {
                 value.location == system && value.is_alliance == expected_is_alliance
@@ -583,25 +594,22 @@ pub struct FleetWindowState {
     title_drag: Option<TitleDrag>,
 }
 
-impl Default for FleetWindowState {
-    fn default() -> Self {
-        Self {
-            faction: CockpitFaction::Alliance,
-            windows: Vec::new(),
-            pending_control_invalidations: Vec::new(),
-            pending_control_focus: Vec::new(),
-            drag: None,
-            drag_owner: None,
-            title_drag: None,
-        }
-    }
-}
+strategic_window_common::impl_strategic_window_state_core!(
+    FleetWindowState,
+    OpenFleetWindow,
+    area_id,
+    pending_control_invalidations = Vec::new(),
+    pending_control_focus = Vec::new(),
+    drag = None,
+    drag_owner = None,
+);
+strategic_window_common::impl_strategic_window_collection_accessors!(
+    FleetWindowState,
+    window_screen_rect
+);
+strategic_window_common::impl_system_content_reports!(FleetWindowState, WindowKind::Fleet);
 
-#[derive(Default)]
-struct EndDragResult {
-    actions: Vec<FleetWindowAction>,
-    claimed_primary_release_by: Option<WindowId>,
-}
+type EndDragResult = strategic_window_common::RoutedDragResult<FleetWindowAction, ItemDrag>;
 
 impl FleetWindowState {
     fn clear_replaced_renames(&mut self, replacement: Option<WindowId>) {
@@ -620,30 +628,6 @@ impl FleetWindowState {
                 self.pending_control_invalidations.push(target);
             }
         }
-    }
-
-    /// Whether any window of this kind is open.
-    #[must_use]
-    pub fn any_open(&self) -> bool {
-        !self.windows.is_empty()
-    }
-
-    /// Egui layer attached to one manager-issued Fleet identity.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        strategic_window_common::managed_layer_id(&self.windows, id, area_id)
-    }
-
-    /// Carry a window drag one frame ([`TitleDrag`]): the window follows
-    /// the pointer while the button is down, and the release lets go.
-    fn update_title_drag(&mut self, ctx: &egui::Context, layout: CockpitLayout) {
-        strategic_window_common::update_title_drag(
-            &mut self.windows,
-            &mut self.title_drag,
-            ctx,
-            layout,
-            area_id,
-        );
     }
 
     /// The manager windows visible in `snapshot` as galaxy children, with
@@ -719,17 +703,19 @@ impl FleetWindowState {
         layout: CockpitLayout,
         selected: Option<FleetWindowEntry>,
     ) -> Option<PreparedFleetWindow> {
-        let subject = system_subject(world, system)?;
+        let prepared = strategic_window_common::prepare_detail_window(
+            world,
+            system,
+            logical_position,
+            layout,
+            WindowKind::Fleet,
+            (FLEET_WINDOW_WIDTH, FLEET_WINDOW_HEIGHT),
+        )?;
         Some(PreparedFleetWindow {
-            spec: contextual_spec(WindowKind::Fleet, subject, WindowOwner::StrategicRoot),
+            spec: prepared.spec,
             faction,
             system,
-            logical_position: clamp_window_to_galaxy(
-                logical_position,
-                layout,
-                FLEET_WINDOW_WIDTH,
-                FLEET_WINDOW_HEIGHT,
-            ),
+            logical_position: prepared.logical_position,
             selected,
             rename: None,
             tab: FleetWindowTab::CapitalShips,
@@ -812,35 +798,28 @@ impl FleetWindowState {
         layout: CockpitLayout,
     ) -> bool {
         self.prepare_faction(faction);
-        if !world.systems.contains_key(system) {
-            return false;
-        }
-        if self.focus_fixture(system) {
-            return true;
-        }
-        self.windows.push(OpenFleetWindow {
-            id: None,
-            subject: None,
+        strategic_window_common::open_direct_system(
+            &mut self.windows,
+            world,
             system,
-            logical_position: clamp_window_to_galaxy(
-                logical_position,
-                layout,
-                FLEET_WINDOW_WIDTH,
-                FLEET_WINDOW_HEIGHT,
-            ),
-            selected: None,
-            selected_item: None,
-            expanded: Vec::new(),
-            tab: FleetWindowTab::CapitalShips,
-            rename: None,
-        });
-        true
-    }
-
-    /// Exact manager identity attached to `system`'s committed content.
-    #[must_use]
-    pub fn window_id(&self, system: SystemKey) -> Option<WindowId> {
-        strategic_window_common::window_id(&self.windows, system)
+            |window| window.id.is_none() && window.system == system,
+            || OpenFleetWindow {
+                id: None,
+                subject: None,
+                system,
+                logical_position: clamp_window_to_galaxy(
+                    logical_position,
+                    layout,
+                    FLEET_WINDOW_WIDTH,
+                    FLEET_WINDOW_HEIGHT,
+                ),
+                selected: None,
+                selected_item: None,
+                expanded: Vec::new(),
+                tab: FleetWindowTab::CapitalShips,
+                rename: None,
+            },
+        )
     }
 
     /// Existing content position used when a semantic reopen carries a new
@@ -851,13 +830,6 @@ impl FleetWindowState {
             .iter()
             .find(|window| window.system == system)
             .map(|window| window.logical_position)
-    }
-
-    /// Whether `system`'s exact content identity participates in this frozen
-    /// frame. Direct fixture content has no manager identity and stays visible.
-    #[must_use]
-    pub fn window_is_visible(&self, snapshot: &RoutingSnapshot, system: SystemKey) -> bool {
-        strategic_window_common::window_is_visible(&self.windows, snapshot, system)
     }
 
     /// Focused Fleet identity and whether its rename control owns keyboard
@@ -879,12 +851,6 @@ impl FleetWindowState {
             })
     }
 
-    /// Whether exact manager-owned Fleet content remains attached.
-    #[must_use]
-    pub fn contains_window(&self, id: WindowId) -> bool {
-        self.windows.iter().any(|window| window.id == Some(id))
-    }
-
     /// Removes only content named by manager teardown receipts.
     pub fn remove_content(&mut self, removed: &[WindowId]) {
         strategic_window_common::remove_content(&mut self.windows, removed);
@@ -903,20 +869,6 @@ impl FleetWindowState {
 
     /// Reports every active Fleet identity in the frozen snapshot, including
     /// minimized history entries whose content remains attached.
-    #[must_use]
-    pub fn content_reports(
-        &self,
-        snapshot: &RoutingSnapshot,
-        world: &GameWorld,
-    ) -> Vec<ContentReport> {
-        strategic_window_common::content_reports(
-            &self.windows,
-            snapshot,
-            WindowKind::Fleet,
-            |window, _| world.systems.contains_key(window.system),
-        )
-    }
-
     /// Select `entry` in `system`'s open window, expanding its fleet for a
     /// ship (slot `+0x6c`, as the Fleet Finder's open does, `FUN_00429440`).
     pub fn select(&mut self, system: SystemKey, entry: FleetWindowEntry) -> bool {
@@ -977,16 +929,6 @@ impl FleetWindowState {
             .iter_mut()
             .find(|window| window.id == Some(target.window))
             .is_some_and(|window| window.rename.take().is_some())
-    }
-
-    #[must_use]
-    pub fn window_count(&self) -> usize {
-        self.windows.len()
-    }
-
-    #[must_use]
-    pub fn is_open(&self, system: SystemKey) -> bool {
-        self.windows.iter().any(|window| window.system == system)
     }
 
     #[must_use]
@@ -1068,13 +1010,6 @@ impl FleetWindowState {
         )
     }
 
-    /// The screen rect of `system`'s window.
-    #[must_use]
-    pub fn screen_rect(&self, layout: CockpitLayout, system: SystemKey) -> Option<egui::Rect> {
-        let window = self.windows.iter().find(|window| window.system == system)?;
-        Some(window_screen_rect(window, layout))
-    }
-
     /// The screen rect of the `row`th left-list entry of `system`'s window.
     #[must_use]
     pub fn entry_screen_rect(
@@ -1083,15 +1018,13 @@ impl FleetWindowState {
         system: SystemKey,
         row: usize,
     ) -> Option<egui::Rect> {
-        let window = self.screen_rect(layout, system)?;
-        Some(logical_rect(
-            window,
-            layout.scale,
-            LEFT_LIST.0,
-            LEFT_LIST.1 + LEFT_ITEM_HEIGHT * row as f32,
-            LEFT_LIST.2,
-            LEFT_ITEM_HEIGHT,
-        ))
+        self.list_row_screen_rect(
+            layout,
+            system,
+            row,
+            (LEFT_LIST.0, LEFT_LIST.1),
+            (LEFT_LIST.2, LEFT_ITEM_HEIGHT),
+        )
     }
 
     /// The screen rect of the `row`th right-list item of `system`'s window.
@@ -1102,14 +1035,30 @@ impl FleetWindowState {
         subject: SystemKey,
         item_row: usize,
     ) -> Option<egui::Rect> {
-        let window = self.screen_rect(cockpit, subject)?;
-        Some(logical_rect(
+        self.list_row_screen_rect(
+            cockpit,
+            subject,
+            item_row,
+            (RIGHT_LIST.0, RIGHT_LIST.1),
+            (125.0, RIGHT_ITEM_HEIGHT),
+        )
+    }
+
+    fn list_row_screen_rect(
+        &self,
+        layout: CockpitLayout,
+        system: SystemKey,
+        row: usize,
+        origin: (f32, f32),
+        size: (f32, f32),
+    ) -> Option<egui::Rect> {
+        let window = self.screen_rect(layout, system)?;
+        Some(strategic_window_common::stacked_row_rect(
             window,
-            cockpit.scale,
-            RIGHT_LIST.0,
-            RIGHT_LIST.1 + RIGHT_ITEM_HEIGHT * item_row as f32,
-            125.0,
-            RIGHT_ITEM_HEIGHT,
+            layout.scale,
+            origin,
+            size,
+            row,
         ))
     }
 
@@ -1148,7 +1097,7 @@ impl FleetWindowState {
         system: SystemKey,
     ) -> Option<FleetWindowReport> {
         let window = self.windows.iter().find(|window| window.system == system)?;
-        let entries = left_entries(world, movement, fog, cockpit_faction(self.faction), window);
+        let entries = left_entries(world, movement, fog, self.faction.player(), window);
         let selected = window.selected.filter(|entry| entries.contains(entry));
         Some(FleetWindowReport {
             origin: window.logical_position,
@@ -1187,7 +1136,7 @@ impl FleetWindowState {
         point: egui::Pos2,
     ) -> Option<Option<ReleaseTarget>> {
         let (window, local) = self.release_window(layout, layer, point)?;
-        let player = cockpit_faction(self.faction);
+        let player = self.faction.player();
         let entries = left_entries(world, movement, fog, player, window);
         Some(drop_target(world, player, window, &entries, local))
     }
@@ -1226,7 +1175,7 @@ impl FleetWindowState {
             FleetWindowEntry::Fleet(_) => None,
         };
         if in_rect(LEFT_LIST, local) {
-            let player = cockpit_faction(self.faction);
+            let player = self.faction.player();
             let entries = left_entries(world, movement, fog, player, window);
             let row = ((local.1 - LEFT_LIST.1) / LEFT_ITEM_HEIGHT) as usize;
             return entries.get(row).copied().and_then(entry_object);
@@ -1312,10 +1261,7 @@ impl FleetWindowState {
 
     /// Applies a manager capture-cancellation receipt to renderer payload.
     pub fn cancel_pointer_capture(&mut self, window: WindowId) {
-        if self.drag_owner == Some(window) {
-            self.drag = None;
-            self.drag_owner = None;
-        }
+        strategic_window_common::cancel_owned_capture(&mut self.drag, &mut self.drag_owner, window);
     }
 
     /// End a held drag on the left release: far enough from the press and
@@ -1335,48 +1281,21 @@ impl FleetWindowState {
         router: Option<&mut FrameInputRouter>,
         pointer_events: &[(InputEventId, PointerPhase)],
     ) -> EndDragResult {
-        let (released, down, point, ctrl) = ctx.input(|input| {
-            (
-                input.pointer.primary_released(),
-                input.pointer.primary_down(),
-                input.pointer.latest_pos(),
-                input.modifiers.ctrl,
-            )
-        });
-        if !released {
-            if !down && self.drag_owner.is_none() {
-                self.drag = None;
-            }
-            return EndDragResult::default();
-        }
-        let mut result = EndDragResult::default();
-        if let (Some(owner), Some(router)) = (self.drag_owner, router) {
-            if claim_fleet_pointer_event(
-                router,
-                pointer_events,
-                owner,
-                PointerPhase::Release(crate::windowing_input::PointerButtonId::Primary),
-            )
-            .is_none()
-            {
-                return result;
-            }
-            result.claimed_primary_release_by = Some(owner);
-        }
-        let Some(drag) = self.drag.take() else {
+        let mut result = strategic_window_common::complete_routed_drag(
+            &mut self.drag,
+            &mut self.drag_owner,
+            ctx,
+            router,
+            pointer_events.iter().rev().copied(),
+            FleetWindowAction::ReleasePointer,
+            scale,
+            DRAG_DISTANCE_SQUARED,
+        )
+        .unwrap_or_default();
+        let Some(drop) = result.drop.take() else {
             return result;
         };
-        let owner = self.drag_owner.take();
-        result
-            .actions
-            .extend(owner.map(FleetWindowAction::ReleasePointer));
-        let Some(point) = point else {
-            return result;
-        };
-        let moved = (point - drag.press) / scale;
-        if moved.length_sq() <= DRAG_DISTANCE_SQUARED || rect_contains(drag.list, point) {
-            return result;
-        }
+        let (drag, point, ctrl) = (drop.payload, drop.point, drop.ctrl);
         if !drag.object.is_current(world, transport, self.faction) {
             return result;
         }
@@ -1425,6 +1344,7 @@ impl FleetWindowState {
         }
     }
 
+    #[cfg(any(test, feature = "interface-test-fixtures"))]
     fn focus_fixture(&mut self, system: SystemKey) -> bool {
         strategic_window_common::focus_where(&mut self.windows, |window| {
             window.id.is_none() && window.system == system
@@ -1433,10 +1353,6 @@ impl FleetWindowState {
 
     fn close(&mut self, system: SystemKey) -> Option<OpenFleetWindow> {
         strategic_window_common::close(&mut self.windows, system)
-    }
-
-    fn window_mut(&mut self, system: SystemKey) -> Option<&mut OpenFleetWindow> {
-        strategic_window_common::window_mut(&mut self.windows, system)
     }
 }
 
@@ -1654,17 +1570,6 @@ fn title_side(world: &GameWorld, fleets: &[FleetKey], player: Faction, system: S
 /// `FUN_004a3340`: side 1's strip is 10299 active and 10200 inactive, side
 /// 2's 10201 and 10302, any other 10303 and 10304. Active is the galaxy
 /// view's focused child (`+0xb8`).
-fn title_resource(side: u8, focused: bool) -> u32 {
-    match (side, focused) {
-        (1, true) => 10299,
-        (1, false) => 10200,
-        (2, true) => 10201,
-        (2, false) => 10302,
-        (_, true) => 10303,
-        (_, false) => 10304,
-    }
-}
-
 /// The system's fleets in key order that the player can see. hyp: the
 /// original's merge loop orders by object id (`+0x6c`); the port's fleets
 /// are kept in key order.
@@ -2125,13 +2030,6 @@ pub(crate) fn control_side(control: ControlKind) -> u8 {
     control.faction().map_or(3, faction_side)
 }
 
-fn cockpit_faction(faction: CockpitFaction) -> Faction {
-    match faction {
-        CockpitFaction::Alliance => Faction::Alliance,
-        CockpitFaction::Empire => Faction::Empire,
-    }
-}
-
 fn in_rect(rect: (f32, f32, f32, f32), point: (f32, f32)) -> bool {
     point.0 >= rect.0 && point.0 < rect.0 + rect.2 && point.1 >= rect.1 && point.1 < rect.1 + rect.3
 }
@@ -2153,27 +2051,20 @@ fn select_entry(window: &mut OpenFleetWindow, entry: FleetWindowEntry) {
     window.selected_item = None;
 }
 
-fn window_screen_rect(window: &OpenFleetWindow, layout: CockpitLayout) -> egui::Rect {
-    egui::Rect::from_min_size(
-        egui::pos2(
-            layout.canvas.x + f32::from(window.logical_position.0) * layout.scale,
-            layout.canvas.y + f32::from(window.logical_position.1) * layout.scale,
-        ),
-        egui::vec2(
-            FLEET_WINDOW_WIDTH * layout.scale,
-            FLEET_WINDOW_HEIGHT * layout.scale,
-        ),
-    )
-}
+strategic_window_common::define_record_screen_rect!(
+    window_screen_rect,
+    OpenFleetWindow,
+    FLEET_WINDOW_WIDTH,
+    FLEET_WINDOW_HEIGHT
+);
 
 fn tab_rect(window: egui::Rect, scale: f32, tab: FleetWindowTab) -> egui::Rect {
-    logical_rect(
+    strategic_window_common::tab_strip_rect(
         window,
         scale,
-        TAB_STRIP.0 + TAB_X[tab.index() as usize],
-        TAB_STRIP.1,
-        TAB_SIZE.0,
-        TAB_SIZE.1,
+        TAB_STRIP,
+        TAB_SIZE,
+        TAB_X[tab.index() as usize],
     )
 }
 
@@ -2192,20 +2083,6 @@ struct WindowDrawResult {
     drag: Option<ItemDrag>,
     object_menu: Option<(MenuObject, egui::Pos2)>,
     rename: Option<RenameOutcome>,
-}
-
-fn claim_fleet_pointer_event(
-    router: &mut FrameInputRouter,
-    events: &[(InputEventId, PointerPhase)],
-    window: WindowId,
-    phase: PointerPhase,
-) -> Option<InputEventId> {
-    events.iter().rev().find_map(|(event, candidate)| {
-        (*candidate == phase
-            && router.pointer_recipient(*event) == InputRecipient::Window(window)
-            && router.claim(*event, InputRecipient::Window(window)))
-        .then_some(*event)
-    })
 }
 
 fn rename_outcome_permitted(
@@ -2343,41 +2220,15 @@ fn draw_fleet_windows_with_snapshot(
         state.prepare_faction(faction);
     }
     state.update_title_drag(ctx, layout);
-    let mut windows = Vec::new();
-    if let Some(snapshot) = snapshot {
-        windows.extend(snapshot.paint_order().iter().filter_map(|id| {
-            if snapshot
-                .key(*id)
-                .is_some_and(|key| key.kind == WindowKind::Fleet)
-            {
-                state
-                    .windows
-                    .iter()
-                    .find(|window| window.id == Some(*id))
-                    .cloned()
-            } else {
-                None
-            }
-        }));
-    }
-    // Direct content exists only in renderer tests and explicit fixture builds.
-    windows.extend(
-        state
-            .windows
-            .iter()
-            .filter(|window| window.id.is_none())
-            .cloned(),
-    );
     // A window the GID menu hides is neither painted nor live.
-    windows.retain(|window| window.id.is_none_or(|id| shown(GalaxyChild::Fleet(id))));
-    let focused_id = windows.last().and_then(|window| window.id);
-    let focused_manager = snapshot
-        .and_then(|frame| frame.focused().map(|focus| focus.window))
-        .or(focused_id);
-    let focused_fixture_system = windows
-        .last()
-        .filter(|window| window.id.is_none())
-        .map(|window| window.system);
+    let windows = strategic_window_common::presentation_windows(
+        &state.windows,
+        snapshot,
+        WindowKind::Fleet,
+        |window| window.id.is_none_or(|id| shown(GalaxyChild::Fleet(id))),
+    );
+    let (focused_manager, focused_fixture_system) =
+        strategic_window_common::presentation_focus(&windows, snapshot, true);
     let ended_drag = state.end_drag(
         ctx,
         world,
@@ -2421,10 +2272,8 @@ fn draw_fleet_windows_with_snapshot(
                 requests_manager_focus: false,
             },
         };
-        let focused = match window.id {
-            Some(id) => focused_manager == Some(id),
-            None => focused_fixture_system == Some(window.system),
-        };
+        let focused =
+            strategic_window_common::is_focused(window, focused_manager, focused_fixture_system);
         let keyboard_permitted = match (window.id, router.as_deref()) {
             (Some(id), Some(router)) => {
                 matches!(router.escape_route(), EscapeRoute::Window(owner) if owner == id)
@@ -2445,12 +2294,11 @@ fn draw_fleet_windows_with_snapshot(
             layout,
             cache,
         );
-        if let Some(grab) = result.drag_grab {
-            state.title_drag = Some(TitleDrag {
-                area: area_id(window),
-                grab,
-            });
-        }
+        strategic_window_common::start_title_drag(
+            &mut state.title_drag,
+            area_id(window),
+            result.drag_grab,
+        );
         let system = window.system;
         let pointer_mutation = result.focus
             || result.close
@@ -2466,35 +2314,33 @@ fn draw_fleet_windows_with_snapshot(
                 result.rename.as_ref(),
                 Some(RenameOutcome::Cancel(RenameCancelCause::FocusLost))
             );
-        let pointer_permitted = match (window.id, pointer_mutation, router.as_deref_mut()) {
-            (Some(id), true, Some(router)) => {
-                let phase = if result.drag.is_some() {
-                    PointerPhase::Press(PointerButtonId::Primary)
-                } else if result.object_menu.is_some() {
-                    PointerPhase::Release(PointerButtonId::Secondary)
-                } else {
-                    PointerPhase::Release(PointerButtonId::Primary)
-                };
-                (phase == PointerPhase::Release(PointerButtonId::Primary)
-                    && ended_drag.claimed_primary_release_by == Some(id))
-                    || claim_fleet_pointer_event(router, pointer_events, id, phase)
-                        .or_else(|| {
-                            (phase == PointerPhase::Release(PointerButtonId::Primary))
-                                .then(|| {
-                                    claim_fleet_pointer_event(
-                                        router,
-                                        pointer_events,
-                                        id,
-                                        PointerPhase::Press(PointerButtonId::Primary),
-                                    )
-                                })
-                                .flatten()
-                        })
-                        .is_some()
-            }
-            (Some(_), true, None) => false,
-            _ => true,
-        };
+        let phase = strategic_window_common::pointer_mutation_phase([
+            (
+                result.drag.is_some(),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            (
+                result.object_menu.is_some(),
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+        ]);
+        let pointer_permitted = strategic_window_common::single_phase_pointer_mutation_permitted(
+            window.id,
+            pointer_mutation,
+            router.as_deref_mut(),
+            phase,
+            phase == PointerPhase::Release(PointerButtonId::Primary)
+                && ended_drag.claimed_primary_release_by == window.id,
+            |router, id, phase| {
+                strategic_window_common::claim_pointer_event(
+                    router,
+                    pointer_events.iter().rev().copied(),
+                    id,
+                    phase,
+                )
+                .is_some()
+            },
+        );
         if rename_lease.requests_manager_focus {
             if let Some(target) = rename_target {
                 actions.push(FleetWindowAction::FocusControl(target));
@@ -2527,27 +2373,16 @@ fn draw_fleet_windows_with_snapshot(
                 Some(_) => keyboard_permitted,
                 None => focused,
             };
-        if (result.close && pointer_permitted) || escaped || !world.systems.contains_key(system) {
-            if let Some(id) = window.id {
-                actions.push(FleetWindowAction::Close(id));
-            } else {
-                state.close(system);
-            }
-            continue;
-        }
-        if result.minimize && pointer_permitted {
-            if let Some(id) = window.id {
-                actions.push(FleetWindowAction::MinimizeManaged {
-                    window: id,
-                    system,
-                    logical_position: window.logical_position,
-                });
-            } else if let Some(closed) = state.close(system) {
-                actions.push(FleetWindowAction::Minimize {
-                    system,
-                    logical_position: closed.logical_position,
-                });
-            }
+        if strategic_window_common::apply_minimizable_detail_exit! {
+            (state, actions, window, system),
+            (
+                (result.close && pointer_permitted) || escaped,
+                result.minimize,
+                pointer_permitted,
+                world.systems.contains_key(system)
+            ),
+            FleetWindowAction,
+        } {
             continue;
         }
         if result.open_sector && pointer_permitted {
@@ -2608,15 +2443,21 @@ fn draw_fleet_windows_with_snapshot(
                 }
             }
         }
-        if result.focus && pointer_permitted {
-            if let Some(id) = window.id {
-                actions.push(FleetWindowAction::Activate(id));
-            } else {
+        strategic_window_common::apply_detail_window_focus(
+            window.id,
+            system,
+            result.focus,
+            pointer_permitted,
+            &mut actions,
+            FleetWindowAction::Activate,
+            |fixture_system| {
                 #[cfg(any(test, feature = "interface-test-fixtures"))]
-                state.focus_fixture(system);
-            }
-            actions.push(FleetWindowAction::SelectSystem(system));
-        }
+                state.focus_fixture(fixture_system);
+                #[cfg(not(any(test, feature = "interface-test-fixtures")))]
+                let _ = fixture_system;
+            },
+            FleetWindowAction::SelectSystem,
+        );
     }
     actions
 }
@@ -2640,11 +2481,8 @@ fn draw_fleet_window(
     cache: &mut BmpCache,
 ) -> WindowDrawResult {
     let mut result = WindowDrawResult::default();
-    let Some(system) = world.systems.get(window.system) else {
-        result.close = true;
-        return result;
-    };
-    let player = cockpit_faction(faction);
+    draw_frame!(result, system, scale, screen_rect, id; world, window, layout);
+    let player = faction.player();
     let viewer = faction_side(player);
     let other = if viewer == 1 { 2 } else { 1 };
     let entries = left_entries(world, movement, fog, player, window);
@@ -2662,151 +2500,177 @@ fn draw_fleet_window(
             .get(entry.fleet())
             .map(|value| fleet_side(value.is_alliance))
     });
-    let scale = layout.scale;
-    let screen_rect = window_screen_rect(window, layout);
-    let id = area_id(window);
-    let area = egui::Area::new(id)
-        .fixed_pos(screen_rect.min)
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            let (pointer, primary_down) = ctx.input(|input| {
-                (
-                    input.pointer.interact_pos(),
-                    input.pointer.button_down(egui::PointerButton::Primary),
-                )
-            });
-            let (local, window_response) =
-                ui.allocate_exact_size(screen_rect.size(), egui::Sense::click());
-            let painter = ui.painter().clone();
-            let paint = |cache: &mut BmpCache, id: u32, x: f32, y: f32| {
-                paint_native(
-                    &painter,
-                    ctx,
-                    cache,
-                    DllSource::Strategy,
-                    id,
-                    local,
-                    scale,
-                    x,
-                    y,
-                );
-            };
+    let area = strategic_window_common::show_canvas(ctx, id, screen_rect, scale, |ui, canvas| {
+        let local = canvas.local;
+        let window_response = canvas.response.clone();
+        let painter = canvas.painter.clone();
+        let paint = |cache: &mut BmpCache, id: u32, x: f32, y: f32| {
+            canvas.paint(cache, DllSource::Strategy, id, x, y);
+        };
 
-            painter.rect_filled(local, 0.0, egui::Color32::BLACK);
-            paint(cache, BACKGROUND, 0.0, 0.0);
-            paint(
-                cache,
-                title_resource(title_side(world, &fleets, player, window.system), focused),
-                2.0,
-                2.0,
-            );
-            // The title label starts after the restore-sector button: its
-            // width plus 5 (`FUN_004a4b10`).
-            painter.text(
-                logical_rect(local, scale, 19.0, 3.0, 0.0, 0.0).min,
-                egui::Align2::LEFT_TOP,
+        // The title label starts after the restore-sector button: its
+        // width plus 5 (`FUN_004a4b10`).
+        canvas.paint_background(cache, BACKGROUND);
+        let clicked = canvas.paint_title_bar(
+            ui,
+            cache,
+            title_side(world, &fleets, player, window.system),
+            focused,
+            strategic_window_common::TitleLabel::new(
                 &system.name,
-                egui::FontId::proportional((11.0 * scale).max(7.0)),
-                egui::Color32::BLACK,
-            );
+                (19.0, 3.0),
+                egui::Align2::LEFT_TOP,
+                11.0,
+                7.0,
+            ),
+            strategic_window_common::TITLE_BUTTONS,
+            (window.id, window.system),
+            |_, _| {},
+        );
+        result.open_sector = clicked[0];
+        result.minimize = clicked[1];
+        result.close = clicked[2];
 
-            let buttons = [
-                (SECTOR_NORMAL, SECTOR_PRESSED, 3.0, "sector"),
-                (MINIMIZE_NORMAL, MINIMIZE_PRESSED, 204.0, "minimize"),
-                (CLOSE_NORMAL, CLOSE_PRESSED, 218.0, "close"),
-            ];
-            let mut clicked = [false; 3];
-            for (index, (normal, pressed, x, name)) in buttons.into_iter().enumerate() {
-                let rect = logical_rect(local, scale, x, 3.0, 14.0, 14.0);
-                let response = ui.interact(
-                    rect,
-                    ui.id().with((window.id, window.system, name)),
-                    egui::Sense::click(),
-                );
-                let down = primary_down && pointer.is_some_and(|point| rect_contains(rect, point));
-                paint(cache, if down { pressed } else { normal }, x, 3.0);
-                clicked[index] = exact_clicked(&response, rect);
+        // The right pane shows only while something is selected: the
+        // player's art for its own side, the other art otherwise.
+        if let Some(side) = selected_side {
+            let art_side = if side == viewer { viewer } else { other };
+            paint(cache, side_art(PANE_ART, art_side), 97.0, 29.0);
+        }
+
+        // The left list: fleet entries, and ships while expanded.
+        let list = logical_rect(
+            local,
+            scale,
+            LEFT_LIST.0,
+            LEFT_LIST.1,
+            LEFT_LIST.2,
+            LEFT_LIST.3,
+        );
+        let list_painter = painter.with_clip_rect(list);
+        let font = egui::FontId::proportional((9.0 * scale).max(6.0));
+        for (row, entry) in entries.iter().enumerate() {
+            let top = LEFT_LIST.1 + LEFT_ITEM_HEIGHT * row as f32;
+            if top >= LEFT_LIST.1 + LEFT_LIST.3 {
+                break;
             }
-            result.open_sector = clicked[0];
-            result.minimize = clicked[1];
-            result.close = clicked[2];
-
-            // The right pane shows only while something is selected: the
-            // player's art for its own side, the other art otherwise.
-            if let Some(side) = selected_side {
-                let art_side = if side == viewer { viewer } else { other };
-                paint(cache, side_art(PANE_ART, art_side), 97.0, 29.0);
-            }
-
-            // The left list: fleet entries, and ships while expanded.
-            let list = logical_rect(
+            let item = logical_rect(
                 local,
                 scale,
                 LEFT_LIST.0,
-                LEFT_LIST.1,
+                top,
                 LEFT_LIST.2,
-                LEFT_LIST.3,
+                LEFT_ITEM_HEIGHT,
             );
-            let list_painter = painter.with_clip_rect(list);
-            let font = egui::FontId::proportional((9.0 * scale).max(6.0));
-            for (row, entry) in entries.iter().enumerate() {
-                let top = LEFT_LIST.1 + LEFT_ITEM_HEIGHT * row as f32;
-                if top >= LEFT_LIST.1 + LEFT_LIST.3 {
-                    break;
-                }
-                let item = logical_rect(
-                    local,
-                    scale,
-                    LEFT_LIST.0,
-                    top,
-                    LEFT_LIST.2,
-                    LEFT_ITEM_HEIGHT,
-                );
-                let side = world
-                    .fleets
-                    .get(entry.fleet())
-                    .map_or(1, |value| fleet_side(value.is_alliance));
-                let expanded = window.expanded.contains(&entry.fleet());
-                match *entry {
-                    FleetWindowEntry::Fleet(fleet) => {
-                        if selected == Some(*entry) {
-                            paint_native(
-                                &list_painter,
-                                ctx,
-                                cache,
-                                DllSource::Strategy,
-                                side_art(FLEET_SELECTED, side),
-                                item,
-                                scale,
-                                0.0,
-                                0.0,
-                            );
-                        }
+            let side = world
+                .fleets
+                .get(entry.fleet())
+                .map_or(1, |value| fleet_side(value.is_alliance));
+            let expanded = window.expanded.contains(&entry.fleet());
+            match *entry {
+                FleetWindowEntry::Fleet(fleet) => {
+                    if selected == Some(*entry) {
                         paint_native(
                             &list_painter,
                             ctx,
                             cache,
                             DllSource::Strategy,
-                            side_art(FLEET_FRAME, side),
+                            side_art(FLEET_SELECTED, side),
+                            item,
+                            scale,
+                            0.0,
+                            0.0,
+                        );
+                    }
+                    paint_native(
+                        &list_painter,
+                        ctx,
+                        cache,
+                        DllSource::Strategy,
+                        side_art(FLEET_FRAME, side),
+                        item,
+                        scale,
+                        5.0,
+                        5.0,
+                    );
+                    if movement.is_in_transit(fleet) {
+                        paint_native(
+                            &list_painter,
+                            ctx,
+                            cache,
+                            DllSource::Strategy,
+                            side_art(EN_ROUTE_ENTRY, side),
                             item,
                             scale,
                             5.0,
                             5.0,
                         );
-                        if movement.is_in_transit(fleet) {
-                            paint_native(
-                                &list_painter,
-                                ctx,
-                                cache,
-                                DllSource::Strategy,
-                                side_art(EN_ROUTE_ENTRY, side),
-                                item,
-                                scale,
-                                5.0,
-                                5.0,
-                            );
+                    }
+                    for (bitmap, x) in fleet_indicators(world, transport, fleet) {
+                        paint_native(
+                            &list_painter,
+                            ctx,
+                            cache,
+                            DllSource::Strategy,
+                            side_art(bitmap, side),
+                            item,
+                            scale,
+                            x,
+                            33.0,
+                        );
+                    }
+                    paint_dotted(&list_painter, item, scale, (2.0, 6.0), (5.0, 6.0));
+                    if expanded {
+                        paint_dotted(&list_painter, item, scale, (2.0, 6.0), (2.0, 50.0));
+                    }
+                    if let Some(label) = fleet_label(world, fleet) {
+                        list_painter.text(
+                            logical_rect(item, scale, 4.0, 5.0, 0.0, 0.0).min,
+                            egui::Align2::LEFT_TOP,
+                            label,
+                            font.clone(),
+                            egui::Color32::WHITE,
+                        );
+                    }
+                }
+                FleetWindowEntry::Ship { fleet, index } => {
+                    let last = entries
+                        .get(row + 1)
+                        .is_none_or(|next| next.fleet() != fleet);
+                    if last {
+                        paint_dotted(&list_painter, item, scale, (2.0, 0.0), (2.0, 6.0));
+                        paint_dotted(&list_painter, item, scale, (2.0, 6.0), (5.0, 6.0));
+                    } else {
+                        paint_dotted(&list_painter, item, scale, (2.0, 0.0), (2.0, 50.0));
+                    }
+                    let class = world
+                        .fleets
+                        .get(fleet)
+                        .and_then(|value| value.capital_ships.get(index))
+                        .and_then(|ship| world.capital_ship_classes.get(ship.class));
+                    // port: a selected ship's look (`FUN_004c7e10`) is
+                    // untraced, so its entry draws as unselected.
+                    if let Some(class) = class {
+                        if let Some(mini) = capital_ship_mini_id(class.dat_id) {
+                            let (en_route, building) = ship_marks(world, movement, fleet, index);
+                            let layers = mini_layers(MiniObject::Craft, mini, en_route, building);
+                            for (source, bitmap) in layers {
+                                paint_native(
+                                    &list_painter,
+                                    ctx,
+                                    cache,
+                                    source,
+                                    bitmap,
+                                    item,
+                                    scale,
+                                    5.0,
+                                    15.0,
+                                );
+                            }
                         }
-                        for (bitmap, x) in fleet_indicators(world, transport, fleet) {
+                        for (bitmap, x) in
+                            indicator_bitmaps(carriage::ship_flags(world, transport, fleet, index))
+                        {
                             paint_native(
                                 &list_painter,
                                 ctx,
@@ -2819,420 +2683,343 @@ fn draw_fleet_window(
                                 33.0,
                             );
                         }
-                        paint_dotted(&list_painter, item, scale, (2.0, 6.0), (5.0, 6.0));
-                        if expanded {
-                            paint_dotted(&list_painter, item, scale, (2.0, 6.0), (2.0, 50.0));
-                        }
-                        if let Some(label) = fleet_label(world, fleet) {
-                            list_painter.text(
-                                logical_rect(item, scale, 4.0, 5.0, 0.0, 0.0).min,
-                                egui::Align2::LEFT_TOP,
-                                label,
-                                font.clone(),
-                                egui::Color32::WHITE,
-                            );
-                        }
-                    }
-                    FleetWindowEntry::Ship { fleet, index } => {
-                        let last = entries
-                            .get(row + 1)
-                            .is_none_or(|next| next.fleet() != fleet);
-                        if last {
-                            paint_dotted(&list_painter, item, scale, (2.0, 0.0), (2.0, 6.0));
-                            paint_dotted(&list_painter, item, scale, (2.0, 6.0), (5.0, 6.0));
-                        } else {
-                            paint_dotted(&list_painter, item, scale, (2.0, 0.0), (2.0, 50.0));
-                        }
-                        let class = world
-                            .fleets
-                            .get(fleet)
-                            .and_then(|value| value.capital_ships.get(index))
-                            .and_then(|ship| world.capital_ship_classes.get(ship.class));
-                        // port: a selected ship's look (`FUN_004c7e10`) is
-                        // untraced, so its entry draws as unselected.
-                        if let Some(class) = class {
-                            if let Some(mini) = capital_ship_mini_id(class.dat_id) {
-                                let (en_route, building) =
-                                    ship_marks(world, movement, fleet, index);
-                                let layers =
-                                    mini_layers(MiniObject::Craft, mini, en_route, building);
-                                for (source, bitmap) in layers {
-                                    paint_native(
-                                        &list_painter,
-                                        ctx,
-                                        cache,
-                                        source,
-                                        bitmap,
-                                        item,
-                                        scale,
-                                        5.0,
-                                        15.0,
-                                    );
-                                }
-                            }
-                            for (bitmap, x) in indicator_bitmaps(carriage::ship_flags(
-                                world, transport, fleet, index,
-                            )) {
-                                paint_native(
-                                    &list_painter,
-                                    ctx,
-                                    cache,
-                                    DllSource::Strategy,
-                                    side_art(bitmap, side),
-                                    item,
-                                    scale,
-                                    x,
-                                    33.0,
-                                );
-                            }
-                        }
-                    }
-                }
-                let response = ui.interact(
-                    item.intersect(list),
-                    ui.id().with((window.system, "entry", row)),
-                    egui::Sense::click(),
-                );
-                if exact_clicked(&response, item) {
-                    result.select = Some(Some(*entry));
-                    result.focus = true;
-                }
-                if response.double_clicked() {
-                    if let FleetWindowEntry::Fleet(fleet) = entry {
-                        result.toggle = Some(*fleet);
-                    }
-                }
-                let object = match *entry {
-                    FleetWindowEntry::Fleet(fleet) => ItemObject::Fleet {
-                        fleet,
-                        system: window.system,
-                    },
-                    FleetWindowEntry::Ship { fleet, index } => ItemObject::Ship {
-                        fleet,
-                        index,
-                        roster: fleet_join::roster(world, fleet).unwrap_or_default(),
-                        system: window.system,
-                    },
-                };
-                if let (true, Some(point)) = (
-                    response.secondary_clicked(),
-                    response.interact_pointer_pos(),
-                ) {
-                    result.object_menu = Some((object.menu_object(), point));
-                }
-                // A drag out of either list posts 0x29a (FUN_006083c0).
-                if let Some(press) = ui.ctx().input(|input| {
-                    input
-                        .pointer
-                        .button_pressed(egui::PointerButton::Primary)
-                        .then(|| input.pointer.press_origin())
-                        .flatten()
-                }) {
-                    if response.is_pointer_button_down_on() {
-                        result.drag = Some(ItemDrag {
-                            object,
-                            press,
-                            list,
-                        });
                     }
                 }
             }
-            if let Some(edit) = &window.rename {
-                result.rename = draw_rename_edit(
-                    ui,
-                    window,
-                    edit,
-                    rename_lease,
-                    &entries,
-                    local,
-                    list,
-                    scale,
-                    &font,
-                );
+            let response = ui.interact(
+                item.intersect(list),
+                ui.id().with((window.system, "entry", row)),
+                egui::Sense::click(),
+            );
+            if exact_clicked(&response, item) {
+                result.select = Some(Some(*entry));
+                result.focus = true;
             }
+            if response.double_clicked() {
+                if let FleetWindowEntry::Fleet(fleet) = entry {
+                    result.toggle = Some(*fleet);
+                }
+            }
+            let object = match *entry {
+                FleetWindowEntry::Fleet(fleet) => ItemObject::Fleet {
+                    fleet,
+                    system: window.system,
+                },
+                FleetWindowEntry::Ship { fleet, index } => ItemObject::Ship {
+                    fleet,
+                    index,
+                    roster: fleet_join::roster(world, fleet).unwrap_or_default(),
+                    system: window.system,
+                },
+            };
+            if let (true, Some(point)) = (
+                response.secondary_clicked(),
+                response.interact_pointer_pos(),
+            ) {
+                result.object_menu = Some((object.menu_object(), point));
+            }
+            // A drag out of either list posts 0x29a (FUN_006083c0).
+            if let Some(press) = ui.ctx().input(|input| {
+                input
+                    .pointer
+                    .button_pressed(egui::PointerButton::Primary)
+                    .then(|| input.pointer.press_origin())
+                    .flatten()
+            }) {
+                if response.is_pointer_button_down_on() {
+                    result.drag = Some(ItemDrag {
+                        object,
+                        press,
+                        list,
+                    });
+                }
+            }
+        }
+        if let Some(edit) = &window.rename {
+            result.rename = draw_rename_edit(
+                ui,
+                window,
+                edit,
+                rename_lease,
+                &entries,
+                local,
+                list,
+                scale,
+                &font,
+            );
+        }
 
-            if let Some(side) = selected_side {
-                // The picture: one fleet's 10425 centered, keyed over the
-                // en route mark 10426 drawn first at the same left edge; or
-                // one ship's portrait at the panel's origin (`FUN_004a5c00`).
-                if let Some(FleetWindowEntry::Fleet(fleet)) = selected {
-                    let picture = side_art(FLEET_PICTURE, side);
-                    let width = cache
-                        .original_resource_size(DllSource::Strategy, picture)
-                        .map_or(PICTURE_PANEL.2, |size| size[0] as f32);
-                    if movement.is_in_transit(fleet) {
-                        paint(
-                            cache,
-                            side_art(EN_ROUTE_PICTURE, side),
-                            picture_x(width),
-                            PICTURE_PANEL.1,
-                        );
-                    }
-                    paint(cache, picture, picture_x(width), PICTURE_PANEL.1);
-                    if let Some(label) = fleet_label(world, fleet) {
-                        painter.text(
-                            logical_rect(local, scale, 164.0, 29.0, 0.0, 0.0).min,
-                            egui::Align2::CENTER_TOP,
-                            label,
-                            egui::FontId::proportional((10.0 * scale).max(7.0)),
-                            label_color(viewer),
-                        );
-                    }
+        if let Some(side) = selected_side {
+            // The picture: one fleet's 10425 centered, keyed over the
+            // en route mark 10426 drawn first at the same left edge; or
+            // one ship's portrait at the panel's origin (`FUN_004a5c00`).
+            if let Some(FleetWindowEntry::Fleet(fleet)) = selected {
+                let picture = side_art(FLEET_PICTURE, side);
+                let width = cache
+                    .original_resource_size(DllSource::Strategy, picture)
+                    .map_or(PICTURE_PANEL.2, |size| size[0] as f32);
+                if movement.is_in_transit(fleet) {
+                    paint(
+                        cache,
+                        side_art(EN_ROUTE_PICTURE, side),
+                        picture_x(width),
+                        PICTURE_PANEL.1,
+                    );
                 }
-                if let Some(FleetWindowEntry::Ship { fleet, index }) = selected {
-                    let mini = world
-                        .fleets
-                        .get(fleet)
-                        .and_then(|value| value.capital_ships.get(index))
-                        .and_then(|ship| world.capital_ship_classes.get(ship.class))
-                        .and_then(|class| capital_ship_mini_id(class.dat_id));
-                    if let Some(mini) = mini {
-                        let portrait = ship_portrait(mini);
-                        // The marks go under the portrait (`portrait_layers`).
-                        let (en_route, building) = ship_marks(world, movement, fleet, index);
-                        let layers =
-                            portrait_layers(MiniObject::Craft, portrait, en_route, false, building);
-                        // The panel is a 125 by 49 bitmap; the 50-row
-                        // portrait loses its last row.
-                        let panel = painter.with_clip_rect(logical_rect(
+                paint(cache, picture, picture_x(width), PICTURE_PANEL.1);
+                if let Some(label) = fleet_label(world, fleet) {
+                    painter.text(
+                        logical_rect(local, scale, 164.0, 29.0, 0.0, 0.0).min,
+                        egui::Align2::CENTER_TOP,
+                        label,
+                        egui::FontId::proportional((10.0 * scale).max(7.0)),
+                        label_color(viewer),
+                    );
+                }
+            }
+            if let Some(FleetWindowEntry::Ship { fleet, index }) = selected {
+                let mini = world
+                    .fleets
+                    .get(fleet)
+                    .and_then(|value| value.capital_ships.get(index))
+                    .and_then(|ship| world.capital_ship_classes.get(ship.class))
+                    .and_then(|class| capital_ship_mini_id(class.dat_id));
+                if let Some(mini) = mini {
+                    let portrait = ship_portrait(mini);
+                    // The marks go under the portrait (`portrait_layers`).
+                    let (en_route, building) = ship_marks(world, movement, fleet, index);
+                    let layers =
+                        portrait_layers(MiniObject::Craft, portrait, en_route, false, building);
+                    // The panel is a 125 by 49 bitmap; the 50-row
+                    // portrait loses its last row.
+                    let panel = painter.with_clip_rect(logical_rect(
+                        local,
+                        scale,
+                        PICTURE_PANEL.0,
+                        PICTURE_PANEL.1,
+                        PICTURE_PANEL.2,
+                        PICTURE_PANEL.3,
+                    ));
+                    for (source, id) in layers {
+                        paint_native(
+                            &panel,
+                            ctx,
+                            cache,
+                            source,
+                            id,
                             local,
                             scale,
                             PICTURE_PANEL.0,
                             PICTURE_PANEL.1,
-                            PICTURE_PANEL.2,
-                            PICTURE_PANEL.3,
-                        ));
-                        for (source, id) in layers {
-                            paint_native(
-                                &panel,
-                                ctx,
-                                cache,
-                                source,
-                                id,
-                                local,
-                                scale,
-                                PICTURE_PANEL.0,
-                                PICTURE_PANEL.1,
-                            );
-                        }
+                        );
                     }
                 }
-                if let Some((aboard, capacity)) = tab_counts(world, transport, selected, window.tab)
-                {
-                    let count_font = egui::FontId::proportional((10.0 * scale).max(7.0));
-                    painter.text(
-                        logical_rect(
-                            local,
-                            scale,
-                            PICTURE_PANEL.0 + 1.0,
-                            PICTURE_PANEL.1 + 2.0,
-                            0.0,
-                            0.0,
-                        )
-                        .min,
-                        egui::Align2::LEFT_TOP,
-                        aboard.to_string(),
-                        count_font.clone(),
-                        egui::Color32::WHITE,
-                    );
-                    painter.text(
-                        logical_rect(
-                            local,
-                            scale,
-                            PICTURE_PANEL.0 + 123.0,
-                            PICTURE_PANEL.1 + 2.0,
-                            0.0,
-                            0.0,
-                        )
-                        .min,
-                        egui::Align2::RIGHT_TOP,
-                        capacity.to_string(),
-                        count_font,
-                        egui::Color32::WHITE,
-                    );
-                }
+            }
+            if let Some((aboard, capacity)) = tab_counts(world, transport, selected, window.tab) {
+                let count_font = egui::FontId::proportional((10.0 * scale).max(7.0));
+                painter.text(
+                    logical_rect(
+                        local,
+                        scale,
+                        PICTURE_PANEL.0 + 1.0,
+                        PICTURE_PANEL.1 + 2.0,
+                        0.0,
+                        0.0,
+                    )
+                    .min,
+                    egui::Align2::LEFT_TOP,
+                    aboard.to_string(),
+                    count_font.clone(),
+                    egui::Color32::WHITE,
+                );
+                painter.text(
+                    logical_rect(
+                        local,
+                        scale,
+                        PICTURE_PANEL.0 + 123.0,
+                        PICTURE_PANEL.1 + 2.0,
+                        0.0,
+                        0.0,
+                    )
+                    .min,
+                    egui::Align2::RIGHT_TOP,
+                    capacity.to_string(),
+                    count_font,
+                    egui::Color32::WHITE,
+                );
+            }
 
-                // The strip: the player's base for its own side, the other
-                // base otherwise.
-                let base = side_art(TAB_BASE, if side == viewer { viewer } else { other });
-                for tab in FleetWindowTab::ALL {
-                    let enabled = tab_enabled(world, transport, selected, tab);
-                    let rect = tab_rect(local, scale, tab);
-                    let id = tab_resource(base, tab, tab == window.tab, enabled);
-                    // The control clips the 29-row art to 28 (`FUN_00602d30`).
-                    let tab_painter = painter.with_clip_rect(rect);
+            // The strip: the player's base for its own side, the other
+            // base otherwise.
+            let base = side_art(TAB_BASE, if side == viewer { viewer } else { other });
+            for tab in FleetWindowTab::ALL {
+                let enabled = tab_enabled(world, transport, selected, tab);
+                let rect = tab_rect(local, scale, tab);
+                let id = tab_resource(base, tab, tab == window.tab, enabled);
+                // The control clips the 29-row art to 28 (`FUN_00602d30`).
+                let tab_painter = painter.with_clip_rect(rect);
+                paint_native(
+                    &tab_painter,
+                    ctx,
+                    cache,
+                    DllSource::Strategy,
+                    id,
+                    rect,
+                    scale,
+                    0.0,
+                    0.0,
+                );
+                let response = ui.interact(
+                    rect,
+                    ui.id().with((window.system, tab)),
+                    if enabled {
+                        egui::Sense::click()
+                    } else {
+                        egui::Sense::hover()
+                    },
+                );
+                if enabled && exact_clicked(&response, rect) {
+                    result.tab = Some(tab);
+                    result.focus = true;
+                }
+            }
+
+            let right = logical_rect(
+                local,
+                scale,
+                RIGHT_LIST.0,
+                RIGHT_LIST.1,
+                RIGHT_LIST.2,
+                RIGHT_LIST.3,
+            );
+            let right_painter = painter.with_clip_rect(right);
+            // Everything aboard a travelling fleet is en route, and so is
+            // a character still on its way aboard (`FUN_004f8240`: the
+            // container's bit 4 or its own bit 5).
+            let travelling = matches!(
+                selected,
+                Some(FleetWindowEntry::Fleet(fleet)) if movement.is_in_transit(fleet)
+            );
+            for (row, item) in right_items(world, transport, selected, window.tab)
+                .iter()
+                .enumerate()
+            {
+                let top = RIGHT_LIST.1 + RIGHT_ITEM_HEIGHT * row as f32;
+                if top >= RIGHT_LIST.1 + RIGHT_LIST.3 {
+                    break;
+                }
+                let cell = logical_rect(local, scale, RIGHT_LIST.0, top, 125.0, RIGHT_ITEM_HEIGHT);
+                if window.selected_item == Some(row) {
                     paint_native(
-                        &tab_painter,
+                        &right_painter,
                         ctx,
                         cache,
                         DllSource::Strategy,
-                        id,
-                        rect,
+                        side_art(RIGHT_ITEM_SELECTED, side),
+                        cell,
                         scale,
-                        0.0,
-                        0.0,
+                        1.0,
+                        1.0,
                     );
-                    let response = ui.interact(
-                        rect,
-                        ui.id().with((window.system, tab)),
-                        if enabled {
-                            egui::Sense::click()
-                        } else {
-                            egui::Sense::hover()
-                        },
-                    );
-                    if enabled && exact_clicked(&response, rect) {
-                        result.tab = Some(tab);
-                        result.focus = true;
-                    }
                 }
-
-                let right = logical_rect(
-                    local,
-                    scale,
-                    RIGHT_LIST.0,
-                    RIGHT_LIST.1,
-                    RIGHT_LIST.2,
-                    RIGHT_LIST.3,
-                );
-                let right_painter = painter.with_clip_rect(right);
-                // Everything aboard a travelling fleet is en route, and so is
-                // a character still on its way aboard (`FUN_004f8240`: the
-                // container's bit 4 or its own bit 5).
-                let travelling = matches!(
-                    selected,
-                    Some(FleetWindowEntry::Fleet(fleet)) if movement.is_in_transit(fleet)
-                );
-                for (row, item) in right_items(world, transport, selected, window.tab)
-                    .iter()
-                    .enumerate()
-                {
-                    let top = RIGHT_LIST.1 + RIGHT_ITEM_HEIGHT * row as f32;
-                    if top >= RIGHT_LIST.1 + RIGHT_LIST.3 {
-                        break;
-                    }
-                    let cell =
-                        logical_rect(local, scale, RIGHT_LIST.0, top, 125.0, RIGHT_ITEM_HEIGHT);
-                    if window.selected_item == Some(row) {
+                if let Some(mini) = item.mini {
+                    let (own, building) = match item.object {
+                        Some(ItemObject::Character { character, .. }) => (
+                            world.characters.get(character).is_some_and(|c| c.en_route),
+                            None,
+                        ),
+                        Some(ItemObject::Ship { fleet, index, .. }) => {
+                            ship_marks(world, movement, fleet, index)
+                        }
+                        _ => (false, None),
+                    };
+                    for (source, bitmap) in
+                        mini_layers(item.kind, mini, travelling || own, building)
+                    {
                         paint_native(
                             &right_painter,
                             ctx,
                             cache,
-                            DllSource::Strategy,
-                            side_art(RIGHT_ITEM_SELECTED, side),
+                            source,
+                            bitmap,
                             cell,
                             scale,
-                            1.0,
-                            1.0,
+                            28.0,
+                            4.0,
                         );
                     }
-                    if let Some(mini) = item.mini {
-                        let (own, building) = match item.object {
-                            Some(ItemObject::Character { character, .. }) => (
-                                world.characters.get(character).is_some_and(|c| c.en_route),
-                                None,
-                            ),
-                            Some(ItemObject::Ship { fleet, index, .. }) => {
-                                ship_marks(world, movement, fleet, index)
-                            }
-                            _ => (false, None),
-                        };
-                        for (source, bitmap) in
-                            mini_layers(item.kind, mini, travelling || own, building)
-                        {
-                            paint_native(
-                                &right_painter,
-                                ctx,
-                                cache,
-                                source,
-                                bitmap,
-                                cell,
-                                scale,
-                                28.0,
-                                4.0,
-                            );
-                        }
-                    }
-                    for (bitmap, x) in indicator_bitmaps(item.flags) {
-                        paint_native(
-                            &right_painter,
-                            ctx,
-                            cache,
-                            DllSource::Strategy,
-                            side_art(bitmap, side),
-                            cell,
-                            scale,
-                            x,
-                            23.0,
-                        );
-                    }
-                    right_painter.text(
-                        logical_rect(cell, scale, 62.5, 37.0, 0.0, 0.0).min,
-                        egui::Align2::CENTER_TOP,
-                        &item.label,
-                        font.clone(),
-                        egui::Color32::WHITE,
+                }
+                for (bitmap, x) in indicator_bitmaps(item.flags) {
+                    paint_native(
+                        &right_painter,
+                        ctx,
+                        cache,
+                        DllSource::Strategy,
+                        side_art(bitmap, side),
+                        cell,
+                        scale,
+                        x,
+                        23.0,
                     );
-                    let response = ui.interact(
-                        cell.intersect(right),
-                        ui.id().with((window.system, "item", row)),
-                        egui::Sense::click(),
-                    );
-                    if exact_clicked(&response, cell) {
-                        result.item = Some(row);
-                        result.focus = true;
+                }
+                right_painter.text(
+                    logical_rect(cell, scale, 62.5, 37.0, 0.0, 0.0).min,
+                    egui::Align2::CENTER_TOP,
+                    &item.label,
+                    font.clone(),
+                    egui::Color32::WHITE,
+                );
+                let response = ui.interact(
+                    cell.intersect(right),
+                    ui.id().with((window.system, "item", row)),
+                    egui::Sense::click(),
+                );
+                if exact_clicked(&response, cell) {
+                    result.item = Some(row);
+                    result.focus = true;
+                }
+                if response.secondary_clicked() {
+                    if let (Some(object), Some(point)) =
+                        (item.object, response.interact_pointer_pos())
+                    {
+                        result.object_menu = Some((object.menu_object(), point));
                     }
-                    if response.secondary_clicked() {
-                        if let (Some(object), Some(point)) =
-                            (item.object, response.interact_pointer_pos())
-                        {
-                            result.object_menu = Some((object.menu_object(), point));
-                        }
-                    }
-                    // A left press on a regiment, ship, squadron or character captures
-                    // the mouse for a drag (FUN_006083c0).
-                    if let (Some(object), Some(press)) = (
-                        item.object,
-                        ui.ctx().input(|input| {
-                            input
-                                .pointer
-                                .button_pressed(egui::PointerButton::Primary)
-                                .then(|| input.pointer.press_origin())
-                                .flatten()
-                        }),
-                    ) {
-                        if response.is_pointer_button_down_on() && rect_contains(cell, press) {
-                            result.drag = Some(ItemDrag {
-                                object,
-                                press,
-                                list: right,
-                            });
-                        }
+                }
+                // A left press on a regiment, ship, squadron or character captures
+                // the mouse for a drag (FUN_006083c0).
+                if let (Some(object), Some(press)) = (
+                    item.object,
+                    crate::native_geometry::primary_press_origin(ui.ctx()),
+                ) {
+                    if response.is_pointer_button_down_on() && rect_contains(cell, press) {
+                        result.drag = Some(ItemDrag {
+                            object,
+                            press,
+                            list: right,
+                        });
                     }
                 }
             }
+        }
 
-            // The two lists (with their bars) and the tab strip are controls
-            // of their own (FUN_004a4b10); FUN_004a29c0 passes every other
-            // press to the base.
-            result.drag_grab = surface_drag_grab(
-                ctx,
-                &window_response,
-                local,
-                scale,
-                &[
-                    LEFT_LIST,
-                    RIGHT_LIST,
-                    (TAB_STRIP.0, TAB_STRIP.1, 131.0, 28.0),
-                ],
-            );
-            if window_response.clicked() || clicked.iter().any(|&value| value) {
-                result.focus = true;
-            }
-        });
-    if area.response.clicked() {
-        result.focus = true;
-    }
+        // The two lists (with their bars) and the tab strip are controls
+        // of their own (FUN_004a4b10); FUN_004a29c0 passes every other
+        // press to the base.
+        result.drag_grab = surface_drag_grab(
+            ctx,
+            &window_response,
+            local,
+            scale,
+            &[
+                LEFT_LIST,
+                RIGHT_LIST,
+                (TAB_STRIP.0, TAB_STRIP.1, 131.0, 28.0),
+            ],
+        );
+        result.focus |=
+            strategic_window_common::interaction_requests_focus(&window_response, &clicked);
+    });
+    result.focus |= area.response.clicked();
     result
 }
 
@@ -3244,17 +3031,6 @@ fn label_color(viewer: u8) -> egui::Color32 {
     } else {
         egui::Color32::from_rgb(0, 255, 0)
     }
-}
-
-fn select_all_text(ctx: &egui::Context, id: egui::Id, char_count: usize) {
-    let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
-    state
-        .cursor
-        .set_char_range(Some(egui::text::CCursorRange::two(
-            egui::text::CCursor::new(0),
-            egui::text::CCursor::new(char_count),
-        )));
-    state.store(ctx, id);
 }
 
 /// The rename edit over its entry: the entry's name line, white on the
@@ -3295,7 +3071,7 @@ fn draw_rename_edit(
     ui.painter().rect_filled(rect, 0.0, egui::Color32::BLACK);
     if window.id.is_some() && edit.fresh && (lease.handles_input || lease.requests_manager_focus) {
         ui.ctx().memory_mut(|memory| memory.request_focus(id));
-        select_all_text(ui.ctx(), id, text.chars().count());
+        strategic_window_common::select_all_text(ui.ctx(), id, text.chars().count());
     }
     let response = ui.put(
         rect,
@@ -3309,7 +3085,7 @@ fn draw_rename_edit(
     );
     if window.id.is_none() && edit.fresh && lease.handles_input {
         response.request_focus();
-        select_all_text(ui.ctx(), id, text.chars().count());
+        strategic_window_common::select_all_text(ui.ctx(), id, text.chars().count());
         return Some(RenameOutcome::Typed(text));
     }
     if edit.fresh && lease.requests_manager_focus {
@@ -3361,11 +3137,10 @@ pub(crate) fn paint_native(
     y: f32,
 ) {
     #[cfg(test)]
-    tests::PAINTED.with(|painted| {
-        painted
-            .borrow_mut()
-            .push((resource_id, logical_rect(parent, scale, x, y, 0.0, 0.0).min));
-    });
+    crate::test_support::record_painted(
+        resource_id,
+        logical_rect(parent, scale, x, y, 0.0, 0.0).min,
+    );
     let Some([width, height]) = cache.original_resource_size(source, resource_id) else {
         return;
     };
@@ -3408,67 +3183,21 @@ fn paint_dotted(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::cockpit::CockpitViewport;
+    use crate::test_support::{
+        add_transport_fleet, click_frames as click, double_click_frames as double_click,
+        full_layout as layout, full_raw_input as frame_input, hover_frames as hover,
+        key_press as key, pointer_button as press, scaled_full_layout as scaled,
+        title_drag_frames as title_drag, world,
+    };
+    use crate::windowing_input::InputRecipient;
     use rebellion_core::carriage::ProductRoom;
-    use rebellion_core::dat::SectorGroup;
     use rebellion_core::ids::{DatId, TroopKey};
-    use rebellion_core::world::{CapitalShipClass, Fleet, Sector, ShipInstance, System, TroopUnit};
+    use rebellion_core::world::{ShipInstance, TroopUnit};
     use rebellion_windowing::{
         CaptureCancelReason, ContentStatus, ExistingEffect, WindowCommand, WindowEvent, WindowId,
         WindowManager, WindowTransition,
     };
     use std::collections::BTreeSet;
-
-    fn layout() -> CockpitLayout {
-        let viewport = CockpitViewport {
-            x: 0.0,
-            y: 0.0,
-            width: 640.0,
-            height: 480.0,
-        };
-        CockpitLayout {
-            canvas: viewport,
-            galaxy: viewport,
-            scale: 1.0,
-        }
-    }
-
-    fn world(control: ControlKind) -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(36),
-            name: "Sesswenna".into(),
-            group: SectorGroup::Core,
-            x: 317,
-            y: 248,
-            systems: Vec::new(),
-        });
-        let system = world.systems.insert(System {
-            dat_id: DatId::new(100),
-            name: "Sluis Van".into(),
-            sector,
-            x: 320,
-            y: 250,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        });
-        (world, system)
-    }
 
     fn add_fleet(
         world: &mut GameWorld,
@@ -3476,24 +3205,16 @@ pub(crate) mod tests {
         is_alliance: bool,
         troops: u32,
     ) -> FleetKey {
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            name: "Transport".into(),
-            is_alliance,
-            troop_capacity: troops,
-            hull: 100,
-            hyperdrive: 1,
-            ..CapitalShipClass::default()
-        });
-        let fleet = world.insert_fleet(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 100, true)],
-            fighters: Vec::new(),
-            characters: Vec::new(),
-            is_alliance,
-            bombarding: false,
-        });
-        world.systems[system].fleets.push(fleet);
-        fleet
+        add_transport_fleet(world, system, is_alliance, troops)
+    }
+
+    fn capital_ship_items(world: &GameWorld, fleet: FleetKey) -> Vec<RightItem> {
+        right_items(
+            world,
+            &TroopTransportState::default(),
+            Some(FleetWindowEntry::Fleet(fleet)),
+            FleetWindowTab::CapitalShips,
+        )
     }
 
     fn add_troop(world: &mut GameWorld, system: SystemKey) -> TroopKey {
@@ -3569,17 +3290,6 @@ pub(crate) mod tests {
             object: ItemObject::Fleet { fleet, system },
             press,
             list,
-        }
-    }
-
-    fn frame_input(events: Vec<egui::Event>) -> egui::RawInput {
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1400.0, 1000.0),
-            )),
-            events,
-            ..Default::default()
         }
     }
 
@@ -3830,13 +3540,9 @@ pub(crate) mod tests {
             CockpitFaction::Alliance,
             None,
         );
-        let (reopened_id, transition) =
-            commit_prepared_fleet_window(&mut manager, &mut state, reopened);
-        assert_eq!(reopened_id, id);
-        assert!(matches!(
-            transition,
-            WindowTransition::Existing { id: existing, .. } if existing == id
-        ));
+        crate::test_support::assert_existing_detail_reopen(id, || {
+            commit_prepared_fleet_window(&mut manager, &mut state, reopened)
+        });
         assert_eq!(state.window_count(), 1);
         let content = state.window_mut(system).unwrap();
         assert_eq!(content.logical_position, ORIGIN);
@@ -3845,32 +3551,33 @@ pub(crate) mod tests {
         assert_eq!(content.selected_item, Some(2));
         assert_eq!(content.expanded, [fleet]);
 
-        manager.apply(WindowCommand::Minimize(id)).unwrap();
-        assert!(!state.window_is_visible(&manager.begin_frame(), system));
-        assert_eq!(state.keyboard_owner(&manager.begin_frame()), None);
-        let restored = state
-            .prepare_open(
-                &world,
-                system,
-                (500, 350),
-                CockpitFaction::Alliance,
-                scaled(),
-                Some(FleetWindowEntry::Fleet(fleet)),
-            )
-            .and_then(|prepared| prepared.with_rename(&world, FleetWindowEntry::Fleet(fleet)))
-            .unwrap();
-        let (restored_id, transition) =
-            commit_prepared_fleet_window(&mut manager, &mut state, restored);
-        assert_eq!(restored_id, id);
-        assert!(matches!(
-            transition,
-            WindowTransition::Existing { id: existing, .. } if existing == id
-        ));
+        crate::test_support::assert_minimized_reopen(
+            &mut manager,
+            &mut state,
+            id,
+            |state, frame| state.window_is_visible(frame, system),
+            |state, frame| assert_eq!(state.keyboard_owner(frame), None),
+            |manager, state| {
+                let restored = state
+                    .prepare_open(
+                        &world,
+                        system,
+                        (500, 350),
+                        CockpitFaction::Alliance,
+                        scaled(),
+                        Some(FleetWindowEntry::Fleet(fleet)),
+                    )
+                    .and_then(|prepared| {
+                        prepared.with_rename(&world, FleetWindowEntry::Fleet(fleet))
+                    })
+                    .unwrap();
+                commit_prepared_fleet_window(manager, state, restored)
+            },
+        );
         assert_eq!(
             state.selection(system),
             Some((Some(FleetWindowEntry::Fleet(fleet)), FleetWindowTab::Troops))
         );
-        assert!(state.window_is_visible(&manager.begin_frame(), system));
         assert!(state.window_mut(system).unwrap().rename.is_some());
         // Publication restores the existing Fleet owner first: FUN_0045aac0
         // reopens a minimized detail through FUN_00429020, whose 0x467 focuses
@@ -4232,15 +3939,30 @@ pub(crate) mod tests {
         let events = [(event, phase)];
 
         assert_eq!(
-            claim_fleet_pointer_event(&mut router, &events, lower, phase),
+            strategic_window_common::claim_pointer_event(
+                &mut router,
+                events.iter().rev().copied(),
+                lower,
+                phase,
+            ),
             None
         );
         assert_eq!(
-            claim_fleet_pointer_event(&mut router, &events, upper, phase),
+            strategic_window_common::claim_pointer_event(
+                &mut router,
+                events.iter().rev().copied(),
+                upper,
+                phase,
+            ),
             Some(event)
         );
         assert_eq!(
-            claim_fleet_pointer_event(&mut router, &events, upper, phase),
+            strategic_window_common::claim_pointer_event(
+                &mut router,
+                events.iter().rev().copied(),
+                upper,
+                phase,
+            ),
             None
         );
 
@@ -4252,7 +3974,12 @@ pub(crate) mod tests {
         router.set_application_hold(true);
         router.collect_pointer(blocked, &BTreeSet::from([upper]), phase);
         assert_eq!(
-            claim_fleet_pointer_event(&mut router, &[(blocked, phase)], upper, phase),
+            strategic_window_common::claim_pointer_event(
+                &mut router,
+                [(blocked, phase)],
+                upper,
+                phase,
+            ),
             None,
         );
     }
@@ -4655,15 +4382,24 @@ pub(crate) mod tests {
         assert_eq!(title_side(&world, &[own], Faction::Empire, system), 1);
 
         assert_eq!(
-            [title_resource(1, true), title_resource(1, false)],
+            [
+                strategic_window_common::title_resource(1, true),
+                strategic_window_common::title_resource(1, false),
+            ],
             [10299, 10200]
         );
         assert_eq!(
-            [title_resource(2, true), title_resource(2, false)],
+            [
+                strategic_window_common::title_resource(2, true),
+                strategic_window_common::title_resource(2, false),
+            ],
             [10201, 10302]
         );
         assert_eq!(
-            [title_resource(0, true), title_resource(3, false)],
+            [
+                strategic_window_common::title_resource(0, true),
+                strategic_window_common::title_resource(3, false),
+            ],
             [10303, 10304]
         );
     }
@@ -4940,28 +4676,9 @@ pub(crate) mod tests {
         assert_eq!(state.windows[0].expanded, [fleet]);
     }
 
-    /// The canvas 10 by 20 pixels in and twice the original size, so offsets
-    /// and scale both show.
-    fn scaled() -> CockpitLayout {
-        let viewport = CockpitViewport {
-            x: 10.0,
-            y: 20.0,
-            width: 1280.0,
-            height: 960.0,
-        };
-        CockpitLayout {
-            canvas: viewport,
-            galaxy: viewport,
-            scale: 2.0,
-        }
-    }
-
     /// A logical point in the window opened at `ORIGIN` on [`scaled`].
     fn at(x: f32, y: f32) -> egui::Pos2 {
-        egui::pos2(
-            10.0 + (f32::from(ORIGIN.0) + x) * 2.0,
-            20.0 + (f32::from(ORIGIN.1) + y) * 2.0,
-        )
+        crate::test_support::window_point(scaled(), ORIGIN, (x, y))
     }
 
     const ORIGIN: (i16, i16) = (20, 30);
@@ -4986,14 +4703,6 @@ pub(crate) mod tests {
             };
             (x - anchor.x).abs() < 0.01 && self.pos.y == anchor.y
         }
-    }
-
-    thread_local! {
-        /// Each bitmap [`paint_native`] or the shared button art
-        /// (`mission_dialog::paint`) was asked for and where, since the
-        /// test cache holds no textures.
-        pub(crate) static PAINTED: std::cell::RefCell<Vec<(u32, egui::Pos2)>> =
-            const { std::cell::RefCell::new(Vec::new()) };
     }
 
     #[derive(Default)]
@@ -5064,14 +4773,13 @@ pub(crate) mod tests {
     ) -> Run {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
-        let fog =
-            world
-                .systems
-                .keys()
-                .fold(FogState::new(cockpit_faction(faction)), |mut fog, key| {
-                    fog.reveal(key);
-                    fog
-                });
+        let fog = world
+            .systems
+            .keys()
+            .fold(FogState::new(faction.player()), |mut fog, key| {
+                fog.reveal(key);
+                fog
+            });
         let mut result = Run::default();
         for (index, events) in frames.into_iter().enumerate() {
             let input = egui::RawInput {
@@ -5084,7 +4792,7 @@ pub(crate) mod tests {
                 modifiers,
                 ..Default::default()
             };
-            PAINTED.with(|painted| painted.borrow_mut().clear());
+            crate::test_support::clear_painted_trace();
             let output = ctx.run(input, |ctx| {
                 result.actions.extend(draw_fleet_windows(
                     ctx,
@@ -5098,7 +4806,7 @@ pub(crate) mod tests {
                     &mut cache,
                 ));
             });
-            result.painted = PAINTED.with(std::cell::RefCell::take);
+            result.painted = crate::test_support::take_painted_trace();
             result.texts.clear();
             result.dots.clear();
             for clipped in output.shapes {
@@ -5127,40 +4835,6 @@ pub(crate) mod tests {
             }
         }
         result
-    }
-
-    fn hover(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        vec![
-            vec![egui::Event::PointerMoved(point)],
-            vec![egui::Event::PointerMoved(point)],
-        ]
-    }
-
-    fn press(point: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
-    }
-
-    fn click(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        let mut frames = hover(point);
-        frames.extend([vec![press(point, true)], vec![press(point, false)], vec![]]);
-        frames
-    }
-
-    fn double_click(point: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        let mut frames = hover(point);
-        frames.extend([
-            vec![press(point, true)],
-            vec![press(point, false)],
-            vec![press(point, true)],
-            vec![press(point, false)],
-            vec![],
-        ]);
-        frames
     }
 
     fn opened(world: &GameWorld, system: SystemKey) -> FleetWindowState {
@@ -5598,15 +5272,14 @@ pub(crate) mod tests {
         state: &mut FleetWindowState,
         point: egui::Pos2,
     ) -> Vec<FleetWindowAction> {
-        let button = |pressed| egui::Event::PointerButton {
-            pos: point,
-            button: egui::PointerButton::Secondary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        let mut frames = hover(point);
-        frames.extend([vec![button(true)], vec![button(false)], vec![]]);
-        run(world, transport, state, CockpitFaction::Alliance, frames).actions
+        run(
+            world,
+            transport,
+            state,
+            CockpitFaction::Alliance,
+            crate::test_support::right_click_frames(point),
+        )
+        .actions
     }
 
     fn menus(actions: &[FleetWindowAction]) -> Vec<(MenuObject, (i16, i16))> {
@@ -5618,6 +5291,13 @@ pub(crate) mod tests {
                 } => Some((selection, point)),
                 _ => None,
             })
+            .collect()
+    }
+
+    fn menu_selections(actions: &[FleetWindowAction]) -> Vec<MenuObject> {
+        menus(actions)
+            .into_iter()
+            .map(|(selection, _)| selection)
             .collect()
     }
 
@@ -5677,13 +5357,7 @@ pub(crate) mod tests {
             .center();
 
         let actions = right_click(&world, &transport, &mut state, entry);
-        assert_eq!(
-            menus(&actions)
-                .into_iter()
-                .map(|(selection, _)| selection)
-                .collect::<Vec<_>>(),
-            [MenuObject::Fleet(fleet)]
-        );
+        assert_eq!(menu_selections(&actions), [MenuObject::Fleet(fleet)]);
 
         if let Some(window) = state.window_mut(system) {
             window.selected = Some(FleetWindowEntry::Fleet(fleet));
@@ -5695,10 +5369,7 @@ pub(crate) mod tests {
             .center();
         let actions = right_click(&world, &transport, &mut state, second);
         assert_eq!(
-            menus(&actions)
-                .into_iter()
-                .map(|(selection, _)| selection)
-                .collect::<Vec<_>>(),
+            menu_selections(&actions),
             [MenuObject::Fighter { fleet, index: 1 }]
         );
     }
@@ -6199,7 +5870,7 @@ pub(crate) mod tests {
             (10480, 13.0, 112.0),
             (10470, 102.0, 128.0),
             (10480, 110.0, 150.0),
-            (CLOSE_NORMAL, 218.0, 3.0),
+            (strategic_window_common::CLOSE_ART.0, 218.0, 3.0),
         ] {
             assert!(
                 painted.contains(&(id, at(x, y))),
@@ -6336,16 +6007,6 @@ pub(crate) mod tests {
         }
     }
 
-    fn key(key: egui::Key) -> egui::Event {
-        egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }
-    }
-
     fn apply_rename_focus_actions(manager: &mut WindowManager, actions: &[FleetWindowAction]) {
         for action in actions {
             let command = match action {
@@ -6393,15 +6054,12 @@ pub(crate) mod tests {
                 id
             })
             .collect();
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1400.0, 1000.0),
-            )),
-            time: Some(frame as f64 * 0.05),
+        let input = crate::test_support::timed_raw_input(
+            usize::try_from(frame).unwrap(),
             events,
-            ..Default::default()
-        };
+            egui::Modifiers::default(),
+            egui::vec2(1400.0, 1000.0),
+        );
         let mut actions = Vec::new();
         let visible_fog = world.systems.keys().fold(
             FogState::new(Faction::Alliance),
@@ -6788,19 +6446,14 @@ pub(crate) mod tests {
         assert!(bootstrap.contains(&FleetWindowAction::FocusControl(target)));
         assert!(state.windows[0].rename.as_ref().unwrap().fresh);
 
-        let modal = match manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap()
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            transition => panic!("expected modal open, got {transition:?}"),
-        };
+        let modal = crate::test_support::open_window(
+            &mut manager,
+            crate::windowing_policy::singleton_spec(
+                WindowKind::Encyclopedia,
+                WindowOwner::StrategicRoot,
+            ),
+            "modal",
+        );
         assert!(manager.apply(WindowCommand::Focus(target)).is_err());
         assert!(state.windows[0].rename.as_ref().unwrap().fresh);
 
@@ -7016,8 +6669,10 @@ pub(crate) mod tests {
             hover(close),
         )
         .painted;
-        assert!(hovered.contains(&(CLOSE_NORMAL, at(218.0, 3.0))));
-        assert!(!hovered.iter().any(|(id, _)| *id == CLOSE_PRESSED));
+        assert!(hovered.contains(&(strategic_window_common::CLOSE_ART.0, at(218.0, 3.0))));
+        assert!(!hovered
+            .iter()
+            .any(|(id, _)| *id == strategic_window_common::CLOSE_ART.1));
 
         let mut frames = hover(close);
         frames.push(vec![press(close, true)]);
@@ -7030,7 +6685,7 @@ pub(crate) mod tests {
             frames,
         )
         .painted;
-        assert!(held.contains(&(CLOSE_PRESSED, at(218.0, 3.0))));
+        assert!(held.contains(&(strategic_window_common::CLOSE_ART.1, at(218.0, 3.0))));
     }
 
     #[test]
@@ -7139,10 +6794,8 @@ pub(crate) mod tests {
         // FUN_004f6270: the ship's +0x34 name, else its class's.
         let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
         let fleet = add_fleet(&mut world, system, true, 1);
-        let transport = TroopTransportState::default();
-        let selected = Some(FleetWindowEntry::Fleet(fleet));
         let labels = |world: &GameWorld| {
-            right_items(world, &transport, selected, FleetWindowTab::CapitalShips)
+            capital_ship_items(world, fleet)
                 .into_iter()
                 .map(|item| item.label)
                 .collect::<Vec<_>>()
@@ -7161,10 +6814,8 @@ pub(crate) mod tests {
         // FUN_004a6be0: flag 0x40 marks a ship with no hyperdrive (10430).
         let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
         let fleet = add_fleet(&mut world, system, true, 1);
-        let transport = TroopTransportState::default();
-        let selected = Some(FleetWindowEntry::Fleet(fleet));
         let flags = |world: &GameWorld| {
-            right_items(world, &transport, selected, FleetWindowTab::CapitalShips)
+            capital_ship_items(world, fleet)
                 .iter()
                 .map(|item| item.flags & 0x40 != 0)
                 .collect::<Vec<_>>()
@@ -7400,19 +7051,6 @@ pub(crate) mod tests {
             state.remove_content(&[first]);
             assert_eq!(manager.begin_frame().paint_order().last(), Some(&second));
         }
-    }
-
-    /// Press at `from`, move to `to` with the button held, and release.
-    fn title_drag(from: egui::Pos2, to: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        let mut frames = hover(from);
-        frames.extend([
-            vec![press(from, true)],
-            vec![egui::Event::PointerMoved(from.lerp(to, 0.5))],
-            vec![egui::Event::PointerMoved(to)],
-            vec![press(to, false)],
-            vec![egui::Event::PointerMoved(to + egui::vec2(30.0, 30.0))],
-        ]);
-        frames
     }
 
     #[test]

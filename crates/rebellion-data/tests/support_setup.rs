@@ -1,15 +1,7 @@
-use std::path::PathBuf;
+mod common;
 
+use common::data_dir;
 use rebellion_core::ids::DatId;
-
-fn data_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates directory")
-        .parent()
-        .expect("repository root")
-        .join("data/base")
-}
 
 /// Setup leaves system `+0x88` bit 3 on every rim system (SYSTEMSD family
 /// `0x92`) and on no core one (`0x90`): the base class's slot `+0xbc`

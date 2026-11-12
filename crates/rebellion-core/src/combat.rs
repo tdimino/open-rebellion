@@ -53,19 +53,12 @@ pub fn side_present_in(
 /// first of these.
 #[must_use]
 pub fn fighting_fleets(world: &GameWorld, system: SystemKey, is_alliance: bool) -> Vec<FleetKey> {
-    world.systems.get(system).map_or_else(Vec::new, |value| {
-        value
-            .fleets
-            .iter()
-            .copied()
-            .filter(|&fleet| {
-                world
-                    .fleets
-                    .get(fleet)
-                    .is_some_and(|fleet| fleet.is_alliance == is_alliance && fleet.usable())
-            })
-            .collect()
-    })
+    world
+        .fleets_at(system)
+        .filter_map(|(key, fleet)| {
+            (fleet.is_alliance == is_alliance && fleet.usable()).then_some(key)
+        })
+        .collect()
 }
 
 /// One side of a space battle: its fleet, if any, and the squadrons the
@@ -131,14 +124,7 @@ mod tests {
         ship: ShipInstance,
         is_alliance: bool,
     ) -> FleetKey {
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ship],
-            is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(fleet);
-        fleet
+        crate::test_support::add_fleet_with_ship(world, system, ship, is_alliance)
     }
 
     fn assert_absent_then_remove_defender(
@@ -292,37 +278,20 @@ mod tests {
     fn a_commander_aboard_a_fleet_whose_only_ship_is_on_its_own_leg_does_not_rate_the_battle() {
         use crate::officer_rank::CommandKind;
         use crate::tactical::BattleSession;
-        use crate::world::{
-            CapitalShipClass, Character, Fleet, ShipInstance, ShipTransit, SkillPair, System,
-        };
+        use crate::test_support::add_usable_fleet;
+        use crate::world::{Character, ShipTransit, SkillPair, System};
         for attacker_is_alliance in [true, false] {
             let mut world = GameWorld::default();
             let yard = world.systems.insert(System::default());
             let system = world.systems.insert(System::default());
-            let fleet_of = |world: &mut GameWorld, is_alliance: bool| {
-                let class = world.capital_ship_classes.insert(CapitalShipClass {
-                    is_alliance,
-                    is_empire: !is_alliance,
-                    hull: 100,
-                    ..CapitalShipClass::default()
-                });
-                let fleet = world.fleets.insert(Fleet {
-                    location: system,
-                    capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
-                    is_alliance,
-                    ..Fleet::default()
-                });
-                world.systems[system].fleets.push(fleet);
-                fleet
-            };
-            let new_hull = fleet_of(&mut world, true);
+            let new_hull = add_usable_fleet(&mut world, system, true);
             world.fleets[new_hull].capital_ships[0].transit = Some(ShipTransit {
                 from: yard,
                 to: system,
                 arrival_tick: 9,
             });
-            let standing = fleet_of(&mut world, true);
-            let enemy = fleet_of(&mut world, false);
+            let standing = add_usable_fleet(&mut world, system, true);
+            let enemy = add_usable_fleet(&mut world, system, false);
             for (fleet, combat) in [(new_hull, 150), (standing, 50)] {
                 world.characters.insert(Character {
                     is_alliance: true,

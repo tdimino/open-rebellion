@@ -126,6 +126,10 @@ repository-wide readiness gates.
   original behavior, no weakened assertions, goldens regenerated only for a
   named cause, new tests shown to fail, a scoped `cargo mutants` run before
   committing, and a source or `port:`/`hyp:` tag on every new simulation rule.
+- Before adding repeated test setup, read `agent_docs/test-fixtures.md` and
+  reuse or extend the crate's shared test support. Small cross-file world,
+  layout, input-frame and assertion duplicates belong in common fixtures when
+  they carry the same semantics.
 - Tracked docs state current facts and name evidence by save, day and values,
   never by an `.artifacts/` path. Ghidra notes carry no history
   (`agent_docs/ghidra-re.md`, "Porting an original flow").

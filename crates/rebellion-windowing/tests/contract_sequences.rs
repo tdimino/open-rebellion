@@ -1,4 +1,8 @@
+mod common;
+
 use std::collections::BTreeSet;
+
+use common::{menu, root_detail as detail};
 
 use rebellion_windowing::{
     BubblePolicy, CaptureCancelReason, CloseReason, ContentReport, ContentStatus, ControlId,
@@ -6,50 +10,8 @@ use rebellion_windowing::{
     WindowManager, WindowOwner, WindowTransition,
 };
 
-fn detail(kind: WindowKind, subject: u64) -> rebellion_windowing::WindowSpec {
-    use rebellion_windowing::{
-        Cardinality, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, InputPolicy, OpenPlacement,
-        PresentationPolicy, StackBand, SubjectId, WindowKey, WindowPolicy, WindowSpec,
-    };
-    WindowSpec {
-        key: WindowKey::contextual(kind, SubjectId::new(2, subject)),
-        owner: WindowOwner::StrategicRoot,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Subject { max_open: None },
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::RaiseRestore,
-            input: InputPolicy::Modeless,
-            presentation: PresentationPolicy::History,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
-    }
-}
-
 fn modal() -> rebellion_windowing::WindowSpec {
-    use rebellion_windowing::{
-        Cardinality, ExistingOpenPolicy, InputPolicy, PresentationPolicy, WindowKey,
-    };
-    let mut spec = detail(WindowKind::Encyclopedia, 0);
-    spec.key = WindowKey::singleton(WindowKind::Encyclopedia);
-    spec.policy.cardinality = Cardinality::Singleton;
-    spec.policy.existing = ExistingOpenPolicy::NoOp;
-    spec.policy.input = InputPolicy::StrategicModal;
-    spec.policy.presentation = PresentationPolicy::None;
-    spec
-}
-
-fn menu(owner: WindowId) -> rebellion_windowing::WindowSpec {
-    use rebellion_windowing::{FocusRestoration, InputPolicy, OpenPlacement, StackBand, WindowKey};
-    let mut spec = modal();
-    spec.key = WindowKey::singleton(WindowKind::Menu);
-    spec.owner = WindowOwner::Window(owner);
-    spec.policy.input = InputPolicy::DismissOnOutsidePress;
-    spec.policy.band = StackBand::Transient;
-    spec.policy.placement = OpenPlacement::AboveOwner;
-    spec.policy.restoration = FocusRestoration::SavedMenuTarget;
-    spec
+    common::modal(WindowKind::Encyclopedia)
 }
 
 fn checked(

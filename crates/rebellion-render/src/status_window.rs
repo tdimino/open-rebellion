@@ -15,16 +15,17 @@ use rebellion_core::missions::{MemberTransit, MissionMember};
 use rebellion_core::officer_rank::CommandPost;
 use rebellion_core::world::GameWorld;
 use rebellion_windowing::{
-    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, SubjectId, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
+    ContentReport, ExistingEffect, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner,
+    WindowSpec, WindowTransition,
 };
 
 use crate::bmp_cache::BmpCache;
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::fleet_window::paint_native;
 use crate::mission_dialog::{button, galaxy_centered_rect, paint};
+use crate::singleton_window_common::{self, impl_singleton_window_routing};
 use crate::status_rows::{status_view, StatusObject, StatusSources};
-use crate::system_window::{fleet_label, logical_rect, rect_contains};
+use crate::system_window::fleet_label;
 use crate::theme::game_font;
 
 pub const STATUS_WINDOW_WIDTH: f32 = 379.0;
@@ -365,45 +366,6 @@ impl StatusWindowState {
         self.window.as_ref().and_then(|window| window.id)
     }
 
-    /// Egui layer attached to the exact manager-issued Status window.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id() == Some(id)).then(|| {
-            egui::LayerId::new(
-                egui::Order::Tooltip,
-                egui::Id::new("original-status-window"),
-            )
-        })
-    }
-
-    /// Manager-owned Status hit for event-local pointer routing.
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id()?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::Status)
-            && frame.allows_input(id)
-            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    /// Exact Status identity that owns this frame's keyboard lease.
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id()?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
-
     /// Exact committed identity used by button, Escape, and recovery closes.
     #[must_use]
     pub fn request_close(&self) -> Option<WindowId> {
@@ -419,27 +381,12 @@ impl StatusWindowState {
         frame: &RoutingSnapshot,
         sources: StatusSources<'_>,
     ) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::Status)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id() == Some(id)
-                    && self.window.as_ref().is_some_and(|window| {
-                        status_view_if_current(sources, window.object, window.witness).is_some()
-                    }) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
+        singleton_window_common::content_reports(frame, WindowKind::Status, |id| {
+            self.window_id() == Some(id)
+                && self.window.as_ref().is_some_and(|window| {
+                    status_view_if_current(sources, window.object, window.witness).is_some()
+                })
+        })
     }
 
     /// Releases only content named by manager close/replacement receipts.
@@ -475,9 +422,20 @@ impl StatusWindowState {
     /// takes no input.
     #[must_use]
     pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
+        crate::singleton_window_common::contains_screen_point(
+            self.window.is_some(),
+            window_rect(layout),
+            point,
+        )
     }
 }
+
+impl_singleton_window_routing!(
+    StatusWindowState,
+    WindowKind::Status,
+    "original-status-window",
+    window_rect
+);
 
 /// The window's screen rectangle (`FUN_00606980` places it from the galaxy
 /// view's rectangle). hyp: centred there, as the move confirmation is.
@@ -637,108 +595,77 @@ fn draw_status_window_surface(
     // Above the modeless windows, as the move confirmation is. Manager order
     // is realized by the application adapter, never by this feature module.
     let area_id = egui::Id::new("original-status-window");
-    egui::Area::new(area_id)
-        .fixed_pos(rect.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(rect.size(), egui::Sense::hover());
-            let painter = ui.painter().with_clip_rect(frame);
-            let at = |(x, y, w, h): (f32, f32, f32, f32)| logical_rect(frame, scale, x, y, w, h);
+    singleton_window_common::show_popup_canvas(ctx, area_id, rect, scale, |ui, canvas| {
+        let frame = canvas.frame;
+        let painter = canvas.painter.clone();
+        let at = |(x, y, w, h): (f32, f32, f32, f32)| canvas.rect(x, y, w, h);
 
-            if let Some(view) = view {
-                paint(
-                    &painter,
-                    ctx,
-                    cache,
-                    background(view.side, viewer),
-                    frame,
-                    scale,
-                );
+        if let Some(view) = view {
+            paint(
+                &painter,
+                ctx,
+                cache,
+                background(view.side, viewer),
+                frame,
+                scale,
+            );
 
-                // The title and name take font 5 and the list font 10
-                // (FUN_0060eed0). The production manager's font 0x11 is the
-                // table's default, the same 16 pixels as font 5.
-                let title_font = game_font(5, scale);
-                let list_font = game_font(10, scale);
+            // The title and name take font 5 and the list font 10
+            // (FUN_0060eed0). The production manager's font 0x11 is the
+            // table's default, the same 16 pixels as font 5.
+            let title_font = game_font(5, scale);
+            let list_font = game_font(10, scale);
 
-                let title = at(TITLE);
-                painter.text(
-                    title.center(),
-                    egui::Align2::CENTER_CENTER,
-                    view.title,
-                    title_font.clone(),
+            let title = at(TITLE);
+            painter.text(
+                title.center(),
+                egui::Align2::CENTER_CENTER,
+                view.title,
+                title_font.clone(),
+                egui::Color32::WHITE,
+            );
+
+            // The picture, keyed (FUN_005fd0f0), centred with integer
+            // offsets on (307, 64).
+            if let Some((source, picture)) = view.picture {
+                if let Some([width, height]) = cache.original_resource_size(source, picture) {
+                    let (x, y) = picture_origin(width, height);
+                    paint_native(&painter, ctx, cache, source, picture, frame, scale, x, y);
+                }
+            }
+
+            let name = at(NAME);
+            let galley = painter.layout(view.name, title_font, egui::Color32::WHITE, name.width());
+            let name_at = egui::pos2(
+                name.center().x - galley.size().x / 2.0,
+                name.center().y - galley.size().y / 2.0,
+            );
+            painter
+                .with_clip_rect(name)
+                .galley(name_at, galley, egui::Color32::WHITE);
+
+            // The list. port: the wheel scrolls it; no scroll bar is drawn.
+            let list = at(LIST);
+            let (laid, height) = layout_rows(&painter, &view.rows, &list_font, COLUMN * scale);
+            let list_response =
+                ui.interact(list, ui.id().with("status-list"), egui::Sense::hover());
+            let wheel = if input_enabled && list_response.hovered() {
+                ui.ctx().input(|input| input.smooth_scroll_delta.y)
+            } else {
+                0.0
+            };
+            open.scroll = scrolled(open.scroll, wheel, scale, height);
+            let list_painter = painter.with_clip_rect(list);
+            let top = list.min.y - open.scroll * scale;
+            for (label, value, label_y, value_y) in laid {
+                list_painter.galley(
+                    egui::pos2(list.min.x, top + label_y),
+                    label,
                     egui::Color32::WHITE,
                 );
-
-                // The picture, keyed (FUN_005fd0f0), centred with integer
-                // offsets on (307, 64).
-                if let Some((source, picture)) = view.picture {
-                    if let Some([width, height]) = cache.original_resource_size(source, picture) {
-                        let (x, y) = picture_origin(width, height);
-                        paint_native(&painter, ctx, cache, source, picture, frame, scale, x, y);
-                    }
-                }
-
-                let name = at(NAME);
-                let galley =
-                    painter.layout(view.name, title_font, egui::Color32::WHITE, name.width());
-                let name_at = egui::pos2(
-                    name.center().x - galley.size().x / 2.0,
-                    name.center().y - galley.size().y / 2.0,
-                );
-                painter
-                    .with_clip_rect(name)
-                    .galley(name_at, galley, egui::Color32::WHITE);
-
-                // The list. port: the wheel scrolls it; no scroll bar is drawn.
-                let list = at(LIST);
-                let (laid, height) = layout_rows(&painter, &view.rows, &list_font, COLUMN * scale);
-                let list_response =
-                    ui.interact(list, ui.id().with("status-list"), egui::Sense::hover());
-                let wheel = if input_enabled && list_response.hovered() {
-                    ui.ctx().input(|input| input.smooth_scroll_delta.y)
-                } else {
-                    0.0
-                };
-                open.scroll = scrolled(open.scroll, wheel, scale, height);
-                let list_painter = painter.with_clip_rect(list);
-                let top = list.min.y - open.scroll * scale;
-                for (label, value, label_y, value_y) in laid {
-                    list_painter.galley(
-                        egui::pos2(list.min.x, top + label_y),
-                        label,
-                        egui::Color32::WHITE,
-                    );
-                    list_painter.galley(
-                        egui::pos2(list.min.x + COLUMN * scale, top + value_y),
-                        value,
-                        egui::Color32::WHITE,
-                    );
-                }
-
-                if input_enabled
-                    && button(
-                        ui,
-                        cache,
-                        at(ENCYCLOPEDIA_RECT),
-                        "status-encyclopedia",
-                        ENCYCLOPEDIA,
-                        false,
-                        scale,
-                    )
-                {
-                    action = Some(StatusWindowAction::Encyclopedia);
-                }
-            } else {
-                // Fail closed after a committed object's backing runtime row
-                // disappears. The dark recovery surface keeps the modal
-                // visible and gives the player an explicit close route.
-                painter.rect_filled(frame, 0.0, egui::Color32::from_rgb(24, 24, 24));
-                painter.text(
-                    frame.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "Status unavailable",
-                    game_font(5, scale),
+                list_painter.galley(
+                    egui::pos2(list.min.x + COLUMN * scale, top + value_y),
+                    value,
                     egui::Color32::WHITE,
                 );
             }
@@ -747,16 +674,43 @@ fn draw_status_window_surface(
                 && button(
                     ui,
                     cache,
-                    at(CLOSE_RECT),
-                    "status-close",
-                    CLOSE,
+                    at(ENCYCLOPEDIA_RECT),
+                    "status-encyclopedia",
+                    ENCYCLOPEDIA,
                     false,
                     scale,
                 )
             {
-                action = Some(StatusWindowAction::Close);
+                action = Some(StatusWindowAction::Encyclopedia);
             }
-        });
+        } else {
+            // Fail closed after a committed object's backing runtime row
+            // disappears. The dark recovery surface keeps the modal
+            // visible and gives the player an explicit close route.
+            painter.rect_filled(frame, 0.0, egui::Color32::from_rgb(24, 24, 24));
+            painter.text(
+                frame.center(),
+                egui::Align2::CENTER_CENTER,
+                "Status unavailable",
+                game_font(5, scale),
+                egui::Color32::WHITE,
+            );
+        }
+
+        if input_enabled
+            && button(
+                ui,
+                cache,
+                at(CLOSE_RECT),
+                "status-close",
+                CLOSE,
+                false,
+                scale,
+            )
+        {
+            action = Some(StatusWindowAction::Close);
+        }
+    });
 
     // Direct fixture path only. Production routes Escape through the frozen
     // keyboard lease and asks the manager to close the exact identity.
@@ -773,19 +727,21 @@ mod tests {
     use super::*;
     use crate::bmp_cache::DllSource;
     use crate::cockpit::CockpitViewport;
+    use crate::test_support::{
+        alliance_system as add_system, assert_modal_window_routing, duplicate_singleton_transition,
+        offset_strategic_layout, pointer_button as press, pointer_raw_input,
+    };
     use crate::windowing_input::{
         FrameInputRouter, InputDisposition, InputEventId, InputRecipient, PointerButtonId,
         PointerPhase,
     };
-    use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
     use rebellion_core::ids::{DatId, FleetKey, SystemKey};
     use rebellion_core::world::{
-        CapitalShipClass, Character, ControlKind, FighterClass, FighterEntry, Fleet, ForceTier,
-        Sector, ShipInstance, SkillPair, System,
+        CapitalShipClass, Character, FighterClass, FighterEntry, Fleet, ShipInstance, SkillPair,
     };
     use rebellion_windowing::{
-        ContentReport, ContentStatus, ExistingEffect, RouteTarget, SubjectId, WindowCommand,
-        WindowManager, WindowTransition,
+        ContentReport, ContentStatus, ExistingEffect, SubjectId, WindowCommand, WindowManager,
+        WindowTransition,
     };
 
     fn skill(base: u32) -> SkillPair {
@@ -798,7 +754,6 @@ mod tests {
             dat_id: DatId::new(0x3000_0242),
             name: "Luke Skywalker".into(),
             is_alliance: true,
-            is_empire: false,
             is_major: true,
             diplomacy: skill(75),
             espionage: skill(75),
@@ -812,69 +767,9 @@ mod tests {
             jedi_level: skill(40),
             can_be_admiral: true,
             can_be_commander: true,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            en_route: false,
-            adrift: false,
-            abode: None,
-            escape_due: None,
-            heritage_known: false,
-            is_killed: false,
             recruited: true,
-            command_kind: rebellion_core::officer_rank::CommandKind::None,
-            command_post: None,
-            ranked_names: Default::default(),
+            ..Default::default()
         }
-    }
-
-    fn add_system(world: &mut GameWorld, name: &str) -> SystemKey {
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(36),
-            name: "Sesswenna".into(),
-            group: SectorGroup::Core,
-            x: 317,
-            y: 248,
-            systems: Vec::new(),
-        });
-        world.systems.insert(System {
-            dat_id: DatId::new(100),
-            name: name.into(),
-            sector,
-            x: 320,
-            y: 250,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
-        })
     }
 
     fn world_with_luke() -> (GameWorld, CharacterKey, SystemKey, SystemKey) {
@@ -1047,6 +942,39 @@ mod tests {
         }
     }
 
+    fn assert_index_compaction_unpaintable(
+        fixture: OpenedIndexed,
+        object: impl Fn(FleetKey) -> StatusObject,
+        names: (&str, &str),
+        remove_first: impl FnOnce(&mut GameWorld, FleetKey),
+    ) {
+        let OpenedIndexed {
+            mut world,
+            fleet,
+            empty,
+            mut manager,
+            state,
+            id,
+        } = fixture;
+        let object = object(fleet);
+        assert_eq!(
+            status_view(empty.sources(&world), object).unwrap().name,
+            names.0
+        );
+        assert_eq!(
+            managed_status_content(&manager, &state, empty.sources(&world)),
+            ContentStatus::Ready
+        );
+
+        remove_first(&mut world, fleet);
+        assert_eq!(
+            status_view(empty.sources(&world), object).unwrap().name,
+            names.1,
+            "the raw index demonstrates the stale-index retarget hazard"
+        );
+        assert_unpaintable(&mut manager, &state, empty.sources(&world), id);
+    }
+
     fn assert_unpaintable(
         manager: &mut WindowManager,
         state: &StatusWindowState,
@@ -1086,20 +1014,8 @@ mod tests {
             subject,
         )
         .unwrap();
-        let duplicate_commit = manager
-            .apply(WindowCommand::Open(duplicate.spec()))
-            .unwrap();
-        assert!(matches!(
-            duplicate_commit.transition,
-            WindowTransition::Existing {
-                id: existing,
-                effect: ExistingEffect::NoOp,
-            } if existing == id
-        ));
-        assert_eq!(
-            state.commit_open(duplicate, &duplicate_commit.transition),
-            Some(id)
-        );
+        let transition = duplicate_singleton_transition(&mut manager, duplicate.spec(), id);
+        assert_eq!(state.commit_open(duplicate, &transition), Some(id));
 
         let content = state.window.as_ref().unwrap();
         assert_eq!(content.object, StatusObject::Character(luke));
@@ -1119,10 +1035,7 @@ mod tests {
         } = opened_luke(42);
         let frame = manager.begin_frame();
         let inside = window_rect(layout()).center();
-        let hits = state
-            .hit_window(&frame, layout(), (inside.x, inside.y))
-            .into_iter()
-            .collect::<BTreeSet<_>>();
+        let hit = state.hit_window(&frame, layout(), (inside.x, inside.y));
 
         assert_eq!(state.keyboard_owner(&frame), Some(id));
         assert_eq!(state.request_close(), Some(id));
@@ -1132,34 +1045,19 @@ mod tests {
             "geometry excludes points outside the Status rectangle"
         );
 
-        assert_eq!(
-            frame.pointer_route(&hits).target,
-            RouteTarget::Window(rebellion_windowing::FocusTarget {
-                window: id,
-                control: None,
-            })
-        );
-        assert_eq!(
-            frame.pointer_route(&BTreeSet::new()).target,
-            RouteTarget::BlockedBy(id)
-        );
-        assert!(!frame.pointer_allows_root());
-        assert_eq!(
-            state.content_reports(&frame, empty.sources(&world)),
-            [ContentReport {
-                window: id,
-                status: ContentStatus::Ready,
-            }]
+        assert_modal_window_routing(
+            &frame,
+            id,
+            hit,
+            &state.content_reports(&frame, empty.sources(&world)),
         );
 
-        manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::FleetFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
+        crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::FleetFinder,
+            WindowOwner::StrategicRoot,
+            "modal cover",
+        );
         let covered = manager.begin_frame();
         assert_eq!(
             state.hit_window(&covered, layout(), (inside.x, inside.y)),
@@ -1417,78 +1315,26 @@ mod tests {
 
     #[test]
     fn committed_ship_index_compaction_is_unpaintable_without_retargeting() {
-        let OpenedIndexed {
-            mut world,
-            fleet,
-            empty,
-            mut manager,
-            state,
-            id,
-        } = opened_indexed(true, 50, true);
-        assert_eq!(
-            status_view(
-                empty.sources(&world),
-                StatusObject::Ship { fleet, index: 1 }
-            )
-            .unwrap()
-            .name,
-            "Ship B"
+        assert_index_compaction_unpaintable(
+            opened_indexed(true, 50, true),
+            |fleet| StatusObject::Ship { fleet, index: 1 },
+            ("Ship B", "Ship C"),
+            |world, fleet| {
+                world.fleets[fleet].capital_ships.remove(0);
+            },
         );
-        assert_eq!(
-            managed_status_content(&manager, &state, empty.sources(&world)),
-            ContentStatus::Ready
-        );
-
-        world.fleets[fleet].capital_ships.remove(0);
-        assert_eq!(
-            status_view(
-                empty.sources(&world),
-                StatusObject::Ship { fleet, index: 1 }
-            )
-            .unwrap()
-            .name,
-            "Ship C",
-            "the raw index demonstrates the stale-index retarget hazard"
-        );
-        assert_unpaintable(&mut manager, &state, empty.sources(&world), id);
     }
 
     #[test]
     fn committed_fighter_index_compaction_is_unpaintable_without_retargeting() {
-        let OpenedIndexed {
-            mut world,
-            fleet,
-            empty,
-            mut manager,
-            state,
-            id,
-        } = opened_indexed(false, 51, false);
-        assert_eq!(
-            status_view(
-                empty.sources(&world),
-                StatusObject::Fighter { fleet, index: 1 }
-            )
-            .unwrap()
-            .name,
-            "Fighter B"
+        assert_index_compaction_unpaintable(
+            opened_indexed(false, 51, false),
+            |fleet| StatusObject::Fighter { fleet, index: 1 },
+            ("Fighter B", "Fighter C"),
+            |world, fleet| {
+                world.fleets[fleet].fighters.remove(0);
+            },
         );
-        assert_eq!(
-            managed_status_content(&manager, &state, empty.sources(&world)),
-            ContentStatus::Ready
-        );
-
-        world.fleets[fleet].fighters.remove(0);
-        assert_eq!(
-            status_view(
-                empty.sources(&world),
-                StatusObject::Fighter { fleet, index: 1 }
-            )
-            .unwrap()
-            .name,
-            "Fighter C",
-            "the raw index demonstrates the stale-index retarget hazard"
-        );
-        assert_unpaintable(&mut manager, &state, empty.sources(&world), id);
     }
 
     #[test]
@@ -1621,12 +1467,6 @@ mod tests {
         );
     }
 
-    fn pairs(rows: &[StatusRow]) -> Vec<(&str, &str)> {
-        rows.iter()
-            .map(|row| (row.label.as_str(), row.value.as_str()))
-            .collect()
-    }
-
     #[test]
     fn a_character_at_a_system_lists_the_rows_of_figure_3_46() {
         // FUN_004486f0, in order; manual p. 101, Fig. 3.46 (Luke at Yavin,
@@ -1634,7 +1474,7 @@ mod tests {
         let (world, key, ..) = world_with_luke();
         let rows = character_rows(&world, &[], key).expect("rows");
         assert_eq!(
-            pairs(&rows),
+            crate::test_support::status_pairs(&rows),
             [
                 ("Commanding:", "None"),
                 ("Attached: ", "Yavin"),
@@ -1688,7 +1528,7 @@ mod tests {
         };
         let rows = character_rows(&world, &[transit], key).expect("rows");
         assert_eq!(
-            pairs(&rows[..4]),
+            crate::test_support::status_pairs(&rows[..4]),
             [
                 ("Commanding:", "None"),
                 ("Attached: ", "Hoth"),
@@ -1800,43 +1640,11 @@ mod tests {
     }
 
     fn layout() -> CockpitLayout {
-        CockpitLayout {
-            canvas: CockpitViewport {
-                x: 10.0,
-                y: 20.0,
-                width: 640.0,
-                height: 480.0,
-            },
-            galaxy: CockpitViewport {
-                x: 65.0,
-                y: 60.0,
-                width: 485.0,
-                height: 350.0,
-            },
-            scale: 1.0,
-        }
-    }
-
-    fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
+        offset_strategic_layout(1.0)
     }
 
     fn pointer_input(pos: egui::Pos2, extra: Vec<egui::Event>) -> egui::RawInput {
-        let mut events = vec![egui::Event::PointerMoved(pos)];
-        events.extend(extra);
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(700.0, 520.0),
-            )),
-            events,
-            ..Default::default()
-        }
+        pointer_raw_input(pos, extra, egui::vec2(700.0, 520.0))
     }
 
     struct DrawHarness {
@@ -1955,27 +1763,13 @@ mod tests {
         let layout = layout();
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
-        let lower = egui::Id::new("raising-lower-managed-surface");
         let mut order_projector = crate::windowing::ManagedOrderProjector::default();
 
-        for _ in 0..3 {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
-                // A lower managed surface reasserts itself before Status in
-                // the manager's bottom-to-top paint sequence.
-                ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, lower));
-                egui::Area::new(lower)
-                    .order(egui::Order::Tooltip)
-                    .fixed_pos(window_rect(layout).min)
-                    .show(ctx, |ui| {
-                        ui.allocate_response(window_rect(layout).size(), egui::Sense::click());
-                    });
+        crate::test_support::assert_managed_surface_reasserted(
+            &ctx,
+            window_rect(layout),
+            egui::Id::new("original-status-window"),
+            |ctx| {
                 let _ = draw_managed_status_window(
                     ctx,
                     empty.sources(&world),
@@ -1991,13 +1785,7 @@ mod tests {
                     &mut order_projector,
                     |window| state.managed_layer_id(window).map(|layer| vec![layer]),
                 );
-            });
-        }
-
-        assert_eq!(
-            ctx.layer_id_at(window_rect(layout).center())
-                .map(|layer| layer.id),
-            Some(egui::Id::new("original-status-window"))
+            },
         );
     }
 
@@ -2057,10 +1845,10 @@ mod tests {
         let (world, key, ..) = world_with_luke();
         let mut state = StatusWindowState::default();
         state.open_character(key);
-        crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
+        crate::test_support::clear_painted_trace();
         let _ = drive(&world, &mut state, (0.0, 0.0), vec![]);
         let rect = window_rect(layout());
-        let painted = crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow().clone());
+        let painted = crate::test_support::painted_trace();
         assert!(painted.contains(&(11_554, rect.min)), "{painted:?}");
         assert!(painted.iter().any(|(id, _)| *id == ENCYCLOPEDIA.0));
         assert!(painted.iter().any(|(id, _)| *id == CLOSE.0));
@@ -2163,7 +1951,7 @@ mod tests {
         cache.set_base_path(staged_portrait());
         let empty = Empty::new();
         let mut output = None;
-        crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
+        crate::test_support::clear_painted_trace();
         for _ in 0..2 {
             let input = egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -2187,7 +1975,7 @@ mod tests {
         for clipped in &output.expect("a frame").shapes {
             collect(&clipped.shape, &mut texts);
         }
-        let painted = crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow().clone());
+        let painted = crate::test_support::painted_trace();
         (texts, painted)
     }
 

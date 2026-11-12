@@ -1664,6 +1664,25 @@ impl BmpCache {
             .map(|mask| [mask.width, mask.height])
     }
 
+    /// Size and floored centering offset of the first original bitmap layer
+    /// within a logical cell. Empty or unavailable layer stacks occupy no
+    /// space and center as a zero-sized bitmap.
+    pub(crate) fn centered_original_resource(
+        &mut self,
+        layers: &[(DllSource, u32)],
+        cell: (f32, f32),
+    ) -> ((f32, f32), (f32, f32)) {
+        let size = layers
+            .first()
+            .and_then(|&(source, id)| self.original_resource_size(source, id))
+            .map_or((0.0, 0.0), |[width, height]| (width as f32, height as f32));
+        let offset = (
+            ((cell.0 - size.0) / 2.0).floor(),
+            ((cell.1 - size.1) / 2.0).floor(),
+        );
+        (size, offset)
+    }
+
     /// Return the original 256-entry BMP palette as RGBA.
     ///
     /// Tactical type-303 textures reference the palette active in the

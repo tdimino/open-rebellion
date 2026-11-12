@@ -22,10 +22,12 @@ use rebellion_windowing::{
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::fleet_window::paint_native;
+use crate::native_geometry::{logical_point, logical_rect, paint_texture_rect};
 use crate::object_menu::MenuObject;
 #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
 use crate::panels::command_palette::InterfaceCommand;
 use crate::quadrant_icons::{self, quadrant_icon, Quadrant};
+use crate::strategic_window_common;
 use crate::theme::game_font;
 use crate::windowing::GalaxyChild;
 use crate::windowing_input::{
@@ -629,7 +631,7 @@ impl SectorWindowState {
             fog,
             missions,
             movement,
-            cockpit_faction(faction),
+            faction.player(),
             system,
             quadrant,
         );
@@ -789,16 +791,13 @@ impl SectorWindowState {
             .windows
             .iter()
             .find(|window| area_id(**window) == layer.id)?;
-        let Some(sector) = world.sectors.get(window.sector) else {
-            return Some(None);
-        };
-        let window_rect = window_screen_rect(self.faction, window.column, layout);
-        Some(sector.systems.iter().copied().find(|key| {
-            world.systems.get(*key).is_some_and(|system| {
-                let (x, y) = sector_planet_position(sector.x, sector.y, system.x, system.y);
-                rect_contains(planet_rect(window_rect, layout.scale, x, y), point)
-            })
-        }))
+        Some(sector_system_at_point(
+            world,
+            self.faction,
+            layout,
+            *window,
+            point,
+        ))
     }
 
     pub fn clear(&mut self) {
@@ -1231,7 +1230,7 @@ fn shown_icon_at_screen_point(
 ) -> Option<SelectedIcon> {
     let sector = world.sectors.get(window.sector)?;
     let window_rect = window_screen_rect(faction, window.column, layout);
-    let player = cockpit_faction(faction);
+    let player = faction.player();
     for &system_key in sector.systems.iter().rev() {
         let Some(system) = world.systems.get(system_key) else {
             continue;
@@ -1257,6 +1256,16 @@ fn shown_icon_at_screen_point(
 }
 
 fn system_at_screen_point(
+    world: &GameWorld,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    window: OpenSectorWindow,
+    point: egui::Pos2,
+) -> Option<SystemKey> {
+    sector_system_at_point(world, faction, layout, window, point)
+}
+
+fn sector_system_at_point(
     world: &GameWorld,
     faction: CockpitFaction,
     layout: CockpitLayout,
@@ -1779,37 +1788,34 @@ fn draw_sector_windows_with_snapshot(
             || result.object_menu.is_some()
             || result.drag_from.is_some()
             || result.drag_end.is_some();
-        let pointer_permitted = match (window.id, pointer_mutation, router.as_deref_mut()) {
-            (Some(id), true, Some(router)) => {
-                let phase = if result.drag_end.is_some() {
-                    PointerPhase::Release(PointerButtonId::Primary)
-                } else if result.object_menu.is_some() {
-                    PointerPhase::Release(PointerButtonId::Secondary)
-                } else if result.drag_from.is_some() {
-                    PointerPhase::Press(PointerButtonId::Primary)
-                } else if result.icon_pressed.is_some() {
-                    PointerPhase::Press(PointerButtonId::Secondary)
-                } else {
-                    PointerPhase::Release(PointerButtonId::Primary)
-                };
-                claim_sector_pointer_event(router, pointer_events, id, phase)
-                    .or_else(|| {
-                        (phase == PointerPhase::Release(PointerButtonId::Primary))
-                            .then(|| {
-                                claim_sector_pointer_event(
-                                    router,
-                                    pointer_events,
-                                    id,
-                                    PointerPhase::Press(PointerButtonId::Primary),
-                                )
-                            })
-                            .flatten()
-                    })
-                    .is_some()
-            }
-            (Some(_), true, None) => false,
-            _ => true,
-        };
+        let phase = strategic_window_common::pointer_mutation_phase([
+            (
+                result.drag_end.is_some(),
+                PointerPhase::Release(PointerButtonId::Primary),
+            ),
+            (
+                result.object_menu.is_some(),
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+            (
+                result.drag_from.is_some(),
+                PointerPhase::Press(PointerButtonId::Primary),
+            ),
+            (
+                result.icon_pressed.is_some(),
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+        ]);
+        let pointer_permitted = strategic_window_common::single_phase_pointer_mutation_permitted(
+            window.id,
+            pointer_mutation,
+            router.as_deref_mut(),
+            phase,
+            false,
+            |router, id, phase| {
+                claim_sector_pointer_event(router, pointer_events, id, phase).is_some()
+            },
+        );
         if (result.close && pointer_permitted) || !world.sectors.contains_key(window.sector) {
             if let Some(id) = window.id {
                 actions.push(SectorWindowAction::Close(id));
@@ -2016,7 +2022,7 @@ fn draw_sector_window(
                 close_rect,
             );
 
-            let player = cockpit_faction(faction);
+            let player = faction.player();
             let layer = egui::LayerId::new(egui::Order::Middle, area_id);
             let double_click = ctx
                 .input(|input| {
@@ -2346,24 +2352,6 @@ fn window_screen_rect(
     )
 }
 
-fn logical_rect(
-    parent: egui::Rect,
-    scale: f32,
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-) -> egui::Rect {
-    egui::Rect::from_min_size(
-        logical_point(parent, scale, x, y),
-        egui::vec2(width * scale, height * scale),
-    )
-}
-
-fn logical_point(parent: egui::Rect, scale: f32, x: f32, y: f32) -> egui::Pos2 {
-    egui::pos2(parent.min.x + x * scale, parent.min.y + y * scale)
-}
-
 #[allow(
     clippy::cast_possible_truncation,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
@@ -2442,13 +2430,6 @@ pub(crate) fn planet_resource_id(dat_id: DatId) -> u32 {
     }
 }
 
-fn cockpit_faction(faction: CockpitFaction) -> Faction {
-    match faction {
-        CockpitFaction::Alliance => Faction::Alliance,
-        CockpitFaction::Empire => Faction::Empire,
-    }
-}
-
 /// `FUN_0045bbb0`: a system's name takes its side's color whoever the
 /// player is, `0x20000ff` red for the Alliance and `0x200ff00` green for the
 /// Empire; any other side is `0x2ffff00` cyan.
@@ -2489,21 +2470,14 @@ fn paint_resource(
     rect: egui::Rect,
 ) {
     #[cfg(test)]
-    crate::fleet_window::tests::PAINTED.with(|painted| {
-        painted.borrow_mut().push((resource_id, rect.min));
-    });
+    crate::test_support::record_painted(resource_id, rect.min);
     let Some(texture_id) = cache
         .get(ctx, DllSource::Strategy, resource_id)
         .map(egui_macroquad::egui::TextureHandle::id)
     else {
         return;
     };
-    painter.image(
-        texture_id,
-        rect,
-        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-        egui::Color32::WHITE,
-    );
+    paint_texture_rect(painter, texture_id, rect);
 }
 
 fn paint_window_border(
@@ -2782,7 +2756,6 @@ fn paint_status_bars(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cockpit::CockpitViewport;
     use rebellion_core::dat::{ExplorationStatus, SectorGroup};
     use rebellion_core::world::{Sector, System};
     use rebellion_windowing::{
@@ -2810,74 +2783,62 @@ mod tests {
 
     fn fixture_world() -> (GameWorld, SystemKey, SystemKey) {
         let mut world = GameWorld::default();
-        let sector_a = world.sectors.insert(Sector {
-            dat_id: DatId::new(36),
-            name: "Sesswenna".into(),
-            group: SectorGroup::Core,
-            x: 317,
-            y: 248,
-            systems: Vec::new(),
-        });
-        let system_a = world.systems.insert(System {
-            dat_id: DatId::new(263),
-            name: "Chandrila".into(),
-            sector: sector_a,
-            x: 322,
-            y: 260,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 1.0,
-            popularity_empire: 0.0,
-            is_populated: true,
-            total_energy: 8,
-            raw_materials: 6,
-            control: ControlKind::Controlled(Faction::Alliance),
-            ..System::default()
-        });
-        world.sectors[sector_a].systems.push(system_a);
+        let (_, system_a) = rebellion_core::test_support::insert_system_in_sector(
+            &mut world,
+            Sector {
+                dat_id: DatId::new(36),
+                name: "Sesswenna".into(),
+                group: SectorGroup::Core,
+                x: 317,
+                y: 248,
+                systems: Vec::new(),
+            },
+            System {
+                dat_id: DatId::new(263),
+                name: "Chandrila".into(),
+                x: 322,
+                y: 260,
+                exploration_status: ExplorationStatus::Explored,
+                popularity_alliance: 1.0,
+                popularity_empire: 0.0,
+                is_populated: true,
+                total_energy: 8,
+                raw_materials: 6,
+                control: ControlKind::Controlled(Faction::Alliance),
+                ..System::default()
+            },
+        );
 
-        let sector_b = world.sectors.insert(Sector {
-            dat_id: DatId::new(37),
-            name: "Sluis".into(),
-            group: SectorGroup::RimInner,
-            x: 526,
-            y: 532,
-            systems: Vec::new(),
-        });
-        let system_b = world.systems.insert(System {
-            dat_id: DatId::new(270),
-            name: "Bothawui".into(),
-            sector: sector_b,
-            x: 560,
-            y: 548,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.0,
-            popularity_empire: 1.0,
-            is_populated: true,
-            total_energy: 5,
-            raw_materials: 9,
-            control: ControlKind::Controlled(Faction::Empire),
-            ..System::default()
-        });
-        world.sectors[sector_b].systems.push(system_b);
+        let (_, system_b) = rebellion_core::test_support::insert_system_in_sector(
+            &mut world,
+            Sector {
+                dat_id: DatId::new(37),
+                name: "Sluis".into(),
+                group: SectorGroup::RimInner,
+                x: 526,
+                y: 532,
+                systems: Vec::new(),
+            },
+            System {
+                dat_id: DatId::new(270),
+                name: "Bothawui".into(),
+                x: 560,
+                y: 548,
+                exploration_status: ExplorationStatus::Explored,
+                popularity_alliance: 0.0,
+                popularity_empire: 1.0,
+                is_populated: true,
+                total_energy: 5,
+                raw_materials: 9,
+                control: ControlKind::Controlled(Faction::Empire),
+                ..System::default()
+            },
+        );
         (world, system_a, system_b)
     }
 
     fn layout(scale: f32) -> CockpitLayout {
-        CockpitLayout {
-            canvas: CockpitViewport {
-                x: 10.0,
-                y: 20.0,
-                width: 640.0 * scale,
-                height: 480.0 * scale,
-            },
-            galaxy: CockpitViewport {
-                x: 0.0,
-                y: 0.0,
-                width: 0.0,
-                height: 0.0,
-            },
-            scale,
-        }
+        crate::test_support::offset_canvas_layout(scale)
     }
 
     fn test_raw_input(events: Vec<egui::Event>) -> egui::RawInput {
@@ -3003,6 +2964,12 @@ mod tests {
             point: (point.x, point.y),
             phase,
         }
+    }
+
+    fn sector_input_events<const N: usize>(
+        events: [(InputEventId, egui::Pos2, PointerPhase); N],
+    ) -> [SectorWindowInputEvent; N] {
+        events.map(|(id, point, phase)| sector_input_event(id, point, phase))
     }
 
     fn primary_press_event(id: InputEventId, point: egui::Pos2) -> SectorWindowInputEvent {
@@ -3133,6 +3100,47 @@ mod tests {
                 $actions, $last, $confirmed
             )
         };
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "The helper preserves the exact routed fixture authorities and two physical points."
+    )]
+    fn route_primary_gesture(
+        frame: u64,
+        world: &GameWorld,
+        state: &mut SectorWindowState,
+        window: WindowId,
+        snapshot: &RoutingSnapshot,
+        layout: CockpitLayout,
+        press: egui::Pos2,
+        release: egui::Pos2,
+    ) -> (ManagedSectorDraw, Vec<SectorWindowAction>) {
+        let mut managed = managed_draw_for_test(state.windows[0]);
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(frame, snapshot);
+        let hits = std::collections::BTreeSet::from([window]);
+        let (fog, missions, movement, mut actions, mut last_activated) = route_test_state();
+        for (ordinal, point, phase) in primary_gesture(press, release) {
+            let id = input_event(frame, ordinal);
+            assert_test_pointer(&mut router, id, &hits, window, phase);
+            route_managed_sector_event(
+                sector_input_event(id, point, phase),
+                &mut managed,
+                world,
+                &fog,
+                &missions,
+                &movement,
+                state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut router,
+                &mut actions,
+                &mut last_activated,
+                false,
+            );
+        }
+        (managed, actions)
     }
 
     fn managed_draw_for_test(window: OpenSectorWindow) -> ManagedSectorDraw {
@@ -4141,6 +4149,57 @@ mod tests {
         )
     }
 
+    struct TwoFleetIcons {
+        world: GameWorld,
+        first: SystemKey,
+        second: SystemKey,
+        manager: WindowManager,
+        state: SectorWindowState,
+        window: WindowId,
+        layout: CockpitLayout,
+        first_point: egui::Pos2,
+        second_point: egui::Pos2,
+        fog: FogState,
+        missions: rebellion_core::missions::MissionState,
+        movement: rebellion_core::movement::MovementState,
+    }
+
+    fn two_fleet_icons() -> TwoFleetIcons {
+        let (mut world, first, _) = fixture_world();
+        add_fleet(&mut world, first);
+        let second = add_neighbour(
+            &mut world,
+            first,
+            264,
+            (380, 300),
+            ControlKind::Controlled(Faction::Alliance),
+        );
+        add_fleet(&mut world, second);
+        let (manager, state, window, _) = managed_sector_fixture(&world, first);
+        let layout = layout(1.0);
+        let point = |system| {
+            state
+                .quadrant_screen_rect(&world, layout, system, Quadrant::Fleets)
+                .unwrap()
+                .center()
+        };
+        let (fog, missions, movement) = route_resources(&[first, second]);
+        TwoFleetIcons {
+            first_point: point(first),
+            second_point: point(second),
+            world,
+            first,
+            second,
+            manager,
+            state,
+            window,
+            layout,
+            fog,
+            missions,
+            movement,
+        }
+    }
+
     fn show_test_area(ctx: &egui::Context, id: egui::Id, rect: egui::Rect) {
         egui::Area::new(id)
             .fixed_pos(rect.min)
@@ -4842,7 +4901,7 @@ mod tests {
     #[test]
     fn sector_drag_fixture_seeds_only_the_exact_managed_identity() {
         let (world, first, second) = fixture_world();
-        let (mut manager, mut state, first_id, second_id) =
+        let (_manager, mut state, first_id, second_id) =
             managed_sector_pair_fixture(&world, first, second);
         state.seed_managed_drag_for_test(second_id);
         assert_eq!(state.drag_owner(), Some(second_id));
@@ -5390,33 +5449,26 @@ mod tests {
 
     #[test]
     fn managed_sector_icon_open_requires_matching_routed_coordinate_and_emits_once() {
-        let (mut world, first, _) = fixture_world();
-        add_fleet(&mut world, first);
-        let neighbour = add_neighbour(
-            &mut world,
+        let TwoFleetIcons {
+            world,
             first,
-            264,
-            (380, 300),
-            ControlKind::Controlled(Faction::Alliance),
-        );
-        add_fleet(&mut world, neighbour);
-        let (manager, mut state, window, _) = managed_sector_fixture(&world, first);
-        let layout = layout(1.0);
-        let icon = state
-            .quadrant_screen_rect(&world, layout, first, Quadrant::Fleets)
-            .unwrap()
-            .center();
-        let wrong_system = state
-            .quadrant_screen_rect(&world, layout, neighbour, Quadrant::Fleets)
-            .unwrap()
-            .center();
+            second: _,
+            manager,
+            mut state,
+            window,
+            layout,
+            first_point: icon,
+            second_point: wrong_system,
+            fog,
+            missions,
+            movement,
+        } = two_fleet_icons();
         let wrong_quadrant = state
             .quadrant_screen_rect(&world, layout, first, Quadrant::System)
             .unwrap()
             .center();
         let blank =
             window_screen_rect(CockpitFaction::Alliance, WindowColumn::Primary, layout).center();
-        let (fog, missions, movement) = route_resources(&[first, neighbour]);
         assert!(shown_icon_at_screen_point(
             &world,
             &fog,
@@ -5646,33 +5698,26 @@ mod tests {
 
     #[test]
     fn managed_sector_routes_two_different_icon_double_clicks_in_raw_order() {
-        let (mut world, first, _) = fixture_world();
-        add_fleet(&mut world, first);
-        let second = add_neighbour(
-            &mut world,
+        let TwoFleetIcons {
+            world,
             first,
-            264,
-            (380, 300),
-            ControlKind::Controlled(Faction::Alliance),
-        );
-        add_fleet(&mut world, second);
-        let (manager, mut state, window, _) = managed_sector_fixture(&world, first);
-        let layout = layout(1.0);
-        let first_point = state
-            .quadrant_screen_rect(&world, layout, first, Quadrant::Fleets)
-            .unwrap()
-            .center();
-        let second_point = state
-            .quadrant_screen_rect(&world, layout, second, Quadrant::Fleets)
-            .unwrap()
-            .center();
+            second,
+            manager,
+            mut state,
+            window,
+            layout,
+            first_point,
+            second_point,
+            fog,
+            missions,
+            movement,
+        } = two_fleet_icons();
         let mut managed = managed_draw_for_test(state.windows[0]);
         managed.result.opened_icon = Some((second, Quadrant::Fleets, (0, 0)));
         managed.aggregate_icon_release = Some(input_event(62, 7));
         let mut router = FrameInputRouter::default();
         router.begin_frame(62, &manager.begin_frame());
         let hits = std::collections::BTreeSet::from([window]);
-        let (fog, missions, movement) = route_resources(&[first, second]);
         let mut actions = Vec::new();
         let mut last_activated = None;
         for (ordinal, point) in [
@@ -5893,16 +5938,16 @@ mod tests {
             let release_point = center + egui::vec2(delta.0 / 2.0, delta.1 / 2.0);
             assert!(rect_contains(close_rect, press_point), "{case}");
             assert!(rect_contains(close_rect, release_point), "{case}");
-            let mut managed = managed_draw_for_test(state.windows[0]);
-            let mut router = FrameInputRouter::default();
-            router.begin_frame(85, &snapshot);
-            let hits = std::collections::BTreeSet::from([window]);
-            let (fog, missions, movement, mut actions, mut last_activated) = route_test_state();
-            for (ordinal, point, phase) in primary_gesture(press_point, release_point) {
-                let id = input_event(85, ordinal);
-                assert_test_pointer(&mut router, id, &hits, window, phase);
-                route_test!(sector_input_event(id, point, phase) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
-            }
+            let (managed, actions) = route_primary_gesture(
+                85,
+                &world,
+                &mut state,
+                window,
+                &snapshot,
+                layout,
+                press_point,
+                release_point,
+            );
             assert_eq!(managed.close_queued, should_close, "{case}");
             assert_eq!(
                 actions.contains(&SectorWindowAction::Close(window)),
@@ -5925,16 +5970,16 @@ mod tests {
             let release_point = center + egui::vec2(delta.0 / 2.0, delta.1 / 2.0);
             assert!(rect_contains(planet, press_point), "{case}");
             assert!(rect_contains(planet, release_point), "{case}");
-            let mut managed = managed_draw_for_test(state.windows[0]);
-            let mut router = FrameInputRouter::default();
-            router.begin_frame(86, &snapshot);
-            let hits = std::collections::BTreeSet::from([window]);
-            let (fog, missions, movement, mut actions, mut last_activated) = route_test_state();
-            for (ordinal, point, phase) in primary_gesture(press_point, release_point) {
-                let id = input_event(86, ordinal);
-                assert_test_pointer(&mut router, id, &hits, window, phase);
-                route_test!(sector_input_event(id, point, phase) => managed, &world, &fog, &missions, &movement, state, layout, router, actions, &mut last_activated, false);
-            }
+            let (_, actions) = route_primary_gesture(
+                86,
+                &world,
+                &mut state,
+                window,
+                &snapshot,
+                layout,
+                press_point,
+                release_point,
+            );
             assert_eq!(
                 actions.contains(&SectorWindowAction::SelectSystem(system)),
                 should_select,
@@ -6173,18 +6218,18 @@ mod tests {
             &hits,
             PointerPhase::Release(PointerButtonId::Secondary),
         );
-        let pointer_events = [
-            SectorWindowInputEvent {
-                id: press,
-                point: (fleet.x, fleet.y),
-                phase: PointerPhase::Press(PointerButtonId::Secondary),
-            },
-            SectorWindowInputEvent {
-                id: release,
-                point: (system_icon.x, system_icon.y),
-                phase: PointerPhase::Release(PointerButtonId::Secondary),
-            },
-        ];
+        let pointer_events = sector_input_events([
+            (
+                press,
+                fleet,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            (
+                release,
+                system_icon,
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+        ]);
         let actions = paint_visible_managed_events_for_test(
             (&world, system, &mut state, &snapshot, &mut router),
             &pointer_events,
@@ -6223,68 +6268,78 @@ mod tests {
         let upper_release_again = input_event(25, 5);
         let mut router = FrameInputRouter::default();
         router.begin_frame(25, &snapshot);
-        router.collect_pointer(
-            upper_press,
-            &std::collections::BTreeSet::from([upper]),
-            PointerPhase::Press(PointerButtonId::Secondary),
-        );
-        router.collect_pointer(
-            upper_release,
-            &std::collections::BTreeSet::from([upper]),
-            PointerPhase::Release(PointerButtonId::Secondary),
-        );
-        router.collect_pointer(
-            lower_press,
-            &std::collections::BTreeSet::from([lower]),
-            PointerPhase::Press(PointerButtonId::Secondary),
-        );
-        router.collect_pointer(
-            lower_release,
-            &std::collections::BTreeSet::from([lower]),
-            PointerPhase::Release(PointerButtonId::Secondary),
-        );
-        router.collect_pointer(
-            upper_press_again,
-            &std::collections::BTreeSet::from([upper]),
-            PointerPhase::Press(PointerButtonId::Secondary),
-        );
-        router.collect_pointer(
-            upper_release_again,
-            &std::collections::BTreeSet::from([upper]),
-            PointerPhase::Release(PointerButtonId::Secondary),
-        );
-        let pointer_events = [
-            SectorWindowInputEvent {
-                id: upper_press,
-                point: (upper_point.x, upper_point.y),
-                phase: PointerPhase::Press(PointerButtonId::Secondary),
-            },
-            SectorWindowInputEvent {
-                id: upper_release,
-                point: (upper_point.x, upper_point.y),
-                phase: PointerPhase::Release(PointerButtonId::Secondary),
-            },
-            SectorWindowInputEvent {
-                id: lower_press,
-                point: (lower_point.x, lower_point.y),
-                phase: PointerPhase::Press(PointerButtonId::Secondary),
-            },
-            SectorWindowInputEvent {
-                id: lower_release,
-                point: (lower_point.x, lower_point.y),
-                phase: PointerPhase::Release(PointerButtonId::Secondary),
-            },
-            SectorWindowInputEvent {
-                id: upper_press_again,
-                point: (upper_point.x, upper_point.y),
-                phase: PointerPhase::Press(PointerButtonId::Secondary),
-            },
-            SectorWindowInputEvent {
-                id: upper_release_again,
-                point: (upper_point.x, upper_point.y),
-                phase: PointerPhase::Release(PointerButtonId::Secondary),
-            },
-        ];
+        for (id, owner, phase) in [
+            (
+                upper_press,
+                upper,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            (
+                upper_release,
+                upper,
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+            (
+                lower_press,
+                lower,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            (
+                lower_release,
+                lower,
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+            (
+                upper_press_again,
+                upper,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            (
+                upper_release_again,
+                upper,
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+        ] {
+            assert_test_pointer(
+                &mut router,
+                id,
+                &std::collections::BTreeSet::from([owner]),
+                owner,
+                phase,
+            );
+        }
+        let pointer_events = sector_input_events([
+            (
+                upper_press,
+                upper_point,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            (
+                upper_release,
+                upper_point,
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+            (
+                lower_press,
+                lower_point,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            (
+                lower_release,
+                lower_point,
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+            (
+                upper_press_again,
+                upper_point,
+                PointerPhase::Press(PointerButtonId::Secondary),
+            ),
+            (
+                upper_release_again,
+                upper_point,
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+        ]);
         let mut fog = FogState::new(Faction::Alliance);
         fog.reveal(first);
         fog.reveal(second);
@@ -6640,7 +6695,7 @@ mod tests {
     }
 
     fn take_painted_bitmaps() -> Vec<(u32, egui::Pos2)> {
-        crate::fleet_window::tests::PAINTED.with(std::cell::RefCell::take)
+        crate::test_support::take_painted_trace()
     }
 
     fn double_click_with_missions(
@@ -7287,7 +7342,7 @@ mod tests {
             &fog,
             missions,
             inputs,
-            || crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear()),
+            crate::test_support::clear_painted_trace,
         );
         take_painted_bitmaps()
     }
@@ -7424,7 +7479,7 @@ mod tests {
         );
         let _ =
             run_sector_test_frames(world, state, owner, layout, &fog, &missions, inputs, || {
-                crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
+                crate::test_support::clear_painted_trace();
             });
         take_painted_bitmaps()
             .into_iter()

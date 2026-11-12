@@ -74,6 +74,8 @@ use rebellion_core::uprising::UprisingState;
 use rebellion_core::victory::VictoryState;
 use rebellion_core::world::{CampaignConfig, GameWorld};
 
+use crate::simulation::SimulationStates;
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -261,6 +263,162 @@ pub struct SaveState {
     // v35 changes no field here: a system holds squadrons of its own
     // (`System::fighters`), and `TroopTransportState` carries squadrons
     // travelling on their own.
+}
+
+/// Runtime-ready state recovered from a complete save snapshot.
+///
+/// The active fog always belongs to the player's faction; the other faction's
+/// fog is retained separately so callers that save again can preserve it.
+pub struct LoadedSimulation {
+    pub world: GameWorld,
+    pub states: SimulationStates,
+    pub inactive_fog: FogState,
+    pub player_is_alliance: bool,
+    pub sim_rng: Xoshiro256PlusPlus,
+    pub game_config: GameConfig,
+    pub player_agent: rebellion_core::agent_automation::PlayerAgent,
+}
+
+impl SaveState {
+    /// Assemble a serializable snapshot from the state used by live runtimes.
+    ///
+    /// `states.fog` is the active player's fog and `inactive_fog` belongs to
+    /// the other side. Keeping that ordering here prevents every runtime and
+    /// replay harness from duplicating the full save-field mapping.
+    #[must_use]
+    pub fn from_simulation(
+        world: GameWorld,
+        states: SimulationStates,
+        inactive_fog: FogState,
+        player_is_alliance: bool,
+        sim_rng: Xoshiro256PlusPlus,
+        game_config: GameConfig,
+        player_agent: rebellion_core::agent_automation::PlayerAgent,
+    ) -> Self {
+        let SimulationStates {
+            clock,
+            manufacturing,
+            missions,
+            events,
+            ai,
+            ai2,
+            movement,
+            fog,
+            blockade,
+            uprising,
+            research,
+            jedi,
+            victory,
+            betrayal,
+            economy,
+            repair,
+            troop_transport,
+            deliveries,
+            stockpiles,
+            campaign_config,
+        } = states;
+        let (fog_alliance, fog_empire) = if player_is_alliance {
+            (fog, inactive_fog)
+        } else {
+            (inactive_fog, fog)
+        };
+        Self {
+            world,
+            clock,
+            manufacturing,
+            missions,
+            events,
+            ai,
+            movement,
+            fog_alliance,
+            fog_empire,
+            player_is_alliance,
+            blockade,
+            uprising,
+            research,
+            jedi,
+            victory,
+            betrayal,
+            economy,
+            sim_rng,
+            ai2,
+            repair,
+            game_config,
+            campaign_config,
+            troop_transport,
+            deliveries,
+            player_agent,
+            stockpiles,
+        }
+    }
+
+    /// Split a serialized snapshot into the common state used by live runtimes.
+    #[must_use]
+    pub fn into_simulation(self) -> LoadedSimulation {
+        let Self {
+            world,
+            clock,
+            manufacturing,
+            missions,
+            events,
+            ai,
+            movement,
+            fog_alliance,
+            fog_empire,
+            player_is_alliance,
+            blockade,
+            uprising,
+            research,
+            jedi,
+            victory,
+            betrayal,
+            economy,
+            sim_rng,
+            ai2,
+            repair,
+            game_config,
+            campaign_config,
+            troop_transport,
+            deliveries,
+            player_agent,
+            stockpiles,
+        } = self;
+        let (fog, inactive_fog) = if player_is_alliance {
+            (fog_alliance, fog_empire)
+        } else {
+            (fog_empire, fog_alliance)
+        };
+        LoadedSimulation {
+            world,
+            states: SimulationStates {
+                clock,
+                manufacturing,
+                missions,
+                events,
+                ai,
+                ai2,
+                movement,
+                fog,
+                blockade,
+                uprising,
+                research,
+                jedi,
+                victory,
+                betrayal,
+                economy,
+                repair,
+                troop_transport,
+                deliveries,
+                stockpiles,
+                campaign_config,
+            },
+            inactive_fog,
+            player_is_alliance,
+            sim_rng,
+            game_config,
+            player_agent,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1090,6 +1248,8 @@ mod tests {
     use rebellion_core::ids::SystemKey;
     use rebellion_core::world::ControlKind;
 
+    use crate::test_support::save_state;
+
     fn save_system(
         sector: rebellion_core::ids::SectorKey,
         dat_id: u32,
@@ -1138,34 +1298,7 @@ mod tests {
             (100, 100),
             Faction::Empire,
         ));
-        SaveState {
-            world,
-            clock: GameClock::default(),
-            manufacturing: ManufacturingState::new(),
-            missions: MissionState::new(),
-            events: EventState::new(),
-            ai: AIState::new(AiFaction::Empire),
-            movement: MovementState::new(),
-            fog_alliance: FogState::new(Faction::Alliance),
-            fog_empire: FogState::new(Faction::Empire),
-            player_is_alliance: false,
-            blockade: BlockadeState::new(),
-            uprising: UprisingState::new(),
-            research: ResearchState::new(),
-            jedi: JediState::new(),
-            victory: rebellion_core::victory::VictoryState::new(sys_a, sys_b),
-            betrayal: BetrayalState::new(),
-            economy: EconomyState::default(),
-            sim_rng: Xoshiro256PlusPlus::seed_from_u64(42),
-            ai2: None,
-            repair: RepairState::default(),
-            game_config: GameConfig::default(),
-            campaign_config: CampaignConfig::default(),
-            troop_transport: TroopTransportState::default(),
-            deliveries: DeliveryState::default(),
-            player_agent: rebellion_core::agent_automation::PlayerAgent::default(),
-            stockpiles: rebellion_core::stockpiles::StockpileState::default(),
-        }
+        save_state(world, sys_a, sys_b, 42, false)
     }
 
     fn insert_ship_fleet(
@@ -1953,7 +2086,7 @@ mod tests {
         use rebellion_core::missions::{
             MissionFaction, MissionKind, MissionMember, MissionRequest,
         };
-        use rebellion_core::world::{Character, MissionRecord, SpecialForceUnit};
+        use rebellion_core::world::{Character, SpecialForceUnit};
         let saves_dir = tmp_dir("v17_mission_members_round_trip");
         let mut state = minimal_save_state();
         let system = state.world.systems.keys().next().unwrap();
@@ -1978,37 +2111,13 @@ mod tests {
             on_hidden_mission: false,
         });
         state.world.systems[system].special_forces.push(unit);
-        state.world.mission_records.push(MissionRecord {
-            dat_id: rebellion_core::ids::DatId::new(0x5100_0010),
-            timer_min_days: 5,
-            timer_spread_days: 10,
-            repeats: true,
-            hidden: false,
-            detection_phases: true,
-            can_resign: false,
-            return_policy: 1,
-            // The shipped MISSNSD Diplomacy record 0x51000010's columns
-            // 11..21 = 1 1 1 1 1 0 0 1 0 0, which the creation validator reads
-            // (base rules, FUN_00523450).
-            rules: rebellion_core::world::MissionTargetRules {
-                container_loss_ends: true,
-                needs_populated_container: true,
-                target_loss_ends: true,
-                own_side_target: true,
-                other_side_target: true,
-                opponent_target: false,
-                revolting_target: false,
-                calm_target: true,
-                prisoner_target: false,
-                free_target: false,
-            },
-            members: rebellion_core::world::MissionMemberRules {
-                alliance: true,
-                empire: false,
-                special_force_mask: 0x402,
-                character_mask: 0x1_0000,
-            },
-        });
+        // Use the shipped Diplomacy target rules, then tailor membership for
+        // this save fixture's force and captive decoys.
+        let mut record = rebellion_core::test_support::diplomacy_mission_record();
+        record.can_resign = false;
+        record.members.empire = false;
+        record.members.special_force_mask = 0x402;
+        state.world.mission_records.push(record);
         let request = MissionRequest {
             kind: MissionKind::Diplomacy,
             faction: MissionFaction::Alliance,

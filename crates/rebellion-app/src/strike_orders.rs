@@ -421,101 +421,58 @@ mod tests {
     use rebellion_core::ids::{CapitalShipKey, SystemKey};
     use rebellion_core::manufacturing::ManufacturingState;
     use rebellion_core::missions::MissionTarget;
-    use rebellion_core::world::{
-        CapitalShipClass, Character, ControlKind, Fleet, ShipInstance, System,
-    };
-    use std::collections::HashMap;
-
-    /// TEXTSTRA RCDATA bytes for `text`, where `{n:k}` is argument `n`
-    /// rendered under kind `k` (`text_templates::format_template`).
-    fn rcdata(text: &str) -> String {
-        let mut out = String::new();
-        let mut rest = text;
-        while let Some(open) = rest.find('{') {
-            out.push_str(&rest[..open]);
-            let close = rest[open..].find('}').unwrap() + open;
-            let (index, kind) = rest[open + 1..close].split_once(':').unwrap();
-            out.push('|');
-            out.push(char::from(index.parse::<u8>().unwrap()));
-            out.push(char::from(kind.parse::<u8>().unwrap()));
-            out.push_str("\0\0\0");
-            rest = &rest[close + 1..];
-        }
-        out.push_str(rest);
-        out.push('\u{1}');
-        out
-    }
+    use rebellion_core::world::{CapitalShipClass, Character};
+    use rebellion_data::test_support::{assault_report_template_entries, text_templates};
 
     /// The shipped TEXTSTRA RCDATA entries the messages use.
     fn templates() -> TextTemplates {
-        let entries: HashMap<u16, String> = [
-            (0x7098, "Orbital bombardment of {1:4}"),
-            (
-                0x7099,
-                "{1:4} ships have conducted an orbital strike on the {2:4} system of {3:1}",
-            ),
-            (
-                0x709a,
-                "{1:4} ships have conducted an orbital strike on the non-aligned system {2:1}",
-            ),
-            (0x70c8, "{2:1} Destroyed!"),
-            (
-                0x70c9,
-                "The Death Star has destroyed the {1:4} system {3:1}.",
-            ),
-            (
-                0x70ca,
-                "The Death Star has destroyed the neutral system {2:1}.",
-            ),
-            (0x7164, "{1:1} Killed"),
-            (0x7365, "{1:1} has been killed."),
-            (0x7170, "Coruscant Captured"),
-            (
-                0x7171,
-                "The Alliance has seized the Imperial capital system of Coruscant.",
-            ),
-            (0x7090, "Assault on {1:1}"),
-            (
-                0x7091,
-                "{1:4} troops have taken control of the {2:4} system {3:1}",
-            ),
-            (
-                0x7092,
-                "{2:4} Troops have defended {3:1} from an {1:4} assault.",
-            ),
-            (
-                0x7093,
-                "{1:4} troops have seized control of the neutral system {2:1}.",
-            ),
-            (
-                0x7094,
-                "The neutral system {2:1} has repulsed an attack by {1:4} troops.",
-            ),
-            (0x71bd, "Death Star Sabotaged"),
-            (
-                0x71be,
-                "The Rebel Alliance has sabotaged the Death Star at {1:1}.",
-            ),
-            (0x7188, "Alliance Headquarters Destroyed"),
-            (
-                0x7189,
-                "The Empire has destroyed the Alliance Headquarters.",
-            ),
-        ]
-        .into_iter()
-        .map(|(id, text)| (id, rcdata(text)))
-        .collect();
-        TextTemplates::from_json(&serde_json::to_vec(&entries).unwrap()).unwrap()
+        text_templates(
+            [
+                (0x7098, "Orbital bombardment of {1:4}"),
+                (
+                    0x7099,
+                    "{1:4} ships have conducted an orbital strike on the {2:4} system of {3:1}",
+                ),
+                (
+                    0x709a,
+                    "{1:4} ships have conducted an orbital strike on the non-aligned system {2:1}",
+                ),
+                (0x70c8, "{2:1} Destroyed!"),
+                (
+                    0x70c9,
+                    "The Death Star has destroyed the {1:4} system {3:1}.",
+                ),
+                (
+                    0x70ca,
+                    "The Death Star has destroyed the neutral system {2:1}.",
+                ),
+                (0x7164, "{1:1} Killed"),
+                (0x7365, "{1:1} has been killed."),
+                (0x7170, "Coruscant Captured"),
+                (
+                    0x7171,
+                    "The Alliance has seized the Imperial capital system of Coruscant.",
+                ),
+            ]
+            .into_iter()
+            .chain(assault_report_template_entries())
+            .chain([
+                (0x71bd, "Death Star Sabotaged"),
+                (
+                    0x71be,
+                    "The Rebel Alliance has sabotaged the Death Star at {1:1}.",
+                ),
+                (0x7188, "Alliance Headquarters Destroyed"),
+                (
+                    0x7189,
+                    "The Empire has destroyed the Alliance Headquarters.",
+                ),
+            ]),
+        )
     }
 
     fn world(holder: Option<Faction>) -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System {
-            name: "Selonia".into(),
-            control: holder.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
-            ..System::default()
-        });
-        (world, system)
+        crate::test_support::order_world(holder, false)
     }
 
     fn armed(world: &mut GameWorld) -> CapitalShipKey {
@@ -534,14 +491,7 @@ mod tests {
         class: CapitalShipKey,
     ) -> FleetKey {
         let is_alliance = side == Faction::Alliance;
-        let key = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
-            is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(key);
-        key
+        rebellion_core::test_support::add_fleet_with_class(world, system, class, is_alliance)
     }
 
     fn strike(

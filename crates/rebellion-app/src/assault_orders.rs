@@ -111,59 +111,21 @@ mod tests {
     use rebellion_core::ids::{DatId, SystemKey};
     use rebellion_core::manufacturing::ManufacturingState;
     use rebellion_core::operation_report::OperationReport;
-    use rebellion_core::world::{
-        CapitalShipClass, ControlKind, Fleet, ShipInstance, System, TroopUnit,
-    };
+    use rebellion_core::test_support::gnprtb_entry;
+    use rebellion_core::world::{CapitalShipClass, ControlKind, Fleet, System, TroopUnit};
+    use rebellion_data::test_support::{assault_report_template_entries, text_templates};
     use rebellion_render::message_log::{MessageRail, MessageTarget, RailAudience};
     use rebellion_render::quadrant_icons::Quadrant;
-    use std::collections::HashMap;
 
     const BOTH: [(Faction, Faction); 2] = [
         (Faction::Empire, Faction::Alliance),
         (Faction::Alliance, Faction::Empire),
     ];
 
-    /// TEXTSTRA RCDATA bytes for `text`, where `{n:k}` is argument `n`
-    /// rendered under kind `k` (`text_templates::format_template`).
-    fn rcdata(text: &str) -> String {
-        let mut out = String::new();
-        let mut rest = text;
-        while let Some(open) = rest.find('{') {
-            out.push_str(&rest[..open]);
-            let close = rest[open..].find('}').unwrap() + open;
-            let (index, kind) = rest[open + 1..close].split_once(':').unwrap();
-            out.push('|');
-            out.push(char::from(index.parse::<u8>().unwrap()));
-            out.push(char::from(kind.parse::<u8>().unwrap()));
-            out.push_str("\0\0\0");
-            rest = &rest[close + 1..];
-        }
-        out.push_str(rest);
-        out.push('\u{1}');
-        out
-    }
-
     /// The shipped TEXTSTRA RCDATA entries `0x7090`-`0x7094` and
     /// `0x70a0`-`0x70a3`.
     fn templates() -> TextTemplates {
-        let entries: HashMap<u16, String> = [
-            (0x7090, "Assault on {1:1}"),
-            (
-                0x7091,
-                "{1:4} troops have taken control of the {2:4} system {3:1}",
-            ),
-            (
-                0x7092,
-                "{2:4} Troops have defended {3:1} from an {1:4} assault.",
-            ),
-            (
-                0x7093,
-                "{1:4} troops have seized control of the neutral system {2:1}.",
-            ),
-            (
-                0x7094,
-                "The neutral system {2:1} has repulsed an attack by {1:4} troops.",
-            ),
+        text_templates(assault_report_template_entries().into_iter().chain([
             (0x70a0, "Fleet Initiates Blockade of {1:1}"),
             (0x70a1, "{3:1} has initiated a blockade of {2:1}."),
             (0x70a2, "{1:1} Under Blockade"),
@@ -171,22 +133,11 @@ mod tests {
                 0x70a3,
                 "{1:4} ships have been detected at {2:1}.  The world is under enemy blockade.",
             ),
-        ]
-        .into_iter()
-        .map(|(id, text)| (id, rcdata(text)))
-        .collect();
-        TextTemplates::from_json(&serde_json::to_vec(&entries).unwrap()).unwrap()
+        ]))
     }
 
     fn world(holder: Option<Faction>) -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System {
-            name: "Selonia".into(),
-            is_populated: true,
-            control: holder.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
-            ..System::default()
-        });
-        (world, system)
+        crate::test_support::order_world(holder, true)
     }
 
     /// A run at `system` that leaves `after` holding it: the report and
@@ -428,13 +379,8 @@ mod tests {
             troop_capacity: 2,
             ..CapitalShipClass::default()
         });
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
-            is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(fleet);
+        let fleet =
+            rebellion_core::test_support::add_fleet_with_class(world, system, class, is_alliance);
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0001),
             is_alliance,
@@ -447,22 +393,11 @@ mod tests {
     }
 
     fn shield_limit(world: &mut GameWorld) {
-        let entry = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
-            parameter_id: id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
         // GNPRTB 0x1e03 (2), 7761 (60) and 7762 (-10) as shipped.
         world.gnprtb = rebellion_core::world::GnprtbParams::new(vec![
-            entry(0x1e03, 2),
-            entry(7761, 60),
-            entry(7762, -10),
+            gnprtb_entry(0x1e03, 2),
+            gnprtb_entry(7761, 60),
+            gnprtb_entry(7762, -10),
         ]);
     }
 
