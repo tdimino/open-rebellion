@@ -143,8 +143,11 @@ Other fixture homes are intentionally narrower:
   four-resource uniform Encyclopedia artwork map.
 - `crates/rebellion-data/tests/common/mod.rs` owns integration-test path
   discovery; `crates/rebellion-windowing/tests/common/mod.rs` owns the shared
-  window-spec/open helpers, including the canonical modeless
-  `system_and_fleet` pair.
+  window-spec/open helpers. Use its canonical `system_and_fleet` pair instead
+  of reopening the same System/Fleet stack, and use `window_focus` or
+  `control_focus` instead of repeating `FocusTarget` records. Its `modal` and
+  `menu` fixtures also share the singleton-policy shell; tests should override
+  only the policy axis they are exercising.
 - `crate::interface_fixture_bridge` in `rebellion-app` owns the browser
   fixture's request-code import and serialized-payload emission. Interface,
   tactical, and Encyclopedia fixtures should call that bridge instead of

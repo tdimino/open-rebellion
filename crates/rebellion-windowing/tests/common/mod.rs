@@ -3,9 +3,9 @@
 #![allow(dead_code)]
 
 use rebellion_windowing::{
-    Cardinality, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, InputPolicy, OpenPlacement,
-    PresentationPolicy, StackBand, SubjectId, WindowCommand, WindowId, WindowKey, WindowKind,
-    WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
+    Cardinality, ControlId, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, FocusTarget,
+    InputPolicy, OpenPlacement, PresentationPolicy, StackBand, SubjectId, WindowCommand, WindowId,
+    WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
 };
 
 pub fn detail(kind: WindowKind, subject: u64, owner: WindowOwner) -> WindowSpec {
@@ -28,20 +28,30 @@ pub fn system_and_fleet() -> (WindowManager, WindowId, WindowId) {
     (manager, system, fleet)
 }
 
+/// Window-level focus target used by lifecycle and routing assertions.
+pub const fn window_focus(window: WindowId) -> FocusTarget {
+    focus_target(window, None)
+}
+
+/// Child-control focus target used by lifecycle and routing assertions.
+pub const fn control_focus(window: WindowId, control: u64) -> FocusTarget {
+    focus_target(window, Some(ControlId(control)))
+}
+
+const fn focus_target(window: WindowId, control: Option<ControlId>) -> FocusTarget {
+    FocusTarget { window, control }
+}
+
 pub fn modal(kind: WindowKind) -> WindowSpec {
     WindowSpec {
         key: WindowKey::singleton(kind),
         owner: WindowOwner::StrategicRoot,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Singleton,
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::NoOp,
-            input: InputPolicy::StrategicModal,
-            presentation: PresentationPolicy::None,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
+        policy: singleton_policy(
+            StackBand::Normal,
+            OpenPlacement::TopOfBand,
+            InputPolicy::StrategicModal,
+            FocusRestoration::PreviousEligible,
+        ),
     }
 }
 
@@ -49,16 +59,30 @@ pub fn menu(owner: WindowId) -> WindowSpec {
     WindowSpec {
         key: WindowKey::singleton(WindowKind::Menu),
         owner: WindowOwner::Window(owner),
-        policy: WindowPolicy {
-            cardinality: Cardinality::Singleton,
-            band: StackBand::Transient,
-            placement: OpenPlacement::AboveOwner,
-            existing: ExistingOpenPolicy::NoOp,
-            input: InputPolicy::DismissOnOutsidePress,
-            presentation: PresentationPolicy::None,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::SavedMenuTarget,
-        },
+        policy: singleton_policy(
+            StackBand::Transient,
+            OpenPlacement::AboveOwner,
+            InputPolicy::DismissOnOutsidePress,
+            FocusRestoration::SavedMenuTarget,
+        ),
+    }
+}
+
+const fn singleton_policy(
+    band: StackBand,
+    placement: OpenPlacement,
+    input: InputPolicy,
+    restoration: FocusRestoration,
+) -> WindowPolicy {
+    WindowPolicy {
+        cardinality: Cardinality::Singleton,
+        band,
+        placement,
+        existing: ExistingOpenPolicy::NoOp,
+        input,
+        presentation: PresentationPolicy::None,
+        focus_on_open: FocusOnOpen::Window,
+        restoration,
     }
 }
 

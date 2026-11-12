@@ -2,12 +2,12 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::{menu, root_detail as detail};
+use common::{control_focus, menu, root_detail as detail, window_focus};
 
 use rebellion_windowing::{
-    BubblePolicy, CaptureCancelReason, CloseReason, ContentReport, ContentStatus, ControlId,
-    FocusTarget, RouteTarget, WindowCommand, WindowError, WindowEvent, WindowId, WindowKind,
-    WindowManager, WindowOwner, WindowTransition,
+    BubblePolicy, CaptureCancelReason, CloseReason, ContentReport, ContentStatus, RouteTarget,
+    WindowCommand, WindowError, WindowEvent, WindowId, WindowKind, WindowManager, WindowOwner,
+    WindowTransition,
 };
 
 fn modal() -> rebellion_windowing::WindowSpec {
@@ -44,10 +44,7 @@ fn suspend_owned_child(
 }
 
 fn target(window: WindowId) -> RouteTarget {
-    RouteTarget::Window(FocusTarget {
-        window,
-        control: None,
-    })
+    RouteTarget::Window(window_focus(window))
 }
 
 fn reports(
@@ -91,10 +88,7 @@ fn contract_sequence_preserves_all_authorities() {
         let mut child_spec = detail(WindowKind::Fleet, seed * 100 + 2);
         child_spec.owner = WindowOwner::Window(root);
         let child = open(&mut manager, child_spec);
-        let control = FocusTarget {
-            window: root,
-            control: Some(ControlId(seed + 1)),
-        };
+        let control = control_focus(root, seed + 1);
         checked(&mut manager, WindowCommand::Focus(control));
         checked(&mut manager, WindowCommand::CapturePointer(child));
         let captured = manager.begin_frame();
@@ -157,13 +151,7 @@ fn contract_sequence_preserves_all_authorities() {
         assert_eq!(retained.blocking_unpainted, Vec::new());
         assert_eq!(manager.validate(), Ok(()));
 
-        checked(
-            &mut manager,
-            WindowCommand::Focus(FocusTarget {
-                window: peer,
-                control: None,
-            }),
-        );
+        checked(&mut manager, WindowCommand::Focus(window_focus(peer)));
         checked(&mut manager, WindowCommand::CapturePointer(peer));
         let frame = manager.begin_frame();
         let absent = manager.reconcile(&frame, &reports(&frame, &ids, Some(peer)));
@@ -331,13 +319,7 @@ fn contract_rejected_commands_preserve_complete_state() {
     let child = open(&mut manager, child_spec);
     let hidden = open(&mut manager, detail(WindowKind::Missions, 4));
     checked(&mut manager, WindowCommand::Minimize(hidden));
-    checked(
-        &mut manager,
-        WindowCommand::Focus(FocusTarget {
-            window: root,
-            control: Some(ControlId(99)),
-        }),
-    );
+    checked(&mut manager, WindowCommand::Focus(control_focus(root, 99)));
     checked(&mut manager, WindowCommand::CapturePointer(root));
     let mut removed_owner = detail(WindowKind::System, 10);
     removed_owner.owner = WindowOwner::Window(child);
@@ -371,14 +353,8 @@ fn contract_rejected_commands_preserve_complete_state() {
             WindowError::UnknownWindow(stale),
         ),
         (
-            WindowCommand::Focus(FocusTarget {
-                window: hidden,
-                control: None,
-            }),
-            WindowError::IneligibleFocus(FocusTarget {
-                window: hidden,
-                control: None,
-            }),
+            WindowCommand::Focus(window_focus(hidden)),
+            WindowError::IneligibleFocus(window_focus(hidden)),
         ),
         (
             WindowCommand::CapturePointer(hidden),
@@ -416,17 +392,11 @@ fn contract_rejected_commands_preserve_complete_state() {
     for command in [
         WindowCommand::Activate(root),
         WindowCommand::Raise(root),
-        WindowCommand::Focus(FocusTarget {
-            window: root,
-            control: None,
-        }),
+        WindowCommand::Focus(window_focus(root)),
     ] {
         assert_eq!(
             manager.apply(command),
-            Err(WindowError::IneligibleFocus(FocusTarget {
-                window: root,
-                control: None
-            }))
+            Err(WindowError::IneligibleFocus(window_focus(root)))
         );
         assert_eq!(format!("{manager:?}"), before);
     }

@@ -333,6 +333,37 @@ enum TacticalLogicalPointerEvent {
     PrimaryRelease((f32, f32)),
 }
 
+impl TacticalLogicalPointerEvent {
+    fn point(self) -> Option<(f32, f32)> {
+        match self {
+            Self::CancelGesture => None,
+            Self::PrimaryPress(point) | Self::PrimaryRelease(point) => Some(point),
+        }
+    }
+}
+
+/// Update one native window control's mouse capture and return a completed
+/// click only when release lands on the control that took the press.
+fn captured_tactical_window_control<Control: PartialEq>(
+    pressed: &mut Option<Control>,
+    event: TacticalLogicalPointerEvent,
+    hovered: Option<Control>,
+) -> Option<Control> {
+    match event {
+        TacticalLogicalPointerEvent::CancelGesture => {
+            *pressed = None;
+            None
+        }
+        TacticalLogicalPointerEvent::PrimaryPress(_) => {
+            *pressed = hovered;
+            None
+        }
+        TacticalLogicalPointerEvent::PrimaryRelease(_) => pressed
+            .take()
+            .filter(|captured| Some(captured) == hovered.as_ref()),
+    }
+}
+
 fn tactical_logical_pointer_events(
     canvas: TacticalCanvas,
     input: &TacticalWindowInput,
@@ -2231,103 +2262,6 @@ enum TacticalCommandControl {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct TacticalHudControlSpec {
-    control: TacticalHudControl,
-    rect: NativeRect,
-    hit_resource: u32,
-}
-
-const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 17] = [
-    TacticalHudControlSpec {
-        control: TacticalHudControl::NavigationSet(0),
-        rect: NativeRect::new(485.0, 272.0, 27.0, 27.0),
-        hit_resource: resources::tactical::BTN_NAVIGATION_SET_NORMAL[0],
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::NavigationSet(1),
-        rect: NativeRect::new(521.0, 272.0, 27.0, 27.0),
-        hit_resource: resources::tactical::BTN_NAVIGATION_SET_NORMAL[1],
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::NavigationSet(2),
-        rect: NativeRect::new(560.0, 272.0, 27.0, 27.0),
-        hit_resource: resources::tactical::BTN_NAVIGATION_SET_NORMAL[2],
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::NavigationSet(3),
-        rect: NativeRect::new(601.0, 272.0, 27.0, 27.0),
-        hit_resource: resources::tactical::BTN_NAVIGATION_SET_NORMAL[3],
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::Pause,
-        rect: NativeRect::new(560.0, 307.0, 28.0, 21.0),
-        hit_resource: resources::tactical::BTN_PAUSE_RUNNING,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::ZoomIn,
-        rect: NativeRect::new(486.0, 343.0, 24.0, 24.0),
-        hit_resource: resources::tactical::BTN_CAMERA_ZOOM_IN_NORMAL,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::ZoomOut,
-        rect: NativeRect::new(603.0, 343.0, 24.0, 24.0),
-        hit_resource: resources::tactical::BTN_CAMERA_ZOOM_OUT_NORMAL,
-    },
-    // The target button is painted above the four overlapping D-pad arms and
-    // therefore owns opaque pixels in their shared bounding region.
-    TacticalHudControlSpec {
-        control: TacticalHudControl::CameraTarget,
-        rect: NativeRect::new(538.0, 379.0, 23.0, 23.0),
-        hit_resource: resources::tactical::BTN_CAMERA_TARGET_NORMAL,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::CameraLeft,
-        rect: NativeRect::new(511.0, 376.0, 42.0, 43.0),
-        hit_resource: resources::tactical::BTN_CAMERA_LEFT_NORMAL,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::CameraRight,
-        rect: NativeRect::new(557.0, 376.0, 43.0, 43.0),
-        hit_resource: resources::tactical::BTN_CAMERA_RIGHT_NORMAL,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::CameraUp,
-        rect: NativeRect::new(537.0, 344.0, 43.0, 43.0),
-        hit_resource: resources::tactical::BTN_CAMERA_UP_NORMAL,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::CameraDown,
-        rect: NativeRect::new(537.0, 412.0, 43.0, 43.0),
-        hit_resource: resources::tactical::BTN_CAMERA_DOWN_NORMAL,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::CameraRecall,
-        rect: NativeRect::new(484.0, 430.0, 43.0, 25.0),
-        hit_resource: resources::tactical::BTN_CAMERA_RECALL_NORMAL,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::CameraMemorize,
-        rect: NativeRect::new(585.0, 430.0, 43.0, 25.0),
-        hit_resource: resources::tactical::BTN_CAMERA_MEMORIZE_NORMAL,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::HighlightAlliance,
-        rect: NativeRect::new(517.0, 304.0, 30.0, 26.0),
-        hit_resource: resources::tactical::DIM_ALLIANCE_SHIPS,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::HighlightEmpire,
-        rect: NativeRect::new(482.0, 304.0, 30.0, 26.0),
-        hit_resource: resources::tactical::DIM_EMPIRE_SHIPS,
-    },
-    TacticalHudControlSpec {
-        control: TacticalHudControl::BattleOptions,
-        rect: NativeRect::new(606.0, 308.0, 20.0, 20.0),
-        hit_resource: resources::tactical::BTN_BATTLE_OPTIONS_NORMAL,
-    },
-];
-
-#[derive(Debug, Clone, Copy)]
 struct TacticalButtonSpec<Control> {
     control: Control,
     rect: NativeRect,
@@ -2349,10 +2283,156 @@ impl<Control> TacticalButtonSpec<Control> {
             pressed_resource,
         }
     }
+
+    fn tactical_resource(self, pressed: bool) -> u32 {
+        if pressed {
+            self.pressed_resource
+        } else {
+            self.normal_resource
+        }
+    }
 }
 
+type TacticalHudControlSpec = TacticalButtonSpec<TacticalHudControl>;
 type TacticalBattleOptionsSpec = TacticalButtonSpec<TacticalBattleOptionsControl>;
 type TacticalWithdrawConfirmationSpec = TacticalButtonSpec<TacticalWithdrawConfirmationControl>;
+
+const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 17] = [
+    TacticalHudControlSpec::new(
+        TacticalHudControl::NavigationSet(0),
+        NativeRect::new(485.0, 272.0, 27.0, 27.0),
+        resources::tactical::BTN_NAVIGATION_SET_NORMAL[0],
+        resources::tactical::BTN_NAVIGATION_SET_SELECTED[0],
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::NavigationSet(1),
+        NativeRect::new(521.0, 272.0, 27.0, 27.0),
+        resources::tactical::BTN_NAVIGATION_SET_NORMAL[1],
+        resources::tactical::BTN_NAVIGATION_SET_SELECTED[1],
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::NavigationSet(2),
+        NativeRect::new(560.0, 272.0, 27.0, 27.0),
+        resources::tactical::BTN_NAVIGATION_SET_NORMAL[2],
+        resources::tactical::BTN_NAVIGATION_SET_SELECTED[2],
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::NavigationSet(3),
+        NativeRect::new(601.0, 272.0, 27.0, 27.0),
+        resources::tactical::BTN_NAVIGATION_SET_NORMAL[3],
+        resources::tactical::BTN_NAVIGATION_SET_SELECTED[3],
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::Pause,
+        NativeRect::new(560.0, 307.0, 28.0, 21.0),
+        resources::tactical::BTN_PAUSE_RUNNING,
+        resources::tactical::BTN_PAUSE_PAUSED,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::ZoomIn,
+        NativeRect::new(486.0, 343.0, 24.0, 24.0),
+        resources::tactical::BTN_CAMERA_ZOOM_IN_NORMAL,
+        resources::tactical::BTN_CAMERA_ZOOM_IN_PRESSED,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::ZoomOut,
+        NativeRect::new(603.0, 343.0, 24.0, 24.0),
+        resources::tactical::BTN_CAMERA_ZOOM_OUT_NORMAL,
+        resources::tactical::BTN_CAMERA_ZOOM_OUT_PRESSED,
+    ),
+    // The target button is painted above the four overlapping D-pad arms and
+    // therefore owns opaque pixels in their shared bounding region.
+    TacticalHudControlSpec::new(
+        TacticalHudControl::CameraTarget,
+        NativeRect::new(538.0, 379.0, 23.0, 23.0),
+        resources::tactical::BTN_CAMERA_TARGET_NORMAL,
+        resources::tactical::BTN_CAMERA_TARGET_PRESSED,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::CameraLeft,
+        NativeRect::new(511.0, 376.0, 42.0, 43.0),
+        resources::tactical::BTN_CAMERA_LEFT_NORMAL,
+        resources::tactical::BTN_CAMERA_LEFT_PRESSED,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::CameraRight,
+        NativeRect::new(557.0, 376.0, 43.0, 43.0),
+        resources::tactical::BTN_CAMERA_RIGHT_NORMAL,
+        resources::tactical::BTN_CAMERA_RIGHT_PRESSED,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::CameraUp,
+        NativeRect::new(537.0, 344.0, 43.0, 43.0),
+        resources::tactical::BTN_CAMERA_UP_NORMAL,
+        resources::tactical::BTN_CAMERA_UP_PRESSED,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::CameraDown,
+        NativeRect::new(537.0, 412.0, 43.0, 43.0),
+        resources::tactical::BTN_CAMERA_DOWN_NORMAL,
+        resources::tactical::BTN_CAMERA_DOWN_PRESSED,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::CameraRecall,
+        NativeRect::new(484.0, 430.0, 43.0, 25.0),
+        resources::tactical::BTN_CAMERA_RECALL_NORMAL,
+        resources::tactical::BTN_CAMERA_RECALL_PRESSED,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::CameraMemorize,
+        NativeRect::new(585.0, 430.0, 43.0, 25.0),
+        resources::tactical::BTN_CAMERA_MEMORIZE_NORMAL,
+        resources::tactical::BTN_CAMERA_MEMORIZE_PRESSED,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::HighlightAlliance,
+        NativeRect::new(517.0, 304.0, 30.0, 26.0),
+        resources::tactical::DIM_ALLIANCE_SHIPS,
+        resources::tactical::HIGHLIGHT_ALLIANCE_SHIPS,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::HighlightEmpire,
+        NativeRect::new(482.0, 304.0, 30.0, 26.0),
+        resources::tactical::DIM_EMPIRE_SHIPS,
+        resources::tactical::HIGHLIGHT_EMPIRE_SHIPS,
+    ),
+    TacticalHudControlSpec::new(
+        TacticalHudControl::BattleOptions,
+        NativeRect::new(606.0, 308.0, 20.0, 20.0),
+        resources::tactical::BTN_BATTLE_OPTIONS_NORMAL,
+        resources::tactical::BTN_BATTLE_OPTIONS_PRESSED,
+    ),
+];
+
+/// Back-to-front paint order. The target follows the overlapping camera arms,
+/// matching the original window's topmost button ownership.
+const TACTICAL_HUD_PAINT_ORDER: [TacticalHudControl; 17] = [
+    TacticalHudControl::NavigationSet(0),
+    TacticalHudControl::NavigationSet(1),
+    TacticalHudControl::NavigationSet(2),
+    TacticalHudControl::NavigationSet(3),
+    TacticalHudControl::HighlightEmpire,
+    TacticalHudControl::HighlightAlliance,
+    TacticalHudControl::Pause,
+    TacticalHudControl::BattleOptions,
+    TacticalHudControl::ZoomIn,
+    TacticalHudControl::ZoomOut,
+    TacticalHudControl::CameraLeft,
+    TacticalHudControl::CameraRight,
+    TacticalHudControl::CameraUp,
+    TacticalHudControl::CameraDown,
+    TacticalHudControl::CameraTarget,
+    TacticalHudControl::CameraRecall,
+    TacticalHudControl::CameraMemorize,
+];
+
+fn tactical_hud_control_spec(control: TacticalHudControl) -> TacticalHudControlSpec {
+    TACTICAL_HUD_CONTROLS
+        .iter()
+        .copied()
+        .find(|spec| spec.control == control)
+        .expect("painted tactical HUD control has a canonical spec")
+}
 
 // REBEXE FUN_005dab90 places these at panel-local (18, 19), (14, 93),
 // (87, 93), (23, 184) and (97, 184) on panel 1306, whose container
@@ -2958,7 +3038,7 @@ fn tactical_hud_control_at(cache: &mut BmpCache, x: f32, y: f32) -> Option<Tacti
         let pixel_x = (x - spec.rect.x).floor() as usize;
         let pixel_y = (y - spec.rect.y).floor() as usize;
         cache
-            .is_resource_hit(DllSource::Tactical, spec.hit_resource, pixel_x, pixel_y)
+            .is_resource_hit(DllSource::Tactical, spec.normal_resource, pixel_x, pixel_y)
             .then_some(spec.control)
     })
 }
@@ -3879,6 +3959,19 @@ fn draw_tactical_button(cache: &mut BmpCache, id: u32, canvas: TacticalCanvas, x
     draw_tactical_button_clipped(cache, id, canvas, x, y, None);
 }
 
+fn tactical_control_resource<Control: Copy + PartialEq>(
+    pressed: Option<Control>,
+    control: Control,
+    normal: u32,
+    pressed_art: u32,
+) -> u32 {
+    if pressed == Some(control) {
+        pressed_art
+    } else {
+        normal
+    }
+}
+
 /// [`draw_tactical_button`] showing only `source_rect` of the bitmap: the
 /// control's window clips the rest (`FUN_005fc140` at native size).
 fn draw_tactical_button_clipped(
@@ -4145,11 +4238,7 @@ fn draw_assignment_confirm_cancel(
             art::BTN_ASSIGN_CANCEL_PRESSED,
         ),
     ] {
-        let resource = if pressed == Some(control) {
-            pressed_art
-        } else {
-            normal
-        };
+        let resource = tactical_control_resource(pressed, control, normal, pressed_art);
         draw_tactical_assignment_button(cache, canvas, control, resource);
     }
 }
@@ -4666,209 +4755,62 @@ fn draw_original_tactical_hud(
         && command_panel == TacticalCommandPanel::Display
         && has_selection
     {
-        if groups.selected_ship_name.is_some() {
-            for (control, normal, pressed_art) in [
-                (
-                    TacticalCommandControl::PreviousCapital,
-                    art::BTN_PREVIOUS_CAPITAL_NORMAL,
-                    art::BTN_PREVIOUS_CAPITAL_PRESSED,
-                ),
-                (
-                    TacticalCommandControl::NextCapital,
-                    art::BTN_NEXT_CAPITAL_NORMAL,
-                    art::BTN_NEXT_CAPITAL_PRESSED,
-                ),
-            ] {
-                draw_tactical_assignment_button(
-                    cache,
-                    canvas,
-                    control,
-                    if pressed_command == Some(control) {
-                        pressed_art
-                    } else {
-                        normal
-                    },
-                );
-            }
-        }
-        for (control, normal, pressed_art) in [
+        for (visible, control, normal, pressed_art) in [
             (
+                groups.selected_ship_name.is_some(),
+                TacticalCommandControl::PreviousCapital,
+                art::BTN_PREVIOUS_CAPITAL_NORMAL,
+                art::BTN_PREVIOUS_CAPITAL_PRESSED,
+            ),
+            (
+                groups.selected_ship_name.is_some(),
+                TacticalCommandControl::NextCapital,
+                art::BTN_NEXT_CAPITAL_NORMAL,
+                art::BTN_NEXT_CAPITAL_PRESSED,
+            ),
+            (
+                true,
                 TacticalCommandControl::OpenMissions,
                 art::BTN_MISSIONS_NORMAL,
                 art::BTN_MISSIONS_PRESSED,
             ),
             (
+                true,
                 TacticalCommandControl::OpenManeuvers,
                 art::BTN_MANEUVERS_TACTICS_NORMAL,
                 art::BTN_MANEUVERS_TACTICS_PRESSED,
             ),
         ] {
-            draw_tactical_assignment_button(
-                cache,
-                canvas,
-                control,
-                if pressed_command == Some(control) {
-                    pressed_art
-                } else {
-                    normal
-                },
-            );
+            if visible {
+                draw_tactical_assignment_button(
+                    cache,
+                    canvas,
+                    control,
+                    tactical_control_resource(pressed_command, control, normal, pressed_art),
+                );
+            }
         }
     }
 
-    for (index, x) in [485.0, 521.0, 560.0, 601.0].into_iter().enumerate() {
-        let selected = navigation_sets_visible[index]
-            || pressed_control == Some(TacticalHudControl::NavigationSet(index as u8));
+    for control in TACTICAL_HUD_PAINT_ORDER {
+        let spec = tactical_hud_control_spec(control);
+        let active = match control {
+            TacticalHudControl::NavigationSet(set) => {
+                navigation_sets_visible[usize::from(set)] || pressed_control == Some(control)
+            }
+            TacticalHudControl::Pause => paused,
+            TacticalHudControl::HighlightAlliance => highlight_alliance,
+            TacticalHudControl::HighlightEmpire => highlight_empire,
+            _ => pressed_control == Some(control),
+        };
         draw_tactical_button(
             cache,
-            if selected {
-                art::BTN_NAVIGATION_SET_SELECTED[index]
-            } else {
-                art::BTN_NAVIGATION_SET_NORMAL[index]
-            },
+            spec.tactical_resource(active),
             canvas,
-            x,
-            272.0,
+            spec.rect.x,
+            spec.rect.y,
         );
     }
-    draw_tactical_button(
-        cache,
-        if highlight_empire {
-            art::HIGHLIGHT_EMPIRE_SHIPS
-        } else {
-            art::DIM_EMPIRE_SHIPS
-        },
-        canvas,
-        482.0,
-        304.0,
-    );
-    draw_tactical_button(
-        cache,
-        if highlight_alliance {
-            art::HIGHLIGHT_ALLIANCE_SHIPS
-        } else {
-            art::DIM_ALLIANCE_SHIPS
-        },
-        canvas,
-        517.0,
-        304.0,
-    );
-    draw_tactical_button(
-        cache,
-        if paused {
-            art::BTN_PAUSE_PAUSED
-        } else {
-            art::BTN_PAUSE_RUNNING
-        },
-        canvas,
-        560.0,
-        307.0,
-    );
-    draw_tactical_button(
-        cache,
-        if pressed_control == Some(TacticalHudControl::BattleOptions) {
-            art::BTN_BATTLE_OPTIONS_PRESSED
-        } else {
-            art::BTN_BATTLE_OPTIONS_NORMAL
-        },
-        canvas,
-        606.0,
-        308.0,
-    );
-
-    draw_tactical_button(
-        cache,
-        if pressed_control == Some(TacticalHudControl::ZoomIn) {
-            art::BTN_CAMERA_ZOOM_IN_PRESSED
-        } else {
-            art::BTN_CAMERA_ZOOM_IN_NORMAL
-        },
-        canvas,
-        486.0,
-        343.0,
-    );
-    draw_tactical_button(
-        cache,
-        if pressed_control == Some(TacticalHudControl::ZoomOut) {
-            art::BTN_CAMERA_ZOOM_OUT_PRESSED
-        } else {
-            art::BTN_CAMERA_ZOOM_OUT_NORMAL
-        },
-        canvas,
-        603.0,
-        343.0,
-    );
-    for (id, x, y) in [
-        (
-            if pressed_control == Some(TacticalHudControl::CameraLeft) {
-                art::BTN_CAMERA_LEFT_PRESSED
-            } else {
-                art::BTN_CAMERA_LEFT_NORMAL
-            },
-            511.0,
-            376.0,
-        ),
-        (
-            if pressed_control == Some(TacticalHudControl::CameraRight) {
-                art::BTN_CAMERA_RIGHT_PRESSED
-            } else {
-                art::BTN_CAMERA_RIGHT_NORMAL
-            },
-            557.0,
-            376.0,
-        ),
-        (
-            if pressed_control == Some(TacticalHudControl::CameraUp) {
-                art::BTN_CAMERA_UP_PRESSED
-            } else {
-                art::BTN_CAMERA_UP_NORMAL
-            },
-            537.0,
-            344.0,
-        ),
-        (
-            if pressed_control == Some(TacticalHudControl::CameraDown) {
-                art::BTN_CAMERA_DOWN_PRESSED
-            } else {
-                art::BTN_CAMERA_DOWN_NORMAL
-            },
-            537.0,
-            412.0,
-        ),
-        (
-            if pressed_control == Some(TacticalHudControl::CameraTarget) {
-                art::BTN_CAMERA_TARGET_PRESSED
-            } else {
-                art::BTN_CAMERA_TARGET_NORMAL
-            },
-            538.0,
-            379.0,
-        ),
-    ] {
-        draw_tactical_button(cache, id, canvas, x, y);
-    }
-    draw_tactical_button(
-        cache,
-        if pressed_control == Some(TacticalHudControl::CameraRecall) {
-            art::BTN_CAMERA_RECALL_PRESSED
-        } else {
-            art::BTN_CAMERA_RECALL_NORMAL
-        },
-        canvas,
-        484.0,
-        430.0,
-    );
-    draw_tactical_button(
-        cache,
-        if pressed_control == Some(TacticalHudControl::CameraMemorize) {
-            art::BTN_CAMERA_MEMORIZE_PRESSED
-        } else {
-            art::BTN_CAMERA_MEMORIZE_NORMAL
-        },
-        canvas,
-        585.0,
-        430.0,
-    );
 }
 
 fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommandControl) {
@@ -7300,21 +7242,12 @@ fn apply_battle_alert_input(
         .as_ref()
         .is_some_and(battle_alert_retreat_enabled);
     for event in tactical_logical_pointer_events(canvas, input) {
-        let point = match event {
-            TacticalLogicalPointerEvent::CancelGesture => {
-                state.battle_alert_pressed = None;
-                continue;
-            }
-            TacticalLogicalPointerEvent::PrimaryPress(point)
-            | TacticalLogicalPointerEvent::PrimaryRelease(point) => point,
-        };
-        if matches!(event, TacticalLogicalPointerEvent::PrimaryPress(_)) {
-            state.battle_alert_pressed = battle_alert_control_at(skin, retreat_enabled, point);
-            continue;
-        }
-        let hovered = battle_alert_control_at(skin, retreat_enabled, point);
-        let captured = state.battle_alert_pressed.take();
-        let Some(control) = captured.filter(|control| Some(*control) == hovered) else {
+        let hovered = event
+            .point()
+            .and_then(|point| battle_alert_control_at(skin, retreat_enabled, point));
+        let Some(control) =
+            captured_tactical_window_control(&mut state.battle_alert_pressed, event, hovered)
+        else {
             continue;
         };
         let action = match control {
@@ -7563,21 +7496,12 @@ fn apply_battle_result_input(
     input: &TacticalWindowInput,
 ) -> TacticalAction {
     for event in tactical_logical_pointer_events(canvas, input) {
-        let point = match event {
-            TacticalLogicalPointerEvent::CancelGesture => {
-                state.battle_result_pressed = None;
-                continue;
-            }
-            TacticalLogicalPointerEvent::PrimaryPress(point)
-            | TacticalLogicalPointerEvent::PrimaryRelease(point) => point,
-        };
-        if matches!(event, TacticalLogicalPointerEvent::PrimaryPress(_)) {
-            state.battle_result_pressed = battle_result_control_at(state, skin, point);
-            continue;
-        }
-        let hovered = battle_result_control_at(state, skin, point);
-        let captured = state.battle_result_pressed.take();
-        let Some(control) = captured.filter(|control| Some(*control) == hovered) else {
+        let hovered = event
+            .point()
+            .and_then(|point| battle_result_control_at(state, skin, point));
+        let Some(control) =
+            captured_tactical_window_control(&mut state.battle_result_pressed, event, hovered)
+        else {
             continue;
         };
         let action = match control {
@@ -12351,6 +12275,33 @@ mod tests {
         );
         assert_eq!(camera_offset_for_target(120.0, 190.0), (-480.0, -210.0));
         assert_eq!(camera_offset_for_target(600.0, 400.0), (0.0, 0.0));
+    }
+
+    #[test]
+    fn tactical_button_specs_choose_the_exact_normal_and_pressed_art() {
+        use resources::tactical as art;
+
+        let zoom = tactical_hud_control_spec(TacticalHudControl::ZoomIn);
+        assert_eq!(zoom.control, TacticalHudControl::ZoomIn);
+        assert_eq!(
+            zoom.tactical_resource(false),
+            art::BTN_CAMERA_ZOOM_IN_NORMAL
+        );
+        assert_eq!(
+            zoom.tactical_resource(true),
+            art::BTN_CAMERA_ZOOM_IN_PRESSED
+        );
+
+        let control = TacticalCommandControl::OpenMissions;
+        assert_eq!(tactical_control_resource(None, control, 17, 23), 17);
+        assert_eq!(
+            tactical_control_resource(Some(control), control, 17, 23),
+            23
+        );
+        assert_eq!(
+            tactical_control_resource(Some(TacticalCommandControl::OpenManeuvers), control, 17, 23,),
+            17
+        );
     }
 
     #[test]

@@ -2,12 +2,12 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::{open, root_detail as detail};
+use common::{open, root_detail as detail, window_focus as focus_target};
 
 use rebellion_windowing::{
-    CaptureCancelReason, CloseReason, ContentReport, ContentStatus, FocusTarget, ReconcileReport,
-    RouteTarget, WindowCommand, WindowEvent, WindowId, WindowKind, WindowManager, WindowOwner,
-    WindowSpec, WindowTransition,
+    CaptureCancelReason, CloseReason, ContentReport, ContentStatus, ReconcileReport, RouteTarget,
+    WindowCommand, WindowEvent, WindowId, WindowKind, WindowManager, WindowOwner, WindowSpec,
+    WindowTransition,
 };
 
 fn modal() -> WindowSpec {
@@ -16,13 +16,6 @@ fn modal() -> WindowSpec {
 
 fn report(window: WindowId, status: ContentStatus) -> ContentReport {
     ContentReport { window, status }
-}
-
-fn focus_target(window: WindowId) -> FocusTarget {
-    FocusTarget {
-        window,
-        control: None,
-    }
 }
 
 fn assert_reconciliation_rejected(

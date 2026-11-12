@@ -5,15 +5,15 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use common::{
-    menu as transient_menu_spec, modal as singleton_spec, open as open_window, opened_id,
-    root_detail as modeless_subject_spec,
+    control_focus, menu as transient_menu_spec, modal as singleton_spec, open as open_window,
+    opened_id, root_detail as modeless_subject_spec, window_focus,
 };
 
 use rebellion_windowing::{
-    CaptureCancelReason, Cardinality, CloseReason, ControlId, ExistingEffect, ExistingOpenPolicy,
-    FocusOnOpen, FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy,
-    StackBand, SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId,
-    WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
+    CaptureCancelReason, Cardinality, CloseReason, ExistingEffect, ExistingOpenPolicy, FocusOnOpen,
+    FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy, StackBand,
+    SubjectId, WindowCommand, WindowCommit, WindowError, WindowEvent, WindowId, WindowKey,
+    WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
 };
 
 fn assert_opaque_id_traits<T: Copy + Debug + Eq + Hash + Ord>() {}
@@ -67,10 +67,7 @@ fn closed(window: WindowId, key: WindowKey, reason: CloseReason) -> WindowEvent 
 fn focus_changed(previous: Option<FocusTarget>, current: WindowId) -> WindowEvent {
     WindowEvent::FocusChanged {
         previous,
-        current: Some(FocusTarget {
-            window: current,
-            control: None,
-        }),
+        current: Some(window_focus(current)),
     }
 }
 
@@ -109,13 +106,7 @@ fn replacement_cleans_history_capture_and_focus_atomically() {
     let menu = open_window(&mut manager, menu_spec);
     manager.apply(WindowCommand::CapturePointer(menu)).unwrap();
     let focus_before = manager.focused();
-    assert_eq!(
-        focus_before,
-        Some(FocusTarget {
-            window: menu,
-            control: None
-        })
-    );
+    assert_eq!(focus_before, Some(window_focus(menu)));
 
     let new_spec = modeless_subject_spec(WindowKind::System, 99);
     let commit = manager
@@ -145,13 +136,7 @@ fn replacement_cleans_history_capture_and_focus_atomically() {
     assert_eq!(manager.visible_order(), &[survivor, new]);
     assert_eq!(manager.presentation_history(), &[history_survivor]);
     assert_eq!(manager.capture_owner(), None);
-    assert_eq!(
-        manager.focused(),
-        Some(FocusTarget {
-            window: new,
-            control: None
-        })
-    );
+    assert_eq!(manager.focused(), Some(window_focus(new)));
     assert_eq!(manager.validate(), Ok(()));
 }
 
@@ -262,10 +247,7 @@ fn invalid_replacement_preserves_old_id_content_links_and_allocator() {
         WindowTransition::Closed {
             root: old,
             closed: vec![menu, child, old],
-            restored_focus: Some(FocusTarget {
-                window: fresh,
-                control: None
-            }),
+            restored_focus: Some(window_focus(fresh)),
         }
     );
 }
@@ -414,10 +396,7 @@ fn replacement_preserves_eligible_surviving_control_focus_and_capture() {
     let old_spec = modeless_subject_spec(WindowKind::System, 1);
     let old = open_window(&mut manager, old_spec);
     let survivor = open_window(&mut manager, modeless_subject_spec(WindowKind::Fleet, 2));
-    let focus = FocusTarget {
-        window: survivor,
-        control: Some(ControlId(17)),
-    };
+    let focus = control_focus(survivor, 17);
     manager.apply(WindowCommand::Focus(focus)).unwrap();
     manager
         .apply(WindowCommand::CapturePointer(survivor))
@@ -453,10 +432,7 @@ fn menu_replacement_retains_saved_control_focus_and_fresh_identity() {
     // Break caught: reopening the old ID, losing saved control focus or retaining removed-menu state.
     let mut manager = WindowManager::new();
     let owner = open_window(&mut manager, modeless_subject_spec(WindowKind::System, 1));
-    let focus = FocusTarget {
-        window: owner,
-        control: Some(ControlId(7)),
-    };
+    let focus = control_focus(owner, 7);
     manager.apply(WindowCommand::Focus(focus)).unwrap();
     let spec = transient_menu_spec(owner);
     let old = open_window(&mut manager, spec);

@@ -2,12 +2,12 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::{menu, open};
+use common::{control_focus, menu, open, window_focus as focus};
 
 use rebellion_windowing::{
-    BubblePolicy, CaptureCancelReason, ControlId, FocusTarget, KeyboardRoute, OpenPlacement,
-    RouteTarget, StackBand, SubjectId, WindowCommand, WindowError, WindowEvent, WindowId,
-    WindowKey, WindowKind, WindowManager, WindowOwner, WindowSpec, WindowTransition,
+    BubblePolicy, CaptureCancelReason, KeyboardRoute, OpenPlacement, RouteTarget, StackBand,
+    SubjectId, WindowCommand, WindowError, WindowEvent, WindowId, WindowKey, WindowKind,
+    WindowManager, WindowOwner, WindowSpec, WindowTransition,
 };
 
 fn detail(subject: u64) -> WindowSpec {
@@ -16,13 +16,6 @@ fn detail(subject: u64) -> WindowSpec {
 
 fn modal() -> WindowSpec {
     common::modal(WindowKind::Encyclopedia)
-}
-
-fn focus(window: WindowId) -> FocusTarget {
-    FocusTarget {
-        window,
-        control: None,
-    }
 }
 
 fn target(window: WindowId) -> RouteTarget {
@@ -154,10 +147,7 @@ fn scene_unknown_id_preserves_membership_and_focus() {
     manager
         .set_active_windows(&BTreeSet::from([active]))
         .unwrap();
-    let control = FocusTarget {
-        window: active,
-        control: Some(ControlId(9)),
-    };
+    let control = control_focus(active, 9);
     manager.apply(WindowCommand::Focus(control)).unwrap();
     manager
         .apply(WindowCommand::CapturePointer(active))
@@ -184,10 +174,7 @@ fn unknown_active_member_rejects_scene_update_without_mutation() {
     let stale = open(&mut manager, detail(1));
     manager.reset_session();
     let current = open(&mut manager, detail(2));
-    let control = FocusTarget {
-        window: current,
-        control: Some(ControlId(7)),
-    };
+    let control = control_focus(current, 7);
     manager.apply(WindowCommand::Focus(control)).unwrap();
     assert_eq!(
         manager.set_active_windows(&BTreeSet::from([stale, current])),

@@ -2,12 +2,12 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::{menu as menu_spec, open, system_and_fleet};
+use common::{control_focus, menu as menu_spec, open, system_and_fleet, window_focus};
 
 use rebellion_windowing::{
-    BubblePolicy, ContentReport, ContentStatus, FocusOnOpen, FocusTarget, InputPolicy,
-    PresentationPolicy, ReconcileReport, RouteTarget, RoutingSnapshot, SubjectId, WindowCommand,
-    WindowError, WindowId, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec,
+    BubblePolicy, ContentReport, ContentStatus, FocusOnOpen, InputPolicy, PresentationPolicy,
+    ReconcileReport, RouteTarget, RoutingSnapshot, SubjectId, WindowCommand, WindowError, WindowId,
+    WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec,
 };
 
 fn policy(input: InputPolicy) -> WindowPolicy {
@@ -67,10 +67,7 @@ fn topmost_eligible_hit_wins_independent_of_hit_registration_order() {
     for registered in [hits([lower, upper]), hits([upper, lower])] {
         assert_eq!(
             frame.pointer_route(&registered).target,
-            RouteTarget::Window(FocusTarget {
-                window: upper,
-                control: None
-            })
+            RouteTarget::Window(window_focus(upper))
         );
     }
 }
@@ -83,10 +80,7 @@ fn modeless_eligibility_does_not_grant_all_windows_the_same_event() {
     assert!(frame.allows_input(upper));
     assert_eq!(
         frame.pointer_route(&hits([lower, upper])).target,
-        RouteTarget::Window(FocusTarget {
-            window: upper,
-            control: None
-        })
+        RouteTarget::Window(window_focus(upper))
     );
 }
 
@@ -127,10 +121,7 @@ fn modal_descendant_menu_is_eligible_but_unrelated_menu_is_not() {
     assert!(!frame.allows_input(background));
     assert_eq!(
         frame.pointer_route(&hits([background, menu])).target,
-        RouteTarget::Window(FocusTarget {
-            window: menu,
-            control: None
-        })
+        RouteTarget::Window(window_focus(menu))
     );
 }
 
@@ -144,10 +135,7 @@ fn capture_routes_motion_outside_owner_bounds() {
     manager.apply(WindowCommand::CapturePointer(owner)).unwrap();
     assert_eq!(
         manager.begin_frame().pointer_route(&BTreeSet::new()).target,
-        RouteTarget::Window(FocusTarget {
-            window: owner,
-            control: None
-        })
+        RouteTarget::Window(window_focus(owner))
     );
 }
 
@@ -162,10 +150,7 @@ fn escape_close_keeps_the_old_modal_keyboard_lease_until_the_next_snapshot() {
     manager.apply(WindowCommand::Close(modal)).unwrap();
     assert_eq!(
         old.keyboard_route().target,
-        RouteTarget::Window(FocusTarget {
-            window: modal,
-            control: None
-        })
+        RouteTarget::Window(window_focus(modal))
     );
     assert_eq!(
         manager.begin_frame().keyboard_route().target,
@@ -195,10 +180,7 @@ fn handled_text_stays_with_the_control_and_unhandled_keys_stop_at_a_strategic_mo
         &mut manager,
         spec(WindowKind::Status, 1, InputPolicy::StrategicModal),
     );
-    let control = FocusTarget {
-        window: modal,
-        control: Some(rebellion_windowing::ControlId(7)),
-    };
+    let control = control_focus(modal, 7);
     manager.apply(WindowCommand::Focus(control)).unwrap();
     let route = manager.begin_frame().keyboard_route();
     assert_eq!(route.target, RouteTarget::Window(control));
@@ -503,14 +485,8 @@ fn active_membership_changes_command_eligibility_and_snapshot_together() {
     assert!(frame.is_visible(galaxy));
     assert!(!frame.is_visible(tactical));
     assert_eq!(
-        manager.apply(WindowCommand::Focus(FocusTarget {
-            window: tactical,
-            control: None
-        })),
-        Err(WindowError::IneligibleFocus(FocusTarget {
-            window: tactical,
-            control: None
-        }))
+        manager.apply(WindowCommand::Focus(window_focus(tactical))),
+        Err(WindowError::IneligibleFocus(window_focus(tactical)))
     );
 }
 
