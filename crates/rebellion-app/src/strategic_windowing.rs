@@ -2009,6 +2009,48 @@ mod tests {
         restored
     }
 
+    macro_rules! assert_basic_detail_lifecycle {
+        (
+            state: $state:ident,
+            coordinator: $coordinator:ident,
+            system: $system:ident,
+            prepare: $prepare:expr,
+            enqueue: $enqueue:ident,
+            content: $content_id:ident,
+            prepared: $prepared_field:ident,
+            acknowledge: $acknowledge:ident,
+            minimize: $minimize:ident $(,)?
+        ) => {{
+            let prepared = $prepare;
+            $coordinator.$enqueue(prepared);
+            assert!($coordinator.begin_frame().paint_order().is_empty());
+
+            let mut opened = $coordinator.apply_pending().remove(0);
+            let id = opened.$content_id.unwrap();
+            assert_eq!(
+                $state.commit_open(
+                    opened.$prepared_field.take().unwrap(),
+                    &opened.result.as_ref().unwrap().transition,
+                ),
+                Some(id)
+            );
+            assert!($coordinator.$acknowledge(id));
+            assert_eq!($state.window_id($system), Some(id));
+
+            minimize_content(&mut $coordinator, id, StrategicWindowing::$minimize);
+            assert!($state.contains_window(id));
+
+            let restored = finish_detail_lifecycle(
+                &mut $coordinator,
+                id,
+                &mut $state,
+                |state, id| state.contains_window(id),
+                |state, removed| state.remove_content(removed),
+            );
+            assert_eq!(restored.$content_id, None);
+        }};
+    }
+
     fn assert_existing_noop(applied: &AppliedWindowCommand, id: WindowId) {
         assert!(matches!(
             applied.result.as_ref().unwrap().transition,
@@ -3890,45 +3932,23 @@ mod tests {
     fn defenses_detail_commits_raise_restore_and_exact_removal_receipts() {
         let (world, system, mut state, mut coordinator) =
             detail_test_context::<DefensesWindowState>();
-        let prepared = state
-            .prepare_open(
+        assert_basic_detail_lifecycle! {
+            state: state,
+            coordinator: coordinator,
+            system: system,
+            prepare: state.prepare_open(
                 &world,
                 system,
                 (40, 50),
                 CockpitFaction::Alliance,
                 fleet_layout(),
-            )
-            .unwrap();
-
-        coordinator.enqueue_defenses_open(prepared);
-        assert!(coordinator.begin_frame().paint_order().is_empty());
-        let mut opened = coordinator.apply_pending().remove(0);
-        let id = opened.defenses_content_id.unwrap();
-        assert_eq!(
-            state.commit_open(
-                opened.prepared_defenses.take().unwrap(),
-                &opened.result.as_ref().unwrap().transition,
-            ),
-            Some(id)
-        );
-        assert!(coordinator.acknowledge_defenses_publication(id));
-        assert_eq!(state.window_id(system), Some(id));
-
-        minimize_content(
-            &mut coordinator,
-            id,
-            StrategicWindowing::enqueue_defenses_minimize,
-        );
-        assert!(state.contains_window(id));
-
-        let restored = finish_detail_lifecycle(
-            &mut coordinator,
-            id,
-            &mut state,
-            DefensesWindowState::contains_window,
-            DefensesWindowState::remove_content,
-        );
-        assert_eq!(restored.defenses_content_id, None);
+            ).unwrap(),
+            enqueue: enqueue_defenses_open,
+            content: defenses_content_id,
+            prepared: prepared_defenses,
+            acknowledge: acknowledge_defenses_publication,
+            minimize: enqueue_defenses_minimize,
+        }
     }
 
     #[test]
@@ -3937,8 +3957,11 @@ mod tests {
             detail_test_context::<MissionsWindowState>();
         let fog = FogState::new(Faction::Alliance);
         let missions = MissionState::new();
-        let prepared = state
-            .prepare_open(
+        assert_basic_detail_lifecycle! {
+            state: state,
+            coordinator: coordinator,
+            system: system,
+            prepare: state.prepare_open(
                 &world,
                 &fog,
                 &missions,
@@ -3946,38 +3969,13 @@ mod tests {
                 (40, 50),
                 CockpitFaction::Alliance,
                 fleet_layout(),
-            )
-            .unwrap();
-
-        coordinator.enqueue_missions_open(prepared);
-        assert!(coordinator.begin_frame().paint_order().is_empty());
-        let mut opened = coordinator.apply_pending().remove(0);
-        let id = opened.missions_content_id.unwrap();
-        assert_eq!(
-            state.commit_open(
-                opened.prepared_missions.take().unwrap(),
-                &opened.result.as_ref().unwrap().transition,
-            ),
-            Some(id)
-        );
-        assert!(coordinator.acknowledge_missions_publication(id));
-        assert_eq!(state.window_id(system), Some(id));
-
-        minimize_content(
-            &mut coordinator,
-            id,
-            StrategicWindowing::enqueue_missions_minimize,
-        );
-        assert!(state.contains_window(id));
-
-        let restored = finish_detail_lifecycle(
-            &mut coordinator,
-            id,
-            &mut state,
-            MissionsWindowState::contains_window,
-            MissionsWindowState::remove_content,
-        );
-        assert_eq!(restored.missions_content_id, None);
+            ).unwrap(),
+            enqueue: enqueue_missions_open,
+            content: missions_content_id,
+            prepared: prepared_missions,
+            acknowledge: acknowledge_missions_publication,
+            minimize: enqueue_missions_minimize,
+        }
     }
 
     #[test]

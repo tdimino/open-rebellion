@@ -188,6 +188,22 @@ pub(crate) fn secondary_release_anchor(
     hit_test((pointer.x, pointer.y))
 }
 
+/// Open a fixture-owned context menu from one secondary-button release.
+/// The screen supplies only its hit/anchor mapping; this helper owns the
+/// shared direct payload update used by context-menu fixtures.
+pub(crate) fn open_context_menu_on_secondary_release(
+    ctx: &egui::Context,
+    layout: CockpitLayout,
+    anchor: &mut Option<(f32, f32)>,
+    hit_test: impl FnOnce((f32, f32)) -> Option<(f32, f32)>,
+) -> bool {
+    let Some(open_at) = secondary_release_anchor(ctx, layout, hit_test) else {
+        return false;
+    };
+    *anchor = Some(open_at);
+    true
+}
+
 /// Insert a recruited character at `system` with the requested side.
 pub(crate) fn add_character(
     world: &mut GameWorld,

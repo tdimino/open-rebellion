@@ -40,7 +40,6 @@ use crate::windowing::GalaxyChild;
 use crate::windowing_input::{FrameInputRouter, InputEventId, PointerButtonId, PointerPhase};
 #[cfg(test)]
 use crate::windowing_policy::contextual_spec;
-use crate::windowing_policy::system_subject;
 
 pub const MISSIONS_WINDOW_WIDTH: f32 = 235.0;
 pub const MISSIONS_WINDOW_HEIGHT: f32 = 304.0;
@@ -235,6 +234,7 @@ strategic_window_common::impl_system_keyed_window_routing!(
 );
 strategic_window_common::impl_fixture_window_order!(MissionsWindowState, OpenMissionsWindow);
 strategic_window_common::impl_admitted_release_target!(MissionsWindowState, area_id);
+strategic_window_common::impl_system_window_visibility!(MissionsWindowState, WindowKind::Missions);
 strategic_window_common::impl_system_content_reports!(MissionsWindowState, WindowKind::Missions);
 strategic_window_common::impl_saved_system_windows!(MissionsWindowState, |system| {
     SavedWindowKind::Missions { system }
@@ -404,19 +404,6 @@ impl MissionsWindowState {
         });
     }
 
-    /// Whether exact Missions content participates visibly in this frozen
-    /// frame. Manager-owned content must retain its committed kind and DAT
-    /// subject; direct fixture content remains visible while its system exists.
-    #[must_use]
-    pub fn has_visible_content(&self, snapshot: &RoutingSnapshot, world: &GameWorld) -> bool {
-        self.windows.iter().any(|window| match window.id {
-            Some(id) => {
-                snapshot.is_visible(id) && committed_window_matches(snapshot, world, window, id)
-            }
-            None => world.systems.contains_key(window.system),
-        })
-    }
-
     /// Removes only content named by manager teardown receipts.
     pub fn remove_content(&mut self, removed: &[WindowId]) {
         strategic_window_common::remove_content(&mut self.windows, removed);
@@ -501,15 +488,6 @@ impl MissionsWindowState {
             target: selected_row
                 .map(|row| target_name(world, target(missions, player, system, row))),
         })
-    }
-
-    /// Refreshes which retained egui layers may resolve a gameplay release.
-    /// The application calls this immediately after freezing the frame so a
-    /// stale prior-frame area cannot retarget before Missions paints.
-    pub fn refresh_release_targets(&mut self, snapshot: &RoutingSnapshot, world: &GameWorld) {
-        for window in &mut self.windows {
-            window.release_target_visible = window_is_visible(window, snapshot, world);
-        }
     }
 
     pub fn clear(&mut self) {
@@ -689,32 +667,6 @@ fn listed_members(
             )
         })
         .collect()
-}
-
-fn committed_window_matches(
-    snapshot: &RoutingSnapshot,
-    world: &GameWorld,
-    window: &OpenMissionsWindow,
-    id: WindowId,
-) -> bool {
-    snapshot
-        .key(id)
-        .is_some_and(|key| key.kind == WindowKind::Missions && key.subject == window.subject)
-        && world.systems.contains_key(window.system)
-        && system_subject(world, window.system) == window.subject
-}
-
-fn window_is_visible(
-    window: &OpenMissionsWindow,
-    snapshot: &RoutingSnapshot,
-    world: &GameWorld,
-) -> bool {
-    match window.id {
-        Some(id) => {
-            snapshot.is_visible(id) && committed_window_matches(snapshot, world, window, id)
-        }
-        None => world.systems.contains_key(window.system),
-    }
 }
 
 fn first_mission(
@@ -1067,7 +1019,6 @@ fn draw_missions_windows_with_snapshot(
         WindowKind::Missions,
         |system| shown(GalaxyChild::Missions(system)),
         world,
-        window_is_visible,
     );
     let mut actions = stale_manager_windows
         .into_iter()

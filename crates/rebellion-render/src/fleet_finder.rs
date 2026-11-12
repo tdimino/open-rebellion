@@ -1010,6 +1010,23 @@ mod tests {
         );
     }
 
+    fn drive_focused_key(
+        ctx: &egui::Context,
+        galaxy: &Galaxy,
+        state: &mut FleetFinderState,
+        focus: FocusTarget,
+        input: egui::Key,
+    ) -> Option<FleetFinderAction> {
+        drive_focused_in_context(
+            ctx,
+            galaxy,
+            state,
+            focus,
+            (0.0, 0.0),
+            vec![vec![key(input)]],
+        )
+    }
+
     fn click() -> Vec<Vec<egui::Event>> {
         let at = egui::Pos2::ZERO;
         vec![vec![press(at, true)], vec![press(at, false)]]
@@ -1264,14 +1281,7 @@ mod tests {
         type_focused_name(&ctx, &galaxy, &mut state, name_focus, "Fleet");
         assert_eq!(state.window.as_ref().unwrap().ui.name, "Fleet");
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                name_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::ArrowDown)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, name_focus, egui::Key::ArrowDown,),
             None
         );
         let list_focus = focus_target(id, FLEET_FINDER_LIST_CONTROL);
@@ -1301,40 +1311,19 @@ mod tests {
         assert_eq!(state.take_focus_request(), Some(name_focus));
 
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::ArrowDown)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowDown,),
             None
         );
         assert_eq!(state.window.as_ref().unwrap().ui.name, "Fleet 1");
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::Enter)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, list_focus, egui::Key::Enter),
             Some(FleetFinderAction::Open(FleetWindowEntry::Fleet(
                 galaxy.seen
             )))
         );
         assert!(state.is_open(), "managed content waits for close receipt");
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::Escape)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, list_focus, egui::Key::Escape),
             Some(FleetFinderAction::Close(id))
         );
     }
@@ -1345,14 +1334,7 @@ mod tests {
         type_focused_name(&ctx, &galaxy, &mut state, name_focus, "Fleet 2");
         let chosen = state.window.as_ref().unwrap().chosen.unwrap();
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                name_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::Enter)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, name_focus, egui::Key::Enter),
             Some(FleetFinderAction::Open(chosen))
         );
     }
@@ -1369,28 +1351,14 @@ mod tests {
         let ctx = egui::Context::default();
 
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::ArrowLeft)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowLeft,),
             None
         );
         assert_eq!(state.window.as_ref().unwrap().tab, FinderTab::Alliance);
 
         state.set_tab(FinderTab::Imperial);
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::ArrowUp)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowUp,),
             None
         );
         assert_eq!(

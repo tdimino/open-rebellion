@@ -22,8 +22,8 @@ use rebellion_core::officer_rank::CommandKind;
 use crate::bmp_cache::BmpCache;
 use crate::cockpit::{CockpitFaction, CockpitLayout, CockpitViewport};
 use crate::game_menu::{
-    draw_game_menu, game_menu_rects, GameMenuEntry, GameMenuPlacement, GameMenuResponse,
-    OwnedMenuOutcome,
+    consume_direct_menu_outcome, draw_game_menu, game_menu_rects, GameMenuEntry, GameMenuPlacement,
+    GameMenuResponse, OwnedMenuOutcome,
 };
 use crate::quadrant_icons::Quadrant;
 use crate::status_rows::StatusObject;
@@ -790,18 +790,9 @@ pub fn draw_object_menu(
     faction: CockpitFaction,
     input_enabled: bool,
 ) -> Option<(ObjectMenuCommand, Option<MenuObject>)> {
-    let open = menu.as_ref()?;
-    match draw_owned_object_menu(ctx, open, cache, layout, faction, input_enabled) {
-        OwnedMenuOutcome::Open => None,
-        OwnedMenuOutcome::Dismissed => {
-            *menu = None;
-            None
-        }
-        OwnedMenuOutcome::Chosen(chosen) => {
-            *menu = None;
-            Some(chosen)
-        }
-    }
+    let outcome =
+        draw_owned_object_menu(ctx, menu.as_ref()?, cache, layout, faction, input_enabled);
+    consume_direct_menu_outcome(outcome, || *menu = None)
 }
 
 /// Draw manager-owned object-menu content without deleting it. Dismissal and

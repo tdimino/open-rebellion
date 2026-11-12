@@ -20,6 +20,14 @@ pub fn root_detail(kind: WindowKind, subject: u64) -> WindowSpec {
     detail(kind, subject, WindowOwner::StrategicRoot)
 }
 
+/// Canonical pair of modeless strategic details, opened in stack order.
+pub fn system_and_fleet() -> (WindowManager, WindowId, WindowId) {
+    let mut manager = WindowManager::new();
+    let system = open(&mut manager, root_detail(WindowKind::System, 1));
+    let fleet = open(&mut manager, root_detail(WindowKind::Fleet, 2));
+    (manager, system, fleet)
+}
+
 pub fn modal(kind: WindowKind) -> WindowSpec {
     WindowSpec {
         key: WindowKey::singleton(kind),

@@ -3907,6 +3907,20 @@ fn draw_original_button(
     let Some(texture) = cache.get_macroquad_button(source, id) else {
         return;
     };
+    draw_texture_in_tactical_canvas(texture, canvas, x, y, source_rect);
+}
+
+/// Draw one cached texture in tactical-canvas coordinates, preserving an
+/// optional native source clip. Asset decoding decides whether the texture is
+/// ordinary artwork or a palette-keyed button before it reaches this common
+/// placement path.
+fn draw_texture_in_tactical_canvas(
+    texture: &Texture2D,
+    canvas: TacticalCanvas,
+    x: f32,
+    y: f32,
+    source_rect: Option<Rect>,
+) {
     let (screen_x, screen_y) = canvas.point(x, y);
     let width = source_rect.map_or_else(|| texture.width(), |rect| rect.w);
     let height = source_rect.map_or_else(|| texture.height(), |rect| rect.h);
@@ -3943,23 +3957,7 @@ fn draw_original_bitmap(
     let Some(texture) = cache.get_macroquad_original(source, id) else {
         return;
     };
-    let (screen_x, screen_y) = canvas.point(x, y);
-    let source_width = source_rect.map_or_else(|| texture.width(), |rect| rect.w);
-    let source_height = source_rect.map_or_else(|| texture.height(), |rect| rect.h);
-    draw_texture_ex(
-        texture,
-        screen_x,
-        screen_y,
-        WHITE,
-        DrawTextureParams {
-            dest_size: Some(vec2(
-                source_width * canvas.scale,
-                source_height * canvas.scale,
-            )),
-            source: source_rect,
-            ..Default::default()
-        },
-    );
+    draw_texture_in_tactical_canvas(texture, canvas, x, y, source_rect);
 }
 
 /// Cache every glyph and size that the macroquad tactical pass can emit before
@@ -8677,6 +8675,31 @@ fn tactical_screen_position(
     )
 }
 
+fn tactical_target_screen_geometry(
+    object_index: usize,
+    arena_position: (f32, f32),
+    projections: &HashMap<usize, TacticalScreenProjection>,
+    fallback_radius: f32,
+    scale: f32,
+    offset_x: f32,
+    offset_y: f32,
+) -> (macroquad::math::Vec2, f32) {
+    let target = tactical_screen_position(
+        object_index,
+        arena_position,
+        projections,
+        scale,
+        offset_x,
+        offset_y,
+    );
+    let radius = projections
+        .get(&object_index)
+        .map_or(fallback_radius * scale, |projection| {
+            (projection.max - projection.min).max_element() * 0.6 + 3.0
+        });
+    (target, radius)
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "The shared renderer needs both object families, their projections, and the arena transform."
@@ -8696,39 +8719,29 @@ fn draw_tactical_attack_target_spec(
             let Some(ship) = session.ships.get(index).filter(|ship| ship.alive) else {
                 return;
             };
-            let target = tactical_screen_position(
+            tactical_target_screen_geometry(
                 index,
                 (ship.x, ship.y),
                 ship_projections,
+                DEFAULT_SHIP_SIZE * 0.4,
                 scale,
                 offset_x,
                 offset_y,
-            );
-            let radius = ship_projections
-                .get(&index)
-                .map_or(DEFAULT_SHIP_SIZE * scale * 0.4, |projection| {
-                    (projection.max - projection.min).max_element() * 0.6 + 3.0
-                });
-            (target, radius)
+            )
         }
         TacticalAttackTarget::FighterGroup(index) => {
             let Some(fighter) = session.fighters.get(index).filter(|fighter| fighter.alive) else {
                 return;
             };
-            let target = tactical_screen_position(
+            tactical_target_screen_geometry(
                 index,
                 (fighter.x, fighter.y),
                 fighter_projections,
+                FIGHTER_SIZE * 0.75,
                 scale,
                 offset_x,
                 offset_y,
-            );
-            let radius = fighter_projections
-                .get(&index)
-                .map_or(FIGHTER_SIZE * scale * 0.75, |projection| {
-                    (projection.max - projection.min).max_element() * 0.6 + 3.0
-                });
-            (target, radius)
+            )
         }
     };
     draw_tactical_attack_target(source, target, radius);

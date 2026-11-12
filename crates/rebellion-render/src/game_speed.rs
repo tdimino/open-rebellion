@@ -19,12 +19,14 @@ use rebellion_core::tick::{GameClock, GameSpeed};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{
-    gid_popup_frame, logical_rect_to_screen, CockpitFaction, CockpitLayout, CockpitViewport,
-    STRATEGIC_LOGICAL_HEIGHT, STRATEGIC_LOGICAL_WIDTH,
+    gid_popup_frame, CockpitFaction, CockpitLayout, CockpitViewport, STRATEGIC_LOGICAL_HEIGHT,
+    STRATEGIC_LOGICAL_WIDTH,
 };
+#[cfg(test)]
+use crate::game_menu::consume_direct_menu_outcome;
 use crate::game_menu::{
-    draw_game_menu, faction_text_color, flat_menu_outcome, game_menu_rects, GameMenuEntry,
-    GameMenuPlacement, OwnedMenuOutcome,
+    context_menu_anchor, draw_owned_flat_menu, faction_text_color, game_menu_rects, GameMenuEntry,
+    OwnedMenuOutcome,
 };
 use crate::theme::game_font_size;
 
@@ -530,15 +532,9 @@ pub fn game_speed_menu_anchor(
     faction: CockpitFaction,
     point: (f32, f32),
 ) -> Option<(f32, f32)> {
-    (layout.scale > 0.0).then_some(())?;
-    let pointer = egui::pos2(point.0, point.1);
-    let hit = logical_rect_to_screen(layout, day_readout_rect(faction));
-    ((hit.x_range().min..hit.x_range().max).contains(&pointer.x)
-        && (hit.y_range().min..hit.y_range().max).contains(&pointer.y))
-    .then_some((
-        (pointer.x - layout.canvas.x) / layout.scale,
-        (pointer.y - layout.canvas.y) / layout.scale,
-    ))
+    context_menu_anchor(layout, point, |(x, y)| {
+        day_readout_rect(faction).contains(x, y)
+    })
 }
 
 /// Fixture-only direct-egui adapter. Production opens through the normalized
@@ -550,13 +546,12 @@ pub fn open_game_speed_menu_on_right_click(
     layout: CockpitLayout,
     faction: CockpitFaction,
 ) -> bool {
-    let Some(anchor) = crate::test_support::secondary_release_anchor(ctx, layout, |point| {
-        game_speed_menu_anchor(layout, faction, point)
-    }) else {
-        return false;
-    };
-    ui_state.menu_anchor = Some(anchor);
-    true
+    crate::test_support::open_context_menu_on_secondary_release(
+        ctx,
+        layout,
+        &mut ui_state.menu_anchor,
+        |point| game_speed_menu_anchor(layout, faction, point),
+    )
 }
 
 /// Where the open speed menu lies on screen.
@@ -586,9 +581,6 @@ pub fn draw_owned_game_speed_menu(
     faction: CockpitFaction,
     input_enabled: bool,
 ) -> OwnedMenuOutcome<GameSpeed> {
-    let Some(anchor) = ui_state.menu_anchor else {
-        return OwnedMenuOutcome::Open;
-    };
     let items = game_speed_menu_items(faction);
     let entries = items.map(|item| GameMenuEntry {
         label: item.label,
@@ -597,18 +589,16 @@ pub fn draw_owned_game_speed_menu(
         submenu: false,
         children: &[],
     });
-    crate::control_registry::name_next_menu("SpeedMenu");
-    flat_menu_outcome(
-        draw_game_menu(
-            ctx,
-            egui::Id::new(SPEED_MENU_ID),
-            cache,
-            layout,
-            faction,
-            GameMenuPlacement::in_frame(anchor),
-            &entries,
-            input_enabled,
-        ),
+    draw_owned_flat_menu(
+        ctx,
+        egui::Id::new(SPEED_MENU_ID),
+        "SpeedMenu",
+        cache,
+        layout,
+        faction,
+        ui_state.menu_anchor,
+        &entries,
+        input_enabled,
         |index| Some(items[index].speed),
     )
 }
@@ -623,17 +613,8 @@ pub fn draw_game_speed_menu(
     faction: CockpitFaction,
     input_enabled: bool,
 ) -> Option<GameSpeed> {
-    match draw_owned_game_speed_menu(ctx, ui_state, cache, layout, faction, input_enabled) {
-        OwnedMenuOutcome::Open => None,
-        OwnedMenuOutcome::Dismissed => {
-            ui_state.menu_anchor = None;
-            None
-        }
-        OwnedMenuOutcome::Chosen(speed) => {
-            ui_state.menu_anchor = None;
-            Some(speed)
-        }
-    }
+    let outcome = draw_owned_game_speed_menu(ctx, ui_state, cache, layout, faction, input_enabled);
+    consume_direct_menu_outcome(outcome, || ui_state.menu_anchor = None)
 }
 
 #[cfg(test)]

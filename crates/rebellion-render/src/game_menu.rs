@@ -370,6 +370,80 @@ pub(crate) fn flat_menu_outcome<T>(
     }
 }
 
+/// Convert a routed screen point into the original cockpit canvas and retain
+/// it only when the owning screen says the point opens its context menu.
+/// Coordinate conversion and invalid-scale rejection are menu-control
+/// behavior; the caller keeps the screen-specific hit region.
+pub(crate) fn context_menu_anchor(
+    layout: CockpitLayout,
+    point: (f32, f32),
+    hit_test: impl FnOnce((f32, f32)) -> bool,
+) -> Option<(f32, f32)> {
+    (layout.scale > 0.0).then_some(())?;
+    let logical = layout.logical_canvas_point(egui::pos2(point.0, point.1));
+    let logical = (logical.x, logical.y);
+    hit_test(logical).then_some(logical)
+}
+
+/// Draw one feature-owned flat menu through the common Game Menu control.
+/// Feature modules supply their records and map the selected row to their own
+/// command; this function owns anchor admission, placement and response
+/// normalization.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The shared menu control receives explicit rendering and feature-mapping inputs."
+)]
+pub(crate) fn draw_owned_flat_menu<T>(
+    ctx: &egui::Context,
+    area_id: egui::Id,
+    registry_name: &'static str,
+    cache: &mut BmpCache,
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+    anchor: Option<(f32, f32)>,
+    entries: &[GameMenuEntry<'_>],
+    input_enabled: bool,
+    selected: impl FnOnce(usize) -> Option<T>,
+) -> OwnedMenuOutcome<T> {
+    let Some(anchor) = anchor else {
+        return OwnedMenuOutcome::Open;
+    };
+    crate::control_registry::name_next_menu(registry_name);
+    flat_menu_outcome(
+        draw_game_menu(
+            ctx,
+            area_id,
+            cache,
+            layout,
+            faction,
+            GameMenuPlacement::in_frame(anchor),
+            entries,
+            input_enabled,
+        ),
+        selected,
+    )
+}
+
+/// Consume the result of a fixture-owned menu. Dismissal and selection both
+/// close the direct payload; manager-owned callers retain the outcome until
+/// their exact close receipt arrives.
+pub(crate) fn consume_direct_menu_outcome<T>(
+    outcome: OwnedMenuOutcome<T>,
+    mut close: impl FnMut(),
+) -> Option<T> {
+    match outcome {
+        OwnedMenuOutcome::Open => None,
+        OwnedMenuOutcome::Dismissed => {
+            close();
+            None
+        }
+        OwnedMenuOutcome::Chosen(chosen) => {
+            close();
+            Some(chosen)
+        }
+    }
+}
+
 /// Submenu arrows, highlighted and normal: 10117 and 10118 for side 1, else
 /// 10128 and 10129 (`FUN_00442860`, loaded by `FUN_004ab3a0`).
 const fn submenu_arrows(faction: CockpitFaction) -> (u32, u32) {

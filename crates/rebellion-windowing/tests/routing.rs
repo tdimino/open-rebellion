@@ -2,7 +2,7 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::{menu as menu_spec, open};
+use common::{menu as menu_spec, open, system_and_fleet};
 
 use rebellion_windowing::{
     BubblePolicy, ContentReport, ContentStatus, FocusOnOpen, FocusTarget, InputPolicy,
@@ -38,13 +38,6 @@ fn open_pair(
     (manager, first, second)
 }
 
-fn modeless_pair() -> (WindowManager, WindowId, WindowId) {
-    open_pair(
-        (WindowKind::System, 1, InputPolicy::Modeless),
-        (WindowKind::Fleet, 2, InputPolicy::Modeless),
-    )
-}
-
 fn owner_menu() -> (WindowManager, WindowId, WindowId) {
     let mut manager = WindowManager::new();
     let owner = open(
@@ -69,7 +62,7 @@ fn reconcile_single(
 
 #[test]
 fn topmost_eligible_hit_wins_independent_of_hit_registration_order() {
-    let (manager, lower, upper) = modeless_pair();
+    let (manager, lower, upper) = system_and_fleet();
     let frame = manager.begin_frame();
     for registered in [hits([lower, upper]), hits([upper, lower])] {
         assert_eq!(
@@ -84,7 +77,7 @@ fn topmost_eligible_hit_wins_independent_of_hit_registration_order() {
 
 #[test]
 fn modeless_eligibility_does_not_grant_all_windows_the_same_event() {
-    let (manager, lower, upper) = modeless_pair();
+    let (manager, lower, upper) = system_and_fleet();
     let frame = manager.begin_frame();
     assert!(frame.allows_input(lower));
     assert!(frame.allows_input(upper));

@@ -356,6 +356,28 @@ pub(crate) trait StrategicWindowRecord {
     fn screen_rect(&self, layout: CockpitLayout) -> egui::Rect;
 }
 
+/// Whether a system-backed detail record is admitted by the frozen manager
+/// identity and the world's current stable system subject. Direct fixtures
+/// remain visible while their runtime system still exists.
+pub(crate) fn system_window_is_visible<T: StrategicWindowRecord>(
+    window: &T,
+    snapshot: &RoutingSnapshot,
+    world: &rebellion_core::world::GameWorld,
+    kind: WindowKind,
+) -> bool {
+    let (id, subject, system) = window.identity();
+    match id {
+        Some(id) => {
+            snapshot.is_visible(id)
+                && snapshot
+                    .key(id)
+                    .is_some_and(|key| key.kind == kind && key.subject == subject)
+                && system_subject(world, system) == subject
+        }
+        None => world.systems.contains_key(system),
+    }
+}
+
 macro_rules! impl_strategic_window_record {
     ($record:ty, $area_id:path, $screen_rect:path) => {
         impl $crate::strategic_window_common::StrategicWindowRecord for $record {
@@ -744,6 +766,47 @@ macro_rules! impl_admitted_release_target {
 
 pub(crate) use impl_admitted_release_target;
 
+/// Define the shared frozen-identity visibility and release-admission API for
+/// a system-backed detail family. The macro expands beside private window
+/// records while delegating the actual policy to [`system_window_is_visible`].
+macro_rules! impl_system_window_visibility {
+    ($state:ty, $kind:path) => {
+        impl $state {
+            /// Whether any retained content is visible under the exact frozen
+            /// manager identity and current system subject.
+            #[must_use]
+            pub fn has_visible_content(
+                &self,
+                snapshot: &rebellion_windowing::RoutingSnapshot,
+                world: &rebellion_core::world::GameWorld,
+            ) -> bool {
+                self.windows.iter().any(|window| {
+                    $crate::strategic_window_common::system_window_is_visible(
+                        window, snapshot, world, $kind,
+                    )
+                })
+            }
+
+            /// Refresh which retained layers may resolve a gameplay release
+            /// during the current frozen frame.
+            pub fn refresh_release_targets(
+                &mut self,
+                snapshot: &rebellion_windowing::RoutingSnapshot,
+                world: &rebellion_core::world::GameWorld,
+            ) {
+                for window in &mut self.windows {
+                    window.release_target_visible =
+                        $crate::strategic_window_common::system_window_is_visible(
+                            window, snapshot, world, $kind,
+                        );
+                }
+            }
+        }
+    };
+}
+
+pub(crate) use impl_system_window_visibility;
+
 pub(crate) const fn title_resource(side: u8, focused: bool) -> u32 {
     match (side, focused) {
         (1, true) => 10299,
@@ -872,13 +935,17 @@ pub(crate) fn refreshed_window_paint_set<T: StrategicWindowRecord + Clone>(
 /// Build the release-admitted paint set shared by system-backed detail
 /// families whose private records carry `release_target_visible`.
 macro_rules! refreshed_release_window_paint_set {
-    ($windows:expr, $snapshot:expr, $kind:path, $shown:expr, $world:expr, $visible:path $(,)?) => {
+    ($windows:expr, $snapshot:expr, $kind:path, $shown:expr, $world:expr $(,)?) => {
         $crate::strategic_window_common::refreshed_window_paint_set(
             $windows,
             $snapshot,
             $kind,
             $shown,
-            |window, snapshot| $visible(window, snapshot, $world),
+            |window, snapshot| {
+                $crate::strategic_window_common::system_window_is_visible(
+                    window, snapshot, $world, $kind,
+                )
+            },
             |window| window.id.is_none() && $world.systems.contains_key(window.system),
             |window, visible| window.release_target_visible = visible,
             |window| window.release_target_visible,

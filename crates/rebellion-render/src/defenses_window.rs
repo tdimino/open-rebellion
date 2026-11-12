@@ -28,7 +28,6 @@ use crate::system_window::{
 };
 use crate::windowing::GalaxyChild;
 use crate::windowing_input::{FrameInputRouter, InputEventId, PointerButtonId, PointerPhase};
-use crate::windowing_policy::system_subject;
 use egui_macroquad::egui;
 use rebellion_core::dat::{ExplorationStatus, Faction};
 use rebellion_core::fog::FogState;
@@ -271,6 +270,7 @@ strategic_window_common::impl_system_keyed_window_routing!(
 );
 strategic_window_common::impl_fixture_window_order!(DefensesWindowState, OpenDefensesWindow);
 strategic_window_common::impl_admitted_release_target!(DefensesWindowState, area_id);
+strategic_window_common::impl_system_window_visibility!(DefensesWindowState, WindowKind::Defenses);
 strategic_window_common::define_basic_prepared_detail!(
     /// Validated Defenses content held aside until the manager accepts its
     /// stable `(Defenses, system DAT ID)` identity.
@@ -373,16 +373,6 @@ impl DefensesWindowState {
         })
     }
 
-    /// Whether exact Defenses content participates visibly in this frozen
-    /// frame. Manager-owned content must retain its committed kind and DAT
-    /// subject; direct fixture content remains visible while its system exists.
-    #[must_use]
-    pub fn has_visible_content(&self, snapshot: &RoutingSnapshot, world: &GameWorld) -> bool {
-        self.windows
-            .iter()
-            .any(|window| window_is_visible(window, snapshot, world))
-    }
-
     /// Removes only content named by manager teardown receipts.
     pub fn remove_content(&mut self, removed: &[WindowId]) {
         strategic_window_common::remove_content(&mut self.windows, removed);
@@ -455,15 +445,6 @@ impl DefensesWindowState {
             selected,
             garrison: garrison_line(world, player, system, window.page),
         })
-    }
-
-    /// Refreshes which retained egui layers may resolve a gameplay release.
-    /// The application calls this immediately after freezing the frame so a
-    /// stale prior-frame area cannot retarget before Defenses paints.
-    pub fn refresh_release_targets(&mut self, snapshot: &RoutingSnapshot, world: &GameWorld) {
-        for window in &mut self.windows {
-            window.release_target_visible = window_is_visible(window, snapshot, world);
-        }
     }
 
     // The object a Mission order released over the Defenses window egui
@@ -867,23 +848,6 @@ fn area_id(window: &OpenDefensesWindow) -> egui::Id {
     egui::Id::new(("original-defenses-window", window.id, window.system))
 }
 
-fn window_is_visible(
-    window: &OpenDefensesWindow,
-    snapshot: &RoutingSnapshot,
-    world: &GameWorld,
-) -> bool {
-    match window.id {
-        Some(id) => {
-            snapshot.is_visible(id)
-                && snapshot.key(id).is_some_and(|key| {
-                    key.kind == WindowKind::Defenses && key.subject == window.subject
-                })
-                && system_subject(world, window.system) == window.subject
-        }
-        None => world.systems.contains_key(window.system),
-    }
-}
-
 strategic_window_common::define_record_screen_rect!(
     window_screen_rect,
     OpenDefensesWindow,
@@ -968,7 +932,6 @@ fn draw_defenses_windows_with_snapshot(
         WindowKind::Defenses,
         |system| shown(GalaxyChild::Defenses(system)),
         world,
-        window_is_visible,
     );
     for &id in &stale_manager_windows {
         state.cancel_pointer_capture(id);

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use common::{
-    menu as transient_menu_spec, modal as singleton_spec, open as open_window,
+    menu as transient_menu_spec, modal as singleton_spec, open as open_window, opened_id,
     root_detail as modeless_subject_spec,
 };
 
@@ -32,13 +32,6 @@ fn sector_spec(subject: u64) -> WindowSpec {
             focus_on_open: FocusOnOpen::Window,
             restoration: FocusRestoration::PreviousEligible,
         },
-    }
-}
-
-fn opened_id(transition: WindowTransition) -> WindowId {
-    match transition {
-        WindowTransition::Opened { id } => id,
-        other => panic!("expected a new window, got {other:?}"),
     }
 }
 

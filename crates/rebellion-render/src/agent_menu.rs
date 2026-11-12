@@ -7,9 +7,10 @@ use egui_macroquad::egui;
 
 use crate::bmp_cache::BmpCache;
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+#[cfg(test)]
+use crate::game_menu::consume_direct_menu_outcome;
 use crate::game_menu::{
-    draw_game_menu, flat_menu_outcome, game_menu_rects, GameMenuEntry, GameMenuPlacement,
-    OwnedMenuOutcome,
+    context_menu_anchor, draw_owned_flat_menu, game_menu_rects, GameMenuEntry, OwnedMenuOutcome,
 };
 
 const AGENT_MENU_ID: &str = "original-agent-menu";
@@ -178,12 +179,9 @@ pub fn agent_menu_anchor(
     faction: CockpitFaction,
     point: (f32, f32),
 ) -> Option<(f32, f32)> {
-    (layout.scale > 0.0).then_some(())?;
-    let logical = (
-        (point.0 - layout.canvas.x) / layout.scale,
-        (point.1 - layout.canvas.y) / layout.scale,
-    );
-    agent_panel_contains(faction, logical).then_some(logical)
+    context_menu_anchor(layout, point, |logical| {
+        agent_panel_contains(faction, logical)
+    })
 }
 
 /// Fixture-only direct-egui adapter. Production opens through the normalized
@@ -195,13 +193,12 @@ pub fn open_agent_menu_on_right_click(
     layout: CockpitLayout,
     faction: CockpitFaction,
 ) -> bool {
-    let Some(anchor) = crate::test_support::secondary_release_anchor(ctx, layout, |point| {
-        agent_menu_anchor(layout, faction, point)
-    }) else {
-        return false;
-    };
-    state.anchor = Some(anchor);
-    true
+    crate::test_support::open_context_menu_on_secondary_release(
+        ctx,
+        layout,
+        &mut state.anchor,
+        |point| agent_menu_anchor(layout, faction, point),
+    )
 }
 
 /// Root and currently visible child rectangles of the open Agent menu.
@@ -226,9 +223,6 @@ pub fn draw_owned_agent_menu(
     view: AgentMenuView,
     input_enabled: bool,
 ) -> OwnedMenuOutcome<AgentCommand> {
-    let Some(anchor) = state.anchor else {
-        return OwnedMenuOutcome::Open;
-    };
     let items = agent_menu_items(view);
     let entries: Vec<GameMenuEntry<'_>> = items
         .iter()
@@ -240,18 +234,16 @@ pub fn draw_owned_agent_menu(
             children: &[],
         })
         .collect();
-    crate::control_registry::name_next_menu("AgentMenu");
-    flat_menu_outcome(
-        draw_game_menu(
-            ctx,
-            egui::Id::new(AGENT_MENU_ID),
-            cache,
-            layout,
-            faction,
-            GameMenuPlacement::in_frame(anchor),
-            &entries,
-            input_enabled,
-        ),
+    draw_owned_flat_menu(
+        ctx,
+        egui::Id::new(AGENT_MENU_ID),
+        "AgentMenu",
+        cache,
+        layout,
+        faction,
+        state.anchor,
+        &entries,
+        input_enabled,
         |index| items[index].command,
     )
 }
@@ -267,17 +259,8 @@ pub fn draw_agent_menu(
     view: AgentMenuView,
     input_enabled: bool,
 ) -> Option<AgentCommand> {
-    match draw_owned_agent_menu(ctx, state, cache, layout, faction, view, input_enabled) {
-        OwnedMenuOutcome::Open => None,
-        OwnedMenuOutcome::Dismissed => {
-            state.anchor = None;
-            None
-        }
-        OwnedMenuOutcome::Chosen(command) => {
-            state.anchor = None;
-            Some(command)
-        }
-    }
+    let outcome = draw_owned_agent_menu(ctx, state, cache, layout, faction, view, input_enabled);
+    consume_direct_menu_outcome(outcome, || state.anchor = None)
 }
 
 #[cfg(test)]

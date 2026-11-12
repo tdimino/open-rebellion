@@ -1,6 +1,9 @@
 mod common;
 
-use common::{detail as modeless_spec, menu as menu_spec, modal as modal_spec, open, opened_id};
+use common::{
+    detail as modeless_spec, menu as menu_spec, modal as modal_spec, open, opened_id,
+    system_and_fleet,
+};
 use rebellion_windowing::{
     CaptureCancelReason, CloseReason, ControlId, ExistingOpenPolicy, FocusOnOpen, FocusRestoration,
     FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy, StackBand, TransitionSubject,
@@ -27,19 +30,6 @@ fn only_menu_may_request_saved_focus_restoration() {
     );
     assert_eq!(valid.get(), 1, "rejection must not consume an identity");
     assert_eq!(manager.validate(), Ok(()));
-}
-
-fn system_and_fleet() -> (WindowManager, WindowId, WindowId) {
-    let mut manager = WindowManager::new();
-    let system = open(
-        &mut manager,
-        modeless_spec(WindowKind::System, 1, WindowOwner::StrategicRoot),
-    );
-    let fleet = open(
-        &mut manager,
-        modeless_spec(WindowKind::Fleet, 2, WindowOwner::StrategicRoot),
-    );
-    (manager, system, fleet)
 }
 
 fn minimized_system_and_fleet() -> (WindowManager, WindowId, WindowId) {

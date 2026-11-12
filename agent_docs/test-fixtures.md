@@ -49,6 +49,12 @@ placeholder pointer-button coordinates in each module. Use
 `for_each_routed_pointer_frame` only when the test needs to inspect or mutate
 the router between drawing steps.
 
+Fixture-owned context menus should use
+`open_context_menu_on_secondary_release`; keep only the screen-specific hit
+region and anchor mapping in the caller. Its lower-level
+`secondary_release_anchor` primitive is for fixtures that need to inspect the
+translated anchor before publishing menu content.
+
 Use `key_frame`, `tap_key`, `click_frames`, `immediate_click_frames`,
 `right_click_frames`, and `title_drag_frames` for input sequences. Use
 `raw_input`, `full_raw_input`, or `timed_raw_input` instead of repeating
@@ -137,7 +143,8 @@ Other fixture homes are intentionally narrower:
   four-resource uniform Encyclopedia artwork map.
 - `crates/rebellion-data/tests/common/mod.rs` owns integration-test path
   discovery; `crates/rebellion-windowing/tests/common/mod.rs` owns the shared
-  window-spec/open helpers.
+  window-spec/open helpers, including the canonical modeless
+  `system_and_fleet` pair.
 - `crate::interface_fixture_bridge` in `rebellion-app` owns the browser
   fixture's request-code import and serialized-payload emission. Interface,
   tactical, and Encyclopedia fixtures should call that bridge instead of
