@@ -220,8 +220,6 @@ struct OpenFinder {
     chosen: Option<FleetWindowEntry>,
 }
 
-finder_common::impl_finder_content!(OpenFinder);
-
 /// What the open Finder shows, for the interface fixture.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FleetFinderReport {
@@ -233,30 +231,16 @@ pub struct FleetFinderReport {
     pub first_row: usize,
 }
 
-/// The Fleet Finder, one at most (`FUN_0042a0c0`).
-#[derive(Debug, Clone, Default)]
-pub struct FleetFinderState {
-    window: Option<OpenFinder>,
-}
-
-finder_common::impl_finder_state_shell!(
-    FleetFinderState,
-    WindowKind::FleetFinder,
-    "original-fleet-finder"
-);
-
-/// Candidate Fleet Finder content. It is inert until the app coordinator
-/// accepts the singleton identity and returns its open receipt.
-#[derive(Debug, Clone, Copy)]
-pub struct PreparedFleetFinder {
-    faction: CockpitFaction,
-}
-
-finder_common::impl_finder_lifecycle!(
-    FleetFinderState,
-    PreparedFleetFinder,
-    WindowKind::FleetFinder,
-    |faction, window_id| {
+finder_common::define_finder_state! {
+    content: OpenFinder;
+    /// The Fleet Finder, one at most (`FUN_0042a0c0`).
+    state: FleetFinderState;
+    /// Candidate Fleet Finder content. It is inert until the app coordinator
+    /// accepts the singleton identity and returns its open receipt.
+    prepared: PreparedFleetFinder;
+    kind: WindowKind::FleetFinder;
+    layer: "original-fleet-finder";
+    open: |faction, window_id| {
         OpenFinder {
             ui: FinderUiState::new(window_id, faction),
             mode: FinderMode::Fleets,
@@ -264,7 +248,7 @@ finder_common::impl_finder_lifecycle!(
             chosen: None,
         }
     }
-);
+}
 
 impl FleetFinderState {
     #[must_use]
@@ -327,18 +311,11 @@ impl FleetFinderState {
         ))
     }
 
-    /// Show `tab` (group `100`): the list rebuilds and the choice clears
-    /// (`FUN_00462be0`).
-    pub fn set_tab(&mut self, tab: FinderTab) {
-        if let Some(window) = &mut self.window {
-            finder_common::change_category(
-                &mut window.tab,
-                &mut window.chosen,
-                &mut window.ui,
-                tab,
-            );
-        }
-    }
+    finder_common::impl_finder_category_setter!(
+        /// Show `tab` (group `100`): the list rebuilds and the choice clears
+        /// (`FUN_00462be0`).
+        set_tab(FinderTab) => tab
+    );
 
     /// `FUN_004632d0`: the name box empties and the list rebuilds for the
     /// tab in use.

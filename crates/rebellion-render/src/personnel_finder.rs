@@ -371,25 +371,23 @@ struct OpenFinder {
     chosen: Option<usize>,
 }
 
-finder_common::impl_finder_content!(OpenFinder);
-
-/// The Personnel Finder, one at most (`FUN_0042a4d0`).
-#[derive(Debug, Clone, Default)]
-pub struct PersonnelFinderState {
-    window: Option<OpenFinder>,
-}
-
-finder_common::impl_finder_state_shell!(
-    PersonnelFinderState,
-    WindowKind::PersonnelFinder,
-    "original-personnel-finder"
-);
-
-/// Candidate Personnel Finder content. It remains inert until the app
-/// coordinator accepts the singleton identity and returns its open receipt.
-#[derive(Debug, Clone, Copy)]
-pub struct PreparedPersonnelFinder {
-    faction: CockpitFaction,
+finder_common::define_finder_state! {
+    content: OpenFinder;
+    /// The Personnel Finder, one at most (`FUN_0042a4d0`).
+    state: PersonnelFinderState;
+    /// Candidate Personnel Finder content. It remains inert until the app
+    /// coordinator accepts the singleton identity and returns its open receipt.
+    prepared: PreparedPersonnelFinder;
+    kind: WindowKind::PersonnelFinder;
+    layer: "original-personnel-finder";
+    open: |faction, window_id| {
+        OpenFinder {
+            ui: FinderUiState::new(window_id, faction),
+            tab: finder_common::side_value(faction, PersonnelTab::ALL),
+            view: PersonnelView::SpecForces,
+            chosen: None,
+        }
+    }
 }
 
 /// Rows visible at once: 161 / 20 = 8.
@@ -414,42 +412,9 @@ const FINDER_CONFIG: finder_common::SideFinderConfig<PersonnelTab> = finder_comm
     controls: (PERSONNEL_FINDER_NAME_CONTROL, PERSONNEL_FINDER_LIST_CONTROL),
 };
 
-finder_common::impl_finder_lifecycle!(
-    PersonnelFinderState,
-    PreparedPersonnelFinder,
-    WindowKind::PersonnelFinder,
-    |faction, window_id| {
-        OpenFinder {
-            ui: FinderUiState::new(window_id, faction),
-            tab: finder_common::side_value(faction, PersonnelTab::ALL),
-            view: PersonnelView::SpecForces,
-            chosen: None,
-        }
-    }
-);
-
 impl PersonnelFinderState {
-    pub fn set_tab(&mut self, tab: PersonnelTab) {
-        if let Some(window) = &mut self.window {
-            finder_common::change_category(
-                &mut window.tab,
-                &mut window.chosen,
-                &mut window.ui,
-                tab,
-            );
-        }
-    }
-
-    pub fn set_view(&mut self, view: PersonnelView) {
-        if let Some(window) = &mut self.window {
-            finder_common::change_category(
-                &mut window.view,
-                &mut window.chosen,
-                &mut window.ui,
-                view,
-            );
-        }
-    }
+    finder_common::impl_finder_category_setter!(set_tab(PersonnelTab) => tab);
+    finder_common::impl_finder_category_setter!(set_view(PersonnelView) => view);
 }
 
 type PersonnelFinderDrawOutcome = finder_common::FinderDrawOutcome<PersonnelFinderAction>;

@@ -211,53 +211,30 @@ struct OpenFinder {
     chosen: Option<usize>,
 }
 
-finder_common::impl_finder_content!(OpenFinder);
-
-/// The Troop Finder, one at most (`FUN_0042a4d0`).
-#[derive(Debug, Clone, Default)]
-pub struct TroopFinderState {
-    window: Option<OpenFinder>,
-}
-
-finder_common::impl_finder_state_shell!(
-    TroopFinderState,
-    WindowKind::TroopFinder,
-    "original-troop-finder"
-);
-
-/// Candidate Troop Finder content. It remains inert until the app coordinator
-/// accepts the singleton identity and returns its open receipt.
-#[derive(Debug, Clone, Copy)]
-pub struct PreparedTroopFinder {
-    faction: CockpitFaction,
-}
-
-finder_common::impl_finder_lifecycle!(
-    TroopFinderState,
-    PreparedTroopFinder,
-    WindowKind::TroopFinder,
-    |faction, window_id| {
+finder_common::define_finder_state! {
+    content: OpenFinder;
+    /// The Troop Finder, one at most (`FUN_0042a4d0`).
+    state: TroopFinderState;
+    /// Candidate Troop Finder content. It remains inert until the app coordinator
+    /// accepts the singleton identity and returns its open receipt.
+    prepared: PreparedTroopFinder;
+    kind: WindowKind::TroopFinder;
+    layer: "original-troop-finder";
+    open: |faction, window_id| {
         OpenFinder {
             ui: FinderUiState::new(window_id, faction),
             tab: finder_common::side_value(faction, TroopTab::ALL),
             chosen: None,
         }
     }
-);
+}
 
 impl TroopFinderState {
-    /// Show `tab` (group `100`): the list rebuilds and the choice clears
-    /// (`FUN_0046ea10`).
-    pub fn set_tab(&mut self, tab: TroopTab) {
-        if let Some(window) = &mut self.window {
-            finder_common::change_category(
-                &mut window.tab,
-                &mut window.chosen,
-                &mut window.ui,
-                tab,
-            );
-        }
-    }
+    finder_common::impl_finder_category_setter!(
+        /// Show `tab` (group `100`): the list rebuilds and the choice clears
+        /// (`FUN_0046ea10`).
+        set_tab(TroopTab) => tab
+    );
 }
 
 /// Rows the list shows at once: 159 / 25 = 6.

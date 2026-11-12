@@ -29,7 +29,9 @@ use crate::singleton_window_common;
 pub(crate) mod prelude {
     pub(crate) use super::{BitmapControl as Control, FinderRowName, FinderUiState};
     pub(crate) use crate::bmp_cache::BmpCache;
-    pub(crate) use crate::cockpit::{CockpitFaction, CockpitLayout};
+    #[cfg(test)]
+    pub(crate) use crate::cockpit::CockpitFaction;
+    pub(crate) use crate::cockpit::CockpitLayout;
     pub(crate) use egui_macroquad::egui;
     pub(crate) use rebellion_core::world::GameWorld;
     pub(crate) use rebellion_windowing::{ControlId, FocusTarget, WindowId, WindowKind};
@@ -971,6 +973,27 @@ pub(crate) fn change_category<Category: PartialEq, Selection>(
     true
 }
 
+/// Generate the thin public setter for a Finder category. The family keeps the
+/// category type and field, while the Finder framework owns the shared reset
+/// semantics for selection and list navigation.
+macro_rules! impl_finder_category_setter {
+    ($(#[$meta:meta])* $method:ident($category:ty) => $field:ident) => {
+        $(#[$meta])*
+        pub fn $method(&mut self, next: $category) {
+            if let Some(window) = &mut self.window {
+                $crate::finder_common::change_category(
+                    &mut window.$field,
+                    &mut window.chosen,
+                    &mut window.ui,
+                    next,
+                );
+            }
+        }
+    };
+}
+
+pub(crate) use impl_finder_category_setter;
+
 /// Commit the common output of an indexed Finder to its family model.
 /// `selection` translates a visible row index into the identity retained by
 /// that family (an index for Personnel/Troop, an object for Fleet).
@@ -1184,6 +1207,47 @@ macro_rules! impl_finder_lifecycle {
 }
 
 pub(crate) use impl_finder_lifecycle;
+
+/// Declare the common state, inert prepared content, and singleton lifecycle
+/// for one Finder family. Screen modules supply only their content initializer;
+/// manager identity and fixture-open behavior remain uniform here.
+macro_rules! define_finder_state {
+    (
+        content: $content:ty;
+        $(#[$state_meta:meta])*
+        state: $state:ident;
+        $(#[$prepared_meta:meta])*
+        prepared: $prepared:ident;
+        kind: $kind:path;
+        layer: $layer_name:literal;
+        open: |$faction:ident, $window_id:ident| $open_content:block $(;)?
+    ) => {
+        $crate::finder_common::impl_finder_content!($content);
+
+        $(#[$state_meta])*
+        #[derive(Debug, Clone, Default)]
+        pub struct $state {
+            window: Option<$content>,
+        }
+
+        $crate::finder_common::impl_finder_state_shell!($state, $kind, $layer_name);
+
+        $(#[$prepared_meta])*
+        #[derive(Debug, Clone, Copy)]
+        pub struct $prepared {
+            faction: $crate::cockpit::CockpitFaction,
+        }
+
+        $crate::finder_common::impl_finder_lifecycle!(
+            $state,
+            $prepared,
+            $kind,
+            |$faction, $window_id| $open_content
+        );
+    };
+}
+
+pub(crate) use define_finder_state;
 
 pub(crate) fn window_id<T: FinderContent>(window: Option<&T>) -> Option<WindowId> {
     window.and_then(|window| window.finder_ui().window_id())
