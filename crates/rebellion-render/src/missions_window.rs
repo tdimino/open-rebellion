@@ -1099,43 +1099,17 @@ pub fn draw_managed_missions_windows(
     )
 }
 
-/// Shared inputs for manager-owned Missions drawing with a visibility filter.
-pub struct ManagedMissionsDraw<'a> {
-    pub ctx: &'a egui::Context,
-    pub world: &'a GameWorld,
-    pub fog: &'a FogState,
-    pub missions: &'a MissionState,
-    pub state: &'a mut MissionsWindowState,
-    pub faction: CockpitFaction,
-    pub layout: CockpitLayout,
-    pub cache: &'a mut BmpCache,
-    pub snapshot: &'a RoutingSnapshot,
-    pub pointer_events: &'a [(InputEventId, PointerPhase)],
-    pub router: &'a mut FrameInputRouter,
-}
+/// Shared managed-detail inputs specialized to Missions state.
+pub type ManagedMissionsDraw<'a> =
+    strategic_window_common::ManagedDetailWindowsDraw<'a, MissionsWindowState>;
 
 /// [`draw_managed_missions_windows`] with command-center GID visibility.
 pub fn draw_managed_missions_windows_shown(
     draw: ManagedMissionsDraw<'_>,
     shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<MissionsWindowAction> {
-    let ManagedMissionsDraw {
-        ctx,
-        world,
-        fog,
-        missions,
-        state,
-        faction,
-        layout,
-        cache,
-        snapshot,
-        pointer_events,
-        router,
-    } = draw;
-    strategic_window_common::draw_managed_detail_windows!(
-        draw_missions_windows_with_snapshot => ctx world fog missions faction layout cache
-        snapshot pointer_events router shown state
-    )
+    let (draw, state) = draw.with_visibility(shown);
+    draw_missions_windows_with_snapshot(draw, state)
 }
 
 #[allow(

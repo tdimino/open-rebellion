@@ -1218,6 +1218,63 @@ pub(crate) struct DetailWindowsDraw<'a> {
     pub(crate) shown: &'a dyn Fn(crate::windowing::GalaxyChild) -> bool,
 }
 
+/// The common application boundary for manager-owned strategic detail
+/// windows. Families provide only their concrete state; rendering, routing,
+/// and command-center visibility travel together through this framework type.
+pub struct ManagedDetailWindowsDraw<'a, State> {
+    pub ctx: &'a egui::Context,
+    pub world: &'a rebellion_core::world::GameWorld,
+    pub fog: &'a rebellion_core::fog::FogState,
+    pub missions: &'a rebellion_core::missions::MissionState,
+    pub state: &'a mut State,
+    pub faction: CockpitFaction,
+    pub layout: CockpitLayout,
+    pub cache: &'a mut BmpCache,
+    pub snapshot: &'a RoutingSnapshot,
+    pub pointer_events: &'a [(InputEventId, PointerPhase)],
+    pub router: &'a mut FrameInputRouter,
+}
+
+impl<'a, State> ManagedDetailWindowsDraw<'a, State> {
+    pub(crate) fn with_visibility<'draw>(
+        self,
+        shown: &'draw dyn Fn(crate::windowing::GalaxyChild) -> bool,
+    ) -> (DetailWindowsDraw<'draw>, &'draw mut State)
+    where
+        'a: 'draw,
+    {
+        let Self {
+            ctx,
+            world,
+            fog,
+            missions,
+            state,
+            faction,
+            layout,
+            cache,
+            snapshot,
+            pointer_events,
+            router,
+        } = self;
+        (
+            DetailWindowsDraw::new(
+                ctx,
+                world,
+                fog,
+                missions,
+                faction,
+                layout,
+                cache,
+                Some(snapshot),
+                pointer_events,
+                Some(router),
+                shown,
+            ),
+            state,
+        )
+    }
+}
+
 static SHOW_ALL_GALAXY_CHILDREN: fn(crate::windowing::GalaxyChild) -> bool = |_| true;
 
 impl<'a> DetailWindowsDraw<'a> {
@@ -1300,33 +1357,6 @@ macro_rules! unpack_detail_windows_draw {
 }
 
 pub(crate) use unpack_detail_windows_draw;
-
-macro_rules! draw_managed_detail_windows {
-    (
-        $draw:path => $ctx:ident $world:ident $fog:ident $missions:ident $faction:ident
-        $layout:ident $cache:ident $snapshot:ident $events:ident $router:ident $shown:ident
-        $state:ident
-    ) => {
-        $draw(
-            $crate::strategic_window_common::DetailWindowsDraw::new(
-                $ctx,
-                $world,
-                $fog,
-                $missions,
-                $faction,
-                $layout,
-                $cache,
-                Some($snapshot),
-                $events,
-                Some($router),
-                $shown,
-            ),
-            $state,
-        )
-    };
-}
-
-pub(crate) use draw_managed_detail_windows;
 
 impl<'a, T> DetailWindowDraw<'a, T> {
     pub(crate) fn new(

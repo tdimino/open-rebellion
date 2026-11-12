@@ -617,7 +617,6 @@ mod tests {
                         world,
                         &fog,
                         &rebellion_core::missions::MissionState::new(),
-                        &rebellion_core::economy::EconomyState::default(),
                         defenses,
                         faction,
                         layout,

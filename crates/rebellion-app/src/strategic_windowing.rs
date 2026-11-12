@@ -1791,7 +1791,6 @@ mod tests {
     use egui_macroquad::egui;
     use rebellion_core::dat::{Faction, SectorGroup};
     use rebellion_core::delivery::DeliveryState;
-    use rebellion_core::economy::EconomyState;
     use rebellion_core::fog::FogState;
     use rebellion_core::ids::FleetKey;
     use rebellion_core::ids::{DatId, SystemKey};
@@ -3204,7 +3203,6 @@ mod tests {
         ) -> Vec<String> {
             let ctx = egui::Context::default();
             let mut cache = BmpCache::new();
-            let economy = EconomyState::default();
             let window = self.defenses_windows.window_id(self.system).unwrap();
             let mut router = FrameInputRouter::default();
             let mut visible_rows = Vec::new();
@@ -3218,7 +3216,6 @@ mod tests {
                         &self.world,
                         &self.fog,
                         &self.missions,
-                        &economy,
                         &mut self.defenses_windows,
                         CockpitFaction::Alliance,
                         fleet_layout(),

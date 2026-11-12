@@ -31,7 +31,6 @@ use crate::windowing_input::{FrameInputRouter, InputEventId, PointerButtonId, Po
 use crate::windowing_policy::system_subject;
 use egui_macroquad::egui;
 use rebellion_core::dat::{ExplorationStatus, Faction};
-use rebellion_core::economy::EconomyState;
 use rebellion_core::fog::FogState;
 use rebellion_core::ids::{
     CharacterKey, DefenseFacilityKey, FighterKey, SpecialForceKey, SystemKey, TroopKey,
@@ -962,7 +961,6 @@ pub fn draw_defenses_windows(
     world: &GameWorld,
     fog: &FogState,
     missions: &MissionState,
-    _economy: &EconomyState,
     state: &mut DefensesWindowState,
     faction: CockpitFaction,
     layout: CockpitLayout,
@@ -987,7 +985,6 @@ pub fn draw_managed_defenses_windows(
     world: &GameWorld,
     fog: &FogState,
     missions: &MissionState,
-    economy: &EconomyState,
     state: &mut DefensesWindowState,
     faction: CockpitFaction,
     layout: CockpitLayout,
@@ -1002,7 +999,6 @@ pub fn draw_managed_defenses_windows(
             world,
             fog,
             missions,
-            economy,
             state,
             faction,
             layout,
@@ -1015,46 +1011,17 @@ pub fn draw_managed_defenses_windows(
     )
 }
 
-/// Inputs shared by the managed Defenses renderer and its visibility-aware
-/// application boundary.
-pub struct ManagedDefensesDraw<'a> {
-    pub ctx: &'a egui::Context,
-    pub world: &'a GameWorld,
-    pub fog: &'a FogState,
-    pub missions: &'a MissionState,
-    pub economy: &'a EconomyState,
-    pub state: &'a mut DefensesWindowState,
-    pub faction: CockpitFaction,
-    pub layout: CockpitLayout,
-    pub cache: &'a mut BmpCache,
-    pub snapshot: &'a RoutingSnapshot,
-    pub pointer_events: &'a [(InputEventId, PointerPhase)],
-    pub router: &'a mut FrameInputRouter,
-}
+/// Shared managed-detail inputs specialized to Defenses state.
+pub type ManagedDefensesDraw<'a> =
+    strategic_window_common::ManagedDetailWindowsDraw<'a, DefensesWindowState>;
 
 /// [`draw_managed_defenses_windows`] with command-center GID visibility.
 pub fn draw_managed_defenses_windows_shown(
     input: ManagedDefensesDraw<'_>,
     shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<DefensesWindowAction> {
-    let ManagedDefensesDraw {
-        ctx,
-        world,
-        fog,
-        missions,
-        economy: _,
-        state,
-        faction,
-        layout,
-        cache,
-        snapshot,
-        pointer_events,
-        router,
-    } = input;
-    strategic_window_common::draw_managed_detail_windows!(
-        draw_defenses_windows_with_snapshot => ctx world fog missions faction layout cache
-        snapshot pointer_events router shown state
-    )
+    let (draw, state) = input.with_visibility(shown);
+    draw_defenses_windows_with_snapshot(draw, state)
 }
 
 #[allow(
@@ -2276,7 +2243,6 @@ mod tests {
                     &world,
                     &fog,
                     missions,
-                    &EconomyState::default(),
                     state,
                     faction,
                     scaled(),
@@ -2303,7 +2269,6 @@ mod tests {
                 fog.reveal(key);
                 fog
             });
-        let economy = EconomyState::default();
         let window = state
             .windows
             .iter()
@@ -2320,7 +2285,6 @@ mod tests {
                     world,
                     &fog,
                     missions,
-                    &economy,
                     state,
                     CockpitFaction::Alliance,
                     scaled(),

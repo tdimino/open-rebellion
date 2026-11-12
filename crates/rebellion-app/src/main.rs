@@ -16656,7 +16656,6 @@ async fn main() {
                                 world: &world,
                                 fog: fog_state,
                                 missions: &mission_state,
-                                economy: &economy_state,
                                 state: &mut defenses_window_state,
                                 faction: cockpit_state.faction,
                                 layout: cockpit_layout,
