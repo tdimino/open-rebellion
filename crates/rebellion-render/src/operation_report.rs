@@ -23,6 +23,7 @@ use rebellion_core::world::GameWorld;
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::fleet_window::{mini_layers, paint_native, portrait_layers, MiniObject};
+use crate::list_control::wheel_step;
 use crate::message_log::{GameMessage, MessageId};
 use crate::mission_dialog::{button, galaxy_centered_rect, paint_button};
 use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
@@ -1109,8 +1110,7 @@ fn draw_at(
                     .is_some_and(|point| rect_contains(list_rect, point));
                 let wheel = ui.input(|input| input.raw_scroll_delta.y);
                 if hovered && wheel != 0.0 {
-                    first_row =
-                        crate::mission_dialog::scrolled(first_row, range.max_first() + 1, wheel);
+                    first_row = wheel_step(first_row, range.max_first().saturating_add(1), wheel);
                 }
             }
 

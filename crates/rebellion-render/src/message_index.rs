@@ -11,7 +11,7 @@ use egui_macroquad::egui::{self, Color32};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::finder_common::{row_click, RowClick};
+use crate::list_control::{clamp_first_row, row_click, wheel_delta, wheel_step, RowClick};
 use crate::message_log::{
     GameMessage, MessageId, MessageLog, MessageRail, MessageTarget, POST_SILENTLY,
 };
@@ -1396,8 +1396,7 @@ pub fn draw_message_index(
     }
 
     // Clamp scroll.
-    let max_scroll = rows.len().saturating_sub(VISIBLE_ROWS);
-    state.scroll_offset = state.scroll_offset.min(max_scroll);
+    state.scroll_offset = clamp_first_row(state.scroll_offset, rows.len(), VISIBLE_ROWS);
 
     match state.mode {
         IndexMode::List => {
@@ -1604,10 +1603,7 @@ fn draw_list_rows(
             );
 
             // Scroll wheel over the list.
-            let pointer = ui.input(|input| input.pointer.hover_pos());
-            if pointer.is_some_and(|p| message_index_rect_contains(list_rect, p)) {
-                wheel = ui.input(|input| input.raw_scroll_delta.y);
-            }
+            wheel = wheel_delta(ui, list_rect);
         });
 
     // Apply click.
@@ -1628,11 +1624,7 @@ fn draw_list_rows(
     // Apply scroll.
     if wheel != 0.0 {
         let max_scroll = rows.len().saturating_sub(VISIBLE_ROWS);
-        state.scroll_offset = if wheel > 0.0 {
-            state.scroll_offset.saturating_sub(1)
-        } else {
-            (state.scroll_offset + 1).min(max_scroll)
-        };
+        state.scroll_offset = wheel_step(state.scroll_offset, max_scroll.saturating_add(1), wheel);
     }
 
     actions

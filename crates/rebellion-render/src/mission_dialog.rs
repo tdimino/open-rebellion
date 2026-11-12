@@ -17,6 +17,7 @@ use rebellion_windowing::{ExistingEffect, WindowId, WindowKind, WindowTransition
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
+use crate::list_control::wheel_step;
 use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::sector_window::planet_resource_id;
 use crate::singleton_window_common::{
@@ -513,18 +514,6 @@ fn centered(bounds: egui::Rect, size: egui::Vec2, scale: f32) -> egui::Rect {
     )
 }
 
-/// One wheel step through `len` items from `row`: down (a negative delta)
-/// goes one on, up goes one back, and neither leaves the list.
-pub(crate) fn scrolled(row: usize, len: usize, wheel: f32) -> usize {
-    if wheel < 0.0 && row + 1 < len {
-        row + 1
-    } else if wheel > 0.0 {
-        row.saturating_sub(1)
-    } else {
-        row
-    }
-}
-
 /// Paint a bitmap at its own size scaled with the dialog, centered in `bounds`.
 pub(crate) fn paint_centered(
     painter: &egui::Painter,
@@ -951,7 +940,7 @@ pub fn draw_mission_dialog(
                 let response = ui.interact(popup, ui.id().with("kind-list"), egui::Sense::click());
                 if response.hovered() {
                     let wheel = ctx.input(|input| input.raw_scroll_delta.y);
-                    dialog.select_kind(scrolled(dialog.kind, dialog.kinds.len(), wheel));
+                    dialog.select_kind(wheel_step(dialog.kind, dialog.kinds.len(), wheel));
                 }
                 paint_kind(
                     &painter,
@@ -1059,7 +1048,7 @@ fn draw_list(
         .is_some_and(|point| rect_contains(list, point));
     if over {
         let wheel = ui.ctx().input(|input| input.raw_scroll_delta.y);
-        *row = scrolled(*row, members.len(), wheel);
+        *row = wheel_step(*row, members.len(), wheel);
     }
     for (index, &member) in members.iter().enumerate().skip(*row) {
         let offset = (index - *row) as f32 * ITEM_SIZE.1;
@@ -1923,11 +1912,16 @@ mod tests {
 
     #[test]
     fn a_wheel_step_moves_one_item_and_stays_in_the_list() {
-        assert_eq!(scrolled(0, 3, -1.0), 1);
-        assert_eq!(scrolled(2, 3, -1.0), 2);
-        assert_eq!(scrolled(2, 3, 1.0), 1);
-        assert_eq!(scrolled(0, 3, 1.0), 0);
-        assert_eq!(scrolled(1, 3, 0.0), 1);
+        assert_eq!(
+            [
+                wheel_step(0, 3, -1.0),
+                wheel_step(2, 3, -1.0),
+                wheel_step(2, 3, 1.0),
+                wheel_step(0, 3, 1.0),
+                wheel_step(1, 3, 0.0),
+            ],
+            [1, 2, 1, 0, 1]
+        );
     }
 
     #[test]

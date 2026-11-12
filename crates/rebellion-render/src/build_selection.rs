@@ -21,10 +21,9 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
+use crate::list_control::wheel_step;
 use crate::manufacturing_window::product;
-use crate::mission_dialog::{
-    button, galaxy_centered_rect, paint, paint_button, paint_centered, scrolled,
-};
+use crate::mission_dialog::{button, galaxy_centered_rect, paint, paint_button, paint_centered};
 use crate::native_geometry::{exact_clicked, rect_contains};
 use crate::singleton_window_common::{
     self, impl_singleton_content_reports, impl_singleton_window_routing,
@@ -864,7 +863,11 @@ pub fn draw_build_selection(
             }
             if response.hovered() {
                 let wheel = ctx.input(|input| input.raw_scroll_delta.y);
-                dialog.top = scrolled(dialog.top, len.saturating_sub(LIST_ROWS) + 1, wheel);
+                dialog.top = wheel_step(
+                    dialog.top,
+                    len.saturating_sub(LIST_ROWS).saturating_add(1),
+                    wheel,
+                );
             }
             for (slot, row) in (dialog.top..len).take(LIST_ROWS).enumerate() {
                 paint_item(

@@ -14,6 +14,10 @@ use rebellion_windowing::{
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::fleet_window::paint_native;
+use crate::list_control::{
+    longest_prefix_match, max_first_row, move_selection, reveal_row, row_click, selected_row,
+    visible_range, wheel_delta, wheel_step, ListMove, RowClick,
+};
 use crate::mission_dialog::{button, galaxy_centered_rect};
 use crate::native_geometry::{logical_rect, rect_contains};
 use crate::singleton_window_common;
@@ -140,8 +144,7 @@ impl FinderCanvas<'_> {
     ) -> impl Iterator<Item = (usize, &'a R, egui::Rect)> {
         let frame = self.frame;
         let scale = self.scale;
-        let end = rows.len().min(first_row.saturating_add(visible_rows));
-        (first_row..end).map(move |index| {
+        visible_range(first_row, rows.len(), visible_rows).map(move |index| {
             let line = (index - first_row) as f32;
             let rect = at(
                 frame,
@@ -613,7 +616,7 @@ where
                     open = Some(row_action(row));
                 }
             }
-            interaction.wheel = list_wheel(ui, list_rect);
+            interaction.wheel = wheel_delta(ui, list_rect);
         },
     );
 
@@ -901,12 +904,8 @@ impl FinderUiState {
             self.pending_focus = Some(control);
         }
         if wheel != 0.0 {
-            let last = row_count.saturating_sub(visible_rows);
-            self.first_row = if wheel > 0.0 {
-                self.first_row.saturating_sub(1)
-            } else {
-                (self.first_row + 1).min(last)
-            };
+            let positions = max_first_row(row_count, visible_rows).saturating_add(1);
+            self.first_row = wheel_step(self.first_row, positions, wheel);
         }
     }
 }
@@ -1230,21 +1229,9 @@ pub(crate) fn accept_singleton_open(
 }
 
 pub(crate) fn prefix_choice<R: FinderRowName>(rows: &[R], text: &str) -> Option<usize> {
-    let typed: Vec<char> = text.chars().map(|c| c.to_ascii_lowercase()).collect();
-    let mut best: Option<(usize, usize)> = None;
-    for (index, row) in rows.iter().enumerate() {
-        let common = row
-            .finder_name()
-            .chars()
-            .map(|c| c.to_ascii_lowercase())
-            .zip(&typed)
-            .take_while(|(a, b)| a == *b)
-            .count();
-        if common > 0 && best.is_none_or(|(_, length)| common > length) {
-            best = Some((index, common));
-        }
-    }
-    best.map(|(index, _)| index)
+    longest_prefix_match(rows.iter().map(FinderRowName::finder_name), text)
+        .filter(|matched| matched.shared_chars > 0)
+        .map(|matched| matched.index)
 }
 
 /// One frame's Finder navigation keys.
@@ -1439,7 +1426,7 @@ impl FinderInteraction {
             ui.name.clone_from(&self.name);
             *chosen = prefix_choice(rows, &self.name);
             if let Some(index) = *chosen {
-                ui.first_row = crate::list_control::reveal_row(ui.first_row, index, visible_rows);
+                ui.first_row = reveal_row(ui.first_row, index, visible_rows);
             }
         }
         if let Some((row, at)) = self.clicked_row {
@@ -1451,7 +1438,7 @@ impl FinderInteraction {
             let row = (*chosen).unwrap_or(0).min(rows.len() - 1);
             *chosen = Some(row);
             set_name(ui, rows[row].finder_name());
-            ui.first_row = crate::list_control::reveal_row(ui.first_row, row, visible_rows);
+            ui.first_row = reveal_row(ui.first_row, row, visible_rows);
             self.focus_request = Some(list_control);
         }
         if focused_control == Some(list_control) {
@@ -1461,20 +1448,21 @@ impl FinderInteraction {
                 }
             } else {
                 let current = (*chosen).unwrap_or(0).min(rows.len() - 1);
-                let next = if keys.arrow_down {
-                    (current + 1).min(rows.len() - 1)
-                } else if keys.arrow_up && current > 0 {
-                    current - 1
+                let movement = if keys.arrow_down {
+                    Some(ListMove::Next)
+                } else if keys.arrow_up {
+                    Some(ListMove::Previous)
                 } else {
-                    current
+                    None
                 };
                 if keys.arrow_up && current == 0 {
                     self.focus_request = Some(name_control);
-                } else if keys.arrow_up || keys.arrow_down {
+                } else if let Some(movement) = movement {
+                    let next = move_selection(Some(current), rows.len(), visible_rows, movement)
+                        .expect("a non-empty list always has a bounded selection");
                     *chosen = Some(next);
                     set_name(ui, rows[next].finder_name());
-                    ui.first_row =
-                        crate::list_control::reveal_row(ui.first_row, next, visible_rows);
+                    ui.first_row = reveal_row(ui.first_row, next, visible_rows);
                 }
             }
         }
@@ -1491,10 +1479,6 @@ impl FinderInteraction {
     }
 }
 
-pub(crate) fn selected_row<R>(rows: &[R], chosen: Option<usize>) -> Option<&R> {
-    rows.get(chosen?)
-}
-
 pub(crate) fn horizontal_choice(
     keys: FinderKeys,
     current: usize,
@@ -1507,73 +1491,6 @@ pub(crate) fn horizontal_choice(
     } else {
         None
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum RowClick {
-    None,
-    Select(f64),
-    Open,
-}
-
-/// Interpret one Finder row's click and double-click semantics.
-pub(crate) fn row_click(
-    ui: &mut egui::Ui,
-    ctx: &egui::Context,
-    row_rect: egui::Rect,
-    row_id: egui::Id,
-    last_clicked: Option<(usize, f64)>,
-    row: usize,
-    accepts_batched_double_click: bool,
-) -> RowClick {
-    let response = ui.interact(row_rect, row_id, egui::Sense::click());
-    let batched_double_click = accepts_batched_double_click
-        && response.double_clicked()
-        && ui.input(|input| {
-            input
-                .events
-                .iter()
-                .filter(|event| {
-                    matches!(
-                        event,
-                        egui::Event::PointerButton {
-                            pos,
-                            button: egui::PointerButton::Primary,
-                            pressed: false,
-                            ..
-                        } if row_rect.contains(*pos)
-                    )
-                })
-                .count()
-                >= 2
-        });
-    if batched_double_click {
-        return RowClick::Open;
-    }
-    if !response.clicked() {
-        return RowClick::None;
-    }
-    let now = ui.input(|input| input.time);
-    let delay = ctx.options(|options| options.input_options.max_double_click_delay);
-    if last_clicked.is_some_and(|(last, at)| last == row && now - at <= delay) {
-        RowClick::Open
-    } else {
-        RowClick::Select(now)
-    }
-}
-
-pub(crate) fn list_wheel(ui: &egui::Ui, list_rect: egui::Rect) -> f32 {
-    ui.input(|input| {
-        if input
-            .pointer
-            .hover_pos()
-            .is_some_and(|point| rect_contains(list_rect, point))
-        {
-            input.raw_scroll_delta.y
-        } else {
-            0.0
-        }
-    })
 }
 
 pub(crate) fn paint_row_name(

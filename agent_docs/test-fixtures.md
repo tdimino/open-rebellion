@@ -65,6 +65,13 @@ Selection reveal is not a Finder or whole-window contract. The original
 `CoolDragList` control implements it in `FUN_00609ed0`, so production lists
 must use `crate::list_control::reveal_row` instead of repeating the
 first-visible-row arithmetic in a Finder, Encyclopedia, or detail window.
+The same module owns the control's ordered prefix scoring, bounded keyboard
+movement, visible range and first-row bounds, wheel stepping and hover gating,
+and row click/double-click interpretation. Window modules should adapt those
+results to their own focus, selection, and open actions rather than recreating
+the control behavior. Keep scrollbar artwork, thumb dragging, and track paging
+in `scroll_bar`; keep window-specific row painting and edit-field policy in the
+owning window family.
 
 For manager-owned singleton fixtures, use `open_singleton_window`,
 `assert_managed_close_receipt`, and `assert_minimized_reopen` instead of
