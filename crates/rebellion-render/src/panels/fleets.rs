@@ -361,28 +361,27 @@ fn fleet_color(faction: MissionFaction) -> egui::Color32 {
     }
 }
 
+fn mini_id_from_faction_blocks(index: u32, blocks: [(u32, &[u32]); 2]) -> Option<u32> {
+    blocks
+        .into_iter()
+        .find_map(|(start, resources)| resources.get(index.checked_sub(start)? as usize).copied())
+}
+
 pub(crate) fn capital_ship_mini_id(dat_id: DatId) -> Option<u32> {
-    match dat_id.index() {
-        64..=78 => ALLIANCE_CAPITAL_SHIP_MINIS
-            .get((dat_id.index() - 64) as usize)
-            .copied(),
-        128..=142 => EMPIRE_CAPITAL_SHIP_MINIS
-            .get((dat_id.index() - 128) as usize)
-            .copied(),
-        _ => None,
-    }
+    mini_id_from_faction_blocks(
+        dat_id.index(),
+        [
+            (64, &ALLIANCE_CAPITAL_SHIP_MINIS),
+            (128, &EMPIRE_CAPITAL_SHIP_MINIS),
+        ],
+    )
 }
 
 pub(crate) fn fighter_mini_id(dat_id: DatId) -> Option<u32> {
-    match dat_id.index() {
-        1..=4 => ALLIANCE_FIGHTER_MINIS
-            .get((dat_id.index() - 1) as usize)
-            .copied(),
-        5..=8 => EMPIRE_FIGHTER_MINIS
-            .get((dat_id.index() - 5) as usize)
-            .copied(),
-        _ => None,
-    }
+    mini_id_from_faction_blocks(
+        dat_id.index(),
+        [(1, &ALLIANCE_FIGHTER_MINIS), (5, &EMPIRE_FIGHTER_MINIS)],
+    )
 }
 
 #[cfg(test)]

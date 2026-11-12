@@ -2126,17 +2126,10 @@ impl TacticalAudioEvent {
     #[must_use]
     pub const fn resource_base(self) -> u32 {
         match self {
-            Self::LaserFire => 13_033,
-            Self::TurbolaserFire => 13_036,
-            Self::IonFire => 13_039,
-            Self::TorpedoFire => 13_042,
-            Self::LaserImpact => 13_045,
-            Self::IonImpact => 13_048,
-            Self::TurbolaserImpact => 13_051,
-            Self::TorpedoImpact => 13_054,
             // Events 0x1d and 0x1f hold 0x3307 and 0x3309.
             Self::SquadronJump => 13_063,
             Self::CapitalShipJump => 13_065,
+            _ => 13_033 + (self.event_id() - 0x0d) as u32 * 3,
         }
     }
 

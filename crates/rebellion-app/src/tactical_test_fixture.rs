@@ -18,6 +18,7 @@ use rebellion_render::{
 };
 use serde::Serialize;
 
+use crate::interface_fixture_bridge;
 use crate::tactical_flow::{self, BattleEntry};
 use crate::GameMode;
 
@@ -106,11 +107,6 @@ impl TacticalLodFixture {
             Self::CameraJourney => None,
         }
     }
-}
-
-extern "C" {
-    fn open_rebellion_interface_fixture_code() -> u32;
-    fn open_rebellion_interface_fixture_emit(ptr: *const u8, len: usize);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -433,7 +429,7 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
 }
 
 pub(crate) fn requested() -> Option<TacticalFixtureRequest> {
-    decode(unsafe { open_rebellion_interface_fixture_code() })
+    decode(interface_fixture_bridge::requested_code())
 }
 
 /// Add a minimal opposing encounter and enter it through the same function as
@@ -1784,8 +1780,7 @@ pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
 }
 
 fn emit(record: &FixtureRecord<'_>) {
-    let bytes = serde_json::to_vec(record).expect("serialize tactical fixture record");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(record);
 }
 
 #[cfg(test)]

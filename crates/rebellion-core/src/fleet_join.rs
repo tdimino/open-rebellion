@@ -22,8 +22,8 @@ use std::hash::{Hash, Hasher};
 
 use crate::ids::{FleetKey, SystemKey};
 use crate::movement::{
-    capital_ship_instance_speed, death_star_room, fleet_move_confirms, transit_ticks_between,
-    FleetDispatchError, MovementState,
+    capital_ship_instance_speed, death_star_room, fleet_move_confirms, movable_fleet,
+    transit_ticks_between, FleetDispatchError, MovementState,
 };
 use crate::troop_transport::TroopTransportState;
 use crate::world::{Fleet, GameWorld, ShipTransit};
@@ -116,17 +116,12 @@ fn movable<'a>(
     fleet: FleetKey,
     expected_is_alliance: bool,
 ) -> Result<&'a Fleet, FleetOrderError> {
-    let value = world
-        .fleets
-        .get(fleet)
-        .ok_or(FleetOrderError::MissingFleet)?;
-    if value.is_alliance != expected_is_alliance {
-        return Err(FleetOrderError::WrongFaction);
-    }
-    if movement.is_in_transit(fleet) {
-        return Err(FleetOrderError::InTransit);
-    }
-    Ok(value)
+    movable_fleet(movement, world, fleet, expected_is_alliance).map_err(|error| match error {
+        FleetDispatchError::MissingFleet => FleetOrderError::MissingFleet,
+        FleetDispatchError::WrongFaction => FleetOrderError::WrongFaction,
+        FleetDispatchError::AlreadyInTransit => FleetOrderError::InTransit,
+        error => FleetOrderError::Dispatch(error),
+    })
 }
 
 /// A fingerprint of `fleet`'s capital ships, in order. A ship order keeps
@@ -209,17 +204,12 @@ fn accept_destination<'a>(
     target: FleetKey,
     is_alliance: bool,
 ) -> Result<&'a Fleet, FleetOrderError> {
-    let value = world
-        .fleets
-        .get(target)
-        .ok_or(FleetOrderError::MissingFleet)?;
-    if value.is_alliance != is_alliance {
-        return Err(FleetOrderError::OtherSideDestination);
-    }
-    if movement.is_in_transit(target) {
-        return Err(FleetOrderError::DestinationInTransit);
-    }
-    Ok(value)
+    movable_fleet(movement, world, target, is_alliance).map_err(|error| match error {
+        FleetDispatchError::MissingFleet => FleetOrderError::MissingFleet,
+        FleetDispatchError::WrongFaction => FleetOrderError::OtherSideDestination,
+        FleetDispatchError::AlreadyInTransit => FleetOrderError::DestinationInTransit,
+        error => FleetOrderError::Dispatch(error),
+    })
 }
 
 /// Whether a fleet bound for `target` can join it on arriving at `system`:

@@ -8394,9 +8394,9 @@ pub fn draw_tactical_view(
                 )
             },
             |ship| {
-                tactical_ship_screen_position(
+                tactical_screen_position(
                     effect.target,
-                    ship,
+                    (ship.x, ship.y),
                     &ship_projections,
                     scale,
                     offset_x,
@@ -8446,9 +8446,9 @@ pub fn draw_tactical_view(
             if !ship.alive || !ship.selected || ship.is_attacker != player_is_attacker {
                 continue;
             }
-            let source = tactical_ship_screen_position(
+            let source = tactical_screen_position(
                 ship_index,
-                ship,
+                (ship.x, ship.y),
                 &ship_projections,
                 scale,
                 offset_x,
@@ -8477,9 +8477,9 @@ pub fn draw_tactical_view(
             if !fighter.alive || !fighter.selected || fighter.is_attacker != player_is_attacker {
                 continue;
             }
-            let source = tactical_fighter_screen_position(
+            let source = tactical_screen_position(
                 fighter_index,
-                fighter,
+                (fighter.x, fighter.y),
                 &fighter_projections,
                 scale,
                 offset_x,
@@ -8658,30 +8658,21 @@ fn tactical_ship_at_pointer(
     })
 }
 
-fn tactical_ship_screen_position(
-    ship_index: usize,
-    ship: &TacticalShip,
+fn tactical_screen_position(
+    object_index: usize,
+    arena_position: (f32, f32),
     projections: &HashMap<usize, TacticalScreenProjection>,
     scale: f32,
     offset_x: f32,
     offset_y: f32,
 ) -> macroquad::math::Vec2 {
-    projections.get(&ship_index).map_or_else(
-        || macroquad::math::Vec2::new(offset_x + ship.x * scale, offset_y + ship.y * scale),
-        |projection| projection.center,
-    )
-}
-
-fn tactical_fighter_screen_position(
-    fighter_index: usize,
-    fighter: &TacticalFighter,
-    projections: &HashMap<usize, TacticalScreenProjection>,
-    scale: f32,
-    offset_x: f32,
-    offset_y: f32,
-) -> macroquad::math::Vec2 {
-    projections.get(&fighter_index).map_or_else(
-        || macroquad::math::Vec2::new(offset_x + fighter.x * scale, offset_y + fighter.y * scale),
+    projections.get(&object_index).map_or_else(
+        || {
+            macroquad::math::Vec2::new(
+                offset_x + arena_position.0 * scale,
+                offset_y + arena_position.1 * scale,
+            )
+        },
         |projection| projection.center,
     )
 }
@@ -8705,9 +8696,9 @@ fn draw_tactical_attack_target_spec(
             let Some(ship) = session.ships.get(index).filter(|ship| ship.alive) else {
                 return;
             };
-            let target = tactical_ship_screen_position(
+            let target = tactical_screen_position(
                 index,
-                ship,
+                (ship.x, ship.y),
                 ship_projections,
                 scale,
                 offset_x,
@@ -8724,9 +8715,9 @@ fn draw_tactical_attack_target_spec(
             let Some(fighter) = session.fighters.get(index).filter(|fighter| fighter.alive) else {
                 return;
             };
-            let target = tactical_fighter_screen_position(
+            let target = tactical_screen_position(
                 index,
-                fighter,
+                (fighter.x, fighter.y),
                 fighter_projections,
                 scale,
                 offset_x,
@@ -9241,6 +9232,29 @@ mod tests {
     use rebellion_core::tactical::test_support::{
         test_death_star, test_fighter, test_session, test_ship,
     };
+
+    #[test]
+    fn tactical_positions_prefer_camera_projections_and_fall_back_to_the_arena_transform() {
+        let mut projections = HashMap::new();
+        assert_eq!(
+            tactical_screen_position(7, (3.0, 4.0), &projections, 2.0, 10.0, 20.0),
+            macroquad::math::Vec2::new(16.0, 28.0)
+        );
+
+        projections.insert(
+            7,
+            TacticalScreenProjection {
+                object_id: 42,
+                center: macroquad::math::Vec2::new(100.0, 200.0),
+                min: macroquad::math::Vec2::ZERO,
+                max: macroquad::math::Vec2::ONE,
+            },
+        );
+        assert_eq!(
+            tactical_screen_position(7, (3.0, 4.0), &projections, 2.0, 10.0, 20.0),
+            macroquad::math::Vec2::new(100.0, 200.0)
+        );
+    }
 
     /// port: test fixture values, not rules.
     fn entry(raw: u32, name: &str) -> SummaryEntry {

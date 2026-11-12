@@ -1233,6 +1233,14 @@ impl Default for TacticalAssetRenderer {
     }
 }
 
+fn retain_new_signature(last: &mut Option<String>, signature: &str) -> bool {
+    if last.as_deref() == Some(signature) {
+        return false;
+    }
+    *last = Some(signature.to_owned());
+    true
+}
+
 impl TacticalAssetRenderer {
     pub(crate) fn set_high_detail(&mut self, enabled: bool) {
         if self.high_detail_models != enabled {
@@ -1270,11 +1278,7 @@ impl TacticalAssetRenderer {
             self.planet = None;
             self.unavailable_planet = None;
             self.material = None;
-            self.logged_participant_scene = false;
-            self.logged_fighter_scene = None;
-            self.logged_effect_scene = None;
-            self.logged_field_scene = None;
-            self.logged_projectile_scene = None;
+            self.clear_object_scene_signatures();
             self.logged_planet_scene = None;
             self.logged_station_scene = None;
             self.logged_station_removal = None;
@@ -1511,11 +1515,7 @@ impl TacticalAssetRenderer {
         self.logged_camera = None;
         self.source_layout = Some(layout);
         self.logged_layout = None;
-        self.logged_participant_scene = false;
-        self.logged_fighter_scene = None;
-        self.logged_effect_scene = None;
-        self.logged_field_scene = None;
-        self.logged_projectile_scene = None;
+        self.clear_object_scene_signatures();
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -1524,6 +1524,10 @@ impl TacticalAssetRenderer {
         self.logged_camera = None;
         self.source_layout = None;
         self.logged_layout = None;
+        self.clear_object_scene_signatures();
+    }
+
+    fn clear_object_scene_signatures(&mut self) {
         self.logged_participant_scene = false;
         self.logged_fighter_scene = None;
         self.logged_effect_scene = None;
@@ -1971,7 +1975,7 @@ impl TacticalAssetRenderer {
             })
             .collect::<Vec<_>>()
             .join(",");
-        if self.logged_fighter_scene.as_deref() != Some(scene_signature.as_str()) {
+        if retain_new_signature(&mut self.logged_fighter_scene, &scene_signature) {
             macroquad::logging::info!(
                 "[tactical_3d] fighter_scene requested={} rendered={} families={} resources={} screen_positions={} screen_bounds={} source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0",
                 objects.len(),
@@ -1981,7 +1985,6 @@ impl TacticalAssetRenderer {
                 screen_positions.join(";"),
                 screen_bounds.join(";"),
             );
-            self.logged_fighter_scene = Some(scene_signature);
         }
         report
     }
@@ -2073,19 +2076,13 @@ impl TacticalAssetRenderer {
         aperture: (f32, f32, f32, f32),
         objects: &[TacticalEffectRenderObject],
     ) -> TacticalDrawReport {
-        let Some((report, signature)) = self.draw_effect_family(aperture, objects, "effect") else {
-            return TacticalDrawReport::default();
-        };
-        if self.logged_effect_scene.as_deref() != Some(signature.as_str()) {
-            macroquad::logging::info!(
-                "[tactical_3d] effect_scene requested={} rendered={} resources={} frame_seconds=0.1 source_positions=true source=FUN_005d39a0,FUN_005d3e90,FUN_005d41a0",
-                objects.len(),
-                report.rendered_object_ids.len(),
-                signature,
-            );
-            self.logged_effect_scene = Some(signature);
-        }
-        report
+        self.draw_logged_effect_family(
+            aperture,
+            objects,
+            "effect",
+            |renderer| &mut renderer.logged_effect_scene,
+            "frame_seconds=0.1 source_positions=true source=FUN_005d39a0,FUN_005d3e90,FUN_005d41a0",
+        )
     }
 
     /// Draw the target-attached tractor/gravity field selected by
@@ -2096,17 +2093,35 @@ impl TacticalAssetRenderer {
         aperture: (f32, f32, f32, f32),
         objects: &[TacticalEffectRenderObject],
     ) -> TacticalDrawReport {
-        let Some((report, signature)) = self.draw_effect_family(aperture, objects, "field") else {
+        self.draw_logged_effect_family(
+            aperture,
+            objects,
+            "field",
+            |renderer| &mut renderer.logged_field_scene,
+            "frame_seconds=0.1 source_size=128x128 priority=gravity_over_tractor source_positions=true source=FUN_005b23e0,FUN_005b24d0,FUN_005b2440,FUN_005b2480,FUN_005d3ac0,FUN_005d3cc0",
+        )
+    }
+
+    fn draw_logged_effect_family(
+        &mut self,
+        aperture: (f32, f32, f32, f32),
+        objects: &[TacticalEffectRenderObject],
+        family: &str,
+        signature_slot: fn(&mut Self) -> &mut Option<String>,
+        log_details: &str,
+    ) -> TacticalDrawReport {
+        let Some((report, signature)) = self.draw_effect_family(aperture, objects, family) else {
             return TacticalDrawReport::default();
         };
-        if self.logged_field_scene.as_deref() != Some(signature.as_str()) {
+        if retain_new_signature(signature_slot(self), &signature) {
             macroquad::logging::info!(
-                "[tactical_3d] field_scene requested={} rendered={} resources={} frame_seconds=0.1 source_size=128x128 priority=gravity_over_tractor source_positions=true source=FUN_005b23e0,FUN_005b24d0,FUN_005b2440,FUN_005b2480,FUN_005d3ac0,FUN_005d3cc0",
+                "[tactical_3d] {}_scene requested={} rendered={} resources={} {}",
+                family,
                 objects.len(),
                 report.rendered_object_ids.len(),
                 signature,
+                log_details,
             );
-            self.logged_field_scene = Some(signature);
         }
         report
     }
@@ -2172,7 +2187,7 @@ impl TacticalAssetRenderer {
             draw_line(center.x, center.y, tip.x, tip.y, device_pixel, color);
         }
         let signature = rendered.join(";");
-        if self.logged_projectile_scene.as_deref() != Some(signature.as_str()) {
+        if retain_new_signature(&mut self.logged_projectile_scene, &signature) {
             macroquad::logging::info!(
                 "[tactical_3d] projectile_scene requested={} rendered={} projectiles={} selectors={} durations=1,1,2 interpolation=source_to_live_target geometry=source_mesh raster_compat=device_pixel_floor source=FUN_005b1ea0,FUN_005b1f60,FUN_005b2080,FUN_005b2c70,FUN_005d3de0,FUN_005ee590,LAB_005eeb90",
                 objects.len(),
@@ -2184,7 +2199,6 @@ impl TacticalAssetRenderer {
                     .collect::<Vec<_>>()
                     .join(","),
             );
-            self.logged_projectile_scene = Some(signature);
         }
         report
     }
@@ -3296,6 +3310,17 @@ fragment float4 fragmentShader(RasterizerData in [[stage_in]], constant Uniforms
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_scene_signature_is_retained_only_when_it_changes() {
+        let mut last = None;
+
+        assert!(retain_new_signature(&mut last, "first"));
+        assert_eq!(last.as_deref(), Some("first"));
+        assert!(!retain_new_signature(&mut last, "first"));
+        assert!(retain_new_signature(&mut last, "second"));
+        assert_eq!(last.as_deref(), Some("second"));
+    }
 
     fn assert_pixel(actual: f32, expected: f32) {
         assert!(

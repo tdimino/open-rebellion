@@ -1893,32 +1893,23 @@ impl WindowManager {
     }
 
     fn band_insertion_index(&self, spec: WindowSpec) -> usize {
-        match spec.policy.placement {
-            OpenPlacement::BottomOfBand => self
-                .visible_order
-                .iter()
-                .position(|candidate| self.registry[candidate].spec.policy.band >= spec.policy.band)
-                .unwrap_or(self.visible_order.len()),
-            OpenPlacement::TopOfBand | OpenPlacement::AboveOwner => self
-                .visible_order
-                .iter()
-                .position(|candidate| self.registry[candidate].spec.policy.band > spec.policy.band)
-                .unwrap_or(self.visible_order.len()),
-        }
+        self.insertion_index_in(spec, &self.visible_order)
     }
 
     fn serialized_insertion_index(&self, spec: WindowSpec) -> usize {
+        self.insertion_index_in(spec, &self.serialized_order)
+    }
+
+    fn insertion_index_in(&self, spec: WindowSpec, order: &[WindowId]) -> usize {
         match spec.policy.placement {
-            OpenPlacement::BottomOfBand => self
-                .serialized_order
+            OpenPlacement::BottomOfBand => order
                 .iter()
                 .position(|candidate| self.registry[candidate].spec.policy.band >= spec.policy.band)
-                .unwrap_or(self.serialized_order.len()),
-            OpenPlacement::TopOfBand | OpenPlacement::AboveOwner => self
-                .serialized_order
+                .unwrap_or(order.len()),
+            OpenPlacement::TopOfBand | OpenPlacement::AboveOwner => order
                 .iter()
                 .position(|candidate| self.registry[candidate].spec.policy.band > spec.policy.band)
-                .unwrap_or(self.serialized_order.len()),
+                .unwrap_or(order.len()),
         }
     }
 

@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ai::AIAction;
 use crate::ai_production::{
-    rank_pick, resume_or_first_index, Dir, Round, SectorRecord, SystemRecord, Turn,
+    first_bounded_step, rank_pick, resume_or_first_index, Dir, Round, SectorRecord, SystemRecord,
+    Turn,
 };
 use crate::ai_records::{fleet, ship, sys, BestClasses, FleetRecord, Marks, ShipRecord};
 use crate::ai_strategy::{ctx, Holder};
@@ -280,7 +281,13 @@ impl Regions {
     pub(crate) fn turn(&mut self, round: &mut Round<'_>, marks: &mut Marks) -> Turn {
         let cx = Context::of(round);
         let mut calls = RECORD_CALLS;
-        match self.turn_on(round, marks, &cx, &mut calls) {
+        let call = first_bounded_step(
+            &mut calls,
+            || self.call(round, marks, &cx),
+            |call| matches!(call, Call::Next),
+        )
+        .unwrap_or(Call::Next);
+        match call {
             Call::Order(action, done) => Turn::Order {
                 action,
                 resume: !done,
@@ -335,25 +342,6 @@ impl Regions {
     /// Slot 6 (`FUN_004dd810`): a refused order restarts the module.
     pub(crate) fn reject(&mut self) {
         self.state = 0;
-    }
-
-    /// The calls of one turn, at most `calls` of them: the first call that
-    /// is not `Call::Next`, else `Call::Next` once the calls run out.
-    fn turn_on(
-        &mut self,
-        round: &mut Round<'_>,
-        marks: &mut Marks,
-        cx: &Context,
-        calls: &mut usize,
-    ) -> Call {
-        while *calls > 0 {
-            *calls -= 1;
-            match self.call(round, marks, cx) {
-                Call::Next => {}
-                call => return call,
-            }
-        }
-        Call::Next
     }
 
     /// `FUN_004cf630`: one driver step.

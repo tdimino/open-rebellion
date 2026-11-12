@@ -901,16 +901,9 @@ pub(crate) mod fixture {
             if self.last_observation.as_ref() == Some(&observation) {
                 return;
             }
-            let bytes = serde_json::to_vec(&observation)
-                .expect("serialize canonical Encyclopedia surface observation");
-            unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+            crate::interface_fixture_bridge::emit(&observation);
             self.last_observation = Some(observation);
         }
-    }
-
-    #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
-    extern "C" {
-        fn open_rebellion_interface_fixture_emit(ptr: *const u8, len: usize);
     }
 
     fn longest_resolved_object_id(

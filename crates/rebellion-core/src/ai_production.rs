@@ -1411,6 +1411,23 @@ pub(crate) fn resume_or_first_index<T>(
         .or_else(|| (!records.is_empty()).then_some(0))
 }
 
+/// Run at most `calls` driver steps and return the first one that asks the
+/// caller to stop.
+pub(crate) fn first_bounded_step<T>(
+    calls: &mut usize,
+    mut step: impl FnMut() -> T,
+    mut should_continue: impl FnMut(&T) -> bool,
+) -> Option<T> {
+    while *calls > 0 {
+        *calls -= 1;
+        let result = step();
+        if !should_continue(&result) {
+            return Some(result);
+        }
+    }
+    None
+}
+
 /// The filters of a system query (`FUN_0041a340`, `FUN_00431830`): A must
 /// hold `require`, must hold none of `exclude`; `own` asks `sys+0x30 & 1`.
 #[derive(Debug, Clone, Copy, Default)]
@@ -4182,6 +4199,26 @@ impl ProductionState {
 mod tests {
     use super::*;
     use crate::carriage::ProductRoom;
+
+    #[test]
+    fn a_bounded_driver_stops_at_its_first_result_or_when_its_calls_run_out() {
+        let mut calls = 3;
+        let mut steps = 0;
+        let result = first_bounded_step(
+            &mut calls,
+            || {
+                steps += 1;
+                steps
+            },
+            |&step| step < 2,
+        );
+        assert_eq!(result, Some(2));
+        assert_eq!(calls, 1);
+
+        let result = first_bounded_step(&mut calls, || 3, |_| true);
+        assert_eq!(result, None);
+        assert_eq!(calls, 0);
+    }
 
     macro_rules! test_round {
         ($round:ident, $state:expr, $world:expr, $manufacturing:expr, $marks:expr, $side:expr) => {

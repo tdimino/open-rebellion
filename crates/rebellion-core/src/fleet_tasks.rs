@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::{AIAction, FleetMoveReason};
-use crate::ai_production::{bit, resume_or_first_index, Dir, Round, Turn};
+use crate::ai_production::{bit, first_bounded_step, resume_or_first_index, Dir, Round, Turn};
 use crate::ai_records::{fleet, ship, sys, Marks};
 use crate::ai_regions::{engaged, own_riders, random_system, set_system_bits, Words};
 use crate::ai_strategy::Holder;
@@ -86,7 +86,13 @@ impl FleetTasks {
     pub(crate) fn turn(&mut self, round: &mut Round<'_>, marks: &mut Marks) -> Turn {
         let threshold = threshold(round);
         let mut calls = TASK_CALLS;
-        let turn = match self.turn_on(round, marks, threshold, &mut calls) {
+        let call = first_bounded_step(
+            &mut calls,
+            || self.call(round, marks, threshold),
+            |call| matches!(call, Call::Next),
+        )
+        .unwrap_or(Call::Next);
+        let turn = match call {
             Call::Finished(Some(action)) => Turn::Order {
                 action,
                 resume: false,
@@ -113,25 +119,6 @@ impl FleetTasks {
     /// Slot 6 (`FUN_004dd810`): a refused order restarts the module.
     pub(crate) fn reject(&mut self) {
         self.state = 0;
-    }
-
-    /// The calls of one turn, at most `calls` of them: the first call that
-    /// is not `Call::Next`, else `Call::Next` once the calls run out.
-    fn turn_on(
-        &mut self,
-        round: &mut Round<'_>,
-        marks: &mut Marks,
-        threshold: i64,
-        calls: &mut usize,
-    ) -> Call {
-        while *calls > 0 {
-            *calls -= 1;
-            match self.call(round, marks, threshold) {
-                Call::Next => {}
-                call => return call,
-            }
-        }
-        Call::Next
     }
 
     /// `FUN_004cf2c0`: one driver step.

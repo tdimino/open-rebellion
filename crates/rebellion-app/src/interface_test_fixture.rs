@@ -57,6 +57,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::encyclopedia_surface::{CanonicalFixtureStart, FixtureStart};
+use crate::interface_fixture_bridge;
 use crate::GameMode;
 
 const FIXTURE_ABSENT: u32 = 0;
@@ -64,11 +65,6 @@ const FIXTURE_ABSENT: u32 = 0;
 /// target system, clear of the system window it opens on the left.
 #[cfg(test)]
 const SCENARIO_COUNT: u8 = 75;
-
-extern "C" {
-    fn open_rebellion_interface_fixture_code() -> u32;
-    fn open_rebellion_interface_fixture_emit(ptr: *const u8, len: usize);
-}
 
 /// Log one sequenced fixture observation only when its payload changed.
 fn log_changed_observation(state: Value, last_state: &mut Option<Value>, sequence: &mut u64) {
@@ -86,6 +82,14 @@ fn log_changed_observation(state: Value, last_state: &mut Option<Value>, sequenc
         "[windowing-contract-state] {}",
         serde_json::to_string(&report).expect("serialize fixture observation")
     );
+}
+
+fn retain_changed<T: Clone + PartialEq>(last: &mut Option<T>, now: Option<T>) -> Option<T> {
+    if now.is_none() || *last == now {
+        return None;
+    }
+    last.clone_from(&now);
+    now
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -385,7 +389,7 @@ fn decode_request(code: u32) -> Option<FixtureRequest> {
 }
 
 pub fn requested() -> Option<FixtureRequest> {
-    decode_request(unsafe { open_rebellion_interface_fixture_code() })
+    decode_request(interface_fixture_bridge::requested_code())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1454,8 +1458,7 @@ pub fn emit_ready(request: FixtureRequest, world: &GameWorld, map: &GalaxyMapSta
         probe_screen_x: probe.1,
         probe_screen_y: probe.2,
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize interface fixture report");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// Where `system` is drawn in the 640 by 480 fixture canvas.
@@ -1589,16 +1592,14 @@ pub fn emit_object_menu(
     let Some(report) = object_menu_report(request, rect, menu, world, sectors, input_ready) else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the object menu report");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 pub fn emit_menu_lifecycle(request: FixtureRequest, open: bool, input_ready: bool) {
     let Some(report) = menu_lifecycle_report(request, open, input_ready) else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the menu lifecycle report");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// One Manufacturing window band as the Build Selection gate sees it.
@@ -1685,8 +1686,7 @@ pub fn emit_production(
     else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the production report");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -1759,8 +1759,7 @@ pub fn emit_fleet_move_setup(
     let Some(report) = fleet_move_setup(request, world, sectors, fleets) else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the fleet move setup");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// What the fleet-move gate checks after each step: the fleet's transit
@@ -1810,12 +1809,8 @@ pub struct FleetMoveWatch {
 }
 
 impl FleetMoveWatch {
-    fn changed(&mut self, now: Option<FleetMoveObservation>) -> Option<&FleetMoveObservation> {
-        if now.is_none() || now == self.last {
-            return None;
-        }
-        self.last = now;
-        self.last.as_ref()
+    fn changed(&mut self, now: Option<FleetMoveObservation>) -> Option<FleetMoveObservation> {
+        retain_changed(&mut self.last, now)
     }
 
     pub fn observe(
@@ -1827,13 +1822,14 @@ impl FleetMoveWatch {
         map: &GalaxyMapState,
         messages: &[GameMessage],
     ) {
-        let now =
-            fleet_move_observation(request, world, movement, confirmation_open, map, messages);
-        let Some(report) = self.changed(now) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(report).expect("serialize the fleet move observation");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_some(self.changed(fleet_move_observation(
+            request,
+            world,
+            movement,
+            confirmation_open,
+            map,
+            messages,
+        )));
     }
 }
 
@@ -1910,8 +1906,7 @@ pub fn emit_quadrant_setup(
     let Some(report) = quadrant_setup(request, world, sectors) else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the quadrant setup");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// One open Defenses window, for the quadrant gate: what it shows and where
@@ -2143,11 +2138,7 @@ impl QuadrantWatch {
                 })
                 .collect(),
         };
-        if self.last.as_ref() == Some(&now) {
-            return None;
-        }
-        self.last = Some(now.clone());
-        Some(now)
+        retain_changed(&mut self.last, Some(now))
     }
 
     pub fn observe(
@@ -2156,11 +2147,7 @@ impl QuadrantWatch {
         world: &GameWorld,
         windows: &QuadrantWindows<'_>,
     ) {
-        let Some(report) = self.next(request, world, windows) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(&report).expect("serialize the quadrant observation");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_some(self.next(request, world, windows));
     }
 }
 
@@ -2238,8 +2225,7 @@ pub fn emit_fleet_load_setup(
     let Some(report) = fleet_load_setup(request, world, sectors, defenses) else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the fleet load setup");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// One fleet the primary system's Fleet window lists: its living capital
@@ -2423,11 +2409,7 @@ impl FleetLoadWatch {
                 });
         }
         let now = fleet_load_observation(self.regiment?, sources);
-        if now.is_none() || now == self.last {
-            return None;
-        }
-        self.last.clone_from(&now);
-        now
+        retain_changed(&mut self.last, now)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2443,7 +2425,7 @@ impl FleetLoadWatch {
         confirmation_open: bool,
         messages: &[GameMessage],
     ) {
-        let Some(report) = self.next(FleetLoadSources {
+        interface_fixture_bridge::emit_some(self.next(FleetLoadSources {
             request,
             world,
             fog,
@@ -2453,11 +2435,7 @@ impl FleetLoadWatch {
             snapshot,
             confirmation_open,
             messages,
-        }) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(&report).expect("serialize the fleet load observation");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        }));
     }
 }
 
@@ -2711,11 +2689,7 @@ impl FleetFinderWatch {
         windows: &FinderWindows<'_>,
     ) -> Option<FleetFinderObservation> {
         let now = fleet_finder_observation(request, world, windows);
-        if now.is_none() || now == self.last {
-            return None;
-        }
-        self.last.clone_from(&now);
-        now
+        retain_changed(&mut self.last, now)
     }
 
     pub fn observe(
@@ -2724,11 +2698,7 @@ impl FleetFinderWatch {
         world: &GameWorld,
         windows: &FinderWindows<'_>,
     ) {
-        let Some(report) = self.next(request, world, windows) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(&report).expect("serialize the fleet finder observation");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_some(self.next(request, world, windows));
     }
 }
 
@@ -2891,11 +2861,7 @@ impl OperationReportWatch {
         request: FixtureRequest,
         state: &rebellion_render::OperationReportState,
     ) {
-        let Some(report) = self.next(request, state) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(&report).expect("serialize the operation report state");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_some(self.next(request, state));
     }
 
     fn next_live(
@@ -2980,7 +2946,7 @@ impl OperationReportWatch {
         let Some(bytes) = self.next_live(request, state, world, movement, windows) else {
             return;
         };
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_bytes(&bytes);
     }
 }
 
@@ -3060,11 +3026,7 @@ impl SpeedMenuWatch {
         rect: Option<egui_macroquad::egui::Rect>,
         input_ready: bool,
     ) {
-        let Some(report) = self.next(request, rect, input_ready) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(&report).expect("serialize the speed menu report");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_some(self.next(request, rect, input_ready));
     }
 }
 
@@ -3083,8 +3045,7 @@ pub fn emit_selected(request: FixtureRequest, mode: GidMode) {
         mode: mode.label(),
         command_id: mode.command_id(),
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize selected GID mode");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 #[derive(Serialize)]
@@ -3105,8 +3066,7 @@ pub fn emit_hover(request: FixtureRequest, world: &GameWorld, map: &GalaxyMapSta
         system_dat_id: system.dat_id.raw(),
         system_name: &system.name,
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize hovered GID system");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// Opens the mission dialog for the mission-dialog scenarios, as a drop of the
@@ -5740,10 +5700,10 @@ mod tests {
             ..first.clone()
         };
 
-        assert_eq!(watch.changed(Some(first.clone())), Some(&first));
+        assert_eq!(watch.changed(Some(first.clone())), Some(first.clone()));
         assert_eq!(watch.changed(Some(first.clone())), None);
         assert_eq!(watch.changed(None), None);
-        assert_eq!(watch.changed(Some(second.clone())), Some(&second));
+        assert_eq!(watch.changed(Some(second.clone())), Some(second.clone()));
     }
 
     #[test]

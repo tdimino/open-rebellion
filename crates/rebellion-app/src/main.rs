@@ -33,6 +33,8 @@ mod encyclopedia_mods;
 mod encyclopedia_native_io;
 mod encyclopedia_surface;
 #[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
+mod interface_fixture_bridge;
+#[cfg(any(test, all(target_arch = "wasm32", feature = "interface-test-fixtures")))]
 #[cfg_attr(
     all(test, not(target_arch = "wasm32")),
     expect(

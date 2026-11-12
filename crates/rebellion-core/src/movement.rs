@@ -509,7 +509,7 @@ impl fmt::Display for FleetDispatchError {
 /// the object check `FUN_004f9860` through `FUN_004fdc70`: the order's side
 /// and not en route. The blockade escape `FUN_005555e0` covers only ALLFACSD
 /// objects, so it never refuses a fleet.
-fn movable_fleet<'a>(
+pub(crate) fn movable_fleet<'a>(
     state: &MovementState,
     world: &'a GameWorld,
     fleet: FleetKey,

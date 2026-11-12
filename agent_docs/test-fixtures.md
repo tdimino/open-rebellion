@@ -138,6 +138,10 @@ Other fixture homes are intentionally narrower:
 - `crates/rebellion-data/tests/common/mod.rs` owns integration-test path
   discovery; `crates/rebellion-windowing/tests/common/mod.rs` owns the shared
   window-spec/open helpers.
+- `crate::interface_fixture_bridge` in `rebellion-app` owns the browser
+  fixture's request-code import and serialized-payload emission. Interface,
+  tactical, and Encyclopedia fixtures should call that bridge instead of
+  redeclaring the `extern "C"` functions or repeating JSON/unsafe pointer code.
 - `rebellion_render::test_support` is normally unit-test-only. Downstream
   crate tests may enable `rebellion-render/test-support`; production defaults
   must leave that feature disabled. Its `scrap_confirmation` fixture is the
