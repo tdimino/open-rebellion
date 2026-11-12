@@ -1241,6 +1241,18 @@ fn retain_new_signature(last: &mut Option<String>, signature: &str) -> bool {
     true
 }
 
+macro_rules! forward_original_camera_controls {
+    ($($control:ident),+ $(,)?) => {
+        $(
+            pub(crate) fn $control(&mut self) {
+                if let Some(camera) = &mut self.source_camera {
+                    camera.$control();
+                }
+            }
+        )+
+    };
+}
+
 impl TacticalAssetRenderer {
     pub(crate) fn set_high_detail(&mut self, enabled: bool) {
         if self.high_detail_models != enabled {
@@ -1535,41 +1547,9 @@ impl TacticalAssetRenderer {
         self.logged_projectile_scene = None;
     }
 
-    pub(crate) fn zoom_in(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.zoom_in();
-        }
-    }
-
-    pub(crate) fn zoom_out(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.zoom_out();
-        }
-    }
-
-    pub(crate) fn turn_left(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.turn_left();
-        }
-    }
-
-    pub(crate) fn turn_right(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.turn_right();
-        }
-    }
-
-    pub(crate) fn pitch_up(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.pitch_up();
-        }
-    }
-
-    pub(crate) fn pitch_down(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.pitch_down();
-        }
-    }
+    forward_original_camera_controls!(
+        zoom_in, zoom_out, turn_left, turn_right, pitch_up, pitch_down
+    );
 
     pub(crate) fn focus_target(&mut self, target_object_id: u32, target: Vec3) {
         if let Some(camera) = &mut self.source_camera {
