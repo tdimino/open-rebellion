@@ -86,11 +86,14 @@ pub fn issue(
 ) -> Result<Vec<StrikeEffects>, BombardRefusal> {
     let tick = states.tick;
     let runs = rebellion_data::integrator::order_strike(world, fleets, kind, states, roll)?;
-    for strike in &runs {
-        rebellion_data::telemetry::native_strike(tick, world, strike);
-        log.extend(strike_messages(world, templates, tick, strike));
-    }
-    Ok(runs)
+    Ok(crate::strategic_order_common::file_order_runs(
+        world,
+        tick,
+        runs,
+        log,
+        rebellion_data::telemetry::native_strike,
+        |world, tick, strike| strike_messages(world, templates, tick, strike),
+    ))
 }
 
 /// The sides told of a strike. The fleet's bombard bit changes in each
@@ -597,7 +600,6 @@ mod tests {
                 7,
                 &strike(system, bombarder, holder, |_| {}),
             );
-            assert_eq!(messages.len(), 2, "{bombarder:?}");
             let (by, at) = if bombarder == Faction::Empire {
                 ("Imperial", "Alliance")
             } else {
@@ -614,17 +616,10 @@ mod tests {
                     )
                 );
                 assert_eq!(display.background, 0x2b9a);
-                assert_eq!(message.rail, Some(MessageRail::Conflict));
-                assert_eq!(message.target, Some(MessageTarget::System(system)));
             }
-            let bombarder_alliance = bombarder == Faction::Alliance;
-            assert_eq!(messages[0].audience, RailAudience::side(bombarder_alliance));
-            assert_eq!(messages[0].advice, None);
-            assert_eq!(
-                messages[1].audience,
-                RailAudience::side(!bombarder_alliance)
+            crate::test_support::assert_two_side_conflict_filing(
+                &messages, bombarder, system, 0x2e,
             );
-            assert_eq!(messages[1].advice, Some(0x2e));
         }
     }
 

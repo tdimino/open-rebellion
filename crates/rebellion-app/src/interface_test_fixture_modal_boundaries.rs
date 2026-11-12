@@ -11,7 +11,8 @@ use rebellion_windowing::RoutingSnapshot;
 use serde_json::{json, Value};
 
 use super::{
-    capture_window_id, focused_window_json, strategic_control_center, FixtureRequest, Scenario,
+    capture_window_id, focused_window_json, log_changed_observation, strategic_control_center,
+    FixtureRequest, Scenario,
 };
 
 /// Stocks one idle local agent plus a legitimate producer of every
@@ -147,19 +148,6 @@ impl ModalBoundaryWatch {
                 ))
                 .collect::<Vec<_>>(),
         });
-        if self.last_state.as_ref() == Some(&state) {
-            return;
-        }
-        self.sequence = self.sequence.saturating_add(1);
-        self.last_state = Some(state.clone());
-        let mut report = state;
-        report
-            .as_object_mut()
-            .expect("modal state is an object")
-            .insert("sequence".into(), json!(self.sequence));
-        macroquad::logging::info!(
-            "[windowing-contract-state] {}",
-            serde_json::to_string(&report).expect("serialize modal-boundary observation")
-        );
+        log_changed_observation(state, &mut self.last_state, &mut self.sequence);
     }
 }

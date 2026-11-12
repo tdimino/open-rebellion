@@ -1387,16 +1387,15 @@ fn draw_missions_window(
                     0.0,
                 );
             }
-            let galley = list_painter.layout(
-                row.label.to_string(),
-                list_font.clone(),
+            strategic_window_common::paint_grid_cell_label(
+                &list_painter,
+                cell,
+                scale,
+                row.label,
+                &list_font,
                 white,
-                (MISSION_ROW.0 - TEXT_RIGHT_TRIM) * scale,
-            );
-            list_painter.galley(
-                logical_rect(cell, scale, TEXT_OFFSET.0, TEXT_OFFSET.1, 0.0, 0.0).min,
-                galley,
-                white,
+                MISSION_ROW.0 - TEXT_RIGHT_TRIM,
+                TEXT_OFFSET,
             );
             let response = ui.interact(
                 cell.intersect(list),
@@ -2801,37 +2800,30 @@ mod tests {
         ));
         assert_eq!(state.window_count(), 1);
         assert!(state.is_open(system));
-        assert_eq!(
+        crate::test_support::assert_screen_rect(
             state.mission_row_screen_rect(scaled(), system, 1),
-            Some(egui::Rect::from_min_size(
-                at(5.0, 74.0),
-                egui::vec2(180.0, 100.0)
-            ))
+            at(5.0, 74.0),
+            egui::vec2(180.0, 100.0),
         );
-        assert_eq!(
+        crate::test_support::assert_screen_rect(
             state.tab_screen_rect(scaled(), system, MissionsTab::Decoys),
-            Some(egui::Rect::from_min_size(
-                at(166.0, 127.0),
-                egui::vec2(122.0, 32.0)
-            ))
+            at(166.0, 127.0),
+            egui::vec2(122.0, 32.0),
         );
-        assert_eq!(
+        crate::test_support::assert_screen_rect(
             state.member_row_screen_rect(scaled(), system, 2),
-            Some(egui::Rect::from_min_size(
-                at(107.0, 231.0),
-                egui::vec2(230.0, 86.0)
-            ))
+            at(107.0, 231.0),
+            egui::vec2(230.0, 86.0),
         );
-        crate::test_support::assert_detail_canvas_bounds(
+        let layer = egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
+        crate::test_support::assert_detail_canvas_routing(
+            system,
+            layer,
             at(234.0, 303.0),
             at(235.5, 150.0),
             |point| state.contains_screen_point(scaled(), point),
+            |layer| state.release_target(layer),
         );
-
-        let layer = egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
-        crate::test_support::assert_system_release_target(system, layer, |layer| {
-            state.release_target(layer)
-        });
 
         crate::test_support::assert_detail_fixture_reset!(
             state,

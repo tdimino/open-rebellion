@@ -4,6 +4,7 @@ use rebellion_core::dat::Faction;
 use rebellion_core::ids::SystemKey;
 use rebellion_core::world::{ControlKind, GameWorld, System};
 use rebellion_data::encyclopedia_session::EncyclopediaResourceBytes;
+use rebellion_render::message_log::{GameMessage, MessageRail, MessageTarget, RailAudience};
 
 /// A one-system world for order-message tests, with the original fixture name.
 pub(crate) fn order_world(holder: Option<Faction>, is_populated: bool) -> (GameWorld, SystemKey) {
@@ -15,6 +16,26 @@ pub(crate) fn order_world(holder: Option<Faction>, is_populated: bool) -> (GameW
         ..System::default()
     });
     (world, system)
+}
+
+/// Assert the shared two-copy filing contract for a conflict initiated by
+/// one side against the other side's system.
+pub(crate) fn assert_two_side_conflict_filing(
+    messages: &[GameMessage],
+    actor: Faction,
+    system: SystemKey,
+    other_side_advice: u8,
+) {
+    assert_eq!(messages.len(), 2, "{actor:?}");
+    for message in messages {
+        assert_eq!(message.rail, Some(MessageRail::Conflict));
+        assert_eq!(message.target, Some(MessageTarget::System(system)));
+    }
+    let actor_is_alliance = actor == Faction::Alliance;
+    assert_eq!(messages[0].audience, RailAudience::side(actor_is_alliance));
+    assert_eq!(messages[0].advice, None);
+    assert_eq!(messages[1].audience, RailAudience::side(!actor_is_alliance));
+    assert_eq!(messages[1].advice, Some(other_side_advice));
 }
 
 /// The four canonical Encyclopedia resource names filled with one indexed

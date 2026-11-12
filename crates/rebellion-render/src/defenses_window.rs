@@ -1469,16 +1469,15 @@ fn draw_defenses_window(
             } else {
                 egui::Color32::WHITE
             };
-            let galley = list_painter.layout(
-                row.label.clone(),
-                font.clone(),
+            strategic_window_common::paint_grid_cell_label(
+                &list_painter,
+                cell,
+                scale,
+                &row.label,
+                &font,
                 color,
-                (CELL - TEXT_RIGHT_TRIM) * scale,
-            );
-            list_painter.galley(
-                logical_rect(cell, scale, TEXT_OFFSET.0, TEXT_OFFSET.1, 0.0, 0.0).min,
-                galley,
-                color,
+                CELL - TEXT_RIGHT_TRIM,
+                TEXT_OFFSET,
             );
             let response = ui.interact(
                 cell.intersect(list),
@@ -2179,26 +2178,16 @@ mod tests {
         assert_eq!(state.window_count(), 1);
         assert!(state.is_open(system));
 
-        assert_eq!(
+        crate::test_support::assert_screen_rect(
             state.tab_screen_rect(scaled(), system, DefensesPage::Shields),
-            Some(egui::Rect::from_min_size(
-                at(136.0, 20.0),
-                egui::vec2(72.0, 66.0)
-            ))
+            at(136.0, 20.0),
+            egui::vec2(72.0, 66.0),
         );
-        assert_eq!(
+        crate::test_support::assert_screen_rect(
             state.cell_screen_rect(scaled(), system, 4),
-            Some(egui::Rect::from_min_size(
-                at(77.0, 151.0),
-                egui::vec2(140.0, 140.0)
-            ))
+            at(77.0, 151.0),
+            egui::vec2(140.0, 140.0),
         );
-        crate::test_support::assert_detail_canvas_bounds(
-            at(234.0, 303.0),
-            at(235.5, 150.0),
-            |point| state.contains_screen_point(scaled(), point),
-        );
-
         let layer = crate::test_support::foreground_layer(area_id(
             state
                 .windows
@@ -2206,9 +2195,14 @@ mod tests {
                 .find(|window| window.system == system)
                 .unwrap(),
         ));
-        crate::test_support::assert_system_release_target(system, layer, |layer| {
-            state.release_target(layer)
-        });
+        crate::test_support::assert_detail_canvas_routing(
+            system,
+            layer,
+            at(234.0, 303.0),
+            at(235.5, 150.0),
+            |point| state.contains_screen_point(scaled(), point),
+            |layer| state.release_target(layer),
+        );
 
         crate::test_support::assert_detail_fixture_reset!(
             state,

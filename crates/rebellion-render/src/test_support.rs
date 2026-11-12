@@ -225,12 +225,36 @@ pub(crate) fn add_special_force(
     key
 }
 
-/// Assert the common two-row finder prefix contract used by finder fixtures.
-pub(crate) fn assert_standard_prefix_choices(choose: impl Fn(&str) -> Option<usize>) {
-    assert_eq!(choose("ya"), Some(1));
-    assert_eq!(choose("cor"), Some(0));
-    assert_eq!(choose("z"), None);
-    assert_eq!(choose(""), None);
+/// Assert case-insensitive longest-prefix selection, including first-row tie
+/// breaking, for any Finder row type.
+pub(crate) fn assert_finder_prefix_choices<Row>(
+    make_row: impl FnMut(&str) -> Row,
+    choose: impl Fn(&[Row], &str) -> Option<usize>,
+) {
+    let rows = ["Corulag", "Coruscant", "Yavin"].map(make_row);
+    assert_eq!(choose(&rows, "corus"), Some(1));
+    assert_eq!(choose(&rows, "cor"), Some(0));
+    assert_eq!(choose(&rows, "ya"), Some(2));
+    assert_eq!(choose(&rows, "z"), None);
+    assert_eq!(choose(&rows, ""), None);
+}
+
+/// Assert one optional screen rectangle without repeating its construction.
+pub(crate) fn assert_screen_rect(actual: Option<egui::Rect>, min: egui::Pos2, size: egui::Vec2) {
+    assert_eq!(actual, Some(egui::Rect::from_min_size(min, size)));
+}
+
+/// Assert that a rectangle hit test includes its minimum and interior while
+/// excluding the right and bottom edges.
+pub(crate) fn assert_exclusive_rect_edges(
+    rect: egui::Rect,
+    contains: impl Fn(egui::Rect, egui::Pos2) -> bool,
+) {
+    let interior = egui::pos2(rect.max.x - 0.001, rect.max.y - 0.001);
+    assert!(contains(rect, rect.min));
+    assert!(contains(rect, interior));
+    assert!(!contains(rect, egui::pos2(rect.max.x, rect.min.y)));
+    assert!(!contains(rect, egui::pos2(rect.min.x, rect.max.y)));
 }
 
 /// Insert a one-ship transport fleet and attach it to its system.
@@ -764,6 +788,7 @@ pub(crate) trait ManagedFinderFixture: Default {
     fn close_direct_finder(&mut self);
     fn direct_finder_is_open(&self) -> bool;
     fn fixture_ui(&self) -> Option<&crate::finder_common::FinderUiState>;
+    fn fixture_ui_mut(&mut self) -> Option<&mut crate::finder_common::FinderUiState>;
 }
 
 macro_rules! impl_managed_finder_fixture {
@@ -801,6 +826,10 @@ macro_rules! impl_managed_finder_fixture {
 
             fn fixture_ui(&self) -> Option<&crate::finder_common::FinderUiState> {
                 self.fixture_ui()
+            }
+
+            fn fixture_ui_mut(&mut self) -> Option<&mut crate::finder_common::FinderUiState> {
+                self.fixture_ui_mut()
             }
         }
     };
@@ -914,6 +943,12 @@ pub(crate) fn assert_focused_duplicate_finder_ui<State: ManagedFinderFixture>(
     first_row: usize,
     focus_name: bool,
 ) {
+    let ui = state
+        .fixture_ui_mut()
+        .expect("Finder content remains attached");
+    ui.name = name.into();
+    ui.first_row = first_row;
+    ui.focus_name = focus_name;
     focus_and_recommit_duplicate_finder(manager, state, existing, focused);
     assert_preserved_finder_ui(
         manager,
@@ -1602,6 +1637,20 @@ pub(crate) fn assert_system_release_target(
     assert_eq!(release_target(own), Some(system));
     let elsewhere = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("elsewhere"));
     assert_eq!(release_target(elsewhere), None);
+}
+
+/// Assert the shared canvas edge and system release-target contracts of one
+/// strategic detail window.
+pub(crate) fn assert_detail_canvas_routing(
+    system: SystemKey,
+    own: egui::LayerId,
+    inside: egui::Pos2,
+    outside: egui::Pos2,
+    contains: impl FnMut((f32, f32)) -> bool,
+    release_target: impl FnMut(egui::LayerId) -> Option<SystemKey>,
+) {
+    assert_detail_canvas_bounds(inside, outside, contains);
+    assert_system_release_target(system, own, release_target);
 }
 
 /// Paint a retained foreground area that requests the top layer every frame,

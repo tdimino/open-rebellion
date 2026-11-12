@@ -179,3 +179,64 @@ macro_rules! impl_singleton_content_reports {
 }
 
 pub(crate) use impl_singleton_content_reports;
+
+/// Validated content kept inert until the manager accepts its contextual window.
+#[derive(Debug, Clone)]
+pub struct PreparedContextualWindow<T> {
+    pub(crate) content: T,
+    pub(crate) replacing: Option<WindowId>,
+    kind: WindowKind,
+}
+
+impl<T> PreparedContextualWindow<T> {
+    pub(crate) const fn new(content: T, replacing: Option<WindowId>, kind: WindowKind) -> Self {
+        Self {
+            content,
+            replacing,
+            kind,
+        }
+    }
+
+    /// Manager specification for this prepared contextual window.
+    #[must_use]
+    pub fn spec(&self, subject: rebellion_windowing::SubjectId) -> rebellion_windowing::WindowSpec {
+        crate::windowing_policy::contextual_spec(
+            self.kind,
+            subject,
+            rebellion_windowing::WindowOwner::StrategicRoot,
+        )
+    }
+
+    /// Exact prior window this preparation expects to replace, if any.
+    #[must_use]
+    pub const fn replacing(&self) -> Option<WindowId> {
+        self.replacing
+    }
+
+    pub(crate) fn into_parts(self) -> (T, Option<WindowId>) {
+        (self.content, self.replacing)
+    }
+}
+
+/// Gameplay-free confirmation paired with one exact manager close.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedWindowConfirm<A> {
+    window: WindowId,
+    action: A,
+}
+
+impl<A> PreparedWindowConfirm<A> {
+    pub(crate) const fn new(window: WindowId, action: A) -> Self {
+        Self { window, action }
+    }
+
+    /// Exact window whose teardown can release this confirmation.
+    #[must_use]
+    pub const fn window_id(&self) -> WindowId {
+        self.window
+    }
+
+    pub(crate) fn into_parts(self) -> (WindowId, A) {
+        (self.window, self.action)
+    }
+}

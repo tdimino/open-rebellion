@@ -16,14 +16,14 @@ use rebellion_core::missions::{MissionFaction, MissionMember};
 use rebellion_core::scrap::{ScrapOrder, ScrapTarget};
 use rebellion_core::troop_transport::SquadronSource;
 use rebellion_windowing::{
-    ContentReport, ContentStatus, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowOwner,
-    WindowSpec, WindowTransition,
+    ContentReport, ContentStatus, RoutingSnapshot, WindowId, WindowKind, WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
 use crate::mission_dialog::{button, galaxy_centered_rect, paint};
 use crate::native_geometry::{logical_rect, rect_contains};
+use crate::singleton_window_common::{PreparedContextualWindow, PreparedWindowConfirm};
 
 pub const MOVE_CONFIRMATION_WIDTH: f32 = 424.0;
 pub const MOVE_CONFIRMATION_HEIGHT: f32 = 331.0;
@@ -155,23 +155,6 @@ fn contains_confirmation<T>(window: Option<&T>, layout: CockpitLayout, point: (f
     window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
 }
 
-macro_rules! managed_commit_open {
-    ($prepared:ty) => {
-        /// Publishes prepared content only for the matching manager receipt.
-        pub fn commit_open(
-            &mut self,
-            prepared: $prepared,
-            transition: &WindowTransition,
-        ) -> Option<WindowId> {
-            commit_replacing(
-                (&mut self.window, &mut self.window_id),
-                (prepared.confirmation, prepared.replacing),
-                transition,
-            )
-        }
-    };
-}
-
 macro_rules! managed_hit_window {
     ($kind:expr) => {
         /// Manager-owned hit for event-local pointer routing.
@@ -188,6 +171,113 @@ macro_rules! managed_hit_window {
         #[must_use]
         pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
             managed_keyboard_owner(self.window_id, frame)
+        }
+    };
+}
+
+macro_rules! impl_managed_confirmation_state {
+    (
+        $state:ty,
+        $confirmation:ty,
+        $prepared:ty,
+        $prepared_confirm:ty,
+        $action:ty,
+        $kind:path,
+        $layer_name:literal
+    ) => {
+        impl $state {
+            /// Publishes unmanaged content for renderer fixtures and legacy calls.
+            pub fn open(&mut self, confirmation: $confirmation) {
+                self.window = Some(confirmation);
+                self.window_id = None;
+            }
+
+            /// Publishes prepared content only for the matching manager receipt.
+            pub fn commit_open(
+                &mut self,
+                prepared: $prepared,
+                transition: &WindowTransition,
+            ) -> Option<WindowId> {
+                let (confirmation, replacing) = prepared.into_parts();
+                commit_replacing(
+                    (&mut self.window, &mut self.window_id),
+                    (confirmation, replacing),
+                    transition,
+                )
+            }
+
+            #[must_use]
+            pub fn is_open(&self) -> bool {
+                self.window.is_some()
+            }
+
+            /// The open window's order, if one waits for an answer.
+            #[must_use]
+            pub fn confirmation(&self) -> Option<&$confirmation> {
+                self.window.as_ref()
+            }
+
+            /// Exact manager identity owning the published content.
+            #[must_use]
+            pub const fn window_id(&self) -> Option<WindowId> {
+                self.window_id
+            }
+
+            /// Egui layer attached to the exact manager-issued confirmation.
+            #[must_use]
+            pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
+                managed_layer_id(self.window_id, id, $layer_name)
+            }
+
+            managed_hit_window!($kind);
+
+            /// Explicit content state for fail-closed manager reconciliation.
+            #[must_use]
+            pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
+                managed_content_reports(self.window_id, $kind, frame)
+            }
+
+            #[must_use]
+            pub const fn request_close(&self) -> Option<WindowId> {
+                self.window_id
+            }
+
+            /// Releases manager-owned content only from its exact teardown receipt.
+            pub fn remove_content(&mut self, removed: &[WindowId]) {
+                remove_managed_content(&mut self.window, &mut self.window_id, removed);
+            }
+
+            /// Snapshots the exact current order without performing gameplay.
+            #[must_use]
+            pub fn prepare_confirm(&self) -> Option<$prepared_confirm> {
+                Some(<$prepared_confirm>::new(
+                    self.window_id?,
+                    self.window.as_ref()?.confirm_action(),
+                ))
+            }
+
+            /// Consumes one confirmation only after the exact manager close.
+            pub fn commit_confirm(
+                &mut self,
+                prepared: $prepared_confirm,
+                removed: &[WindowId],
+            ) -> Option<$action> {
+                let (window, action) = prepared.into_parts();
+                commit_managed_confirm(
+                    &mut self.window,
+                    &mut self.window_id,
+                    window,
+                    action,
+                    removed,
+                    <$confirmation>::confirm_action,
+                )
+            }
+
+            /// Whether `point` falls on the open window.
+            #[must_use]
+            pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
+                contains_confirmation(self.window.as_ref(), layout, point)
+            }
         }
     };
 }
@@ -299,49 +389,13 @@ pub struct MoveConfirmationState {
 
 /// Validated Move content kept inert until the manager accepts its fresh
 /// command-context identity.
-#[derive(Debug, Clone)]
-pub struct PreparedMoveConfirmation {
-    confirmation: MoveConfirmation,
-    replacing: Option<WindowId>,
-}
-
-impl PreparedMoveConfirmation {
-    #[must_use]
-    pub fn spec(&self, subject: SubjectId) -> WindowSpec {
-        crate::windowing_policy::contextual_spec(
-            WindowKind::MoveConfirmation,
-            subject,
-            WindowOwner::StrategicRoot,
-        )
-    }
-
-    #[must_use]
-    pub const fn replacing(&self) -> Option<WindowId> {
-        self.replacing
-    }
-}
+pub type PreparedMoveConfirmation = PreparedContextualWindow<MoveConfirmation>;
 
 /// Exact Move candidate paired with one manager close. It remains inert until
 /// the matching teardown receipt releases it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedMoveConfirmationConfirm {
-    window: WindowId,
-    action: MoveConfirmationAction,
-}
-
-impl PreparedMoveConfirmationConfirm {
-    #[must_use]
-    pub const fn window_id(&self) -> WindowId {
-        self.window
-    }
-}
+pub type PreparedMoveConfirmationConfirm = PreparedWindowConfirm<MoveConfirmationAction>;
 
 impl MoveConfirmationState {
-    pub fn open(&mut self, confirmation: MoveConfirmation) {
-        self.window = Some(confirmation);
-        self.window_id = None;
-    }
-
     /// Prepares one valid logical Move context without disturbing any
     /// published confirmation. Exactly one mover family must be present and
     /// every mover must retain its transit line.
@@ -361,86 +415,11 @@ impl MoveConfirmationState {
         if family_count != 1 || confirmation.lines.len() != line_count {
             return None;
         }
-        Some(PreparedMoveConfirmation {
+        Some(PreparedMoveConfirmation::new(
             confirmation,
-            replacing: self.window_id,
-        })
-    }
-
-    managed_commit_open!(PreparedMoveConfirmation);
-
-    #[must_use]
-    pub fn is_open(&self) -> bool {
-        self.window.is_some()
-    }
-
-    /// The open window's order, if one waits for an answer.
-    #[must_use]
-    pub fn confirmation(&self) -> Option<&MoveConfirmation> {
-        self.window.as_ref()
-    }
-
-    /// Exact manager identity owning the published Move content.
-    #[must_use]
-    pub const fn window_id(&self) -> Option<WindowId> {
-        self.window_id
-    }
-
-    /// Egui layer attached to the exact manager-issued Move confirmation.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        managed_layer_id(self.window_id, id, "original-move-confirmation")
-    }
-
-    managed_hit_window!(WindowKind::MoveConfirmation);
-
-    /// Explicit content state for fail-closed manager reconciliation.
-    #[must_use]
-    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        managed_content_reports(self.window_id, WindowKind::MoveConfirmation, frame)
-    }
-
-    #[must_use]
-    pub const fn request_close(&self) -> Option<WindowId> {
-        self.window_id
-    }
-
-    /// Releases manager-owned content only from its exact teardown receipt.
-    pub fn remove_content(&mut self, removed: &[WindowId]) {
-        remove_managed_content(&mut self.window, &mut self.window_id, removed);
-    }
-
-    /// Snapshots the exact current Move order without performing gameplay.
-    #[must_use]
-    pub fn prepare_confirm(&self) -> Option<PreparedMoveConfirmationConfirm> {
-        Some(PreparedMoveConfirmationConfirm {
-            window: self.window_id?,
-            action: self.window.as_ref()?.confirm_action(),
-        })
-    }
-
-    /// Consumes one Move confirmation only after the exact manager close and
-    /// while its published payload still matches the prepared candidate.
-    pub fn commit_confirm(
-        &mut self,
-        prepared: PreparedMoveConfirmationConfirm,
-        removed: &[WindowId],
-    ) -> Option<MoveConfirmationAction> {
-        commit_managed_confirm(
-            &mut self.window,
-            &mut self.window_id,
-            prepared.window,
-            prepared.action,
-            removed,
-            MoveConfirmation::confirm_action,
-        )
-    }
-
-    /// Whether `point` falls on the open window, so the galaxy map under it
-    /// takes no input.
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        contains_confirmation(self.window.as_ref(), layout, point)
+            self.window_id,
+            WindowKind::MoveConfirmation,
+        ))
     }
 
     /// Either control closes the window (`+0x30`) after acting.
@@ -456,6 +435,16 @@ impl MoveConfirmationState {
         })
     }
 }
+
+impl_managed_confirmation_state!(
+    MoveConfirmationState,
+    MoveConfirmation,
+    PreparedMoveConfirmation,
+    PreparedMoveConfirmationConfirm,
+    MoveConfirmationAction,
+    WindowKind::MoveConfirmation,
+    "original-move-confirmation"
+);
 
 const fn side(faction: MissionFaction) -> usize {
     match faction {
@@ -704,41 +693,10 @@ pub struct ScrapConfirmationState {
 
 /// Validated Scrap content held inert until its explicit port-modal identity
 /// commits in the shared manager.
-#[derive(Debug, Clone)]
-pub struct PreparedScrapConfirmation {
-    confirmation: ScrapConfirmation,
-    replacing: Option<WindowId>,
-}
-
-impl PreparedScrapConfirmation {
-    #[must_use]
-    pub fn spec(&self, subject: SubjectId) -> WindowSpec {
-        crate::windowing_policy::contextual_spec(
-            WindowKind::ScrapConfirmation,
-            subject,
-            WindowOwner::StrategicRoot,
-        )
-    }
-
-    #[must_use]
-    pub const fn replacing(&self) -> Option<WindowId> {
-        self.replacing
-    }
-}
+pub type PreparedScrapConfirmation = PreparedContextualWindow<ScrapConfirmation>;
 
 /// Exact Scrap candidate paired with one manager close.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedScrapConfirmationConfirm {
-    window: WindowId,
-    action: ScrapConfirmationAction,
-}
-
-impl PreparedScrapConfirmationConfirm {
-    #[must_use]
-    pub const fn window_id(&self) -> WindowId {
-        self.window
-    }
-}
+pub type PreparedScrapConfirmationConfirm = PreparedWindowConfirm<ScrapConfirmationAction>;
 
 impl ScrapConfirmation {
     fn confirm_action(&self) -> ScrapConfirmationAction {
@@ -751,11 +709,6 @@ impl ScrapConfirmation {
 }
 
 impl ScrapConfirmationState {
-    pub fn open(&mut self, confirmation: ScrapConfirmation) {
-        self.window = Some(confirmation);
-        self.window_id = None;
-    }
-
     #[must_use]
     pub fn prepare_open(
         &self,
@@ -764,80 +717,23 @@ impl ScrapConfirmationState {
         if confirmation.targets.is_empty() || confirmation.names.is_empty() {
             return None;
         }
-        Some(PreparedScrapConfirmation {
+        Some(PreparedScrapConfirmation::new(
             confirmation,
-            replacing: self.window_id,
-        })
-    }
-
-    managed_commit_open!(PreparedScrapConfirmation);
-
-    #[must_use]
-    pub fn is_open(&self) -> bool {
-        self.window.is_some()
-    }
-
-    #[must_use]
-    pub fn confirmation(&self) -> Option<&ScrapConfirmation> {
-        self.window.as_ref()
-    }
-
-    #[must_use]
-    pub const fn window_id(&self) -> Option<WindowId> {
-        self.window_id
-    }
-
-    /// Egui layer attached to the exact manager-issued Scrap confirmation.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        managed_layer_id(self.window_id, id, "original-scrap-confirmation")
-    }
-
-    managed_hit_window!(WindowKind::ScrapConfirmation);
-
-    #[must_use]
-    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        managed_content_reports(self.window_id, WindowKind::ScrapConfirmation, frame)
-    }
-
-    #[must_use]
-    pub const fn request_close(&self) -> Option<WindowId> {
-        self.window_id
-    }
-
-    pub fn remove_content(&mut self, removed: &[WindowId]) {
-        remove_managed_content(&mut self.window, &mut self.window_id, removed);
-    }
-
-    #[must_use]
-    pub fn prepare_confirm(&self) -> Option<PreparedScrapConfirmationConfirm> {
-        Some(PreparedScrapConfirmationConfirm {
-            window: self.window_id?,
-            action: self.window.as_ref()?.confirm_action(),
-        })
-    }
-
-    pub fn commit_confirm(
-        &mut self,
-        prepared: PreparedScrapConfirmationConfirm,
-        removed: &[WindowId],
-    ) -> Option<ScrapConfirmationAction> {
-        commit_managed_confirm(
-            &mut self.window,
-            &mut self.window_id,
-            prepared.window,
-            prepared.action,
-            removed,
-            ScrapConfirmation::confirm_action,
-        )
-    }
-
-    /// Whether `point` falls on the open window.
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        contains_confirmation(self.window.as_ref(), layout, point)
+            self.window_id,
+            WindowKind::ScrapConfirmation,
+        ))
     }
 }
+
+impl_managed_confirmation_state!(
+    ScrapConfirmationState,
+    ScrapConfirmation,
+    PreparedScrapConfirmation,
+    PreparedScrapConfirmationConfirm,
+    ScrapConfirmationAction,
+    WindowKind::ScrapConfirmation,
+    "original-scrap-confirmation"
+);
 
 /// Draw the open Scrap confirmation, if any, and report the answer.
 pub fn draw_scrap_confirmation(
@@ -1570,7 +1466,7 @@ mod tests {
     fn managed_open<S, P>(
         state: &mut S,
         prepared: P,
-        spec: impl FnOnce(&P) -> WindowSpec,
+        spec: impl FnOnce(&P) -> rebellion_windowing::WindowSpec,
         commit: impl FnOnce(&mut S, P, &WindowTransition) -> Option<WindowId>,
     ) -> (WindowManager, WindowId) {
         let mut manager = WindowManager::new();

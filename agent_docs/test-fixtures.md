@@ -57,9 +57,14 @@ then overwrite only the palette entries or pixels the test observes. Use
 `add_standalone_system` only for row-level tests that intentionally need no
 sector relation; ordinary renderer worlds should use `add_system`. Use
 `add_special_force`, `assert_finder_selection`, `assert_finder_bounds`,
-`assert_finder_modal_routing`, and `assert_standard_prefix_choices` for the
+`assert_finder_modal_routing`, and `assert_finder_prefix_choices` for the
 Finder contracts already shared by multiple families. These helpers
 deliberately keep the window-specific action assertion at the call site.
+
+Selection reveal is not a Finder or whole-window contract. The original
+`CoolDragList` control implements it in `FUN_00609ed0`, so production lists
+must use `crate::list_control::reveal_row` instead of repeating the
+first-visible-row arithmetic in a Finder, Encyclopedia, or detail window.
 
 For manager-owned singleton fixtures, use `open_singleton_window`,
 `assert_managed_close_receipt`, and `assert_minimized_reopen` instead of

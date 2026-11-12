@@ -647,24 +647,17 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_name_chooses_the_first_row_it_best_begins() {
-        // FUN_00609650: the same prefix-match the Fleet Finder uses.
-        let rows = vec![
-            TroopFinderRow {
-                name: "Coruscant".into(),
+    fn typed_names_use_the_longest_prefix_and_a_tie_keeps_the_first_row() {
+        // FUN_00609650 keeps a row only for a strictly longer match.
+        crate::test_support::assert_finder_prefix_choices(
+            |name| TroopFinderRow {
+                name: name.into(),
                 system: SystemKey::default(),
                 fleet: None,
                 counts: [TroopCount::default(); 5],
             },
-            TroopFinderRow {
-                name: "Yavin".into(),
-                system: SystemKey::default(),
-                fleet: None,
-                counts: [TroopCount::default(); 5],
-            },
-        ];
-
-        crate::test_support::assert_standard_prefix_choices(|text| prefix_choice(&rows, text));
+            prefix_choice,
+        );
     }
 
     #[test]
@@ -703,15 +696,6 @@ mod tests {
     }
 
     #[test]
-    fn the_list_scrolls_as_little_as_it_must_to_show_a_row() {
-        assert_eq!(finder_common::scrolled_to(0, 5, VISIBLE_ROWS), 0);
-        assert_eq!(finder_common::scrolled_to(0, 6, VISIBLE_ROWS), 1);
-        assert_eq!(finder_common::scrolled_to(3, 1, VISIBLE_ROWS), 1);
-        assert_eq!(finder_common::scrolled_to(3, 8, VISIBLE_ROWS), 3);
-        assert_eq!(finder_common::scrolled_to(2, 8, VISIBLE_ROWS), 3);
-    }
-
-    #[test]
     fn opening_an_open_finder_keeps_its_state() {
         // FUN_0042a4d0 builds the window only when no type 0x16 is open.
         crate::test_support::assert_finder_reopen_preserves::<TroopFinderState>(
@@ -726,10 +710,7 @@ mod tests {
 
         let content = state.window.as_mut().unwrap();
         content.tab = TroopTab::Imperial;
-        content.ui.name = "Coruscant".into();
         content.chosen = Some(0);
-        content.ui.first_row = 2;
-        content.ui.focus_name = false;
         let focused = focus(id, TROOP_FINDER_LIST_CONTROL);
         crate::test_support::assert_focused_duplicate_finder_ui(
             &mut manager,
@@ -788,22 +769,6 @@ mod tests {
             state.hit_window(&blocked_frame, layout(), (rect.center().x, rect.center().y),),
             None
         );
-    }
-
-    #[test]
-    fn the_longest_common_beginning_wins_and_a_tie_keeps_the_first() {
-        // FUN_00609650 keeps a row only for a strictly longer match.
-        let rows: Vec<TroopFinderRow> = ["Corulag", "Coruscant", "Yavin"]
-            .into_iter()
-            .map(|name| TroopFinderRow {
-                name: name.into(),
-                system: SystemKey::default(),
-                fleet: None,
-                counts: [TroopCount::default(); 5],
-            })
-            .collect();
-        assert_eq!(prefix_choice(&rows, "corus"), Some(1));
-        assert_eq!(prefix_choice(&rows, "cor"), Some(0));
     }
 
     #[test]

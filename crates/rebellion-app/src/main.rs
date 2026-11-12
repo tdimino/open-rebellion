@@ -44,6 +44,7 @@ mod interface_test_fixture;
 mod movies;
 #[cfg(any(target_arch = "wasm32", test))]
 mod runtime_pack;
+mod strategic_order_common;
 mod strategic_windowing;
 mod strike_orders;
 mod tactical_flow;

@@ -18,8 +18,8 @@ use crate::tactical_flow::{self, BattleEntry};
 use crate::GameMode;
 
 use super::{
-    active_modal_id, capture_window_id, focused_window_json, registered_window_ids, FixtureRequest,
-    Scenario,
+    active_modal_id, capture_window_id, focused_window_json, log_changed_observation,
+    registered_window_ids, FixtureRequest, Scenario,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -291,20 +291,7 @@ impl InputScenesFixture {
             "encyclopedia_rect": windows.encyclopedia_rect,
             "encyclopedia_content_status": windows.encyclopedia_content_status.map(status_name),
         });
-        if self.last_state.as_ref() == Some(&state) {
-            return;
-        }
-        self.observation_sequence = self.observation_sequence.saturating_add(1);
-        self.last_state = Some(state.clone());
-        let mut report = state;
-        report
-            .as_object_mut()
-            .expect("input-scenes state is an object")
-            .insert("sequence".into(), json!(self.observation_sequence));
-        macroquad::logging::info!(
-            "[windowing-contract-state] {}",
-            serde_json::to_string(&report).expect("serialize input-scenes observation")
-        );
+        log_changed_observation(state, &mut self.last_state, &mut self.observation_sequence);
     }
 
     #[cfg(test)]

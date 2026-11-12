@@ -146,6 +146,17 @@ pub fn encyclopedia_catalog(entries: Vec<EncyclopediaCatalogEntry>) -> Encyclope
     }
 }
 
+/// Representative system, concept, and capital-ship topics shared by
+/// Encyclopedia presenter and session tests.
+#[must_use]
+pub fn representative_encyclopedia_catalog() -> EncyclopediaCatalog {
+    encyclopedia_catalog(vec![
+        encyclopedia_entry(0x9200_0064, 0x2e00, "Abregado-rae"),
+        encyclopedia_entry(0x5100_0010, 0x2c50, "Diplomacy"),
+        encyclopedia_entry(0x1400_0040, 0x2740, "Mon Calamari Cruiser"),
+    ])
+}
+
 /// A 400x200, 8-bit indexed BMP whose palette index 1 has `pixel` RGB and
 /// fills the image. This matches the encyclopedia's native artwork geometry.
 #[must_use]

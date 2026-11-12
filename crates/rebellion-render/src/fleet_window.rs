@@ -5363,26 +5363,20 @@ pub(crate) mod tests {
 
         assert_eq!(state.window_count(), 2);
         assert!(state.is_open(system) && state.is_open(other) && !state.is_open(missing));
-        assert_eq!(
+        crate::test_support::assert_screen_rect(
             state.entry_screen_rect(scaled(), system, 2),
-            Some(egui::Rect::from_min_size(
-                at(4.0, 129.0),
-                egui::vec2(182.0, 100.0)
-            ))
+            at(4.0, 129.0),
+            egui::vec2(182.0, 100.0),
         );
-        assert_eq!(
+        crate::test_support::assert_screen_rect(
             state.tab_screen_rect(scaled(), system, FleetWindowTab::Troops),
-            Some(egui::Rect::from_min_size(
-                at(164.0, 96.0),
-                egui::vec2(62.0, 56.0)
-            ))
+            at(164.0, 96.0),
+            egui::vec2(62.0, 56.0),
         );
-        assert_eq!(
+        crate::test_support::assert_screen_rect(
             state.screen_rect(scaled(), system),
-            Some(egui::Rect::from_min_size(
-                at(0.0, 0.0),
-                egui::vec2(FLEET_WINDOW_WIDTH * 2.0, FLEET_WINDOW_HEIGHT * 2.0)
-            ))
+            at(0.0, 0.0),
+            egui::vec2(FLEET_WINDOW_WIDTH * 2.0, FLEET_WINDOW_HEIGHT * 2.0),
         );
         assert_eq!(state.screen_rect(scaled(), missing), None);
         assert_eq!(state.entry_screen_rect(scaled(), missing, 0), None);

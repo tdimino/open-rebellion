@@ -373,6 +373,32 @@ pub enum ReportCell<'a> {
     Blank,
 }
 
+/// Flatten report columns into the row-major cell order used by both the
+/// strategic operation report and the tactical battle summary.
+pub(crate) fn report_grid_cells<'a, T, C>(
+    columns: &[(Vec<&'a T>, &'static str)],
+    object_cell: impl Fn(&'a T) -> C,
+    text_cell: impl Fn(&'static str) -> C,
+    blank_cell: impl Fn() -> C,
+) -> Vec<C> {
+    let rows = columns
+        .iter()
+        .map(|(objects, _)| objects.len().max(1))
+        .max()
+        .unwrap_or(1);
+    let mut cells = Vec::with_capacity(rows * columns.len());
+    for row in 0..rows {
+        for (objects, empty_text) in columns {
+            cells.push(match objects.get(row) {
+                Some(object) => object_cell(*object),
+                None if row == 0 => text_cell(empty_text),
+                None => blank_cell(),
+            });
+        }
+    }
+    cells
+}
+
 /// The list `FUN_0044e500` fills, row by row: the view's operational,
 /// (for Personnel) captured and destroyed lists, each filtered to the tab's
 /// families, side by side; a column out of objects shows its empty text in
@@ -407,22 +433,9 @@ pub fn list_cells<'a>(
         columns.push((filtered(captured), NONE_TEXT));
     }
     columns.push((filtered(destroyed), NO_CASUALTIES_TEXT));
-    let rows = columns
-        .iter()
-        .map(|(units, _)| units.len().max(1))
-        .max()
-        .unwrap_or(1);
-    let mut cells = Vec::with_capacity(rows * columns.len());
-    for row in 0..rows {
-        for (units, empty) in &columns {
-            cells.push(match units.get(row) {
-                Some(unit) => ReportCell::Object(unit),
-                None if row == 0 => ReportCell::Text(empty),
-                None => ReportCell::Blank,
-            });
-        }
-    }
-    cells
+    report_grid_cells(&columns, ReportCell::Object, ReportCell::Text, || {
+        ReportCell::Blank
+    })
 }
 
 /// A cell's object picture, bottom layer first: `FUN_0042c3b0(.., arg, 1)`

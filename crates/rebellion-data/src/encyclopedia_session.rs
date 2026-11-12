@@ -636,25 +636,15 @@ mod tests {
     use rebellion_core::world::GameWorld;
 
     use super::*;
-    use crate::encyclopedia_catalog::{EncyclopediaCatalog, EncyclopediaCatalogEntry};
+    use crate::encyclopedia_catalog::EncyclopediaCatalogEntry;
     use crate::encyclopedia_overlay::{parse_encyclopedia_overlay, EncyclopediaOverlayLayer};
     use crate::encyclopedia_topics::EncyclopediaAudience;
-    use crate::test_support::{
-        encyclopedia_catalog, encyclopedia_entry, indexed_encyclopedia_artwork,
-    };
+    use crate::test_support::{indexed_encyclopedia_artwork, representative_encyclopedia_catalog};
 
     const SHARED_SOURCE: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json");
     const SHARED_MANIFEST: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json.manifest.json");
-
-    fn fixture_index() -> EncyclopediaCatalog {
-        encyclopedia_catalog(vec![
-            encyclopedia_entry(0x9200_0064, 0x2e00, "Abregado-rae"),
-            encyclopedia_entry(0x5100_0010, 0x2c50, "Diplomacy"),
-            encyclopedia_entry(0x1400_0040, 0x2740, "Mon Calamari Cruiser"),
-        ])
-    }
 
     fn bmp(pixel: [u8; 3]) -> Arc<[u8]> {
         crate::test_support::rgb_encyclopedia_bmp(pixel).into()
@@ -685,7 +675,7 @@ mod tests {
 
     fn input() -> EncyclopediaSessionInput {
         EncyclopediaSessionInput {
-            catalog: fixture_index(),
+            catalog: representative_encyclopedia_catalog(),
             source_catalog_bytes: Arc::from(SHARED_SOURCE),
             source_manifest_bytes: Arc::from(SHARED_MANIFEST),
             system_pictures: HashMap::from([(0x9200_0064, 1)]),

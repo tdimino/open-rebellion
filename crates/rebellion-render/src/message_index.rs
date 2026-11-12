@@ -2407,14 +2407,7 @@ mod tests {
     #[test]
     fn hit_testing_excludes_right_and_bottom_edges() {
         let rect = egui::Rect::from_min_max(egui::pos2(22.0, 46.0), egui::pos2(58.0, 87.0));
-
-        assert!(message_index_rect_contains(rect, egui::pos2(22.0, 46.0)));
-        assert!(message_index_rect_contains(
-            rect,
-            egui::pos2(57.999, 86.999)
-        ));
-        assert!(!message_index_rect_contains(rect, egui::pos2(58.0, 46.0)));
-        assert!(!message_index_rect_contains(rect, egui::pos2(22.0, 87.0)));
+        crate::test_support::assert_exclusive_rect_edges(rect, message_index_rect_contains);
     }
 
     // ── List geometry ───────────────────────────────────────────────────

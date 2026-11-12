@@ -65,6 +65,7 @@ pub mod game_menu;
 pub mod game_options;
 pub mod game_speed;
 pub mod gid_legend;
+mod list_control;
 pub mod main_menu;
 pub mod main_menu_destinations;
 pub mod manufacturing_window;

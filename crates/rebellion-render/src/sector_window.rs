@@ -6508,10 +6508,7 @@ mod tests {
     #[test]
     fn original_control_rects_exclude_right_and_bottom_edges() {
         let rect = egui::Rect::from_min_max(egui::pos2(10.0, 20.0), egui::pos2(24.0, 34.0));
-        assert!(rect_contains(rect, egui::pos2(10.0, 20.0)));
-        assert!(rect_contains(rect, egui::pos2(23.999, 33.999)));
-        assert!(!rect_contains(rect, egui::pos2(24.0, 20.0)));
-        assert!(!rect_contains(rect, egui::pos2(10.0, 34.0)));
+        crate::test_support::assert_exclusive_rect_edges(rect, rect_contains);
     }
 
     /// Draw `system`'s sector window and double-click at the canvas point

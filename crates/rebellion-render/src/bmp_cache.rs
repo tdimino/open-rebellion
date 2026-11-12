@@ -1452,6 +1452,22 @@ pub struct BmpCache {
     macroquad_button_textures: HashMap<(DllSource, u32), Option<Texture2D>>,
 }
 
+fn cache_decoded_asset<T>(
+    cache: &mut HashMap<(DllSource, u32), Option<T>>,
+    key: (DllSource, u32),
+    kind: &str,
+    asset: Option<T>,
+) {
+    if asset.is_none() {
+        eprintln!(
+            "[bmp_cache] {kind} asset unavailable source={} resource_id={}",
+            key.0.dll_dir_name(),
+            key.1
+        );
+    }
+    cache.insert(key, asset);
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct BitmapHitMask {
     width: usize,
@@ -1715,14 +1731,7 @@ impl BmpCache {
             let texture = self
                 .load_original_bytes(source, resource_id)
                 .and_then(|bytes| decode_macroquad_texture(&bytes, source, resource_id));
-            if texture.is_none() {
-                eprintln!(
-                    "[bmp_cache] macroquad asset unavailable source={} resource_id={}",
-                    source.dll_dir_name(),
-                    resource_id
-                );
-            }
-            self.macroquad_textures.insert(key, texture);
+            cache_decoded_asset(&mut self.macroquad_textures, key, "macroquad", texture);
         }
 
         self.macroquad_textures.get(&key)?.as_ref()
@@ -1748,14 +1757,7 @@ impl BmpCache {
                         AssetVariant::Original.texture_options(),
                     )
                 });
-            if handle.is_none() {
-                eprintln!(
-                    "[bmp_cache] button asset unavailable source={} resource_id={}",
-                    source.dll_dir_name(),
-                    resource_id
-                );
-            }
-            self.button_textures.insert(key, handle);
+            cache_decoded_asset(&mut self.button_textures, key, "button", handle);
         }
         self.button_textures.get(&key)?.as_ref()
     }
@@ -1771,14 +1773,12 @@ impl BmpCache {
             let texture = self
                 .load_original_bytes(source, resource_id)
                 .and_then(|bytes| button_macroquad_texture(&bytes, source, resource_id));
-            if texture.is_none() {
-                eprintln!(
-                    "[bmp_cache] macroquad button asset unavailable source={} resource_id={}",
-                    source.dll_dir_name(),
-                    resource_id
-                );
-            }
-            self.macroquad_button_textures.insert(key, texture);
+            cache_decoded_asset(
+                &mut self.macroquad_button_textures,
+                key,
+                "macroquad button",
+                texture,
+            );
         }
         self.macroquad_button_textures.get(&key)?.as_ref()
     }

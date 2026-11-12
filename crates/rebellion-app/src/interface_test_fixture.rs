@@ -54,6 +54,7 @@ use rebellion_render::{
 use rebellion_render::{DefensesPage, DefensesWindowState, MissionsTab, MissionsWindowState};
 use rebellion_windowing::{RoutingSnapshot, WindowId, WindowKind};
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::encyclopedia_surface::{CanonicalFixtureStart, FixtureStart};
 use crate::GameMode;
@@ -67,6 +68,24 @@ const SCENARIO_COUNT: u8 = 75;
 extern "C" {
     fn open_rebellion_interface_fixture_code() -> u32;
     fn open_rebellion_interface_fixture_emit(ptr: *const u8, len: usize);
+}
+
+/// Log one sequenced fixture observation only when its payload changed.
+fn log_changed_observation(state: Value, last_state: &mut Option<Value>, sequence: &mut u64) {
+    if last_state.as_ref() == Some(&state) {
+        return;
+    }
+    *sequence = sequence.saturating_add(1);
+    *last_state = Some(state.clone());
+    let mut report = state;
+    report
+        .as_object_mut()
+        .expect("fixture observation is an object")
+        .insert("sequence".into(), serde_json::json!(*sequence));
+    macroquad::logging::info!(
+        "[windowing-contract-state] {}",
+        serde_json::to_string(&report).expect("serialize fixture observation")
+    );
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

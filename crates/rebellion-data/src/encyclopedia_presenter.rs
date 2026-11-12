@@ -527,22 +527,14 @@ mod tests {
     };
     use crate::encyclopedia_topics::EncyclopediaAudience;
     use crate::test_support::{
-        encyclopedia_catalog, encyclopedia_category as category, encyclopedia_entry,
-        indexed_encyclopedia_artwork, indexed_encyclopedia_bmp,
+        encyclopedia_catalog, indexed_encyclopedia_artwork, indexed_encyclopedia_bmp,
+        representative_encyclopedia_catalog,
     };
 
     const SHARED_SOURCE: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json");
     const SHARED_MANIFEST: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json.manifest.json");
-
-    fn fixture_catalog() -> EncyclopediaCatalog {
-        encyclopedia_catalog(vec![
-            encyclopedia_entry(0x9200_0064, 0x2e00, "Abregado-rae"),
-            encyclopedia_entry(0x5100_0010, 0x2c50, "Diplomacy"),
-            encyclopedia_entry(0x1400_0040, 0x2740, "Mon Calamari Cruiser"),
-        ])
-    }
 
     fn indexed_bmp(pixel: [u8; 3]) -> Arc<[u8]> {
         indexed_encyclopedia_bmp(pixel).into()
@@ -563,7 +555,7 @@ mod tests {
     }
 
     fn fixture_session() -> Arc<EncyclopediaSession> {
-        fixture_session_with_catalog(fixture_catalog())
+        fixture_session_with_catalog(representative_encyclopedia_catalog())
     }
 
     fn full_catalog() -> EncyclopediaCatalog {
@@ -597,20 +589,7 @@ mod tests {
         }
         assert_eq!(entries.len(), 346);
 
-        EncyclopediaCatalog {
-            title: "Galactic Encyclopedia".into(),
-            topic_label: "Topic".into(),
-            categories: [
-                category(0x6f, 0x1850, None),
-                category(0x70, 0x1855, Some(0x90..0x98)),
-                category(0x71, 0x1854, Some(0x14..0x20)),
-                category(0x72, 0x1852, Some(0x20..0x30)),
-                category(0x73, 0x1851, Some(0x40..0x80)),
-                category(0x74, 0x1856, Some(0x10..0x14)),
-                category(0x75, 0x1853, Some(0x30..0x40)),
-            ],
-            entries,
-        }
+        encyclopedia_catalog(entries)
     }
 
     fn full_session() -> Arc<EncyclopediaSession> {
@@ -832,7 +811,7 @@ mod tests {
 
     #[test]
     fn presenter_preserves_literal_mixed_case_and_equal_fold_catalog_order() {
-        let mut catalog = fixture_catalog();
+        let mut catalog = representative_encyclopedia_catalog();
         catalog.entries = vec![
             EncyclopediaCatalogEntry {
                 object_id: 0x1400_0040,

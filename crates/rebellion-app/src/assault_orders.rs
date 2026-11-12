@@ -56,11 +56,14 @@ pub fn issue(
 ) -> Result<Vec<AssaultEffects>, AssaultRefusal> {
     let tick = states.tick;
     let runs = rebellion_data::integrator::order_assault(world, fleets, side, states, roll)?;
-    for run in &runs {
-        rebellion_data::telemetry::native_assault(tick, world, run);
-        log.extend(assault_messages(world, templates, tick, run));
-    }
-    Ok(runs)
+    Ok(crate::strategic_order_common::file_order_runs(
+        world,
+        tick,
+        runs,
+        log,
+        rebellion_data::telemetry::native_assault,
+        |world, tick, assault| assault_messages(world, templates, tick, assault),
+    ))
 }
 
 /// The messages of an assault, the player's or the AI's: event `0x150`
@@ -112,7 +115,7 @@ mod tests {
     use rebellion_core::test_support::gnprtb_entry;
     use rebellion_core::world::{CapitalShipClass, ControlKind, Fleet, System, TroopUnit};
     use rebellion_data::test_support::{assault_report_template_entries, text_templates};
-    use rebellion_render::message_log::{MessageRail, MessageTarget, RailAudience};
+    use rebellion_render::message_log::RailAudience;
     use rebellion_render::quadrant_icons::Quadrant;
 
     const BOTH: [(Faction, Faction); 2] = [
@@ -207,7 +210,6 @@ mod tests {
             ] {
                 let (_, messages) =
                     run_messages(&mut world, &templates, system, assaulter, holder, after);
-                assert_eq!(messages.len(), 2, "{assaulter:?}");
                 for message in &messages {
                     let display = message.display.as_ref().unwrap();
                     assert_eq!(display.title, "Assault on Selonia");
@@ -218,14 +220,10 @@ mod tests {
                         0x2b99
                     };
                     assert_eq!(display.background, picture);
-                    assert_eq!(message.rail, Some(MessageRail::Conflict));
-                    assert_eq!(message.target, Some(MessageTarget::System(system)));
                 }
-                let alliance = assaulter == Faction::Alliance;
-                assert_eq!(messages[0].audience, RailAudience::side(alliance));
-                assert_eq!(messages[0].advice, None);
-                assert_eq!(messages[1].audience, RailAudience::side(!alliance));
-                assert_eq!(messages[1].advice, Some(0x2f));
+                crate::test_support::assert_two_side_conflict_filing(
+                    &messages, assaulter, system, 0x2f,
+                );
             }
         }
     }

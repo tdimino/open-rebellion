@@ -13,16 +13,15 @@ use rebellion_core::ids::SystemKey;
 use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember, MissionTarget};
 use rebellion_core::research::TechType;
 use rebellion_core::world::GameWorld;
-use rebellion_windowing::{
-    ExistingEffect, SubjectId, WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
-};
+use rebellion_windowing::{ExistingEffect, WindowId, WindowKind, WindowTransition};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
 use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::sector_window::planet_resource_id;
 use crate::singleton_window_common::{
-    self, impl_singleton_content_reports, impl_singleton_window_routing,
+    self, impl_singleton_content_reports, impl_singleton_window_routing, PreparedContextualWindow,
+    PreparedWindowConfirm,
 };
 use crate::system_window::{character_mini_resource_id, special_force_mini};
 
@@ -184,42 +183,11 @@ pub struct MissionDialogState {
 /// Validated Mission content kept inert until the manager accepts its fresh
 /// command-context identity. A valid logical open replaces the exact prior
 /// dialog atomically; invalid preparation leaves published content untouched.
-#[derive(Debug, Clone)]
-pub struct PreparedMissionDialog {
-    dialog: MissionDialog,
-    replacing: Option<WindowId>,
-}
-
-impl PreparedMissionDialog {
-    #[must_use]
-    pub fn spec(&self, subject: SubjectId) -> WindowSpec {
-        crate::windowing_policy::contextual_spec(
-            WindowKind::MissionDialog,
-            subject,
-            WindowOwner::StrategicRoot,
-        )
-    }
-
-    #[must_use]
-    pub const fn replacing(&self) -> Option<WindowId> {
-        self.replacing
-    }
-}
+pub type PreparedMissionDialog = PreparedContextualWindow<MissionDialog>;
 
 /// Exact Mission confirmation candidate paired with one manager close. It is
 /// gameplay-free and can be released only by the matching teardown receipt.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedMissionDialogConfirm {
-    window: WindowId,
-    action: MissionDialogAction,
-}
-
-impl PreparedMissionDialogConfirm {
-    #[must_use]
-    pub const fn window_id(&self) -> WindowId {
-        self.window
-    }
-}
+pub type PreparedMissionDialogConfirm = PreparedWindowConfirm<MissionDialogAction>;
 
 impl MissionDialogState {
     /// Prepares publication of an existing legacy dialog that has no manager
@@ -227,10 +195,14 @@ impl MissionDialogState {
     #[must_use]
     pub fn prepare_adoption(&self) -> Option<PreparedMissionDialog> {
         let dialog = self.dialog.as_ref()?.clone();
-        dialog.window_id.is_none().then_some(PreparedMissionDialog {
-            dialog,
-            replacing: None,
-        })
+        dialog
+            .window_id
+            .is_none()
+            .then_some(PreparedMissionDialog::new(
+                dialog,
+                None,
+                WindowKind::MissionDialog,
+            ))
     }
 
     /// Prepares a fresh logical Mission context without changing the currently
@@ -248,8 +220,8 @@ impl MissionDialogState {
         if kinds.is_empty() || team.is_empty() {
             return None;
         }
-        Some(PreparedMissionDialog {
-            dialog: MissionDialog {
+        Some(PreparedMissionDialog::new(
+            MissionDialog {
                 window_id: None,
                 faction,
                 target,
@@ -264,8 +236,9 @@ impl MissionDialogState {
                 decoys_row: 0,
                 object,
             },
-            replacing: self.window_id(),
-        })
+            self.window_id(),
+            WindowKind::MissionDialog,
+        ))
     }
 
     /// Publishes prepared content only for the exact open/replacement receipt.
@@ -277,21 +250,21 @@ impl MissionDialogState {
     ) -> Option<WindowId> {
         match *transition {
             WindowTransition::Opened { id }
-                if prepared.replacing.is_none()
+                if prepared.replacing().is_none()
                     && (self.dialog.is_none()
                         || self.dialog.as_ref().is_some_and(|dialog| {
-                            dialog.window_id.is_none() && dialog == &prepared.dialog
+                            dialog.window_id.is_none() && dialog == &prepared.content
                         })) =>
             {
-                prepared.dialog.window_id = Some(id);
-                self.dialog = Some(prepared.dialog);
+                prepared.content.window_id = Some(id);
+                self.dialog = Some(prepared.content);
                 Some(id)
             }
             WindowTransition::Replaced { old, new }
-                if self.window_id() == Some(old) && prepared.replacing == Some(old) =>
+                if self.window_id() == Some(old) && prepared.replacing() == Some(old) =>
             {
-                prepared.dialog.window_id = Some(new);
-                self.dialog = Some(prepared.dialog);
+                prepared.content.window_id = Some(new);
+                self.dialog = Some(prepared.content);
                 Some(new)
             }
             WindowTransition::Existing {
@@ -324,10 +297,10 @@ impl MissionDialogState {
     #[must_use]
     pub fn prepare_confirm(&self) -> Option<PreparedMissionDialogConfirm> {
         let dialog = self.dialog.as_ref()?;
-        Some(PreparedMissionDialogConfirm {
-            window: dialog.window_id?,
-            action: dialog.begin_action(),
-        })
+        Some(PreparedMissionDialogConfirm::new(
+            dialog.window_id?,
+            dialog.begin_action(),
+        ))
     }
 
     /// Consumes one confirmation only after the exact manager close and while
@@ -337,15 +310,16 @@ impl MissionDialogState {
         prepared: PreparedMissionDialogConfirm,
         removed: &[WindowId],
     ) -> Option<MissionDialogAction> {
-        if !removed.contains(&prepared.window) {
+        let (window, action) = prepared.into_parts();
+        if !removed.contains(&window) {
             return None;
         }
         let dialog = self.dialog.as_ref()?;
-        if dialog.window_id != Some(prepared.window) || dialog.begin_action() != prepared.action {
+        if dialog.window_id != Some(window) || dialog.begin_action() != action {
             return None;
         }
         self.dialog = None;
-        Some(prepared.action)
+        Some(action)
     }
 
     /// Open the dialog for an order's team and target (a system, or an object

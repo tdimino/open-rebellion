@@ -761,10 +761,7 @@ mod tests {
         let content = state.window.as_mut().unwrap();
         content.tab = PersonnelTab::Imperial;
         content.view = PersonnelView::Characters;
-        content.ui.name = "Leia".into();
         content.chosen = Some(3);
-        content.ui.first_row = 2;
-        content.ui.focus_name = false;
         let focused = focus(id, PERSONNEL_FINDER_LIST_CONTROL);
         crate::test_support::assert_focused_duplicate_finder_ui(
             &mut manager,
@@ -1414,23 +1411,17 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_name_chooses_the_first_row_it_best_begins() {
-        // FUN_00609650: prefix match across both row kinds.
-        let rows = vec![
-            PersonnelFinderRow::SpecForces {
-                name: "Coruscant".into(),
+    fn typed_names_use_the_longest_prefix_and_a_tie_keeps_the_first_row() {
+        // FUN_00609650 keeps a row only for a strictly longer match.
+        crate::test_support::assert_finder_prefix_choices(
+            |name| PersonnelFinderRow::SpecForces {
+                name: name.into(),
                 system: SystemKey::default(),
                 fleet: None,
                 counts: [SfCount::default(); 4],
             },
-            PersonnelFinderRow::SpecForces {
-                name: "Yavin".into(),
-                system: SystemKey::default(),
-                fleet: None,
-                counts: [SfCount::default(); 4],
-            },
-        ];
-        crate::test_support::assert_standard_prefix_choices(|text| prefix_choice(&rows, text));
+            prefix_choice,
+        );
     }
 
     #[test]
@@ -1470,31 +1461,6 @@ mod tests {
     fn the_visible_rows_count_is_eight() {
         // FUN_00607ea0: list 161 tall, rows 20 tall → 8 visible.
         assert_eq!(VISIBLE_ROWS, 8);
-    }
-
-    #[test]
-    fn the_list_scrolls_as_little_as_it_must_to_show_a_row() {
-        assert_eq!(finder_common::scrolled_to(0, 7, VISIBLE_ROWS), 0);
-        assert_eq!(finder_common::scrolled_to(0, 8, VISIBLE_ROWS), 1);
-        assert_eq!(finder_common::scrolled_to(3, 1, VISIBLE_ROWS), 1);
-        assert_eq!(finder_common::scrolled_to(3, 10, VISIBLE_ROWS), 3);
-        assert_eq!(finder_common::scrolled_to(2, 10, VISIBLE_ROWS), 3);
-    }
-
-    #[test]
-    fn the_longest_common_beginning_wins_and_a_tie_keeps_the_first() {
-        // FUN_00609650 keeps a row only for a strictly longer match.
-        let rows: Vec<PersonnelFinderRow> = ["Corulag", "Coruscant", "Yavin"]
-            .into_iter()
-            .map(|name| PersonnelFinderRow::SpecForces {
-                name: name.into(),
-                system: SystemKey::default(),
-                fleet: None,
-                counts: [SfCount::default(); 4],
-            })
-            .collect();
-        assert_eq!(prefix_choice(&rows, "corus"), Some(1));
-        assert_eq!(prefix_choice(&rows, "cor"), Some(0));
     }
 
     #[test]

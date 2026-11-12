@@ -365,7 +365,7 @@ impl RepairSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dat::{ExplorationStatus, Faction};
+    use crate::dat::Faction;
     use crate::ids::DatId;
     use crate::world::*;
 
@@ -376,7 +376,7 @@ mod tests {
             group: crate::dat::SectorGroup::Core,
             x: 100,
             y: 100,
-            systems: vec![],
+            ..Sector::default()
         });
         let mfg_key = world
             .manufacturing_facilities
@@ -389,27 +389,18 @@ mod tests {
 
         world.systems.insert(System {
             dat_id: DatId::new(0x9000_0000),
-            name: "Kuat".into(),
-            sector,
-            x: 100,
-            y: 100,
-            exploration_status: ExplorationStatus::Explored,
             popularity_alliance: 0.3,
             popularity_empire: 0.7,
-            is_populated: true,
             total_energy: 10,
             raw_materials: 8,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
             manufacturing_facilities: vec![mfg_key],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Empire),
+            ..crate::test_support::system_at(
+                "Kuat",
+                sector,
+                100,
+                100,
+                ControlKind::Controlled(Faction::Empire),
+            )
         })
     }
 
@@ -417,35 +408,9 @@ mod tests {
         let class_key = world.capital_ship_classes.insert(CapitalShipClass {
             dat_id: DatId::new(0x3000_0001),
             name: "Star Destroyer".into(),
-            is_alliance: false,
             is_empire: true,
-            refined_material_cost: 100,
-            maintenance_cost: 10,
-            research_order: 1,
-            research_difficulty: 5,
             hull: 200,
-            shield_strength: 100,
-            sub_light_engine: 50,
-            maneuverability: 30,
-            hyperdrive: 40,
-            fighter_capacity: 6,
-            troop_capacity: 4,
-            detection: 3,
-            turbolaser_fore: 10,
-            turbolaser_aft: 5,
-            turbolaser_port: 8,
-            turbolaser_starboard: 8,
-            ion_cannon_fore: 5,
-            ion_cannon_aft: 3,
-            ion_cannon_port: 4,
-            ion_cannon_starboard: 4,
-            laser_cannon_fore: 3,
-            laser_cannon_aft: 2,
-            laser_cannon_port: 3,
-            laser_cannon_starboard: 3,
-            shield_recharge_rate: 5,
             damage_control: 10,
-            bombardment_modifier: 50,
             ..Default::default()
         });
         let fleet_key = world.fleets.insert(Fleet {
@@ -505,32 +470,20 @@ mod tests {
             group: crate::dat::SectorGroup::RimOuter,
             x: 500,
             y: 500,
-            systems: vec![],
+            ..Sector::default()
         });
         // System with NO manufacturing facilities
         let sys_key = world.systems.insert(System {
             dat_id: DatId::new(0x9000_0001),
-            name: "Tatooine".into(),
-            sector,
-            x: 500,
-            y: 500,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
             total_energy: 3,
             raw_materials: 2,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![], // no shipyard!
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+            ..crate::test_support::system_at(
+                "Tatooine",
+                sector,
+                500,
+                500,
+                ControlKind::Uncontrolled,
+            )
         });
         let fleet_key = add_fleet_with_ship(&mut world, sys_key);
         world.fleets.get_mut(fleet_key).unwrap().capital_ships[0].hull_current = 150;

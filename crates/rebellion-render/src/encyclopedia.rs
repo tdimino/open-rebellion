@@ -1023,11 +1023,11 @@ fn reconcile_surface_scroll(
             .iter()
             .position(|topic| topic.object_id == selected)
     }) {
-        if position < state.scroll_row {
-            state.scroll_row = position;
-        } else if position >= state.scroll_row + ORIGINAL_INDEX_VISIBLE_ROWS {
-            state.scroll_row = position + 1 - ORIGINAL_INDEX_VISIBLE_ROWS;
-        }
+        state.scroll_row = crate::list_control::reveal_row(
+            state.scroll_row,
+            position,
+            ORIGINAL_INDEX_VISIBLE_ROWS,
+        );
     }
 }
 
@@ -1596,11 +1596,11 @@ fn reconcile_original_index_state(
     let max_scroll = entries.len().saturating_sub(ORIGINAL_INDEX_VISIBLE_ROWS);
     state.original_scroll_row = state.original_scroll_row.min(max_scroll);
     if reveal_selection {
-        if selected_index < state.original_scroll_row {
-            state.original_scroll_row = selected_index;
-        } else if selected_index >= state.original_scroll_row + ORIGINAL_INDEX_VISIBLE_ROWS {
-            state.original_scroll_row = selected_index + 1 - ORIGINAL_INDEX_VISIBLE_ROWS;
-        }
+        state.original_scroll_row = crate::list_control::reveal_row(
+            state.original_scroll_row,
+            selected_index,
+            ORIGINAL_INDEX_VISIBLE_ROWS,
+        );
     }
 }
 

@@ -1065,6 +1065,15 @@ macro_rules! impl_finder_state_shell {
                     .as_ref()
                     .map(|window| $crate::finder_common::FinderContent::finder_ui(window))
             }
+
+            #[cfg(any(test, feature = "test-support"))]
+            pub(crate) fn fixture_ui_mut(
+                &mut self,
+            ) -> Option<&mut $crate::finder_common::FinderUiState> {
+                self.window
+                    .as_mut()
+                    .map(|window| $crate::finder_common::FinderContent::finder_ui_mut(window))
+            }
         }
     };
 }
@@ -1430,7 +1439,7 @@ impl FinderInteraction {
             ui.name.clone_from(&self.name);
             *chosen = prefix_choice(rows, &self.name);
             if let Some(index) = *chosen {
-                ui.first_row = scrolled_to(ui.first_row, index, visible_rows);
+                ui.first_row = crate::list_control::reveal_row(ui.first_row, index, visible_rows);
             }
         }
         if let Some((row, at)) = self.clicked_row {
@@ -1442,7 +1451,7 @@ impl FinderInteraction {
             let row = (*chosen).unwrap_or(0).min(rows.len() - 1);
             *chosen = Some(row);
             set_name(ui, rows[row].finder_name());
-            ui.first_row = scrolled_to(ui.first_row, row, visible_rows);
+            ui.first_row = crate::list_control::reveal_row(ui.first_row, row, visible_rows);
             self.focus_request = Some(list_control);
         }
         if focused_control == Some(list_control) {
@@ -1464,7 +1473,8 @@ impl FinderInteraction {
                 } else if keys.arrow_up || keys.arrow_down {
                     *chosen = Some(next);
                     set_name(ui, rows[next].finder_name());
-                    ui.first_row = scrolled_to(ui.first_row, next, visible_rows);
+                    ui.first_row =
+                        crate::list_control::reveal_row(ui.first_row, next, visible_rows);
                 }
             }
         }
@@ -1694,17 +1704,6 @@ pub(crate) fn window_rect(layout: CockpitLayout) -> egui::Rect {
 
 pub(crate) fn at(frame: egui::Rect, scale: f32, (x, y, w, h): LogicalRect) -> egui::Rect {
     logical_rect(frame, scale, x, y, w, h)
-}
-
-/// The first row that shows `row`, moving the list as little as possible.
-pub(crate) const fn scrolled_to(first_row: usize, row: usize, visible_rows: usize) -> usize {
-    if row < first_row {
-        row
-    } else if row >= first_row + visible_rows {
-        row + 1 - visible_rows
-    } else {
-        first_row
-    }
 }
 
 pub(crate) fn should_remove(id: Option<WindowId>, removed: &[WindowId]) -> bool {

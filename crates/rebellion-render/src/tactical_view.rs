@@ -41,7 +41,7 @@ use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
 use crate::native_geometry::NativeRect;
-use crate::operation_report::{cell_picture, ReportTab};
+use crate::operation_report::{cell_picture, report_grid_cells, ReportTab};
 use crate::scroll_bar::{ScrollBar, ScrollPointer, ScrollRange, LIST_BAR_29FC, TEXT_BAR_299D};
 #[cfg(feature = "interface-test-fixtures")]
 use crate::tactical_assets::TacticalLodView;
@@ -6332,22 +6332,9 @@ fn battle_summary_cells(summary: &BattleSummarySide, filter: ReportTab) -> Vec<S
         columns.push((captured, "None"));
     }
     columns.push((destroyed, "No Casualties"));
-    let rows = columns
-        .iter()
-        .map(|(entries, _)| entries.len().max(1))
-        .max()
-        .unwrap_or(1);
-    let mut cells = Vec::with_capacity(rows * columns.len());
-    for row in 0..rows {
-        for (entries, empty) in &columns {
-            cells.push(match entries.get(row) {
-                Some(entry) => SummaryCell::Entry(entry),
-                None if row == 0 => SummaryCell::Text(empty),
-                None => SummaryCell::Blank,
-            });
-        }
-    }
-    cells
+    report_grid_cells(&columns, SummaryCell::Entry, SummaryCell::Text, || {
+        SummaryCell::Blank
+    })
 }
 
 /// Left and Right step to the neighbouring filter; Right past the last, or

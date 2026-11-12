@@ -169,6 +169,27 @@ pub(crate) fn grid_cell_rect(
     )
 }
 
+/// Lay out and paint one clipped strategic grid-cell label using logical
+/// coordinates. Detail families retain their own offset, width, font, and
+/// colour policy.
+pub(crate) fn paint_grid_cell_label(
+    painter: &egui::Painter,
+    cell: egui::Rect,
+    scale: f32,
+    text: &str,
+    font: &egui::FontId,
+    color: egui::Color32,
+    logical_width: f32,
+    offset: (f32, f32),
+) {
+    let galley = painter.layout(text.to_owned(), font.clone(), color, logical_width * scale);
+    painter.galley(
+        logical_rect(cell, scale, offset.0, offset.1, 0.0, 0.0).min,
+        galley,
+        color,
+    );
+}
+
 pub(crate) fn tab_strip_rect(
     window: egui::Rect,
     scale: f32,

@@ -862,12 +862,8 @@ mod tests {
     }
 
     #[test]
-    fn the_list_scrolls_as_little_as_it_must_to_show_a_row() {
+    fn the_visible_rows_count_is_eight() {
         assert_eq!(VISIBLE_ROWS, 8);
-        assert_eq!(finder_common::scrolled_to(0, 7, VISIBLE_ROWS), 0);
-        assert_eq!(finder_common::scrolled_to(0, 8, VISIBLE_ROWS), 1);
-        assert_eq!(finder_common::scrolled_to(5, 2, VISIBLE_ROWS), 2);
-        assert_eq!(finder_common::scrolled_to(5, 12, VISIBLE_ROWS), 5);
     }
 
     #[test]
@@ -885,9 +881,7 @@ mod tests {
         let (mut manager, mut state, id) = managed_finder();
 
         let content = state.window.as_mut().unwrap();
-        content.ui.name = "Fleet 7".into();
         content.chosen = Some(FleetWindowEntry::Fleet(galaxy.own));
-        content.ui.first_row = 3;
         let focused = FocusTarget {
             window: id,
             control: Some(FLEET_FINDER_LIST_CONTROL),
