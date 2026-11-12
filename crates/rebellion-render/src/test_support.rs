@@ -1922,6 +1922,50 @@ macro_rules! assert_detail_fixture_reset {
 #[cfg(test)]
 pub(crate) use assert_detail_fixture_reset;
 
+/// Assert that reopening a direct detail fixture at a new origin reuses the
+/// family window for the same system.
+#[cfg(test)]
+macro_rules! assert_detail_fixture_reopen {
+    ($state:ident, $system:expr, $open:expr $(,)?) => {{
+        assert!($open);
+        assert_eq!($state.window_count(), 1);
+        assert!($state.is_open($system));
+    }};
+}
+
+#[cfg(test)]
+pub(crate) use assert_detail_fixture_reopen;
+
+/// Assert the shared direct-detail canvas routing contract, then replace the
+/// fixture with its opposite-faction instance and clear it. The open
+/// expression remains at the call site because each family has different
+/// production dependencies and private state.
+#[cfg(test)]
+macro_rules! assert_detail_canvas_and_reset {
+    (
+        $state:ident,
+        $system:expr,
+        $layer:expr,
+        $inside:expr,
+        $outside:expr,
+        $layout:expr,
+        $open:expr $(,)?
+    ) => {{
+        $crate::test_support::assert_detail_canvas_routing(
+            $system,
+            $layer,
+            $inside,
+            $outside,
+            |point| $state.contains_screen_point($layout, point),
+            |layer| $state.release_target(layer),
+        );
+        $crate::test_support::assert_detail_fixture_reset!($state, $system, $open);
+    }};
+}
+
+#[cfg(test)]
+pub(crate) use assert_detail_canvas_and_reset;
+
 /// Restore every saved window through one family adapter and identify the
 /// faction in any failed fixture assertion.
 pub(crate) fn assert_saved_windows_restore(

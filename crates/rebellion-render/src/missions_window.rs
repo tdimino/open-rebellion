@@ -2789,17 +2789,19 @@ mod tests {
         // FUN_00609ae0); +0x70 gives the subject (FUN_004aa470).
         let (world, system, missions, _) = busy();
         let mut state = opened(&world, &missions, system);
-        assert!(state.open(
-            &world,
-            &unseen(),
-            &missions,
+        crate::test_support::assert_detail_fixture_reopen!(
+            state,
             system,
-            (300, 100),
-            CockpitFaction::Alliance,
-            scaled()
-        ));
-        assert_eq!(state.window_count(), 1);
-        assert!(state.is_open(system));
+            state.open(
+                &world,
+                &unseen(),
+                &missions,
+                system,
+                (300, 100),
+                CockpitFaction::Alliance,
+                scaled(),
+            ),
+        );
         crate::test_support::assert_screen_rect(
             state.mission_row_screen_rect(scaled(), system, 1),
             at(5.0, 74.0),
@@ -2816,18 +2818,13 @@ mod tests {
             egui::vec2(230.0, 86.0),
         );
         let layer = egui::LayerId::new(egui::Order::Foreground, content_area_id(&state, system));
-        crate::test_support::assert_detail_canvas_routing(
+        crate::test_support::assert_detail_canvas_and_reset!(
+            state,
             system,
             layer,
             at(234.0, 303.0),
             at(235.5, 150.0),
-            |point| state.contains_screen_point(scaled(), point),
-            |layer| state.release_target(layer),
-        );
-
-        crate::test_support::assert_detail_fixture_reset!(
-            state,
-            system,
+            scaled(),
             state.open(
                 &world,
                 &unseen(),

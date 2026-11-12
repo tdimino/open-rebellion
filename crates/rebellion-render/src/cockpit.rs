@@ -510,15 +510,21 @@ pub struct CockpitViewport {
 }
 
 impl CockpitViewport {
+    /// Construct a fixed original-canvas viewport.
+    #[must_use]
+    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
     /// Viewport that fills the entire screen (no cockpit chrome).
     #[must_use]
     pub fn fullscreen() -> Self {
-        CockpitViewport {
-            x: 0.0,
-            y: 0.0,
-            width: screen_width(),
-            height: screen_height(),
-        }
+        Self::new(0.0, 0.0, screen_width(), screen_height())
     }
 
     /// Right edge in screen pixels.
@@ -540,181 +546,127 @@ impl CockpitViewport {
     }
 }
 
+const fn strategic_control(
+    button: CockpitButton,
+    command_id: u16,
+    rect: CockpitViewport,
+    normal_resource: u32,
+    pressed_resource: u32,
+) -> StrategicControlSpec {
+    StrategicControlSpec {
+        button,
+        command_id,
+        rect,
+        normal_resource,
+        pressed_resource,
+    }
+}
+
 const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
-    StrategicControlSpec {
-        button: CockpitButton::SystemFinder,
-        command_id: 0x12d,
-        rect: CockpitViewport {
-            x: 106.0,
-            y: 408.0,
-            width: 27.0,
-            height: 16.0,
-        },
-        normal_resource: resources::strategy::ALLIANCE_SYSTEM_FINDER_NORMAL,
-        pressed_resource: resources::strategy::ALLIANCE_SYSTEM_FINDER_PRESSED,
-    },
-    StrategicControlSpec {
-        button: CockpitButton::FleetFinder,
-        command_id: 0x12e,
-        rect: CockpitViewport {
-            x: 157.0,
-            y: 407.0,
-            width: 27.0,
-            height: 15.0,
-        },
-        normal_resource: resources::strategy::ALLIANCE_FLEET_FINDER_NORMAL,
-        pressed_resource: resources::strategy::ALLIANCE_FLEET_FINDER_PRESSED,
-    },
-    StrategicControlSpec {
-        button: CockpitButton::PersonnelFinder,
-        command_id: 0x12f,
-        rect: CockpitViewport {
-            x: 258.0,
-            y: 405.0,
-            width: 27.0,
-            height: 16.0,
-        },
-        normal_resource: resources::strategy::ALLIANCE_PERSONNEL_FINDER_NORMAL,
-        pressed_resource: resources::strategy::ALLIANCE_PERSONNEL_FINDER_PRESSED,
-    },
-    StrategicControlSpec {
-        button: CockpitButton::TroopFinder,
-        command_id: 0x130,
-        rect: CockpitViewport {
-            x: 209.0,
-            y: 405.0,
-            width: 27.0,
-            height: 16.0,
-        },
-        normal_resource: resources::strategy::ALLIANCE_TROOP_FINDER_NORMAL,
-        pressed_resource: resources::strategy::ALLIANCE_TROOP_FINDER_PRESSED,
-    },
-    StrategicControlSpec {
-        button: CockpitButton::Encyclopedia,
-        command_id: 0x131,
-        rect: CockpitViewport {
-            x: 394.0,
-            y: 405.0,
-            width: 27.0,
-            height: 16.0,
-        },
-        normal_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_NORMAL,
-        pressed_resource: resources::strategy::ALLIANCE_ENCYCLOPEDIA_PRESSED,
-    },
-    StrategicControlSpec {
-        button: CockpitButton::GalacticInformationDisplay,
-        command_id: 0x132,
-        rect: CockpitViewport {
-            x: 446.0,
-            y: 406.0,
-            width: 27.0,
-            height: 16.0,
-        },
-        normal_resource: resources::strategy::ALLIANCE_GID_NORMAL,
-        pressed_resource: resources::strategy::ALLIANCE_GID_PRESSED,
-    },
+    strategic_control(
+        CockpitButton::SystemFinder,
+        0x12d,
+        CockpitViewport::new(106.0, 408.0, 27.0, 16.0),
+        resources::strategy::ALLIANCE_SYSTEM_FINDER_NORMAL,
+        resources::strategy::ALLIANCE_SYSTEM_FINDER_PRESSED,
+    ),
+    strategic_control(
+        CockpitButton::FleetFinder,
+        0x12e,
+        CockpitViewport::new(157.0, 407.0, 27.0, 15.0),
+        resources::strategy::ALLIANCE_FLEET_FINDER_NORMAL,
+        resources::strategy::ALLIANCE_FLEET_FINDER_PRESSED,
+    ),
+    strategic_control(
+        CockpitButton::PersonnelFinder,
+        0x12f,
+        CockpitViewport::new(258.0, 405.0, 27.0, 16.0),
+        resources::strategy::ALLIANCE_PERSONNEL_FINDER_NORMAL,
+        resources::strategy::ALLIANCE_PERSONNEL_FINDER_PRESSED,
+    ),
+    strategic_control(
+        CockpitButton::TroopFinder,
+        0x130,
+        CockpitViewport::new(209.0, 405.0, 27.0, 16.0),
+        resources::strategy::ALLIANCE_TROOP_FINDER_NORMAL,
+        resources::strategy::ALLIANCE_TROOP_FINDER_PRESSED,
+    ),
+    strategic_control(
+        CockpitButton::Encyclopedia,
+        0x131,
+        CockpitViewport::new(394.0, 405.0, 27.0, 16.0),
+        resources::strategy::ALLIANCE_ENCYCLOPEDIA_NORMAL,
+        resources::strategy::ALLIANCE_ENCYCLOPEDIA_PRESSED,
+    ),
+    strategic_control(
+        CockpitButton::GalacticInformationDisplay,
+        0x132,
+        CockpitViewport::new(446.0, 406.0, 27.0, 16.0),
+        resources::strategy::ALLIANCE_GID_NORMAL,
+        resources::strategy::ALLIANCE_GID_PRESSED,
+    ),
 ];
 
 const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
-    StrategicControlSpec {
-        button: CockpitButton::SystemFinder,
-        command_id: 0x12d,
-        rect: CockpitViewport {
-            x: 143.0,
-            y: 434.0,
-            width: 37.0,
-            height: 24.0,
-        },
-        normal_resource: resources::strategy::EMPIRE_SYSTEM_FINDER_NORMAL,
-        pressed_resource: resources::strategy::EMPIRE_SYSTEM_FINDER_PRESSED,
-    },
-    StrategicControlSpec {
-        button: CockpitButton::FleetFinder,
-        command_id: 0x12e,
-        rect: CockpitViewport {
-            x: 199.0,
-            y: 434.0,
-            width: 37.0,
-            height: 24.0,
-        },
-        normal_resource: resources::strategy::EMPIRE_FLEET_FINDER_NORMAL,
-        pressed_resource: resources::strategy::EMPIRE_FLEET_FINDER_PRESSED,
-    },
-    StrategicControlSpec {
-        button: CockpitButton::PersonnelFinder,
-        command_id: 0x12f,
-        rect: CockpitViewport {
-            x: 412.0,
-            y: 433.0,
-            width: 34.0,
-            height: 22.0,
-        },
-        normal_resource: resources::strategy::EMPIRE_PERSONNEL_FINDER_NORMAL,
-        pressed_resource: resources::strategy::EMPIRE_PERSONNEL_FINDER_PRESSED,
-    },
-    StrategicControlSpec {
-        button: CockpitButton::TroopFinder,
-        command_id: 0x130,
-        rect: CockpitViewport {
-            x: 253.0,
-            y: 433.0,
-            width: 34.0,
-            height: 22.0,
-        },
-        normal_resource: resources::strategy::EMPIRE_TROOP_FINDER_NORMAL,
-        pressed_resource: resources::strategy::EMPIRE_TROOP_FINDER_PRESSED,
-    },
-    StrategicControlSpec {
-        button: CockpitButton::Encyclopedia,
-        command_id: 0x131,
-        rect: CockpitViewport {
-            x: 465.0,
-            y: 434.0,
-            width: 35.0,
-            height: 24.0,
-        },
-        normal_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_NORMAL,
-        pressed_resource: resources::strategy::EMPIRE_ENCYCLOPEDIA_PRESSED,
-    },
-    StrategicControlSpec {
-        button: CockpitButton::GalacticInformationDisplay,
-        command_id: 0x132,
-        rect: CockpitViewport {
-            x: 519.0,
-            y: 434.0,
-            width: 37.0,
-            height: 25.0,
-        },
-        normal_resource: resources::strategy::EMPIRE_GID_NORMAL,
-        pressed_resource: resources::strategy::EMPIRE_GID_PRESSED,
-    },
+    strategic_control(
+        CockpitButton::SystemFinder,
+        0x12d,
+        CockpitViewport::new(143.0, 434.0, 37.0, 24.0),
+        resources::strategy::EMPIRE_SYSTEM_FINDER_NORMAL,
+        resources::strategy::EMPIRE_SYSTEM_FINDER_PRESSED,
+    ),
+    strategic_control(
+        CockpitButton::FleetFinder,
+        0x12e,
+        CockpitViewport::new(199.0, 434.0, 37.0, 24.0),
+        resources::strategy::EMPIRE_FLEET_FINDER_NORMAL,
+        resources::strategy::EMPIRE_FLEET_FINDER_PRESSED,
+    ),
+    strategic_control(
+        CockpitButton::PersonnelFinder,
+        0x12f,
+        CockpitViewport::new(412.0, 433.0, 34.0, 22.0),
+        resources::strategy::EMPIRE_PERSONNEL_FINDER_NORMAL,
+        resources::strategy::EMPIRE_PERSONNEL_FINDER_PRESSED,
+    ),
+    strategic_control(
+        CockpitButton::TroopFinder,
+        0x130,
+        CockpitViewport::new(253.0, 433.0, 34.0, 22.0),
+        resources::strategy::EMPIRE_TROOP_FINDER_NORMAL,
+        resources::strategy::EMPIRE_TROOP_FINDER_PRESSED,
+    ),
+    strategic_control(
+        CockpitButton::Encyclopedia,
+        0x131,
+        CockpitViewport::new(465.0, 434.0, 35.0, 24.0),
+        resources::strategy::EMPIRE_ENCYCLOPEDIA_NORMAL,
+        resources::strategy::EMPIRE_ENCYCLOPEDIA_PRESSED,
+    ),
+    strategic_control(
+        CockpitButton::GalacticInformationDisplay,
+        0x132,
+        CockpitViewport::new(519.0, 434.0, 37.0, 25.0),
+        resources::strategy::EMPIRE_GID_NORMAL,
+        resources::strategy::EMPIRE_GID_PRESSED,
+    ),
 ];
 
-const ALLIANCE_GAME_OPTIONS_CONTROL: StrategicControlSpec = StrategicControlSpec {
-    button: CockpitButton::GameOptions,
-    command_id: 0x133,
-    rect: CockpitViewport {
-        x: 3.0,
-        y: 355.0,
-        width: 27.0,
-        height: 41.0,
-    },
-    normal_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_NORMAL,
-    pressed_resource: resources::strategy::ALLIANCE_GAME_OPTIONS_PRESSED,
-};
+const ALLIANCE_GAME_OPTIONS_CONTROL: StrategicControlSpec = strategic_control(
+    CockpitButton::GameOptions,
+    0x133,
+    CockpitViewport::new(3.0, 355.0, 27.0, 41.0),
+    resources::strategy::ALLIANCE_GAME_OPTIONS_NORMAL,
+    resources::strategy::ALLIANCE_GAME_OPTIONS_PRESSED,
+);
 
-const EMPIRE_GAME_OPTIONS_CONTROL: StrategicControlSpec = StrategicControlSpec {
-    button: CockpitButton::GameOptions,
-    command_id: 0x133,
-    rect: CockpitViewport {
-        x: 79.0,
-        y: 192.0,
-        width: 35.0,
-        height: 57.0,
-    },
-    normal_resource: resources::strategy::EMPIRE_GAME_OPTIONS_NORMAL,
-    pressed_resource: resources::strategy::EMPIRE_GAME_OPTIONS_PRESSED,
-};
+const EMPIRE_GAME_OPTIONS_CONTROL: StrategicControlSpec = strategic_control(
+    CockpitButton::GameOptions,
+    0x133,
+    CockpitViewport::new(79.0, 192.0, 35.0, 57.0),
+    resources::strategy::EMPIRE_GAME_OPTIONS_NORMAL,
+    resources::strategy::EMPIRE_GAME_OPTIONS_PRESSED,
+);
 
 const ALLIANCE_MESSAGE_INDEX_CONTROLS: [MessageIndexControlSpec; 9] = [
     message_index_control(0x136, 3.0, 109.0, 10050, 10060),
@@ -749,12 +701,7 @@ const fn message_index_control(
 ) -> MessageIndexControlSpec {
     MessageIndexControlSpec {
         command_id,
-        rect: CockpitViewport {
-            x,
-            y,
-            width: 27.0,
-            height: 22.0,
-        },
+        rect: CockpitViewport::new(x, y, 27.0, 22.0),
         resting_resource,
         illuminated_resource,
     }
@@ -2654,72 +2601,42 @@ mod tests {
                 (
                     CockpitButton::SystemFinder,
                     0x12d,
-                    CockpitViewport {
-                        x: 106.0,
-                        y: 408.0,
-                        width: 27.0,
-                        height: 16.0,
-                    },
+                    CockpitViewport::new(106.0, 408.0, 27.0, 16.0),
                     10002,
                     10001,
                 ),
                 (
                     CockpitButton::FleetFinder,
                     0x12e,
-                    CockpitViewport {
-                        x: 157.0,
-                        y: 407.0,
-                        width: 27.0,
-                        height: 15.0,
-                    },
+                    CockpitViewport::new(157.0, 407.0, 27.0, 15.0),
                     10004,
                     10003,
                 ),
                 (
                     CockpitButton::PersonnelFinder,
                     0x12f,
-                    CockpitViewport {
-                        x: 258.0,
-                        y: 405.0,
-                        width: 27.0,
-                        height: 16.0,
-                    },
+                    CockpitViewport::new(258.0, 405.0, 27.0, 16.0),
                     10006,
                     10005,
                 ),
                 (
                     CockpitButton::TroopFinder,
                     0x130,
-                    CockpitViewport {
-                        x: 209.0,
-                        y: 405.0,
-                        width: 27.0,
-                        height: 16.0,
-                    },
+                    CockpitViewport::new(209.0, 405.0, 27.0, 16.0),
                     10008,
                     10007,
                 ),
                 (
                     CockpitButton::Encyclopedia,
                     0x131,
-                    CockpitViewport {
-                        x: 394.0,
-                        y: 405.0,
-                        width: 27.0,
-                        height: 16.0,
-                    },
+                    CockpitViewport::new(394.0, 405.0, 27.0, 16.0),
                     10010,
                     10009,
                 ),
                 (
                     CockpitButton::GalacticInformationDisplay,
                     0x132,
-                    CockpitViewport {
-                        x: 446.0,
-                        y: 406.0,
-                        width: 27.0,
-                        height: 16.0,
-                    },
+                    CockpitViewport::new(446.0, 406.0, 27.0, 16.0),
                     10012,
                     10011,
                 ),
@@ -2777,12 +2694,7 @@ mod tests {
         assert_eq!(alliance.command_id, 0x132);
         assert_eq!(
             alliance.rect,
-            CockpitViewport {
-                x: 446.0,
-                y: 406.0,
-                width: 27.0,
-                height: 16.0,
-            }
+            CockpitViewport::new(446.0, 406.0, 27.0, 16.0)
         );
         assert_eq!(alliance.normal_resource, 10012);
         assert_eq!(alliance.pressed_resource, 10011);
@@ -2790,15 +2702,7 @@ mod tests {
         let empire = strategic_gid_control(CockpitFaction::Empire);
         assert_eq!(empire.button, CockpitButton::GalacticInformationDisplay);
         assert_eq!(empire.command_id, 0x132);
-        assert_eq!(
-            empire.rect,
-            CockpitViewport {
-                x: 519.0,
-                y: 434.0,
-                width: 37.0,
-                height: 25.0,
-            }
-        );
+        assert_eq!(empire.rect, CockpitViewport::new(519.0, 434.0, 37.0, 25.0));
         assert_eq!(empire.normal_resource, 10026);
         assert_eq!(empire.pressed_resource, 10025);
     }

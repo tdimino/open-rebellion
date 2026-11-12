@@ -77,6 +77,11 @@ For manager-owned singleton fixtures, use `open_singleton_window`,
 `assert_managed_close_receipt`, and `assert_minimized_reopen` instead of
 reconstructing policy specs or manager receipt sequences. Strategic save tests
 can use `assert_saved_windows_restore`; row assertions can use `status_pairs`.
+Direct detail-window geometry tests should use
+`assert_detail_fixture_reopen!` for the same-system replacement assertion and
+`assert_detail_canvas_and_reset!` for the common canvas-edge, release-target,
+opposite-faction replacement, and clear sequence. Keep each family's open
+expressions and unique geometry assertions at the call site.
 
 Finder modules should define their ordinary manager-owned constructor once
 with `define_managed_finder_fixture!`. The generated helper uses the family's

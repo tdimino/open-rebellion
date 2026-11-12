@@ -2328,72 +2328,83 @@ const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 17] = [
 ];
 
 #[derive(Debug, Clone, Copy)]
-struct TacticalBattleOptionsSpec {
-    control: TacticalBattleOptionsControl,
+struct TacticalButtonSpec<Control> {
+    control: Control,
     rect: NativeRect,
     normal_resource: u32,
     pressed_resource: u32,
 }
+
+impl<Control> TacticalButtonSpec<Control> {
+    const fn new(
+        control: Control,
+        rect: NativeRect,
+        normal_resource: u32,
+        pressed_resource: u32,
+    ) -> Self {
+        Self {
+            control,
+            rect,
+            normal_resource,
+            pressed_resource,
+        }
+    }
+}
+
+type TacticalBattleOptionsSpec = TacticalButtonSpec<TacticalBattleOptionsControl>;
+type TacticalWithdrawConfirmationSpec = TacticalButtonSpec<TacticalWithdrawConfirmationControl>;
 
 // REBEXE FUN_005dab90 places these at panel-local (18, 19), (14, 93),
 // (87, 93), (23, 184) and (97, 184) on panel 1306, whose container
 // `FUN_0059cac0` places at (482, 28) (0x1e2, 0x1c).
 const TACTICAL_BATTLE_OPTIONS_CONTROLS: [TacticalBattleOptionsSpec; 5] = [
-    TacticalBattleOptionsSpec {
-        control: TacticalBattleOptionsControl::Withdraw,
-        rect: NativeRect::new(500.0, 47.0, 48.0, 34.0),
-        normal_resource: resources::tactical::BTN_WITHDRAW_FROM_BATTLE_NORMAL,
-        pressed_resource: resources::tactical::BTN_WITHDRAW_FROM_BATTLE_PRESSED,
-    },
-    TacticalBattleOptionsSpec {
-        control: TacticalBattleOptionsControl::SimulateRemainder,
-        rect: NativeRect::new(496.0, 121.0, 44.0, 25.0),
-        normal_resource: resources::tactical::BTN_SIMULATE_REMAINDER_NORMAL,
-        pressed_resource: resources::tactical::BTN_SIMULATE_REMAINDER_PRESSED,
-    },
-    TacticalBattleOptionsSpec {
-        control: TacticalBattleOptionsControl::ObserveToggle,
-        rect: NativeRect::new(569.0, 121.0, 45.0, 25.0),
-        normal_resource: resources::tactical::BTN_OBSERVE_TOGGLE_NORMAL,
-        pressed_resource: resources::tactical::BTN_OBSERVE_TOGGLE_PRESSED,
-    },
-    TacticalBattleOptionsSpec {
-        control: TacticalBattleOptionsControl::GameOptions,
-        rect: NativeRect::new(505.0, 212.0, 52.0, 33.0),
-        normal_resource: resources::tactical::BTN_GAME_OPTIONS_NORMAL,
-        pressed_resource: resources::tactical::BTN_GAME_OPTIONS_PRESSED,
-    },
-    TacticalBattleOptionsSpec {
-        control: TacticalBattleOptionsControl::Close,
-        rect: NativeRect::new(579.0, 212.0, 29.0, 33.0),
-        normal_resource: resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_NORMAL,
-        pressed_resource: resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_PRESSED,
-    },
+    TacticalBattleOptionsSpec::new(
+        TacticalBattleOptionsControl::Withdraw,
+        NativeRect::new(500.0, 47.0, 48.0, 34.0),
+        resources::tactical::BTN_WITHDRAW_FROM_BATTLE_NORMAL,
+        resources::tactical::BTN_WITHDRAW_FROM_BATTLE_PRESSED,
+    ),
+    TacticalBattleOptionsSpec::new(
+        TacticalBattleOptionsControl::SimulateRemainder,
+        NativeRect::new(496.0, 121.0, 44.0, 25.0),
+        resources::tactical::BTN_SIMULATE_REMAINDER_NORMAL,
+        resources::tactical::BTN_SIMULATE_REMAINDER_PRESSED,
+    ),
+    TacticalBattleOptionsSpec::new(
+        TacticalBattleOptionsControl::ObserveToggle,
+        NativeRect::new(569.0, 121.0, 45.0, 25.0),
+        resources::tactical::BTN_OBSERVE_TOGGLE_NORMAL,
+        resources::tactical::BTN_OBSERVE_TOGGLE_PRESSED,
+    ),
+    TacticalBattleOptionsSpec::new(
+        TacticalBattleOptionsControl::GameOptions,
+        NativeRect::new(505.0, 212.0, 52.0, 33.0),
+        resources::tactical::BTN_GAME_OPTIONS_NORMAL,
+        resources::tactical::BTN_GAME_OPTIONS_PRESSED,
+    ),
+    TacticalBattleOptionsSpec::new(
+        TacticalBattleOptionsControl::Close,
+        NativeRect::new(579.0, 212.0, 29.0, 33.0),
+        resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_NORMAL,
+        resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_PRESSED,
+    ),
 ];
-
-#[derive(Debug, Clone, Copy)]
-struct TacticalWithdrawConfirmationSpec {
-    control: TacticalWithdrawConfirmationControl,
-    rect: NativeRect,
-    normal_resource: u32,
-    pressed_resource: u32,
-}
 
 // REBEXE FUN_005f0f40 constructs these controls at panel-local (66, 202)
 // and (106, 202), each 27x25, with TACTICAL resources 1113 through 1116.
 const TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS: [TacticalWithdrawConfirmationSpec; 2] = [
-    TacticalWithdrawConfirmationSpec {
-        control: TacticalWithdrawConfirmationControl::Confirm,
-        rect: NativeRect::new(548.0, 230.0, 27.0, 25.0),
-        normal_resource: resources::tactical::BTN_ASSIGN_CONFIRM_NORMAL,
-        pressed_resource: resources::tactical::BTN_ASSIGN_CONFIRM_PRESSED,
-    },
-    TacticalWithdrawConfirmationSpec {
-        control: TacticalWithdrawConfirmationControl::Cancel,
-        rect: NativeRect::new(588.0, 230.0, 27.0, 25.0),
-        normal_resource: resources::tactical::BTN_ASSIGN_CANCEL_NORMAL,
-        pressed_resource: resources::tactical::BTN_ASSIGN_CANCEL_PRESSED,
-    },
+    TacticalWithdrawConfirmationSpec::new(
+        TacticalWithdrawConfirmationControl::Confirm,
+        NativeRect::new(548.0, 230.0, 27.0, 25.0),
+        resources::tactical::BTN_ASSIGN_CONFIRM_NORMAL,
+        resources::tactical::BTN_ASSIGN_CONFIRM_PRESSED,
+    ),
+    TacticalWithdrawConfirmationSpec::new(
+        TacticalWithdrawConfirmationControl::Cancel,
+        NativeRect::new(588.0, 230.0, 27.0, 25.0),
+        resources::tactical::BTN_ASSIGN_CANCEL_NORMAL,
+        resources::tactical::BTN_ASSIGN_CANCEL_PRESSED,
+    ),
 ];
 
 const DEATH_STAR_LASER_GAUGE_RECT: NativeRect = NativeRect::new(474.0, 0.0, 166.0, 25.0);
@@ -4902,34 +4913,22 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
                 };
             }
         }
-        TacticalCommandControl::LeftHook => {
+        control @ (TacticalCommandControl::LeftHook
+        | TacticalCommandControl::RightHook
+        | TacticalCommandControl::Hammer
+        | TacticalCommandControl::Anvil
+        | TacticalCommandControl::HoldPosition) => {
+            let order = match control {
+                TacticalCommandControl::LeftHook => TacticalOrder::LeftHook,
+                TacticalCommandControl::RightHook => TacticalOrder::RightHook,
+                TacticalCommandControl::Hammer => TacticalOrder::Hammer,
+                TacticalCommandControl::Anvil => TacticalOrder::Anvil,
+                TacticalCommandControl::HoldPosition => TacticalOrder::HoldPosition,
+                _ => unreachable!("the outer pattern admits only maneuver orders"),
+            };
             if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
             {
-                *pending_order = TacticalOrder::LeftHook;
-            }
-        }
-        TacticalCommandControl::RightHook => {
-            if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
-            {
-                *pending_order = TacticalOrder::RightHook;
-            }
-        }
-        TacticalCommandControl::Hammer => {
-            if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
-            {
-                *pending_order = TacticalOrder::Hammer;
-            }
-        }
-        TacticalCommandControl::Anvil => {
-            if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
-            {
-                *pending_order = TacticalOrder::Anvil;
-            }
-        }
-        TacticalCommandControl::HoldPosition => {
-            if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
-            {
-                *pending_order = TacticalOrder::HoldPosition;
+                *pending_order = order;
             }
         }
         TacticalCommandControl::ToggleTactic => {
@@ -4942,24 +4941,19 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
                 };
             }
         }
-        TacticalCommandControl::AttackCapitalShips => {
+        control @ (TacticalCommandControl::AttackCapitalShips
+        | TacticalCommandControl::AttackFighters
+        | TacticalCommandControl::Recover
+        | TacticalCommandControl::AttackDeathStar) => {
+            let order = match control {
+                TacticalCommandControl::AttackCapitalShips => TacticalOrder::AttackCapitalShips,
+                TacticalCommandControl::AttackFighters => TacticalOrder::AttackFighters,
+                TacticalCommandControl::Recover => TacticalOrder::Recover,
+                TacticalCommandControl::AttackDeathStar => TacticalOrder::AttackDeathStar,
+                _ => unreachable!("the outer pattern admits only mission orders"),
+            };
             if let TacticalCommandPanel::Missions { pending_order, .. } = &mut state.command_panel {
-                *pending_order = TacticalOrder::AttackCapitalShips;
-            }
-        }
-        TacticalCommandControl::AttackFighters => {
-            if let TacticalCommandPanel::Missions { pending_order, .. } = &mut state.command_panel {
-                *pending_order = TacticalOrder::AttackFighters;
-            }
-        }
-        TacticalCommandControl::Recover => {
-            if let TacticalCommandPanel::Missions { pending_order, .. } = &mut state.command_panel {
-                *pending_order = TacticalOrder::Recover;
-            }
-        }
-        TacticalCommandControl::AttackDeathStar => {
-            if let TacticalCommandPanel::Missions { pending_order, .. } = &mut state.command_panel {
-                *pending_order = TacticalOrder::AttackDeathStar;
+                *pending_order = order;
             }
         }
         TacticalCommandControl::Confirm => {
@@ -11937,6 +11931,72 @@ mod tests {
             tactical_command_rect_control_at(fighter_missions, false, false, false, 575.0, 165.0),
             Some(TacticalCommandControl::Recover)
         );
+    }
+
+    // Source: FUN_005dcc70 and FUN_005df4f0 stage the pressed maneuver or
+    // mission order in the panel before the check mark commits it.
+    #[test]
+    fn each_maneuver_and_mission_control_stages_its_corresponding_order() {
+        let maneuver_orders = [
+            (TacticalCommandControl::LeftHook, TacticalOrder::LeftHook),
+            (TacticalCommandControl::RightHook, TacticalOrder::RightHook),
+            (TacticalCommandControl::Hammer, TacticalOrder::Hammer),
+            (TacticalCommandControl::Anvil, TacticalOrder::Anvil),
+            (
+                TacticalCommandControl::HoldPosition,
+                TacticalOrder::HoldPosition,
+            ),
+        ];
+        for (control, expected) in maneuver_orders {
+            let mut state = TacticalState {
+                command_panel: TacticalCommandPanel::Maneuvers {
+                    pending_order: TacticalOrder::None,
+                    pending_tactic: TacticalTactic::StandOff,
+                },
+                ..TacticalState::default()
+            };
+
+            activate_tactical_command(&mut state, control);
+
+            assert!(matches!(
+                state.command_panel,
+                TacticalCommandPanel::Maneuvers { pending_order, .. }
+                    if pending_order == expected
+            ));
+        }
+
+        let mission_orders = [
+            (
+                TacticalCommandControl::AttackCapitalShips,
+                TacticalOrder::AttackCapitalShips,
+            ),
+            (
+                TacticalCommandControl::AttackFighters,
+                TacticalOrder::AttackFighters,
+            ),
+            (TacticalCommandControl::Recover, TacticalOrder::Recover),
+            (
+                TacticalCommandControl::AttackDeathStar,
+                TacticalOrder::AttackDeathStar,
+            ),
+        ];
+        for (control, expected) in mission_orders {
+            let mut state = TacticalState {
+                command_panel: TacticalCommandPanel::Missions {
+                    pending_order: TacticalOrder::None,
+                    fighter_group: None,
+                },
+                ..TacticalState::default()
+            };
+
+            activate_tactical_command(&mut state, control);
+
+            assert!(matches!(
+                state.command_panel,
+                TacticalCommandPanel::Missions { pending_order, .. }
+                    if pending_order == expected
+            ));
+        }
     }
 
     // Source: FUN_005dcc70's maneuver panel commits order +0x68 and tactic +0x38 on
