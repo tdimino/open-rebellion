@@ -1055,19 +1055,9 @@ pub fn draw_missions_windows(
     cache: &mut BmpCache,
 ) -> Vec<MissionsWindowAction> {
     draw_missions_windows_with_snapshot(
-        strategic_window_common::DetailWindowsDraw {
-            ctx,
-            world,
-            fog,
-            missions,
-            faction,
-            layout,
-            cache,
-            snapshot: None,
-            pointer_events: &[],
-            router: None,
-            shown: &|_| true,
-        },
+        strategic_window_common::DetailWindowsDraw::unmanaged(
+            ctx, world, fog, missions, faction, layout, cache,
+        ),
         state,
     )
 }

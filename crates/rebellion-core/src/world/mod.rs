@@ -1417,18 +1417,12 @@ impl GnprtbParams {
     #[cfg(test)]
     #[must_use]
     pub(crate) fn uniform(values: &[(u16, i32)]) -> Self {
-        let entry = |&(id, value): &(u16, i32)| GnprtbEntry {
-            parameter_id: u32::from(id),
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
-        Self::new(values.iter().map(entry).collect())
+        Self::new(
+            values
+                .iter()
+                .map(|&(id, value)| crate::test_support::gnprtb_entry(id, value))
+                .collect(),
+        )
     }
 
     /// Return the parameter value for `param_id` at `difficulty`.

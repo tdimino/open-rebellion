@@ -588,6 +588,14 @@ impl MessageLog {
     }
 }
 
+impl Extend<GameMessage> for MessageLog {
+    fn extend<T: IntoIterator<Item = GameMessage>>(&mut self, iter: T) {
+        for message in iter {
+            self.push(message);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // MessageLogState
 // ---------------------------------------------------------------------------

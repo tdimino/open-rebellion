@@ -1875,20 +1875,12 @@ mod tests {
     /// rim system `rand(7765) + 50`, and the Empire holds 100 minus it.
     #[test]
     fn a_neutral_systems_support_is_the_alliances_and_the_empire_holds_the_rest() {
-        use rebellion_core::world::{GnprtbEntry, GnprtbParams, Sector};
-        let entry = |parameter_id, value| GnprtbEntry {
-            parameter_id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
+        use rebellion_core::world::{GnprtbParams, Sector};
         let mut world = GameWorld {
-            gnprtb: GnprtbParams::new(vec![entry(7764, 18), entry(7765, 10)]),
+            gnprtb: GnprtbParams::new(vec![
+                rebellion_core::test_support::gnprtb_entry(7764, 18),
+                rebellion_core::test_support::gnprtb_entry(7765, 10),
+            ]),
             ..GameWorld::default()
         };
         let mut sector = |group| {

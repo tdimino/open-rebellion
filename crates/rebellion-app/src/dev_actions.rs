@@ -182,9 +182,7 @@ pub fn post_message(
         .iter()
         .filter_map(|message| message.display.as_ref().map(|d| d.title.clone()))
         .collect();
-    for message in filed {
-        log.push(message);
-    }
+    log.extend(filed);
     Ok(format!("filed {}", titles.join(" | ")))
 }
 

@@ -93,34 +93,38 @@ pub(crate) fn finder_layout() -> CockpitLayout {
     }
 }
 
-/// A full-canvas strategic layout at native scale.
-pub(crate) fn full_layout() -> CockpitLayout {
-    let viewport = CockpitViewport {
-        x: 0.0,
-        y: 0.0,
-        width: 640.0,
-        height: 480.0,
-    };
+fn full_layout_for(viewport: CockpitViewport, scale: f32) -> CockpitLayout {
     CockpitLayout {
         canvas: viewport,
         galaxy: viewport,
-        scale: 1.0,
+        scale,
     }
+}
+
+/// A full-canvas strategic layout at native scale.
+pub(crate) fn full_layout() -> CockpitLayout {
+    full_layout_for(
+        CockpitViewport {
+            x: 0.0,
+            y: 0.0,
+            width: 640.0,
+            height: 480.0,
+        },
+        1.0,
+    )
 }
 
 /// A full-canvas layout offset by (10, 20) and rendered at double scale.
 pub(crate) fn scaled_full_layout() -> CockpitLayout {
-    let viewport = CockpitViewport {
-        x: 10.0,
-        y: 20.0,
-        width: 1280.0,
-        height: 960.0,
-    };
-    CockpitLayout {
-        canvas: viewport,
-        galaxy: viewport,
-        scale: 2.0,
-    }
+    full_layout_for(
+        CockpitViewport {
+            x: 10.0,
+            y: 20.0,
+            width: 1280.0,
+            height: 960.0,
+        },
+        2.0,
+    )
 }
 
 /// A strategic layout with the test canvas at (10, 20), the galaxy inset by

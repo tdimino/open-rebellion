@@ -335,8 +335,9 @@ impl JediSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::fixed_skill;
     use crate::tick::TickEvent;
-    use crate::world::{Character, ForceTier, GameWorld, SkillPair};
+    use crate::world::{Character, ForceTier, GameWorld};
 
     fn ticks(n: u64) -> Vec<TickEvent> {
         (1..=n).map(|t| TickEvent { tick: t }).collect()
@@ -352,43 +353,16 @@ mod tests {
             name: "Test Jedi".into(),
             is_alliance: true,
             is_major: true,
-            diplomacy: SkillPair {
-                base: 50,
-                variance: 0,
-            },
-            espionage: SkillPair {
-                base: 50,
-                variance: 0,
-            },
-            ship_design: SkillPair {
-                base: 50,
-                variance: 0,
-            },
-            troop_training: SkillPair {
-                base: 50,
-                variance: 0,
-            },
-            facility_design: SkillPair {
-                base: 50,
-                variance: 0,
-            },
-            combat: SkillPair {
-                base: 70,
-                variance: 0,
-            },
-            leadership: SkillPair {
-                base: 60,
-                variance: 0,
-            },
-            loyalty: SkillPair {
-                base: 80,
-                variance: 0,
-            },
+            diplomacy: fixed_skill(50),
+            espionage: fixed_skill(50),
+            ship_design: fixed_skill(50),
+            troop_training: fixed_skill(50),
+            facility_design: fixed_skill(50),
+            combat: fixed_skill(70),
+            leadership: fixed_skill(60),
+            loyalty: fixed_skill(80),
             jedi_probability,
-            jedi_level: SkillPair {
-                base: 5,
-                variance: 0,
-            },
+            jedi_level: fixed_skill(5),
             can_be_commander: true,
             force_tier,
             force_experience: force_xp,

@@ -9,7 +9,8 @@ use crate::manufacturing::{BuildableKind, ManufacturingState, QueueItem};
 use crate::movement::MovementState;
 use crate::world::{
     CapitalShipClass, ControlKind, FighterClass, Fleet, GameWorld, GnprtbEntry, MissionMemberRules,
-    MissionRecord, MissionTargetRules, SdprtbEntry, Sector, ShipInstance, System, TroopUnit,
+    MissionRecord, MissionTargetRules, SdprtbEntry, Sector, ShipInstance, SkillPair, System,
+    TroopUnit,
 };
 
 /// Common world-building vocabulary for unit-test modules. Keeping this
@@ -41,6 +42,12 @@ pub fn gnprtb_entry(id: impl TryInto<u32>, value: i32) -> GnprtbEntry {
         empire_sp_hard: value,
         multiplayer: value,
     }
+}
+
+/// One deterministic character skill with no scenario-start variance.
+#[must_use]
+pub const fn fixed_skill(base: u32) -> SkillPair {
+    SkillPair { base, variance: 0 }
 }
 
 /// One SDPRTB value repeated for both sides in every game mode.

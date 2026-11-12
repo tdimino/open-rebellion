@@ -1085,6 +1085,7 @@ mod tests {
     use super::*;
     use crate::ids::DatId;
     use crate::ids::SectorKey;
+    use crate::test_support::gnprtb_entry;
     use crate::world::GameWorld;
 
     /// Create a `GnprtbParams` with the stock economy values.
@@ -1093,262 +1094,31 @@ mod tests {
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
     fn stock_gnprtb() -> GnprtbParams {
-        use crate::world::GnprtbEntry;
         let entries = vec![
-            GnprtbEntry {
-                parameter_id: 7686,
-                development: 10,
-                alliance_sp_easy: 10,
-                alliance_sp_medium: 10,
-                alliance_sp_hard: 10,
-                empire_sp_easy: 10,
-                empire_sp_medium: 10,
-                empire_sp_hard: 10,
-                multiplayer: 10,
-            },
-            GnprtbEntry {
-                parameter_id: 7687,
-                development: 5,
-                alliance_sp_easy: 5,
-                alliance_sp_medium: 5,
-                alliance_sp_hard: 5,
-                empire_sp_easy: 5,
-                empire_sp_medium: 5,
-                empire_sp_hard: 5,
-                multiplayer: 5,
-            },
-            GnprtbEntry {
-                parameter_id: 7688,
-                development: 2,
-                alliance_sp_easy: 2,
-                alliance_sp_medium: 2,
-                alliance_sp_hard: 2,
-                empire_sp_easy: 2,
-                empire_sp_medium: 2,
-                empire_sp_hard: 2,
-                multiplayer: 2,
-            },
-            GnprtbEntry {
-                parameter_id: 7732,
-                development: 40,
-                alliance_sp_easy: 40,
-                alliance_sp_medium: 40,
-                alliance_sp_hard: 40,
-                empire_sp_easy: 40,
-                empire_sp_medium: 40,
-                empire_sp_hard: 40,
-                multiplayer: 40,
-            },
-            GnprtbEntry {
-                parameter_id: 7733,
-                development: 25,
-                alliance_sp_easy: 25,
-                alliance_sp_medium: 25,
-                alliance_sp_hard: 25,
-                empire_sp_easy: 25,
-                empire_sp_medium: 25,
-                empire_sp_hard: 25,
-                multiplayer: 25,
-            },
-            GnprtbEntry {
-                parameter_id: 7734,
-                development: 30,
-                alliance_sp_easy: 30,
-                alliance_sp_medium: 30,
-                alliance_sp_hard: 30,
-                empire_sp_easy: 30,
-                empire_sp_medium: 30,
-                empire_sp_hard: 30,
-                multiplayer: 30,
-            },
-            GnprtbEntry {
-                parameter_id: 7735,
-                development: 50,
-                alliance_sp_easy: 50,
-                alliance_sp_medium: 50,
-                alliance_sp_hard: 50,
-                empire_sp_easy: 50,
-                empire_sp_medium: 50,
-                empire_sp_hard: 50,
-                multiplayer: 50,
-            },
-            GnprtbEntry {
-                parameter_id: 7736,
-                development: 20,
-                alliance_sp_easy: 20,
-                alliance_sp_medium: 20,
-                alliance_sp_hard: 20,
-                empire_sp_easy: 20,
-                empire_sp_medium: 20,
-                empire_sp_hard: 20,
-                multiplayer: 20,
-            },
-            GnprtbEntry {
-                parameter_id: 7737,
-                development: 75,
-                alliance_sp_easy: 75,
-                alliance_sp_medium: 75,
-                alliance_sp_hard: 75,
-                empire_sp_easy: 75,
-                empire_sp_medium: 75,
-                empire_sp_hard: 75,
-                multiplayer: 75,
-            },
-            GnprtbEntry {
-                parameter_id: 7761,
-                development: 60,
-                alliance_sp_easy: 60,
-                alliance_sp_medium: 60,
-                alliance_sp_hard: 60,
-                empire_sp_easy: 60,
-                empire_sp_medium: 60,
-                empire_sp_hard: 60,
-                multiplayer: 60,
-            },
-            GnprtbEntry {
-                parameter_id: 7762,
-                development: -10,
-                alliance_sp_easy: -10,
-                alliance_sp_medium: -10,
-                alliance_sp_hard: -10,
-                empire_sp_easy: -10,
-                empire_sp_medium: -10,
-                empire_sp_hard: -10,
-                multiplayer: -10,
-            },
-            GnprtbEntry {
-                parameter_id: 7763,
-                development: 100,
-                alliance_sp_easy: 100,
-                alliance_sp_medium: 100,
-                alliance_sp_hard: 100,
-                empire_sp_easy: 100,
-                empire_sp_medium: 100,
-                empire_sp_hard: 100,
-                multiplayer: 100,
-            },
+            gnprtb_entry(7686, 10),
+            gnprtb_entry(7687, 5),
+            gnprtb_entry(7688, 2),
+            gnprtb_entry(7732, 40),
+            gnprtb_entry(7733, 25),
+            gnprtb_entry(7734, 30),
+            gnprtb_entry(7735, 50),
+            gnprtb_entry(7736, 20),
+            gnprtb_entry(7737, 75),
+            gnprtb_entry(7761, 60),
+            gnprtb_entry(7762, -10),
+            gnprtb_entry(7763, 100),
             // Phase 3b additions: all economy tick GNPRTB indices (values from GNPRTB.DAT)
-            GnprtbEntry {
-                parameter_id: 7680,
-                development: 2,
-                alliance_sp_easy: 2,
-                alliance_sp_medium: 2,
-                alliance_sp_hard: 2,
-                empire_sp_easy: 2,
-                empire_sp_medium: 2,
-                empire_sp_hard: 2,
-                multiplayer: 2,
-            }, // Empire troop doubling + garrison halving
-            GnprtbEntry {
-                parameter_id: 7682,
-                development: 2,
-                alliance_sp_easy: 2,
-                alliance_sp_medium: 2,
-                alliance_sp_hard: 2,
-                empire_sp_easy: 2,
-                empire_sp_medium: 2,
-                empire_sp_hard: 2,
-                multiplayer: 2,
-            }, // Uprising garrison doubler
-            GnprtbEntry {
-                parameter_id: 7684,
-                development: 5,
-                alliance_sp_easy: 5,
-                alliance_sp_medium: 5,
-                alliance_sp_hard: 5,
-                empire_sp_easy: 5,
-                empire_sp_medium: 5,
-                empire_sp_hard: 5,
-                multiplayer: 5,
-            }, // KDY capship penalty per unit
-            GnprtbEntry {
-                parameter_id: 7685,
-                development: 2,
-                alliance_sp_easy: 2,
-                alliance_sp_medium: 2,
-                alliance_sp_hard: 2,
-                empire_sp_easy: 2,
-                empire_sp_medium: 2,
-                empire_sp_hard: 2,
-                multiplayer: 2,
-            }, // KDY fighter penalty per unit
-            GnprtbEntry {
-                parameter_id: 7691,
-                development: 0,
-                alliance_sp_easy: 0,
-                alliance_sp_medium: 0,
-                alliance_sp_hard: 0,
-                empire_sp_easy: 0,
-                empire_sp_medium: 0,
-                empire_sp_hard: 0,
-                multiplayer: 0,
-            }, // Support delta Empire-controlled transition
-            GnprtbEntry {
-                parameter_id: 7693,
-                development: 1,
-                alliance_sp_easy: 1,
-                alliance_sp_medium: 1,
-                alliance_sp_hard: 1,
-                empire_sp_easy: 1,
-                empire_sp_medium: 1,
-                empire_sp_hard: 1,
-                multiplayer: 1,
-            }, // Timer 0x386: a blockader with the majority gains
-            GnprtbEntry {
-                parameter_id: 7694,
-                development: 30,
-                alliance_sp_easy: 30,
-                alliance_sp_medium: 30,
-                alliance_sp_hard: 30,
-                empire_sp_easy: 30,
-                empire_sp_medium: 30,
-                empire_sp_hard: 30,
-                multiplayer: 30,
-            }, // Timer 0x386 delay, the blockader with the majority
-            GnprtbEntry {
-                parameter_id: 7695,
-                development: -1,
-                alliance_sp_easy: -1,
-                alliance_sp_medium: -1,
-                alliance_sp_hard: -1,
-                empire_sp_easy: -1,
-                empire_sp_medium: -1,
-                empire_sp_hard: -1,
-                multiplayer: -1,
-            }, // Timer 0x386: a blockader without the majority loses
-            GnprtbEntry {
-                parameter_id: 7696,
-                development: 30,
-                alliance_sp_easy: 30,
-                alliance_sp_medium: 30,
-                alliance_sp_hard: 30,
-                empire_sp_easy: 30,
-                empire_sp_medium: 30,
-                empire_sp_hard: 30,
-                multiplayer: 30,
-            }, // Timer 0x386 delay, the blockader without the majority
-            GnprtbEntry {
-                parameter_id: 7697,
-                development: -1,
-                alliance_sp_easy: -1,
-                alliance_sp_medium: -1,
-                alliance_sp_hard: -1,
-                empire_sp_easy: -1,
-                empire_sp_medium: -1,
-                empire_sp_hard: -1,
-                multiplayer: -1,
-            }, // Support delta controlled systems
-            GnprtbEntry {
-                parameter_id: 7760,
-                development: 60,
-                alliance_sp_easy: 60,
-                alliance_sp_medium: 60,
-                alliance_sp_hard: 60,
-                empire_sp_easy: 60,
-                empire_sp_medium: 60,
-                empire_sp_hard: 60,
-                multiplayer: 60,
-            }, // Support a side needs to hold a system without troops
+            gnprtb_entry(7680, 2),  // Empire troop doubling + garrison halving
+            gnprtb_entry(7682, 2),  // Uprising garrison doubler
+            gnprtb_entry(7684, 5),  // KDY capship penalty per unit
+            gnprtb_entry(7685, 2),  // KDY fighter penalty per unit
+            gnprtb_entry(7691, 0),  // Support delta Empire-controlled transition
+            gnprtb_entry(7693, 1),  // Timer 0x386: a blockader with the majority gains
+            gnprtb_entry(7694, 30), // Timer 0x386 delay, the blockader with the majority
+            gnprtb_entry(7695, -1), // Timer 0x386: a blockader without the majority loses
+            gnprtb_entry(7696, 30), // Timer 0x386 delay, the blockader without the majority
+            gnprtb_entry(7697, -1), // Support delta controlled systems
+            gnprtb_entry(7760, 60), // Support a side needs to hold a system without troops
         ];
         GnprtbParams::new(entries)
     }

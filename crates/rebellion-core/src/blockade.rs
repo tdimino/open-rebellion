@@ -874,6 +874,7 @@ impl BlockadeSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::gnprtb_entry;
     #[allow(unused_imports)]
     use crate::test_support::world_fixture_prelude::*;
     use crate::tick::TickEvent;
@@ -1292,23 +1293,9 @@ mod tests {
     use crate::movement::MovementState;
     use crate::troop_transport::TroopTransportState;
     use crate::world::{
-        CapitalShipClass, DefenseFacilityInstance, FighterClass, FighterEntry, GnprtbEntry,
-        GnprtbParams, ShipInstance,
+        CapitalShipClass, DefenseFacilityInstance, FighterClass, FighterEntry, GnprtbParams,
+        ShipInstance,
     };
-
-    fn gnprtb_entry(parameter_id: u32, value: i32) -> GnprtbEntry {
-        GnprtbEntry {
-            parameter_id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        }
-    }
 
     /// An Empire fleet of `ships` transports and `squadrons` fighters, carrying
     /// one Empire regiment, orbits an uncontrolled `origin`. `target` is the

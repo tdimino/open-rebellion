@@ -3476,16 +3476,8 @@ mod tests {
     ) -> Vec<rebellion_core::world::GnprtbEntry> {
         values
             .into_iter()
-            .map(|(parameter_id, value)| rebellion_core::world::GnprtbEntry {
-                parameter_id,
-                development: value,
-                alliance_sp_easy: value,
-                alliance_sp_medium: value,
-                alliance_sp_hard: value,
-                empire_sp_easy: value,
-                empire_sp_medium: value,
-                empire_sp_hard: value,
-                multiplayer: value,
+            .map(|(parameter_id, value)| {
+                rebellion_core::test_support::gnprtb_entry(parameter_id, value)
             })
             .collect()
     }

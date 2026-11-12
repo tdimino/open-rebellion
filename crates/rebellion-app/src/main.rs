@@ -24484,27 +24484,27 @@ fn show_ai_records(
                 ));
             }
             AIAction::Bombard { .. } | AIAction::DestroySystem { .. } => {
-                for message in
-                    strike_orders::strike_messages(world, templates, tick, &record.strike)
-                {
-                    log.push(message);
-                }
+                log.extend(strike_orders::strike_messages(
+                    world,
+                    templates,
+                    tick,
+                    &record.strike,
+                ));
             }
             AIAction::Assault { .. } => {
-                for message in
-                    assault_orders::assault_messages(world, templates, tick, &record.assault)
-                {
-                    log.push(message);
-                }
+                log.extend(assault_orders::assault_messages(
+                    world,
+                    templates,
+                    tick,
+                    &record.assault,
+                ));
             }
             _ => {}
         }
         // The holder changes the order's regiments made (FUN_00508660 ->
         // FUN_0050b610).
         for change in &record.fired.controls {
-            for message in control_change_messages(world, templates, tick, change) {
-                log.push(message);
-            }
+            log.extend(control_change_messages(world, templates, tick, change));
         }
     }
 }
@@ -24607,9 +24607,7 @@ fn show_blockade_events(
         rebellion_data::telemetry::native_blockade_event(world, blockade, evt);
         match evt {
             rebellion_core::blockade::BlockadeEvent::BlockadeStarted { .. } => {
-                for message in blockade_transition_messages(world, templates, evt) {
-                    log.push(message);
-                }
+                log.extend(blockade_transition_messages(world, templates, evt));
             }
             rebellion_core::blockade::BlockadeEvent::BlockadeEnded { system, .. } => {
                 rebellion_core::support_shift::blockade_ended(world, blockade, *system);
@@ -24650,9 +24648,9 @@ fn show_blockade_events(
         }
     }
     for (system, on, units) in &lost {
-        for message in evacuation_losses_messages(world, templates, *system, *on, units) {
-            log.push(message);
-        }
+        log.extend(evacuation_losses_messages(
+            world, templates, *system, *on, units,
+        ));
     }
     fire_support_events(
         world,
@@ -25924,9 +25922,7 @@ fn fire_support_events(
     );
     rebellion_data::telemetry::native_support_shifts(tick, world, &fired);
     for change in &fired.controls {
-        for message in control_change_messages(world, templates, tick, change) {
-            log.push(message);
-        }
+        log.extend(control_change_messages(world, templates, tick, change));
     }
 }
 

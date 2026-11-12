@@ -969,19 +969,9 @@ pub fn draw_defenses_windows(
     cache: &mut BmpCache,
 ) -> Vec<DefensesWindowAction> {
     draw_defenses_windows_with_snapshot(
-        strategic_window_common::DetailWindowsDraw {
-            ctx,
-            world,
-            fog,
-            missions,
-            faction,
-            layout,
-            cache,
-            snapshot: None,
-            pointer_events: &[],
-            router: None,
-            shown: &|_| true,
-        },
+        strategic_window_common::DetailWindowsDraw::unmanaged(
+            ctx, world, fog, missions, faction, layout, cache,
+        ),
         state,
     )
 }

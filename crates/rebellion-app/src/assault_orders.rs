@@ -58,9 +58,7 @@ pub fn issue(
     let runs = rebellion_data::integrator::order_assault(world, fleets, side, states, roll)?;
     for run in &runs {
         rebellion_data::telemetry::native_assault(tick, world, run);
-        for message in assault_messages(world, templates, tick, run) {
-            log.push(message);
-        }
+        log.extend(assault_messages(world, templates, tick, run));
     }
     Ok(runs)
 }

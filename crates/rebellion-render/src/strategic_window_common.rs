@@ -1197,6 +1197,8 @@ pub(crate) struct DetailWindowsDraw<'a> {
     pub(crate) shown: &'a dyn Fn(crate::windowing::GalaxyChild) -> bool,
 }
 
+static SHOW_ALL_GALAXY_CHILDREN: fn(crate::windowing::GalaxyChild) -> bool = |_| true;
+
 impl<'a> DetailWindowsDraw<'a> {
     #[allow(
         clippy::too_many_arguments,
@@ -1228,6 +1230,30 @@ impl<'a> DetailWindowsDraw<'a> {
             router,
             shown,
         }
+    }
+
+    pub(crate) fn unmanaged(
+        ctx: &'a egui::Context,
+        world: &'a rebellion_core::world::GameWorld,
+        fog: &'a rebellion_core::fog::FogState,
+        missions: &'a rebellion_core::missions::MissionState,
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+        cache: &'a mut BmpCache,
+    ) -> Self {
+        Self::new(
+            ctx,
+            world,
+            fog,
+            missions,
+            faction,
+            layout,
+            cache,
+            None,
+            &[],
+            None,
+            &SHOW_ALL_GALAXY_CHILDREN,
+        )
     }
 }
 

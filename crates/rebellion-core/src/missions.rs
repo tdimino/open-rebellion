@@ -4031,8 +4031,9 @@ mod tests {
         state
     }
     use crate::ids::{CharacterKey, SystemKey};
+    use crate::test_support::fixed_skill as skill_pair;
     use crate::uprising::UprisingState;
-    use crate::world::{Character, GameWorld, SkillPair};
+    use crate::world::{Character, GameWorld};
 
     #[test]
     fn a_kind_with_no_record_times_its_mission_from_the_port_range() {
@@ -4104,10 +4105,6 @@ mod tests {
 
     fn minimal_world() -> GameWorld {
         GameWorld::default()
-    }
-
-    fn skill_pair(base: u32) -> SkillPair {
-        SkillPair { base, variance: 0 }
     }
 
     fn character_with_diplomacy(world: &mut GameWorld, diplomacy: u32) -> CharacterKey {

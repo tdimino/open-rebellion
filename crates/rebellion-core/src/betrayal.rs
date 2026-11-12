@@ -149,12 +149,9 @@ impl BetrayalSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::fixed_skill as skill_pair;
     use crate::tick::TickEvent;
-    use crate::world::{Character, GameWorld, MstbEntry, MstbTable, SkillPair};
-
-    fn skill_pair(base: u32) -> SkillPair {
-        SkillPair { base, variance: 0 }
-    }
+    use crate::world::{Character, GameWorld, MstbEntry, MstbTable};
 
     fn default_test_character(name: &str, loyalty_base: u32) -> Character {
         Character {

@@ -1123,6 +1123,7 @@ impl MovementSystem {
 mod tests {
     use super::*;
     use crate::carriage::ProductRoom;
+    use crate::test_support::gnprtb_entry;
     use crate::tick::TickEvent;
     use crate::world::{ControlKind, FighterEntry};
 
@@ -2142,18 +2143,8 @@ mod tests {
     #[test]
     fn loaded_gnprtb_values_replace_the_shipped_divisor_and_base() {
         let (mut world, _, _) = make_transit_world(0, 0, 0, 0);
-        let entry = |id, value| crate::world::GnprtbEntry {
-            parameter_id: id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
-        world.gnprtb = crate::world::GnprtbParams::new(vec![entry(5120, 10), entry(1, 50)]);
+        world.gnprtb =
+            crate::world::GnprtbParams::new(vec![gnprtb_entry(5120, 10), gnprtb_entry(1, 50)]);
         // 50 / 10 = 5; 5 * 100 / 50 = 10.
         assert_eq!(transit_ticks_between(&world, (0, 0), (30, 40), 100), 10);
     }

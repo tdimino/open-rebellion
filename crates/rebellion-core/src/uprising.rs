@@ -1113,8 +1113,9 @@ mod tests {
     use crate::ids::{DatId, DefenseFacilityKey, ManufacturingFacilityKey, ProductionFacilityKey};
     use crate::missions::MissionFaction;
     use crate::missions::MissionRequest;
+    use crate::test_support::gnprtb_entry;
     use crate::world::{
-        Character, ControlKind, DefenseFacilityInstance, GnprtbEntry, GnprtbParams,
+        Character, ControlKind, DefenseFacilityInstance, GnprtbParams,
         ManufacturingFacilityInstance, MstbEntry, ProductionFacilityInstance, SkillPair, TroopUnit,
     };
 
@@ -1123,20 +1124,6 @@ mod tests {
     fn with_death_star(world: &mut GameWorld, system: SystemKey) {
         crate::test_support::add_death_star_fleet(world, system, false);
         crate::death_star::refresh_sectors(world);
-    }
-
-    fn gnprtb_entry(parameter_id: u16, value: i32) -> GnprtbEntry {
-        GnprtbEntry {
-            parameter_id: u32::from(parameter_id),
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        }
     }
 
     fn table(rows: &[(i32, u32)]) -> MstbTable {

@@ -88,9 +88,7 @@ pub fn issue(
     let runs = rebellion_data::integrator::order_strike(world, fleets, kind, states, roll)?;
     for strike in &runs {
         rebellion_data::telemetry::native_strike(tick, world, strike);
-        for message in strike_messages(world, templates, tick, strike) {
-            log.push(message);
-        }
+        log.extend(strike_messages(world, templates, tick, strike));
     }
     Ok(runs)
 }
