@@ -283,7 +283,7 @@ pub fn character_rows(
             system: character.current_system,
         });
     }
-    rows.sort_by_cached_key(|row| row.display_name().to_ascii_lowercase());
+    finder_common::sort_rows_by_name(&mut rows);
     rows
 }
 
@@ -321,7 +321,7 @@ pub fn specforces_rows(
         // surface SF units appear.
     }
 
-    rows.sort_by_cached_key(|row| row.display_name().to_ascii_lowercase());
+    finder_common::sort_rows_by_name(&mut rows);
     rows
 }
 
@@ -387,12 +387,7 @@ finder_common::define_finder_state! {
 }
 
 /// Rows visible at once: 161 / 20 = 8.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Eight whole rows of 20 in a list 161 tall."
-)]
-const VISIBLE_ROWS: usize = (LIST.3 / ROW_HEIGHT) as usize;
+const VISIBLE_ROWS: usize = crate::list_control::visible_row_capacity(LIST.3, ROW_HEIGHT);
 
 const FINDER_CONFIG: finder_common::SideFinderConfig<PersonnelTab> = finder_common::side_finder_config! {
     PersonnelTab, &PersonnelTab::ALL;
@@ -657,14 +652,13 @@ mod tests {
         FocusTarget,
         egui::Context,
     ) {
-        let (_manager, state, id) = managed_finder();
-        (
-            state,
-            id,
-            focus(id, PERSONNEL_FINDER_NAME_CONTROL),
-            focus(id, PERSONNEL_FINDER_LIST_CONTROL),
-            egui::Context::default(),
-        )
+        let (_manager, state, id, name_focus, list_focus, ctx) =
+            crate::test_support::finder_navigation_fixture(
+                managed_finder(),
+                PERSONNEL_FINDER_NAME_CONTROL,
+                PERSONNEL_FINDER_LIST_CONTROL,
+            );
+        (state, id, name_focus, list_focus, ctx)
     }
 
     fn draw_fixture_frame(

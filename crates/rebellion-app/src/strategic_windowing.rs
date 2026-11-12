@@ -198,6 +198,121 @@ impl QueuedWindowCommand {
     }
 }
 
+trait QueuedPreparedOpen: Sized {
+    fn spec(&self) -> WindowSpec;
+    fn attach(self, queued: &mut QueuedWindowCommand);
+
+    fn into_queued_open(self) -> QueuedWindowCommand {
+        let command = WindowCommand::Open(self.spec());
+        QueuedWindowCommand::new(command).with_payload(|queued| self.attach(queued))
+    }
+}
+
+macro_rules! impl_queued_prepared_open {
+    ($prepared:ty, $field:ident, $spec:expr) => {
+        impl QueuedPreparedOpen for $prepared {
+            fn spec(&self) -> WindowSpec {
+                ($spec)(self)
+            }
+
+            fn attach(self, queued: &mut QueuedWindowCommand) {
+                queued.$field = Some(self);
+            }
+        }
+    };
+}
+
+impl_queued_prepared_open!(
+    PreparedBuildSelection,
+    prepared_build_selection,
+    PreparedBuildSelection::spec
+);
+impl_queued_prepared_open!(
+    PreparedSystemWindow,
+    prepared_system,
+    PreparedSystemWindow::spec
+);
+impl_queued_prepared_open!(
+    PreparedDefensesWindow,
+    prepared_defenses,
+    PreparedDefensesWindow::spec
+);
+impl_queued_prepared_open!(
+    PreparedMissionsWindow,
+    prepared_missions,
+    PreparedMissionsWindow::spec
+);
+impl_queued_prepared_open!(
+    PreparedFleetWindow,
+    prepared_fleet,
+    PreparedFleetWindow::spec
+);
+impl_queued_prepared_open!(
+    PreparedFleetFinder,
+    prepared_fleet_finder,
+    |prepared: &PreparedFleetFinder| (*prepared).spec()
+);
+impl_queued_prepared_open!(
+    PreparedTroopFinder,
+    prepared_troop_finder,
+    |prepared: &PreparedTroopFinder| (*prepared).spec()
+);
+impl_queued_prepared_open!(
+    PreparedPersonnelFinder,
+    prepared_personnel_finder,
+    |prepared: &PreparedPersonnelFinder| (*prepared).spec()
+);
+impl_queued_prepared_open!(
+    PreparedMessageIndex,
+    prepared_message_index,
+    |prepared: &PreparedMessageIndex| (*prepared).spec()
+);
+
+trait QueuedPreparedClose: Sized {
+    fn queued_window_id(&self) -> WindowId;
+    fn attach(self, queued: &mut QueuedWindowCommand);
+
+    fn into_queued_close(self) -> QueuedWindowCommand {
+        let command = WindowCommand::Close(self.queued_window_id());
+        QueuedWindowCommand::new(command).with_payload(|queued| self.attach(queued))
+    }
+}
+
+macro_rules! impl_queued_prepared_close {
+    ($prepared:ty, $field:ident, $window_id:expr) => {
+        impl QueuedPreparedClose for $prepared {
+            fn queued_window_id(&self) -> WindowId {
+                ($window_id)(self)
+            }
+
+            fn attach(self, queued: &mut QueuedWindowCommand) {
+                queued.$field = Some(self);
+            }
+        }
+    };
+}
+
+impl_queued_prepared_close!(
+    PreparedBuildSelectionConfirm,
+    prepared_build_selection_confirm,
+    |prepared: &PreparedBuildSelectionConfirm| (*prepared).window_id()
+);
+impl_queued_prepared_close!(
+    PreparedMissionDialogConfirm,
+    prepared_mission_dialog_confirm,
+    PreparedMissionDialogConfirm::window_id
+);
+impl_queued_prepared_close!(
+    PreparedMoveConfirmationConfirm,
+    prepared_move_confirmation_confirm,
+    PreparedMoveConfirmationConfirm::window_id
+);
+impl_queued_prepared_close!(
+    PreparedScrapConfirmationConfirm,
+    prepared_scrap_confirmation_confirm,
+    PreparedScrapConfirmationConfirm::window_id
+);
+
 fn open_or_replace(replacing: Option<WindowId>, new: WindowSpec) -> WindowCommand {
     replacing.map_or(WindowCommand::Open(new), |old| WindowCommand::Replace {
         old,
@@ -613,22 +728,14 @@ impl StrategicWindowing {
 
     /// Queues validated Build Selection context beside its singleton open.
     pub fn enqueue_build_selection_open(&mut self, prepared: PreparedBuildSelection) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_build_selection = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_open());
     }
 
     /// Queues the exact close paired with an inert Build Selection confirm.
     /// The candidate is returned only if that close commits and releases the
     /// attached content identity.
     pub fn enqueue_build_selection_confirm(&mut self, prepared: PreparedBuildSelectionConfirm) {
-        let command = WindowCommand::Close(prepared.window_id());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_build_selection_confirm = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_close());
     }
 
     /// Allocates a fresh command-context subject and queues inert Mission
@@ -643,11 +750,7 @@ impl StrategicWindowing {
     /// Queues the exact close paired with an inert Mission order. The order
     /// is returned only when that close tears down its attached identity.
     pub fn enqueue_mission_dialog_confirm(&mut self, prepared: PreparedMissionDialogConfirm) {
-        let command = WindowCommand::Close(prepared.window_id());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_mission_dialog_confirm = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_close());
     }
 
     /// Allocates a fresh command-context subject and queues inert Move
@@ -661,11 +764,7 @@ impl StrategicWindowing {
 
     /// Queues the exact close paired with one inert Move order.
     pub fn enqueue_move_confirmation_confirm(&mut self, prepared: PreparedMoveConfirmationConfirm) {
-        let command = WindowCommand::Close(prepared.window_id());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_move_confirmation_confirm = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_close());
     }
 
     /// Allocates a fresh command context for the manufacturing Stop dialog.
@@ -694,20 +793,12 @@ impl StrategicWindowing {
         &mut self,
         prepared: PreparedScrapConfirmationConfirm,
     ) {
-        let command = WindowCommand::Close(prepared.window_id());
-        self.pending
-            .push(QueuedWindowCommand::new(command).with_payload(|queued| {
-                queued.prepared_scrap_confirmation_confirm = Some(prepared);
-            }));
+        self.pending.push(prepared.into_queued_close());
     }
 
     /// Queues validated System content beside its semantic detail open.
     pub fn enqueue_system_open(&mut self, prepared: PreparedSystemWindow) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_system = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_open());
     }
 
     /// Queues validated Sector content beside either an exact duplicate open
@@ -756,86 +847,50 @@ impl StrategicWindowing {
 
     /// Queues validated Defenses content beside its semantic detail open.
     pub fn enqueue_defenses_open(&mut self, prepared: PreparedDefensesWindow) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_defenses = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_open());
     }
 
     /// Queues validated Missions content beside its semantic detail open.
     pub fn enqueue_missions_open(&mut self, prepared: PreparedMissionsWindow) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_missions = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_open());
     }
 
     /// Queues validated System content for publication only after Galaxy is
     /// active. Battle Results destinations must not join Tactical membership.
     pub fn enqueue_galaxy_system_open(&mut self, prepared: PreparedSystemWindow) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending_galaxy.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_system = Some(prepared)),
-        );
+        self.pending_galaxy.push(prepared.into_queued_open());
     }
 
     /// Queues a validated Fleet content candidate beside its semantic open.
     /// The candidate returns to the app only after the manager applies it.
     pub fn enqueue_fleet_open(&mut self, prepared: PreparedFleetWindow) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_fleet = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_open());
     }
 
     /// Queues validated Fleet content for publication only after Galaxy is
     /// active, preserving the outgoing Results frame's immutable lease.
     pub fn enqueue_galaxy_fleet_open(&mut self, prepared: PreparedFleetWindow) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending_galaxy.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_fleet = Some(prepared)),
-        );
+        self.pending_galaxy.push(prepared.into_queued_open());
     }
 
     /// Queues inert Fleet Finder content beside its semantic singleton open.
     pub fn enqueue_fleet_finder_open(&mut self, prepared: PreparedFleetFinder) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_fleet_finder = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_open());
     }
 
     /// Queues inert Troop Finder content beside its semantic singleton open.
     pub fn enqueue_troop_finder_open(&mut self, prepared: PreparedTroopFinder) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_troop_finder = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_open());
     }
 
     /// Queues inert Personnel Finder content beside its semantic singleton open.
     pub fn enqueue_personnel_finder_open(&mut self, prepared: PreparedPersonnelFinder) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_personnel_finder = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_open());
     }
 
     /// Queues inert Message Index content beside its semantic singleton open.
     pub fn enqueue_message_index_open(&mut self, prepared: PreparedMessageIndex) {
-        let command = WindowCommand::Open(prepared.spec());
-        self.pending.push(
-            QueuedWindowCommand::new(command)
-                .with_payload(|queued| queued.prepared_message_index = Some(prepared)),
-        );
+        self.pending.push(prepared.into_queued_open());
     }
 
     /// Queues validated contextual Status content. A later logical open
@@ -1255,131 +1310,83 @@ impl StrategicWindowing {
         self.attached_content.insert(id)
     }
 
-    /// Acknowledges renderer publication only after the exact prepared Fleet
-    /// content has accepted the manager identity.
-    pub fn acknowledge_fleet_publication(&mut self, id: WindowId) -> bool {
+    fn acknowledge_publication(&mut self, id: WindowId, kind: WindowKind) -> bool {
         self.manager
             .begin_frame()
             .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Fleet)
+            .is_some_and(|key| key.kind == kind)
             && self.attached_content.insert(id)
+    }
+
+    /// Acknowledges renderer publication only after the exact prepared Fleet
+    /// content has accepted the manager identity.
+    pub fn acknowledge_fleet_publication(&mut self, id: WindowId) -> bool {
+        self.acknowledge_publication(id, WindowKind::Fleet)
     }
 
     /// Acknowledges Build Selection publication only for its exact singleton.
     pub fn acknowledge_build_selection_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::BuildSelection)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::BuildSelection)
     }
 
     /// Acknowledges Mission publication only for its exact contextual identity.
     pub fn acknowledge_mission_dialog_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::MissionDialog)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::MissionDialog)
     }
 
     /// Acknowledges Move publication only for its exact contextual identity.
     pub fn acknowledge_move_confirmation_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::MoveConfirmation)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::MoveConfirmation)
     }
 
     /// Acknowledges Scrap publication only for its exact contextual identity.
     pub fn acknowledge_scrap_confirmation_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::ScrapConfirmation)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::ScrapConfirmation)
     }
 
     /// Acknowledges System publication only for the exact manager identity.
     pub fn acknowledge_system_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::System)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::System)
     }
 
     /// Acknowledges Defenses publication only for the exact manager identity.
     pub fn acknowledge_defenses_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Defenses)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::Defenses)
     }
 
     /// Acknowledges Missions publication only for the exact manager identity.
     pub fn acknowledge_missions_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Missions)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::Missions)
     }
 
     /// Acknowledges Fleet Finder publication only for its exact singleton.
     pub fn acknowledge_fleet_finder_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::FleetFinder)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::FleetFinder)
     }
 
     /// Acknowledges Troop Finder publication only for its exact singleton.
     pub fn acknowledge_troop_finder_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::TroopFinder)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::TroopFinder)
     }
 
     /// Acknowledges Personnel Finder publication only for its exact singleton.
     pub fn acknowledge_personnel_finder_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::PersonnelFinder)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::PersonnelFinder)
     }
 
     /// Acknowledges Message Index publication only for its exact singleton.
     pub fn acknowledge_message_index_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::MessageIndex)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::MessageIndex)
     }
 
     /// Acknowledges Status publication only for the exact contextual identity.
     pub fn acknowledge_status_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Status)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::Status)
     }
 
     /// Acknowledges Sector publication only for the exact manager identity.
     pub fn acknowledge_sector_publication(&mut self, id: WindowId) -> bool {
-        self.manager
-            .begin_frame()
-            .key(id)
-            .is_some_and(|key| key.kind == rebellion_windowing::WindowKind::Sector)
-            && self.attached_content.insert(id)
+        self.acknowledge_publication(id, WindowKind::Sector)
     }
 
     /// Compensates a failed renderer publication or rail eviction by closing
@@ -2175,6 +2182,47 @@ mod tests {
     ) {
         let mut applied = coordinator.apply_pending().remove(0);
         commit_existing_finder(finder, &mut applied, id, coordinator, expected_focus);
+    }
+
+    fn assert_finder_duplicate_open<T: FinderTestState + Default>(
+        enqueue: impl Fn(&mut StrategicWindowing, CockpitFaction),
+        acknowledge: impl Fn(&mut StrategicWindowing, WindowId) -> bool,
+        name_control: ControlId,
+        select_alternate: impl FnOnce(&mut T),
+    ) {
+        let mut coordinator = StrategicWindowing::new();
+        let mut finder = T::default();
+        enqueue(&mut coordinator, CockpitFaction::Alliance);
+        assert!(coordinator.begin_frame().paint_order().is_empty());
+
+        let mut opened = coordinator.apply_pending().remove(0);
+        let id = commit_finder_open(&mut finder, &mut opened);
+        assert!(acknowledge(&mut coordinator, id));
+        let name_focus = finder_name_focus(&coordinator, id, name_control);
+
+        select_alternate(&mut finder);
+        enqueue(&mut coordinator, CockpitFaction::Empire);
+        commit_pending_existing_finder(&mut coordinator, &mut finder, id, name_focus);
+    }
+
+    fn assert_wrong_finder_publication<T: FinderTestState>(
+        enqueue: impl FnOnce(&mut StrategicWindowing),
+        acknowledge: impl Fn(&mut StrategicWindowing, WindowId) -> bool,
+        rollback: impl Fn(&mut StrategicWindowing, WindowId) -> Vec<WindowId>,
+    ) {
+        let mut coordinator = StrategicWindowing::new();
+        let fleet_finder = open_fleet_finder(&mut coordinator);
+        assert!(!acknowledge(&mut coordinator, fleet_finder));
+
+        enqueue(&mut coordinator);
+        let applied = coordinator.apply_pending().remove(0);
+        let finder = T::content_id(&applied).unwrap();
+        assert_ne!(finder, fleet_finder);
+        assert!(!coordinator.has_content(finder));
+
+        assert_eq!(rollback(&mut coordinator, finder), [finder]);
+        assert!(!coordinator.begin_frame().is_visible(finder));
+        assert!(!coordinator.has_content(finder));
     }
 
     fn enqueue_singletons(
@@ -4025,103 +4073,68 @@ mod tests {
 
     #[test]
     fn finder_duplicate_open_preserves_id_selection_and_focus() {
-        let mut coordinator = StrategicWindowing::new();
-        let mut finder = FleetFinderState::default();
-        coordinator
-            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Alliance));
-        assert!(coordinator.begin_frame().paint_order().is_empty());
-
-        let mut opened = coordinator.apply_pending().remove(0);
-        let id = commit_finder_open(&mut finder, &mut opened);
-        assert!(coordinator.acknowledge_fleet_finder_publication(id));
-        let name_focus = finder_name_focus(&coordinator, id, FLEET_FINDER_NAME_CONTROL);
-
-        finder.set_tab(rebellion_render::fleet_finder::FinderTab::Imperial);
-        coordinator
-            .enqueue_fleet_finder_open(FleetFinderState::prepare_open(CockpitFaction::Empire));
-        commit_pending_existing_finder(&mut coordinator, &mut finder, id, name_focus);
+        assert_finder_duplicate_open::<FleetFinderState>(
+            |coordinator, faction| {
+                coordinator.enqueue_fleet_finder_open(FleetFinderState::prepare_open(faction));
+            },
+            StrategicWindowing::acknowledge_fleet_finder_publication,
+            FLEET_FINDER_NAME_CONTROL,
+            |finder| finder.set_tab(rebellion_render::fleet_finder::FinderTab::Imperial),
+        );
     }
 
     #[test]
     fn troop_finder_duplicate_open_preserves_id_selection_and_focus() {
-        let mut coordinator = StrategicWindowing::new();
-        let mut finder = TroopFinderState::default();
-        coordinator
-            .enqueue_troop_finder_open(TroopFinderState::prepare_open(CockpitFaction::Alliance));
-
-        let mut opened = coordinator.apply_pending().remove(0);
-        let id = commit_finder_open(&mut finder, &mut opened);
-        assert!(coordinator.acknowledge_troop_finder_publication(id));
-        let name_focus = finder_name_focus(&coordinator, id, TROOP_FINDER_NAME_CONTROL);
-
-        finder.set_tab(TroopTab::Imperial);
-        coordinator
-            .enqueue_troop_finder_open(TroopFinderState::prepare_open(CockpitFaction::Empire));
-        commit_pending_existing_finder(&mut coordinator, &mut finder, id, name_focus);
+        assert_finder_duplicate_open::<TroopFinderState>(
+            |coordinator, faction| {
+                coordinator.enqueue_troop_finder_open(TroopFinderState::prepare_open(faction));
+            },
+            StrategicWindowing::acknowledge_troop_finder_publication,
+            TROOP_FINDER_NAME_CONTROL,
+            |finder| finder.set_tab(TroopTab::Imperial),
+        );
     }
 
     #[test]
     fn troop_finder_wrong_publication_is_rejected_and_rolled_back() {
-        let mut coordinator = StrategicWindowing::new();
-        let fleet_finder = open_fleet_finder(&mut coordinator);
-        assert!(!coordinator.acknowledge_troop_finder_publication(fleet_finder));
-
-        coordinator
-            .enqueue_troop_finder_open(TroopFinderState::prepare_open(CockpitFaction::Alliance));
-        let applied = coordinator.apply_pending().remove(0);
-        let troop_finder = applied.troop_finder_content_id.unwrap();
-        assert_ne!(troop_finder, fleet_finder);
-        assert!(!coordinator.has_content(troop_finder));
-
-        assert_eq!(
-            coordinator.rollback_troop_finder_publication(troop_finder),
-            [troop_finder]
+        assert_wrong_finder_publication::<TroopFinderState>(
+            |coordinator| {
+                coordinator.enqueue_troop_finder_open(TroopFinderState::prepare_open(
+                    CockpitFaction::Alliance,
+                ));
+            },
+            StrategicWindowing::acknowledge_troop_finder_publication,
+            StrategicWindowing::rollback_troop_finder_publication,
         );
-        assert!(!coordinator.begin_frame().is_visible(troop_finder));
-        assert!(!coordinator.has_content(troop_finder));
     }
 
     #[test]
     fn personnel_finder_duplicate_open_preserves_id_selection_and_focus() {
-        let mut coordinator = StrategicWindowing::new();
-        let mut finder = PersonnelFinderState::default();
-        coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
-            CockpitFaction::Alliance,
-        ));
-
-        let mut opened = coordinator.apply_pending().remove(0);
-        let id = commit_finder_open(&mut finder, &mut opened);
-        assert!(coordinator.acknowledge_personnel_finder_publication(id));
-        let name_focus = finder_name_focus(&coordinator, id, PERSONNEL_FINDER_NAME_CONTROL);
-
-        finder.set_tab(PersonnelTab::Imperial);
-        finder.set_view(PersonnelView::Characters);
-        coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
-            CockpitFaction::Empire,
-        ));
-        commit_pending_existing_finder(&mut coordinator, &mut finder, id, name_focus);
+        assert_finder_duplicate_open::<PersonnelFinderState>(
+            |coordinator, faction| {
+                coordinator
+                    .enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(faction));
+            },
+            StrategicWindowing::acknowledge_personnel_finder_publication,
+            PERSONNEL_FINDER_NAME_CONTROL,
+            |finder| {
+                finder.set_tab(PersonnelTab::Imperial);
+                finder.set_view(PersonnelView::Characters);
+            },
+        );
     }
 
     #[test]
     fn personnel_finder_wrong_publication_is_rejected_and_rolled_back() {
-        let mut coordinator = StrategicWindowing::new();
-        let fleet_finder = open_fleet_finder(&mut coordinator);
-        assert!(!coordinator.acknowledge_personnel_finder_publication(fleet_finder));
-
-        coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
-            CockpitFaction::Alliance,
-        ));
-        let applied = coordinator.apply_pending().remove(0);
-        let personnel_finder = applied.personnel_finder_content_id.unwrap();
-        assert_ne!(personnel_finder, fleet_finder);
-        assert!(!coordinator.has_content(personnel_finder));
-
-        assert_eq!(
-            coordinator.rollback_personnel_finder_publication(personnel_finder),
-            [personnel_finder]
+        assert_wrong_finder_publication::<PersonnelFinderState>(
+            |coordinator| {
+                coordinator.enqueue_personnel_finder_open(PersonnelFinderState::prepare_open(
+                    CockpitFaction::Alliance,
+                ));
+            },
+            StrategicWindowing::acknowledge_personnel_finder_publication,
+            StrategicWindowing::rollback_personnel_finder_publication,
         );
-        assert!(!coordinator.begin_frame().is_visible(personnel_finder));
-        assert!(!coordinator.has_content(personnel_finder));
     }
 
     #[test]

@@ -1225,7 +1225,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let mut actions = Vec::new();
-        for events in [vec![], vec![]].into_iter().chain(frames) {
+        for events in crate::test_support::warmed_frames(Vec::new(), frames) {
             let input = egui::RawInput {
                 screen_rect: Some(viewport(640.0, 480.0)),
                 events,

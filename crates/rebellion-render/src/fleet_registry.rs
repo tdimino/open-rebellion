@@ -478,7 +478,7 @@ mod tests {
         let canvas = Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0));
         let mut state = FleetRegistryState::new();
         let mut outcome = RegistryOutcome::Open;
-        for events in [vec![], vec![]].into_iter().chain(frames) {
+        for events in crate::test_support::warmed_frames(Vec::new(), frames) {
             let input = egui::RawInput {
                 screen_rect: Some(canvas),
                 events,

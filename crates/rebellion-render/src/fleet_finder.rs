@@ -189,7 +189,7 @@ pub fn rows(
             }
         }
     }
-    rows.sort_by_cached_key(|row| row.name.to_ascii_lowercase());
+    finder_common::sort_rows_by_name(&mut rows);
     rows
 }
 
@@ -348,12 +348,7 @@ const fn tab_index(tab: FinderTab) -> usize {
 }
 
 /// Rows the list shows at once.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Eight whole rows of 20 in a list 165 tall."
-)]
-const VISIBLE_ROWS: usize = (LIST.3 / ROW_HEIGHT) as usize;
+const VISIBLE_ROWS: usize = crate::list_control::visible_row_capacity(LIST.3, ROW_HEIGHT);
 
 /// Draw a fixture-opened Finder, if any, and report an action.
 pub fn draw_fleet_finder(
@@ -519,10 +514,6 @@ mod tests {
         fleet
     }
 
-    fn names(rows: &[FinderRow]) -> Vec<&str> {
-        rows.iter().map(|row| row.name.as_str()).collect()
-    }
-
     fn row(name: &str) -> FinderRow {
         FinderRow {
             object: FleetWindowEntry::Fleet(FleetKey::default()),
@@ -578,13 +569,6 @@ mod tests {
         "Fleet Finder"
     );
 
-    fn focus_target(window: WindowId, control: ControlId) -> FocusTarget {
-        FocusTarget {
-            window,
-            control: Some(control),
-        }
-    }
-
     fn focused_finder() -> (
         Galaxy,
         FleetFinderState,
@@ -593,9 +577,13 @@ mod tests {
         egui::Context,
     ) {
         let galaxy = galaxy();
-        let (_manager, state, id) = managed_finder();
-        let focus = focus_target(id, FLEET_FINDER_NAME_CONTROL);
-        (galaxy, state, id, focus, egui::Context::default())
+        let (_manager, state, id, focus, _list_focus, ctx) =
+            crate::test_support::finder_navigation_fixture(
+                managed_finder(),
+                FLEET_FINDER_NAME_CONTROL,
+                FLEET_FINDER_LIST_CONTROL,
+            );
+        (galaxy, state, id, focus, ctx)
     }
 
     fn pointer_input(
@@ -644,7 +632,7 @@ mod tests {
         );
 
         assert_eq!(
-            names(&rows),
+            finder_common::row_names(&rows),
             ["corellian Corvette", "Victory Star Destroyer"]
         );
         assert_eq!(
@@ -679,7 +667,10 @@ mod tests {
                 FinderTab::All,
             );
             for name in ["corellian Corvette", "Victory Star Destroyer"] {
-                assert!(names(&rows).contains(&name), "{player:?}: {name}");
+                assert!(
+                    finder_common::row_names(&rows).contains(&name),
+                    "{player:?}: {name}"
+                );
             }
         }
     }
@@ -717,7 +708,7 @@ mod tests {
         // FUN_00462be0: tab 2 needs side bit 0x40, tab 3 bit 0x80.
         let galaxy = galaxy();
         let list = |tab| {
-            names(&rows(
+            finder_common::row_names(&rows(
                 &galaxy.world,
                 &rebellion_core::movement::MovementState::default(),
                 &galaxy.fog,
@@ -946,7 +937,7 @@ mod tests {
         let mut cache = BmpCache::new();
         let mut emitted = None;
         let first = frames.first().map_or((0.0, 0.0), |(at, _)| *at);
-        for ((x, y), extra) in [(first, vec![]), (first, vec![])].into_iter().chain(frames) {
+        for ((x, y), extra) in crate::test_support::warmed_frames((first, Vec::new()), frames) {
             let pos = finder_common::window_rect(layout).min + egui::vec2(x, y);
             let input = pointer_input(pos, extra, egui::vec2(700.0, 520.0), None);
             let _ = ctx.run(input, |ctx| {
@@ -1284,7 +1275,7 @@ mod tests {
             drive_focused_key(&ctx, &galaxy, &mut state, name_focus, egui::Key::ArrowDown,),
             None
         );
-        let list_focus = focus_target(id, FLEET_FINDER_LIST_CONTROL);
+        let list_focus = crate::test_support::control_focus(id, FLEET_FINDER_LIST_CONTROL);
         assert_eq!(state.take_focus_request(), Some(list_focus));
         ctx.memory_mut(|memory| {
             memory.request_focus(egui::Id::new("original-fleet-finder-name"));
@@ -1347,7 +1338,7 @@ mod tests {
         galaxy.fog = FogState::new(Faction::Alliance);
         let (_manager, mut state, id) = managed_finder();
         state.set_tab(FinderTab::Imperial);
-        let list_focus = focus_target(id, FLEET_FINDER_LIST_CONTROL);
+        let list_focus = crate::test_support::control_focus(id, FLEET_FINDER_LIST_CONTROL);
         let ctx = egui::Context::default();
 
         assert_eq!(
@@ -1396,7 +1387,10 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(report.mode, FinderMode::Ships, "{faction:?}");
-            assert_eq!(names(&report.rows), ["Victory Star Destroyer"]);
+            assert_eq!(
+                finder_common::row_names(&report.rows),
+                ["Victory Star Destroyer"]
+            );
 
             drive(
                 &galaxy,
@@ -1465,7 +1459,7 @@ mod tests {
         let mut cache = BmpCache::new();
         let mut result = Run::default();
         let first = frames.first().map_or((0.0, 0.0), |(at, _)| *at);
-        let frames = [(first, vec![]), (first, vec![])].into_iter().chain(frames);
+        let frames = crate::test_support::warmed_frames((first, Vec::new()), frames);
         for (index, ((x, y), extra)) in frames.enumerate() {
             let pos = finder_common::window_rect(layout).min + egui::vec2(x, y) * 2.0;
             let input = pointer_input(

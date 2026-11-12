@@ -94,6 +94,24 @@ pub(crate) const fn max_first_row(row_count: usize, visible_rows: usize) -> usiz
     row_count.saturating_sub(visible_rows)
 }
 
+/// Number of complete rows that fit in one list-control viewport.
+///
+/// Window families supply their recovered pixel geometry; the shared
+/// `CoolDragList` control owns the truncation to whole rows.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Validated non-negative list geometry is truncated to complete rows."
+)]
+pub(crate) const fn visible_row_capacity(viewport_height: f32, row_height: f32) -> usize {
+    assert!(
+        viewport_height >= 0.0,
+        "list viewport height must be non-negative"
+    );
+    assert!(row_height > 0.0, "list row height must be positive");
+    (viewport_height / row_height) as usize
+}
+
 /// Bound a stored first row after the list or viewport size changes.
 pub(crate) fn clamp_first_row(first_row: usize, row_count: usize, visible_rows: usize) -> usize {
     first_row.min(max_first_row(row_count, visible_rows))
@@ -214,7 +232,10 @@ pub(crate) const fn reveal_row(first_row: usize, selected: usize, visible_rows: 
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_first_row, longest_prefix_match, reveal_row, visible_range, PrefixMatch};
+    use super::{
+        clamp_first_row, longest_prefix_match, reveal_row, visible_range, visible_row_capacity,
+        PrefixMatch,
+    };
 
     #[test]
     fn prefix_search_keeps_the_first_strictly_longest_case_insensitive_match() {
@@ -242,6 +263,7 @@ mod tests {
 
     #[test]
     fn viewport_helpers_bound_offsets_and_visible_indices() {
+        assert_eq!(visible_row_capacity(194.0, 21.0), 9);
         assert_eq!(
             [
                 clamp_first_row(5, 3, 8),

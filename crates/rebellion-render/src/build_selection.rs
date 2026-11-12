@@ -1334,7 +1334,7 @@ mod tests {
         let manufacturing = ManufacturingState::new();
         let mut emitted = None;
         let mut texts = Vec::new();
-        for extra in [vec![], vec![]].into_iter().chain(frames) {
+        for extra in crate::test_support::warmed_frames(Vec::new(), frames) {
             let input = pointer_raw_input(pos, extra, egui::vec2(1400.0, 1040.0));
             let output = ctx.run(input, |ctx| {
                 if let Some(action) = draw_build_selection(

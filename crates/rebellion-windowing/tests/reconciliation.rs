@@ -2,7 +2,9 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::{open, root_detail as detail, window_focus as focus_target};
+use common::{
+    closed_event, focus_changed_event, open, root_detail as detail, window_focus as focus_target,
+};
 
 use rebellion_windowing::{
     CaptureCancelReason, CloseReason, ContentReport, ContentStatus, ReconcileReport, RouteTarget,
@@ -24,10 +26,19 @@ fn assert_reconciliation_rejected(
     before: &str,
     invalid: &[WindowId],
 ) {
+    assert_inert_reconciliation(result, invalid, &[]);
+    assert_eq!(format!("{manager:?}"), before);
+}
+
+fn assert_inert_reconciliation(
+    result: &ReconcileReport,
+    invalid: &[WindowId],
+    blocking_unpainted: &[WindowId],
+) {
     assert_eq!(result.invalid_reports, invalid);
+    assert_eq!(result.blocking_unpainted, blocking_unpainted);
     assert_eq!(result.removed, Vec::new());
     assert_eq!(result.events, Vec::new());
-    assert_eq!(format!("{manager:?}"), before);
 }
 
 #[test]
@@ -47,15 +58,10 @@ fn reconciliation_paint_absence_is_not_content_absence() {
             report(hidden, ContentStatus::Suspended),
         ],
     );
-    assert_eq!(result.removed, Vec::new());
-    assert_eq!(result.events, Vec::new());
-    assert_eq!(result.invalid_reports, Vec::new());
-    assert_eq!(result.blocking_unpainted, Vec::new());
+    assert_inert_reconciliation(&result, &[], &[]);
     assert_eq!(format!("{manager:?}"), before);
     let missing = manager.reconcile(&frame, &[]);
-    assert_eq!(missing.invalid_reports, vec![visible, hidden]);
-    assert_eq!(missing.removed, Vec::new());
-    assert_eq!(missing.events, Vec::new());
+    assert_inert_reconciliation(&missing, &[visible, hidden], &[]);
     assert_eq!(manager.visible_order(), &[visible]);
     assert_eq!(manager.presentation_history(), &[hidden]);
     assert_eq!(format!("{manager:?}"), before);
@@ -83,11 +89,7 @@ fn reconciliation_new_open_survives_old_snapshot_reports() {
     assert_eq!(result.invalid_reports, vec![new]);
     assert_eq!(
         result.events,
-        vec![WindowEvent::Closed {
-            window: old,
-            key: old_spec.key,
-            reason: CloseReason::ContentRemoved,
-        }]
+        vec![closed_event(old, old_spec.key, CloseReason::ContentRemoved,)]
     );
     assert_eq!(manager.id_for(old_spec.key), None);
     assert_eq!(manager.id_for(new_spec.key), Some(new));
@@ -107,10 +109,7 @@ fn an_unpainted_strategic_modal_is_retained_as_a_fail_closed_blocker() {
     let frame = manager.begin_frame();
     let before = format!("{manager:?}");
     let missing = manager.reconcile(&frame, &[report(underlay, ContentStatus::Ready)]);
-    assert_eq!(missing.blocking_unpainted, vec![dialog]);
-    assert_eq!(missing.invalid_reports, vec![dialog]);
-    assert_eq!(missing.removed, Vec::new());
-    assert_eq!(missing.events, Vec::new());
+    assert_inert_reconciliation(&missing, &[dialog], &[dialog]);
     let unpaintable = manager.reconcile(
         &frame,
         &[
@@ -118,10 +117,7 @@ fn an_unpainted_strategic_modal_is_retained_as_a_fail_closed_blocker() {
             report(underlay, ContentStatus::Ready),
         ],
     );
-    assert_eq!(unpaintable.blocking_unpainted, vec![dialog]);
-    assert_eq!(unpaintable.invalid_reports, Vec::new());
-    assert_eq!(unpaintable.removed, Vec::new());
-    assert_eq!(unpaintable.events, Vec::new());
+    assert_inert_reconciliation(&unpaintable, &[], &[dialog]);
     assert_eq!(format!("{manager:?}"), before);
     assert_eq!(manager.begin_frame().active_modal(), Some(dialog));
     assert_eq!(
@@ -144,10 +140,7 @@ fn unpaintable_modeless_content_is_retained_without_implicit_close() {
     let frame = manager.begin_frame();
     let before = format!("{manager:?}");
     let result = manager.reconcile(&frame, &[report(id, ContentStatus::Unpaintable)]);
-    assert_eq!(result.removed, Vec::new());
-    assert_eq!(result.blocking_unpainted, Vec::new());
-    assert_eq!(result.invalid_reports, Vec::new());
-    assert_eq!(result.events, Vec::new());
+    assert_inert_reconciliation(&result, &[], &[]);
     assert_eq!(format!("{manager:?}"), before);
     assert_eq!(manager.capture_owner(), Some(id));
     assert_eq!(manager.validate(), Ok(()));
@@ -195,25 +188,10 @@ fn explicitly_absent_modeless_content_closes_with_events() {
                 window: child,
                 reason: CaptureCancelReason::OwnerClosed
             },
-            WindowEvent::Closed {
-                window: child,
-                key: child_spec.key,
-                reason: CloseReason::OwnerClosed
-            },
-            WindowEvent::Closed {
-                window: hidden,
-                key: hidden_spec.key,
-                reason: CloseReason::OwnerClosed
-            },
-            WindowEvent::Closed {
-                window: root,
-                key: root_spec.key,
-                reason: CloseReason::ContentRemoved
-            },
-            WindowEvent::FocusChanged {
-                previous: Some(focus_target(child)),
-                current: Some(focus_target(survivor))
-            },
+            closed_event(child, child_spec.key, CloseReason::OwnerClosed),
+            closed_event(hidden, hidden_spec.key, CloseReason::OwnerClosed),
+            closed_event(root, root_spec.key, CloseReason::ContentRemoved),
+            focus_changed_event(Some(focus_target(child)), Some(focus_target(survivor)),),
         ]
     );
     assert_eq!(manager.visible_order(), &[survivor]);
@@ -237,16 +215,11 @@ fn absent_modal_reports_blocker_until_explicit_close() {
     let frame = manager.begin_frame();
     let before = format!("{manager:?}");
     let result = manager.reconcile(&frame, &[report(dialog, ContentStatus::Absent)]);
-    assert_eq!(result.blocking_unpainted, vec![dialog]);
-    assert_eq!(result.invalid_reports, Vec::new());
-    assert_eq!(result.removed, Vec::new());
-    assert_eq!(result.events, Vec::new());
+    assert_inert_reconciliation(&result, &[], &[dialog]);
     assert_eq!(format!("{manager:?}"), before);
     manager.apply(WindowCommand::Close(dialog)).unwrap();
     let late = manager.reconcile(&frame, &[report(dialog, ContentStatus::Absent)]);
-    assert_eq!(late.invalid_reports, vec![dialog]);
-    assert_eq!(late.blocking_unpainted, Vec::new());
-    assert_eq!(late.events, Vec::new());
+    assert_inert_reconciliation(&late, &[dialog], &[]);
     assert!(manager.begin_frame().pointer_allows_root());
 }
 
@@ -266,10 +239,7 @@ fn suspended_content_is_retained_without_claiming_it_painted() {
             report(dialog, ContentStatus::Suspended),
         ],
     );
-    assert_eq!(result.removed, Vec::new());
-    assert_eq!(result.invalid_reports, Vec::new());
-    assert_eq!(result.blocking_unpainted, Vec::new());
-    assert_eq!(result.events, Vec::new());
+    assert_inert_reconciliation(&result, &[], &[]);
     assert_eq!(format!("{manager:?}"), before);
     assert_eq!(manager.begin_frame().active_modal(), Some(dialog));
     assert_eq!(manager.validate(), Ok(()));
@@ -319,10 +289,7 @@ fn contradictory_or_unknown_content_reports_are_diagnosed() {
             report(late, ContentStatus::Absent),
         ],
     );
-    assert_eq!(result.invalid_reports, vec![a, b, stale, late]);
-    assert_eq!(result.removed, Vec::new());
-    assert_eq!(result.blocking_unpainted, Vec::new());
-    assert_eq!(result.events, Vec::new());
+    assert_inert_reconciliation(&result, &[a, b, stale, late], &[]);
     assert_eq!(format!("{manager:?}"), before);
     assert_eq!(open(&mut manager, detail(WindowKind::System, 5)).get(), 5);
     assert_eq!(manager.validate(), Ok(()));
@@ -342,9 +309,7 @@ fn foreign_snapshot_cannot_delete_an_equal_numeric_identity() {
     drop(foreign);
     let before = format!("{manager:?}");
     let result = manager.reconcile(&frame, &[report(other, ContentStatus::Absent)]);
-    assert_eq!(result.invalid_reports, vec![other]);
-    assert_eq!(result.removed, Vec::new());
-    assert_eq!(result.events, Vec::new());
+    assert_inert_reconciliation(&result, &[other], &[]);
     assert_eq!(format!("{manager:?}"), before);
     let local_frame = manager.begin_frame().clone();
     assert_eq!(
@@ -400,9 +365,7 @@ fn retained_children_prevent_an_absent_owner_from_discarding_live_content() {
             report(dialog, ContentStatus::Absent),
         ],
     );
-    assert_eq!(result.invalid_reports, vec![owner]);
-    assert_eq!(result.blocking_unpainted, vec![dialog]);
-    assert_eq!(result.removed, Vec::new());
+    assert_inert_reconciliation(&result, &[owner], &[dialog]);
     assert_eq!(format!("{manager:?}"), before);
     assert_eq!(manager.validate(), Ok(()));
 }
@@ -425,9 +388,7 @@ fn same_key_replacement_survives_a_late_report_for_the_old_identity() {
     };
     let before = format!("{manager:?}");
     let result = manager.reconcile(&frame, &[report(old, ContentStatus::Absent)]);
-    assert_eq!(result.invalid_reports, vec![old]);
-    assert_eq!(result.removed, Vec::new());
-    assert_eq!(result.events, Vec::new());
+    assert_inert_reconciliation(&result, &[old], &[]);
     assert_eq!(manager.id_for(spec.key), Some(fresh));
     assert_eq!(format!("{manager:?}"), before);
 }
@@ -465,20 +426,9 @@ fn multiple_absent_roots_deliver_cancellation_teardown_then_only_final_focus() {
                 window: a,
                 reason: CaptureCancelReason::OwnerClosed
             },
-            WindowEvent::Closed {
-                window: b,
-                key: b_spec.key,
-                reason: CloseReason::ContentRemoved
-            },
-            WindowEvent::Closed {
-                window: a,
-                key: a_spec.key,
-                reason: CloseReason::ContentRemoved
-            },
-            WindowEvent::FocusChanged {
-                previous: Some(focus_target(a)),
-                current: Some(focus_target(survivor))
-            },
+            closed_event(b, b_spec.key, CloseReason::ContentRemoved),
+            closed_event(a, a_spec.key, CloseReason::ContentRemoved),
+            focus_changed_event(Some(focus_target(a)), Some(focus_target(survivor))),
         ]
     );
     assert_eq!(manager.visible_order(), &[survivor]);

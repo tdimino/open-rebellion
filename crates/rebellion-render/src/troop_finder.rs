@@ -180,7 +180,7 @@ pub fn rows(
         }
     }
 
-    rows.sort_by_cached_key(|row| row.name.to_ascii_lowercase());
+    finder_common::sort_rows_by_name(&mut rows);
     rows
 }
 
@@ -234,12 +234,7 @@ impl TroopFinderState {
 }
 
 /// Rows the list shows at once: 159 / 25 = 6.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Six whole rows of 25 in a list 159 tall."
-)]
-const VISIBLE_ROWS: usize = (LIST.3 / ROW_HEIGHT) as usize;
+const VISIBLE_ROWS: usize = crate::list_control::visible_row_capacity(LIST.3, ROW_HEIGHT);
 
 const FINDER_CONFIG: finder_common::SideFinderConfig<TroopTab> = finder_common::side_finder_config! {
     TroopTab, &TroopTab::ALL;
@@ -395,10 +390,6 @@ mod tests {
         crate::test_support::add_transport_fleet(world, system, is_alliance, 4)
     }
 
-    fn names(rows: &[TroopFinderRow]) -> Vec<&str> {
-        rows.iter().map(|row| row.name.as_str()).collect()
-    }
-
     fn managed_navigation() -> (
         WindowManager,
         TroopFinderState,
@@ -407,14 +398,10 @@ mod tests {
         FocusTarget,
         egui::Context,
     ) {
-        let (manager, state, id) = managed_finder();
-        (
-            manager,
-            state,
-            id,
-            focus(id, TROOP_FINDER_NAME_CONTROL),
-            focus(id, TROOP_FINDER_LIST_CONTROL),
-            egui::Context::default(),
+        crate::test_support::finder_navigation_fixture(
+            managed_finder(),
+            TROOP_FINDER_NAME_CONTROL,
+            TROOP_FINDER_LIST_CONTROL,
         )
     }
 
@@ -535,7 +522,7 @@ mod tests {
         let transport = TroopTransportState::default();
 
         let alliance = rows(&galaxy.world, TroopTab::Alliance, &transport);
-        assert_eq!(names(&alliance), ["Yavin"]);
+        assert_eq!(finder_common::row_names(&alliance), ["Yavin"]);
         assert_eq!(alliance[0].counts[0].count, 2, "Army Regiment column");
         assert_eq!(alliance[0].counts[1].count, 1, "Fleet Regiment column");
         assert_eq!(alliance[0].counts[2].count, 0);
@@ -543,7 +530,7 @@ mod tests {
         let imperial = rows(&galaxy.world, TroopTab::Imperial, &transport);
         // FUN_0046ea10 walks all systems; ground troops are shown
         // regardless of fog.
-        assert_eq!(names(&imperial), ["Coruscant"]);
+        assert_eq!(finder_common::row_names(&imperial), ["Coruscant"]);
         assert_eq!(imperial[0].counts[0].count, 1, "Stormtrooper column");
     }
 
@@ -592,7 +579,7 @@ mod tests {
         let transport = TroopTransportState::default();
 
         let listed = rows(&world, TroopTab::Alliance, &transport);
-        assert_eq!(names(&listed), ["Alpha", "beta"]);
+        assert_eq!(finder_common::row_names(&listed), ["Alpha", "beta"]);
     }
 
     #[test]
@@ -983,7 +970,7 @@ mod tests {
         let mut galaxy = galaxy();
         add_alliance_alderaan(&mut galaxy);
         assert_eq!(
-            names(&rows(
+            finder_common::row_names(&rows(
                 &galaxy.world,
                 TroopTab::Alliance,
                 &TroopTransportState::default(),

@@ -1034,7 +1034,7 @@ mod tests {
         let mut response = GameMenuResponse::Open;
         let mut rect = egui::Rect::NOTHING;
         let mut texts = Vec::new();
-        for (frame, extra) in [vec![], vec![]].into_iter().chain(frames).enumerate() {
+        for (frame, extra) in crate::test_support::warmed_frames(Vec::new(), frames).enumerate() {
             let pointer = if frame >= 2 {
                 rect = ctx
                     .memory(|memory| memory.area_rect(id))

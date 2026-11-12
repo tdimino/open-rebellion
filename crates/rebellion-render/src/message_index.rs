@@ -11,7 +11,9 @@ use egui_macroquad::egui::{self, Color32};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::list_control::{clamp_first_row, row_click, wheel_delta, wheel_step, RowClick};
+use crate::list_control::{
+    clamp_first_row, row_click, visible_row_capacity, wheel_delta, wheel_step, RowClick,
+};
 use crate::message_log::{
     GameMessage, MessageId, MessageLog, MessageRail, MessageTarget, POST_SILENTLY,
 };
@@ -157,12 +159,7 @@ const TEXT_AREA_HEIGHT: f32 = 80.0;
 const BODY_LINE_HEIGHT: f32 = 16.0;
 
 /// Visible rows the list shows at once: `194 / 21 = 9`.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Nine whole rows of 21 in a list 194 tall."
-)]
-const VISIBLE_ROWS: usize = (LIST_HEIGHT / ROW_HEIGHT) as usize;
+const VISIBLE_ROWS: usize = visible_row_capacity(LIST_HEIGHT, ROW_HEIGHT);
 
 // ---------------------------------------------------------------------------
 // Category control specs (unchanged)
@@ -2999,7 +2996,7 @@ mod tests {
         let mut all_actions = Vec::new();
 
         let first = frames.first().map_or(egui::Pos2::ZERO, |(pos, _)| *pos);
-        let full_frames = [(first, vec![]), (first, vec![])].into_iter().chain(frames);
+        let full_frames = crate::test_support::warmed_frames((first, Vec::new()), frames);
 
         for (index, (pos, events)) in full_frames.enumerate() {
             // Extract modifier state from PointerButton events so that

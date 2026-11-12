@@ -42,7 +42,17 @@ Use `RenderRun<Action>` with `run_render_frames` when a window test needs the
 actions plus final-frame text and bitmap traces. Use
 `run_routed_render_frames` for manager-owned pointer input: it rebuilds the
 frozen snapshot and normalized pointer records for every frame. Finder focus
-tests that must retain one egui context can use `run_action_frames`.
+tests that must retain one egui context can use `run_action_frames`. Build the
+manager, name/list focus targets, and persistent egui context with
+`finder_navigation_fixture` instead of recreating that tuple in each Finder
+family. Pointer tests that need egui's standard two layout frames before their
+action frames should use `warmed_frames`, passing the initial pointer or frame
+metadata once instead of spelling out the warm-up sequence per window.
+
+Window-manager integration tests should use the constructors in
+`crates/rebellion-windowing/tests/common/mod.rs`. In particular,
+`open_root_detail` owns the standard modeless strategic-root setup; keep an
+explicit `WindowSpec` only when the test needs to inspect or modify that spec.
 
 For lower-level input construction, prefer `pointer_raw_input` over rewriting
 placeholder pointer-button coordinates in each module. Use
@@ -73,11 +83,13 @@ must use `crate::list_control::reveal_row` instead of repeating the
 first-visible-row arithmetic in a Finder, Encyclopedia, or detail window.
 The same module owns the control's ordered prefix scoring, bounded keyboard
 movement, visible range and first-row bounds, wheel stepping and hover gating,
-and row click/double-click interpretation. Window modules should adapt those
-results to their own focus, selection, and open actions rather than recreating
-the control behavior. Keep scrollbar artwork, thumb dragging, and track paging
-in `scroll_bar`; keep window-specific row painting and edit-field policy in the
-owning window family.
+row click/double-click interpretation, and whole-row viewport capacity. Window
+modules should adapt those results to their own focus, selection, and open
+actions rather than recreating the control behavior. Finder row families
+should use `finder_common::sort_rows_by_name`, which deliberately sorts by the
+same label the shared prefix/list control displays. Keep scrollbar artwork,
+thumb dragging, and track paging in `scroll_bar`; keep window-specific row
+painting and edit-field policy in the owning window family.
 
 For manager-owned singleton fixtures, use `open_singleton_window`,
 `assert_managed_close_receipt`, and `assert_minimized_reopen` instead of

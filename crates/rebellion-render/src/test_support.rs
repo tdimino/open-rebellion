@@ -776,6 +776,16 @@ pub(crate) fn run_action_frames<Action>(
     emitted
 }
 
+/// Prepend the two idle layout frames required before interacting with a newly
+/// opened egui area. `initial` carries the pointer position or other frame
+/// metadata that must remain stable while the area settles.
+pub(crate) fn warmed_frames<T: Clone>(
+    initial: T,
+    frames: impl IntoIterator<Item = T>,
+) -> impl Iterator<Item = T> {
+    [initial.clone(), initial].into_iter().chain(frames)
+}
+
 /// Open one manager-owned singleton and require its content publication to
 /// accept the exact manager receipt.
 pub(crate) fn open_managed_singleton(
@@ -876,6 +886,30 @@ pub(crate) fn managed_finder_fixture<State: ManagedFinderFixture>(
         state.commit_finder(prepared, transition)
     });
     (manager, state, id)
+}
+
+/// Add the shared name/list focus targets and persistent egui context to one
+/// manager-owned Finder fixture.
+pub(crate) fn finder_navigation_fixture<State>(
+    (manager, state, id): (WindowManager, State, WindowId),
+    name_control: ControlId,
+    list_control: ControlId,
+) -> (
+    WindowManager,
+    State,
+    WindowId,
+    FocusTarget,
+    FocusTarget,
+    egui::Context,
+) {
+    (
+        manager,
+        state,
+        id,
+        control_focus(id, name_control),
+        control_focus(id, list_control),
+        egui::Context::default(),
+    )
 }
 
 /// Exercise the direct-fixture singleton lifecycle while the owning test

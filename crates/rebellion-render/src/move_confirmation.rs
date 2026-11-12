@@ -1026,7 +1026,7 @@ mod tests {
         draw: impl FnMut(&egui::Context, &mut S, CockpitLayout, &mut BmpCache) -> Option<A>,
     ) -> Option<A> {
         let pos = window_rect(layout).min + egui::vec2(x, y) * layout.scale;
-        let frames = [vec![], vec![]].into_iter().chain(frames).map(|extra| {
+        let frames = crate::test_support::warmed_frames(Vec::new(), frames).map(|extra| {
             let mut events = vec![egui::Event::PointerMoved(pos)];
             events.extend(extra.into_iter().map(|event| match event {
                 egui::Event::PointerButton { pressed, .. } => press(pos, pressed),

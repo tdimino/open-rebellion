@@ -1676,7 +1676,7 @@ mod tests {
             empty,
         } = draw_harness((x, y));
         let mut emitted = None;
-        for extra in [vec![], vec![]].into_iter().chain(frames) {
+        for extra in crate::test_support::warmed_frames(Vec::new(), frames) {
             let _ = ctx.run(pointer_input(pos, extra), |ctx| {
                 if let Some(action) = draw_status_window(
                     ctx,

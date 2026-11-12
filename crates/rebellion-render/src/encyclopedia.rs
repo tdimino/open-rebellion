@@ -1206,7 +1206,6 @@ fn draw_surface_index(
         .len()
         .saturating_sub(ORIGINAL_INDEX_VISIBLE_ROWS);
     let list_rect = original_index_list_rect(window_rect, scale);
-    let list_painter = ui.painter().with_clip_rect(list_rect);
     if let Some(scroll) = wheel_scroll(ui, list_rect, state.scroll_row, max_scroll) {
         state.scroll_row = scroll;
     }
@@ -1225,42 +1224,87 @@ fn draw_surface_index(
         )
         .round() as usize;
     }
-    for (visible_row, topic) in surface
-        .topics
+    if let Some(row_action) = draw_encyclopedia_index_rows(
+        ui,
+        window_rect,
+        scale,
+        &surface.topics,
+        state.scroll_row,
+        effective_selection,
+        "authentic-encyclopedia-row",
+        true,
+        |topic| (topic.object_id, topic.title),
+    ) {
+        let (object_id, action_kind) = match row_action {
+            EncyclopediaIndexRowAction::Select(object_id) => {
+                (object_id, EncyclopediaSurfaceAction::SelectTopic(object_id))
+            }
+            EncyclopediaIndexRowAction::Open(object_id) => {
+                (object_id, EncyclopediaSurfaceAction::OpenTopic(object_id))
+            }
+        };
+        bind_search_to_selection(state, surface, Some(object_id));
+        *action = Some(action_kind);
+    }
+    search_rect
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EncyclopediaIndexRowAction {
+    Select(u32),
+    Open(u32),
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Recovered list geometry, identity and family row adapters are separate contracts."
+)]
+fn draw_encyclopedia_index_rows<'a, Item>(
+    ui: &mut egui::Ui,
+    window_rect: egui::Rect,
+    scale: f32,
+    items: &'a [Item],
+    scroll_row: usize,
+    selected_object_id: Option<u32>,
+    row_id: &'static str,
+    double_click_opens: bool,
+    mut row_data: impl FnMut(&'a Item) -> (u32, &'a str),
+) -> Option<EncyclopediaIndexRowAction> {
+    let list_rect = original_index_list_rect(window_rect, scale);
+    let list_painter = ui.painter().with_clip_rect(list_rect);
+    let font = egui::FontId::proportional(14.0 * scale);
+    let mut action = None;
+    for (visible_row, item) in items
         .iter()
-        .skip(state.scroll_row)
+        .skip(scroll_row)
         .take(ORIGINAL_INDEX_VISIBLE_ROWS)
         .enumerate()
     {
+        let (object_id, label) = row_data(item);
         let y = 137.0 + visible_row as f32 * ORIGINAL_INDEX_ROW_HEIGHT;
-        let row_rect = original_index_row_rect(window_rect, scale, visible_row);
-        let selected = Some(topic.object_id) == effective_selection;
         let response = ui.interact(
-            row_rect,
-            ui.id()
-                .with(("authentic-encyclopedia-row", topic.object_id)),
+            original_index_row_rect(window_rect, scale, visible_row),
+            ui.id().with((row_id, object_id)),
             egui::Sense::click(),
         );
         list_painter.text(
             encyclopedia_point(window_rect, scale, 40.0, y + 1.0),
             egui::Align2::LEFT_TOP,
-            topic.title,
-            list_font.clone(),
-            if selected {
+            label,
+            font.clone(),
+            if Some(object_id) == selected_object_id {
                 Color32::WHITE
             } else {
                 Color32::from_gray(128)
             },
         );
-        if response.double_clicked() {
-            bind_search_to_selection(state, surface, Some(topic.object_id));
-            *action = Some(EncyclopediaSurfaceAction::OpenTopic(topic.object_id));
+        if double_click_opens && response.double_clicked() {
+            action = Some(EncyclopediaIndexRowAction::Open(object_id));
         } else if response.clicked() {
-            bind_search_to_selection(state, surface, Some(topic.object_id));
-            *action = Some(EncyclopediaSurfaceAction::SelectTopic(topic.object_id));
+            action = Some(EncyclopediaIndexRowAction::Select(object_id));
         }
     }
-    search_rect
+    action
 }
 
 fn draw_surface_topic(
@@ -1735,7 +1779,6 @@ fn draw_original_index_content(
         .len()
         .saturating_sub(ORIGINAL_INDEX_VISIBLE_ROWS);
     let list_rect = original_index_list_rect(window_rect, scale);
-    let list_painter = painter.with_clip_rect(list_rect);
     outcome.scroll_row = wheel_scroll(ui, list_rect, content.scroll_row, max_scroll);
     if max_scroll > 0 {
         let next_scroll = draw_encyclopedia_scrollbar(
@@ -1756,35 +1799,21 @@ fn draw_original_index_content(
         }
     }
 
-    for (visible_row, entry) in content
-        .entries
-        .iter()
-        .skip(content.scroll_row)
-        .take(ORIGINAL_INDEX_VISIBLE_ROWS)
-        .enumerate()
-    {
-        let y = 137.0 + visible_row as f32 * ORIGINAL_INDEX_ROW_HEIGHT;
-        let row_rect = original_index_row_rect(window_rect, scale, visible_row);
-        let selected = Some(entry.object_id) == content.selected_object_id;
-        let response = ui.interact(
-            row_rect,
-            ui.id().with(("encyclopedia-index-row", entry.object_id)),
-            egui::Sense::click(),
-        );
-        list_painter.text(
-            encyclopedia_point(window_rect, scale, 40.0, y + 1.0),
-            egui::Align2::LEFT_TOP,
-            &entry.name,
-            list_font.clone(),
-            if selected {
-                Color32::WHITE
-            } else {
-                Color32::from_gray(128)
-            },
-        );
-        if response.clicked() {
-            outcome.selected_object_id = Some(entry.object_id);
-        }
+    if let Some(row_action) = draw_encyclopedia_index_rows(
+        ui,
+        window_rect,
+        scale,
+        content.entries,
+        content.scroll_row,
+        content.selected_object_id,
+        "encyclopedia-index-row",
+        false,
+        |entry| (entry.object_id, &entry.name),
+    ) {
+        outcome.selected_object_id = Some(match row_action {
+            EncyclopediaIndexRowAction::Select(object_id)
+            | EncyclopediaIndexRowAction::Open(object_id) => object_id,
+        });
     }
 }
 

@@ -787,6 +787,18 @@ pub(crate) trait FinderRowName {
     fn finder_name(&self) -> &str;
 }
 
+/// Sort one Finder family's rows by the case-insensitive label exposed to the
+/// original shared name-prefix/list control.
+pub(crate) fn sort_rows_by_name<Row: FinderRowName>(rows: &mut [Row]) {
+    rows.sort_by_cached_key(|row| row.finder_name().to_ascii_lowercase());
+}
+
+/// Borrow the displayed row names for concise family-level assertions.
+#[cfg(test)]
+pub(crate) fn row_names<Row: FinderRowName>(rows: &[Row]) -> Vec<&str> {
+    rows.iter().map(FinderRowName::finder_name).collect()
+}
+
 /// One original Finder count cell. The port currently has no per-unit usable
 /// bit, so populated rows initialize `all_usable` to true.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

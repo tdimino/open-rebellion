@@ -1670,7 +1670,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let mut emitted = None;
-        for extra in [vec![], vec![]].into_iter().chain(frames) {
+        for extra in crate::test_support::warmed_frames(Vec::new(), frames) {
             let input = pointer_raw_input(pos, extra, egui::vec2(700.0, 520.0));
             let _ = ctx.run(input, |ctx| {
                 if let Some(action) = draw_mission_dialog(ctx, world, state, layout, &mut cache) {
