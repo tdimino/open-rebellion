@@ -6531,13 +6531,7 @@ mod tests {
         let destroyer = world
             .capital_ship_classes
             .insert(crate::world::CapitalShipClass::default());
-        let death_star = world
-            .capital_ship_classes
-            .insert(crate::world::CapitalShipClass {
-                dat_id: crate::ids::DatId::new(crate::world::DEATH_STAR_CLASS_ID),
-                family: 0x18,
-                ..Default::default()
-            });
+        let death_star = crate::test_support::death_star_class(world);
         let fleet = world.fleets.insert(crate::world::Fleet {
             location: system,
             capital_ships: vec![

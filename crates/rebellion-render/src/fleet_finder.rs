@@ -633,17 +633,9 @@ mod tests {
         screen_size: egui::Vec2,
         time: Option<f64>,
     ) -> egui::RawInput {
-        let mut events = vec![egui::Event::PointerMoved(pos)];
-        events.extend(extra.into_iter().map(|event| match event {
-            egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-            other => other,
-        }));
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, screen_size)),
-            time,
-            events,
-            ..Default::default()
-        }
+        let mut input = crate::test_support::pointer_raw_input(pos, extra, screen_size);
+        input.time = time;
+        input
     }
 
     fn draw_test_finder(

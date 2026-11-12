@@ -5,23 +5,13 @@ use std::collections::BTreeSet;
 use common::{menu as menu_spec, open};
 
 use rebellion_windowing::{
-    BubblePolicy, Cardinality, ContentReport, ContentStatus, ExistingOpenPolicy, FocusOnOpen,
-    FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy, ReconcileReport,
-    RouteTarget, RoutingSnapshot, StackBand, SubjectId, WindowCommand, WindowError, WindowId,
-    WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec,
+    BubblePolicy, ContentReport, ContentStatus, FocusOnOpen, FocusTarget, InputPolicy,
+    PresentationPolicy, ReconcileReport, RouteTarget, RoutingSnapshot, SubjectId, WindowCommand,
+    WindowError, WindowId, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec,
 };
 
 fn policy(input: InputPolicy) -> WindowPolicy {
-    WindowPolicy {
-        cardinality: Cardinality::Subject { max_open: None },
-        band: StackBand::Normal,
-        placement: OpenPlacement::TopOfBand,
-        existing: ExistingOpenPolicy::RaiseRestore,
-        input,
-        presentation: PresentationPolicy::History,
-        focus_on_open: FocusOnOpen::Window,
-        restoration: FocusRestoration::PreviousEligible,
-    }
+    WindowPolicy::restorable_history(input, FocusOnOpen::Window)
 }
 
 fn spec(kind: WindowKind, subject: u64, input: InputPolicy) -> WindowSpec {

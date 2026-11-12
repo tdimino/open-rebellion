@@ -1,15 +1,6 @@
 //! Native acquisition and atomic installation for Encyclopedia mod overlays.
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::collections::BTreeMap;
-#[cfg(not(target_arch = "wasm32"))]
-use std::fs::File;
-#[cfg(not(target_arch = "wasm32"))]
-use std::path::Path;
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::Arc;
-
-#[cfg(not(target_arch = "wasm32"))]
 use rebellion_data::encyclopedia_overlay::{
     parse_encyclopedia_overlay, referenced_artwork_paths, EncyclopediaOverlayLayer,
 };
@@ -24,7 +15,9 @@ use rebellion_data::mods::ModManifest;
 use rebellion_data::mods::{ModContent, ModContentTarget, ModRuntime};
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::encyclopedia_native_io::{read_open_file_bounded, BoundedReadError};
+use crate::encyclopedia_native_io::{
+    read_open_file_bounded, Arc, BTreeMap, BoundedReadError, File, Path,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_MOD_ARTWORK_BYTES: usize = 128 * 1024 * 1024;

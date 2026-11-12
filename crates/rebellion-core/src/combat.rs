@@ -173,8 +173,7 @@ mod tests {
     fn a_fleet_holding_only_a_ship_on_its_own_leg_is_not_present_for_either_side() {
         use crate::world::ShipTransit;
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let origin = world.systems.insert(System::default());
+            let (mut world, [origin]) = crate::test_support::bare_systems();
             let system = battle_system(&mut world, is_alliance);
             let class = capital_class(&mut world, is_alliance);
             let mut ship = ShipInstance::new(class, 100, is_alliance);

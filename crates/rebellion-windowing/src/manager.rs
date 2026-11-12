@@ -135,6 +135,17 @@ pub enum WindowTransition {
     },
 }
 
+impl WindowTransition {
+    /// Newly allocated identity, when this transition is an open.
+    #[must_use]
+    pub const fn opened_id(&self) -> Option<WindowId> {
+        match self {
+            Self::Opened { id } => Some(*id),
+            _ => None,
+        }
+    }
+}
+
 /// Identity associated with a successful no-op transition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionSubject {
@@ -2100,14 +2111,12 @@ mod tests {
     }
 
     fn open_id(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
-        match manager
+        manager
             .apply(WindowCommand::Open(spec))
             .expect("window opens")
             .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected open, got {other:?}"),
-        }
+            .opened_id()
+            .expect("expected open transition")
     }
 
     fn focused_pair() -> (WindowManager, WindowId, WindowId) {

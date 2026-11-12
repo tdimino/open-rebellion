@@ -417,18 +417,12 @@ impl StatusWindowState {
     pub fn is_open(&self) -> bool {
         self.window.is_some()
     }
-
-    /// Whether `point` falls on the open window, so the galaxy map under it
-    /// takes no input.
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        crate::singleton_window_common::contains_screen_point(
-            self.window.is_some(),
-            window_rect(layout),
-            point,
-        )
-    }
 }
+
+crate::singleton_window_common::impl_singleton_contains_screen_point!(
+    StatusWindowState,
+    window_rect
+);
 
 impl_singleton_window_routing!(
     StatusWindowState,

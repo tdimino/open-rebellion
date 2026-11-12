@@ -871,18 +871,13 @@ impl BlockadeSystem {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::carriage::ProductRoom;
-    use crate::dat::{Faction, SectorGroup};
-    use crate::ids::DatId;
+    #[allow(unused_imports)]
+    use crate::test_support::world_fixture_prelude::*;
     use crate::tick::TickEvent;
-    use crate::world::{ControlKind, Fleet, GameWorld, Sector, System, TroopUnit};
+    use crate::world::TroopUnit;
 
     fn tick(n: u64) -> TickEvent {
         TickEvent { tick: n }

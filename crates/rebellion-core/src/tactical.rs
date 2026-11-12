@@ -332,7 +332,7 @@ fn original_navigation_point_sets(
 /// Stable production identity for one battle participant. Slotmap keys remain
 /// runtime-only; the original DAT identity and fleet roster index survive any
 /// tactical render reordering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TacticalObjectIdentity {
     pub class_dat_id: DatId,
     pub fleet_roster_index: usize,
@@ -342,7 +342,7 @@ pub struct TacticalObjectIdentity {
 /// Initial retained-mode world coordinate recovered from the original battle
 /// setup. The existing 2D simulation coordinates remain separate until its
 /// movement and scale rules are recovered.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct TacticalWorldPosition {
     pub x: f32,
     pub y: f32,
@@ -350,7 +350,7 @@ pub struct TacticalWorldPosition {
 }
 
 /// Source retained-mode direction or velocity vector.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct TacticalWorldVector {
     pub x: f32,
     pub y: f32,
@@ -557,7 +557,7 @@ impl TacticalTactic {
 // ---------------------------------------------------------------------------
 
 /// One individual ship hull participating in the battle.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[allow(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
@@ -768,7 +768,7 @@ impl TacticalFighterRecoveryState {
 }
 
 /// The five selected-capital condition values consumed by the original HUD.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TacticalSubsystemCondition {
     pub shields: u8,
     pub weapons: u8,
@@ -778,7 +778,7 @@ pub struct TacticalSubsystemCondition {
 }
 
 /// Installed subsystem components passed to the original tactical constructor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TacticalSubsystemCapacity {
     pub shields: bool,
     pub weapons: bool,
@@ -4533,20 +4533,11 @@ impl BattleSession {
                 weapon_recharge_rate: class.weapon_recharge_rate as f32
                     * ORIGINAL_WEAPON_RECHARGE_SCALE,
                 shield_recharge_rate: class.shield_recharge_rate as f32,
-                shield_recharge_carry: 0.0,
-                weapon_recharge_queue: Vec::new(),
-                attack_target: None,
-                manual_targets: Vec::new(),
-                escort_target: None,
-                contents: Vec::new(),
-                retreating: false,
-                retreat_progress: 0.0,
-                retreated: false,
                 outstanding_hits: u32::from(subsystem_damage.shields)
                     + u32::from(subsystem_damage.tractor)
                     + u32::from(subsystem_damage.engines)
                     + u32::from(subsystem_damage.hyperdrive),
-                repair_timer_steps: 0,
+                ..TacticalShip::default()
             });
         }
 

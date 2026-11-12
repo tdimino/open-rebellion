@@ -134,11 +134,11 @@ impl BombardRefusal {
             Self::NoDeathStar => (8, 8),
             Self::MixedHolders => (1, 0x14),
             Self::Destroyed => (1, 0x22),
-            Self::NoTeam => (1, 0x16),
-            Self::FleetRefused => (1, 1),
-            Self::NoShip => (8, 1),
-            Self::LastShipUnfinished => (1, 0x10),
-            Self::LastShipEnRoute => (1, 0x11),
+            Self::NoTeam => FleetCommandRefusal::NoTeam.status(),
+            Self::FleetRefused => FleetCommandRefusal::FleetRefused.status(),
+            Self::NoShip => ShipsRefusal::NoShip.status(),
+            Self::LastShipUnfinished => ShipsRefusal::Unfinished.status(),
+            Self::LastShipEnRoute => ShipsRefusal::EnRoute.status(),
         }
     }
 }
@@ -153,6 +153,19 @@ pub enum ShipsRefusal {
     Unfinished,
     /// The last ship walked is completed but en route (bit 4).
     EnRoute,
+}
+
+impl ShipsRefusal {
+    /// The terminal two-word status retained by `FUN_004ffa70.c:15-60` while
+    /// it walks the fleet's capital ships.
+    #[must_use]
+    pub(crate) const fn status(self) -> (u32, u32) {
+        match self {
+            Self::NoShip => (8, 1),
+            Self::Unfinished => (1, 0x10),
+            Self::EnRoute => (1, 0x11),
+        }
+    }
 }
 
 impl From<ShipsRefusal> for BombardRefusal {
@@ -171,6 +184,19 @@ pub(crate) enum FleetCommandRefusal {
     NoTeam,
     FleetRefused,
     Ships(ShipsRefusal),
+}
+
+impl FleetCommandRefusal {
+    /// The shared command status: `FUN_00553770` supplies no-team, while
+    /// `FUN_004f9860` through `FUN_004ffa70` supplies fleet and ship refusal.
+    #[must_use]
+    pub(crate) const fn status(self) -> (u32, u32) {
+        match self {
+            Self::NoTeam => (1, 0x16),
+            Self::FleetRefused => (1, 1),
+            Self::Ships(refusal) => refusal.status(),
+        }
+    }
 }
 
 impl From<FleetCommandRefusal> for BombardRefusal {

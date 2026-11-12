@@ -15,16 +15,15 @@ use rebellion_core::world::{
     CapitalShipClass, Character, ControlKind, GameWorld, Sector, SpecialForceUnit,
 };
 use rebellion_windowing::{
-    Cardinality, ContentReport, ContentStatus, ControlId, ExistingEffect, ExistingOpenPolicy,
-    FocusOnOpen, FocusRestoration, FocusTarget, InputPolicy, OpenPlacement, PresentationPolicy,
-    RouteTarget, RoutingSnapshot, StackBand, SubjectId, WindowCommand, WindowId, WindowKey,
-    WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
+    ContentReport, ContentStatus, ControlId, ExistingEffect, FocusOnOpen, FocusTarget, InputPolicy,
+    RouteTarget, RoutingSnapshot, SubjectId, WindowCommand, WindowId, WindowKey, WindowKind,
+    WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
 };
 
 use crate::cockpit::{CockpitLayout, CockpitViewport};
 use crate::strategic_window_common;
 use crate::windowing_input::{
-    FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+    FrameInputRouter, InputDisposition, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
 };
 
 thread_local! {
@@ -276,6 +275,26 @@ pub(crate) fn window_point(
     )
 }
 
+#[cfg(test)]
+macro_rules! define_detail_window_point {
+    ($name:ident, $origin:expr) => {
+        fn $name(x: f32, y: f32) -> egui_macroquad::egui::Pos2 {
+            $crate::test_support::window_point(
+                $crate::test_support::scaled_full_layout(),
+                $origin,
+                (x, y),
+            )
+        }
+    };
+}
+
+#[cfg(test)]
+pub(crate) use define_detail_window_point;
+
+pub(crate) fn foreground_layer(id: egui::Id) -> egui::LayerId {
+    egui::LayerId::new(egui::Order::Foreground, id)
+}
+
 /// Egui input for one deterministic 20 Hz renderer-test frame.
 pub(crate) fn timed_raw_input(
     index: usize,
@@ -298,6 +317,28 @@ pub(crate) fn raw_input(events: Vec<egui::Event>, screen_size: egui::Vec2) -> eg
         events,
         ..Default::default()
     }
+}
+
+/// Assert that an unhandled key owned by a strategic window remains blocked
+/// from the root for the lifetime of the frozen routing snapshot.
+pub fn assert_unhandled_window_key_blocks_root(
+    snapshot: &RoutingSnapshot,
+    window: WindowId,
+    event: InputEventId,
+) {
+    let mut router = FrameInputRouter::default();
+    router.begin_frame(event.frame, snapshot);
+    router.collect_keyboard(event);
+    assert_eq!(
+        router.keyboard_recipient(event),
+        InputRecipient::Window(window)
+    );
+    router.report_key(
+        event,
+        InputRecipient::Window(window),
+        InputDisposition::Unhandled,
+    );
+    assert!(!router.claim_root(event));
 }
 
 pub(crate) fn full_raw_input(events: Vec<egui::Event>) -> egui::RawInput {
@@ -342,16 +383,7 @@ pub(crate) fn routing_window_spec(subject: u64, input: InputPolicy) -> WindowSpe
     WindowSpec {
         key: WindowKey::contextual(WindowKind::System, SubjectId::new(2, subject)),
         owner: WindowOwner::StrategicRoot,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Subject { max_open: None },
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::RaiseRestore,
-            input,
-            presentation: PresentationPolicy::History,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
+        policy: WindowPolicy::restorable_history(input, FocusOnOpen::Window),
     }
 }
 
@@ -371,6 +403,96 @@ pub(crate) fn assert_finder_selection(
     assert_eq!(actual, Some(expected));
     assert_eq!(actual_name, expected_name);
 }
+
+pub(crate) fn assert_painted_at(
+    painted: &[(u32, egui::Pos2)],
+    expected: impl IntoIterator<Item = (u32, egui::Pos2)>,
+) {
+    for (id, point) in expected {
+        assert!(
+            painted.contains(&(id, point)),
+            "{id} at {point:?} in {painted:?}"
+        );
+    }
+}
+
+pub(crate) fn assert_detail_chrome(
+    painted: &[(u32, egui::Pos2)],
+    background: u32,
+    title: u32,
+    at: impl Fn(f32, f32) -> egui::Pos2,
+) {
+    assert_painted_at(
+        painted,
+        [
+            (background, at(0.0, 0.0)),
+            (title, at(2.0, 2.0)),
+            (strategic_window_common::SECTOR_ART.0, at(3.0, 3.0)),
+            (strategic_window_common::MINIMIZE_ART.0, at(204.0, 3.0)),
+            (strategic_window_common::CLOSE_ART.0, at(218.0, 3.0)),
+        ],
+    );
+}
+
+#[cfg(test)]
+macro_rules! assert_indexed_finder_selection {
+    ($state:expr, $expected:expr, $name:expr $(,)?) => {{
+        let window = $state.window.as_ref().expect("open Finder fixture");
+        $crate::test_support::assert_finder_selection(
+            window.chosen,
+            &window.ui.name,
+            $expected,
+            $name,
+        );
+    }};
+}
+
+#[cfg(test)]
+pub(crate) use assert_indexed_finder_selection;
+
+pub(crate) fn assert_existing_noop(transition: &WindowTransition, expected: WindowId) {
+    assert!(matches!(
+        transition,
+        WindowTransition::Existing {
+            id,
+            effect: ExistingEffect::NoOp,
+        } if *id == expected
+    ));
+}
+
+pub(crate) fn commit_replacement(
+    manager: &mut WindowManager,
+    old: WindowId,
+    new: WindowSpec,
+    name: &str,
+) -> (WindowTransition, WindowId) {
+    let committed = manager
+        .apply(WindowCommand::Replace { old, new })
+        .unwrap_or_else(|error| panic!("fresh {name} context replaces atomically: {error:?}"));
+    let new = match committed.transition {
+        WindowTransition::Replaced { new, .. } => new,
+        ref other => panic!("expected {name} replacement, got {other:?}"),
+    };
+    (committed.transition, new)
+}
+
+#[cfg(test)]
+macro_rules! commit_prepared_replacement {
+    ($manager:expr, $state:expr, $old:expr, $prepared:expr, $name:literal) => {{
+        let prepared = $prepared;
+        let (transition, new) = $crate::test_support::commit_replacement(
+            $manager,
+            $old,
+            prepared.spec($crate::windowing_policy::command_context_subject(3)),
+            $name,
+        );
+        assert_eq!($state.commit_open(prepared, &transition), Some(new));
+        new
+    }};
+}
+
+#[cfg(test)]
+pub(crate) use commit_prepared_replacement;
 
 /// Borrow status rows as label/value pairs for compact fixture assertions.
 pub(crate) fn status_pairs(rows: &[crate::status_window::StatusRow]) -> Vec<(&str, &str)> {
@@ -553,6 +675,10 @@ impl<Action> RenderRun<Action> {
     }
 }
 
+fn new_render_run<Action>() -> (egui::Context, RenderRun<Action>) {
+    (egui::Context::default(), RenderRun::default())
+}
+
 /// Run deterministic egui frames and retain their actions plus the final
 /// frame's text and bitmap trace.
 pub(crate) fn run_render_frames<Action>(
@@ -561,8 +687,7 @@ pub(crate) fn run_render_frames<Action>(
     mut draw: impl FnMut(&egui::Context) -> Vec<Action>,
     mut take_painted: impl FnMut() -> Vec<(u32, egui::Pos2)>,
 ) -> RenderRun<Action> {
-    let ctx = egui::Context::default();
-    let mut result = RenderRun::default();
+    let (ctx, mut result) = new_render_run();
     for (index, events) in frames.into_iter().enumerate() {
         result.run_frame(&ctx, input(index, events), &mut draw, &mut take_painted);
     }
@@ -958,42 +1083,8 @@ pub fn scrap_confirmation() -> crate::move_confirmation::ScrapConfirmation {
     }
 }
 
-/// [`run_render_frames`] for manager-owned content. Each frame receives the
-/// frozen routing snapshot, normalized pointer records, and their claim
-/// router, so tests cannot accidentally exercise an unrouted mutation path.
-pub(crate) fn run_routed_render_frames<Action>(
-    manager: &WindowManager,
-    window: WindowId,
-    frames: Vec<(Vec<egui::Event>, Vec<PointerPhase>)>,
-    mut input: impl FnMut(usize, Vec<egui::Event>) -> egui::RawInput,
-    mut draw: impl FnMut(
-        &egui::Context,
-        &RoutingSnapshot,
-        &[(InputEventId, PointerPhase)],
-        &mut FrameInputRouter,
-    ) -> Vec<Action>,
-    mut take_painted: impl FnMut() -> Vec<(u32, egui::Pos2)>,
-) -> RenderRun<Action> {
-    let ctx = egui::Context::default();
-    let mut result = RenderRun::default();
-    for_each_routed_pointer_frame(
-        manager,
-        window,
-        frames,
-        |index, events, snapshot, routed, router| {
-            result.run_frame(
-                &ctx,
-                input(index, events),
-                |ctx| draw(ctx, snapshot, routed, router),
-                &mut take_painted,
-            );
-        },
-    );
-    result
-}
-
-/// [`run_routed_render_frames`] with the renderer's shared bitmap trace reset
-/// and collected for every frame.
+/// Run manager-owned content with the shared bitmap trace reset and collected
+/// for every frame. Each draw receives the frozen snapshot and claim router.
 pub(crate) fn run_painted_routed_render_frames<Action>(
     manager: &WindowManager,
     window: WindowId,
@@ -1006,17 +1097,23 @@ pub(crate) fn run_painted_routed_render_frames<Action>(
         &mut FrameInputRouter,
     ) -> Vec<Action>,
 ) -> RenderRun<Action> {
-    run_routed_render_frames(
+    let (ctx, mut result) = new_render_run();
+    let mut draw = draw;
+    for_each_routed_pointer_frame(
         manager,
         window,
         frames,
-        |index, events| {
+        |index, events, snapshot, routed, router| {
             clear_painted_trace();
-            input(index, events)
+            result.run_frame(
+                &ctx,
+                input(index, events),
+                |ctx| draw(ctx, snapshot, routed, router),
+                take_painted_trace,
+            );
         },
-        draw,
-        take_painted_trace,
-    )
+    );
+    result
 }
 
 /// Insert one explored fixture system in a minimal sector.
@@ -1507,6 +1604,11 @@ pub(crate) fn assert_system_release_target(
 /// used to verify that strategic modals reassert their stronger ordering.
 pub(crate) fn show_self_raising_area(ctx: &egui::Context, window: egui::Id, size: egui::Vec2) {
     ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, window));
+    show_foreground_area(ctx, window, size);
+}
+
+/// Paint a retained clickable foreground area without changing its order.
+pub(crate) fn show_foreground_area(ctx: &egui::Context, window: egui::Id, size: egui::Vec2) {
     egui::Area::new(window)
         .order(egui::Order::Foreground)
         .fixed_pos(egui::Pos2::ZERO)
@@ -1654,6 +1756,35 @@ pub(crate) fn assert_managed_close_receipt<State>(
     assert!(!is_open(state));
 }
 
+/// Drive Escape through a focused Finder, assert its managed close action,
+/// then apply the exact manager teardown receipt.
+pub(crate) fn assert_managed_finder_escape_close<State, Action>(
+    manager: &mut WindowManager,
+    state: &mut State,
+    id: WindowId,
+    name: &str,
+    expected: Action,
+    mut draw: impl FnMut(
+        &egui::Context,
+        &mut State,
+        Option<FocusTarget>,
+        &mut crate::bmp_cache::BmpCache,
+    ) -> Option<Action>,
+    is_open: impl Fn(&State) -> bool,
+    remove_content: impl Fn(&mut State, &[WindowId]),
+) where
+    Action: std::fmt::Debug + PartialEq,
+{
+    let ctx = egui::Context::default();
+    let mut cache = crate::bmp_cache::BmpCache::new();
+    let mut action = None;
+    let _ = ctx.run(finder_escape_input(), |ctx| {
+        action = draw(ctx, state, manager.begin_frame().focused(), &mut cache);
+    });
+    assert_eq!(action, Some(expected));
+    assert_managed_close_receipt(manager, state, id, name, is_open, remove_content);
+}
+
 /// Minimize manager-owned content, reopen it through the family adapter, and
 /// prove the exact identity was restored rather than republished.
 pub(crate) fn assert_minimized_reopen<State>(
@@ -1702,6 +1833,25 @@ pub(crate) fn assert_simple_minimized_reopen<State>(
     assert_minimized_reopen(manager, state, id, is_visible, |_, _| {}, reopen);
 }
 
+#[cfg(test)]
+macro_rules! assert_detail_minimized_reopen {
+    ($manager:expr, $state:expr, $id:expr, $system:expr, $prepare:expr, $commit:path $(,)?) => {
+        $crate::test_support::assert_simple_minimized_reopen(
+            $manager,
+            $state,
+            $id,
+            |state, frame| state.window_is_visible(frame, $system),
+            |manager, state| {
+                let restored = ($prepare)(state);
+                $commit(manager, state, restored)
+            },
+        )
+    };
+}
+
+#[cfg(test)]
+pub(crate) use assert_detail_minimized_reopen;
+
 /// Assert the common faction replacement and clear contract for direct
 /// strategic detail fixtures. The open expression stays at the call site so
 /// each family retains its explicit dependencies.
@@ -1729,4 +1879,14 @@ pub(crate) fn assert_saved_windows_restore(
     for window in saved {
         assert!(restore(window), "{faction:?}");
     }
+}
+
+pub(crate) fn restored_saved_windows<State: Default>(
+    saved: &[SavedWindow],
+    faction: crate::cockpit::CockpitFaction,
+    mut restore: impl FnMut(&mut State, &SavedWindow) -> bool,
+) -> State {
+    let mut state = State::default();
+    assert_saved_windows_restore(saved, faction, |window| restore(&mut state, window));
+    state
 }

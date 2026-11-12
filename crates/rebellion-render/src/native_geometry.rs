@@ -2,6 +2,26 @@
 
 use egui_macroquad::egui;
 
+/// Allocate a clipped, fixed-position area and expose its screen-space frame
+/// and painter to native-canvas renderers.
+pub(crate) fn show_area<R>(
+    ctx: &egui::Context,
+    id: egui::Id,
+    rect: egui::Rect,
+    order: egui::Order,
+    sense: egui::Sense,
+    draw: impl FnOnce(&mut egui::Ui, egui::Rect, egui::Painter) -> R,
+) -> egui::InnerResponse<R> {
+    egui::Area::new(id)
+        .fixed_pos(rect.min)
+        .order(order)
+        .show(ctx, |ui| {
+            let (frame, _) = ui.allocate_exact_size(rect.size(), sense);
+            let painter = ui.painter().with_clip_rect(frame);
+            draw(ui, frame, painter)
+        })
+}
+
 /// Origin of this frame's primary-button press, if one began.
 pub(crate) fn primary_press_origin(ctx: &egui::Context) -> Option<egui::Pos2> {
     ctx.input(|input| {

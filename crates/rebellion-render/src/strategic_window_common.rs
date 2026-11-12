@@ -24,6 +24,20 @@ use crate::windowing_input::{
 };
 use crate::windowing_policy::{contextual_spec, system_subject};
 
+/// Common renderer/window-manager vocabulary used by strategic window
+/// families. Family-specific domain types remain imported locally.
+#[allow(unused_imports)]
+pub(crate) mod window_prelude {
+    pub(crate) use rebellion_windowing::{
+        ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, SubjectId, WindowId,
+        WindowKind, WindowOwner, WindowSpec, WindowTransition,
+    };
+
+    pub(crate) use crate::bmp_cache::{BmpCache, DllSource};
+    pub(crate) use crate::cockpit::{CockpitFaction, CockpitLayout};
+    pub(crate) use crate::fleet_window::paint_native;
+}
+
 pub(crate) type WindowIdentity = (Option<WindowId>, Option<SubjectId>, SystemKey);
 pub(crate) const SECTOR_ART: (u32, u32) = (10209, 10208);
 pub(crate) const MINIMIZE_ART: (u32, u32) = (10253, 10254);
@@ -352,6 +366,66 @@ macro_rules! impl_strategic_window_record {
 
 pub(crate) use impl_strategic_window_record;
 
+/// Define the stable release-object API while leaving private record lookup
+/// and mapping in the owning window module.
+macro_rules! define_release_object_method {
+    ($(#[$attr:meta])* |$this:ident, $layout:ident, $layer:ident, $point:ident| $body:block) => {
+        $(#[$attr])*
+        #[must_use]
+        pub fn release_object(
+            &self,
+            $layout: $crate::cockpit::CockpitLayout,
+            $layer: egui_macroquad::egui::LayerId,
+            $point: egui_macroquad::egui::Pos2,
+        ) -> Option<rebellion_core::missions::MissionTarget> {
+            let $this = self;
+            $body
+        }
+    };
+}
+
+pub(crate) use define_release_object_method;
+
+/// Define the stable manager-aware hit-test API for a private window family.
+macro_rules! define_hit_window_ids_method {
+    ($(#[$attr:meta])* |$this:ident, $snapshot:ident, $layout:ident, $point:ident, $top_layer:ident| $body:block) => {
+        $(#[$attr])*
+        #[must_use]
+        pub fn hit_window_ids(
+            &self,
+            $snapshot: &rebellion_windowing::RoutingSnapshot,
+            $layout: $crate::cockpit::CockpitLayout,
+            $point: (f32, f32),
+            $top_layer: Option<egui_macroquad::egui::LayerId>,
+        ) -> std::collections::BTreeSet<rebellion_windowing::WindowId> {
+            let $this = self;
+            $body
+        }
+    };
+}
+
+pub(crate) use define_hit_window_ids_method;
+
+/// Define the compatibility open API shared by direct system fixtures.
+macro_rules! define_direct_system_open_method {
+    ($(#[$attr:meta])* |$this:ident, $world:ident, $system:ident, $position:ident, $faction:ident, $layout:ident| $body:block) => {
+        $(#[$attr])*
+        pub fn open(
+            &mut self,
+            $world: &rebellion_core::world::GameWorld,
+            $system: rebellion_core::ids::SystemKey,
+            $position: (i16, i16),
+            $faction: $crate::cockpit::CockpitFaction,
+            $layout: $crate::cockpit::CockpitLayout,
+        ) -> bool {
+            let $this = self;
+            $body
+        }
+    };
+}
+
+pub(crate) use define_direct_system_open_method;
+
 /// Publish the collection and manager-identity API shared by every strategic
 /// detail-window state. Family-specific teardown remains in the owning module
 /// because Fleet, Defenses and System also clear different transient state.
@@ -667,15 +741,21 @@ pub(crate) struct WindowPaintSet<T> {
     pub(crate) focused_fixture_system: Option<SystemKey>,
 }
 
-/// Rebuild one detail family's paint list from the manager snapshot, then add
-/// direct fixture content behind the same focus rules.
-pub(crate) fn window_paint_set<T: StrategicWindowRecord + Clone>(
+pub(crate) struct PaintProjection<T> {
+    pub(crate) windows: Vec<T>,
+    pub(crate) stale_manager_windows: Vec<WindowId>,
+}
+
+/// Project manager paint order onto one renderer family, validating each
+/// manager identity and then appending direct test fixtures.
+pub(crate) fn paint_projection<T: Clone>(
     windows: &[T],
     snapshot: Option<&RoutingSnapshot>,
     kind: WindowKind,
-    shown: impl Fn(SystemKey) -> bool,
+    identity: impl Fn(&T) -> (Option<WindowId>, Option<SubjectId>),
+    shown: impl Fn(&T) -> bool,
     admitted: impl Fn(&T) -> bool,
-) -> WindowPaintSet<T> {
+) -> PaintProjection<T> {
     let mut paint = Vec::new();
     let mut stale_manager_windows = Vec::new();
     if let Some(snapshot) = snapshot {
@@ -685,11 +765,11 @@ pub(crate) fn window_paint_set<T: StrategicWindowRecord + Clone>(
             };
             match windows
                 .iter()
-                .find(|window| window.identity().0 == Some(id))
+                .find(|window| identity(window).0 == Some(id))
                 .cloned()
             {
-                Some(window) if !shown(window.identity().2) => {}
-                Some(window) if admitted(&window) && key.subject == window.identity().1 => {
+                Some(window) if !shown(&window) => {}
+                Some(window) if admitted(&window) && key.subject == identity(&window).1 => {
                     paint.push(window);
                 }
                 Some(_) | None => stale_manager_windows.push(id),
@@ -699,8 +779,34 @@ pub(crate) fn window_paint_set<T: StrategicWindowRecord + Clone>(
     paint.extend(
         windows
             .iter()
-            .filter(|window| window.identity().0.is_none())
+            .filter(|window| identity(window).0.is_none())
             .cloned(),
+    );
+    PaintProjection {
+        windows: paint,
+        stale_manager_windows,
+    }
+}
+
+/// Rebuild one detail family's paint list from the manager snapshot, then add
+/// direct fixture content behind the same focus rules.
+pub(crate) fn window_paint_set<T: StrategicWindowRecord + Clone>(
+    windows: &[T],
+    snapshot: Option<&RoutingSnapshot>,
+    kind: WindowKind,
+    shown: impl Fn(SystemKey) -> bool,
+    admitted: impl Fn(&T) -> bool,
+) -> WindowPaintSet<T> {
+    let PaintProjection {
+        windows: paint,
+        stale_manager_windows,
+    } = paint_projection(
+        windows,
+        snapshot,
+        kind,
+        |window| (window.identity().0, window.identity().1),
+        |window| shown(window.identity().2),
+        admitted,
     );
     let focused_manager = snapshot.and_then(|frame| frame.focused().map(|focus| focus.window));
     let focused_fixture_system = paint
@@ -741,6 +847,25 @@ pub(crate) fn refreshed_window_paint_set<T: StrategicWindowRecord + Clone>(
     );
     window_paint_set(windows, snapshot, kind, shown, admitted)
 }
+
+/// Build the release-admitted paint set shared by system-backed detail
+/// families whose private records carry `release_target_visible`.
+macro_rules! refreshed_release_window_paint_set {
+    ($windows:expr, $snapshot:expr, $kind:path, $shown:expr, $world:expr, $visible:path $(,)?) => {
+        $crate::strategic_window_common::refreshed_window_paint_set(
+            $windows,
+            $snapshot,
+            $kind,
+            $shown,
+            |window, snapshot| $visible(window, snapshot, $world),
+            |window| window.id.is_none() && $world.systems.contains_key(window.system),
+            |window, visible| window.release_target_visible = visible,
+            |window| window.release_target_visible,
+        )
+    };
+}
+
+pub(crate) use refreshed_release_window_paint_set;
 
 /// Rebuild a detail family's paint order from manager identities, append
 /// direct fixture records, and apply the family's visibility projection.
@@ -1027,6 +1152,16 @@ pub(crate) fn start_title_drag(
     }
 }
 
+pub(crate) fn record_title_drag<T>(
+    active: &mut Option<TitleDrag>,
+    area: egui::Id,
+    result: T,
+    grab: impl FnOnce(&T) -> Option<egui::Vec2>,
+) -> T {
+    start_title_drag(active, area, grab(&result));
+    result
+}
+
 /// The bitmap-backed foreground canvas shared by strategic detail windows.
 pub(crate) struct StrategicWindowCanvas<'a> {
     ctx: &'a egui::Context,
@@ -1038,7 +1173,183 @@ pub(crate) struct StrategicWindowCanvas<'a> {
     pub(crate) primary_down: bool,
 }
 
+pub(crate) struct DetailWindowDraw<'a, T> {
+    ctx: &'a egui::Context,
+    world: &'a rebellion_core::world::GameWorld,
+    window: &'a T,
+    focused: bool,
+    faction: CockpitFaction,
+    layout: CockpitLayout,
+    cache: &'a mut BmpCache,
+}
+
+pub(crate) struct DetailWindowsDraw<'a> {
+    pub(crate) ctx: &'a egui::Context,
+    pub(crate) world: &'a rebellion_core::world::GameWorld,
+    pub(crate) fog: &'a rebellion_core::fog::FogState,
+    pub(crate) missions: &'a rebellion_core::missions::MissionState,
+    pub(crate) faction: CockpitFaction,
+    pub(crate) layout: CockpitLayout,
+    pub(crate) cache: &'a mut BmpCache,
+    pub(crate) snapshot: Option<&'a RoutingSnapshot>,
+    pub(crate) pointer_events: &'a [(InputEventId, PointerPhase)],
+    pub(crate) router: Option<&'a mut FrameInputRouter>,
+    pub(crate) shown: &'a dyn Fn(crate::windowing::GalaxyChild) -> bool,
+}
+
+impl<'a> DetailWindowsDraw<'a> {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "This is the shared boundary replacing per-family argument plumbing."
+    )]
+    pub(crate) fn new(
+        ctx: &'a egui::Context,
+        world: &'a rebellion_core::world::GameWorld,
+        fog: &'a rebellion_core::fog::FogState,
+        missions: &'a rebellion_core::missions::MissionState,
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+        cache: &'a mut BmpCache,
+        snapshot: Option<&'a RoutingSnapshot>,
+        pointer_events: &'a [(InputEventId, PointerPhase)],
+        router: Option<&'a mut FrameInputRouter>,
+        shown: &'a dyn Fn(crate::windowing::GalaxyChild) -> bool,
+    ) -> Self {
+        Self {
+            ctx,
+            world,
+            fog,
+            missions,
+            faction,
+            layout,
+            cache,
+            snapshot,
+            pointer_events,
+            router,
+            shown,
+        }
+    }
+}
+
+macro_rules! unpack_detail_windows_draw {
+    (
+        $draw:expr => $ctx:ident $world:ident $fog:ident $missions:ident $faction:ident
+        $layout:ident $cache:ident $snapshot:ident $pointer_events:ident $router:ident $shown:ident
+    ) => {
+        let $crate::strategic_window_common::DetailWindowsDraw {
+            ctx: $ctx,
+            world: $world,
+            fog: $fog,
+            missions: $missions,
+            faction: $faction,
+            layout: $layout,
+            cache: $cache,
+            snapshot: $snapshot,
+            pointer_events: $pointer_events,
+            router: mut $router,
+            shown: $shown,
+        } = $draw;
+    };
+}
+
+pub(crate) use unpack_detail_windows_draw;
+
+macro_rules! draw_managed_detail_windows {
+    (
+        $draw:path => $ctx:ident $world:ident $fog:ident $missions:ident $faction:ident
+        $layout:ident $cache:ident $snapshot:ident $events:ident $router:ident $shown:ident
+        $state:ident
+    ) => {
+        $draw(
+            $crate::strategic_window_common::DetailWindowsDraw::new(
+                $ctx,
+                $world,
+                $fog,
+                $missions,
+                $faction,
+                $layout,
+                $cache,
+                Some($snapshot),
+                $events,
+                Some($router),
+                $shown,
+            ),
+            $state,
+        )
+    };
+}
+
+pub(crate) use draw_managed_detail_windows;
+
+impl<'a, T> DetailWindowDraw<'a, T> {
+    pub(crate) fn new(
+        ctx: &'a egui::Context,
+        world: &'a rebellion_core::world::GameWorld,
+        window: &'a T,
+        focused: bool,
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+        cache: &'a mut BmpCache,
+    ) -> Self {
+        Self {
+            ctx,
+            world,
+            window,
+            focused,
+            faction,
+            layout,
+            cache,
+        }
+    }
+
+    pub(crate) fn parts(
+        self,
+    ) -> (
+        &'a egui::Context,
+        &'a rebellion_core::world::GameWorld,
+        &'a T,
+        bool,
+        CockpitFaction,
+        CockpitLayout,
+        &'a mut BmpCache,
+    ) {
+        (
+            self.ctx,
+            self.world,
+            self.window,
+            self.focused,
+            self.faction,
+            self.layout,
+            self.cache,
+        )
+    }
+}
+
+/// Unpack a detail draw and initialize its shared frame/result vocabulary.
+macro_rules! begin_detail_window_draw {
+    (
+        $draw:expr =>
+        $ctx:ident $world:ident $window:ident $focused:ident $faction:ident
+        $layout:ident $cache:ident $result:ident $system:ident $scale:ident
+        $screen_rect:ident $id:ident $player:ident : $result_type:ty
+    ) => {
+        let ($ctx, $world, $window, $focused, $faction, $layout, $cache) = $draw.parts();
+        let mut $result = <$result_type>::default();
+        $crate::strategic_window_common::draw_frame!(
+            $result, $system, $scale, $screen_rect, $id;
+            $world, $window, $layout
+        );
+        let $player = $faction.player();
+    };
+}
+
+pub(crate) use begin_detail_window_draw;
+
 impl StrategicWindowCanvas<'_> {
+    pub(crate) fn input_parts(&self) -> (egui::Rect, egui::Response, egui::Painter) {
+        (self.local, self.response.clone(), self.painter.clone())
+    }
+
     pub(crate) fn paint(&self, cache: &mut BmpCache, source: DllSource, id: u32, x: f32, y: f32) {
         paint_native(
             &self.painter,
@@ -1288,6 +1599,14 @@ impl<A, T> Default for RoutedDragResult<A, T> {
     }
 }
 
+impl<A, T> RoutedDragResult<A, T> {
+    pub(crate) fn take_drop(&mut self) -> Option<(T, egui::Pos2, bool)> {
+        self.drop
+            .take()
+            .map(|drop| (drop.payload, drop.point, drop.ctrl))
+    }
+}
+
 /// Clear a capture payload only when the manager cancellation names its
 /// current owner.
 pub(crate) fn cancel_owned_capture<T>(
@@ -1301,73 +1620,161 @@ pub(crate) fn cancel_owned_capture<T>(
     }
 }
 
-/// Complete the common drag lifecycle around a routed primary release. A
-/// missing payload preserves the capture owner, matching the legacy states'
-/// fail-closed handling of inconsistent receipts.
-pub(crate) fn take_routed_drag<T>(
-    drag: &mut Option<T>,
-    owner: &mut Option<WindowId>,
-    ctx: &egui::Context,
-    router: Option<&mut FrameInputRouter>,
-    events: impl IntoIterator<Item = (InputEventId, PointerPhase)>,
-) -> Option<RoutedDragRelease<T>> {
-    let (point, ctrl, claimed_by) = match routed_primary_release(ctx, *owner, router, events) {
-        RoutedPrimaryRelease::Waiting { button_down } => {
-            if !button_down && owner.is_none() {
-                *drag = None;
-            }
-            return None;
-        }
-        RoutedPrimaryRelease::Unclaimed => return None,
-        RoutedPrimaryRelease::Released {
-            point,
-            ctrl,
-            claimed_by,
-        } => (point, ctrl, claimed_by),
-    };
-    let payload = drag.take();
-    let released_owner = payload.as_ref().and_then(|_| owner.take());
-    Some(RoutedDragRelease {
-        payload,
-        point,
-        ctrl,
-        owner: released_owner,
-        claimed_by,
-    })
+/// The mutable payload, manager owner and input router participating in one
+/// routed drag. Grouping them prevents each window family from rebuilding the
+/// same lifecycle call shape.
+pub(crate) struct RoutedDrag<'a, T> {
+    drag: &'a mut Option<T>,
+    owner: &'a mut Option<WindowId>,
+    ctx: &'a egui::Context,
+    router: Option<&'a mut FrameInputRouter>,
 }
 
-/// Complete a routed drag release, emit the common capture-release action and
-/// retain a payload only when the family-specific drop-distance test accepts
-/// the release point.
-pub(crate) fn complete_routed_drag<A, T: RoutedDragPayload>(
-    drag: &mut Option<T>,
-    owner: &mut Option<WindowId>,
-    ctx: &egui::Context,
-    router: Option<&mut FrameInputRouter>,
-    events: impl IntoIterator<Item = (InputEventId, PointerPhase)>,
-    release_action: impl FnOnce(WindowId) -> A,
-    scale: f32,
-    minimum_distance_squared: f32,
-) -> Option<RoutedDragResult<A, T>> {
-    let release = take_routed_drag(drag, owner, ctx, router, events)?;
-    let drop = match (release.payload, release.point) {
-        (Some(payload), Some(point)) => {
-            let moved = (point - payload.press()) / scale;
-            (moved.length_sq() > minimum_distance_squared && !rect_contains(payload.list(), point))
+pub(crate) struct RoutedDragFrame<'a> {
+    pub(crate) ctx: &'a egui::Context,
+    pub(crate) scale: f32,
+    pub(crate) router: Option<&'a mut FrameInputRouter>,
+    pub(crate) pointer_events: &'a [(InputEventId, PointerPhase)],
+}
+
+impl<'a> RoutedDragFrame<'a> {
+    pub(crate) fn new(
+        ctx: &'a egui::Context,
+        scale: f32,
+        router: Option<&'a mut FrameInputRouter>,
+        pointer_events: &'a [(InputEventId, PointerPhase)],
+    ) -> Self {
+        Self {
+            ctx,
+            scale,
+            router,
+            pointer_events,
+        }
+    }
+}
+
+impl<'a, T> RoutedDrag<'a, T> {
+    pub(crate) fn new(
+        drag: &'a mut Option<T>,
+        owner: &'a mut Option<WindowId>,
+        ctx: &'a egui::Context,
+        router: Option<&'a mut FrameInputRouter>,
+    ) -> Self {
+        Self {
+            drag,
+            owner,
+            ctx,
+            router,
+        }
+    }
+
+    /// Complete the common capture lifecycle. A missing payload preserves its
+    /// owner, matching the states' fail-closed handling of invalid receipts.
+    fn take(
+        &mut self,
+        events: impl IntoIterator<Item = (InputEventId, PointerPhase)>,
+    ) -> Option<RoutedDragRelease<T>> {
+        let (point, ctrl, claimed_by) =
+            match routed_primary_release(self.ctx, *self.owner, self.router.as_deref_mut(), events)
+            {
+                RoutedPrimaryRelease::Waiting { button_down } => {
+                    if !button_down && self.owner.is_none() {
+                        *self.drag = None;
+                    }
+                    return None;
+                }
+                RoutedPrimaryRelease::Unclaimed => return None,
+                RoutedPrimaryRelease::Released {
+                    point,
+                    ctrl,
+                    claimed_by,
+                } => (point, ctrl, claimed_by),
+            };
+        let payload = self.drag.take();
+        let released_owner = payload.as_ref().and_then(|_| self.owner.take());
+        Some(RoutedDragRelease {
+            payload,
+            point,
+            ctrl,
+            owner: released_owner,
+            claimed_by,
+        })
+    }
+}
+
+impl<T: RoutedDragPayload> RoutedDrag<'_, T> {
+    /// Emit the common capture-release action and retain a drop only when the
+    /// family-specific distance test accepts its release point.
+    pub(crate) fn complete<A>(
+        mut self,
+        events: impl IntoIterator<Item = (InputEventId, PointerPhase)>,
+        release_action: impl FnOnce(WindowId) -> A,
+        scale: f32,
+        minimum_distance_squared: f32,
+    ) -> Option<RoutedDragResult<A, T>> {
+        let release = self.take(events)?;
+        let drop = match (release.payload, release.point) {
+            (Some(payload), Some(point)) => {
+                let moved = (point - payload.press()) / scale;
+                (moved.length_sq() > minimum_distance_squared
+                    && !rect_contains(payload.list(), point))
                 .then_some(RoutedDrop {
                     payload,
                     point,
                     ctrl: release.ctrl,
                 })
-        }
-        _ => None,
-    };
-    Some(RoutedDragResult {
-        actions: release.owner.map(release_action).into_iter().collect(),
-        claimed_primary_release_by: release.claimed_by,
-        drop,
-    })
+            }
+            _ => None,
+        };
+        Some(RoutedDragResult {
+            actions: release.owner.map(release_action).into_iter().collect(),
+            claimed_primary_release_by: release.claimed_by,
+            drop,
+        })
+    }
 }
+
+macro_rules! complete_window_drag_events {
+    ($state:expr, $frame:expr, $events:expr, $release:path) => {
+        $crate::strategic_window_common::RoutedDrag::new(
+            &mut $state.drag,
+            &mut $state.drag_owner,
+            $frame.ctx,
+            $frame.router.as_deref_mut(),
+        )
+        .complete(
+            $events,
+            $release,
+            $frame.scale,
+            $crate::fleet_window::DRAG_DISTANCE_SQUARED,
+        )
+        .unwrap_or_default()
+    };
+}
+
+pub(crate) use complete_window_drag_events;
+
+/// Complete a private window state's standard routed drag capture.
+macro_rules! complete_window_drag {
+    ($state:expr, $frame:expr, forward, $release:path) => {
+        $crate::strategic_window_common::complete_window_drag_events!(
+            $state,
+            $frame,
+            $frame.pointer_events.iter().copied(),
+            $release
+        )
+    };
+    ($state:expr, $frame:expr, reverse, $release:path) => {
+        $crate::strategic_window_common::complete_window_drag_events!(
+            $state,
+            $frame,
+            $frame.pointer_events.iter().rev().copied(),
+            $release
+        )
+    };
+}
+
+pub(crate) use complete_window_drag;
 
 pub(crate) fn managed_layer_id<T: StrategicWindowRecord>(
     windows: &[T],
@@ -1731,6 +2138,15 @@ pub(crate) fn focus<T: StrategicWindowRecord>(windows: &mut Vec<T>, system: Syst
     focus_where(windows, |window| window.identity().2 == system)
 }
 
+pub(crate) fn focus_direct_system<T: StrategicWindowRecord>(
+    windows: &mut Vec<T>,
+    system: SystemKey,
+) -> bool {
+    focus_where(windows, |window| {
+        window.identity().0.is_none() && window.identity().2 == system
+    })
+}
+
 pub(crate) fn focus_where<T>(windows: &mut Vec<T>, matches: impl Fn(&T) -> bool) -> bool {
     let Some(index) = windows.iter().position(matches) else {
         return false;
@@ -1781,6 +2197,23 @@ pub(crate) fn open_direct_system<T>(
 ) -> bool {
     open_direct(windows, world.systems.contains_key(system), matches, create)
 }
+
+/// Bind the shared state/faction setup for a direct system fixture while the
+/// owning module supplies its private record construction.
+macro_rules! open_direct_system_window {
+    ($state:expr, $world:expr, $system:expr, $faction:expr, $matches:expr, $create:expr $(,)?) => {{
+        $state.prepare_faction($faction);
+        $crate::strategic_window_common::open_direct_system(
+            &mut $state.windows,
+            $world,
+            $system,
+            $matches,
+            $create,
+        )
+    }};
+}
+
+pub(crate) use open_direct_system_window;
 
 pub(crate) fn close<T: StrategicWindowRecord>(
     windows: &mut Vec<T>,

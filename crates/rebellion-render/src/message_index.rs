@@ -2108,13 +2108,7 @@ mod tests {
         let duplicate_commit = manager
             .apply(WindowCommand::Open(duplicate.spec()))
             .unwrap();
-        assert!(matches!(
-            duplicate_commit.transition,
-            WindowTransition::Existing {
-                id,
-                effect: ExistingEffect::NoOp,
-            } if id == replacement
-        ));
+        crate::test_support::assert_existing_noop(&duplicate_commit.transition, replacement);
         assert_eq!(
             state.commit_open(duplicate, &duplicate_commit.transition),
             None
@@ -2183,19 +2177,7 @@ mod tests {
             frame: 4,
             ordinal: 0,
         };
-        let mut router = FrameInputRouter::default();
-        router.begin_frame(4, &frame);
-        router.collect_keyboard(event);
-        assert_eq!(router.keyboard_recipient(event), InputRecipient::Window(id));
-        router.report_key(
-            event,
-            InputRecipient::Window(id),
-            InputDisposition::Unhandled,
-        );
-        assert!(
-            !router.claim_root(event),
-            "an unhandled modal key cannot bubble to the strategic root"
-        );
+        crate::test_support::assert_unhandled_window_key_blocks_root(&frame, id, event);
     }
 
     #[test]

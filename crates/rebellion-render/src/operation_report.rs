@@ -711,15 +711,6 @@ impl OperationReportState {
         })
     }
 
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        crate::singleton_window_common::contains_screen_point(
-            self.window.is_some(),
-            window_rect(layout),
-            point,
-        )
-    }
-
     /// `FUN_0044e3d0`: the rail's radio; the list keeps its tab and starts
     /// at its top (`FUN_0044e500(tab, 1)` refills it).
     pub fn set_view(&mut self, view: ReportView) {
@@ -743,6 +734,11 @@ impl OperationReportState {
         }
     }
 }
+
+crate::singleton_window_common::impl_singleton_contains_screen_point!(
+    OperationReportState,
+    window_rect
+);
 
 fn window_rect(layout: CockpitLayout) -> egui::Rect {
     galaxy_centered_rect(layout, OPERATION_REPORT_WIDTH, OPERATION_REPORT_HEIGHT)
@@ -863,12 +859,13 @@ fn draw_at(
 
     let id = egui::Id::new("original-operation-report");
     ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, id));
-    egui::Area::new(id)
-        .fixed_pos(rect.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(rect.size(), egui::Sense::click());
-            let painter = ui.painter().with_clip_rect(frame);
+    crate::native_geometry::show_area(
+        ctx,
+        id,
+        rect,
+        egui::Order::Tooltip,
+        egui::Sense::click(),
+        |ui, frame, painter| {
             let at = |(x, y, w, h): (f32, f32, f32, f32)| logical_rect(frame, scale, x, y, w, h);
             let paint = |cache: &mut BmpCache, source: DllSource, id: u32, (x, y): (f32, f32)| {
                 paint_native(&painter, ctx, cache, source, id, frame, scale, x, y);
@@ -1168,7 +1165,8 @@ fn draw_at(
                     }
                 }
             }
-        });
+        },
+    );
 
     // FUN_0044e180: Escape closes; Left and Right step the tabs over a list.
     let (escape, left, right) = ctx.input(|input| {
@@ -1305,15 +1303,12 @@ mod tests {
         let mut cache = BmpCache::new();
         let mut result = Run::default();
         for (index, events) in frames.into_iter().enumerate() {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(800.0, 600.0),
-                )),
-                time: Some(index as f64 * 0.05),
+            let input = crate::test_support::timed_raw_input(
+                index,
                 events,
-                ..Default::default()
-            };
+                egui::Modifiers::default(),
+                egui::vec2(800.0, 600.0),
+            );
             crate::test_support::clear_painted_trace();
             let output = ctx.run(input, |ctx| {
                 result.actions.extend(draw_at(

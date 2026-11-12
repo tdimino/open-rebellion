@@ -2241,9 +2241,7 @@ mod tests {
     fn a_ship_on_its_own_leg_neither_slows_nor_carries_its_fleet_for_either_side() {
         use crate::world::ShipTransit;
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let origin = world.systems.insert(System::default());
-            let system = world.systems.insert(System::default());
+            let (mut world, [origin, system]) = crate::test_support::bare_systems();
             let (fast, slow) = side_speed_classes(&mut world, is_alliance);
             let mut leg = ShipInstance::new(slow, 100, is_alliance);
             leg.transit = Some(ShipTransit {

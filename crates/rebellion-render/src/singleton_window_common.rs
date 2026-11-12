@@ -22,18 +22,21 @@ pub(crate) fn show_popup_canvas<R>(
     scale: f32,
     draw: impl FnOnce(&mut egui::Ui, &PopupCanvas) -> R,
 ) -> egui::InnerResponse<R> {
-    egui::Area::new(area_id)
-        .fixed_pos(rect.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(rect.size(), egui::Sense::hover());
+    crate::native_geometry::show_area(
+        ctx,
+        area_id,
+        rect,
+        egui::Order::Tooltip,
+        egui::Sense::hover(),
+        |ui, frame, painter| {
             let canvas = PopupCanvas {
                 frame,
-                painter: ui.painter().with_clip_rect(frame),
+                painter,
                 scale,
             };
             draw(ui, &canvas)
-        })
+        },
+    )
 }
 
 #[must_use]
@@ -135,6 +138,28 @@ macro_rules! impl_singleton_window_routing {
 }
 
 pub(crate) use impl_singleton_window_routing;
+
+macro_rules! impl_singleton_contains_screen_point {
+    ($state:ty, $rect:path) => {
+        impl $state {
+            /// Whether `point` lies inside this open singleton surface.
+            #[must_use]
+            pub fn contains_screen_point(
+                &self,
+                layout: crate::cockpit::CockpitLayout,
+                point: (f32, f32),
+            ) -> bool {
+                crate::singleton_window_common::contains_screen_point(
+                    self.window.is_some(),
+                    $rect(layout),
+                    point,
+                )
+            }
+        }
+    };
+}
+
+pub(crate) use impl_singleton_contains_screen_point;
 
 macro_rules! impl_singleton_content_reports {
     ($state:ty, $kind:path) => {

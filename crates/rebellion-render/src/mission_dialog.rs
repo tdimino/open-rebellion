@@ -1305,21 +1305,12 @@ mod tests {
         assert_eq!(state.dialog(), Some(&before));
         assert_eq!(state.window_id(), Some(id));
 
-        let committed = manager
-            .apply(WindowCommand::Replace {
-                old: id,
-                new: replacement.spec(SubjectId::new(
-                    crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
-                    3,
-                )),
-            })
-            .expect("fresh valid context replaces atomically");
-        let WindowTransition::Replaced { new, .. } = committed.transition else {
-            panic!("expected Mission replacement");
-        };
-        assert_eq!(
-            state.commit_open(replacement, &committed.transition),
-            Some(new)
+        let new = crate::test_support::commit_prepared_replacement!(
+            &mut manager,
+            &mut state,
+            id,
+            replacement,
+            "Mission"
         );
         assert_ne!(new, id);
         let dialog = state.dialog().unwrap();

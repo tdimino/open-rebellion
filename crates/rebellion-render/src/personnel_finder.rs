@@ -532,16 +532,13 @@ fn draw_personnel_finder_outcome(
         window.view,
     );
     let mut new_view_tab = None;
-    let colours = finder_common::count_cell_colours(window.tab.index());
-    let outcome = finder_common::draw_side_finder_window!(
+    let outcome = finder_common::draw_coloured_side_finder_window!(
         ctx, cache, layout, focus, window, list, &FINDER_CONFIG,
-        finder_common::SideFinderPresentation {
-            section_label: window.tab.label(),
-            section_at: (40.0, window.view.label_y()),
-            panel: PANELS[window.view.index()][window.tab.index()],
-            rail: RAIL[side_idx],
-            controls: (controls.close, controls.display),
-        };
+        finder_common::side_finder_presentation!(
+            window.tab.label(), (40.0, window.view.label_y()), window.tab.index();
+            PANELS[window.view.index()][window.tab.index()], side_idx, RAIL,
+            (controls.close, controls.display)
+        );
         extra_controls: |ui, canvas, cache| {
             // View tabs (FUN_004637a0 group 0x6e).
             for candidate in PersonnelView::ALL {
@@ -567,7 +564,12 @@ fn draw_personnel_finder_outcome(
                     new_view_tab = Some(candidate);
                 }
             }
-        }, paint_details: |canvas, painter, row, line, cell_font| {
+        }, paint_details: |canvas: &finder_common::FinderCanvas<'_>,
+                           painter: &egui::Painter,
+                           row: &PersonnelFinderRow,
+                           line: f32,
+                           cell_font: &egui::FontId,
+                           colours: (egui::Color32, egui::Color32)| {
             if let PersonnelFinderRow::SpecForces { counts, .. } = row {
                 // Four columns at x = 222 + 28*i (FUN_00465540).
                 finder_common::paint_count_cells(
@@ -715,11 +717,6 @@ mod tests {
         );
     }
 
-    fn assert_selection(state: &PersonnelFinderState, chosen: usize, name: &str) {
-        let window = state.window.as_ref().unwrap();
-        crate::test_support::assert_finder_selection(window.chosen, &window.ui.name, chosen, name);
-    }
-
     fn managed_navigation() -> (
         PersonnelFinderState,
         WindowId,
@@ -850,28 +847,15 @@ mod tests {
         let (mut manager, mut state, id) = managed_finder();
         let world = GameWorld::default();
         let fog = FogState::new(Faction::Alliance);
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let input = escape_input();
-        let mut action = None;
-        let _ = ctx.run(input, |ctx| {
-            action = draw_personnel_finder_focused(
-                ctx,
-                &world,
-                &fog,
-                &mut state,
-                manager.begin_frame().focused(),
-                layout(),
-                &mut cache,
-            );
-        });
-
-        assert_eq!(action, Some(ManagedPersonnelFinderAction::Close(id)));
-        crate::test_support::assert_managed_close_receipt(
+        crate::test_support::assert_managed_finder_escape_close(
             &mut manager,
             &mut state,
             id,
             "Personnel Finder",
+            ManagedPersonnelFinderAction::Close(id),
+            |ctx, state, focus, cache| {
+                draw_personnel_finder_focused(ctx, &world, &fog, state, focus, layout(), cache)
+            },
             PersonnelFinderState::is_open,
             PersonnelFinderState::remove_content,
         );
@@ -912,7 +896,7 @@ mod tests {
             list_focus,
             egui::Key::ArrowDown,
         );
-        assert_selection(&state, 2, "Zulu");
+        crate::test_support::assert_indexed_finder_selection!(&state, 2, "Zulu");
         drive_key_without_action(
             &ctx,
             &world,
@@ -931,7 +915,7 @@ mod tests {
             list_focus,
             egui::Key::ArrowUp,
         );
-        assert_selection(&state, 1, "Yavin");
+        crate::test_support::assert_indexed_finder_selection!(&state, 1, "Yavin");
         drive_key_without_action(
             &ctx,
             &world,
@@ -940,7 +924,7 @@ mod tests {
             list_focus,
             egui::Key::ArrowUp,
         );
-        assert_selection(&state, 0, "Alpha");
+        crate::test_support::assert_indexed_finder_selection!(&state, 0, "Alpha");
         drive_key_without_action(
             &ctx,
             &world,
@@ -1071,7 +1055,7 @@ mod tests {
             name_focus,
             egui::Key::ArrowDown,
         );
-        assert_selection(&state, 2, "Zulu");
+        crate::test_support::assert_indexed_finder_selection!(&state, 2, "Zulu");
 
         state.window.as_mut().unwrap().chosen = Some(usize::MAX);
         drive_key_without_action(
@@ -1082,7 +1066,7 @@ mod tests {
             list_focus,
             egui::Key::ArrowUp,
         );
-        assert_selection(&state, 1, "Yavin");
+        crate::test_support::assert_indexed_finder_selection!(&state, 1, "Yavin");
     }
 
     #[test]

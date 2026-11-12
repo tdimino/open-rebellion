@@ -18,6 +18,11 @@ pub const SUBJECT_SECTOR: u32 = 1;
 pub const SUBJECT_SYSTEM: u32 = 2;
 /// Subject namespace for coordinator-allocated command contexts.
 pub const SUBJECT_COMMAND_CONTEXT: u32 = 3;
+
+#[cfg(test)]
+pub(crate) const fn command_context_subject(id: u64) -> SubjectId {
+    SubjectId::new(SUBJECT_COMMAND_CONTEXT, id)
+}
 /// Subject namespace for coordinator-allocated battle sessions.
 pub const SUBJECT_BATTLE: u32 = 4;
 /// Subject namespace for Galaxy Operation Reports keyed by stable message id.

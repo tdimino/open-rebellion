@@ -11,20 +11,7 @@
 //! minimized into the faction-specific 12-slot rail and restored without
 //! creating duplicates.
 
-use egui_macroquad::egui;
-use rebellion_core::dat::Faction;
-use rebellion_core::delivery::DeliveryState;
-use rebellion_core::fog::FogState;
-use rebellion_core::ids::{DatId, FleetKey, SystemKey};
-use rebellion_core::manufacturing::{ManufacturingState, ProductionArea};
-use rebellion_core::missions::{MissionState, MissionTarget};
-use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
-use rebellion_core::world::{ControlKind, GameWorld};
-use rebellion_windowing::{RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowTransition};
-
-use crate::bmp_cache::{BmpCache, DllSource};
-use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::fleet_window::{control_side, paint_native};
+use crate::fleet_window::control_side;
 use crate::manufacturing_window::{
     band, band_strip, contents_visible, item_frame, page_cells, yard_count, yard_page,
     FacilityItem, FacilityPage, BAND_AREAS, BAND_DESTINATION, BAND_FRAME, BAND_PORTRAIT,
@@ -36,6 +23,8 @@ use crate::native_geometry::{
 };
 use crate::object_menu::MenuObject;
 use crate::strategic_window_common;
+#[allow(unused_imports)]
+use crate::strategic_window_common::window_prelude::*;
 use crate::windowing::GalaxyChild;
 use crate::windowing_input::{
     FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
@@ -43,6 +32,15 @@ use crate::windowing_input::{
 #[cfg(test)]
 use crate::windowing_policy::contextual_spec;
 use crate::windowing_policy::system_subject;
+use egui_macroquad::egui;
+use rebellion_core::dat::Faction;
+use rebellion_core::delivery::DeliveryState;
+use rebellion_core::fog::FogState;
+use rebellion_core::ids::{DatId, FleetKey, SystemKey};
+use rebellion_core::manufacturing::{ManufacturingState, ProductionArea};
+use rebellion_core::missions::{MissionState, MissionTarget};
+use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
+use rebellion_core::world::{ControlKind, GameWorld};
 
 pub const SYSTEM_WINDOW_CLIENT_WIDTH: f32 = 226.0;
 /// `FUN_0045aac0` creates type 9 at 226 by 304 (`0xe2` by `0x130`).
@@ -415,35 +413,28 @@ impl SystemWindowState {
         )
     }
 
-    /// Open at the original logical double-click point, clamped so the client
-    /// surface remains inside the recovered galaxy aperture, on the overview
-    /// (`FUN_00452fc0` starts on page `0x67`). Existing visible or minimized
-    /// windows focus or restore instead of duplicating.
-    pub fn open(
-        &mut self,
-        world: &GameWorld,
-        system: SystemKey,
-        logical_position: (i16, i16),
-        faction: CockpitFaction,
-        layout: CockpitLayout,
-    ) -> bool {
-        self.prepare_faction(faction);
-        strategic_window_common::open_direct_system(
-            &mut self.windows,
-            world,
-            system,
-            |window| window.system == system,
-            || OpenSystemWindow {
-                id: None,
-                subject: None,
+    // Open at the original logical double-click point, clamped so the client
+    // surface remains inside the recovered galaxy aperture, on the overview.
+    strategic_window_common::define_direct_system_open_method!(
+        |this, world, system, logical_position, faction, layout| {
+            strategic_window_common::open_direct_system_window!(
+                this,
+                world,
                 system,
-                logical_position: clamp_to_galaxy(logical_position, layout),
-                tab: SystemWindowTab::Overview,
-                selected_item: None,
-                selected_band: None,
-            },
-        )
-    }
+                faction,
+                |window| window.system == system,
+                || OpenSystemWindow {
+                    id: None,
+                    subject: None,
+                    system,
+                    logical_position: clamp_to_galaxy(logical_position, layout),
+                    tab: SystemWindowTab::Overview,
+                    selected_item: None,
+                    selected_band: None,
+                },
+            )
+        }
+    );
 
     /// Removes only content named by manager teardown receipts.
     pub fn remove_content(&mut self, removed: &[WindowId]) {
@@ -542,20 +533,13 @@ impl SystemWindowState {
             .map(|window| window.system)
     }
 
-    /// The object a Mission order released over the system window egui
-    /// draws as `layer` names (`+0x68`, `FUN_00458b80`): on a facility page,
-    /// the facility in the cell under `point` (list `+0x174` at (8, 77),
-    /// `FUN_00609ae0`'s grid); `None` on the overview, off the cells, or on
-    /// a pending unit or empty deposit, where the window gives its system.
-    #[must_use]
-    pub fn release_object(
-        &self,
-        layout: CockpitLayout,
-        layer: egui::LayerId,
-        point: egui::Pos2,
-    ) -> Option<MissionTarget> {
+    // The object a Mission order released over the system window egui draws
+    // as `layer` names (`+0x68`, `FUN_00458b80`): on a facility page, the
+    // facility in the cell under `point`; `None` on the overview, off the
+    // cells, or on a pending unit or empty deposit.
+    strategic_window_common::define_release_object_method!(|this, layout, layer, point| {
         let (window, local) = strategic_window_common::local_point_for_layer(
-            &self.windows,
+            &this.windows,
             layout,
             layer,
             point,
@@ -564,7 +548,7 @@ impl SystemWindowState {
         )?;
         window.tab.page()?;
         let index = grid_cell(local, LIST, CELL, COLUMNS)?;
-        let (_, cells) = self
+        let (_, cells) = this
             .painted
             .iter()
             .find(|(system, _)| *system == window.system)?;
@@ -573,7 +557,7 @@ impl SystemWindowState {
             FacilityItem::Production(key) => Some(MissionTarget::ProductionFacility(*key)),
             FacilityItem::Pending(_) | FacilityItem::Deposit(_) => None,
         }
-    }
+    });
 
     #[must_use]
     pub fn rail_count(&self) -> usize {
@@ -751,9 +735,7 @@ impl SystemWindowState {
     }
 
     fn focus(&mut self, system: SystemKey) -> bool {
-        strategic_window_common::focus_where(&mut self.windows, |window| {
-            window.id.is_none() && window.system == system
-        })
+        strategic_window_common::focus_direct_system(&mut self.windows, system)
     }
 
     fn close(&mut self, system: SystemKey) {
@@ -1601,9 +1583,7 @@ fn draw_system_window(
     let area = strategic_window_common::show_canvas(ctx, id, screen_rect, scale, |ui, canvas| {
         let pointer = canvas.pointer;
         let primary_down = canvas.primary_down;
-        let local = canvas.local;
-        let window_response = canvas.response.clone();
-        let painter = canvas.painter.clone();
+        let (local, window_response, painter) = canvas.input_parts();
         let paint = |cache: &mut BmpCache, source: DllSource, id: u32, x: f32, y: f32| {
             canvas.paint(cache, source, id, x, y);
         };
@@ -2620,17 +2600,17 @@ mod tests {
         assert_eq!(content.logical_position, ORIGIN);
         assert_eq!(content.selected_item, Some(mine));
 
-        crate::test_support::assert_simple_minimized_reopen(
+        crate::test_support::assert_detail_minimized_reopen!(
             &mut manager,
             &mut state,
             id,
-            |state, frame| state.window_is_visible(frame, system),
-            |manager, state| {
-                let restored = state
+            system,
+            |state: &mut SystemWindowState| {
+                state
                     .prepare_open(&world, system, (500, 350), CockpitFaction::Alliance, layout)
-                    .unwrap();
-                commit_prepared_system_window(manager, state, restored)
+                    .unwrap()
             },
+            commit_prepared_system_window,
         );
         assert_eq!(state.window_count(), 1);
         assert_eq!(state.window_mut(system).unwrap().selected_item, Some(mine));
@@ -4250,10 +4230,13 @@ mod tests {
                 .map(|window| (window.system, window.logical_position))
                 .collect();
 
-            let mut restored = SystemWindowState::default();
-            crate::test_support::assert_saved_windows_restore(&saved, faction, |window| {
-                restored.restore_saved(&world, faction, window)
-            });
+            let restored = crate::test_support::restored_saved_windows(
+                &saved,
+                faction,
+                |state: &mut SystemWindowState, window| {
+                    state.restore_saved(&world, faction, window)
+                },
+            );
 
             let back: Vec<_> = restored
                 .windows

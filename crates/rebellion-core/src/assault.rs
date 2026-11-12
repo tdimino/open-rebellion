@@ -95,11 +95,11 @@ impl AssaultRefusal {
     #[must_use]
     pub const fn status(self) -> (u32, u32) {
         match self {
-            Self::NoTeam => (1, 0x16),
-            Self::FleetRefused => (1, 1),
-            Self::NoShip => (8, 1),
-            Self::LastShipUnfinished => (1, 0x10),
-            Self::LastShipEnRoute => (1, 0x11),
+            Self::NoTeam => crate::bombardment::FleetCommandRefusal::NoTeam.status(),
+            Self::FleetRefused => crate::bombardment::FleetCommandRefusal::FleetRefused.status(),
+            Self::NoShip => crate::bombardment::ShipsRefusal::NoShip.status(),
+            Self::LastShipUnfinished => crate::bombardment::ShipsRefusal::Unfinished.status(),
+            Self::LastShipEnRoute => crate::bombardment::ShipsRefusal::EnRoute.status(),
             Self::MixedHolders => (1, 0x14),
             Self::NotBlockaded => (8, 7),
             Self::NoRegiments => (8, 5),

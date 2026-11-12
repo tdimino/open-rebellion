@@ -55,14 +55,12 @@ pub fn menu(owner: WindowId) -> WindowSpec {
 }
 
 pub fn open(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
-    match manager
+    manager
         .apply(WindowCommand::Open(spec))
         .expect("window opens")
         .transition
-    {
-        WindowTransition::Opened { id } => id,
-        other => panic!("expected a new window, got {other:?}"),
-    }
+        .opened_id()
+        .expect("expected a new window transition")
 }
 
 pub fn opened_id(transition: WindowTransition) -> WindowId {

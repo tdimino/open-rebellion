@@ -2,8 +2,11 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use std::fs::File;
+pub(crate) use std::collections::BTreeMap;
+pub(crate) use std::fs::File;
 use std::io::Read;
+pub(crate) use std::path::Path;
+pub(crate) use std::sync::Arc;
 
 #[derive(Debug)]
 pub(crate) enum BoundedReadError {

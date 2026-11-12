@@ -7,6 +7,34 @@ use super::resource_ids::{capital_ship_tactical_resource, fighter_tactical_resou
 )]
 use super::*;
 
+/// A raw battle system plus one possible retreat system for `refuge_side`.
+///
+/// port: test fixture values, not rules.
+#[must_use]
+pub fn battle_system_with_refuge(
+    refuge_side: crate::dat::Faction,
+    refuge_x: u16,
+) -> (GameWorld, SystemKey, SystemKey) {
+    let (mut world, [battle]) = crate::test_support::bare_systems();
+    let refuge = world.systems.insert(crate::world::System {
+        x: refuge_x,
+        control: crate::world::ControlKind::Controlled(refuge_side),
+        ..crate::world::System::default()
+    });
+    (world, battle, refuge)
+}
+
+/// Attach the two opposing battle fleets in stable key order.
+pub fn attach_opposed_fleets(
+    world: &mut GameWorld,
+    system: SystemKey,
+    alliance: FleetKey,
+    empire: FleetKey,
+) {
+    world.systems[system].fleets = vec![alliance, empire];
+    world.systems[system].fleets.sort_unstable();
+}
+
 /// port: test fixture values, not rules.
 #[must_use]
 pub fn test_ship(dat_id: u32, roster: usize, is_alliance: bool, alive: bool) -> TacticalShip {
@@ -83,17 +111,7 @@ pub fn test_ship(dat_id: u32, roster: usize, is_alliance: bool, alive: bool) -> 
         weapon_ranges: TacticalWeaponRanges::default(),
         weapon_recharge_rate: 0.0,
         shield_recharge_rate: 0.0,
-        shield_recharge_carry: 0.0,
-        weapon_recharge_queue: Vec::new(),
-        attack_target: None,
-        manual_targets: Vec::new(),
-        escort_target: None,
-        contents: Vec::new(),
-        retreating: false,
-        retreat_progress: 0.0,
-        retreated: false,
-        outstanding_hits: 0,
-        repair_timer_steps: 0,
+        ..TacticalShip::default()
     }
 }
 

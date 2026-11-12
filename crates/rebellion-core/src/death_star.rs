@@ -1236,12 +1236,9 @@ pub fn hold_in_jail(world: &mut GameWorld, key: CharacterKey, tick: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::carriage::ProductRoom;
-    use crate::dat::{Faction, SectorGroup};
-    use crate::ids::DatId;
     use crate::ids::FleetKey;
-    use crate::world::ControlKind;
-    use crate::world::{Fleet, GameWorld, Sector, System};
+    #[allow(unused_imports)]
+    use crate::test_support::world_fixture_prelude::*;
 
     fn make_world() -> (GameWorld, SystemKey) {
         let mut world = GameWorld::default();

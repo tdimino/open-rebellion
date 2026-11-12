@@ -359,17 +359,18 @@ fn draw_troop_finder_outcome(
 ) -> Option<TroopFinderDrawOutcome> {
     let (window, side_idx, controls) = finder_common::side_finder_snapshot!(state, CONTROLS);
     let list = rows(world, window.tab, transport);
-    let colours = finder_common::count_cell_colours(window.tab.index());
-    let outcome = finder_common::draw_side_finder_window!(
+    let outcome = finder_common::draw_coloured_side_finder_window!(
         ctx, cache, layout, focus, window, list, &FINDER_CONFIG,
-        finder_common::SideFinderPresentation {
-            section_label: window.tab.label(),
-            section_at: TAB_LABEL_AT,
-            panel: PANEL[window.tab.index()],
-            rail: RAIL[side_idx],
-            controls: (controls.close, controls.display),
-        };
-        extra_controls: |_, _, _| {}, paint_details: |canvas, painter, row, line, cell_font| {
+        finder_common::side_finder_presentation!(
+            window.tab.label(), TAB_LABEL_AT, window.tab.index();
+            PANEL[window.tab.index()], side_idx, RAIL, (controls.close, controls.display)
+        );
+        extra_controls: |_, _, _| {}, paint_details: |canvas: &finder_common::FinderCanvas<'_>,
+                                                       painter: &egui::Painter,
+                                                       row: &TroopFinderRow,
+                                                       line: f32,
+                                                       cell_font: &egui::FontId,
+                                                       colours: (egui::Color32, egui::Color32)| {
             // Five count columns at x = 194 + 28*i, y = 2 within the row
             // (FUN_0046d8d0).
             finder_common::paint_count_cells(
@@ -502,11 +503,6 @@ mod tests {
             drive_focused_in_context(ctx, galaxy, state, focus, tap(key)),
             None
         );
-    }
-
-    fn assert_selection(state: &TroopFinderState, chosen: usize, name: &str) {
-        let window = state.window.as_ref().unwrap();
-        crate::test_support::assert_finder_selection(window.chosen, &window.ui.name, chosen, name);
     }
 
     fn drive_tab(
@@ -896,28 +892,23 @@ mod tests {
         let (mut manager, mut state, id) = managed_finder();
         let galaxy = galaxy();
         let transport = TroopTransportState::default();
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let input = escape_input();
-        let mut action = None;
-        let _ = ctx.run(input, |ctx| {
-            action = draw_troop_finder_focused(
-                ctx,
-                &galaxy.world,
-                &mut state,
-                manager.begin_frame().focused(),
-                layout(),
-                &mut cache,
-                &transport,
-            );
-        });
-
-        assert_eq!(action, Some(ManagedTroopFinderAction::Close(id)));
-        crate::test_support::assert_managed_close_receipt(
+        crate::test_support::assert_managed_finder_escape_close(
             &mut manager,
             &mut state,
             id,
             "Troop Finder",
+            ManagedTroopFinderAction::Close(id),
+            |ctx, state, focus, cache| {
+                draw_troop_finder_focused(
+                    ctx,
+                    &galaxy.world,
+                    state,
+                    focus,
+                    layout(),
+                    cache,
+                    &transport,
+                )
+            },
             TroopFinderState::is_open,
             TroopFinderState::remove_content,
         );
@@ -1089,7 +1080,7 @@ mod tests {
         let (_manager, mut state, _id, name_focus, list_focus, ctx) = managed_navigation();
 
         drive_tap_without_action(&ctx, &galaxy, &mut state, name_focus, egui::Key::ArrowDown);
-        assert_selection(&state, 0, "Alderaan");
+        crate::test_support::assert_indexed_finder_selection!(&state, 0, "Alderaan");
         assert_eq!(state.take_focus_request(), Some(list_focus));
 
         assert_eq!(
@@ -1104,7 +1095,7 @@ mod tests {
             (egui::Key::ArrowUp, 0, "Alderaan"),
         ] {
             drive_tap_without_action(&ctx, &galaxy, &mut state, list_focus, key);
-            assert_selection(&state, chosen, name);
+            crate::test_support::assert_indexed_finder_selection!(&state, chosen, name);
         }
 
         drive_tap_without_action(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowUp);
@@ -1181,11 +1172,11 @@ mod tests {
 
         state.window.as_mut().unwrap().chosen = Some(usize::MAX);
         drive_tap_without_action(&ctx, &galaxy, &mut state, name_focus, egui::Key::ArrowDown);
-        assert_selection(&state, 1, "Yavin");
+        crate::test_support::assert_indexed_finder_selection!(&state, 1, "Yavin");
 
         state.window.as_mut().unwrap().chosen = Some(usize::MAX);
         drive_tap_without_action(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowUp);
-        assert_selection(&state, 0, "Alderaan");
+        crate::test_support::assert_indexed_finder_selection!(&state, 0, "Alderaan");
     }
 
     #[test]

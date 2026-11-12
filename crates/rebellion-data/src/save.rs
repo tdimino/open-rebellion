@@ -355,68 +355,40 @@ impl SaveState {
     /// Split a serialized snapshot into the common state used by live runtimes.
     #[must_use]
     pub fn into_simulation(self) -> LoadedSimulation {
-        let Self {
-            world,
-            clock,
-            manufacturing,
-            missions,
-            events,
-            ai,
-            movement,
-            fog_alliance,
-            fog_empire,
-            player_is_alliance,
-            blockade,
-            uprising,
-            research,
-            jedi,
-            victory,
-            betrayal,
-            economy,
-            sim_rng,
-            ai2,
-            repair,
-            game_config,
-            campaign_config,
-            troop_transport,
-            deliveries,
-            player_agent,
-            stockpiles,
-        } = self;
-        let (fog, inactive_fog) = if player_is_alliance {
-            (fog_alliance, fog_empire)
+        let (fog, inactive_fog) = if self.player_is_alliance {
+            (self.fog_alliance, self.fog_empire)
         } else {
-            (fog_empire, fog_alliance)
+            (self.fog_empire, self.fog_alliance)
         };
         LoadedSimulation {
-            world,
+            world: self.world,
             states: SimulationStates {
-                clock,
-                manufacturing,
-                missions,
-                events,
-                ai,
-                ai2,
-                movement,
+                clock: self.clock,
+                manufacturing: self.manufacturing,
+                missions: self.missions,
+                events: self.events,
+                ai: self.ai,
+                ai2: self.ai2,
+                movement: self.movement,
                 fog,
-                blockade,
-                uprising,
-                research,
-                jedi,
-                victory,
-                betrayal,
-                economy,
-                repair,
-                troop_transport,
-                deliveries,
-                stockpiles,
-                campaign_config,
+                blockade: self.blockade,
+                uprising: self.uprising,
+                research: self.research,
+                jedi: self.jedi,
+                victory: self.victory,
+                betrayal: self.betrayal,
+                economy: self.economy,
+                repair: self.repair,
+                troop_transport: self.troop_transport,
+                deliveries: self.deliveries,
+                stockpiles: self.stockpiles,
+                campaign_config: self.campaign_config,
             },
             inactive_fog,
-            player_is_alliance,
-            sim_rng,
-            game_config,
-            player_agent,
+            player_is_alliance: self.player_is_alliance,
+            sim_rng: self.sim_rng,
+            game_config: self.game_config,
+            player_agent: self.player_agent,
         }
     }
 }

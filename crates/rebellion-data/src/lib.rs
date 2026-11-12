@@ -1072,37 +1072,14 @@ mod tests {
         let file: MissionsFile =
             parse_dat_bytes(&one_record_file(0x40, &record), "MISSNSD.DAT").unwrap();
 
-        assert_eq!(
-            mission_record(&file.missions[0]),
-            MissionRecord {
-                dat_id: DatId::new(0x5100_0010),
-                timer_min_days: 5,
-                timer_spread_days: 10,
-                repeats: true,
-                hidden: false,
-                detection_phases: true,
-                can_resign: true,
-                return_policy: 1,
-                rules: MissionTargetRules {
-                    container_loss_ends: true,
-                    needs_populated_container: true,
-                    target_loss_ends: false,
-                    own_side_target: true,
-                    other_side_target: false,
-                    opponent_target: true,
-                    revolting_target: false,
-                    calm_target: true,
-                    prisoner_target: false,
-                    free_target: true,
-                },
-                members: MissionMemberRules {
-                    alliance: true,
-                    empire: false,
-                    special_force_mask: 0x402,
-                    character_mask: 0x1_0000,
-                },
-            }
-        );
+        let mut expected = rebellion_core::test_support::diplomacy_mission_record();
+        expected.rules.target_loss_ends = false;
+        expected.rules.other_side_target = false;
+        expected.rules.opponent_target = true;
+        expected.rules.free_target = true;
+        expected.members.empire = false;
+        expected.members.special_force_mask = 0x402;
+        assert_eq!(mission_record(&file.missions[0]), expected);
     }
 
     #[test]

@@ -327,12 +327,7 @@ mod tests {
         };
         let draw_reverse = |ctx: &egui::Context| {
             for (_, id, size) in ids.into_iter().rev() {
-                egui::Area::new(id)
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(egui::Pos2::ZERO)
-                    .show(ctx, |ui| {
-                        ui.allocate_response(size, egui::Sense::click());
-                    });
+                crate::test_support::show_foreground_area(ctx, id, size);
             }
         };
         let realize = |ctx: &egui::Context, projector: &mut ManagedOrderProjector| {

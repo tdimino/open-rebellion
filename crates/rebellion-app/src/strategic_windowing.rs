@@ -4259,17 +4259,7 @@ mod tests {
             frame: 1,
             ordinal: 0,
         };
-        let mut router = FrameInputRouter::default();
-        router.begin_frame(1, &frame);
-        router.collect_keyboard(event);
-
-        assert_eq!(router.keyboard_recipient(event), InputRecipient::Window(id));
-        router.report_key(
-            event,
-            InputRecipient::Window(id),
-            InputDisposition::Unhandled,
-        );
-        assert!(!router.claim_root(event));
+        rebellion_render::test_support::assert_unhandled_window_key_blocks_root(&frame, id, event);
     }
 
     #[test]

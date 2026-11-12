@@ -7,6 +7,20 @@
 //! A system with fleets shows the fleet icon at its planet's top right; a
 //! double click on it opens the Fleet window (`ghidra/notes/fleet-window.md`).
 
+use crate::native_geometry::{logical_point, logical_rect, paint_texture_rect};
+use crate::object_menu::MenuObject;
+#[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
+use crate::panels::command_palette::InterfaceCommand;
+use crate::quadrant_icons::{self, quadrant_icon, Quadrant};
+use crate::strategic_window_common;
+#[allow(unused_imports)]
+use crate::strategic_window_common::window_prelude::*;
+use crate::theme::game_font;
+use crate::windowing::GalaxyChild;
+use crate::windowing_input::{
+    FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
+};
+use crate::windowing_policy::{contextual_spec, sector_subject};
 use egui_macroquad::egui;
 use rebellion_core::dat::Faction;
 use rebellion_core::fog::FogState;
@@ -14,26 +28,6 @@ use rebellion_core::ids::{DatId, SectorKey, SystemKey};
 use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
 use rebellion_core::world::System;
 use rebellion_core::world::{ControlKind, GameWorld};
-use rebellion_windowing::{
-    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, SubjectId, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
-};
-
-use crate::bmp_cache::{BmpCache, DllSource};
-use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::fleet_window::paint_native;
-use crate::native_geometry::{logical_point, logical_rect, paint_texture_rect};
-use crate::object_menu::MenuObject;
-#[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
-use crate::panels::command_palette::InterfaceCommand;
-use crate::quadrant_icons::{self, quadrant_icon, Quadrant};
-use crate::strategic_window_common;
-use crate::theme::game_font;
-use crate::windowing::GalaxyChild;
-use crate::windowing_input::{
-    FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
-};
-use crate::windowing_policy::{contextual_spec, sector_subject};
 
 /// `DAT_00658bd8`, a static 1023: the galaxy's width, whose half
 /// `FUN_00429ce0` compares a sector's x with (`FUN_00526560`, the record's
@@ -444,34 +438,29 @@ impl SectorWindowState {
             .collect()
     }
 
-    /// Exact visible Sector identities whose rectangle covers `point` and
-    /// whose egui layer is the top layer observed for this event.
-    #[must_use]
-    pub fn hit_window_ids(
-        &self,
-        snapshot: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-        top_layer: Option<egui::LayerId>,
-    ) -> std::collections::BTreeSet<WindowId> {
-        let point = egui::pos2(point.0, point.1);
-        self.windows
-            .iter()
-            .filter(|window| top_layer.is_some_and(|layer| layer.id == area_id(**window)))
-            .filter_map(|window| {
-                window.id.filter(|id| {
-                    snapshot.is_visible(*id)
-                        && snapshot
-                            .key(*id)
-                            .is_some_and(|key| key.kind == WindowKind::Sector)
-                        && rect_contains(
-                            window_screen_rect(self.faction, window.column, layout),
-                            point,
-                        )
+    // Exact visible Sector identities whose rectangle covers `point` and
+    // whose egui layer is the top layer observed for this event.
+    strategic_window_common::define_hit_window_ids_method!(
+        |this, snapshot, layout, point, top_layer| {
+            let point = egui::pos2(point.0, point.1);
+            this.windows
+                .iter()
+                .filter(|window| top_layer.is_some_and(|layer| layer.id == area_id(**window)))
+                .filter_map(|window| {
+                    window.id.filter(|id| {
+                        snapshot.is_visible(*id)
+                            && snapshot
+                                .key(*id)
+                                .is_some_and(|key| key.kind == WindowKind::Sector)
+                            && rect_contains(
+                                window_screen_rect(this.faction, window.column, layout),
+                                point,
+                            )
+                    })
                 })
-            })
-            .collect()
-    }
+                .collect()
+        }
+    );
 
     /// Whether visible Sector content covers `point` in this frozen frame.
     #[must_use]
@@ -1599,40 +1588,16 @@ fn draw_sector_windows_with_snapshot(
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
     }
-    let mut windows = Vec::new();
-    let mut stale_manager_windows = Vec::new();
-    if let Some(snapshot) = snapshot {
-        for &id in snapshot.paint_order() {
-            let Some(key) = snapshot
-                .key(id)
-                .filter(|key| key.kind == WindowKind::Sector)
-            else {
-                continue;
-            };
-            match state
-                .windows
-                .iter()
-                .find(|window| window.id == Some(id))
-                .copied()
-            {
-                Some(window) if !shown(GalaxyChild::Sector(window.sector)) => {}
-                Some(window)
-                    if key.subject == window.subject
-                        && sector_subject(world, window.sector) == window.subject =>
-                {
-                    windows.push(window);
-                }
-                Some(_) | None => stale_manager_windows.push(id),
-            }
-        }
-    }
-    // Direct content exists only in renderer tests and explicit fixtures.
-    windows.extend(
-        state
-            .windows
-            .iter()
-            .filter(|window| window.id.is_none())
-            .copied(),
+    let strategic_window_common::PaintProjection {
+        windows,
+        stale_manager_windows,
+    } = strategic_window_common::paint_projection(
+        &state.windows,
+        snapshot,
+        WindowKind::Sector,
+        |window| (window.id, window.subject),
+        |window| shown(GalaxyChild::Sector(window.sector)),
+        |window| sector_subject(world, window.sector) == window.subject,
     );
     let mut actions = stale_manager_windows
         .into_iter()
@@ -2936,6 +2901,26 @@ mod tests {
         let release = input_event(frame, ordinal + 1);
         router.collect_pointer(release, hits, PointerPhase::Release(button));
         release
+    }
+
+    fn routed_window_fixture(
+        frame: u64,
+        manager: &WindowManager,
+        window: WindowId,
+    ) -> (
+        FrameInputRouter,
+        std::collections::BTreeSet<WindowId>,
+        Vec<SectorWindowAction>,
+        Option<WindowId>,
+    ) {
+        let mut router = FrameInputRouter::default();
+        router.begin_frame(frame, &manager.begin_frame());
+        (
+            router,
+            std::collections::BTreeSet::from([window]),
+            Vec::new(),
+            None,
+        )
     }
 
     fn route_test_state() -> (
@@ -4797,13 +4782,7 @@ mod tests {
         let duplicate_commit = manager
             .apply(WindowCommand::Open(duplicate.spec()))
             .unwrap();
-        assert!(matches!(
-            duplicate_commit.transition,
-            WindowTransition::Existing {
-                id,
-                effect: ExistingEffect::NoOp,
-            } if id == first_id
-        ));
+        crate::test_support::assert_existing_noop(&duplicate_commit.transition, first_id);
         assert_eq!(manager.begin_frame().paint_order(), before_order);
         assert_eq!(manager.begin_frame().focused(), before_focus);
 
@@ -5483,11 +5462,8 @@ mod tests {
         let mut managed = managed_draw_for_test(state.windows[0]);
         managed.result.focus = true;
         managed.result.opened_icon = Some((first, Quadrant::Fleets, (0, 0)));
-        let mut router = FrameInputRouter::default();
-        router.begin_frame(48, &manager.begin_frame());
-        let hits = std::collections::BTreeSet::from([window]);
-        let mut actions = Vec::new();
-        let mut last_activated = None;
+        let (mut router, hits, mut actions, mut last_activated) =
+            routed_window_fixture(48, &manager, window);
         for (ordinal, point) in [
             (0, blank),
             (2, wrong_system),
@@ -5715,11 +5691,8 @@ mod tests {
         let mut managed = managed_draw_for_test(state.windows[0]);
         managed.result.opened_icon = Some((second, Quadrant::Fleets, (0, 0)));
         managed.aggregate_icon_release = Some(input_event(62, 7));
-        let mut router = FrameInputRouter::default();
-        router.begin_frame(62, &manager.begin_frame());
-        let hits = std::collections::BTreeSet::from([window]);
-        let mut actions = Vec::new();
-        let mut last_activated = None;
+        let (mut router, hits, mut actions, mut last_activated) =
+            routed_window_fixture(62, &manager, window);
         for (ordinal, point) in [
             (0, first_point),
             (2, first_point),

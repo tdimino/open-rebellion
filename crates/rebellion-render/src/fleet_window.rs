@@ -34,7 +34,7 @@ use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::object_menu::MenuObject;
 use crate::panels::fleets::{capital_ship_mini_id, fighter_mini_id};
 use crate::quadrant_icons::{quadrant_art, Quadrant};
-use crate::strategic_window_common::{self, draw_frame};
+use crate::strategic_window_common;
 use crate::system_window::{
     canvas_point, character_mini_resource_id, clamp_window_to_galaxy, fleet_label,
     opposing_contents_visible, surface_drag_grab, troop_mini, TitleDrag,
@@ -785,42 +785,37 @@ impl FleetWindowState {
         committed
     }
 
-    /// Compatibility helper for renderer tests and explicit interface
-    /// fixtures compiled in dependent crates. Production code must use
-    /// `prepare_open` and `commit_open`.
-    #[doc(hidden)]
-    pub fn open(
-        &mut self,
-        world: &GameWorld,
-        system: SystemKey,
-        logical_position: (i16, i16),
-        faction: CockpitFaction,
-        layout: CockpitLayout,
-    ) -> bool {
-        self.prepare_faction(faction);
-        strategic_window_common::open_direct_system(
-            &mut self.windows,
-            world,
-            system,
-            |window| window.id.is_none() && window.system == system,
-            || OpenFleetWindow {
-                id: None,
-                subject: None,
+    // Compatibility helper for renderer tests and explicit interface
+    // fixtures compiled in dependent crates. Production code must use
+    // `prepare_open` and `commit_open`.
+    strategic_window_common::define_direct_system_open_method!(
+        #[doc(hidden)]
+        |this, world, system, logical_position, faction, layout| {
+            strategic_window_common::open_direct_system_window!(
+                this,
+                world,
                 system,
-                logical_position: clamp_window_to_galaxy(
-                    logical_position,
-                    layout,
-                    FLEET_WINDOW_WIDTH,
-                    FLEET_WINDOW_HEIGHT,
-                ),
-                selected: None,
-                selected_item: None,
-                expanded: Vec::new(),
-                tab: FleetWindowTab::CapitalShips,
-                rename: None,
-            },
-        )
-    }
+                faction,
+                |window| window.id.is_none() && window.system == system,
+                || OpenFleetWindow {
+                    id: None,
+                    subject: None,
+                    system,
+                    logical_position: clamp_window_to_galaxy(
+                        logical_position,
+                        layout,
+                        FLEET_WINDOW_WIDTH,
+                        FLEET_WINDOW_HEIGHT,
+                    ),
+                    selected: None,
+                    selected_item: None,
+                    expanded: Vec::new(),
+                    tab: FleetWindowTab::CapitalShips,
+                    rename: None,
+                },
+            )
+        }
+    );
 
     /// Existing content position used when a semantic reopen carries a new
     /// selection or Rename intent. The manager preserves this geometry.
@@ -972,21 +967,15 @@ impl FleetWindowState {
         )
     }
 
-    /// Exact visible manager identity whose Fleet rectangle covers `point`
-    /// when `top_layer`, egui's topmost interactable layer there, is that
-    /// window's own area. A retained window of another family painted above
-    /// it, or no layer at all, leaves the event to the strategic root, as
-    /// egui leaves it to that other window.
-    #[must_use]
-    pub fn hit_window_ids(
-        &self,
-        snapshot: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-        top_layer: Option<egui::LayerId>,
-    ) -> std::collections::BTreeSet<WindowId> {
-        self.hit_shown_window_ids(snapshot, layout, point, top_layer, &|_| true)
-    }
+    // Exact visible manager identity whose Fleet rectangle covers `point`
+    // when `top_layer`, egui's topmost interactable layer there, is that
+    // window's own area. A retained window of another family painted above
+    // it, or no layer at all, leaves the event to the strategic root.
+    strategic_window_common::define_hit_window_ids_method!(
+        |this, snapshot, layout, point, top_layer| {
+            this.hit_shown_window_ids(snapshot, layout, point, top_layer, &|_| true)
+        }
+    );
 
     /// [`Self::hit_window_ids`] after GID visibility is projected onto the
     /// registered Fleet identity.
@@ -1274,28 +1263,19 @@ impl FleetWindowState {
     /// not ported for the other objects.
     fn end_drag(
         &mut self,
-        ctx: &egui::Context,
         world: &GameWorld,
         transport: &TroopTransportState,
-        scale: f32,
-        router: Option<&mut FrameInputRouter>,
-        pointer_events: &[(InputEventId, PointerPhase)],
+        mut frame: strategic_window_common::RoutedDragFrame<'_>,
     ) -> EndDragResult {
-        let mut result = strategic_window_common::complete_routed_drag(
-            &mut self.drag,
-            &mut self.drag_owner,
-            ctx,
-            router,
-            pointer_events.iter().rev().copied(),
-            FleetWindowAction::ReleasePointer,
-            scale,
-            DRAG_DISTANCE_SQUARED,
-        )
-        .unwrap_or_default();
-        let Some(drop) = result.drop.take() else {
+        let mut result = strategic_window_common::complete_window_drag!(
+            self,
+            frame,
+            reverse,
+            FleetWindowAction::ReleasePointer
+        );
+        let Some((drag, point, ctrl)) = result.take_drop() else {
             return result;
         };
-        let (drag, point, ctrl) = (drop.payload, drop.point, drop.ctrl);
         if !drag.object.is_current(world, transport, self.faction) {
             return result;
         }
@@ -1346,9 +1326,7 @@ impl FleetWindowState {
 
     #[cfg(any(test, feature = "interface-test-fixtures"))]
     fn focus_fixture(&mut self, system: SystemKey) -> bool {
-        strategic_window_common::focus_where(&mut self.windows, |window| {
-            window.id.is_none() && window.system == system
-        })
+        strategic_window_common::focus_direct_system(&mut self.windows, system)
     }
 
     fn close(&mut self, system: SystemKey) -> Option<OpenFleetWindow> {
@@ -2230,12 +2208,14 @@ fn draw_fleet_windows_with_snapshot(
     let (focused_manager, focused_fixture_system) =
         strategic_window_common::presentation_focus(&windows, snapshot, true);
     let ended_drag = state.end_drag(
-        ctx,
         world,
         transport,
-        layout.scale,
-        router.as_deref_mut(),
-        pointer_events,
+        strategic_window_common::RoutedDragFrame::new(
+            ctx,
+            layout.scale,
+            router.as_deref_mut(),
+            pointer_events,
+        ),
     );
     let mut actions: Vec<_> = std::mem::take(&mut state.pending_control_invalidations)
         .into_iter()
@@ -2282,17 +2262,13 @@ fn draw_fleet_windows_with_snapshot(
             (Some(_), None) => false,
         };
         let result = draw_fleet_window(
-            ctx,
-            world,
+            strategic_window_common::DetailWindowDraw::new(
+                ctx, world, window, focused, faction, layout, cache,
+            ),
             movement,
             fog,
             transport,
-            window,
             rename_lease,
-            focused,
-            faction,
-            layout,
-            cache,
         );
         strategic_window_common::start_title_drag(
             &mut state.title_drag,
@@ -2468,21 +2444,16 @@ fn draw_fleet_windows_with_snapshot(
     reason = "Keep the window's ordered paint and input pass together, as the system window does."
 )]
 fn draw_fleet_window(
-    ctx: &egui::Context,
-    world: &GameWorld,
+    draw: strategic_window_common::DetailWindowDraw<'_, OpenFleetWindow>,
     movement: &MovementState,
     fog: &FogState,
     transport: &TroopTransportState,
-    window: &OpenFleetWindow,
     rename_lease: RenameInputLease,
-    focused: bool,
-    faction: CockpitFaction,
-    layout: CockpitLayout,
-    cache: &mut BmpCache,
 ) -> WindowDrawResult {
-    let mut result = WindowDrawResult::default();
-    draw_frame!(result, system, scale, screen_rect, id; world, window, layout);
-    let player = faction.player();
+    strategic_window_common::begin_detail_window_draw!(
+        draw => ctx world window focused faction layout cache result system scale screen_rect id player:
+        WindowDrawResult
+    );
     let viewer = faction_side(player);
     let other = if viewer == 1 { 2 } else { 1 };
     let entries = left_entries(world, movement, fog, player, window);
@@ -2501,9 +2472,7 @@ fn draw_fleet_window(
             .map(|value| fleet_side(value.is_alliance))
     });
     let area = strategic_window_common::show_canvas(ctx, id, screen_rect, scale, |ui, canvas| {
-        let local = canvas.local;
-        let window_response = canvas.response.clone();
-        let painter = canvas.painter.clone();
+        let (local, window_response, painter) = canvas.input_parts();
         let paint = |cache: &mut BmpCache, id: u32, x: f32, y: f32| {
             canvas.paint(cache, DllSource::Strategy, id, x, y);
         };
@@ -3476,12 +3445,14 @@ pub(crate) mod tests {
             ]),
             |ctx| {
                 result = state.end_drag(
-                    ctx,
                     world,
                     transport,
-                    1.0,
-                    Some(router),
-                    &[(release_id, release_phase)],
+                    strategic_window_common::RoutedDragFrame::new(
+                        ctx,
+                        1.0,
+                        Some(router),
+                        &[(release_id, release_phase)],
+                    ),
                 );
             },
         );
@@ -4782,16 +4753,12 @@ pub(crate) mod tests {
             });
         let mut result = Run::default();
         for (index, events) in frames.into_iter().enumerate() {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                time: Some(index as f64 * 0.05),
+            let input = crate::test_support::timed_raw_input(
+                index,
                 events,
                 modifiers,
-                ..Default::default()
-            };
+                egui::vec2(1400.0, 1000.0),
+            );
             crate::test_support::clear_painted_trace();
             let output = ctx.run(input, |ctx| {
                 result.actions.extend(draw_fleet_windows(
@@ -5434,16 +5401,13 @@ pub(crate) mod tests {
         assert!(!state.contains_screen_point(scaled(), point(at(-0.5, 150.0))));
 
         let fog = fog(system);
-        let layer = egui::LayerId::new(
-            egui::Order::Foreground,
-            area_id(
-                state
-                    .windows
-                    .iter()
-                    .find(|window| window.system == system)
-                    .unwrap(),
-            ),
-        );
+        let layer = crate::test_support::foreground_layer(area_id(
+            state
+                .windows
+                .iter()
+                .find(|window| window.system == system)
+                .unwrap(),
+        ));
         assert_eq!(
             state.release_target(
                 &world,

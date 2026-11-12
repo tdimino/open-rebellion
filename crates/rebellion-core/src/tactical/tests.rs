@@ -2933,20 +2933,12 @@ fn a_death_star_destroyed_in_battle_leaves_its_fleet_without_one_and_its_ship_de
 // side that holds nothing retreats to the other side's system.
 #[test]
 fn a_side_retreats_to_a_system_it_holds_else_to_the_other_sides() {
-    use crate::world::{ControlKind, System};
-
     for refuge_side in [crate::dat::Faction::Alliance, crate::dat::Faction::Empire] {
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System::default());
-        world.systems.insert(System {
-            x: 30,
-            control: ControlKind::Controlled(refuge_side),
-            ..System::default()
-        });
+        let (mut world, system, _) =
+            super::test_support::battle_system_with_refuge(refuge_side, 30);
         let alliance = simple_fleet(&mut world, system, true, 1);
         let empire = simple_fleet(&mut world, system, false, 1);
-        world.systems[system].fleets = vec![alliance, empire];
-        world.systems[system].fleets.sort_unstable();
+        super::test_support::attach_opposed_fleets(&mut world, system, alliance, empire);
 
         let mut session = BattleSession::new(&world, system, alliance, empire, true, 1, 0x5eed);
         apply::seat_morale(
@@ -3725,12 +3717,10 @@ fn the_ships_whose_class_projects_a_gravity_well_are_listed() {
 // its own leg from its yard (`+0x50` bit 5, FUN_00556430) stays out.
 #[test]
 fn a_ship_on_its_own_leg_does_not_fight_for_either_side() {
-    use crate::world::{ShipTransit, System};
+    use crate::world::ShipTransit;
 
     for is_alliance in [true, false] {
-        let mut world = GameWorld::default();
-        let origin = world.systems.insert(System::default());
-        let system = world.systems.insert(System::default());
+        let (mut world, [origin, system]) = crate::test_support::bare_systems();
         let attacker = simple_fleet(&mut world, system, is_alliance, 2);
         let defender = simple_fleet(&mut world, system, !is_alliance, 1);
         world.fleets[attacker].capital_ships[1].transit = Some(ShipTransit {

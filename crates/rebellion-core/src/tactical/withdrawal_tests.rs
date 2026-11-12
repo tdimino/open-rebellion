@@ -597,17 +597,11 @@ fn a_retreat_takes_only_its_own_sides_operational_imperial_station_away() {
 // no other system.
 #[test]
 fn a_side_withdrawal_counts_down_its_transit_to_the_retreat_system() {
-    use crate::world::{CapitalShipClass, ControlKind, Fleet, ShipInstance, System};
+    use crate::world::{CapitalShipClass, Fleet, ShipInstance};
 
     for refuge_side in [crate::dat::Faction::Alliance, crate::dat::Faction::Empire] {
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System::default());
-        // port: test fixture values, not rules.
-        let refuge = world.systems.insert(System {
-            x: 500,
-            control: ControlKind::Controlled(refuge_side),
-            ..System::default()
-        });
+        let (mut world, system, refuge) =
+            super::test_support::battle_system_with_refuge(refuge_side, 500);
         let mut fleet = |is_alliance: bool| {
             let class = world.capital_ship_classes.insert(CapitalShipClass {
                 dat_id: DatId::new(0x1400_0001),
@@ -626,8 +620,7 @@ fn a_side_withdrawal_counts_down_its_transit_to_the_retreat_system() {
         };
         let alliance = fleet(true);
         let empire = fleet(false);
-        world.systems[system].fleets = vec![alliance, empire];
-        world.systems[system].fleets.sort_unstable();
+        super::test_support::attach_opposed_fleets(&mut world, system, alliance, empire);
 
         let mut session = BattleSession::new(&world, system, alliance, empire, true, 1, 0x5eed);
         seat_morale(&mut session, &world);

@@ -13,6 +13,22 @@
 //! dragged out of the list moves to where it is dropped (`0x201`), as one
 //! out of the Fleet window does.
 
+use crate::fleet_window::{control_side, faction_side, fleet_side, mini_layers, MiniObject};
+use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
+use crate::object_menu::MenuObject;
+use crate::panels::fleets::fighter_mini_id;
+use crate::quadrant_icons::{mission_keys, system_members};
+use crate::scroll_bar::{egui_pointer, ScrollBar, ScrollDrag, ScrollRange, LIST_BAR_29CC};
+use crate::strategic_window_common;
+#[allow(unused_imports)]
+use crate::strategic_window_common::window_prelude::*;
+use crate::system_window::{
+    canvas_point, character_mini_resource_id, clamp_window_to_galaxy, defense_facility_mini,
+    opposing_contents_visible, special_force_mini, surface_drag_grab, troop_mini, TitleDrag,
+};
+use crate::windowing::GalaxyChild;
+use crate::windowing_input::{FrameInputRouter, InputEventId, PointerButtonId, PointerPhase};
+use crate::windowing_policy::system_subject;
 use egui_macroquad::egui;
 use rebellion_core::dat::{ExplorationStatus, Faction};
 use rebellion_core::economy::EconomyState;
@@ -25,27 +41,6 @@ use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
 use rebellion_core::world::GameWorld;
 #[cfg(test)]
 use rebellion_windowing::{ContentReport, WindowOwner};
-use rebellion_windowing::{RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowTransition};
-
-use crate::bmp_cache::{BmpCache, DllSource};
-use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::fleet_window::{
-    control_side, faction_side, fleet_side, mini_layers, paint_native, MiniObject,
-    DRAG_DISTANCE_SQUARED,
-};
-use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
-use crate::object_menu::MenuObject;
-use crate::panels::fleets::fighter_mini_id;
-use crate::quadrant_icons::{mission_keys, system_members};
-use crate::scroll_bar::{egui_pointer, ScrollBar, ScrollDrag, ScrollRange, LIST_BAR_29CC};
-use crate::strategic_window_common::{self, draw_frame};
-use crate::system_window::{
-    canvas_point, character_mini_resource_id, clamp_window_to_galaxy, defense_facility_mini,
-    opposing_contents_visible, special_force_mini, surface_drag_grab, troop_mini, TitleDrag,
-};
-use crate::windowing::GalaxyChild;
-use crate::windowing_input::{FrameInputRouter, InputEventId, PointerButtonId, PointerPhase};
-use crate::windowing_policy::system_subject;
 
 pub const DEFENSES_WINDOW_WIDTH: f32 = 235.0;
 pub const DEFENSES_WINDOW_HEIGHT: f32 = 304.0;
@@ -472,20 +467,14 @@ impl DefensesWindowState {
         }
     }
 
-    /// The object a Mission order released over the Defenses window egui
-    /// draws as `layer` names (`+0x68`, `FUN_004aa380`): the row in the cell
-    /// under `point` (list `+0x164` at (7, 81), on any page), or `None`
-    /// where the window gives its system. port: a character or squadron
-    /// row names no [`MissionTarget`], so it gives the system too.
-    #[must_use]
-    pub fn release_object(
-        &self,
-        layout: CockpitLayout,
-        layer: egui::LayerId,
-        point: egui::Pos2,
-    ) -> Option<MissionTarget> {
+    // The object a Mission order released over the Defenses window egui
+    // draws as `layer` names (`+0x68`, `FUN_004aa380`): the row in the cell
+    // under `point` (list `+0x164` at (7, 81), on any page), or `None`
+    // where the window gives its system. port: a character or squadron row
+    // names no `MissionTarget`, so it gives the system too.
+    strategic_window_common::define_release_object_method!(|this, layout, layer, point| {
         let (window, local) = strategic_window_common::local_point_for_layer(
-            &self.windows,
+            &this.windows,
             layout,
             layer,
             point,
@@ -499,7 +488,7 @@ impl DefensesWindowState {
             DefensesItem::SpecialForce(key) => Some(MissionTarget::SpecialForce(key)),
             DefensesItem::Character(_) | DefensesItem::Squadron { .. } => None,
         }
-    }
+    });
 
     pub fn clear(&mut self) {
         self.windows.clear();
@@ -553,26 +542,17 @@ impl DefensesWindowState {
     /// Move.
     fn end_drag(
         &mut self,
-        ctx: &egui::Context,
-        scale: f32,
-        router: Option<&mut FrameInputRouter>,
-        pointer_events: &[(InputEventId, PointerPhase)],
+        mut frame: strategic_window_common::RoutedDragFrame<'_>,
     ) -> EndDragResult {
-        let mut result = strategic_window_common::complete_routed_drag(
-            &mut self.drag,
-            &mut self.drag_owner,
-            ctx,
-            router,
-            pointer_events.iter().copied(),
-            DefensesWindowAction::ReleasePointer,
-            scale,
-            DRAG_DISTANCE_SQUARED,
-        )
-        .unwrap_or_default();
-        let Some(drop) = result.drop.take() else {
+        let mut result = strategic_window_common::complete_window_drag!(
+            self,
+            frame,
+            forward,
+            DefensesWindowAction::ReleasePointer
+        );
+        let Some((drag, point, ctrl)) = result.take_drop() else {
             return result;
         };
-        let (drag, point, ctrl) = (drop.payload, drop.point, drop.ctrl);
         let action = match drag.item {
             DefensesItem::Squadron { class, .. } => DefensesWindowAction::DragSquadron {
                 system: drag.system,
@@ -982,26 +962,27 @@ pub fn draw_defenses_windows(
     world: &GameWorld,
     fog: &FogState,
     missions: &MissionState,
-    economy: &EconomyState,
+    _economy: &EconomyState,
     state: &mut DefensesWindowState,
     faction: CockpitFaction,
     layout: CockpitLayout,
     cache: &mut BmpCache,
 ) -> Vec<DefensesWindowAction> {
     draw_defenses_windows_with_snapshot(
-        ctx,
-        world,
-        fog,
-        missions,
-        economy,
+        strategic_window_common::DetailWindowsDraw {
+            ctx,
+            world,
+            fog,
+            missions,
+            faction,
+            layout,
+            cache,
+            snapshot: None,
+            pointer_events: &[],
+            router: None,
+            shown: &|_| true,
+        },
         state,
-        faction,
-        layout,
-        cache,
-        None,
-        &[],
-        None,
-        &|_| true,
     )
 }
 
@@ -1071,7 +1052,7 @@ pub fn draw_managed_defenses_windows_shown(
         world,
         fog,
         missions,
-        economy,
+        economy: _,
         state,
         faction,
         layout,
@@ -1080,20 +1061,9 @@ pub fn draw_managed_defenses_windows_shown(
         pointer_events,
         router,
     } = input;
-    draw_defenses_windows_with_snapshot(
-        ctx,
-        world,
-        fog,
-        missions,
-        economy,
-        state,
-        faction,
-        layout,
-        cache,
-        Some(snapshot),
-        pointer_events,
-        Some(router),
-        shown,
+    strategic_window_common::draw_managed_detail_windows!(
+        draw_defenses_windows_with_snapshot => ctx world fog missions faction layout cache
+        snapshot pointer_events router shown state
     )
 }
 
@@ -1102,20 +1072,12 @@ pub fn draw_managed_defenses_windows_shown(
     reason = "Shared implementation for production snapshots and fixture-only direct content."
 )]
 fn draw_defenses_windows_with_snapshot(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    fog: &FogState,
-    missions: &MissionState,
-    _economy: &EconomyState,
+    draw: strategic_window_common::DetailWindowsDraw<'_>,
     state: &mut DefensesWindowState,
-    faction: CockpitFaction,
-    layout: CockpitLayout,
-    cache: &mut BmpCache,
-    snapshot: Option<&RoutingSnapshot>,
-    pointer_events: &[(InputEventId, PointerPhase)],
-    mut router: Option<&mut FrameInputRouter>,
-    shown: &dyn Fn(GalaxyChild) -> bool,
 ) -> Vec<DefensesWindowAction> {
+    strategic_window_common::unpack_detail_windows_draw!(
+        draw => ctx world fog missions faction layout cache snapshot pointer_events router shown
+    );
     state.update_title_drag(ctx, layout);
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
@@ -1125,20 +1087,23 @@ fn draw_defenses_windows_with_snapshot(
         stale_manager_windows,
         focused_manager,
         focused_fixture_system,
-    } = strategic_window_common::refreshed_window_paint_set(
+    } = strategic_window_common::refreshed_release_window_paint_set!(
         &mut state.windows,
         snapshot,
         WindowKind::Defenses,
         |system| shown(GalaxyChild::Defenses(system)),
-        |window, snapshot| window_is_visible(window, snapshot, world),
-        |window| window.id.is_none() && world.systems.contains_key(window.system),
-        |window, visible| window.release_target_visible = visible,
-        |window| window.release_target_visible,
+        world,
+        window_is_visible,
     );
     for &id in &stale_manager_windows {
         state.cancel_pointer_capture(id);
     }
-    let ended_drag = state.end_drag(ctx, layout.scale, router.as_deref_mut(), pointer_events);
+    let ended_drag = state.end_drag(strategic_window_common::RoutedDragFrame::new(
+        ctx,
+        layout.scale,
+        router.as_deref_mut(),
+        pointer_events,
+    ));
     let mut actions = stale_manager_windows
         .into_iter()
         .map(DefensesWindowAction::Close)
@@ -1147,13 +1112,17 @@ fn draw_defenses_windows_with_snapshot(
     for window in &windows {
         let focused =
             strategic_window_common::is_focused(window, focused_manager, focused_fixture_system);
-        let result = draw_defenses_window(
-            ctx, world, fog, missions, window, focused, faction, layout, cache,
-        );
-        strategic_window_common::start_title_drag(
+        let result = strategic_window_common::record_title_drag(
             &mut state.title_drag,
             area_id(window),
-            result.drag_grab,
+            draw_defenses_window(
+                strategic_window_common::DetailWindowDraw::new(
+                    ctx, world, window, focused, faction, layout, cache,
+                ),
+                fog,
+                missions,
+            ),
+            |result| result.drag_grab,
         );
         let system = window.system;
         let scroll_changed = result
@@ -1253,25 +1222,18 @@ fn draw_defenses_windows_with_snapshot(
     reason = "Keep the window's ordered paint and input pass together, as the Fleet window does."
 )]
 fn draw_defenses_window(
-    ctx: &egui::Context,
-    world: &GameWorld,
+    draw: strategic_window_common::DetailWindowDraw<'_, OpenDefensesWindow>,
     fog: &FogState,
     missions: &MissionState,
-    window: &OpenDefensesWindow,
-    focused: bool,
-    faction: CockpitFaction,
-    layout: CockpitLayout,
-    cache: &mut BmpCache,
 ) -> WindowDrawResult {
-    let mut result = WindowDrawResult::default();
-    draw_frame!(result, system, scale, screen_rect, id; world, window, layout);
-    let player = faction.player();
+    strategic_window_common::begin_detail_window_draw!(
+        draw => ctx world window focused faction layout cache result system scale screen_rect id player:
+        WindowDrawResult
+    );
     let side = shown_side(world, window.system);
     let rows = page_rows(world, fog, missions, player, window.system, window.page);
     let area = strategic_window_common::show_canvas(ctx, id, screen_rect, scale, |ui, canvas| {
-        let local = canvas.local;
-        let window_response = canvas.response.clone();
-        let painter = canvas.painter.clone();
+        let (local, window_response, painter) = canvas.input_parts();
         // The title label `+0x49` starts after the sector button, in
         // font 5 with format `0x24`: one line, left-aligned and
         // vertically centred (`FUN_004a8790`).
@@ -1967,13 +1929,13 @@ mod tests {
         });
         assert_preserved_content(&mut state, system, selected);
 
-        crate::test_support::assert_simple_minimized_reopen(
+        crate::test_support::assert_detail_minimized_reopen!(
             &mut manager,
             &mut state,
             id,
-            |state, frame| state.window_is_visible(frame, system),
-            |manager, state| {
-                let restored = state
+            system,
+            |state: &mut DefensesWindowState| {
+                state
                     .prepare_open(
                         &world,
                         system,
@@ -1981,9 +1943,9 @@ mod tests {
                         CockpitFaction::Alliance,
                         scaled(),
                     )
-                    .unwrap();
-                commit_prepared_defenses_window(manager, state, restored)
+                    .unwrap()
             },
+            commit_prepared_defenses_window,
         );
         assert_preserved_content(&mut state, system, selected);
     }
@@ -2202,10 +2164,7 @@ mod tests {
         });
     }
 
-    /// A logical point in the window opened at `ORIGIN` on [`scaled`].
-    fn at(x: f32, y: f32) -> egui::Pos2 {
-        crate::test_support::window_point(scaled(), ORIGIN, (x, y))
-    }
+    crate::test_support::define_detail_window_point!(at, ORIGIN);
 
     fn opened(world: &GameWorld, system: SystemKey) -> DefensesWindowState {
         let mut state = DefensesWindowState::default();
@@ -2250,16 +2209,13 @@ mod tests {
             |point| state.contains_screen_point(scaled(), point),
         );
 
-        let layer = egui::LayerId::new(
-            egui::Order::Foreground,
-            area_id(
-                state
-                    .windows
-                    .iter()
-                    .find(|window| window.system == system)
-                    .unwrap(),
-            ),
-        );
+        let layer = crate::test_support::foreground_layer(area_id(
+            state
+                .windows
+                .iter()
+                .find(|window| window.system == system)
+                .unwrap(),
+        ));
         crate::test_support::assert_system_release_target(system, layer, |layer| {
             state.release_target(layer)
         });
@@ -2438,27 +2394,20 @@ mod tests {
         let mut state = opened(&world, system);
         let run = run(&world, &missions, &mut state, hover(at(150.0, 10.0)));
 
-        for (id, point) in [
-            (BACKGROUND, at(0.0, 0.0)),
-            (10299, at(2.0, 2.0)),
-            (strategic_window_common::SECTOR_ART.0, at(3.0, 3.0)),
-            (strategic_window_common::MINIMIZE_ART.0, at(204.0, 3.0)),
-            (strategic_window_common::CLOSE_ART.0, at(218.0, 3.0)),
-            (10571, at(28.0, 20.0)),
-            (10563, at(64.0, 20.0)),
-            (10558, at(100.0, 20.0)),
-            (10553, at(136.0, 20.0)),
-            (10550, at(172.0, 20.0)),
-            (18_176 + 832, at(7.0, 81.0)),
-            (18_176 + 832, at(77.0, 81.0)),
-            (17_728, at(147.0, 81.0)),
-        ] {
-            assert!(
-                run.painted.contains(&(id, point)),
-                "{id} at {point:?} in {:?}",
-                run.painted
-            );
-        }
+        crate::test_support::assert_detail_chrome(&run.painted, BACKGROUND, 10299, at);
+        crate::test_support::assert_painted_at(
+            &run.painted,
+            [
+                (10571, at(28.0, 20.0)),
+                (10563, at(64.0, 20.0)),
+                (10558, at(100.0, 20.0)),
+                (10553, at(136.0, 20.0)),
+                (10550, at(172.0, 20.0)),
+                (18_176 + 832, at(7.0, 81.0)),
+                (18_176 + 832, at(77.0, 81.0)),
+                (17_728, at(147.0, 81.0)),
+            ],
+        );
         assert!(!run.painted.iter().any(|(id, _)| ROW_FRAME.contains(id)));
         let idle = run.text("Idle");
         assert_eq!(idle.pos, at(8.0, 108.0));
@@ -2889,10 +2838,13 @@ mod tests {
             let saved = state.saved_windows(&world);
             assert!(saved.iter().all(|window| window.shown));
 
-            let mut restored = DefensesWindowState::default();
-            crate::test_support::assert_saved_windows_restore(&saved, faction, |window| {
-                restored.restore_saved(&world, faction, window)
-            });
+            let restored = crate::test_support::restored_saved_windows(
+                &saved,
+                faction,
+                |state: &mut DefensesWindowState, window| {
+                    state.restore_saved(&world, faction, window)
+                },
+            );
 
             let back: Vec<_> = restored
                 .windows

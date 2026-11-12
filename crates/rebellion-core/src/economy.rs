@@ -1867,13 +1867,7 @@ mod tests {
     fn the_drift_counts_usable_death_stars_and_the_systems_own_squadrons_for_either_side() {
         for is_alliance in [true, false] {
             let (mut world, sys) = side_world(is_alliance);
-            let death_star = world
-                .capital_ship_classes
-                .insert(crate::world::CapitalShipClass {
-                    dat_id: DatId::new(crate::world::DEATH_STAR_CLASS_ID),
-                    family: 0x18,
-                    ..Default::default()
-                });
+            let death_star = crate::test_support::death_star_class(&mut world);
             let fleet = world.fleets.insert(crate::world::Fleet {
                 location: sys,
                 capital_ships: vec![crate::world::ShipInstance::new(

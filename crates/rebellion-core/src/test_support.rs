@@ -12,6 +12,19 @@ use crate::world::{
     MissionRecord, MissionTargetRules, SdprtbEntry, Sector, ShipInstance, System, TroopUnit,
 };
 
+/// Common world-building vocabulary for unit-test modules. Keeping this
+/// prelude narrow avoids repeating the same fixture imports across domains.
+#[allow(
+    unused_imports,
+    reason = "each fixture imports only the vocabulary it needs"
+)]
+pub(crate) mod world_fixture_prelude {
+    pub(crate) use crate::carriage::ProductRoom;
+    pub(crate) use crate::dat::{Faction, SectorGroup};
+    pub(crate) use crate::ids::DatId;
+    pub(crate) use crate::world::{ControlKind, Fleet, GameWorld, Sector, System};
+}
+
 /// One GNPRTB value repeated across every difficulty and game mode.
 pub fn gnprtb_entry(id: impl TryInto<u32>, value: i32) -> GnprtbEntry {
     let Ok(parameter_id) = id.try_into() else {
@@ -168,6 +181,16 @@ pub fn world_with_system(system: System) -> (GameWorld, SystemKey) {
     (world, system)
 }
 
+/// Insert `N` completely default systems without inventing sector or control
+/// state. Use this only for low-level tests whose behavior observes raw
+/// runtime keys rather than a valid strategic map relation.
+#[must_use]
+pub fn bare_systems<const N: usize>() -> (GameWorld, [SystemKey; N]) {
+    let mut world = GameWorld::default();
+    let systems = std::array::from_fn(|_| world.systems.insert(System::default()));
+    (world, systems)
+}
+
 /// Put systems at the requested coordinates in one deterministic test sector.
 ///
 /// port: test fixture values, not simulation rules.
@@ -254,6 +277,17 @@ pub fn add_usable_fleet(world: &mut GameWorld, system: SystemKey, is_alliance: b
         ..CapitalShipClass::default()
     });
     add_fleet_with_class(world, system, class, is_alliance)
+}
+
+/// Insert the canonical Death Star class identity used by simulation tests.
+///
+/// port: test fixture values, not simulation rules.
+pub fn death_star_class(world: &mut GameWorld) -> CapitalShipKey {
+    world.capital_ship_classes.insert(CapitalShipClass {
+        dat_id: DatId::new(crate::world::DEATH_STAR_CLASS_ID),
+        family: 0x18,
+        ..CapitalShipClass::default()
+    })
 }
 
 /// Insert a completed Death Star ship into an existing fleet.
