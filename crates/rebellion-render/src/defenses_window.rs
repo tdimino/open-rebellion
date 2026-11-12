@@ -916,12 +916,8 @@ strategic_window_common::impl_strategic_window_cell_rect!(
 
 #[derive(Default)]
 struct WindowDrawResult {
-    /// Where a press on the window's own surface took hold ([`TitleDrag`]).
-    drag_grab: Option<egui::Vec2>,
-    focus: bool,
+    interaction: strategic_window_common::DetailWindowInteraction,
     close: bool,
-    minimize: bool,
-    open_sector: bool,
     page: Option<DefensesPage>,
     select: Option<DefensesItem>,
     /// A press on the list's empty space clears the selection
@@ -932,96 +928,18 @@ struct WindowDrawResult {
     drag: Option<RowDrag>,
     /// The list's first row and bar press after this frame.
     scroll: Option<(usize, ScrollDrag)>,
-    /// Normalized physical phases that causally produced this frame's
-    /// mutations, in backend order with duplicates removed.
-    causal_pointer_phases: Vec<PointerPhase>,
     /// The cells painted from the list's top.
     painted: Vec<DefensesItem>,
 }
 
-impl WindowDrawResult {
-    fn note_pointer_phase(&mut self, phase: PointerPhase) {
-        if !self.causal_pointer_phases.contains(&phase) {
-            self.causal_pointer_phases.push(phase);
-        }
-    }
-}
-
-/// Draw every open Defenses window.
-///
-/// port: the window's keys (`FUN_004aa2b0`: Escape closes, left and right
-/// step the tabs) are not ported; the galaxy view's windows keep no shared
-/// keyboard focus to route them by.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
-)]
-pub fn draw_defenses_windows(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    fog: &FogState,
-    missions: &MissionState,
-    state: &mut DefensesWindowState,
-    faction: CockpitFaction,
-    layout: CockpitLayout,
-    cache: &mut BmpCache,
-) -> Vec<DefensesWindowAction> {
-    draw_defenses_windows_with_snapshot(
-        strategic_window_common::DetailWindowsDraw::unmanaged(
-            ctx, world, fog, missions, faction, layout, cache,
-        ),
-        state,
-    )
-}
-
-/// Draw manager-owned Defenses content in the frozen bottom-to-top paint
-/// order and admit mutations only through routed pointer events.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
-)]
-pub fn draw_managed_defenses_windows(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    fog: &FogState,
-    missions: &MissionState,
-    state: &mut DefensesWindowState,
-    faction: CockpitFaction,
-    layout: CockpitLayout,
-    cache: &mut BmpCache,
-    snapshot: &RoutingSnapshot,
-    pointer_events: &[(InputEventId, PointerPhase)],
-    router: &mut FrameInputRouter,
-) -> Vec<DefensesWindowAction> {
-    draw_managed_defenses_windows_shown(
-        ManagedDefensesDraw {
-            ctx,
-            world,
-            fog,
-            missions,
-            state,
-            faction,
-            layout,
-            cache,
-            snapshot,
-            pointer_events,
-            router,
-        },
-        &|_| true,
-    )
-}
-
-/// Shared managed-detail inputs specialized to Defenses state.
-pub type ManagedDefensesDraw<'a> =
-    strategic_window_common::ManagedDetailWindowsDraw<'a, DefensesWindowState>;
-
-/// [`draw_managed_defenses_windows`] with command-center GID visibility.
-pub fn draw_managed_defenses_windows_shown(
-    input: ManagedDefensesDraw<'_>,
-    shown: &dyn Fn(GalaxyChild) -> bool,
-) -> Vec<DefensesWindowAction> {
-    let (draw, state) = input.with_visibility(shown);
-    draw_defenses_windows_with_snapshot(draw, state)
+strategic_window_common::define_detail_window_draw_entrypoints! {
+    unmanaged: draw_defenses_windows,
+    managed: draw_managed_defenses_windows,
+    managed_shown: draw_managed_defenses_windows_shown,
+    managed_draw: ManagedDefensesDraw,
+    state: DefensesWindowState,
+    action: DefensesWindowAction,
+    draw: draw_defenses_windows_with_snapshot,
 }
 
 #[allow(
@@ -1079,17 +997,17 @@ fn draw_defenses_windows_with_snapshot(
                 fog,
                 missions,
             ),
-            |result| result.drag_grab,
+            |result| result.interaction.drag_grab,
         );
         let system = window.system;
         let scroll_changed = result
             .scroll
             .as_ref()
             .is_some_and(|(first, scroll)| *first != window.first_row || *scroll != window.scroll);
-        let pointer_mutation = result.focus
+        let pointer_mutation = result.interaction.focus
             || result.close
-            || result.minimize
-            || result.open_sector
+            || result.interaction.minimize
+            || result.interaction.open_sector
             || result.page.is_some()
             || result.select.is_some()
             || result.deselect
@@ -1099,7 +1017,7 @@ fn draw_defenses_windows_with_snapshot(
         let pointer_permitted = strategic_window_common::pointer_mutation_permitted(
             window.id,
             pointer_mutation,
-            &result.causal_pointer_phases,
+            &result.interaction.causal_pointer_phases,
             router.as_deref_mut(),
             pointer_events,
             |phase| {
@@ -1120,7 +1038,7 @@ fn draw_defenses_windows_with_snapshot(
             (state, actions, window, system),
             (
                 result.close && pointer_permitted,
-                result.minimize,
+                result.interaction.minimize,
                 pointer_permitted,
                 world.systems.contains_key(system)
             ),
@@ -1128,7 +1046,7 @@ fn draw_defenses_windows_with_snapshot(
         } {
             continue;
         }
-        if result.open_sector && pointer_permitted {
+        if result.interaction.open_sector && pointer_permitted {
             actions.push(DefensesWindowAction::OpenSector(system));
         }
         if pointer_permitted {
@@ -1156,7 +1074,7 @@ fn draw_defenses_windows_with_snapshot(
         }
         strategic_window_common::apply_detail_focus! {
             (state, actions, window, system),
-            (result.focus, pointer_permitted),
+            (result.interaction.focus, pointer_permitted),
             DefensesWindowAction,
         };
         if pointer_permitted {
@@ -1216,11 +1134,13 @@ fn draw_defenses_window(
                 );
             },
         );
-        result.open_sector = clicked[0];
-        result.minimize = clicked[1];
+        result.interaction.open_sector = clicked[0];
+        result.interaction.minimize = clicked[1];
         result.close = clicked[2];
         if clicked.into_iter().any(|clicked| clicked) {
-            result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+            result
+                .interaction
+                .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
         }
 
         // The tabs. No tab is ever disabled; an empty one opens its
@@ -1248,8 +1168,10 @@ fn draw_defenses_window(
             );
             if exact_clicked(&response, rect) {
                 result.page = Some(page);
-                result.focus = true;
-                result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+                result.interaction.focus = true;
+                result
+                    .interaction
+                    .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
             }
         }
 
@@ -1306,15 +1228,21 @@ fn draw_defenses_window(
         let first_row = bar.update(&mut scroll, range, VISIBLE_ROWS, pointer);
         result.scroll = Some((first_row, scroll));
         if first_row != window.first_row || scroll != window.scroll {
-            result.focus = true;
+            result.interaction.focus = true;
             if pointer.pressed {
-                result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
+                result
+                    .interaction
+                    .note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
             }
             if pointer.down && !pointer.pressed {
-                result.note_pointer_phase(PointerPhase::Motion(PointerButtonId::Primary));
+                result
+                    .interaction
+                    .note_pointer_phase(PointerPhase::Motion(PointerButtonId::Primary));
             }
             if pointer.released {
-                result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+                result
+                    .interaction
+                    .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
             }
         }
         let range = scroll_range_after_input(range, first_row);
@@ -1343,17 +1271,21 @@ fn draw_defenses_window(
         let any_pressed = primary_pressed || right_pressed;
         if any_pressed && list_response.is_pointer_button_down_on() && !on_bar {
             result.deselect = true;
-            result.focus = true;
-            result.note_pointer_phase(PointerPhase::Press(if right_pressed {
-                PointerButtonId::Secondary
-            } else {
-                PointerButtonId::Primary
-            }));
+            result.interaction.focus = true;
+            result
+                .interaction
+                .note_pointer_phase(PointerPhase::Press(if right_pressed {
+                    PointerButtonId::Secondary
+                } else {
+                    PointerButtonId::Primary
+                }));
         }
         if list_response.secondary_clicked() {
             if let Some(point) = release_point.filter(|point| rect_contains(list, *point)) {
                 result.object_menu = Some((None, canvas_point(layout, point)));
-                result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
+                result
+                    .interaction
+                    .note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
             }
         }
         let font = egui::FontId::proportional((9.0 * scale).max(6.0));
@@ -1453,16 +1385,20 @@ fn draw_defenses_window(
             );
             if exact_clicked(&response, cell) {
                 result.select = Some(row.item);
-                result.focus = true;
-                result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+                result.interaction.focus = true;
+                result
+                    .interaction
+                    .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
             }
             // A right press selects the row as a left press does
             // (FUN_006083c0 shares the WM_LBUTTONDOWN path); the release
             // opens its menu.
             if right_pressed && response.is_pointer_button_down_on() {
                 result.select = Some(row.item);
-                result.focus = true;
-                result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Secondary));
+                result.interaction.focus = true;
+                result
+                    .interaction
+                    .note_pointer_phase(PointerPhase::Press(PointerButtonId::Secondary));
             }
             // A left press on a squadron, character or special force
             // captures the mouse for a drag (FUN_006083c0).
@@ -1483,7 +1419,9 @@ fn draw_defenses_window(
                         press,
                         list,
                     });
-                    result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
+                    result
+                        .interaction
+                        .note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
                 }
             }
             if response.secondary_clicked() {
@@ -1493,7 +1431,9 @@ fn draw_defenses_window(
                 {
                     let object = row.item.menu_object(window.system, side);
                     result.object_menu = Some((Some(object), canvas_point(layout, point)));
-                    result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
+                    result
+                        .interaction
+                        .note_pointer_phase(PointerPhase::Release(PointerButtonId::Secondary));
                 }
             }
         }
@@ -1507,15 +1447,19 @@ fn draw_defenses_window(
             &bar.blits(range, scroll, pointer),
         );
 
-        result.drag_grab = surface_drag_grab(ctx, &window_response, local, scale, &[]);
+        result.interaction.drag_grab = surface_drag_grab(ctx, &window_response, local, scale, &[]);
         if strategic_window_common::interaction_requests_focus(&window_response, &clicked) {
-            result.focus = true;
-            result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+            result.interaction.focus = true;
+            result
+                .interaction
+                .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
         }
     });
     if area.response.clicked() {
-        result.focus = true;
-        result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+        result.interaction.focus = true;
+        result
+            .interaction
+            .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
     }
     result
 }

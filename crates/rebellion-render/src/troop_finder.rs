@@ -108,11 +108,7 @@ impl FinderRowName for TroopFinderRow {
     }
 }
 
-/// A typed name chooses the first row it best begins (`FUN_00609650`).
-#[must_use]
-pub fn prefix_choice(rows: &[TroopFinderRow], text: &str) -> Option<usize> {
-    finder_common::prefix_choice(rows, text)
-}
+finder_common::define_prefix_choice!(TroopFinderRow);
 
 finder_common::define_world_class_counter!(
     count_troops,

@@ -462,38 +462,6 @@ impl BuildSelectionState {
         true
     }
 
-    #[must_use]
-    pub fn is_open(&self) -> bool {
-        self.dialog.is_some()
-    }
-
-    #[must_use]
-    pub fn dialog(&self) -> Option<&BuildSelection> {
-        self.dialog.as_ref()
-    }
-
-    pub fn dialog_mut(&mut self) -> Option<&mut BuildSelection> {
-        self.dialog.as_mut()
-    }
-
-    /// Close and Cancel discard the order (`FUN_00438800`, 100 and 102).
-    pub fn close(&mut self) {
-        if self.window_id().is_none() {
-            self.dialog = None;
-        }
-    }
-
-    /// Whether `point` falls on the open window, so the galaxy map under it
-    /// takes no input.
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        crate::singleton_window_common::contains_screen_point(
-            self.dialog.is_some(),
-            window_rect(layout),
-            point,
-        )
-    }
-
     /// Confirm (`0x65`, `FUN_00438980`): remember the class for its kind of
     /// manager and submit the order; the window closes.
     pub fn confirm(&mut self) -> Option<BuildSelectionAction> {
@@ -511,6 +479,12 @@ impl BuildSelectionState {
         })
     }
 }
+
+crate::singleton_window_common::impl_singleton_dialog_state!(
+    BuildSelectionState,
+    BuildSelection,
+    window_rect
+);
 
 impl_singleton_window_routing!(
     BuildSelectionState,

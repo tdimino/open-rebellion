@@ -1342,6 +1342,21 @@ pub(crate) fn prefix_choice<R: FinderRowName>(rows: &[R], text: &str) -> Option<
         .map(|matched| matched.index)
 }
 
+/// Expose the original Finder prefix-selection contract for one concrete row
+/// type without repeating its public adapter in every screen module.
+macro_rules! define_prefix_choice {
+    ($row:ty) => {
+        /// The first row with the longest case-insensitive prefix in common
+        /// with the typed text, or none when no row shares its first letter.
+        #[must_use]
+        pub fn prefix_choice(rows: &[$row], text: &str) -> Option<usize> {
+            $crate::finder_common::prefix_choice(rows, text)
+        }
+    };
+}
+
+pub(crate) use define_prefix_choice;
+
 /// One frame's Finder navigation keys.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct FinderKeys {

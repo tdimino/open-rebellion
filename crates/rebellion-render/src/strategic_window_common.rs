@@ -1204,6 +1204,27 @@ pub(crate) struct DetailWindowDraw<'a, T> {
     cache: &'a mut BmpCache,
 }
 
+/// Input and chrome results shared by every strategic detail-window frame.
+/// Screen modules add only their domain-specific selection and list outcomes.
+#[derive(Default)]
+pub(crate) struct DetailWindowInteraction {
+    /// Where a press on the window's own surface took hold.
+    pub(crate) drag_grab: Option<egui::Vec2>,
+    pub(crate) focus: bool,
+    pub(crate) minimize: bool,
+    pub(crate) open_sector: bool,
+    /// Physical phases that causally produced mutations, in backend order.
+    pub(crate) causal_pointer_phases: Vec<PointerPhase>,
+}
+
+impl DetailWindowInteraction {
+    pub(crate) fn note_pointer_phase(&mut self, phase: PointerPhase) {
+        if !self.causal_pointer_phases.contains(&phase) {
+            self.causal_pointer_phases.push(phase);
+        }
+    }
+}
+
 pub(crate) struct DetailWindowsDraw<'a> {
     pub(crate) ctx: &'a egui::Context,
     pub(crate) world: &'a rebellion_core::world::GameWorld,
@@ -1334,6 +1355,96 @@ impl<'a> DetailWindowsDraw<'a> {
         )
     }
 }
+
+/// Define the public unmanaged and manager-owned entrypoints for a strategic
+/// detail family that uses [`DetailWindowsDraw`]. Screen modules retain their
+/// concrete state, action, and paint implementation; this framework macro owns
+/// the identical input plumbing between those boundaries.
+macro_rules! define_detail_window_draw_entrypoints {
+    (
+        unmanaged: $unmanaged:ident,
+        managed: $managed:ident,
+        managed_shown: $managed_shown:ident,
+        managed_draw: $managed_draw:ident,
+        state: $state:ty,
+        action: $action:ty,
+        draw: $draw:path $(,)?
+    ) => {
+        /// Draw every open window in this detail family without manager routing.
+        #[allow(
+            clippy::too_many_arguments,
+            reason = "Keep the public fixture boundary aligned with manager-owned detail drawing."
+        )]
+        pub fn $unmanaged(
+            ctx: &egui::Context,
+            world: &GameWorld,
+            fog: &FogState,
+            missions: &MissionState,
+            state: &mut $state,
+            faction: CockpitFaction,
+            layout: CockpitLayout,
+            cache: &mut BmpCache,
+        ) -> Vec<$action> {
+            $draw(
+                $crate::strategic_window_common::DetailWindowsDraw::unmanaged(
+                    ctx, world, fog, missions, faction, layout, cache,
+                ),
+                state,
+            )
+        }
+
+        /// Draw manager-owned content in frozen bottom-to-top paint order.
+        #[allow(
+            clippy::too_many_arguments,
+            reason = "Keep the public manager boundary aligned with unmanaged detail drawing."
+        )]
+        pub fn $managed(
+            ctx: &egui::Context,
+            world: &GameWorld,
+            fog: &FogState,
+            missions: &MissionState,
+            state: &mut $state,
+            faction: CockpitFaction,
+            layout: CockpitLayout,
+            cache: &mut BmpCache,
+            snapshot: &RoutingSnapshot,
+            pointer_events: &[(InputEventId, PointerPhase)],
+            router: &mut FrameInputRouter,
+        ) -> Vec<$action> {
+            $managed_shown(
+                $managed_draw {
+                    ctx,
+                    world,
+                    fog,
+                    missions,
+                    state,
+                    faction,
+                    layout,
+                    cache,
+                    snapshot,
+                    pointer_events,
+                    router,
+                },
+                &|_| true,
+            )
+        }
+
+        /// Shared manager-owned inputs specialized to this detail family.
+        pub type $managed_draw<'a> =
+            $crate::strategic_window_common::ManagedDetailWindowsDraw<'a, $state>;
+
+        /// Manager-owned drawing with command-center child visibility.
+        pub fn $managed_shown(
+            input: $managed_draw<'_>,
+            shown: &dyn Fn(GalaxyChild) -> bool,
+        ) -> Vec<$action> {
+            let (draw, state) = input.with_visibility(shown);
+            $draw(draw, state)
+        }
+    };
+}
+
+pub(crate) use define_detail_window_draw_entrypoints;
 
 macro_rules! unpack_detail_windows_draw {
     (

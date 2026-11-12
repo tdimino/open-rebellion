@@ -1392,21 +1392,7 @@ impl TacticalAssetRenderer {
             size,
             origin: ORIGINAL_PLANET_DECAL_ORIGIN,
         };
-        let texels = vec2(planet.texture.width(), planet.texture.height());
-        let rect = decal_screen_rect(source_camera.pose(), aperture, decal, texels);
-        if let Some((min, dest_size)) = rect {
-            draw_texture_ex(
-                &planet.texture,
-                min.x,
-                min.y,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(dest_size),
-                    ..Default::default()
-                },
-            );
-        }
-        rect.is_some()
+        draw_decal(&planet.texture, source_camera.pose(), aperture, decal)
     }
 
     /// Log, once per cause, that `FUN_005c1200` has taken the station's
@@ -1491,21 +1477,7 @@ impl TacticalAssetRenderer {
         let Some(source_camera) = self.source_camera else {
             return false;
         };
-        let texels = vec2(asset.texture.width(), asset.texture.height());
-        let rect = decal_screen_rect(source_camera.pose(), aperture, decal, texels);
-        if let Some((min, dest_size)) = rect {
-            draw_texture_ex(
-                &asset.texture,
-                min.x,
-                min.y,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(dest_size),
-                    ..Default::default()
-                },
-            );
-        }
-        rect.is_some()
+        draw_decal(&asset.texture, source_camera.pose(), aperture, decal)
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -2502,6 +2474,29 @@ fn decal_screen_rect(
     let pixels = decal.size * aperture.3 / (2.0 * depth * (scene_fovy(pose, aperture) * 0.5).tan());
     let size = vec2(pixels, pixels);
     Some((centre - decal.origin / texture_size * size, size))
+}
+
+fn draw_decal(
+    texture: &Texture2D,
+    pose: OriginalCameraPose,
+    aperture: (f32, f32, f32, f32),
+    decal: TacticalDecalRenderObject,
+) -> bool {
+    let texture_size = vec2(texture.width(), texture.height());
+    let Some((min, dest_size)) = decal_screen_rect(pose, aperture, decal, texture_size) else {
+        return false;
+    };
+    draw_texture_ex(
+        texture,
+        min.x,
+        min.y,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(dest_size),
+            ..Default::default()
+        },
+    );
+    true
 }
 
 fn project_world_position(

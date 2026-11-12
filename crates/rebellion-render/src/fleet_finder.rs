@@ -193,13 +193,7 @@ pub fn rows(
     rows
 }
 
-/// The row a typed name chooses (`FUN_00609650`): the first, in list order,
-/// with the longest prefix in common with `text`, ignoring case
-/// (`FUN_005f3430` flag 0); none when no row shares the first letter.
-#[must_use]
-pub fn prefix_choice(rows: &[FinderRow], text: &str) -> Option<usize> {
-    finder_common::prefix_choice(rows, text)
-}
+finder_common::define_prefix_choice!(FinderRow);
 
 /// What the Finder asks of the galaxy view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

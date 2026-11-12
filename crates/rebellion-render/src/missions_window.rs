@@ -999,25 +999,10 @@ fn member_row_rect(window: egui::Rect, scale: f32, index: usize) -> egui::Rect {
 
 #[derive(Default)]
 struct WindowDrawResult {
-    /// Where a press on the window's own surface took hold ([`TitleDrag`]).
-    drag_grab: Option<egui::Vec2>,
-    focus: bool,
+    interaction: strategic_window_common::DetailWindowInteraction,
     close: bool,
-    minimize: bool,
-    open_sector: bool,
     select: Option<u64>,
     tab: Option<MissionsTab>,
-    /// Normalized physical phases that causally produced this frame's
-    /// mutations, in backend order with duplicates removed.
-    causal_pointer_phases: Vec<PointerPhase>,
-}
-
-impl WindowDrawResult {
-    fn note_pointer_phase(&mut self, phase: PointerPhase) {
-        if !self.causal_pointer_phases.contains(&phase) {
-            self.causal_pointer_phases.push(phase);
-        }
-    }
 }
 
 struct WindowPointerMutation(bool);
@@ -1026,90 +1011,23 @@ fn draw_missions_windows_with_snapshot_pointer_mutation(
     result: &WindowDrawResult,
 ) -> WindowPointerMutation {
     WindowPointerMutation(
-        result.focus
+        result.interaction.focus
             || result.close
-            || result.minimize
-            || result.open_sector
+            || result.interaction.minimize
+            || result.interaction.open_sector
             || result.select.is_some()
             || result.tab.is_some(),
     )
 }
 
-/// Draw every open Missions window.
-///
-/// port: the scroll bars, the tab help text, the list drags (`FUN_004a0400`)
-/// and Escape (`FUN_004a0e00`) are not ported; the galaxy view's windows keep
-/// no shared keyboard focus to route a key by.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
-)]
-pub fn draw_missions_windows(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    fog: &FogState,
-    missions: &MissionState,
-    state: &mut MissionsWindowState,
-    faction: CockpitFaction,
-    layout: CockpitLayout,
-    cache: &mut BmpCache,
-) -> Vec<MissionsWindowAction> {
-    draw_missions_windows_with_snapshot(
-        strategic_window_common::DetailWindowsDraw::unmanaged(
-            ctx, world, fog, missions, faction, layout, cache,
-        ),
-        state,
-    )
-}
-
-/// Draw manager-owned Missions content in the frozen bottom-to-top paint
-/// order and admit mutations only through routed pointer events.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "Keep explicit state and rendering inputs at this UI boundary, as the Fleet window does."
-)]
-pub fn draw_managed_missions_windows(
-    ctx: &egui::Context,
-    world: &GameWorld,
-    fog: &FogState,
-    missions: &MissionState,
-    state: &mut MissionsWindowState,
-    faction: CockpitFaction,
-    layout: CockpitLayout,
-    cache: &mut BmpCache,
-    snapshot: &RoutingSnapshot,
-    pointer_events: &[(InputEventId, PointerPhase)],
-    router: &mut FrameInputRouter,
-) -> Vec<MissionsWindowAction> {
-    draw_managed_missions_windows_shown(
-        ManagedMissionsDraw {
-            ctx,
-            world,
-            fog,
-            missions,
-            state,
-            faction,
-            layout,
-            cache,
-            snapshot,
-            pointer_events,
-            router,
-        },
-        &|_| true,
-    )
-}
-
-/// Shared managed-detail inputs specialized to Missions state.
-pub type ManagedMissionsDraw<'a> =
-    strategic_window_common::ManagedDetailWindowsDraw<'a, MissionsWindowState>;
-
-/// [`draw_managed_missions_windows`] with command-center GID visibility.
-pub fn draw_managed_missions_windows_shown(
-    draw: ManagedMissionsDraw<'_>,
-    shown: &dyn Fn(GalaxyChild) -> bool,
-) -> Vec<MissionsWindowAction> {
-    let (draw, state) = draw.with_visibility(shown);
-    draw_missions_windows_with_snapshot(draw, state)
+strategic_window_common::define_detail_window_draw_entrypoints! {
+    unmanaged: draw_missions_windows,
+    managed: draw_managed_missions_windows,
+    managed_shown: draw_managed_missions_windows_shown,
+    managed_draw: ManagedMissionsDraw,
+    state: MissionsWindowState,
+    action: MissionsWindowAction,
+    draw: draw_missions_windows_with_snapshot,
 }
 
 #[allow(
@@ -1171,14 +1089,14 @@ fn draw_missions_windows_with_snapshot(
                 fog,
                 missions,
             ),
-            |result| result.drag_grab,
+            |result| result.interaction.drag_grab,
         );
         let system = window.system;
         let pointer_mutation = draw_missions_windows_with_snapshot_pointer_mutation(&result).0;
         let pointer_permitted = strategic_window_common::pointer_mutation_permitted(
             window.id,
             pointer_mutation,
-            &result.causal_pointer_phases,
+            &result.interaction.causal_pointer_phases,
             router.as_deref_mut(),
             pointer_events,
             |_| false,
@@ -1187,7 +1105,7 @@ fn draw_missions_windows_with_snapshot(
             (state, actions, window, system),
             (
                 result.close && pointer_permitted,
-                result.minimize,
+                result.interaction.minimize,
                 pointer_permitted,
                 world.systems.contains_key(system)
             ),
@@ -1195,7 +1113,7 @@ fn draw_missions_windows_with_snapshot(
         } {
             continue;
         }
-        if result.open_sector && pointer_permitted {
+        if result.interaction.open_sector && pointer_permitted {
             actions.push(MissionsWindowAction::OpenSector(system));
         }
         if pointer_permitted {
@@ -1214,7 +1132,7 @@ fn draw_missions_windows_with_snapshot(
         }
         strategic_window_common::apply_detail_focus! {
             (state, actions, window, system),
-            (result.focus, pointer_permitted),
+            (result.interaction.focus, pointer_permitted),
             MissionsWindowAction,
         };
     }
@@ -1309,8 +1227,8 @@ fn draw_missions_window(
             window.system,
             |_, _| {},
         );
-        result.open_sector = clicked[0];
-        result.minimize = clicked[1];
+        result.interaction.open_sector = clicked[0];
+        result.interaction.minimize = clicked[1];
         result.close = clicked[2];
 
         // The mission list: each picture keyed at its row's corner, the
@@ -1378,7 +1296,7 @@ fn draw_missions_window(
             );
             if exact_clicked(&response, cell) {
                 result.select = Some(row.mission);
-                result.focus = true;
+                result.interaction.focus = true;
             }
         }
 
@@ -1407,7 +1325,7 @@ fn draw_missions_window(
                 );
                 if exact_clicked(&response, rect) {
                     result.tab = Some(tab);
-                    result.focus = true;
+                    result.interaction.focus = true;
                 }
             }
             let members = logical_rect(
@@ -1479,7 +1397,7 @@ fn draw_missions_window(
                     egui::Sense::click(),
                 );
                 if exact_clicked(&response, cell) {
-                    result.focus = true;
+                    result.interaction.focus = true;
                 }
             }
         }
@@ -1491,13 +1409,16 @@ fn draw_missions_window(
         if selected.is_some() {
             lists.push(MEMBER_LIST);
         }
-        result.drag_grab = surface_drag_grab(ctx, &window_response, local, scale, &lists);
-        result.focus |=
+        result.interaction.drag_grab =
+            surface_drag_grab(ctx, &window_response, local, scale, &lists);
+        result.interaction.focus |=
             strategic_window_common::interaction_requests_focus(&window_response, &clicked);
     });
-    result.focus |= area.response.clicked();
+    result.interaction.focus |= area.response.clicked();
     if draw_missions_windows_with_snapshot_pointer_mutation(&result).0 {
-        result.note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
+        result
+            .interaction
+            .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
     }
     result
 }
@@ -2937,7 +2858,10 @@ mod tests {
 
         assert!([
             WindowDrawResult {
-                focus: true,
+                interaction: strategic_window_common::DetailWindowInteraction {
+                    focus: true,
+                    ..Default::default()
+                },
                 ..WindowDrawResult::default()
             },
             WindowDrawResult {
@@ -2945,11 +2869,17 @@ mod tests {
                 ..WindowDrawResult::default()
             },
             WindowDrawResult {
-                minimize: true,
+                interaction: strategic_window_common::DetailWindowInteraction {
+                    minimize: true,
+                    ..Default::default()
+                },
                 ..WindowDrawResult::default()
             },
             WindowDrawResult {
-                open_sector: true,
+                interaction: strategic_window_common::DetailWindowInteraction {
+                    open_sector: true,
+                    ..Default::default()
+                },
                 ..WindowDrawResult::default()
             },
             WindowDrawResult {

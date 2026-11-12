@@ -357,37 +357,6 @@ impl MissionDialogState {
         true
     }
 
-    #[must_use]
-    pub fn is_open(&self) -> bool {
-        self.dialog.is_some()
-    }
-
-    #[must_use]
-    pub fn dialog(&self) -> Option<&MissionDialog> {
-        self.dialog.as_ref()
-    }
-
-    pub fn dialog_mut(&mut self) -> Option<&mut MissionDialog> {
-        self.dialog.as_mut()
-    }
-
-    pub fn close(&mut self) {
-        if self.window_id().is_none() {
-            self.dialog = None;
-        }
-    }
-
-    /// Legacy hit testing for the ID-less compatibility path. Managed Mission
-    /// dialogs derive modal blocking from the frame routing snapshot instead.
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        crate::singleton_window_common::contains_screen_point(
-            self.dialog.is_some(),
-            dialog_rect(layout),
-            point,
-        )
-    }
-
     /// "Begin Mission" (`0x66`): the order's mission becomes the selected
     /// kind and the order is submitted; the dialog closes whether or not the
     /// validator accepts it.
@@ -399,6 +368,12 @@ impl MissionDialogState {
         Some(dialog.begin_action())
     }
 }
+
+crate::singleton_window_common::impl_singleton_dialog_state!(
+    MissionDialogState,
+    MissionDialog,
+    dialog_rect
+);
 
 impl_singleton_window_routing!(
     MissionDialogState,

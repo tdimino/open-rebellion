@@ -1006,6 +1006,17 @@ impl StrategicWindowing {
         ) && removed_content.contains(&window)
     }
 
+    fn committed_confirmation<T>(
+        prepared: Option<T>,
+        transition: &WindowTransition,
+        removed_content: &[WindowId],
+        window_id: impl FnOnce(&T) -> WindowId,
+    ) -> Option<T> {
+        prepared.filter(|candidate| {
+            Self::confirmation_committed(transition, removed_content, window_id(candidate))
+        })
+    }
+
     fn focus_opened_control(&mut self, transition: &WindowTransition, control: ControlId) {
         let WindowTransition::Opened { id } = transition else {
             return;
@@ -1114,40 +1125,40 @@ impl StrategicWindowing {
             if prepared_build_selection.is_some() {
                 build_selection_content_id = self.opened_or_attached_existing(&commit.transition);
             }
-            if let Some(prepared) = prepared_build_selection_confirm {
-                let window = prepared.window_id();
-                if Self::confirmation_committed(&commit.transition, &removed_content, window) {
-                    confirmed_build_selection = Some(prepared);
-                }
-            }
+            confirmed_build_selection = Self::committed_confirmation(
+                prepared_build_selection_confirm,
+                &commit.transition,
+                &removed_content,
+                |prepared| prepared.window_id(),
+            );
             if prepared_mission_dialog.is_some() {
                 mission_dialog_content_id =
                     self.opened_replaced_or_attached_existing(&commit.transition);
             }
-            if let Some(prepared) = prepared_mission_dialog_confirm.as_ref() {
-                let window = prepared.window_id();
-                if Self::confirmation_committed(&commit.transition, &removed_content, window) {
-                    confirmed_mission_dialog = prepared_mission_dialog_confirm;
-                }
-            }
+            confirmed_mission_dialog = Self::committed_confirmation(
+                prepared_mission_dialog_confirm,
+                &commit.transition,
+                &removed_content,
+                PreparedMissionDialogConfirm::window_id,
+            );
             if prepared_move_confirmation.is_some() {
                 move_confirmation_content_id = Self::opened_or_replaced(&commit.transition);
             }
-            if let Some(prepared) = prepared_move_confirmation_confirm.as_ref() {
-                let window = prepared.window_id();
-                if Self::confirmation_committed(&commit.transition, &removed_content, window) {
-                    confirmed_move_confirmation = prepared_move_confirmation_confirm;
-                }
-            }
+            confirmed_move_confirmation = Self::committed_confirmation(
+                prepared_move_confirmation_confirm,
+                &commit.transition,
+                &removed_content,
+                PreparedMoveConfirmationConfirm::window_id,
+            );
             if prepared_scrap_confirmation.is_some() {
                 scrap_confirmation_content_id = Self::opened_or_replaced(&commit.transition);
             }
-            if let Some(prepared) = prepared_scrap_confirmation_confirm.as_ref() {
-                let window = prepared.window_id();
-                if Self::confirmation_committed(&commit.transition, &removed_content, window) {
-                    confirmed_scrap_confirmation = prepared_scrap_confirmation_confirm;
-                }
-            }
+            confirmed_scrap_confirmation = Self::committed_confirmation(
+                prepared_scrap_confirmation_confirm,
+                &commit.transition,
+                &removed_content,
+                PreparedScrapConfirmationConfirm::window_id,
+            );
             if prepared_system.is_some() {
                 system_content_id = self.opened_or_attached_existing(&commit.transition);
             }
