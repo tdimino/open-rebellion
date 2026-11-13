@@ -302,164 +302,93 @@ struct OriginalControlSpec {
     selected_in_index: bool,
 }
 
+const EMPTY_ORIGINAL_CONTROL: OriginalControlSpec = OriginalControlSpec {
+    command_id: 0,
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    normal_resource: 0,
+    pressed_resource: 0,
+    selected_in_index: false,
+};
+
 const fn encyclopedia_category_controls(
     faction: crate::cockpit::CockpitFaction,
 ) -> [OriginalControlSpec; 7] {
-    let (ships_normal, ships_pressed, facilities_normal, facilities_pressed) = match faction {
-        crate::cockpit::CockpitFaction::Alliance => (10_348, 10_347, 10_344, 10_343),
-        crate::cockpit::CockpitFaction::Empire => (10_360, 10_359, 10_356, 10_355),
+    let faction_resources = match faction {
+        crate::cockpit::CockpitFaction::Alliance => [
+            [10_348, 10_347],
+            [10_344, 10_343],
+            [11_616, 11_615],
+            [10_352, 10_351],
+            [10_346, 10_345],
+        ],
+        crate::cockpit::CockpitFaction::Empire => [
+            [10_360, 10_359],
+            [10_356, 10_355],
+            [11_618, 11_617],
+            [10_362, 10_361],
+            [10_358, 10_357],
+        ],
     };
-    let (personnel_normal, personnel_pressed, missions_normal, missions_pressed) = match faction {
-        crate::cockpit::CockpitFaction::Alliance => (10_346, 10_345, 11_616, 11_615),
-        crate::cockpit::CockpitFaction::Empire => (10_358, 10_357, 11_618, 11_617),
-    };
-    let (troops_normal, troops_pressed) = match faction {
-        crate::cockpit::CockpitFaction::Alliance => (10_352, 10_351),
-        crate::cockpit::CockpitFaction::Empire => (10_362, 10_361),
-    };
-    [
-        OriginalControlSpec {
-            command_id: 0x6f,
-            x: 36,
+    let resources = [
+        [10_340, 10_339],
+        [10_350, 10_349],
+        faction_resources[0],
+        faction_resources[1],
+        faction_resources[2],
+        faction_resources[3],
+        faction_resources[4],
+    ];
+    let mut controls = [EMPTY_ORIGINAL_CONTROL; 7];
+    let mut index = 0;
+    let mut command_id = 0x6f;
+    let mut x = 36;
+    while index < controls.len() {
+        controls[index] = OriginalControlSpec {
+            command_id,
+            x,
             y: 78,
             width: 49,
             height: 41,
-            normal_resource: 10_340,
-            pressed_resource: 10_339,
+            normal_resource: resources[index][0],
+            pressed_resource: resources[index][1],
             selected_in_index: false,
-        },
-        OriginalControlSpec {
-            command_id: 0x70,
-            x: 88,
-            y: 78,
-            width: 49,
-            height: 41,
-            normal_resource: 10_350,
-            pressed_resource: 10_349,
-            selected_in_index: false,
-        },
-        OriginalControlSpec {
-            command_id: 0x71,
-            x: 140,
-            y: 78,
-            width: 49,
-            height: 41,
-            normal_resource: ships_normal,
-            pressed_resource: ships_pressed,
-            selected_in_index: false,
-        },
-        OriginalControlSpec {
-            command_id: 0x72,
-            x: 192,
-            y: 78,
-            width: 49,
-            height: 41,
-            normal_resource: facilities_normal,
-            pressed_resource: facilities_pressed,
-            selected_in_index: false,
-        },
-        OriginalControlSpec {
-            command_id: 0x73,
-            x: 244,
-            y: 78,
-            width: 49,
-            height: 41,
-            normal_resource: missions_normal,
-            pressed_resource: missions_pressed,
-            selected_in_index: false,
-        },
-        OriginalControlSpec {
-            command_id: 0x74,
-            x: 296,
-            y: 78,
-            width: 49,
-            height: 41,
-            normal_resource: troops_normal,
-            pressed_resource: troops_pressed,
-            selected_in_index: false,
-        },
-        OriginalControlSpec {
-            command_id: 0x75,
-            x: 348,
-            y: 78,
-            width: 49,
-            height: 41,
-            normal_resource: personnel_normal,
-            pressed_resource: personnel_pressed,
-            selected_in_index: false,
-        },
-    ]
+        };
+        index += 1;
+        command_id += 1;
+        x += 52;
+    }
+    controls
 }
 
 const fn encyclopedia_rail_controls(
     faction: crate::cockpit::CockpitFaction,
 ) -> [OriginalControlSpec; 3] {
-    match faction {
-        crate::cockpit::CockpitFaction::Alliance => [
-            OriginalControlSpec {
-                command_id: 0xfb,
-                x: 423,
-                y: 25,
-                width: 32,
-                height: 31,
-                normal_resource: 10_370,
-                pressed_resource: 10_371,
-                selected_in_index: false,
-            },
-            OriginalControlSpec {
-                command_id: 0x67,
-                x: 423,
-                y: 93,
-                width: 32,
-                height: 31,
-                normal_resource: 10_374,
-                pressed_resource: 10_375,
-                selected_in_index: false,
-            },
-            OriginalControlSpec {
-                command_id: 0x68,
-                x: 423,
-                y: 147,
-                width: 32,
-                height: 31,
-                normal_resource: 10_372,
-                pressed_resource: 10_373,
-                selected_in_index: true,
-            },
-        ],
-        crate::cockpit::CockpitFaction::Empire => [
-            OriginalControlSpec {
-                command_id: 0xfb,
-                x: 426,
-                y: 21,
-                width: 44,
-                height: 41,
-                normal_resource: 10_376,
-                pressed_resource: 10_377,
-                selected_in_index: false,
-            },
-            OriginalControlSpec {
-                command_id: 0x67,
-                x: 426,
-                y: 89,
-                width: 44,
-                height: 41,
-                normal_resource: 10_380,
-                pressed_resource: 10_381,
-                selected_in_index: false,
-            },
-            OriginalControlSpec {
-                command_id: 0x68,
-                x: 426,
-                y: 143,
-                width: 44,
-                height: 41,
-                normal_resource: 10_378,
-                pressed_resource: 10_379,
-                selected_in_index: true,
-            },
-        ],
+    let (x, first_y, width, height, first_resource) = match faction {
+        crate::cockpit::CockpitFaction::Alliance => (423, 25, 32, 31, 10_370),
+        crate::cockpit::CockpitFaction::Empire => (426, 21, 44, 41, 10_376),
+    };
+    let commands = [0xfb, 0x67, 0x68];
+    let y_offsets = [0, 68, 122];
+    let resource_offsets = [0, 4, 2];
+    let mut controls = [EMPTY_ORIGINAL_CONTROL; 3];
+    let mut index = 0;
+    while index < controls.len() {
+        controls[index] = OriginalControlSpec {
+            command_id: commands[index],
+            x,
+            y: first_y + y_offsets[index],
+            width,
+            height,
+            normal_resource: first_resource + resource_offsets[index],
+            pressed_resource: first_resource + resource_offsets[index] + 1,
+            selected_in_index: index == 2,
+        };
+        index += 1;
     }
+    controls
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

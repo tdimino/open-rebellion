@@ -174,98 +174,60 @@ struct MessageCategoryControlSpec {
     pressed_resource: u32,
 }
 
+const EMPTY_MESSAGE_CATEGORY_CONTROL: MessageCategoryControlSpec = MessageCategoryControlSpec {
+    command_id: 0,
+    x: 0,
+    width: 0,
+    normal_resource: 0,
+    pressed_resource: 0,
+};
+
 const fn message_category_control_specs(
     faction: CockpitFaction,
 ) -> [MessageCategoryControlSpec; 10] {
-    let (
-        faction_normal,
-        faction_pressed,
-        fleet_normal,
-        fleet_pressed,
-        mission_normal,
-        mission_pressed,
-        advice_normal,
-        advice_pressed,
-    ) = match faction {
-        CockpitFaction::Alliance => (
-            10_832, 10_833, 10_840, 10_841, 10_842, 10_843, 10_846, 10_847,
-        ),
-        CockpitFaction::Empire => (
-            10_834, 10_835, 10_838, 10_839, 10_844, 10_845, 10_848, 10_849,
-        ),
+    let [faction_resources, fleet_resources, mission_resources, advice_resources] = match faction {
+        CockpitFaction::Alliance => [
+            [10_832, 10_833],
+            [10_840, 10_841],
+            [10_842, 10_843],
+            [10_846, 10_847],
+        ],
+        CockpitFaction::Empire => [
+            [10_834, 10_835],
+            [10_838, 10_839],
+            [10_844, 10_845],
+            [10_848, 10_849],
+        ],
     };
-    [
-        MessageCategoryControlSpec {
-            command_id: 0x79,
-            x: 0,
-            width: 36,
-            normal_resource: 10_830,
-            pressed_resource: 10_831,
-        },
-        MessageCategoryControlSpec {
-            command_id: 0x7a,
-            x: 38,
-            width: 36,
-            normal_resource: faction_normal,
-            pressed_resource: faction_pressed,
-        },
-        MessageCategoryControlSpec {
-            command_id: 0x7b,
-            x: 76,
-            width: 36,
-            normal_resource: fleet_normal,
-            pressed_resource: fleet_pressed,
-        },
-        MessageCategoryControlSpec {
-            command_id: 0x7c,
-            x: 114,
-            width: 35,
-            normal_resource: mission_normal,
-            pressed_resource: mission_pressed,
-        },
-        MessageCategoryControlSpec {
-            command_id: 0x7d,
-            x: 151,
-            width: 36,
-            normal_resource: 10_836,
-            pressed_resource: 10_837,
-        },
-        MessageCategoryControlSpec {
-            command_id: 0x7e,
-            x: 189,
-            width: 36,
-            normal_resource: 10_852,
-            pressed_resource: 10_853,
-        },
-        MessageCategoryControlSpec {
-            command_id: 0x7f,
-            x: 227,
-            width: 34,
-            normal_resource: 10_856,
-            pressed_resource: 10_857,
-        },
-        MessageCategoryControlSpec {
-            command_id: 0x80,
-            x: 263,
-            width: 36,
-            normal_resource: 10_854,
-            pressed_resource: 10_855,
-        },
-        MessageCategoryControlSpec {
-            command_id: 0x81,
-            x: 301,
-            width: 35,
-            normal_resource: 10_850,
-            pressed_resource: 10_851,
-        },
-        MessageCategoryControlSpec {
-            command_id: 0x82,
-            x: 338,
-            width: 37,
-            normal_resource: advice_normal,
-            pressed_resource: advice_pressed,
-        },
-    ]
+    let resources = [
+        [10_830, 10_831],
+        faction_resources,
+        fleet_resources,
+        mission_resources,
+        [10_836, 10_837],
+        [10_852, 10_853],
+        [10_856, 10_857],
+        [10_854, 10_855],
+        [10_850, 10_851],
+        advice_resources,
+    ];
+    let xs = [0, 38, 76, 114, 151, 189, 227, 263, 301, 338];
+    let widths = [36, 36, 36, 35, 36, 36, 34, 36, 35, 37];
+    let mut controls = [EMPTY_MESSAGE_CATEGORY_CONTROL; 10];
+    let mut command_id = 0x79;
+    let mut index = 0;
+    while index < controls.len() {
+        controls[index] = MessageCategoryControlSpec {
+            command_id,
+            x: xs[index],
+            width: widths[index],
+            normal_resource: resources[index][0],
+            pressed_resource: resources[index][1],
+        };
+        command_id += 1;
+        index += 1;
+    }
+    controls
 }
 
 /// The category a cockpit command opens the window on (`FUN_00422ce0`):
@@ -1273,18 +1235,10 @@ pub struct MessageIndexReport {
 /// All Messages (`0x79`) returns 0; the filter uses a special path for it.
 #[must_use]
 pub const fn category_filter_mask(command: u16) -> u16 {
-    match command {
+    match category_rail(command) {
+        Some(rail) => rail.mask(),
         // All Messages and unknown commands do not apply a category mask.
-        0x7a => 0x001, // Popular Support
-        0x7b => 0x080, // Fleet
-        0x7c => 0x010, // Mission
-        0x7d => 0x004, // Resource
-        0x7e => 0x008, // Manufacturing
-        0x7f => 0x040, // Defense
-        0x80 => 0x100, // Conflict
-        0x81 => 0x020, // Chat
-        0x82 => 0x200, // Advice
-        _ => 0,
+        None => 0,
     }
 }
 
