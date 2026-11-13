@@ -28,6 +28,7 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::drag_image::DragImage;
 use crate::object_menu::MenuObject;
 use crate::panels::fleets::{capital_ship_mini_id, fighter_mini_id};
 use crate::quadrant_icons::{quadrant_art, Quadrant};
@@ -435,6 +436,9 @@ struct ItemDrag {
     object: ItemObject,
     press: egui::Pos2,
     list: egui::Rect,
+    /// The item's bitmaps, which follow the pointer while the press is held
+    /// (`FUN_006083c0`, [`DragImage`]).
+    image: DragImage,
 }
 
 /// The object a list item stands for, which a drag carries and a right
@@ -1349,6 +1353,12 @@ impl FleetWindowState {
         self.drag.is_some()
     }
 
+    /// The held drag's image, which follows the pointer ([`DragImage`]).
+    #[must_use]
+    pub fn drag_image(&self) -> Option<DragImage> {
+        self.drag.map(|drag| drag.image)
+    }
+
     /// Exact manager capture owner of the active Fleet drag, if migrated.
     #[must_use]
     pub const fn drag_owner(&self) -> Option<WindowId> {
@@ -1371,6 +1381,7 @@ impl FleetWindowState {
             object: ItemObject::Fleet { fleet, system },
             press: egui::pos2(40.0, 40.0),
             list: egui::Rect::from_min_max(egui::pos2(4.0, 29.0), egui::pos2(95.0, 295.0)),
+            image: DragImage::default(),
         });
         self.drag_owner = Some(window);
         true
@@ -1747,6 +1758,11 @@ fn title_resource(side: u8, focused: bool) -> u32 {
 /// The system's fleets in key order that the player can see. hyp: the
 /// original's merge loop orders by object id (`+0x6c`); the port's fleets
 /// are kept in key order.
+///
+/// A move changes a fleet's container at once (`FUN_00556390`, slot `+0xa8`;
+/// `ghidra/notes/move-order.md`), so the player's own fleet lists at its
+/// destination from the order on, explored or not. port: an unexplored
+/// system shows nothing else, as the System window lists nothing there.
 fn visible_fleets(
     world: &GameWorld,
     movement: &MovementState,
@@ -1757,10 +1773,8 @@ fn visible_fleets(
     let Some(value) = world.systems.get(system) else {
         return Vec::new();
     };
-    if value.exploration_status == ExplorationStatus::Unexplored {
-        return Vec::new();
-    }
-    let opposing_visible = opposing_contents_visible(world, fog, player, system);
+    let opposing_visible = value.exploration_status != ExplorationStatus::Unexplored
+        && opposing_contents_visible(world, fog, player, system);
     let player_is_alliance = player == Faction::Alliance;
     let mut fleets: Vec<FleetKey> =
         rebellion_core::movement::listed_fleets(movement, world, system)
@@ -2818,6 +2832,8 @@ fn draw_fleet_window(
                     .get(entry.fleet())
                     .map_or(1, |value| fleet_side(value.is_alliance));
                 let expanded = window.expanded.contains(&entry.fleet());
+                // The bitmaps this entry paints, for its drag image.
+                let mut drawn: Vec<(DllSource, u32, f32, f32)> = Vec::new();
                 match *entry {
                     FleetWindowEntry::Fleet(fleet) => {
                         if selected == Some(*entry) {
@@ -2844,7 +2860,14 @@ fn draw_fleet_window(
                             5.0,
                             5.0,
                         );
+                        drawn.push((DllSource::Strategy, side_art(FLEET_FRAME, side), 5.0, 5.0));
                         if movement.is_in_transit(fleet) {
+                            drawn.push((
+                                DllSource::Strategy,
+                                side_art(EN_ROUTE_ENTRY, side),
+                                5.0,
+                                5.0,
+                            ));
                             paint_native(
                                 &list_painter,
                                 ctx,
@@ -2858,6 +2881,7 @@ fn draw_fleet_window(
                             );
                         }
                         for (bitmap, x) in fleet_indicators(world, transport, fleet) {
+                            drawn.push((DllSource::Strategy, side_art(bitmap, side), x, 33.0));
                             paint_native(
                                 &list_painter,
                                 ctx,
@@ -2908,6 +2932,7 @@ fn draw_fleet_window(
                                 let layers =
                                     mini_layers(MiniObject::Craft, mini, en_route, building);
                                 for (source, bitmap) in layers {
+                                    drawn.push((source, bitmap, 5.0, 15.0));
                                     paint_native(
                                         &list_painter,
                                         ctx,
@@ -2924,6 +2949,7 @@ fn draw_fleet_window(
                             for (bitmap, x) in indicator_bitmaps(carriage::ship_flags(
                                 world, transport, fleet, index,
                             )) {
+                                drawn.push((DllSource::Strategy, side_art(bitmap, side), x, 33.0));
                                 paint_native(
                                     &list_painter,
                                     ctx,
@@ -2984,6 +3010,7 @@ fn draw_fleet_window(
                             object,
                             press,
                             list,
+                            image: drag_image_of(&drawn, item, press, scale),
                         });
                     }
                 }
@@ -3164,6 +3191,8 @@ fn draw_fleet_window(
                     }
                     let cell =
                         logical_rect(local, scale, RIGHT_LIST.0, top, 125.0, RIGHT_ITEM_HEIGHT);
+                    // The bitmaps this item paints, for its drag image.
+                    let mut drawn: Vec<(DllSource, u32, f32, f32)> = Vec::new();
                     if window.selected_item == Some(row) {
                         paint_native(
                             &right_painter,
@@ -3191,6 +3220,7 @@ fn draw_fleet_window(
                         for (source, bitmap) in
                             mini_layers(item.kind, mini, travelling || own, building)
                         {
+                            drawn.push((source, bitmap, 28.0, 4.0));
                             paint_native(
                                 &right_painter,
                                 ctx,
@@ -3205,6 +3235,7 @@ fn draw_fleet_window(
                         }
                     }
                     for (bitmap, x) in indicator_bitmaps(item.flags) {
+                        drawn.push((DllSource::Strategy, side_art(bitmap, side), x, 23.0));
                         paint_native(
                             &right_painter,
                             ctx,
@@ -3257,6 +3288,7 @@ fn draw_fleet_window(
                                 object,
                                 press,
                                 list: right,
+                                image: drag_image_of(&drawn, cell, press, scale),
                             });
                         }
                     }
@@ -3403,6 +3435,21 @@ fn draw_rename_edit(
     clippy::cast_precision_loss,
     reason = "Bitmap sizes are small integers."
 )]
+/// A list item's drag image: the bitmaps it painted (`drawn`, each at its
+/// canvas offset in `item`), grabbed at `press` (`FUN_006083c0` copies the
+/// pressed item off screen as the drag begins).
+pub(crate) fn drag_image_of(
+    drawn: &[(DllSource, u32, f32, f32)],
+    item: egui::Rect,
+    press: egui::Pos2,
+    scale: f32,
+) -> DragImage {
+    drawn.iter().fold(
+        DragImage::new(item.min, press, scale),
+        |image, &(source, bitmap, x, y)| image.with_layer(source, bitmap, x, y),
+    )
+}
+
 pub(crate) fn paint_native(
     painter: &egui::Painter,
     ctx: &egui::Context,
@@ -3601,6 +3648,7 @@ pub(crate) mod tests {
             object: ItemObject::Fleet { fleet, system },
             press: egui::pos2(40.0, 40.0),
             list: egui::Rect::from_min_max(egui::pos2(4.0, 29.0), egui::pos2(95.0, 295.0)),
+            image: DragImage::default(),
         });
         state.drag_owner = Some(owner);
         manager
@@ -4598,6 +4646,7 @@ pub(crate) mod tests {
                 object: ItemObject::Fleet { fleet, system },
                 press: egui::pos2(1.0, 1.0),
                 list: egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(2.0, 2.0)),
+                image: DragImage::default(),
             }),
             drag_owner: Some(owner),
             ..FleetWindowState::default()
@@ -4647,6 +4696,7 @@ pub(crate) mod tests {
             object: ItemObject::Fleet { fleet, system },
             press: egui::pos2(1.0, 1.0),
             list: egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(2.0, 2.0)),
+            image: DragImage::default(),
         });
         state.drag_owner = Some(first_id);
 
@@ -5378,6 +5428,93 @@ pub(crate) mod tests {
 
     /// Inside the first right-list item.
     const FIRST_RIGHT_ITEM: (f32, f32) = (160.0, 150.0);
+
+    /// Press `from` in `tab` of a fleet with a regiment aboard and hold it:
+    /// the held state and the last frame's paints.
+    fn hold_press(tab: FleetWindowTab, from: (f32, f32)) -> (FleetWindowState, Run, egui::Pos2) {
+        let (world, transport, system, fleet, _) = fleet_with_regiment();
+        let mut state = FleetWindowState::default();
+        assert!(state.open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled()));
+        if let Some(window) = state.window_mut(system) {
+            window.selected = Some(FleetWindowEntry::Fleet(fleet));
+            window.tab = tab;
+        }
+        let start = at(from.0, from.1);
+        let mut frames = hover(start);
+        frames.push(vec![press(start, true)]);
+        let held = run(
+            &world,
+            &transport,
+            &mut state,
+            CockpitFaction::Alliance,
+            frames,
+        );
+        (state, held, start)
+    }
+
+    /// Every layer of `state`'s drag image lies, with the pointer at the
+    /// press, where the pressed item painted it.
+    fn assert_image_matches_item(state: &FleetWindowState, held: &Run, start: egui::Pos2) {
+        let image = state
+            .drag_image()
+            .expect("a held press on an item carries its image");
+        let scale = scaled().scale;
+        let layers: Vec<_> = image.layers().collect();
+        assert!(!layers.is_empty());
+        for layer in &layers {
+            let at_press = image.top_left(start, scale) + egui::vec2(layer.x, layer.y) * scale;
+            assert!(
+                held.painted.contains(&(layer.bitmap, at_press)),
+                "{layer:?} at {at_press:?}"
+            );
+        }
+        // Moved, it keeps the grabbed point under the pointer.
+        let moved = start + egui::vec2(-120.0, 50.0);
+        assert_eq!(
+            image.top_left(moved, scale),
+            image.top_left(start, scale) + egui::vec2(-120.0, 50.0)
+        );
+    }
+
+    #[test]
+    fn a_held_regiment_carries_the_bitmaps_its_item_paints_under_the_pointer() {
+        // FUN_006083c0: the drag copies the pressed item off screen
+        // (FUN_0060dbb0) with the press as its hotspot (FUN_0060dcb0) and
+        // redraws it at the cursor less that hotspot (FUN_0060df00).
+        let (state, held, start) = hold_press(FleetWindowTab::Troops, FIRST_RIGHT_ITEM);
+        assert_image_matches_item(&state, &held, start);
+    }
+
+    #[test]
+    fn a_held_fleet_carries_the_bitmaps_its_entry_paints_under_the_pointer() {
+        // FUN_006083c0, as above, for the left list.
+        let (state, held, start) = hold_press(FleetWindowTab::CapitalShips, (40.0, 40.0));
+        assert_image_matches_item(&state, &held, start);
+    }
+
+    #[test]
+    fn a_released_drag_carries_no_image() {
+        // FUN_0060de50 hides the image on the release.
+        let (world, transport, system, fleet, _) = fleet_with_regiment();
+        let mut state = FleetWindowState::default();
+        assert!(state.open(&world, system, ORIGIN, CockpitFaction::Alliance, scaled()));
+        if let Some(window) = state.window_mut(system) {
+            window.selected = Some(FleetWindowEntry::Fleet(fleet));
+            window.tab = FleetWindowTab::Troops;
+        }
+        let start = at(FIRST_RIGHT_ITEM.0, FIRST_RIGHT_ITEM.1);
+        let mut frames = hover(start);
+        frames.push(vec![press(start, true)]);
+        frames.push(vec![press(start, false)]);
+        run(
+            &world,
+            &transport,
+            &mut state,
+            CockpitFaction::Alliance,
+            frames,
+        );
+        assert_eq!(state.drag_image(), None);
+    }
 
     #[test]
     fn a_regiment_dragged_out_of_the_troops_tab_drops_where_the_button_comes_up() {

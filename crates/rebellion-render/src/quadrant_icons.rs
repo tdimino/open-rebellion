@@ -67,6 +67,15 @@ pub fn quadrant_side(
     system: SystemKey,
     quadrant: Quadrant,
 ) -> Option<u8> {
+    // FUN_0045ccc0, ported in `fleet_window`: the player's own fleets show
+    // at their destination from the order on, even at an unexplored system,
+    // which shows nothing else.
+    if quadrant == Quadrant::Fleets {
+        return match icon_side(world, movement, fog, player, system) {
+            (_, 0) => None,
+            (side, _) => Some(side),
+        };
+    }
     let contents = SystemContents::new(world, fog, player, system)?;
     match quadrant {
         // FUN_0045cdc0: the system's side bits while it has manufacturing or
@@ -76,11 +85,7 @@ pub fn quadrant_side(
         // facilities, regiments, squadrons, or personnel off a visible
         // mission.
         Quadrant::Defenses => (contents.defenses(missions) > 0).then(|| contents.side()),
-        // FUN_0045ccc0, ported in `fleet_window`.
-        Quadrant::Fleets => match icon_side(world, movement, fog, player, system) {
-            (_, 0) => None,
-            (side, _) => Some(side),
-        },
+        Quadrant::Fleets => unreachable!("answered above"),
         // FUN_0045d090: FUN_004a1f60's side; disabled for 0 and 3.
         Quadrant::Missions => match mission_side(&contents, missions) {
             0 | 3 => None,
@@ -443,10 +448,11 @@ fn mission_side(contents: &SystemContents<'_>, missions: &MissionState) -> u8 {
 mod tests {
     use super::*;
     use rebellion_core::dat::SectorGroup;
+    use rebellion_core::ids::FleetKey;
     use rebellion_core::ids::{CharacterKey, DatId};
     use rebellion_core::missions::{MissionFaction, MissionKind, MissionRequest};
     use rebellion_core::world::{
-        Character, ControlKind, DefenseFacilityInstance, ManufacturingFacilityInstance,
+        Character, ControlKind, DefenseFacilityInstance, Fleet, ManufacturingFacilityInstance,
         ProductionFacilityInstance, Sector, SpecialForceUnit, System, TroopUnit,
     };
 
@@ -974,6 +980,76 @@ mod tests {
         add_mine(&mut world, system, true);
         world.systems[system].exploration_status = ExplorationStatus::Unexplored;
         assert_eq!(alliance_side(&world, system, Quadrant::System), None);
+    }
+
+    /// An unexplored system beside `here` holding an Alliance mine, and a
+    /// fleet of each side at `here` ordered to it.
+    fn fleets_bound_for_unexplored() -> (GameWorld, MovementState, SystemKey, [FleetKey; 2]) {
+        let (mut world, here) = alliance_world();
+        let mut far = world.systems[here].clone();
+        far.fleets.clear();
+        far.x += 30;
+        far.exploration_status = ExplorationStatus::Unexplored;
+        let there = world.systems.insert(far);
+        add_mine(&mut world, there, true);
+        let movement = MovementState::default();
+        let fleets = [true, false].map(|is_alliance| {
+            let fleet = world.insert_fleet(Fleet {
+                location: here,
+                is_alliance,
+                ..Fleet::default()
+            });
+            world.systems[here].fleets.push(fleet);
+            fleet
+        });
+        (world, movement, there, fleets)
+    }
+
+    #[test]
+    fn an_own_fleet_ordered_to_an_unexplored_system_shows_there_at_once() {
+        // FUN_00556390 changes a moving fleet's container on the order
+        // (ghidra/notes/move-order.md), so its icon shows at the
+        // destination before it arrives. port: nothing else shows there.
+        let (world, mut movement, there, [own, _]) = fleets_bound_for_unexplored();
+        let here = world.fleets[own].location;
+        let fog = FogState::new(Faction::Alliance);
+        let side = |movement: &MovementState, quadrant| {
+            quadrant_side(
+                &world,
+                &fog,
+                &MissionState::new(),
+                movement,
+                Faction::Alliance,
+                there,
+                quadrant,
+            )
+        };
+        assert_eq!(side(&movement, Quadrant::Fleets), None);
+        assert!(movement.order(own, here, there, 10));
+        assert_eq!(side(&movement, Quadrant::Fleets), Some(1));
+        assert_eq!(side(&movement, Quadrant::System), None);
+        assert_eq!(side(&movement, Quadrant::Defenses), None);
+    }
+
+    #[test]
+    fn an_opposing_fleet_ordered_to_an_unexplored_system_stays_hidden() {
+        let (world, mut movement, there, [_, theirs]) = fleets_bound_for_unexplored();
+        let here = world.fleets[theirs].location;
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(there);
+        assert!(movement.order(theirs, here, there, 10));
+        assert_eq!(
+            quadrant_side(
+                &world,
+                &fog,
+                &MissionState::new(),
+                &movement,
+                Faction::Alliance,
+                there,
+                Quadrant::Fleets,
+            ),
+            None
+        );
     }
 
     #[test]

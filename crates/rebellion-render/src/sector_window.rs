@@ -21,6 +21,7 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::drag_image::DragImage;
 use crate::fleet_window::paint_native;
 use crate::object_menu::MenuObject;
 #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
@@ -494,6 +495,53 @@ impl SectorWindowState {
                     point,
                 )
         })
+    }
+
+    /// The held icon drag's image: the selected icon's pressed bitmap, kept
+    /// under the pointer where the press grabbed it (`FUN_004593e0` on
+    /// `WM_MOUSEMOVE`, [`DragImage`]).
+    #[must_use]
+    pub fn drag_image(
+        &self,
+        world: &GameWorld,
+        fog: &FogState,
+        missions: &rebellion_core::missions::MissionState,
+        movement: &rebellion_core::movement::MovementState,
+        layout: CockpitLayout,
+    ) -> Option<DragImage> {
+        let window = self
+            .windows
+            .iter()
+            .find(|window| window.drag_from.is_some() && window.selection.is_some())?;
+        let (from, icon) = (window.drag_from?, window.selection?);
+        let sector = world.sectors.get(window.sector)?;
+        let system = world.systems.get(icon.system)?;
+        let (_, pressed) = quadrant_icon(
+            world,
+            fog,
+            missions,
+            movement,
+            cockpit_faction(self.faction),
+            icon.system,
+            icon.quadrant,
+        )?;
+        let window_rect = window_screen_rect(self.faction, window.column, layout);
+        let (x, y) = sector_planet_position(sector.x, sector.y, system.x, system.y);
+        let rect = quadrant_rect(
+            planet_rect(window_rect, layout.scale, x, y),
+            layout.scale,
+            icon.quadrant,
+        );
+        let press = egui::pos2(
+            layout.canvas.x + f32::from(from.0) * layout.scale,
+            layout.canvas.y + f32::from(from.1) * layout.scale,
+        );
+        Some(DragImage::new(rect.min, press, layout.scale).with_layer(
+            DllSource::Strategy,
+            pressed,
+            0.0,
+            0.0,
+        ))
     }
 
     /// Manager identity whose icon drag currently owns pointer capture.
@@ -7927,6 +7975,122 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn a_held_icon_drag_carries_the_pressed_icon_under_the_pointer() {
+        // FUN_004593e0 on WM_MOUSEMOVE: the held drag copies the selected
+        // icon (FUN_0060dbb0), sets the press as its hotspot (FUN_0060dcb0)
+        // and redraws it at the cursor less the hotspot (FUN_0060df00).
+        let (mut world, system, _) = fixture_world();
+        add_fleet(&mut world, system);
+        let layout = layout(1.0);
+        let mut state = SectorWindowState::default();
+        state.open_for_system(&world, system, CockpitFaction::Alliance);
+        let mut fog = FogState::new(Faction::Alliance);
+        fog.reveal(system);
+        let missions = rebellion_core::missions::MissionState::new();
+        let movement = rebellion_core::movement::MovementState::default();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let at =
+            |point: (f32, f32)| egui::pos2(layout.canvas.x + point.0, layout.canvas.y + point.1);
+        let (start, held) = (at((115.0, 90.0)), at((200.0, 250.0)));
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut painted = Vec::new();
+        for (index, events) in [
+            vec![egui::Event::PointerMoved(start)],
+            vec![button(start, true)],
+            vec![egui::Event::PointerMoved(held)],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 520.0),
+                )),
+                time: Some(index as f64 * 0.05),
+                events,
+                ..Default::default()
+            };
+            crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
+            let _ = ctx.run(input, |ctx| {
+                let _ = draw_sector_windows(
+                    ctx,
+                    &world,
+                    &movement,
+                    &fog,
+                    &mut state,
+                    CockpitFaction::Alliance,
+                    layout,
+                    &mut cache,
+                    &missions,
+                    &rebellion_core::uprising::UprisingState::default(),
+                    &|_| true,
+                );
+            });
+            painted = crate::fleet_window::tests::PAINTED.with(|painted| painted.take());
+        }
+        let image = state
+            .drag_image(&world, &fog, &missions, &movement, layout)
+            .expect("a held icon drag carries an image");
+        let (_, pressed) = quadrant_icon(
+            &world,
+            &fog,
+            &missions,
+            &movement,
+            Faction::Alliance,
+            system,
+            Quadrant::Fleets,
+        )
+        .expect("the fleet icon shows");
+        let layers: Vec<_> = image.layers().map(|layer| layer.bitmap).collect();
+        assert_eq!(layers, [pressed]);
+        // With the pointer back at the press, the image covers the icon as
+        // the window paints it.
+        assert!(painted.contains(&(pressed, image.top_left(start, layout.scale))));
+        assert!(image.shown(held));
+        assert_eq!(
+            image.top_left(held, layout.scale) - image.top_left(start, layout.scale),
+            held - start
+        );
+
+        // The release ends the drag and hides the image (FUN_0060de50).
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(700.0, 520.0),
+            )),
+            time: Some(0.2),
+            events: vec![button(held, false)],
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| {
+            let _ = draw_sector_windows(
+                ctx,
+                &world,
+                &movement,
+                &fog,
+                &mut state,
+                CockpitFaction::Alliance,
+                layout,
+                &mut cache,
+                &missions,
+                &rebellion_core::uprising::UprisingState::default(),
+                &|_| true,
+            );
+        });
+        assert_eq!(
+            state.drag_image(&world, &fog, &missions, &movement, layout),
+            None
+        );
     }
 
     #[test]
