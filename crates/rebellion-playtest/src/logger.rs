@@ -5,8 +5,41 @@ use std::path::Path;
 
 use rebellion_core::dat::Faction;
 use rebellion_core::game_events::GameEventRecord;
-use rebellion_core::movement::MovementState;
+use rebellion_core::movement::{MovementOrder, MovementState};
 use rebellion_core::world::{ControlKind, GameWorld};
+
+pub(crate) struct TransitDescription<'a> {
+    pub faction: &'static str,
+    pub origin: &'a str,
+    pub destination: &'a str,
+    pub progress_percent: f32,
+    pub ticks_remaining: u32,
+}
+
+pub(crate) fn describe_transit<'a>(
+    world: &'a GameWorld,
+    order: &MovementOrder,
+) -> TransitDescription<'a> {
+    TransitDescription {
+        origin: world
+            .systems
+            .get(order.origin)
+            .map_or("?", |system| system.name.as_str()),
+        destination: world
+            .systems
+            .get(order.destination)
+            .map_or("?", |system| system.name.as_str()),
+        faction: world.fleets.get(order.fleet).map_or("?", |fleet| {
+            if fleet.is_alliance {
+                "Alliance"
+            } else {
+                "Empire"
+            }
+        }),
+        progress_percent: order.progress() * 100.0,
+        ticks_remaining: order.ticks_remaining(),
+    }
+}
 
 pub struct EventLogger {
     events: Vec<GameEventRecord>,
@@ -95,28 +128,14 @@ impl EventLogger {
         if !movement.is_empty() {
             println!("\nFleets in transit: {}", movement.len());
             for order in movement.orders().values() {
-                let origin = world
-                    .systems
-                    .get(order.origin)
-                    .map_or("?", |s| s.name.as_str());
-                let dest = world
-                    .systems
-                    .get(order.destination)
-                    .map_or("?", |s| s.name.as_str());
-                let faction = world.fleets.get(order.fleet).map_or("?", |f| {
-                    if f.is_alliance {
-                        "Alliance"
-                    } else {
-                        "Empire"
-                    }
-                });
+                let transit = describe_transit(world, order);
                 println!(
                     "  {} fleet: {} → {} ({:.0}%, {} ticks left)",
-                    faction,
-                    origin,
-                    dest,
-                    order.progress() * 100.0,
-                    order.ticks_remaining()
+                    transit.faction,
+                    transit.origin,
+                    transit.destination,
+                    transit.progress_percent,
+                    transit.ticks_remaining
                 );
             }
         }
@@ -130,22 +149,17 @@ impl EventLogger {
                 .and_then(|v| v.as_str())
                 .is_none_or(|outcome| outcome == "applied")
         };
-        let move_fleet_attacks = self
-            .events
-            .iter()
-            .filter(|e| e.event_type == "ai_action")
-            .filter(applied)
-            .filter(|e| e.details.get("type").and_then(|v| v.as_str()) == Some("MoveFleet"))
-            .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some("Attack"))
-            .count();
-        let move_fleet_reinforce = self
-            .events
-            .iter()
-            .filter(|e| e.event_type == "ai_action")
-            .filter(applied)
-            .filter(|e| e.details.get("type").and_then(|v| v.as_str()) == Some("MoveFleet"))
-            .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some("Reinforce"))
-            .count();
+        let move_fleet_orders = |reason| {
+            self.events
+                .iter()
+                .filter(|e| e.event_type == "ai_action")
+                .filter(applied)
+                .filter(|e| e.details.get("type").and_then(|v| v.as_str()) == Some("MoveFleet"))
+                .filter(|e| e.details.get("reason").and_then(|v| v.as_str()) == Some(reason))
+                .count()
+        };
+        let move_fleet_attacks = move_fleet_orders("Attack");
+        let move_fleet_reinforce = move_fleet_orders("Reinforce");
         println!("\nCombat diagnostics:");
         println!("  Fleet attack orders:     {move_fleet_attacks}");
         println!("  Fleet reinforce orders:  {move_fleet_reinforce}");

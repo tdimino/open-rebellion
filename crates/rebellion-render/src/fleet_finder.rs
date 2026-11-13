@@ -8,43 +8,25 @@
 //! it best begins (`FUN_00609650`); Display, Enter or a double click opens
 //! the Sector and Fleet windows for the choice (`FUN_00429440`).
 
-use egui_macroquad::egui;
 use rebellion_core::dat::Faction;
 use rebellion_core::fog::FogState;
 use rebellion_core::movement::{listed_location, MovementState};
-use rebellion_core::world::GameWorld;
-use rebellion_windowing::{
-    ContentReport, ContentStatus, ControlId, ExistingEffect, FocusTarget, RoutingSnapshot,
-    WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
-};
 
-use crate::bmp_cache::{BmpCache, DllSource};
-use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::fleet_window::{paint_native, FleetWindowEntry};
-use crate::mission_dialog::{button, galaxy_centered_rect};
-use crate::system_window::{fleet_label, logical_rect, opposing_contents_visible, rect_contains};
+use crate::finder_common::{self, prelude::*};
+use crate::fleet_window::FleetWindowEntry;
+use crate::system_window::{fleet_label, opposing_contents_visible};
 
-pub const FLEET_FINDER_WIDTH: f32 = 470.0;
-pub const FLEET_FINDER_HEIGHT: f32 = 330.0;
+pub const FLEET_FINDER_WIDTH: f32 = finder_common::WIDTH;
+pub const FLEET_FINDER_HEIGHT: f32 = finder_common::HEIGHT;
 /// Stable child identity for the name edit (`0xcd`).
 pub const FLEET_FINDER_NAME_CONTROL: ControlId = ControlId(0xcd);
 /// Stable child identity for the result list (`0xcc`).
 pub const FLEET_FINDER_LIST_CONTROL: ControlId = ControlId(0xcc);
 
 // STRATEGY bitmaps by side, Alliance then Empire (FUN_00461960).
-const BACKGROUND: [u32; 2] = [10335, 10336];
 const FLEET_PANEL: [u32; 2] = [10526, 10527];
 const SHIP_PANEL: [u32; 2] = [10524, 10525];
 const RAIL: [u32; 2] = [10586, 10590];
-const PANEL_AT: (f32, f32) = (12.0, 13.0);
-const RAIL_AT: (f32, f32) = (412.0, 0.0);
-
-/// One bitmap button: its window rectangle and its normal and pressed art.
-#[derive(Debug, Clone, Copy)]
-struct Control {
-    rect: (f32, f32, f32, f32),
-    art: (u32, u32),
-}
 
 /// The side's Close (`200`), Display (`0xc9`), Ship Finder and Fleet Finder
 /// (group `0xfa`, tags 2 and 1) controls (`FUN_00461960`).
@@ -57,62 +39,27 @@ struct SideControls {
 
 const CONTROLS: [SideControls; 2] = [
     SideControls {
-        close: Control {
-            rect: (423.0, 25.0, 32.0, 31.0),
-            art: (10514, 10515),
-        },
-        display: Control {
-            rect: (423.0, 93.0, 32.0, 31.0),
-            art: (10518, 10519),
-        },
-        ship_finder: Control {
-            rect: (423.0, 147.0, 32.0, 31.0),
-            art: (10530, 10531),
-        },
-        fleet_finder: Control {
-            rect: (423.0, 201.0, 32.0, 31.0),
-            art: (10528, 10529),
-        },
+        close: Control::new((423.0, 25.0, 32.0, 31.0), (10514, 10515)),
+        display: Control::new((423.0, 93.0, 32.0, 31.0), (10518, 10519)),
+        ship_finder: Control::new((423.0, 147.0, 32.0, 31.0), (10530, 10531)),
+        fleet_finder: Control::new((423.0, 201.0, 32.0, 31.0), (10528, 10529)),
     },
     SideControls {
-        close: Control {
-            rect: (426.0, 21.0, 44.0, 41.0),
-            art: (10516, 10517),
-        },
-        display: Control {
-            rect: (426.0, 89.0, 44.0, 41.0),
-            art: (10520, 10521),
-        },
-        ship_finder: Control {
-            rect: (426.0, 143.0, 44.0, 41.0),
-            art: (10534, 10535),
-        },
-        fleet_finder: Control {
-            rect: (426.0, 197.0, 44.0, 41.0),
-            art: (10532, 10533),
-        },
+        close: Control::new((426.0, 21.0, 44.0, 41.0), (10516, 10517)),
+        display: Control::new((426.0, 89.0, 44.0, 41.0), (10520, 10521)),
+        ship_finder: Control::new((426.0, 143.0, 44.0, 41.0), (10534, 10535)),
+        fleet_finder: Control::new((426.0, 197.0, 44.0, 41.0), (10532, 10533)),
     },
 ];
 
 /// The side tabs (group `100`) at (36, 78): All, Alliance, Imperial.
 const TABS: [Control; 3] = [
-    Control {
-        rect: (36.0, 78.0, 49.0, 41.0),
-        art: (10500, 10501),
-    },
-    Control {
-        rect: (88.0, 78.0, 49.0, 41.0),
-        art: (10502, 10503),
-    },
-    Control {
-        rect: (140.0, 78.0, 49.0, 41.0),
-        art: (10505, 10506),
-    },
+    Control::new((36.0, 78.0, 49.0, 41.0), (10500, 10501)),
+    Control::new((88.0, 78.0, 49.0, 41.0), (10502, 10503)),
+    Control::new((140.0, 78.0, 49.0, 41.0), (10505, 10506)),
 ];
 
 // Window rectangles (x, y, width, height), FUN_00461960.
-const TITLE_AT: (f32, f32) = (36.0, 14.0);
-const NAME_LABEL_AT: (f32, f32) = (36.0, 48.0);
 const NAME_BOX: (f32, f32, f32, f32) = (143.0, 45.0, 250.0, 16.0);
 const TAB_LABEL_AT: (f32, f32) = (40.0, 119.0);
 const LIST: (f32, f32, f32, f32) = (36.0, 138.0, 350.0, 165.0);
@@ -181,6 +128,12 @@ pub struct FinderRow {
     pub name: String,
 }
 
+impl FinderRowName for FinderRow {
+    fn finder_name(&self) -> &str {
+        &self.name
+    }
+}
+
 /// The rows `FUN_00462be0` lists for `mode` and `tab`, in name order
 /// ignoring case (`FUN_0060a890` mode 2, `_stricmp`), ties in walk order.
 ///
@@ -236,31 +189,11 @@ pub fn rows(
             }
         }
     }
-    rows.sort_by_cached_key(|row| row.name.to_ascii_lowercase());
+    finder_common::sort_rows_by_name(&mut rows);
     rows
 }
 
-/// The row a typed name chooses (`FUN_00609650`): the first, in list order,
-/// with the longest prefix in common with `text`, ignoring case
-/// (`FUN_005f3430` flag 0); none when no row shares the first letter.
-#[must_use]
-pub fn prefix_choice(rows: &[FinderRow], text: &str) -> Option<usize> {
-    let typed: Vec<char> = text.chars().map(|c| c.to_ascii_lowercase()).collect();
-    let mut best: Option<(usize, usize)> = None;
-    for (index, row) in rows.iter().enumerate() {
-        let common = row
-            .name
-            .chars()
-            .map(|c| c.to_ascii_lowercase())
-            .zip(&typed)
-            .take_while(|(a, b)| a == *b)
-            .count();
-        if common > 0 && best.is_none_or(|(_, length)| common > length) {
-            best = Some((index, common));
-        }
-    }
-    best.map(|(index, _)| index)
-}
+finder_common::define_prefix_choice!(FinderRow);
 
 /// What the Finder asks of the galaxy view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -274,27 +207,11 @@ pub enum FleetFinderAction {
 
 #[derive(Debug, Clone)]
 struct OpenFinder {
-    /// Shared strategic-window identity accepted at the app commit boundary.
-    id: Option<WindowId>,
-    faction: CockpitFaction,
+    ui: FinderUiState,
     mode: FinderMode,
     tab: FinderTab,
-    /// The name box's text (`0xcd`).
-    name: String,
     /// `+0x16c`: the chosen row's object.
     chosen: Option<FleetWindowEntry>,
-    /// The first row the list shows.
-    first_row: usize,
-    /// The name box takes the focus when the window opens.
-    focus_name: bool,
-    /// Child focus requested by content input and committed by the app after
-    /// this immutable frame finishes.
-    pending_focus: Option<ControlId>,
-    /// The row the last click chose and when: a second click on it soon
-    /// after is the list's double click (0x309). port: egui counts a double
-    /// click across widgets, and a third click as a triple, so the list
-    /// keeps its own.
-    last_clicked: Option<(usize, f64)>,
 }
 
 /// What the open Finder shows, for the interface fixture.
@@ -308,185 +225,26 @@ pub struct FleetFinderReport {
     pub first_row: usize,
 }
 
-/// The Fleet Finder, one at most (`FUN_0042a0c0`).
-#[derive(Debug, Clone, Default)]
-pub struct FleetFinderState {
-    window: Option<OpenFinder>,
-}
-
-/// Candidate Fleet Finder content. It is inert until the app coordinator
-/// accepts the singleton identity and returns its open receipt.
-#[derive(Debug, Clone, Copy)]
-pub struct PreparedFleetFinder {
-    faction: CockpitFaction,
-}
-
-impl PreparedFleetFinder {
-    #[must_use]
-    pub const fn spec(self) -> WindowSpec {
-        crate::windowing_policy::singleton_spec(WindowKind::FleetFinder, WindowOwner::StrategicRoot)
+finder_common::define_finder_state! {
+    content: OpenFinder;
+    /// The Fleet Finder, one at most (`FUN_0042a0c0`).
+    state: FleetFinderState;
+    /// Candidate Fleet Finder content. It is inert until the app coordinator
+    /// accepts the singleton identity and returns its open receipt.
+    prepared: PreparedFleetFinder;
+    kind: WindowKind::FleetFinder;
+    layer: "original-fleet-finder";
+    open: |faction, window_id| {
+        OpenFinder {
+            ui: FinderUiState::new(window_id, faction),
+            mode: FinderMode::Fleets,
+            tab: FinderTab::All,
+            chosen: None,
+        }
     }
 }
 
 impl FleetFinderState {
-    /// Prepares inert content for a manager-owned singleton open.
-    #[must_use]
-    pub const fn prepare_open(faction: CockpitFaction) -> PreparedFleetFinder {
-        PreparedFleetFinder { faction }
-    }
-
-    /// Publishes prepared content only for a new manager identity. A duplicate
-    /// NoOp acknowledges the existing identity without rebuilding its state.
-    pub fn commit_open(
-        &mut self,
-        prepared: PreparedFleetFinder,
-        transition: &WindowTransition,
-    ) -> Option<WindowId> {
-        match *transition {
-            WindowTransition::Opened { id } if self.window.is_none() => {
-                self.window = Some(OpenFinder {
-                    id: Some(id),
-                    faction: prepared.faction,
-                    mode: FinderMode::Fleets,
-                    tab: FinderTab::All,
-                    name: String::new(),
-                    chosen: None,
-                    first_row: 0,
-                    focus_name: true,
-                    pending_focus: None,
-                    last_clicked: None,
-                });
-                Some(id)
-            }
-            WindowTransition::Existing {
-                id,
-                effect: ExistingEffect::NoOp,
-            } if self.window_id() == Some(id) => Some(id),
-            _ => None,
-        }
-    }
-
-    /// Exact manager identity currently owning the published content.
-    #[must_use]
-    pub fn window_id(&self) -> Option<WindowId> {
-        self.window.as_ref().and_then(|window| window.id)
-    }
-
-    /// Egui layer attached to the exact manager-issued Fleet Finder.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id() == Some(id)).then(|| {
-            egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("original-fleet-finder"))
-        })
-    }
-
-    /// Manager-owned Finder hit for event-local pointer routing.
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id()?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::FleetFinder)
-            && frame.allows_input(id)
-            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    /// Exact focused manager identity that receives this frame's keys.
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id()?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
-
-    /// Explicit Fleet Finder content state for the immutable manager frame.
-    /// Other Finder policies are deliberately not claimed here.
-    #[must_use]
-    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::FleetFinder)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id() == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
-    }
-
-    /// Releases only content named by manager close/reconciliation receipts.
-    pub fn remove_content(&mut self, removed: &[WindowId]) {
-        if self.window_id().is_some_and(|id| removed.contains(&id)) {
-            self.window = None;
-        }
-    }
-
-    /// Takes one child-focus intent scoped to the exact owning identity.
-    pub fn take_focus_request(&mut self) -> Option<FocusTarget> {
-        let window = self.window.as_mut()?;
-        let window_id = window.id?;
-        let control = window.pending_focus.take()?;
-        Some(FocusTarget {
-            window: window_id,
-            control: Some(control),
-        })
-    }
-
-    /// Open the Finder in Fleet Finder mode on its All tab with the focus in
-    /// the name box (`FUN_00461960`). An open Finder stays as it is.
-    pub fn open(&mut self, faction: CockpitFaction) -> bool {
-        if self.window.is_some() {
-            return false;
-        }
-        self.window = Some(OpenFinder {
-            id: None,
-            faction,
-            mode: FinderMode::Fleets,
-            tab: FinderTab::All,
-            name: String::new(),
-            chosen: None,
-            first_row: 0,
-            focus_name: true,
-            pending_focus: None,
-            last_clicked: None,
-        });
-        true
-    }
-
-    pub fn close(&mut self) {
-        self.window = None;
-    }
-
-    #[must_use]
-    pub fn is_open(&self) -> bool {
-        self.window.is_some()
-    }
-
-    /// Whether `point` falls on the open window, so the galaxy map under it
-    /// takes no input.
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
-    }
-
     #[must_use]
     pub fn report(
         &self,
@@ -503,10 +261,10 @@ impl FleetFinderState {
         Some(FleetFinderReport {
             mode: window.mode,
             tab: window.tab,
-            name: window.name.clone(),
+            name: window.ui.name.clone(),
             rows,
             chosen,
-            first_row: window.first_row,
+            first_row: window.ui.first_row,
         })
     }
 
@@ -520,7 +278,7 @@ impl FleetFinderState {
         control: FinderControl,
     ) -> Option<egui::Rect> {
         let window = self.window.as_ref()?;
-        let side = &CONTROLS[side(window.faction)];
+        let side = &CONTROLS[finder_common::side(window.ui.faction)];
         let rect = match control {
             FinderControl::Tab(tab) => TABS[tab_index(tab)].rect,
             FinderControl::Close => side.close.rect,
@@ -530,7 +288,7 @@ impl FleetFinderState {
             FinderControl::NameBox => NAME_BOX,
             FinderControl::Row(row) => {
                 let line = row
-                    .checked_sub(window.first_row)
+                    .checked_sub(window.ui.first_row)
                     .filter(|&line| line < VISIBLE_ROWS)?;
                 (
                     LIST.0,
@@ -540,38 +298,30 @@ impl FleetFinderState {
                 )
             }
         };
-        Some(at(window_rect(layout), layout.scale, rect))
+        Some(finder_common::at(
+            finder_common::window_rect(layout),
+            layout.scale,
+            rect,
+        ))
     }
 
-    /// The window's screen rectangle while it is open.
-    #[must_use]
-    pub fn screen_rect(&self, layout: CockpitLayout) -> Option<egui::Rect> {
-        self.window.as_ref().map(|_| window_rect(layout))
-    }
-
-    /// Show `tab` (group `100`): the list rebuilds and the choice clears
-    /// (`FUN_00462be0`).
-    pub fn set_tab(&mut self, tab: FinderTab) {
-        if let Some(window) = &mut self.window {
-            if window.tab != tab {
-                window.tab = tab;
-                window.chosen = None;
-                window.first_row = 0;
-                window.last_clicked = None;
-            }
-        }
-    }
+    finder_common::impl_finder_category_setter!(
+        /// Show `tab` (group `100`): the list rebuilds and the choice clears
+        /// (`FUN_00462be0`).
+        set_tab(FinderTab) => tab
+    );
 
     /// `FUN_004632d0`: the name box empties and the list rebuilds for the
     /// tab in use.
     pub fn set_mode(&mut self, mode: FinderMode) {
         if let Some(window) = &mut self.window {
-            if window.mode != mode {
-                window.mode = mode;
-                window.name.clear();
-                window.chosen = None;
-                window.first_row = 0;
-                window.last_clicked = None;
+            if finder_common::change_category(
+                &mut window.mode,
+                &mut window.chosen,
+                &mut window.ui,
+                mode,
+            ) {
+                window.ui.name.clear();
             }
         }
     }
@@ -589,13 +339,6 @@ pub enum FinderControl {
     Row(usize),
 }
 
-const fn side(faction: CockpitFaction) -> usize {
-    match faction {
-        CockpitFaction::Alliance => 0,
-        CockpitFaction::Empire => 1,
-    }
-}
-
 const fn tab_index(tab: FinderTab) -> usize {
     match tab {
         FinderTab::All => 0,
@@ -604,30 +347,8 @@ const fn tab_index(tab: FinderTab) -> usize {
     }
 }
 
-const fn player_side(faction: CockpitFaction) -> Faction {
-    match faction {
-        CockpitFaction::Alliance => Faction::Alliance,
-        CockpitFaction::Empire => Faction::Empire,
-    }
-}
-
-/// hyp: `FUN_00606980` places it in the galaxy view; the port centers it,
-/// as the move confirmation.
-fn window_rect(layout: CockpitLayout) -> egui::Rect {
-    galaxy_centered_rect(layout, FLEET_FINDER_WIDTH, FLEET_FINDER_HEIGHT)
-}
-
-fn at(frame: egui::Rect, scale: f32, (x, y, w, h): (f32, f32, f32, f32)) -> egui::Rect {
-    logical_rect(frame, scale, x, y, w, h)
-}
-
 /// Rows the list shows at once.
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Eight whole rows of 20 in a list 165 tall."
-)]
-const VISIBLE_ROWS: usize = (LIST.3 / ROW_HEIGHT) as usize;
+const VISIBLE_ROWS: usize = crate::list_control::visible_row_capacity(LIST.3, ROW_HEIGHT);
 
 /// Draw a fixture-opened Finder, if any, and report an action.
 pub fn draw_fleet_finder(
@@ -643,7 +364,7 @@ pub fn draw_fleet_finder(
 }
 
 /// Draw the open manager-owned Finder using the frozen semantic focus.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     clippy::too_many_lines,
     reason = "The window carries the existing render context plus semantic focus; splitting it hides the original control order."
@@ -658,448 +379,108 @@ pub fn draw_fleet_finder_focused(
     layout: CockpitLayout,
     cache: &mut BmpCache,
 ) -> Option<FleetFinderAction> {
-    let window = state.window.clone()?;
-    let focused_control = window
-        .id
-        .and_then(|id| focus.filter(|target| target.window == id))
-        .and_then(|target| target.control);
-    let side = side(window.faction);
-    let controls = &CONTROLS[side];
-    let scale = layout.scale;
-    let rect = window_rect(layout);
+    let (window, side_idx, controls) = finder_common::side_finder_snapshot!(state, CONTROLS);
     let list = rows(
         world,
         movement,
         fog,
-        player_side(window.faction),
+        finder_common::player_side(window.ui.faction),
         window.mode,
         window.tab,
     );
     let chosen_row = window
         .chosen
         .and_then(|object| list.iter().position(|row| row.object == object));
-
-    let mut close = false;
-    let mut open = None;
-    let mut tab = None;
     let mut mode = None;
-    let mut clicked_row = None;
-    let mut name = window.name.clone();
-    let mut name_changed = false;
-    let mut enter = false;
-    let mut wheel = 0.0;
-    let mut focus_request = None;
-
-    // FUN_0042a0c0 opens the Finder above the galaxy view's modeless child
-    // windows, on the popup layer used by command modals and menus.
-    let id = egui::Id::new("original-fleet-finder");
-    egui::Area::new(id)
-        .fixed_pos(rect.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(rect.size(), egui::Sense::click());
-            let painter = ui.painter().with_clip_rect(frame);
-            let paint = |cache: &mut BmpCache, id: u32, (x, y): (f32, f32)| {
-                paint_native(
-                    &painter,
-                    ctx,
-                    cache,
-                    DllSource::Strategy,
-                    id,
-                    frame,
-                    scale,
-                    x,
-                    y,
-                );
-            };
-
-            painter.rect_filled(frame, 0.0, egui::Color32::BLACK);
-            paint(cache, BACKGROUND[side], (0.0, 0.0));
-            let panel = match window.mode {
-                FinderMode::Fleets => FLEET_PANEL[side],
-                FinderMode::Ships => SHIP_PANEL[side],
-            };
-            paint(cache, panel, PANEL_AT);
-            paint(cache, RAIL[side], RAIL_AT);
-
-            // hyp: fonts 5 and 4 (FUN_00420550) are not mapped; the port's
-            // own sizes stand in. Their colour is white (0x2ffffff).
-            let (title, label) = window.mode.titles();
-            let title_font = egui::FontId::proportional((12.0 * scale).max(8.0));
-            let font = egui::FontId::proportional((10.0 * scale).max(7.0));
-            painter.text(
-                at(frame, scale, (TITLE_AT.0, TITLE_AT.1, 0.0, 0.0)).min,
-                egui::Align2::LEFT_TOP,
-                title,
-                title_font.clone(),
-                egui::Color32::WHITE,
-            );
-            painter.text(
-                at(frame, scale, (NAME_LABEL_AT.0, NAME_LABEL_AT.1, 0.0, 0.0)).min,
-                egui::Align2::LEFT_TOP,
-                label,
-                font.clone(),
-                egui::Color32::WHITE,
-            );
-            painter.text(
-                at(frame, scale, (TAB_LABEL_AT.0, TAB_LABEL_AT.1, 0.0, 0.0)).min,
-                egui::Align2::LEFT_TOP,
-                window.tab.label(window.mode),
-                title_font,
-                egui::Color32::WHITE,
-            );
-
-            // hyp: the tab and mode groups show their current member in its
-            // second bitmap, as the mission dialog's tab strip does
-            // (FUN_0060d590); their pressed art is untraced.
-            for candidate in FinderTab::ALL {
-                let control = TABS[tab_index(candidate)];
-                let down = candidate == window.tab;
-                if button(
-                    ui,
-                    cache,
-                    at(frame, scale, control.rect),
-                    ("finder-tab", tab_index(candidate)),
-                    control.art,
-                    down,
-                    scale,
-                ) {
-                    tab = Some(candidate);
-                }
-            }
+    let (title, name_label) = window.mode.titles();
+    let panel = match window.mode {
+        FinderMode::Fleets => FLEET_PANEL[side_idx],
+        FinderMode::Ships => SHIP_PANEL[side_idx],
+    };
+    let outcome = finder_common::draw_indexed_finder(
+        ctx,
+        cache,
+        layout,
+        focus,
+        &window.ui,
+        window.tab,
+        chosen_row,
+        window.chosen,
+        &list,
+        &finder_common::IndexedFinderConfig {
+            area_id: "original-fleet-finder",
+            name_id: "original-fleet-finder-name",
+            list_id: "original-fleet-finder-list",
+            row_id: "fleet",
+            title,
+            name_label,
+            section_label: window.tab.label(window.mode),
+            section_at: TAB_LABEL_AT,
+            panel,
+            rail: RAIL[side_idx],
+            tabs: &FinderTab::ALL,
+            tab_controls: &TABS,
+            controls: (controls.close, controls.display),
+            name_box: NAME_BOX,
+            list: LIST,
+            row_height: ROW_HEIGHT,
+            visible_rows: VISIBLE_ROWS,
+            semantic_controls: (FLEET_FINDER_NAME_CONTROL, FLEET_FINDER_LIST_CONTROL),
+            accepts_batched_double_click: true,
+        },
+        |ui, canvas, cache| {
             for (candidate, control, id) in [
                 (FinderMode::Ships, controls.ship_finder, "finder-ships"),
                 (FinderMode::Fleets, controls.fleet_finder, "finder-fleets"),
             ] {
-                if button(
-                    ui,
-                    cache,
-                    at(frame, scale, control.rect),
-                    id,
-                    control.art,
-                    candidate == window.mode,
-                    scale,
-                ) {
+                if canvas.button(ui, cache, control, id, candidate == window.mode) {
                     mode = Some(candidate);
                 }
             }
-            if button(
-                ui,
-                cache,
-                at(frame, scale, controls.close.rect),
-                "finder-close",
-                controls.close.art,
-                false,
-                scale,
-            ) {
-                close = true;
-            }
-            if button(
-                ui,
-                cache,
-                at(frame, scale, controls.display.rect),
-                "finder-display",
-                controls.display.art,
-                false,
-                scale,
-            ) {
-                open = window.chosen;
-            }
-
-            // The name box (0xcd): white text, no frame.
-            let name_rect = at(frame, scale, NAME_BOX);
-            let name_id = egui::Id::new("original-fleet-finder-name");
-            let list_id = egui::Id::new("original-fleet-finder-list");
-            if focused_control == Some(FLEET_FINDER_LIST_CONTROL) {
-                ui.memory_mut(|memory| memory.request_focus(list_id));
-            }
-            let edit = ui.put(
-                name_rect,
-                egui::TextEdit::singleline(&mut name)
-                    .id(name_id)
-                    .frame(false)
-                    .font(font.clone())
-                    .text_color(egui::Color32::WHITE)
-                    .desired_width(name_rect.width()),
-            );
-            if window.focus_name || focused_control == Some(FLEET_FINDER_NAME_CONTROL) {
-                edit.request_focus();
-            }
-            if window.id.is_some() && edit.gained_focus() {
-                focus_request = Some(FLEET_FINDER_NAME_CONTROL);
-            }
-            name_changed = edit.changed();
-            enter = edit.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
-
-            // The list (0xcc). port: no scroll bar (art 10653); the wheel
-            // scrolls it. hyp: the selected row's look (FUN_004c7e10) is
-            // untraced; it is drawn yellow.
-            let list_rect = at(frame, scale, LIST);
-            let list_painter = painter.with_clip_rect(list_rect);
-            for (offset, row) in list
-                .iter()
-                .enumerate()
-                .skip(window.first_row)
-                .take(VISIBLE_ROWS)
-            {
-                let line = (offset - window.first_row) as f32;
-                let row_rect = at(
-                    frame,
-                    scale,
-                    (LIST.0, LIST.1 + ROW_HEIGHT * line, LIST.2, ROW_HEIGHT),
-                );
-                let colour = if chosen_row == Some(offset) {
-                    egui::Color32::YELLOW
-                } else {
-                    egui::Color32::WHITE
-                };
-                list_painter.text(
-                    row_rect.left_center() + egui::vec2(4.0 * scale, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    &row.name,
-                    font.clone(),
-                    colour,
-                );
-                let response = ui.interact(
-                    row_rect,
-                    ui.id().with(("finder-row", offset)),
-                    egui::Sense::click(),
-                );
-                let same_row_double_click_batch = response.double_clicked()
-                    && ui.input(|input| {
-                        input
-                            .events
-                            .iter()
-                            .filter(|event| {
-                                matches!(
-                                    event,
-                                    egui::Event::PointerButton {
-                                        pos,
-                                        button: egui::PointerButton::Primary,
-                                        pressed: false,
-                                        ..
-                                    } if row_rect.contains(*pos)
-                                )
-                            })
-                            .count()
-                            >= 2
-                    });
-                if same_row_double_click_batch {
-                    open = Some(row.object);
-                } else if response.clicked() {
-                    if window.id.is_some() {
-                        focus_request = Some(FLEET_FINDER_LIST_CONTROL);
-                    }
-                    let (now, delay) = (
-                        ui.input(|input| input.time),
-                        ctx.options(|options| options.input_options.max_double_click_delay),
-                    );
-                    if window
-                        .last_clicked
-                        .is_some_and(|(last, at)| last == offset && now - at <= delay)
-                    {
-                        open = Some(row.object);
-                    } else {
-                        clicked_row = Some((offset, now));
-                    }
-                }
-            }
-            let pointer = ui.input(|input| input.pointer.hover_pos());
-            if pointer.is_some_and(|point| rect_contains(list_rect, point)) {
-                wheel = ui.input(|input| input.raw_scroll_delta.y);
-            }
-        });
-
-    let escape = ctx.input(|input| input.key_pressed(egui::Key::Escape));
-    let arrow_up = ctx.input(|input| input.key_pressed(egui::Key::ArrowUp));
-    let arrow_down = ctx.input(|input| input.key_pressed(egui::Key::ArrowDown));
-    let arrow_left = ctx.input(|input| input.key_pressed(egui::Key::ArrowLeft));
-    let arrow_right = ctx.input(|input| input.key_pressed(egui::Key::ArrowRight));
-    let managed_enter = ctx.input(|input| input.key_pressed(egui::Key::Enter));
+        },
+        |_, _, _, _, _| {},
+        |row| row.object,
+    );
     let open_window = state.window.as_mut()?;
-    open_window.focus_name = false;
-    if name_changed {
-        // FUN_00462a50 0x408: the best prefix match is chosen and shown.
-        open_window.name.clone_from(&name);
-        let choice = prefix_choice(&list, &name);
-        open_window.chosen = choice.map(|index| list[index].object);
-        if let Some(index) = choice {
-            open_window.first_row = scrolled_to(open_window.first_row, index);
-        }
-    }
-    if let Some((row, at)) = clicked_row {
-        // 0x29b: the row's id is chosen and its name copied into the box.
-        open_window.last_clicked = Some((row, at));
-        open_window.chosen = Some(list[row].object);
-        open_window.name.clone_from(&list[row].name);
-    }
-    if focused_control == Some(FLEET_FINDER_NAME_CONTROL) && arrow_down && !list.is_empty() {
-        let row = open_window
-            .chosen
-            .and_then(|object| list.iter().position(|entry| entry.object == object))
-            .unwrap_or(0);
-        open_window.chosen = Some(list[row].object);
-        open_window.name.clone_from(&list[row].name);
-        open_window.first_row = scrolled_to(open_window.first_row, row);
-        focus_request = Some(FLEET_FINDER_LIST_CONTROL);
-    }
-    if focused_control == Some(FLEET_FINDER_LIST_CONTROL) {
-        if list.is_empty() {
-            if arrow_up {
-                focus_request = Some(FLEET_FINDER_NAME_CONTROL);
-            }
-        } else {
-            let current = open_window
-                .chosen
-                .and_then(|object| list.iter().position(|entry| entry.object == object))
-                .unwrap_or(0);
-            let next = if arrow_down {
-                (current + 1).min(list.len() - 1)
-            } else if arrow_up && current > 0 {
-                current - 1
-            } else {
-                current
-            };
-            if arrow_up && current == 0 {
-                focus_request = Some(FLEET_FINDER_NAME_CONTROL);
-            } else if arrow_up || arrow_down {
-                open_window.chosen = Some(list[next].object);
-                open_window.name.clone_from(&list[next].name);
-                open_window.first_row = scrolled_to(open_window.first_row, next);
-            }
-        }
-        if arrow_left || arrow_right {
-            let current = tab_index(open_window.tab);
-            let next = if arrow_left {
-                current.saturating_sub(1)
-            } else {
-                (current + 1).min(FinderTab::ALL.len() - 1)
-            };
-            tab = Some(FinderTab::ALL[next]);
-        }
-    }
-    if managed_enter
-        && matches!(
-            focused_control,
-            Some(FLEET_FINDER_NAME_CONTROL) | Some(FLEET_FINDER_LIST_CONTROL)
-        )
-    {
-        open = open.or(open_window.chosen);
-    }
-    if let Some(control) = focus_request {
-        open_window.pending_focus = Some(control);
-    }
-    if enter {
-        open = open.or(open_window.chosen);
-    }
-    if wheel != 0.0 {
-        let last = list.len().saturating_sub(VISIBLE_ROWS);
-        open_window.first_row = if wheel > 0.0 {
-            open_window.first_row.saturating_sub(1)
-        } else {
-            (open_window.first_row + 1).min(last)
-        };
-    }
-    if let Some(tab) = tab {
-        state.set_tab(tab);
-    }
+    let committed = finder_common::commit_indexed_output(
+        &mut open_window.ui,
+        &mut open_window.tab,
+        &mut open_window.chosen,
+        &list,
+        outcome,
+        |_, row| row.object,
+    );
     if let Some(mode) = mode {
         state.set_mode(mode);
     }
-    if let Some(object) = open {
-        if state.window_id().is_none() {
+    match committed {
+        Some(finder_common::FinderDrawOutcome::Open(object)) => {
+            if state.window_id().is_none() {
+                state.close();
+            }
+            Some(FleetFinderAction::Open(object))
+        }
+        Some(finder_common::FinderDrawOutcome::Close) => {
+            if let Some(id) = state.window_id() {
+                return Some(FleetFinderAction::Close(id));
+            }
             state.close();
+            None
         }
-        return Some(FleetFinderAction::Open(object));
-    }
-    if close || escape {
-        if let Some(id) = state.window_id() {
-            return Some(FleetFinderAction::Close(id));
-        }
-        state.close();
-    }
-    None
-}
-
-/// The first row that shows `row`, moving the list as little as possible.
-fn scrolled_to(first_row: usize, row: usize) -> usize {
-    if row < first_row {
-        row
-    } else if row >= first_row + VISIBLE_ROWS {
-        row + 1 - VISIBLE_ROWS
-    } else {
-        first_row
+        None => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use super::*;
     use crate::cockpit::CockpitViewport;
-    use rebellion_core::dat::{ExplorationStatus, SectorGroup};
-    use rebellion_core::ids::{DatId, FleetKey, SystemKey};
-    use rebellion_core::world::{
-        CapitalShipClass, ControlKind, Fleet, Sector, ShipInstance, System,
+    use crate::test_support::{
+        add_system, finder_layout as layout, key_press as key, pointer_button as press,
     };
-    use rebellion_windowing::{
-        ContentStatus, ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowKind,
-        WindowManager, WindowOwner, WindowTransition,
-    };
-
-    fn layout() -> CockpitLayout {
-        CockpitLayout {
-            canvas: CockpitViewport {
-                x: 0.0,
-                y: 0.0,
-                width: 640.0,
-                height: 480.0,
-            },
-            galaxy: CockpitViewport {
-                x: 65.0,
-                y: 60.0,
-                width: 485.0,
-                height: 350.0,
-            },
-            scale: 1.0,
-        }
-    }
-
-    fn add_system(world: &mut GameWorld, name: &str, control: ControlKind) -> SystemKey {
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(36),
-            name: "Sesswenna".into(),
-            group: SectorGroup::Core,
-            x: 317,
-            y: 248,
-            systems: Vec::new(),
-        });
-        world.systems.insert(System {
-            dat_id: DatId::new(100),
-            name: name.into(),
-            sector,
-            x: 320,
-            y: 250,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        })
-    }
+    use rebellion_core::ids::{FleetKey, SystemKey};
+    use rebellion_core::world::{CapitalShipClass, ControlKind, Fleet, ShipInstance};
+    use rebellion_windowing::{FocusTarget, WindowKind, WindowManager, WindowOwner};
 
     /// A fleet of one ship per class name, in orbit at `system`.
     fn add_fleet(
@@ -1131,10 +512,6 @@ mod tests {
         });
         world.systems[system].fleets.push(fleet);
         fleet
-    }
-
-    fn names(rows: &[FinderRow]) -> Vec<&str> {
-        rows.iter().map(|row| row.name.as_str()).collect()
     }
 
     fn row(name: &str) -> FinderRow {
@@ -1186,6 +563,58 @@ mod tests {
         }
     }
 
+    crate::test_support::define_managed_finder_fixture!(
+        managed_finder,
+        FleetFinderState,
+        "Fleet Finder"
+    );
+
+    fn focused_finder() -> (
+        Galaxy,
+        FleetFinderState,
+        WindowId,
+        FocusTarget,
+        egui::Context,
+    ) {
+        let galaxy = galaxy();
+        let (_manager, state, id, focus, _list_focus, ctx) =
+            crate::test_support::finder_navigation_fixture(
+                managed_finder(),
+                FLEET_FINDER_NAME_CONTROL,
+                FLEET_FINDER_LIST_CONTROL,
+            );
+        (galaxy, state, id, focus, ctx)
+    }
+
+    fn pointer_input(
+        pos: egui::Pos2,
+        extra: Vec<egui::Event>,
+        screen_size: egui::Vec2,
+        time: Option<f64>,
+    ) -> egui::RawInput {
+        let mut input = crate::test_support::pointer_raw_input(pos, extra, screen_size);
+        input.time = time;
+        input
+    }
+
+    fn draw_test_finder(
+        ctx: &egui::Context,
+        galaxy: &Galaxy,
+        state: &mut FleetFinderState,
+        layout: CockpitLayout,
+        cache: &mut BmpCache,
+    ) -> Option<FleetFinderAction> {
+        draw_fleet_finder(
+            ctx,
+            &galaxy.world,
+            &rebellion_core::movement::MovementState::default(),
+            &galaxy.fog,
+            state,
+            layout,
+            cache,
+        )
+    }
+
     #[test]
     fn the_ship_finder_lists_living_ships_by_name_ignoring_case() {
         // FUN_00462be0 mode 2 walks capital ships; FUN_0060a890 mode 2
@@ -1203,7 +632,7 @@ mod tests {
         );
 
         assert_eq!(
-            names(&rows),
+            finder_common::row_names(&rows),
             ["corellian Corvette", "Victory Star Destroyer"]
         );
         assert_eq!(
@@ -1238,7 +667,10 @@ mod tests {
                 FinderTab::All,
             );
             for name in ["corellian Corvette", "Victory Star Destroyer"] {
-                assert!(names(&rows).contains(&name), "{player:?}: {name}");
+                assert!(
+                    finder_common::row_names(&rows).contains(&name),
+                    "{player:?}: {name}"
+                );
             }
         }
     }
@@ -1276,7 +708,7 @@ mod tests {
         // FUN_00462be0: tab 2 needs side bit 0x40, tab 3 bit 0x80.
         let galaxy = galaxy();
         let list = |tab| {
-            names(&rows(
+            finder_common::row_names(&rows(
                 &galaxy.world,
                 &rebellion_core::movement::MovementState::default(),
                 &galaxy.fog,
@@ -1392,72 +824,41 @@ mod tests {
     }
 
     #[test]
-    fn the_list_scrolls_as_little_as_it_must_to_show_a_row() {
+    fn the_visible_rows_count_is_eight() {
         assert_eq!(VISIBLE_ROWS, 8);
-        assert_eq!(scrolled_to(0, 7), 0);
-        assert_eq!(scrolled_to(0, 8), 1);
-        assert_eq!(scrolled_to(5, 2), 2);
-        assert_eq!(scrolled_to(5, 12), 5);
     }
 
     #[test]
     fn opening_an_open_finder_keeps_its_state() {
         // FUN_0042a0c0 builds the window only when no type 0x15 is open.
-        let mut state = FleetFinderState::default();
-        assert!(state.open(CockpitFaction::Alliance));
-        state.set_tab(FinderTab::Imperial);
-
-        assert!(!state.open(CockpitFaction::Alliance));
-
-        assert_eq!(state.window.as_ref().unwrap().tab, FinderTab::Imperial);
+        crate::test_support::assert_finder_reopen_preserves::<FleetFinderState>(
+            |state| state.set_tab(FinderTab::Imperial),
+            |state| assert_eq!(state.window.as_ref().unwrap().tab, FinderTab::Imperial),
+        );
     }
 
     #[test]
     fn fleet_finder_duplicate_preserves_content() {
         let galaxy = galaxy();
-        let mut manager = WindowManager::new();
-        let mut state = FleetFinderState::default();
-        let prepared = FleetFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Fleet Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (mut manager, mut state, id) = managed_finder();
 
         let content = state.window.as_mut().unwrap();
-        content.name = "Fleet 7".into();
         content.chosen = Some(FleetWindowEntry::Fleet(galaxy.own));
-        content.first_row = 3;
         let focused = FocusTarget {
             window: id,
             control: Some(FLEET_FINDER_LIST_CONTROL),
         };
-        manager.apply(WindowCommand::Focus(focused)).unwrap();
-
-        let duplicate = FleetFinderState::prepare_open(CockpitFaction::Empire);
-        let duplicate_commit = manager
-            .apply(WindowCommand::Open(duplicate.spec()))
-            .unwrap();
-        assert!(matches!(
-            duplicate_commit.transition,
-            WindowTransition::Existing {
-                id: existing,
-                effect: ExistingEffect::NoOp,
-            } if existing == id
-        ));
-        assert_eq!(
-            state.commit_open(duplicate, &duplicate_commit.transition),
-            Some(id)
+        crate::test_support::assert_focused_duplicate_finder_ui(
+            &mut manager,
+            &mut state,
+            id,
+            focused,
+            "Fleet 7",
+            3,
+            true,
         );
-
         let content = state.window.as_ref().unwrap();
-        assert_eq!(state.window_id(), Some(id));
-        assert_eq!(content.faction, CockpitFaction::Alliance);
-        assert_eq!(content.name, "Fleet 7");
         assert_eq!(content.chosen, Some(FleetWindowEntry::Fleet(galaxy.own)));
-        assert_eq!(content.first_row, 3);
-        assert_eq!(manager.begin_frame().focused(), Some(focused));
         assert_eq!(
             manager.begin_frame().key(id).map(|key| key.kind),
             Some(WindowKind::FleetFinder)
@@ -1466,60 +867,23 @@ mod tests {
 
     #[test]
     fn fleet_finder_modal_blocks_underlay() {
-        let mut manager = WindowManager::new();
-        let mut state = FleetFinderState::default();
-        let prepared = FleetFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Fleet Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let frame = manager.begin_frame();
-        let inside = state.screen_rect(layout()).unwrap().center();
-        let hit = state.hit_window(&frame, layout(), (inside.x, inside.y));
-        let hits = hit.into_iter().collect::<BTreeSet<_>>();
-
-        assert_eq!(
-            frame.pointer_route(&hits).target,
-            RouteTarget::Window(FocusTarget {
-                window: id,
-                control: None,
-            })
-        );
-        assert_eq!(
-            frame.pointer_route(&BTreeSet::new()).target,
-            RouteTarget::BlockedBy(id)
-        );
-        assert!(!frame.pointer_allows_root());
-        assert_eq!(
-            state.content_reports(&frame),
-            [rebellion_windowing::ContentReport {
-                window: id,
-                status: ContentStatus::Ready,
-            }]
-        );
+        let (manager, state, id) = managed_finder();
+        crate::test_support::assert_finder_modal_routing(&manager, &state, id, layout());
     }
 
     #[test]
     fn system_finder_policy_does_not_claim_missing_port_content() {
         let mut manager = WindowManager::new();
-        let opened = manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::SystemFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected System Finder policy open, got {other:?}"),
-        };
+        let id = crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::SystemFinder,
+            WindowOwner::StrategicRoot,
+            "System Finder policy",
+        );
         let frame = manager.begin_frame();
         let reports = FleetFinderState::default().content_reports(&frame);
 
-        assert!(reports.is_empty());
+        assert_empty!(reports);
         let reconciliation = manager.reconcile(&frame, &reports);
         assert_eq!(reconciliation.invalid_reports, [id]);
         assert_eq!(reconciliation.blocking_unpainted, [id]);
@@ -1532,38 +896,19 @@ mod tests {
         state.open(CockpitFaction::Empire);
         let window = state.window.as_mut().unwrap();
         window.chosen = Some(FleetWindowEntry::Fleet(FleetKey::default()));
-        window.name = "Fleet".into();
+        window.ui.name = "Fleet".into();
 
         state.set_tab(FinderTab::Alliance);
         let window = state.window.as_ref().unwrap();
         assert_eq!(window.chosen, None);
-        assert_eq!(window.name, "Fleet");
+        assert_eq!(window.ui.name, "Fleet");
 
         state.window.as_mut().unwrap().chosen = Some(FleetWindowEntry::Fleet(FleetKey::default()));
         state.set_mode(FinderMode::Ships);
         let window = state.window.as_ref().unwrap();
-        assert_eq!(window.name, "");
+        assert_eq!(window.ui.name, "");
         assert_eq!(window.chosen, None);
         assert_eq!(window.tab, FinderTab::Alliance);
-    }
-
-    fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
-    }
-
-    fn key(key: egui::Key) -> egui::Event {
-        egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }
     }
 
     /// Run two idle frames, then one frame per entry of `frames` with the
@@ -1592,31 +937,11 @@ mod tests {
         let mut cache = BmpCache::new();
         let mut emitted = None;
         let first = frames.first().map_or((0.0, 0.0), |(at, _)| *at);
-        for ((x, y), extra) in [(first, vec![]), (first, vec![])].into_iter().chain(frames) {
-            let pos = window_rect(layout).min + egui::vec2(x, y);
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
+        for ((x, y), extra) in crate::test_support::warmed_frames((first, Vec::new()), frames) {
+            let pos = finder_common::window_rect(layout).min + egui::vec2(x, y);
+            let input = pointer_input(pos, extra, egui::vec2(700.0, 520.0), None);
             let _ = ctx.run(input, |ctx| {
-                if let Some(action) = draw_fleet_finder(
-                    ctx,
-                    &galaxy.world,
-                    &rebellion_core::movement::MovementState::default(),
-                    &galaxy.fog,
-                    state,
-                    layout,
-                    &mut cache,
-                ) {
+                if let Some(action) = draw_test_finder(ctx, galaxy, state, layout, &mut cache) {
                     emitted = Some(action);
                 }
             });
@@ -1636,20 +961,8 @@ mod tests {
         let mut cache = BmpCache::new();
         let mut emitted = None;
         for extra in frames {
-            let pos = window_rect(layout).min + egui::vec2(at.0, at.1);
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
+            let pos = finder_common::window_rect(layout).min + egui::vec2(at.0, at.1);
+            let input = pointer_input(pos, extra, egui::vec2(700.0, 520.0), None);
             let _ = ctx.run(input, |ctx| {
                 if let Some(action) = draw_fleet_finder_focused(
                     ctx,
@@ -1666,6 +979,43 @@ mod tests {
             });
         }
         emitted
+    }
+
+    fn type_focused_name(
+        ctx: &egui::Context,
+        galaxy: &Galaxy,
+        state: &mut FleetFinderState,
+        focus: FocusTarget,
+        text: &str,
+    ) {
+        assert_eq!(
+            drive_focused_in_context(
+                ctx,
+                galaxy,
+                state,
+                focus,
+                (0.0, 0.0),
+                vec![vec![], vec![], vec![egui::Event::Text(text.into())]],
+            ),
+            None
+        );
+    }
+
+    fn drive_focused_key(
+        ctx: &egui::Context,
+        galaxy: &Galaxy,
+        state: &mut FleetFinderState,
+        focus: FocusTarget,
+        input: egui::Key,
+    ) -> Option<FleetFinderAction> {
+        drive_focused_in_context(
+            ctx,
+            galaxy,
+            state,
+            focus,
+            (0.0, 0.0),
+            vec![vec![key(input)]],
+        )
     }
 
     fn click() -> Vec<Vec<egui::Event>> {
@@ -1735,9 +1085,9 @@ mod tests {
             assert_eq!(drive(&galaxy, &mut state, list_row(1), click()), None);
             let window = state.window.as_ref().unwrap();
             assert_eq!(window.chosen, Some(FleetWindowEntry::Fleet(second)));
-            assert_eq!(window.name, name);
+            assert_eq!(window.ui.name, name);
 
-            let display = CONTROLS[side(faction)].display.rect;
+            let display = CONTROLS[finder_common::side(faction)].display.rect;
             let action = drive(&galaxy, &mut state, center(display), click());
 
             assert_eq!(
@@ -1865,7 +1215,7 @@ mod tests {
     fn a_second_click_long_after_the_first_only_chooses_the_row() {
         let galaxy = galaxy();
         let mut state = opened(CockpitFaction::Alliance);
-        state.window.as_mut().unwrap().last_clicked = Some((0, -10.0));
+        state.window.as_mut().unwrap().ui.last_clicked = Some((0, -10.0));
 
         assert_eq!(drive(&galaxy, &mut state, list_row(0), click()), None);
 
@@ -1878,7 +1228,7 @@ mod tests {
         let galaxy = galaxy();
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
             let mut state = opened(faction);
-            let close = CONTROLS[side(faction)].close.rect;
+            let close = CONTROLS[finder_common::side(faction)].close.rect;
             assert_eq!(drive(&galaxy, &mut state, center(close), click()), None);
             assert!(!state.is_open(), "{faction:?}");
         }
@@ -1896,15 +1246,7 @@ mod tests {
     #[test]
     fn fleet_finder_close_consumes_trigger() {
         let galaxy = galaxy();
-        let mut manager = WindowManager::new();
-        let mut state = FleetFinderState::default();
-        let prepared = FleetFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Fleet Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (mut manager, mut state, id) = managed_finder();
 
         let action = drive(
             &galaxy,
@@ -1913,82 +1255,38 @@ mod tests {
             vec![vec![key(egui::Key::Escape)]],
         );
         assert_eq!(action, Some(FleetFinderAction::Close(id)));
-        assert!(state.is_open(), "content waits for the close receipt");
-
-        let closed = manager.apply(WindowCommand::Close(id)).unwrap();
-        let removed = match closed.transition {
-            WindowTransition::Closed { closed, .. } => closed,
-            ref other => panic!("expected Fleet Finder close, got {other:?}"),
-        };
-        state.remove_content(&removed);
-        assert!(!state.is_open());
+        crate::test_support::assert_managed_close_receipt(
+            &mut manager,
+            &mut state,
+            id,
+            "Fleet Finder",
+            FleetFinderState::is_open,
+            FleetFinderState::remove_content,
+        );
     }
 
     #[test]
     fn finder_focused_control_consumes_text_arrows_enter_and_escape() {
-        let galaxy = galaxy();
-        let mut manager = WindowManager::new();
-        let mut state = FleetFinderState::default();
-        let prepared = FleetFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Fleet Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(FLEET_FINDER_NAME_CONTROL),
-        };
-        let ctx = egui::Context::default();
+        let (galaxy, mut state, id, name_focus, ctx) = focused_finder();
 
+        type_focused_name(&ctx, &galaxy, &mut state, name_focus, "Fleet");
+        assert_eq!(state.window.as_ref().unwrap().ui.name, "Fleet");
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                name_focus,
-                (0.0, 0.0),
-                vec![vec![], vec![], vec![egui::Event::Text("Fleet".into())]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, name_focus, egui::Key::ArrowDown,),
             None
         );
-        assert_eq!(state.window.as_ref().unwrap().name, "Fleet");
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                name_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::ArrowDown)]],
-            ),
-            None
-        );
-        let list_focus = FocusTarget {
-            window: id,
-            control: Some(FLEET_FINDER_LIST_CONTROL),
-        };
+        let list_focus = crate::test_support::control_focus(id, FLEET_FINDER_LIST_CONTROL);
         assert_eq!(state.take_focus_request(), Some(list_focus));
         ctx.memory_mut(|memory| {
             memory.request_focus(egui::Id::new("original-fleet-finder-name"));
         });
-        let name_after_list_focus = state.window.as_ref().unwrap().name.clone();
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![egui::Event::Text("ignored".into())]],
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().name, name_after_list_focus);
-        assert_eq!(
-            ctx.memory(|memory| memory.focused()),
-            Some(egui::Id::new("original-fleet-finder-list"))
+        crate::test_support::assert_finder_list_focus_ignores_text(
+            &ctx,
+            &mut state,
+            "original-fleet-finder-list",
+            |state, events| {
+                drive_focused_in_context(&ctx, &galaxy, state, list_focus, (0.0, 0.0), events)
+            },
         );
         assert_eq!(
             drive_focused_in_context(
@@ -2004,82 +1302,30 @@ mod tests {
         assert_eq!(state.take_focus_request(), Some(name_focus));
 
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::ArrowDown)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowDown,),
             None
         );
-        assert_eq!(state.window.as_ref().unwrap().name, "Fleet 1");
+        assert_eq!(state.window.as_ref().unwrap().ui.name, "Fleet 1");
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::Enter)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, list_focus, egui::Key::Enter),
             Some(FleetFinderAction::Open(FleetWindowEntry::Fleet(
                 galaxy.seen
             )))
         );
         assert!(state.is_open(), "managed content waits for close receipt");
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::Escape)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, list_focus, egui::Key::Escape),
             Some(FleetFinderAction::Close(id))
         );
     }
 
     #[test]
     fn managed_name_control_enter_opens_the_chosen_row_without_blurring() {
-        let galaxy = galaxy();
-        let mut manager = WindowManager::new();
-        let mut state = FleetFinderState::default();
-        let prepared = FleetFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Fleet Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(FLEET_FINDER_NAME_CONTROL),
-        };
-        let ctx = egui::Context::default();
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                name_focus,
-                (0.0, 0.0),
-                vec![vec![], vec![], vec![egui::Event::Text("Fleet 2".into())]],
-            ),
-            None
-        );
+        let (galaxy, mut state, _id, name_focus, ctx) = focused_finder();
+        type_focused_name(&ctx, &galaxy, &mut state, name_focus, "Fleet 2");
         let chosen = state.window.as_ref().unwrap().chosen.unwrap();
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                name_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::Enter)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, name_focus, egui::Key::Enter),
             Some(FleetFinderAction::Open(chosen))
         );
     }
@@ -2090,45 +1336,20 @@ mod tests {
         // when FUN_00462be0 produced no rows.
         let mut galaxy = galaxy();
         galaxy.fog = FogState::new(Faction::Alliance);
-        let mut manager = WindowManager::new();
-        let mut state = FleetFinderState::default();
-        let prepared = FleetFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Fleet Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (_manager, mut state, id) = managed_finder();
         state.set_tab(FinderTab::Imperial);
-        let list_focus = FocusTarget {
-            window: id,
-            control: Some(FLEET_FINDER_LIST_CONTROL),
-        };
+        let list_focus = crate::test_support::control_focus(id, FLEET_FINDER_LIST_CONTROL);
         let ctx = egui::Context::default();
 
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::ArrowLeft)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowLeft,),
             None
         );
         assert_eq!(state.window.as_ref().unwrap().tab, FinderTab::Alliance);
 
         state.set_tab(FinderTab::Imperial);
         assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                (0.0, 0.0),
-                vec![vec![key(egui::Key::ArrowUp)]],
-            ),
+            drive_focused_key(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowUp,),
             None
         );
         assert_eq!(
@@ -2150,7 +1371,7 @@ mod tests {
             drive(&galaxy, &mut state, center(TABS[2].rect), click());
             assert_eq!(state.window.as_ref().unwrap().tab, FinderTab::Imperial);
 
-            let controls = &CONTROLS[side(faction)];
+            let controls = &CONTROLS[finder_common::side(faction)];
             drive(
                 &galaxy,
                 &mut state,
@@ -2166,7 +1387,10 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(report.mode, FinderMode::Ships, "{faction:?}");
-            assert_eq!(names(&report.rows), ["Victory Star Destroyer"]);
+            assert_eq!(
+                finder_common::row_names(&report.rows),
+                ["Victory Star Destroyer"]
+            );
 
             drive(
                 &galaxy,
@@ -2235,38 +1459,22 @@ mod tests {
         let mut cache = BmpCache::new();
         let mut result = Run::default();
         let first = frames.first().map_or((0.0, 0.0), |(at, _)| *at);
-        let frames = [(first, vec![]), (first, vec![])].into_iter().chain(frames);
+        let frames = crate::test_support::warmed_frames((first, Vec::new()), frames);
         for (index, ((x, y), extra)) in frames.enumerate() {
-            let pos = window_rect(layout).min + egui::vec2(x, y) * 2.0;
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1000.0),
-                )),
-                time: Some(index as f64 * 0.05),
-                events,
-                ..Default::default()
-            };
-            crate::fleet_window::tests::PAINTED.with(|painted| painted.borrow_mut().clear());
+            let pos = finder_common::window_rect(layout).min + egui::vec2(x, y) * 2.0;
+            let input = pointer_input(
+                pos,
+                extra,
+                egui::vec2(1400.0, 1000.0),
+                Some(index as f64 * 0.05),
+            );
+            crate::test_support::clear_painted_trace();
             let output = ctx.run(input, |ctx| {
-                if let Some(action) = draw_fleet_finder(
-                    ctx,
-                    &galaxy.world,
-                    &rebellion_core::movement::MovementState::default(),
-                    &galaxy.fog,
-                    state,
-                    layout,
-                    &mut cache,
-                ) {
+                if let Some(action) = draw_test_finder(ctx, galaxy, state, layout, &mut cache) {
                     result.action = Some(action);
                 }
             });
-            result.painted = crate::fleet_window::tests::PAINTED.with(|painted| painted.take());
+            result.painted = crate::test_support::take_painted_trace();
             result.texts = output
                 .shapes
                 .into_iter()
@@ -2338,7 +1546,7 @@ mod tests {
             ),
         ] {
             let mut state = opened(faction);
-            let origin = window_rect(scaled()).min;
+            let origin = finder_common::window_rect(scaled()).min;
             let at = |(x, y): (f32, f32)| Some(origin + egui::vec2(x, y) * 2.0);
 
             let drawn = idle(&galaxy, &mut state);
@@ -2375,7 +1583,7 @@ mod tests {
         // the tab's 0x1882..0x1889 at (40, 119), white (0x2ffffff).
         let galaxy = galaxy();
         let mut state = opened(CockpitFaction::Empire);
-        let origin = window_rect(scaled()).min;
+        let origin = finder_common::window_rect(scaled()).min;
         let shown = |run: &Run, text: &str| {
             run.texts
                 .iter()
@@ -2440,9 +1648,9 @@ mod tests {
         assert_eq!(list.len(), 11);
         let mut state = opened(CockpitFaction::Alliance);
         let window = state.window.as_mut().unwrap();
-        window.first_row = 2;
+        window.ui.first_row = 2;
         window.chosen = Some(list[3].object);
-        let origin = window_rect(scaled()).min;
+        let origin = finder_common::window_rect(scaled()).min;
 
         let drawn = idle(&galaxy, &mut state);
 
@@ -2484,7 +1692,7 @@ mod tests {
         // port: the list has no scroll bar (art 10653 is not drawn).
         let galaxy = crowded(9);
         let mut state = opened(CockpitFaction::Alliance);
-        let first_row = |state: &FleetFinderState| state.window.as_ref().unwrap().first_row;
+        let first_row = |state: &FleetFinderState| state.window.as_ref().unwrap().ui.first_row;
         let over = list_row(3);
 
         run(&galaxy, &mut state, vec![(over, vec![wheel(-1.0)])]);
@@ -2518,7 +1726,7 @@ mod tests {
 
         assert_eq!(drawn.action, None);
         let window = state.window.as_ref().unwrap();
-        assert_eq!(window.name, "Fleet");
+        assert_eq!(window.ui.name, "Fleet");
         assert!(window.chosen.is_some());
     }
 
@@ -2551,8 +1759,8 @@ mod tests {
             None
         );
         state.open(CockpitFaction::Empire);
-        state.window.as_mut().unwrap().first_row = 1;
-        let origin = window_rect(layout).min;
+        state.window.as_mut().unwrap().ui.first_row = 1;
+        let origin = finder_common::window_rect(layout).min;
         let rect = |(x, y, w, h): (f32, f32, f32, f32)| {
             Some(egui::Rect::from_min_size(
                 origin + egui::vec2(x, y) * 2.0,
@@ -2560,7 +1768,10 @@ mod tests {
             ))
         };
 
-        assert_eq!(state.screen_rect(layout), Some(window_rect(layout)));
+        assert_eq!(
+            state.screen_rect(layout),
+            Some(finder_common::window_rect(layout))
+        );
         assert_eq!(
             state.control_screen_rect(layout, FinderControl::Row(0)),
             None
@@ -2593,13 +1804,7 @@ mod tests {
     #[test]
     fn the_finder_blocks_only_its_own_rectangle() {
         let mut state = FleetFinderState::default();
-        let rect = window_rect(layout());
-        assert!(!state.contains_screen_point(layout(), (rect.center().x, rect.center().y)));
-
-        state.open(CockpitFaction::Alliance);
-
-        assert!(state.contains_screen_point(layout(), (rect.center().x, rect.center().y)));
-        assert!(!state.contains_screen_point(layout(), (rect.max.x + 1.0, rect.center().y)));
+        let rect = crate::test_support::assert_finder_bounds(&mut state, layout());
         assert_eq!(rect.size(), egui::vec2(470.0, 330.0));
     }
 
@@ -2614,13 +1819,7 @@ mod tests {
         let mut state = opened(CockpitFaction::Alliance);
         let modeless = egui::Id::new("raising-fleet-window");
         for _ in 0..3 {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                ..Default::default()
-            };
+            let input = crate::test_support::raw_input(Vec::new(), egui::vec2(700.0, 520.0));
             let _ = ctx.run(input, |ctx| {
                 let _ = draw_fleet_finder(
                     ctx,
@@ -2644,7 +1843,7 @@ mod tests {
         }
 
         assert_eq!(
-            ctx.layer_id_at(window_rect(layout).center())
+            ctx.layer_id_at(finder_common::window_rect(layout).center())
                 .map(|layer| layer.id),
             Some(egui::Id::new("original-fleet-finder"))
         );

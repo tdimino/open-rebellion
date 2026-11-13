@@ -14,10 +14,13 @@ pub(crate) static TACTICAL_OBJECT_CACHE: LazyLock<Mutex<TacticalObjectCache>> =
 
 /// Install typed tactical runtime objects unpacked from the browser pack.
 pub fn set_tactical_asset_cache(
-    meshes: HashMap<String, Vec<u8>>,
-    textures: HashMap<String, Vec<u8>>,
+    meshes: impl IntoIterator<Item = (String, Vec<u8>)>,
+    textures: impl IntoIterator<Item = (String, Vec<u8>)>,
 ) {
-    *TACTICAL_OBJECT_CACHE.lock().unwrap() = TacticalObjectCache { meshes, textures };
+    *TACTICAL_OBJECT_CACHE.lock().unwrap() = TacticalObjectCache {
+        meshes: meshes.into_iter().collect(),
+        textures: textures.into_iter().collect(),
+    };
 }
 
 /// Return the installed mesh and texture counts for runtime diagnostics.

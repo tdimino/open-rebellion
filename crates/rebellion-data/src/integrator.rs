@@ -24,14 +24,14 @@ use rebellion_core::game_events::{
     EVT_CHARACTER_KILLED, EVT_COMBAT_SPACE, EVT_CONTROL_CHANGED, EVT_DESTROYED_ON_ARRIVAL,
     EVT_DS_FIRED, EVT_ESCAPE, EVT_EVENT_FIRED, EVT_FLEET_ARRIVED, EVT_FOG_REVEALED,
     EVT_HQ_CAPTURED, EVT_INFORMANT_INTEL, EVT_JEDI_CHECK, EVT_JEDI_DISCOVERED, EVT_JEDI_TIER,
-    EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE, EVT_SCRAPPED_ABOARD, EVT_MISSION_DISPATCHED,
+    EVT_MAINTENANCE_SHORTFALL, EVT_MANUFACTURING_IDLE, EVT_MISSION_DISPATCHED,
     EVT_MISSION_RESOLVED, EVT_NATURAL_DISASTER, EVT_RESEARCH_UNLOCKED, EVT_REVOLT_SUPPORT_LOSS,
-    EVT_SABOTEUR_DETECTED, EVT_SIDE_CHANGE, EVT_SUPPORT_SHIFT, EVT_TRAITOR_REVEALED,
-    EVT_TROOP_MOVED, EVT_UNITS_DEPLOYED, EVT_UPRISING_BEGAN, EVT_UPRISING_CHECK,
-    EVT_UPRISING_ENDED, EVT_UPRISING_INCIDENT, EVT_VICTORY, EVT_VICTORY_CHECK, SYS_AI,
-    SYS_BETRAYAL, SYS_BLOCKADE, SYS_COMBAT, SYS_DEATH_STAR, SYS_ECONOMY, SYS_EVENTS, SYS_FOG,
-    SYS_JEDI, SYS_MANUFACTURING, SYS_MISSIONS, SYS_MOVEMENT, SYS_REPAIR, SYS_RESEARCH, SYS_STORY,
-    SYS_UPRISING, SYS_VICTORY,
+    EVT_SABOTEUR_DETECTED, EVT_SCRAPPED_ABOARD, EVT_SIDE_CHANGE, EVT_SUPPORT_SHIFT,
+    EVT_TRAITOR_REVEALED, EVT_TROOP_MOVED, EVT_UNITS_DEPLOYED, EVT_UPRISING_BEGAN,
+    EVT_UPRISING_CHECK, EVT_UPRISING_ENDED, EVT_UPRISING_INCIDENT, EVT_VICTORY, EVT_VICTORY_CHECK,
+    SYS_AI, SYS_BETRAYAL, SYS_BLOCKADE, SYS_COMBAT, SYS_DEATH_STAR, SYS_ECONOMY, SYS_EVENTS,
+    SYS_FOG, SYS_JEDI, SYS_MANUFACTURING, SYS_MISSIONS, SYS_MOVEMENT, SYS_REPAIR, SYS_RESEARCH,
+    SYS_STORY, SYS_UPRISING, SYS_VICTORY,
 };
 use rebellion_core::ids::DatId;
 use rebellion_core::ids::{CharacterKey, FleetKey, SystemKey, TroopKey};
@@ -348,6 +348,26 @@ impl PerceptionIntegrator {
     /// Add a pre-built telemetry record.
     pub fn push(&mut self, record: GameEventRecord) {
         self.events.push(record);
+    }
+
+    /// Emit the complete telemetry envelope for each AI order record.
+    pub fn emit_ai_records(
+        &mut self,
+        world: &GameWorld,
+        records: &[crate::simulation::AiOrderRecord],
+    ) {
+        for record in records {
+            self.emit_ai_order(
+                world,
+                &record.issued.action,
+                &record.origin(),
+                &record.outcome,
+            );
+            self.emit_strike(world, &record.strike);
+            self.emit_assault(world, &record.assault);
+            self.emit_fired(world, &record.fired.shifts, &record.fired.controls);
+            self.emit_swept(world, &record.swept);
+        }
     }
 
     /// Serve the support shifts (event `0x373`), regiment reruns and holder
@@ -1062,10 +1082,7 @@ impl PerceptionIntegrator {
             EVT_AI_ACTION,
             crate::telemetry::ai_order_payload(world, action, origin, &outcome.view()),
         );
-        if let (
-            AIAction::Scrap { targets },
-            AiOutcome::Applied { aboard, .. },
-        ) = (action, outcome)
+        if let (AIAction::Scrap { targets }, AiOutcome::Applied { aboard, .. }) = (action, outcome)
         {
             if *aboard != rebellion_core::scrap::Aboard::default() {
                 self.emit(
@@ -1588,7 +1605,7 @@ impl PerceptionIntegrator {
 // Mission effects helper (moved from simulation.rs)
 // ---------------------------------------------------------------------------
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -1611,7 +1628,9 @@ fn apply_mission_effects_inner(
                 amount,
             } => rebellion_core::missions::raise_skill(world, *character, *skill, *amount),
             // Credited by ResearchSystem::apply_mission_points.
-            MissionEffect::ResearchPoints { .. } => {}
+            MissionEffect::ResearchPoints { .. }
+            | MissionEffect::CharacterInjured { .. }
+            | MissionEffect::CharacterEscaped { .. } => {}
             MissionEffect::UprisingIncident(event) => {
                 rebellion_core::uprising::apply_uprising_event(world, event);
             }
@@ -1670,8 +1689,6 @@ fn apply_mission_effects_inner(
             MissionEffect::SpecialForceDestroyed { unit } => {
                 rebellion_core::missions::destroy_special_force(world, *unit);
             }
-            // port: the port stores no injury (F-026).
-            MissionEffect::CharacterInjured { .. } => {}
             MissionEffect::CharacterRescued {
                 character,
                 returned_to,
@@ -1706,9 +1723,6 @@ fn apply_mission_effects_inner(
             MissionEffect::EnRoute { member, en_route } => {
                 rebellion_core::missions::set_en_route(world, *member, *en_route);
             }
-            // The escape step's own release (death_star::free_escapee); no
-            // mission result carries one.
-            MissionEffect::CharacterEscaped { .. } => {}
             MissionEffect::UprisingSubdued {
                 system,
                 side,
@@ -1773,11 +1787,11 @@ pub fn apply_mission_state_effects(
 ///   originating event on `CharacterAtSystem OR CharacterAssignedToFleet`
 ///   to guarantee resolution success (SF-#7).
 #[inline]
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -2228,9 +2242,89 @@ impl AiOutcome {
     }
 }
 
+fn apply_transport_orders<T, U>(
+    orders: impl IntoIterator<Item = (T, Option<bool>)>,
+    order_is_alliance: bool,
+    mut move_one: impl FnMut(T) -> Result<U, rebellion_core::troop_transport::TroopTransportError>,
+    applied: AiOutcome,
+) -> AiOutcome {
+    use rebellion_core::troop_transport::TroopTransportError;
+
+    let mut first_error = None;
+    let mut moved = false;
+    for (source, owner_is_alliance) in orders {
+        if owner_is_alliance.is_some_and(|owner| owner != order_is_alliance) {
+            first_error.get_or_insert(TroopTransportError::WrongFaction);
+            continue;
+        }
+        match move_one(source) {
+            Ok(_) => moved = true,
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    if moved {
+        applied
+    } else {
+        AiOutcome::Refused(AiRefusal::Troops(
+            first_error.unwrap_or(TroopTransportError::NoTroops),
+        ))
+    }
+}
+
+fn regiment_order_owners(world: &GameWorld, troops: &[TroopKey]) -> Vec<(TroopKey, Option<bool>)> {
+    troops
+        .iter()
+        .map(|&troop| {
+            (
+                troop,
+                world.troops.get(troop).map(|value| value.is_alliance),
+            )
+        })
+        .collect()
+}
+
+fn squadron_order_owners(
+    world: &GameWorld,
+    squadrons: &[rebellion_core::troop_transport::SquadronSource],
+) -> Vec<(
+    rebellion_core::troop_transport::SquadronSource,
+    Option<bool>,
+)> {
+    use rebellion_core::troop_transport::SquadronSource;
+
+    squadrons
+        .iter()
+        .map(|&source| {
+            let owner = match source {
+                SquadronSource::Fleet { fleet, .. } => {
+                    world.fleets.get(fleet).map(|value| value.is_alliance)
+                }
+                SquadronSource::System { is_alliance, .. } => Some(is_alliance),
+            };
+            (source, owner)
+        })
+        .collect()
+}
+
+fn transport_constraints(
+    world: &GameWorld,
+    manufacturing: &ManufacturingState,
+    deliveries: &rebellion_core::delivery::DeliveryState,
+) -> (
+    std::collections::HashSet<SystemKey>,
+    rebellion_core::carriage::ProductRoom,
+) {
+    (
+        BlockadeSystem::blockaded_now(world),
+        rebellion_core::carriage::ProductRoom::new(manufacturing, deliveries),
+    )
+}
+
 /// Apply one AI order to the world: the side's order executed in phase 5
 /// (`FUN_0051df30`). Strikes go to [`resolve_ai_strike`].
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep the existing explicit simulation state inputs at this integration boundary."
 )]
@@ -2393,17 +2487,13 @@ pub fn apply_ai_order(
             .map_or_else(|refusal| refused(AiRefusal::Mission(refusal)), |_| applied),
         AIAction::GiveCommand { character, kind } => {
             let is_alliance = mission_faction == MissionFaction::Alliance;
-            match rebellion_core::officer_rank::command_refusal(
-                world,
-                *character,
-                is_alliance,
-                *kind,
-            ) {
-                Some(refusal) => refused(AiRefusal::Command(refusal)),
-                None => {
-                    rebellion_core::officer_rank::give_command(world, *character, *kind);
-                    applied
-                }
+            if let Some(refusal) =
+                rebellion_core::officer_rank::command_refusal(world, *character, is_alliance, *kind)
+            {
+                refused(AiRefusal::Command(refusal))
+            } else {
+                rebellion_core::officer_rank::give_command(world, *character, *kind);
+                applied
             }
         }
         AIAction::JoinFleet {
@@ -2429,86 +2519,46 @@ pub fn apply_ai_order(
             .map_or_else(|error| refused(AiRefusal::Fleet(error)), |_| applied)
         }
         AIAction::MoveRegiments { troops, to } => {
-            use rebellion_core::troop_transport::TroopTransportError;
             let is_alliance = mission_faction == MissionFaction::Alliance;
-            let blockaded = BlockadeSystem::blockaded_now(world);
-            let products = rebellion_core::carriage::ProductRoom::new(mfg_state, deliveries);
-            let mut first_error = None;
-            let mut moved = false;
-            for troop in troops {
-                // FUN_004f9860: the object check refuses another side's
-                // regiment.
-                if world.troops.get(*troop).is_some_and(|value| value.is_alliance != is_alliance) {
-                    first_error.get_or_insert(TroopTransportError::WrongFaction);
-                    continue;
-                }
-                match troop_transport.move_regiment(
-                    world,
-                    movement_state,
-                    &blockaded,
-                    &products,
-                    *troop,
-                    *to,
-                    tick,
-                ) {
-                    Ok(_) => moved = true,
-                    Err(error) => {
-                        first_error.get_or_insert(error);
-                    }
-                }
-            }
-            // port: the original issues one order per regiment; the port's
-            // order is applied when any of them moves.
-            if moved {
-                applied
-            } else {
-                refused(AiRefusal::Troops(first_error.unwrap_or(
-                    rebellion_core::troop_transport::TroopTransportError::NoTroops,
-                )))
-            }
+            let orders = regiment_order_owners(world, troops);
+            let (blockaded, products) = transport_constraints(world, mfg_state, deliveries);
+            apply_transport_orders(
+                orders,
+                is_alliance,
+                |troop| {
+                    troop_transport.move_regiment(
+                        world,
+                        movement_state,
+                        &blockaded,
+                        &products,
+                        troop,
+                        *to,
+                        tick,
+                    )
+                },
+                applied,
+            )
         }
         AIAction::MoveSquadrons { squadrons, fleet } => {
-            use rebellion_core::troop_transport::{SquadronSource, TroopTransportError};
             let is_alliance = mission_faction == MissionFaction::Alliance;
-            let blockaded = BlockadeSystem::blockaded_now(world);
-            let products = rebellion_core::carriage::ProductRoom::new(mfg_state, deliveries);
-            let mut first_error = None;
-            let mut moved = false;
-            for source in squadrons {
-                // FUN_004f9860: the object check refuses another side's
-                // squadron.
-                let owner = match *source {
-                    SquadronSource::Fleet { fleet, .. } => {
-                        world.fleets.get(fleet).map(|value| value.is_alliance)
-                    }
-                    SquadronSource::System { is_alliance, .. } => Some(is_alliance),
-                };
-                if owner.is_some_and(|owner| owner != is_alliance) {
-                    first_error.get_or_insert(TroopTransportError::WrongFaction);
-                    continue;
-                }
-                match troop_transport.move_squadron(
-                    world,
-                    movement_state,
-                    &blockaded,
-                    &products,
-                    *source,
-                    rebellion_core::troop_transport::RegimentTarget::Fleet(*fleet),
-                    tick,
-                ) {
-                    Ok(_) => moved = true,
-                    Err(error) => {
-                        first_error.get_or_insert(error);
-                    }
-                }
-            }
-            if moved {
-                applied
-            } else {
-                refused(AiRefusal::Troops(first_error.unwrap_or(
-                    rebellion_core::troop_transport::TroopTransportError::NoTroops,
-                )))
-            }
+            let orders = squadron_order_owners(world, squadrons);
+            let (blockaded, products) = transport_constraints(world, mfg_state, deliveries);
+            apply_transport_orders(
+                orders,
+                is_alliance,
+                |source| {
+                    troop_transport.move_squadron(
+                        world,
+                        movement_state,
+                        &blockaded,
+                        &products,
+                        source,
+                        rebellion_core::troop_transport::RegimentTarget::Fleet(*fleet),
+                        tick,
+                    )
+                },
+                applied,
+            )
         }
         AIAction::MoveCharacters {
             characters,
@@ -3011,7 +3061,7 @@ pub fn order_strike(
         .collect())
 }
 
-/// Resolve an AI strike, a Bombard or a DestroySystem, through the player's
+/// Resolve an AI strike, a Bombard or a `DestroySystem`, through the player's
 /// order (`order_strike`). It writes no record; the caller emits from the
 /// effects.
 pub fn resolve_ai_strike(
@@ -3075,10 +3125,7 @@ pub fn resolve_ai_strike(
             )),
             StrikeEffects::default(),
         ),
-        Ok(mut runs) => (
-            AiOutcome::applied(None),
-            runs.pop().unwrap_or_default(),
-        ),
+        Ok(mut runs) => (AiOutcome::applied(None), runs.pop().unwrap_or_default()),
         Err(refusal) => (
             AiOutcome::Refused(AiRefusal::Strike(refusal)),
             StrikeEffects::default(),
@@ -3143,25 +3190,28 @@ pub fn resolve_assault(
     let team: Vec<FleetKey> = fleets
         .iter()
         .copied()
-        .filter(|&fleet| world.fleets.get(fleet).is_some_and(|f| f.location == system))
+        .filter(|&fleet| {
+            world
+                .fleets
+                .get(fleet)
+                .is_some_and(|f| f.location == system)
+        })
         .collect();
     let units: HashMap<TroopKey, operation_report::ReportUnit> = team
         .iter()
         .flat_map(|&fleet| states.transport.cargo(fleet).to_vec())
-        .chain(world.systems.get(system).map_or_else(Vec::new, |sys| sys.ground_units.clone()))
+        .chain(
+            world
+                .systems
+                .get(system)
+                .map_or_else(Vec::new, |sys| sys.ground_units.clone()),
+        )
         .filter_map(|troop| operation_report::regiment(world, troop).map(|unit| (troop, unit)))
         .collect();
     let facilities: Vec<(FacilityRef, operation_report::ReportUnit)> = world
         .systems
         .get(system)
-        .map_or_else(Vec::new, |sys| {
-            sys.defense_facilities
-                .iter()
-                .map(|&key| FacilityRef::Defense(key))
-                .chain(sys.manufacturing_facilities.iter().map(|&key| FacilityRef::Manufacturing(key)))
-                .chain(sys.production_facilities.iter().map(|&key| FacilityRef::Production(key)))
-                .collect()
-        })
+        .map_or_else(Vec::new, |system| system.facilities().collect())
         .into_iter()
         .filter_map(|key| operation_report::facility(world, key).map(|unit| (key, unit)))
         .collect();
@@ -3190,7 +3240,11 @@ pub fn resolve_assault(
         previous.filter(|&previous| world.systems[system].control != previous);
     // Each owner change at the system requests the rerun (FUN_00511b30),
     // one that a shift turned back included.
-    if effects.controls.iter().any(|change| change.system == system) {
+    if effects
+        .controls
+        .iter()
+        .any(|change| change.system == system)
+    {
         if let Some(event) =
             BlockadeSystem::refresh_system(states.blockade, world, system, states.tick)
         {
@@ -3329,10 +3383,7 @@ pub fn resolve_ai_assault(
         );
     }
     match order_assault(world, &[fleet], side, states, roll) {
-        Ok(mut runs) => (
-            AiOutcome::applied(None),
-            runs.pop().unwrap_or_default(),
-        ),
+        Ok(mut runs) => (AiOutcome::applied(None), runs.pop().unwrap_or_default()),
         Err(refusal) => (
             AiOutcome::Refused(AiRefusal::Assault(refusal)),
             AssaultEffects::default(),
@@ -3380,6 +3431,11 @@ mod tests {
     use rebellion_core::missions::{MissionKind, MissionOutcome};
     use rebellion_core::world::{CapitalShipClass, Fleet, Sector, ShipInstance, System};
 
+    const SIDE_CHANGES: [(Faction, Faction); 2] = [
+        (Faction::Alliance, Faction::Empire),
+        (Faction::Empire, Faction::Alliance),
+    ];
+
     fn add_system(world: &mut GameWorld, name: &str) -> SystemKey {
         let sector = world.sectors.insert(Sector {
             dat_id: DatId(1),
@@ -3393,26 +3449,89 @@ mod tests {
             dat_id: DatId(2),
             name: name.into(),
             sector,
-            x: 0,
-            y: 0,
             exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.0,
             popularity_empire: 1.0,
             is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
             control: ControlKind::Controlled(Faction::Empire),
+            ..System::default()
         })
+    }
+
+    fn add_regiment(
+        world: &mut GameWorld,
+        system: SystemKey,
+        class_dat_id: DatId,
+        is_alliance: bool,
+    ) -> TroopKey {
+        let troop = world.troops.insert(rebellion_core::world::TroopUnit {
+            class_dat_id,
+            is_alliance,
+        });
+        world.systems[system].ground_units.push(troop);
+        troop
+    }
+
+    fn gnprtb_entries(
+        values: impl IntoIterator<Item = (u32, i32)>,
+    ) -> Vec<rebellion_core::world::GnprtbEntry> {
+        values
+            .into_iter()
+            .map(|(parameter_id, value)| {
+                rebellion_core::test_support::gnprtb_entry(parameter_id, value)
+            })
+            .collect()
+    }
+
+    fn active_uprising(system: SystemKey) -> UprisingState {
+        let mut uprisings = UprisingState::new();
+        uprisings.active_uprisings.insert(
+            system,
+            rebellion_core::uprising::ActiveUprising {
+                started_tick: 0,
+                next_incident_tick: None,
+                next_support_tick: None,
+            },
+        );
+        uprisings
+    }
+
+    fn subdue_result(
+        system: SystemKey,
+        agent: CharacterKey,
+        faction: MissionFaction,
+        side: Faction,
+        support_gain: i32,
+    ) -> MissionResult {
+        MissionResult {
+            mission_id: 1,
+            tick: 9,
+            kind: MissionKind::SubdueUprising,
+            faction,
+            character: Some(agent),
+            target_system: system,
+            outcome: MissionOutcome::Success,
+            effects: vec![MissionEffect::UprisingSubdued {
+                system,
+                side,
+                support_gain,
+            }],
+        }
+    }
+
+    fn integrate_mission_result(
+        world: &mut GameWorld,
+        result: &MissionResult,
+        uprisings: &mut UprisingState,
+    ) -> PerceptionIntegrator {
+        let mut integrator = PerceptionIntegrator::new(result.tick, 0);
+        integrator.apply_mission_result(
+            world,
+            &mut ManufacturingState::new(),
+            result,
+            uprisings,
+            &mut ResearchState::new(),
+        );
+        integrator
     }
 
     #[test]
@@ -3463,15 +3582,7 @@ mod tests {
         // no GNPRTB rows the garrison requirement is 0, so it ends.
         let mut world = GameWorld::default();
         let system = add_system(&mut world, "Naboo");
-        let mut uprisings = UprisingState::new();
-        uprisings.active_uprisings.insert(
-            system,
-            rebellion_core::uprising::ActiveUprising {
-                started_tick: 0,
-                next_incident_tick: None,
-                next_support_tick: None,
-            },
-        );
+        let mut uprisings = active_uprising(system);
         let ended = apply_mission_state_effects(
             &[MissionEffect::UprisingSubdued {
                 system,
@@ -3497,22 +3608,8 @@ mod tests {
         // one regiment falls short; a gain of 10 makes it ceil(10 / 10) = 1.
         for (support_gain, ends) in [(10, true), (0, false)] {
             let mut world = GameWorld::default();
-            world.gnprtb = rebellion_core::world::GnprtbParams::new(
-                [(7761, 60), (7762, -10)]
-                    .into_iter()
-                    .map(|(id, value)| rebellion_core::world::GnprtbEntry {
-                        parameter_id: id,
-                        development: value,
-                        alliance_sp_easy: value,
-                        alliance_sp_medium: value,
-                        alliance_sp_hard: value,
-                        empire_sp_easy: value,
-                        empire_sp_medium: value,
-                        empire_sp_hard: value,
-                        multiplayer: value,
-                    })
-                    .collect(),
-            );
+            world.gnprtb =
+                rebellion_core::world::GnprtbParams::new(gnprtb_entries([(7761, 60), (7762, -10)]));
             let system = add_system(&mut world, "Naboo");
             world.systems[system].control = ControlKind::Controlled(Faction::Alliance);
             world.systems[system].popularity_alliance = 0.4;
@@ -3525,37 +3622,15 @@ mod tests {
             let agent = world
                 .characters
                 .insert(rebellion_core::world::Character::default());
-            let mut uprisings = UprisingState::new();
-            uprisings.active_uprisings.insert(
+            let mut uprisings = active_uprising(system);
+            let result = subdue_result(
                 system,
-                rebellion_core::uprising::ActiveUprising {
-                    started_tick: 0,
-                    next_incident_tick: None,
-                    next_support_tick: None,
-                },
+                agent,
+                MissionFaction::Alliance,
+                Faction::Alliance,
+                support_gain,
             );
-            let result = MissionResult {
-                mission_id: 1,
-                tick: 9,
-                kind: MissionKind::SubdueUprising,
-                faction: MissionFaction::Alliance,
-                character: Some(agent),
-                target_system: system,
-                outcome: MissionOutcome::Success,
-                effects: vec![MissionEffect::UprisingSubdued {
-                    system,
-                    side: Faction::Alliance,
-                    support_gain,
-                }],
-            };
-            let mut integrator = PerceptionIntegrator::new(9, 0);
-            integrator.apply_mission_result(
-                &mut world,
-                &mut ManufacturingState::new(),
-                &result,
-                &mut uprisings,
-                &mut ResearchState::new(),
-            );
+            let _ = integrate_mission_result(&mut world, &result, &mut uprisings);
             assert_eq!(uprisings.is_uprising(system), !ends, "gain {support_gain}");
         }
     }
@@ -3571,37 +3646,9 @@ mod tests {
         let agent = world
             .characters
             .insert(rebellion_core::world::Character::default());
-        let mut uprisings = UprisingState::new();
-        uprisings.active_uprisings.insert(
-            system,
-            rebellion_core::uprising::ActiveUprising {
-                started_tick: 0,
-                next_incident_tick: None,
-                next_support_tick: None,
-            },
-        );
-        let result = MissionResult {
-            mission_id: 1,
-            tick: 9,
-            kind: MissionKind::SubdueUprising,
-            faction: MissionFaction::Empire,
-            character: Some(agent),
-            target_system: system,
-            outcome: MissionOutcome::Success,
-            effects: vec![MissionEffect::UprisingSubdued {
-                system,
-                side: Faction::Empire,
-                support_gain: 5,
-            }],
-        };
-        let mut integrator = PerceptionIntegrator::new(9, 0);
-        integrator.apply_mission_result(
-            &mut world,
-            &mut ManufacturingState::new(),
-            &result,
-            &mut uprisings,
-            &mut ResearchState::new(),
-        );
+        let mut uprisings = active_uprising(system);
+        let result = subdue_result(system, agent, MissionFaction::Empire, Faction::Empire, 5);
+        let integrator = integrate_mission_result(&mut world, &result, &mut uprisings);
 
         assert!((world.systems[system].popularity_empire - 0.65).abs() < 1e-6);
         assert!(!uprisings.is_uprising(system));
@@ -3702,20 +3749,7 @@ mod tests {
     /// GNPRTB 7761 (60) and 7762 (-10) as shipped: the assault's landing
     /// limit `FUN_00559fe0(side, 0)` is 6.
     fn landing_limit() -> Vec<rebellion_core::world::GnprtbEntry> {
-        [(7761, 60), (7762, -10)]
-            .into_iter()
-            .map(|(id, value)| rebellion_core::world::GnprtbEntry {
-                parameter_id: id,
-                development: value,
-                alliance_sp_easy: value,
-                alliance_sp_medium: value,
-                alliance_sp_hard: value,
-                empire_sp_easy: value,
-                empire_sp_medium: value,
-                empire_sp_hard: value,
-                multiplayer: value,
-            })
-            .collect()
+        gnprtb_entries([(7761, 60), (7762, -10)])
     }
 
     /// `side`'s fleet of one transport at `system` with `count` regiments
@@ -3735,13 +3769,12 @@ mod tests {
             troop_capacity: 10,
             ..Default::default()
         });
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(ship, 100, is_alliance)],
+        let fleet = add_capital_fleet(
+            world,
+            system,
             is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(fleet);
+            vec![ShipInstance::new(ship, 100, is_alliance)],
+        );
         let troops: Vec<TroopKey> = (0..count)
             .map(|_| {
                 let troop = world.troops.insert(rebellion_core::world::TroopUnit {
@@ -3758,19 +3791,37 @@ mod tests {
         (fleet, troops)
     }
 
+    fn resolve_one_regiment_assault(
+        world: &mut GameWorld,
+        system: SystemKey,
+        captor: Faction,
+        fixture: &mut StrikeFixture,
+    ) -> AssaultEffects {
+        let (fleet, _) = assault_fleet(
+            world,
+            &mut fixture.transport,
+            system,
+            captor,
+            DatId::new(0x1000_0001),
+            1,
+        );
+        resolve_assault(world, system, &[fleet], &mut fixture.states(), 0.5)
+    }
+
     // The holder change an assault makes serves its autoscrap requests in the
     // same order, after its phase 5 (event 0x307, FUN_00515480): the old
     // holder's product queued at its other yard and bound for the system
     // goes back to that yard, the hint (FUN_00515480.c:82-124).
     #[test]
     fn an_assault_that_takes_a_system_sends_the_old_holders_products_for_it_back_to_their_yard() {
-        for (holder, assaulter) in [
-            (Faction::Empire, Faction::Alliance),
-            (Faction::Alliance, Faction::Empire),
-        ] {
+        for (holder, assaulter) in SIDE_CHANGES {
             let mut world = GameWorld::default();
             world.gnprtb = rebellion_core::world::GnprtbParams::new(landing_limit());
-            let support = if holder == Faction::Alliance { 1.0 } else { 0.0 };
+            let support = if holder == Faction::Alliance {
+                1.0
+            } else {
+                0.0
+            };
             let [system, yard] = ["Kuat", "Fondor"].map(|name| {
                 let key = add_system(&mut world, name);
                 let held = &mut world.systems[key];
@@ -3788,20 +3839,10 @@ mod tests {
             let mut fixture = StrikeFixture::new();
             fixture.manufacturing.enqueue(
                 yard,
-                QueueItem::new(facility, 10).delivered_to(
-                    rebellion_core::manufacturing::Destination::System(system),
-                ),
+                QueueItem::new(facility, 10)
+                    .delivered_to(rebellion_core::manufacturing::Destination::System(system)),
             );
-            let (fleet, _) = assault_fleet(
-                &mut world,
-                &mut fixture.transport,
-                system,
-                assaulter,
-                DatId::new(0x1000_0001),
-                1,
-            );
-
-            resolve_assault(&mut world, system, &[fleet], &mut fixture.states(), 0.5);
+            let _ = resolve_one_regiment_assault(&mut world, system, assaulter, &mut fixture);
 
             assert_eq!(
                 world.systems[system].control,
@@ -3893,8 +3934,13 @@ mod tests {
                 world.capital_ship_classes[class].dat_id = DatId::new(0x1400_0040);
                 world.capital_ship_classes[class].name = "Transport".into();
             }
-            let effects =
-                resolve_assault(&mut world, system, &[first, second], &mut fixture.states(), 0.5);
+            let effects = resolve_assault(
+                &mut world,
+                system,
+                &[first, second],
+                &mut fixture.states(),
+                0.5,
+            );
             assert_eq!(effects.report.unwrap().landed.len(), 6, "{assaulter:?}");
             let report = effects.operation.expect("the Operation Report");
             assert_eq!(
@@ -3945,32 +3991,17 @@ mod tests {
         // setter is FUN_00509c30).
         let mut world = GameWorld::default();
         let system = add_system(&mut world, "Naboo");
-        world.gnprtb = rebellion_core::world::GnprtbParams::new(
-            [
-                (7686, 10),
-                (7687, 5),
-                (7688, 2),
-                (7732, 40),
-                (7733, 25),
-                (7734, 30),
-                (7735, 50),
-                (7736, 20),
-                (7737, 75),
-            ]
-            .into_iter()
-            .map(|(id, value)| rebellion_core::world::GnprtbEntry {
-                parameter_id: id,
-                development: value,
-                alliance_sp_easy: value,
-                alliance_sp_medium: value,
-                alliance_sp_hard: value,
-                empire_sp_easy: value,
-                empire_sp_medium: value,
-                empire_sp_hard: value,
-                multiplayer: value,
-            })
-            .collect(),
-        );
+        world.gnprtb = rebellion_core::world::GnprtbParams::new(gnprtb_entries([
+            (7686, 10),
+            (7687, 5),
+            (7688, 2),
+            (7732, 40),
+            (7733, 25),
+            (7734, 30),
+            (7735, 50),
+            (7736, 20),
+            (7737, 75),
+        ]));
         world.systems[system].control = ControlKind::Controlled(Faction::Alliance);
         world.systems[system].popularity_alliance = 0.1;
         world.systems[system].popularity_empire = 0.9;
@@ -4053,6 +4084,60 @@ mod tests {
             .collect()
     }
 
+    struct AiOrderFixture {
+        ai: AIState,
+        missions: MissionState,
+        manufacturing: ManufacturingState,
+        deliveries: rebellion_core::delivery::DeliveryState,
+        movement: MovementState,
+        transport: TroopTransportState,
+        stockpiles: StockpileState,
+        uprisings: UprisingState,
+    }
+
+    fn ai_system(faction: AiFaction, name: &str) -> (bool, GameWorld, SystemKey) {
+        let is_alliance = faction == AiFaction::Alliance;
+        let mut world = GameWorld::default();
+        let system = add_system(&mut world, name);
+        (is_alliance, world, system)
+    }
+
+    fn opposing_ai_system(faction: AiFaction, name: &str) -> (AiFaction, GameWorld, SystemKey) {
+        let (_, world, system) = ai_system(faction, name);
+        (opposing_ai_faction(faction), world, system)
+    }
+
+    impl AiOrderFixture {
+        fn new(faction: AiFaction) -> Self {
+            Self {
+                ai: AIState::new(faction),
+                missions: MissionState::new(),
+                manufacturing: ManufacturingState::new(),
+                deliveries: rebellion_core::delivery::DeliveryState::default(),
+                movement: MovementState::new(),
+                transport: TroopTransportState::default(),
+                stockpiles: StockpileState::new(),
+                uprisings: UprisingState::default(),
+            }
+        }
+
+        fn apply(&mut self, world: &mut GameWorld, action: &AIAction) -> AiOutcome {
+            apply_ai_order(
+                action,
+                &mut self.ai,
+                &mut self.missions,
+                &mut self.manufacturing,
+                &self.deliveries,
+                &mut self.movement,
+                &mut self.transport,
+                &mut self.stockpiles,
+                world,
+                &self.uprisings,
+                5,
+            )
+        }
+    }
+
     // The AI's Build is the player's order 0x211 (FUN_004cba90): its
     // execute, FUN_00529ab0, runs FUN_0052a2c0 (+0xac(0x16) on every product
     // the manager lists) before FUN_0052a140 creates the new units, so a
@@ -4066,9 +4151,7 @@ mod tests {
     fn an_ai_build_replaces_what_its_area_was_building_and_destroys_the_replaced_ship_for_either_side(
     ) {
         for faction in [AiFaction::Alliance, AiFaction::Empire] {
-            let is_alliance = faction == AiFaction::Alliance;
-            let mut world = GameWorld::default();
-            let yard = add_system(&mut world, "Yard");
+            let (is_alliance, mut world, yard) = ai_system(faction, "Yard");
             let shipyard = world.manufacturing_facilities.insert(
                 rebellion_core::world::ManufacturingFacilityInstance {
                     class_dat_id: DatId::new(0x2800_0001),
@@ -4087,10 +4170,10 @@ mod tests {
                 })
             };
             let (first, second) = (class(&mut world), class(&mut world));
-            let mut ai = AIState::new(faction);
-            let mut manufacturing = ManufacturingState::new();
+            let mut fixture = AiOrderFixture::new(faction);
             let mut order = |world: &mut GameWorld, class, count| {
-                apply_ai_order(
+                fixture.apply(
+                    world,
                     &AIAction::EnqueueProduction {
                         system: yard,
                         kind: BuildableKind::CapitalShip(class),
@@ -4098,16 +4181,6 @@ mod tests {
                         count,
                         destination: None,
                     },
-                    &mut ai,
-                    &mut MissionState::new(),
-                    &mut manufacturing,
-                    &rebellion_core::delivery::DeliveryState::default(),
-                    &mut MovementState::new(),
-                    &mut TroopTransportState::default(),
-                    &mut StockpileState::new(),
-                    world,
-                    &UprisingState::default(),
-                    5,
                 )
             };
 
@@ -4115,7 +4188,8 @@ mod tests {
             let replaced = world.systems[yard].fleets[0];
             assert_eq!(order(&mut world, second, 1), AiOutcome::applied(None));
 
-            let queued: Vec<BuildableKind> = manufacturing
+            let queued: Vec<BuildableKind> = fixture
+                .manufacturing
                 .queue(yard, ProductionArea::Shipyard)
                 .unwrap()
                 .items()
@@ -4140,9 +4214,7 @@ mod tests {
     #[test]
     fn an_ai_build_its_own_side_cannot_maintain_is_refused_for_either_side() {
         for faction in [AiFaction::Alliance, AiFaction::Empire] {
-            let is_alliance = faction == AiFaction::Alliance;
-            let mut world = GameWorld::default();
-            let yard = add_system(&mut world, "Yard");
+            let (is_alliance, mut world, yard) = ai_system(faction, "Yard");
             // A mine matched by a refinery: 50 maintenance for the other side.
             for raw in [0x2c00_0001, 0x2d00_0002] {
                 world
@@ -4161,9 +4233,8 @@ mod tests {
                 maintenance_cost: 1,
                 ..CapitalShipClass::default()
             });
-            let mut manufacturing = ManufacturingState::new();
-
-            let outcome = apply_ai_order(
+            let outcome = AiOrderFixture::new(faction).apply(
+                &mut world,
                 &AIAction::EnqueueProduction {
                     system: yard,
                     kind: BuildableKind::CapitalShip(class),
@@ -4171,16 +4242,6 @@ mod tests {
                     count: 1,
                     destination: None,
                 },
-                &mut AIState::new(faction),
-                &mut MissionState::new(),
-                &mut manufacturing,
-                &rebellion_core::delivery::DeliveryState::default(),
-                &mut MovementState::new(),
-                &mut TroopTransportState::default(),
-                &mut StockpileState::new(),
-                &mut world,
-                &UprisingState::default(),
-                5,
             );
 
             assert_eq!(
@@ -4196,19 +4257,42 @@ mod tests {
 
     /// One AI order of `faction` applied to `world` alone.
     fn ai_alone(world: &mut GameWorld, faction: AiFaction, action: &AIAction) -> AiOutcome {
-        apply_ai_order(
-            action,
-            &mut AIState::new(faction),
-            &mut MissionState::new(),
-            &mut ManufacturingState::new(),
-            &rebellion_core::delivery::DeliveryState::default(),
-            &mut MovementState::new(),
-            &mut TroopTransportState::default(),
-            &mut StockpileState::new(),
-            world,
-            &UprisingState::default(),
-            5,
-        )
+        AiOrderFixture::new(faction).apply(world, action)
+    }
+
+    const fn opposing_ai_faction(faction: AiFaction) -> AiFaction {
+        match faction {
+            AiFaction::Alliance => AiFaction::Empire,
+            AiFaction::Empire => AiFaction::Alliance,
+        }
+    }
+
+    fn add_capital_fleet(
+        world: &mut GameWorld,
+        system: SystemKey,
+        is_alliance: bool,
+        capital_ships: Vec<ShipInstance>,
+    ) -> FleetKey {
+        let fleet = world.fleets.insert(Fleet {
+            location: system,
+            is_alliance,
+            capital_ships,
+            ..Fleet::default()
+        });
+        world.systems[system].fleets.push(fleet);
+        fleet
+    }
+
+    fn add_fleet_with_regiment(
+        world: &mut GameWorld,
+        system: SystemKey,
+        fleet_is_alliance: bool,
+        ship: ShipInstance,
+        troop_is_alliance: bool,
+    ) -> (FleetKey, TroopKey) {
+        let fleet = add_capital_fleet(world, system, fleet_is_alliance, vec![ship]);
+        let troop = add_regiment(world, system, DatId::new(0x1000_0001), troop_is_alliance);
+        (fleet, troop)
     }
 
     /// A fleet of `faction`'s side at `at` with one tagged ship.
@@ -4227,14 +4311,7 @@ mod tests {
         });
         let mut ship = ShipInstance::new(class, 100, is_alliance);
         ship.tag = tag;
-        let fleet = world.fleets.insert(Fleet {
-            location: at,
-            is_alliance,
-            capital_ships: vec![ship],
-            ..Fleet::default()
-        });
-        world.systems[at].fleets.push(fleet);
-        fleet
+        add_capital_fleet(world, at, is_alliance, vec![ship])
     }
 
     // The Command submenu's object check refuses another side's character
@@ -4283,13 +4360,7 @@ mod tests {
     #[test]
     fn an_ai_joins_its_own_fleet_to_its_own_sides_fleet_only_for_either_side() {
         for faction in [AiFaction::Alliance, AiFaction::Empire] {
-            let other = if faction == AiFaction::Alliance {
-                AiFaction::Empire
-            } else {
-                AiFaction::Alliance
-            };
-            let mut world = GameWorld::default();
-            let at = add_system(&mut world, "Muster");
+            let (other, mut world, at) = opposing_ai_system(faction, "Muster");
             let mover = tagged_fleet(&mut world, at, faction, 1);
             let target = tagged_fleet(&mut world, at, faction, 2);
             let theirs = tagged_fleet(&mut world, at, other, 3);
@@ -4320,13 +4391,7 @@ mod tests {
     #[test]
     fn an_ai_creates_a_fleet_from_its_own_sides_ships_only_for_either_side() {
         for faction in [AiFaction::Alliance, AiFaction::Empire] {
-            let other = if faction == AiFaction::Alliance {
-                AiFaction::Empire
-            } else {
-                AiFaction::Alliance
-            };
-            let mut world = GameWorld::default();
-            let at = add_system(&mut world, "Muster");
+            let (other, mut world, at) = opposing_ai_system(faction, "Muster");
             let ours = tagged_fleet(&mut world, at, faction, 1);
             let theirs = tagged_fleet(&mut world, at, other, 2);
             let create = |fleet, tag| AIAction::CreateFleet {
@@ -4355,19 +4420,16 @@ mod tests {
     // act only on its own side's.
     #[test]
     fn an_ai_moves_and_scraps_only_its_own_sides_regiments_and_squadrons_for_either_side() {
-        use rebellion_core::troop_transport::{RegimentTarget, SquadronSource, TroopTransportError};
+        use rebellion_core::troop_transport::{
+            RegimentTarget, SquadronSource, TroopTransportError,
+        };
         for faction in [AiFaction::Alliance, AiFaction::Empire] {
-            let other = if faction == AiFaction::Alliance {
-                AiFaction::Empire
-            } else {
-                AiFaction::Alliance
-            };
+            let (other, mut world, at) = opposing_ai_system(faction, "Muster");
             let theirs = other == AiFaction::Alliance;
-            let mut world = GameWorld::default();
-            let at = add_system(&mut world, "Muster");
             let to = add_system(&mut world, "Target");
             for system in [at, to] {
-                world.systems[system].control = ControlKind::Controlled(Faction::of_alliance(theirs));
+                world.systems[system].control =
+                    ControlKind::Controlled(Faction::of_alliance(theirs));
             }
             let troop = world.troops.insert(rebellion_core::world::TroopUnit {
                 class_dat_id: DatId::new(0x1000_0001),
@@ -4387,8 +4449,15 @@ mod tests {
                 troops: vec![troop],
                 to: RegimentTarget::System(to),
             };
-            assert_eq!(ai_alone(&mut world, faction, &regiments), wrong, "{faction:?}");
-            assert!(world.systems[at].ground_units.contains(&troop), "{faction:?}");
+            assert_eq!(
+                ai_alone(&mut world, faction, &regiments),
+                wrong,
+                "{faction:?}"
+            );
+            assert!(
+                world.systems[at].ground_units.contains(&troop),
+                "{faction:?}"
+            );
             let squadrons = AIAction::MoveSquadrons {
                 squadrons: vec![SquadronSource::System {
                     system: at,
@@ -4397,7 +4466,11 @@ mod tests {
                 }],
                 fleet: carrier,
             };
-            assert_eq!(ai_alone(&mut world, faction, &squadrons), wrong, "{faction:?}");
+            assert_eq!(
+                ai_alone(&mut world, faction, &squadrons),
+                wrong,
+                "{faction:?}"
+            );
             assert_eq!(world.systems[at].squadron_count(theirs), 1, "{faction:?}");
             let scrap = AIAction::Scrap {
                 targets: vec![rebellion_core::scrap::ScrapTarget::Troop(troop)],
@@ -4421,13 +4494,7 @@ mod tests {
         use rebellion_core::fleet_join::FleetOrderError;
         use rebellion_core::movement::FleetDispatchError;
         for faction in [AiFaction::Alliance, AiFaction::Empire] {
-            let other = if faction == AiFaction::Alliance {
-                AiFaction::Empire
-            } else {
-                AiFaction::Alliance
-            };
-            let mut world = GameWorld::default();
-            let at = add_system(&mut world, "Muster");
+            let (other, mut world, at) = opposing_ai_system(faction, "Muster");
             let to = add_system(&mut world, "Target");
             let gone = add_system(&mut world, "Gone");
             world.systems.remove(gone);
@@ -4442,7 +4509,8 @@ mod tests {
                 reason: rebellion_core::ai::FleetMoveReason::Attack,
                 troops: Vec::new(),
             };
-            let refusal = |error| AiOutcome::Refused(AiRefusal::Fleet(FleetOrderError::Dispatch(error)));
+            let refusal =
+                |error| AiOutcome::Refused(AiRefusal::Fleet(FleetOrderError::Dispatch(error)));
 
             assert_eq!(
                 ai_alone(&mut world, faction, &order(theirs, to)),
@@ -4456,7 +4524,10 @@ mod tests {
                 "{faction:?}"
             );
             assert_eq!(world.fleets[unfinished].location, at, "{faction:?}");
-            assert!(world.systems[at].fleets.contains(&unfinished), "{faction:?}");
+            assert!(
+                world.systems[at].fleets.contains(&unfinished),
+                "{faction:?}"
+            );
             assert_eq!(
                 ai_alone(&mut world, faction, &order(ours, to)),
                 AiOutcome::applied(None),
@@ -4478,15 +4549,12 @@ mod tests {
             hyperdrive: 100,
             ..CapitalShipClass::default()
         });
-        let fleet = world.fleets.insert(Fleet {
-            location: origin,
-            capital_ships: vec![ShipInstance::new(class, 100, false)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        world.systems[origin].fleets.push(fleet);
+        let fleet = add_capital_fleet(
+            &mut world,
+            origin,
+            false,
+            vec![ShipInstance::new(class, 100, false)],
+        );
 
         let actions = vec![
             AIAction::MoveFleet {
@@ -4687,7 +4755,9 @@ mod tests {
             assert_eq!(events[1].event_type, EVT_SCRAPPED_ABOARD, "{is_alliance}");
             assert_eq!(events[1].details["regiments"], 2, "{is_alliance}");
             assert_eq!(events[1].details["squadrons"], 0, "{is_alliance}");
-            assert!(troops.iter().all(|&troop| !world.troops.contains_key(troop)));
+            assert!(troops
+                .iter()
+                .all(|&troop| !world.troops.contains_key(troop)));
         }
     }
 
@@ -4700,15 +4770,15 @@ mod tests {
         let events = empire_ai_events(
             &mut world,
             &[AIAction::Scrap {
-                targets: vec![rebellion_core::scrap::ScrapTarget::CapitalShip {
-                    fleet,
-                    index: 0,
-                }],
+                targets: vec![rebellion_core::scrap::ScrapTarget::CapitalShip { fleet, index: 0 }],
             }],
         );
 
         assert_eq!(
-            events.iter().map(|event| event.event_type).collect::<Vec<_>>(),
+            events
+                .iter()
+                .map(|event| event.event_type)
+                .collect::<Vec<_>>(),
             [EVT_AI_ACTION]
         );
     }
@@ -4836,32 +4906,33 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ai_transport_action_embarks_before_authoritative_transit() {
+    fn empire_transport_fixture() -> (GameWorld, SystemKey, SystemKey, FleetKey, TroopKey) {
         let mut world = GameWorld::default();
         let origin = add_system(&mut world, "Origin");
         let destination = add_system(&mut world, "Destination");
         let class = world.capital_ship_classes.insert(CapitalShipClass {
-            is_alliance: false,
             is_empire: true,
             hull: 100,
             troop_capacity: 1,
             ..CapitalShipClass::default()
         });
-        let fleet = world.fleets.insert(Fleet {
-            location: origin,
-            capital_ships: vec![ShipInstance::new(class, 100, false)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        world.systems[origin].fleets.push(fleet);
+        let fleet = add_capital_fleet(
+            &mut world,
+            origin,
+            false,
+            vec![ShipInstance::new(class, 100, false)],
+        );
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0001),
             is_alliance: false,
         });
         world.systems[origin].ground_units.push(troop);
+        (world, origin, destination, fleet, troop)
+    }
+
+    #[test]
+    fn ai_transport_action_embarks_before_authoritative_transit() {
+        let (mut world, origin, destination, fleet, troop) = empire_transport_fixture();
 
         let actions = [AIAction::MoveFleet {
             fleet,
@@ -4908,90 +4979,52 @@ mod tests {
                 hyperdrive: 80,
                 ..CapitalShipClass::default()
             });
-            let fleet = world.fleets.insert(Fleet {
-                location: origin,
-                capital_ships: vec![ShipInstance::ordered(class, 100, is_alliance)],
+            let fleet = add_capital_fleet(
+                &mut world,
+                origin,
                 is_alliance,
-                ..Fleet::default()
-            });
-            world.systems[origin].fleets.push(fleet);
-            let mut movement = MovementState::new();
-
-            let outcome = apply_ai_order(
+                vec![ShipInstance::ordered(class, 100, is_alliance)],
+            );
+            let mut fixture = AiOrderFixture::new(faction);
+            let outcome = fixture.apply(
+                &mut world,
                 &AIAction::MoveFleet {
                     fleet,
                     to_system: destination,
                     reason: FleetMoveReason::Attack,
                     troops: vec![],
                 },
-                &mut AIState::new(faction),
-                &mut MissionState::new(),
-                &mut ManufacturingState::new(),
-                &rebellion_core::delivery::DeliveryState::default(),
-                &mut movement,
-                &mut TroopTransportState::default(),
-                &mut StockpileState::new(),
-                &mut world,
-                &UprisingState::default(),
-                5,
             );
 
-            assert!(matches!(outcome, AiOutcome::Applied { .. }), "{is_alliance}: {outcome:?}");
-            assert!(!movement.is_in_transit(fleet), "{is_alliance}");
-            assert_eq!(world.fleets[fleet].location, destination, "{is_alliance}");
-            assert!(world.systems[destination].fleets.contains(&fleet), "{is_alliance}");
-            assert!(!world.systems[origin].fleets.contains(&fleet), "{is_alliance}");
+            assert!(
+                matches!(outcome, AiOutcome::Applied { .. }),
+                "{is_alliance}: {outcome:?}"
+            );
+            rebellion_core::test_support::assert_fleet_arrived(
+                &world,
+                &fixture.movement,
+                fleet,
+                origin,
+                destination,
+            );
         }
     }
 
     #[test]
     fn troops_embarked_for_a_move_that_cannot_depart_land_again() {
-        let mut world = GameWorld::default();
-        let origin = add_system(&mut world, "Origin");
-        let destination = add_system(&mut world, "Destination");
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            is_alliance: false,
-            is_empire: true,
-            hull: 100,
-            troop_capacity: 1,
-            ..CapitalShipClass::default()
-        });
-        let fleet = world.fleets.insert(Fleet {
-            location: origin,
-            capital_ships: vec![ShipInstance::new(class, 100, false)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        world.systems[origin].fleets.push(fleet);
-        let troop = world.troops.insert(TroopUnit {
-            class_dat_id: DatId::new(0x1000_0001),
-            is_alliance: false,
-        });
-        world.systems[origin].ground_units.push(troop);
-        let mut movement = MovementState::new();
+        let (mut world, origin, destination, fleet, troop) = empire_transport_fixture();
+        let mut fixture = AiOrderFixture::new(AiFaction::Empire);
         // An order already held refuses the new one (MovementState::order).
-        assert!(movement.order(fleet, origin, destination, 3));
-        let mut troop_transport = TroopTransportState::default();
+        assert!(fixture.movement.order(fleet, origin, destination, 3));
 
-        let outcome = apply_ai_order(
+        let outcome = fixture.apply(
+            &mut world,
             &AIAction::MoveFleet {
                 fleet,
                 to_system: destination,
                 reason: FleetMoveReason::Attack,
                 troops: vec![troop],
             },
-            &mut AIState::new(AiFaction::Empire),
-            &mut MissionState::new(),
-            &mut ManufacturingState::new(),
-            &rebellion_core::delivery::DeliveryState::default(),
-            &mut movement,
-            &mut troop_transport,
-            &mut StockpileState::new(),
-            &mut world,
-            &UprisingState::default(),
-            5,
         );
 
         assert_eq!(
@@ -5002,7 +5035,7 @@ mod tests {
                 )
             ))
         );
-        assert!(troop_transport.cargo(fleet).is_empty());
+        assert_empty!(fixture.transport.cargo(fleet));
         assert!(world.systems[origin].ground_units.contains(&troop));
     }
 
@@ -5076,7 +5109,7 @@ mod tests {
             class,
             1,
         );
-        assert!(world.death_star_sectors.is_empty());
+        assert_empty!(world.death_star_sectors);
     }
 
     // A fleet-bound squadron or regiment was created aboard the ship its
@@ -5095,21 +5128,22 @@ mod tests {
                 troop_capacity: 1,
                 ..Default::default()
             });
-            let fleet = world.fleets.insert(Fleet {
-                location: system,
+            let fleet = add_capital_fleet(
+                &mut world,
+                system,
                 is_alliance,
-                capital_ships: vec![
+                vec![
                     ShipInstance::new(class, 100, is_alliance),
                     ShipInstance::new(class, 100, is_alliance),
                 ],
-                ..Fleet::default()
-            });
-            world.systems[system].fleets.push(fleet);
+            );
             let tag = rebellion_core::carriage::tag_ship(&mut world, fleet, 1).unwrap();
-            let fighter = world.fighter_classes.insert(rebellion_core::world::FighterClass {
-                is_alliance,
-                ..Default::default()
-            });
+            let fighter = world
+                .fighter_classes
+                .insert(rebellion_core::world::FighterClass {
+                    is_alliance,
+                    ..Default::default()
+                });
             let regiment = rebellion_core::ids::DatId::new(0x1000_0001);
             world.buildable_classes.insert(
                 regiment,
@@ -5169,8 +5203,14 @@ mod tests {
                 .map(|&troop| transport.carrier(troop))
                 .collect();
             assert_eq!(carried, [tag], "alliance {is_alliance}");
-            assert!(world.systems[system].ground_units.is_empty(), "alliance {is_alliance}");
-            assert!(world.systems[system].fighters.is_empty(), "alliance {is_alliance}");
+            assert!(
+                world.systems[system].ground_units.is_empty(),
+                "alliance {is_alliance}"
+            );
+            assert!(
+                world.systems[system].fighters.is_empty(),
+                "alliance {is_alliance}"
+            );
         }
     }
 
@@ -5230,6 +5270,32 @@ mod tests {
         (world, yard, destination, class)
     }
 
+    fn finished_far_ship(
+        is_alliance: bool,
+    ) -> (
+        GameWorld,
+        SystemKey,
+        SystemKey,
+        rebellion_core::ids::CapitalShipKey,
+        BuildableKind,
+    ) {
+        let (mut world, yard, destination, class) = far_yard(is_alliance);
+        order_and_finish(
+            &mut world,
+            yard,
+            rebellion_core::manufacturing::Destination::System(destination),
+            class,
+            5,
+        );
+        (
+            world,
+            yard,
+            destination,
+            class,
+            BuildableKind::CapitalShip(class),
+        )
+    }
+
     // The ship sits in its destination's spare fleet from its order
     // (FUN_0052a140 -> FUN_004f7d50; death-star-product.md section 1).
     // FUN_0052bee0 sets en route active on a product whose location is not
@@ -5240,15 +5306,7 @@ mod tests {
     fn a_capital_ship_finished_for_another_system_travels_in_its_destination_spare_fleet_for_either_side(
     ) {
         for is_alliance in [false, true] {
-            let (mut world, yard, destination, class) = far_yard(is_alliance);
-            let kind = BuildableKind::CapitalShip(class);
-            order_and_finish(
-                &mut world,
-                yard,
-                rebellion_core::manufacturing::Destination::System(destination),
-                class,
-                5,
-            );
+            let (world, yard, destination, _, kind) = finished_far_ship(is_alliance);
             let ticks = rebellion_core::delivery::transit_days(&world, kind, yard, destination);
             assert!(ticks > 1, "{is_alliance}");
             let fleets: Vec<_> = world.systems[destination]
@@ -5291,15 +5349,7 @@ mod tests {
     fn a_travelling_capital_ship_arrives_on_its_day_or_follows_its_moved_fleet_for_either_side() {
         use rebellion_core::tick::TickEvent;
         for is_alliance in [false, true] {
-            let (mut world, yard, destination, class) = far_yard(is_alliance);
-            let kind = BuildableKind::CapitalShip(class);
-            order_and_finish(
-                &mut world,
-                yard,
-                rebellion_core::manufacturing::Destination::System(destination),
-                class,
-                5,
-            );
+            let (mut world, yard, destination, class, kind) = finished_far_ship(is_alliance);
             let fleet = world.systems[destination].fleets[0];
             let due = 5 + u64::from(rebellion_core::delivery::transit_days(
                 &world,
@@ -5357,22 +5407,11 @@ mod tests {
     ) {
         let mut world = GameWorld::default();
         // GNPRTB 0x601-0x603 as shipped: 40, 1, 10.
-        let entry = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
-            parameter_id: id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
-        world.gnprtb = rebellion_core::world::GnprtbParams::new(vec![
-            entry(0x601, 40),
-            entry(0x602, 1),
-            entry(0x603, 10),
-        ]);
+        world.gnprtb = rebellion_core::world::GnprtbParams::new(gnprtb_entries([
+            (0x601, 40),
+            (0x602, 1),
+            (0x603, 10),
+        ]));
         let system = add_system(&mut world, "Target");
         world.systems[system].control = ControlKind::Controlled(Faction::Alliance);
         let class = world.capital_ship_classes.insert(CapitalShipClass {
@@ -5381,17 +5420,13 @@ mod tests {
             bombardment_modifier: 5,
             ..Default::default()
         });
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 100, false)],
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(fleet);
-        let troop = world.troops.insert(rebellion_core::world::TroopUnit {
-            class_dat_id: DatId::new(0x1000_0001),
-            is_alliance: true,
-        });
-        world.systems[system].ground_units.push(troop);
+        let (fleet, troop) = add_fleet_with_regiment(
+            &mut world,
+            system,
+            false,
+            ShipInstance::new(class, 100, false),
+            true,
+        );
         (world, system, fleet, troop)
     }
 
@@ -5432,11 +5467,113 @@ mod tests {
                 step: 0,
             }
         }
+
+        fn run_strike(
+            &mut self,
+            world: &mut GameWorld,
+            fleet: FleetKey,
+            kind: rebellion_core::bombardment::BombardKind,
+        ) -> Vec<StrikeEffects> {
+            order_strike(world, &[fleet], kind, &mut self.states(), &mut || 0.5)
+                .expect("the gate passes")
+        }
+
+        fn resolve_ai_strike(
+            &mut self,
+            world: &mut GameWorld,
+            action: &AIAction,
+            side: Faction,
+        ) -> (AiOutcome, StrikeEffects) {
+            resolve_ai_strike(action, side, world, &mut self.states(), &mut || 0.5)
+        }
+
+        fn resolve_own_strike(
+            &mut self,
+            world: &mut GameWorld,
+            fleet: FleetKey,
+            action: &AIAction,
+        ) -> (AiOutcome, StrikeEffects) {
+            let side = fleet_side(world, fleet);
+            self.resolve_ai_strike(world, action, side)
+        }
+
+        fn resolve_own_assault(
+            &mut self,
+            world: &mut GameWorld,
+            fleet: FleetKey,
+            system: SystemKey,
+        ) -> (AiOutcome, AssaultEffects) {
+            let side = fleet_side(world, fleet);
+            resolve_ai_assault(
+                &AIAction::Assault { fleet, system },
+                side,
+                world,
+                &mut self.states(),
+                &mut || 0.5,
+            )
+        }
+
+        fn begin_transit(
+            &mut self,
+            world: &mut GameWorld,
+            fleet: FleetKey,
+            destination: SystemKey,
+        ) {
+            assert!(begin_fleet_transit(
+                &mut self.movement,
+                world,
+                fleet,
+                destination,
+                5,
+            ));
+        }
+
+        fn embark(&mut self, world: &mut GameWorld, fleet: FleetKey, troops: &[TroopKey]) {
+            self.transport
+                .embark(world, &ProductRoom::default(), fleet, troops)
+                .expect("the ship carries its test regiment");
+        }
     }
 
     /// The side of `fleet`, the AI whose order names it.
     fn fleet_side(world: &GameWorld, fleet: FleetKey) -> Faction {
         Faction::of_alliance(world.fleets[fleet].is_alliance)
+    }
+
+    fn add_battery(world: &mut GameWorld, system: SystemKey, side: Faction, attack: u32) {
+        let class = DatId::new(0x2300_0001);
+        world.buildable_classes.insert(
+            class,
+            rebellion_core::world::BuildableClass {
+                stats: rebellion_core::world::ClassStats {
+                    attack_strength: attack,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        let battery = world.defense_facilities.insert(DefenseFacilityInstance {
+            class_dat_id: class,
+            side,
+        });
+        world.systems[system].defense_facilities.push(battery);
+    }
+
+    fn embark_regiment(
+        world: &mut GameWorld,
+        system: SystemKey,
+        fleet: FleetKey,
+        class_dat_id: DatId,
+        is_alliance: bool,
+        fixture: &mut StrikeFixture,
+    ) -> TroopKey {
+        let troop = world.troops.insert(rebellion_core::world::TroopUnit {
+            class_dat_id,
+            is_alliance,
+        });
+        world.systems[system].ground_units.push(troop);
+        fixture.embark(world, fleet, &[troop]);
+        troop
     }
 
     // The strike and assault orders run the object check of every order
@@ -5454,16 +5591,14 @@ mod tests {
             }
             let other = Faction::of_alliance(!world.fleets[fleet].is_alliance);
             let mut fixture = StrikeFixture::new();
-            let (outcome, strike) = resolve_ai_strike(
+            let (outcome, strike) = fixture.resolve_ai_strike(
+                &mut world,
                 &AIAction::Bombard {
                     fleet,
                     system,
                     kind: rebellion_core::ai_regions::Strike::Military,
                 },
                 other,
-                &mut world,
-                &mut fixture.states(),
-                &mut || 0.5,
             );
             assert_eq!((outcome, strike.report), (wrong, None), "{other:?}");
             assert!(world.troops.contains_key(troop), "{other:?}");
@@ -5484,16 +5619,14 @@ mod tests {
         // player's does, and the finalize clears the fleet's flag.
         let (mut world, system, fleet, troop) = strike_world();
         let mut fixture = StrikeFixture::new();
-        let (outcome, strike) = resolve_ai_strike(
+        let (outcome, strike) = fixture.resolve_own_strike(
+            &mut world,
+            fleet,
             &AIAction::Bombard {
                 fleet,
                 system,
                 kind: rebellion_core::ai_regions::Strike::Military,
             },
-            fleet_side(&world, fleet),
-            &mut world,
-            &mut fixture.states(),
-            &mut || 0.5,
         );
         assert!(outcome.is_applied());
         let report = strike.report.expect("the run's report");
@@ -5512,12 +5645,10 @@ mod tests {
         // FUN_00582440: 0x223 needs a family 0x18-0x1b ship (8/8).
         let (mut world, system, fleet, troop) = strike_world();
         let mut fixture = StrikeFixture::new();
-        let (outcome, strike) = resolve_ai_strike(
-            &AIAction::DestroySystem { fleet, system },
-            fleet_side(&world, fleet),
+        let (outcome, strike) = fixture.resolve_own_strike(
             &mut world,
-            &mut fixture.states(),
-            &mut || 0.5,
+            fleet,
+            &AIAction::DestroySystem { fleet, system },
         );
         assert_eq!(
             outcome,
@@ -5536,22 +5667,13 @@ mod tests {
         let (mut world, system, fleet, troop) = strike_world();
         let other = add_system(&mut world, "Elsewhere");
         let mut fixture = StrikeFixture::new();
-        assert!(begin_fleet_transit(
-            &mut fixture.movement,
+        fixture.begin_transit(&mut world, fleet, other);
+        let runs = fixture.run_strike(
             &mut world,
             fleet,
-            other,
-            5
-        ));
-        let runs = order_strike(
-            &mut world,
-            &[fleet],
             rebellion_core::bombardment::BombardKind::General,
-            &mut fixture.states(),
-            &mut || 0.5,
-        )
-        .expect("the gate passes");
-        assert!(runs.is_empty());
+        );
+        assert_empty!(runs);
         assert!(!world.fleets[fleet].bombarding);
         assert!(world.troops.contains_key(troop));
         let _ = system;
@@ -5564,26 +5686,13 @@ mod tests {
         let (mut world, system, fleet, _) = strike_world();
         let other = add_system(&mut world, "Elsewhere");
         let mut fixture = StrikeFixture::new();
-        assert!(begin_fleet_transit(
-            &mut fixture.movement,
-            &mut world,
-            fleet,
-            other,
-            5
-        ));
+        fixture.begin_transit(&mut world, fleet, other);
         let action = AIAction::Bombard {
             fleet,
             system,
             kind: rebellion_core::ai_regions::Strike::General,
         };
-        let (outcome, effects) =
-            resolve_ai_strike(
-                &action,
-                fleet_side(&world, fleet),
-                &mut world,
-                &mut fixture.states(),
-                &mut || 0.5,
-            );
+        let (outcome, effects) = fixture.resolve_own_strike(&mut world, fleet, &action);
         assert_eq!(
             outcome,
             AiOutcome::Refused(AiRefusal::Strike(
@@ -5598,22 +5707,7 @@ mod tests {
         // FUN_0058d540 destroys the last hull; the emptied fleet goes as a
         // battle's does (post_battle::destroy_fleet).
         let (mut world, system, fleet, _) = strike_world();
-        let battery = DatId::new(0x2300_0001);
-        world.buildable_classes.insert(
-            battery,
-            rebellion_core::world::BuildableClass {
-                stats: rebellion_core::world::ClassStats {
-                    attack_strength: 500,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        );
-        let lnr = world.defense_facilities.insert(DefenseFacilityInstance {
-            class_dat_id: battery,
-            side: Faction::Alliance,
-        });
-        world.systems[system].defense_facilities.push(lnr);
+        add_battery(&mut world, system, Faction::Alliance, 500);
         let admiral = world.characters.insert(rebellion_core::world::Character {
             current_fleet: Some(fleet),
             current_system: Some(system),
@@ -5621,14 +5715,11 @@ mod tests {
         });
         world.fleets[fleet].characters.push(admiral);
         let mut fixture = StrikeFixture::new();
-        let runs = order_strike(
+        let runs = fixture.run_strike(
             &mut world,
-            &[fleet],
+            fleet,
             rebellion_core::bombardment::BombardKind::General,
-            &mut fixture.states(),
-            &mut || 0.5,
-        )
-        .expect("the gate passes");
+        );
         assert_eq!(
             runs[0].report.as_ref().map(|report| report.ships_destroyed),
             Some(1)
@@ -5679,6 +5770,23 @@ mod tests {
         units.iter().map(|unit| unit.name.as_str()).collect()
     }
 
+    fn transport_strike_world(
+        bombarder: Faction,
+    ) -> (
+        GameWorld,
+        SystemKey,
+        FleetKey,
+        Faction,
+        rebellion_core::ids::CapitalShipKey,
+        StrikeFixture,
+    ) {
+        let (mut world, system, fleet, _) = named_strike_world(bombarder);
+        let holder = world.systems[system].control.faction().unwrap();
+        let class = world.fleets[fleet].capital_ships[0].class;
+        world.capital_ship_classes[class].troop_capacity = 1;
+        (world, system, fleet, holder, class, StrikeFixture::new())
+    }
+
     #[test]
     fn an_ordinary_run_reports_what_stands_after_it_and_what_it_destroyed() {
         // The finalize's flag clearing raises 0x182 and 0x14f with value 0,
@@ -5697,14 +5805,11 @@ mod tests {
                 });
             world.systems[system].manufacturing_facilities.push(yard);
             let mut fixture = StrikeFixture::new();
-            let runs = order_strike(
+            let runs = fixture.run_strike(
                 &mut world,
-                &[fleet],
+                fleet,
                 rebellion_core::bombardment::BombardKind::Military,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            );
             assert!(!world.troops.contains_key(troop));
             let report = runs[0].operation.as_ref().expect("the Operation Report");
             assert_eq!(
@@ -5718,7 +5823,7 @@ mod tests {
             );
             assert_eq!(report.fleets, [fleet]);
             assert_eq!(names(&report.fleet_operational), ["Cruiser"]);
-            assert!(report.fleet_destroyed.is_empty());
+            assert_empty!(report.fleet_destroyed);
             assert_eq!(names(&report.system_operational), ["Shipyard"]);
             assert_eq!(names(&report.system_destroyed), ["Regiment"]);
             assert_eq!(report.picture(), 0x2b9b, "{bombarder:?}");
@@ -5731,48 +5836,26 @@ mod tests {
         // regiments lost with their transport go with it
         // (destroy_untransportable_cargo); the picture is 0x2b9c.
         for bombarder in [Faction::Empire, Faction::Alliance] {
-            let (mut world, system, fleet, _) = named_strike_world(bombarder);
-            let holder = world.systems[system].control.faction().unwrap();
-            let class = world.fleets[fleet].capital_ships[0].class;
-            world.capital_ship_classes[class].troop_capacity = 1;
-            let aboard = world.troops.insert(rebellion_core::world::TroopUnit {
-                class_dat_id: DatId::new(0x1000_0001),
-                is_alliance: bombarder == Faction::Alliance,
-            });
-            world.systems[system].ground_units.push(aboard);
-            let mut fixture = StrikeFixture::new();
-            fixture
-                .transport
-                .embark(&mut world, &ProductRoom::default(), fleet, &[aboard])
-                .expect("the ship carries one regiment");
-            let battery = DatId::new(0x2300_0001);
-            world.buildable_classes.insert(
-                battery,
-                rebellion_core::world::BuildableClass {
-                    stats: rebellion_core::world::ClassStats {
-                        attack_strength: 500,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            );
-            let lnr = world.defense_facilities.insert(DefenseFacilityInstance {
-                class_dat_id: battery,
-                side: holder,
-            });
-            world.systems[system].defense_facilities.push(lnr);
-            let runs = order_strike(
+            let (mut world, system, fleet, holder, _, mut fixture) =
+                transport_strike_world(bombarder);
+            let aboard = embark_regiment(
                 &mut world,
-                &[fleet],
+                system,
+                fleet,
+                DatId::new(0x1000_0001),
+                bombarder == Faction::Alliance,
+                &mut fixture,
+            );
+            add_battery(&mut world, system, holder, 500);
+            let runs = fixture.run_strike(
+                &mut world,
+                fleet,
                 rebellion_core::bombardment::BombardKind::General,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            );
             assert!(!world.troops.contains_key(aboard));
             let report = runs[0].operation.as_ref().expect("the Operation Report");
             assert!(report.fleets.is_empty(), "the emptied fleet is gone");
-            assert!(report.fleet_operational.is_empty());
+            assert_empty!(report.fleet_operational);
             assert_eq!(names(&report.fleet_destroyed), ["Cruiser", "Regiment"]);
             assert_eq!(report.picture(), 0x2b9c, "{bombarder:?}");
         }
@@ -5786,10 +5869,8 @@ mod tests {
         // (FUN_004f7ed0), and FUN_00508c60 adds its slot +0x1c0 (TROOPSD
         // uprising_defense) to B beside the ship's (FUN_00501ae0(.., 0xf)).
         for bombarder in [Faction::Empire, Faction::Alliance] {
-            let (mut world, system, fleet, _) = named_strike_world(bombarder);
-            let holder = world.systems[system].control.faction().unwrap();
-            let class = world.fleets[fleet].capital_ships[0].class;
-            world.capital_ship_classes[class].troop_capacity = 1;
+            let (mut world, system, fleet, holder, class, mut fixture) =
+                transport_strike_world(bombarder);
             world.capital_ship_classes[class].uprising_defense = 4;
             let regiment = DatId::new(0x1000_0001);
             world
@@ -5798,40 +5879,20 @@ mod tests {
                 .expect("the named Regiment class")
                 .stats
                 .uprising_defense = 6;
-            let aboard = world.troops.insert(rebellion_core::world::TroopUnit {
-                class_dat_id: regiment,
-                is_alliance: bombarder == Faction::Alliance,
-            });
-            world.systems[system].ground_units.push(aboard);
-            let mut fixture = StrikeFixture::new();
-            fixture
-                .transport
-                .embark(&mut world, &ProductRoom::default(), fleet, &[aboard])
-                .expect("the ship carries one regiment");
-            let battery = DatId::new(0x2300_0001);
-            world.buildable_classes.insert(
-                battery,
-                rebellion_core::world::BuildableClass {
-                    stats: rebellion_core::world::ClassStats {
-                        attack_strength: 500,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            );
-            let lnr = world.defense_facilities.insert(DefenseFacilityInstance {
-                class_dat_id: battery,
-                side: holder,
-            });
-            world.systems[system].defense_facilities.push(lnr);
-            order_strike(
+            let aboard = embark_regiment(
                 &mut world,
-                &[fleet],
+                system,
+                fleet,
+                regiment,
+                bombarder == Faction::Alliance,
+                &mut fixture,
+            );
+            add_battery(&mut world, system, holder, 500);
+            fixture.run_strike(
+                &mut world,
+                fleet,
                 rebellion_core::bombardment::BombardKind::General,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            );
             assert!(!world.troops.contains_key(aboard), "{bombarder:?}");
             let losses = fixture.blockade.losses(system).expect("a loss record");
             let index = usize::from(bombarder == Faction::Empire);
@@ -5845,14 +5906,11 @@ mod tests {
         for side in [Faction::Empire, Faction::Alliance] {
             let (mut world, system, _, _) = strike_world();
             let death_star = death_star_fleet(&mut world, system, side);
-            let runs = order_strike(
+            let runs = StrikeFixture::new().run_strike(
                 &mut world,
-                &[death_star],
+                death_star,
                 rebellion_core::bombardment::BombardKind::DestroySystem,
-                &mut StrikeFixture::new().states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            );
             assert_eq!(runs[0].destroyed(), Some(system));
             assert!(runs[0].operation.is_none(), "{side:?}");
         }
@@ -5871,14 +5929,12 @@ mod tests {
             bombardment_modifier: 15,
             ..Default::default()
         });
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 25_000, is_alliance)],
+        add_capital_fleet(
+            world,
+            system,
             is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(fleet);
-        fleet
+            vec![ShipInstance::new(class, 25_000, is_alliance)],
+        )
     }
 
     /// Destroy System (`0x223`): the cascade leaves every fleet in orbit and
@@ -5890,11 +5946,7 @@ mod tests {
     fn destroy_system_keeps_the_fleets_and_a_second_order_is_refused() {
         for side in [Faction::Empire, Faction::Alliance] {
             let (mut world, system, fleet, troop) = strike_world();
-            let victim = if side == Faction::Empire {
-                Faction::Alliance
-            } else {
-                Faction::Empire
-            };
+            let victim = opposing_faction(side);
             world.systems[system].control = ControlKind::Controlled(victim);
             world.troops[troop].is_alliance = victim == Faction::Alliance;
             world.fleets[fleet].is_alliance = victim == Faction::Alliance;
@@ -5902,14 +5954,7 @@ mod tests {
             let mut fixture = StrikeFixture::new();
             let kind = rebellion_core::bombardment::BombardKind::DestroySystem;
 
-            let runs = order_strike(
-                &mut world,
-                &[death_star],
-                kind,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            let runs = fixture.run_strike(&mut world, death_star, kind);
 
             assert_eq!(runs.len(), 1);
             assert_eq!(runs[0].destroyed(), Some(system));
@@ -5962,14 +6007,11 @@ mod tests {
             }
             let mut fixture = StrikeFixture::new();
 
-            order_strike(
+            fixture.run_strike(
                 &mut world,
-                &[death_star],
+                death_star,
                 rebellion_core::bombardment::BombardKind::DestroySystem,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            );
 
             for (character, refuge) in refuges {
                 let value = &world.characters[character];
@@ -5998,11 +6040,7 @@ mod tests {
             let (mut world, system, fleet, troop) = strike_world();
             world.systems[system].fleets.retain(|&each| each != fleet);
             world.fleets.remove(fleet);
-            let victim = if side == Faction::Empire {
-                Faction::Alliance
-            } else {
-                Faction::Empire
-            };
+            let victim = opposing_faction(side);
             world.systems[system].control = ControlKind::Controlled(victim);
             world.troops[troop].is_alliance = victim == Faction::Alliance;
             let death_star = death_star_fleet(&mut world, system, side);
@@ -6019,14 +6057,11 @@ mod tests {
             }
             let mut fixture = StrikeFixture::new();
 
-            let runs = order_strike(
+            let runs = fixture.run_strike(
                 &mut world,
-                &[death_star],
+                death_star,
                 rebellion_core::bombardment::BombardKind::DestroySystem,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            );
 
             let mut sent: Vec<_> = runs[0]
                 .adrift_trips
@@ -6053,24 +6088,13 @@ mod tests {
     #[test]
     fn a_character_the_destroy_system_roll_kills_joins_no_adrift_trip() {
         let (mut world, system, _, _) = strike_world();
-        let entry = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
-            parameter_id: id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
         // strike_world's GNPRTB 0x601-0x603, and a certain character roll.
-        world.gnprtb = rebellion_core::world::GnprtbParams::new(vec![
-            entry(0x601, 40),
-            entry(0x602, 1),
-            entry(0x603, 10),
-            entry(0x606, 100),
-        ]);
+        world.gnprtb = rebellion_core::world::GnprtbParams::new(gnprtb_entries([
+            (0x601, 40),
+            (0x602, 1),
+            (0x603, 10),
+            (0x606, 100),
+        ]));
         let death_star = death_star_fleet(&mut world, system, Faction::Empire);
         let refuge = add_system(&mut world, "Refuge");
         world.systems[refuge].control = ControlKind::Controlled(Faction::Alliance);
@@ -6081,14 +6105,11 @@ mod tests {
         });
         let mut fixture = StrikeFixture::new();
 
-        order_strike(
+        fixture.run_strike(
             &mut world,
-            &[death_star],
+            death_star,
             rebellion_core::bombardment::BombardKind::DestroySystem,
-            &mut fixture.states(),
-            &mut || 0.5,
-        )
-        .expect("the gate passes");
+        );
 
         assert!(world.characters[minor].is_killed);
         assert!(fixture.missions.missions().iter().all(|mission| !mission
@@ -6201,14 +6222,11 @@ mod tests {
                 None
             );
 
-            order_strike(
+            StrikeFixture::new().run_strike(
                 &mut world,
-                &[death_star],
+                death_star,
                 rebellion_core::bombardment::BombardKind::DestroySystem,
-                &mut StrikeFixture::new().states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            );
 
             let outcome = VictorySystem::check(
                 &state,
@@ -6240,14 +6258,11 @@ mod tests {
         let last = add_system(&mut world, "Last");
         let death_star = death_star_fleet(&mut world, last, Faction::Empire);
 
-        let runs = order_strike(
+        let runs = StrikeFixture::new().run_strike(
             &mut world,
-            &[death_star],
+            death_star,
             rebellion_core::bombardment::BombardKind::DestroySystem,
-            &mut StrikeFixture::new().states(),
-            &mut || 0.5,
-        )
-        .expect("the gate passes");
+        );
 
         assert_eq!(runs[0].destroyed(), Some(last));
         assert!(world.systems[last].is_destroyed);
@@ -6258,24 +6273,13 @@ mod tests {
     /// The Kill branch's report and records (`FUN_0058d990`): the cascade
     /// first, then the minor-character roll (GNPRTB `0x606`, here 100, so
     /// the adrift character dies), the finalize flags for a kill; the
-    /// strike's records are EVT_CONTROL_CHANGED for the turn to neutral,
-    /// EVT_DS_FIRED with the cascade's counts and one
-    /// EVT_CHARACTER_KILLED per rolled character.
+    /// strike's records are `EVT_CONTROL_CHANGED` for the turn to neutral,
+    /// `EVT_DS_FIRED` with the cascade's counts and one
+    /// `EVT_CHARACTER_KILLED` per rolled character.
     #[test]
     fn a_destroy_system_reports_its_run_and_records_the_cascade_and_the_dead() {
         let (mut world, system, _, _) = strike_world();
-        world.gnprtb =
-            rebellion_core::world::GnprtbParams::new(vec![rebellion_core::world::GnprtbEntry {
-                parameter_id: 0x606,
-                development: 100,
-                alliance_sp_easy: 100,
-                alliance_sp_medium: 100,
-                alliance_sp_hard: 100,
-                empire_sp_easy: 100,
-                empire_sp_medium: 100,
-                empire_sp_hard: 100,
-                multiplayer: 100,
-            }]);
+        world.gnprtb = rebellion_core::world::GnprtbParams::new(gnprtb_entries([(0x606, 100)]));
         let minor = world.characters.insert(rebellion_core::world::Character {
             name: "Lieutenant".into(),
             is_alliance: true,
@@ -6284,14 +6288,11 @@ mod tests {
         });
         let death_star = death_star_fleet(&mut world, system, Faction::Empire);
 
-        let mut runs = order_strike(
+        let mut runs = StrikeFixture::new().run_strike(
             &mut world,
-            &[death_star],
+            death_star,
             rebellion_core::bombardment::BombardKind::DestroySystem,
-            &mut StrikeFixture::new().states(),
-            &mut || 0.5,
-        )
-        .expect("the gate passes");
+        );
         let strike = runs.remove(0);
 
         let report = strike.report.clone().expect("the run's report");
@@ -6406,20 +6407,13 @@ mod tests {
             troop_capacity: 1,
             ..CapitalShipClass::default()
         });
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 100, false)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        world.systems[system].fleets.push(fleet);
-        let troop = world.troops.insert(rebellion_core::world::TroopUnit {
-            class_dat_id: DatId::new(0x1000_0001),
-            is_alliance: false,
-        });
-        world.systems[system].ground_units.push(troop);
+        let (fleet, troop) = add_fleet_with_regiment(
+            &mut world,
+            system,
+            false,
+            ShipInstance::new(class, 100, false),
+            false,
+        );
         let mut transport = TroopTransportState::default();
         transport
             .embark(&mut world, &ProductRoom::default(), fleet, &[troop])
@@ -6440,7 +6434,7 @@ mod tests {
             }],
         );
 
-        assert!(transport.cargo(fleet).is_empty());
+        assert_empty!(transport.cargo(fleet));
         assert!(!world.troops.contains_key(troop));
         let events = integrator.finish();
         assert_eq!(events.len(), 1);
@@ -6513,7 +6507,7 @@ mod tests {
             );
         }
 
-        assert!(world.fleets[enemy].fighters.is_empty());
+        assert_empty!(world.fleets[enemy].fighters);
         assert_eq!(world.systems[system].fleets, [enemy]);
         assert_eq!(world.systems[system].squadron_count(false), 2);
         assert_eq!(world.systems[system].squadron_count(true), 0);
@@ -6618,49 +6612,20 @@ mod tests {
     /// [`shift_sector`] with GNPRTB 7760, the support a side needs to hold
     /// a system without regiments (`FUN_0055a080`), at `threshold`.
     fn shift_sector_at(holder: Faction, threshold: i32) -> (GameWorld, SystemKey, SystemKey) {
-        let gn = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
-            parameter_id: id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
-        let sd = |id: u32, value: i32| rebellion_core::world::SdprtbEntry {
-            parameter_id: id,
-            dev_alliance: value,
-            dev_empire: value,
-            alliance_sp_easy_alliance: value,
-            alliance_sp_easy_empire: value,
-            alliance_sp_medium_alliance: value,
-            alliance_sp_medium_empire: value,
-            alliance_sp_hard_alliance: value,
-            alliance_sp_hard_empire: value,
-            empire_sp_easy_alliance: value,
-            empire_sp_easy_empire: value,
-            empire_sp_medium_alliance: value,
-            empire_sp_medium_empire: value,
-            empire_sp_hard_alliance: value,
-            empire_sp_hard_empire: value,
-            multiplayer_alliance: value,
-            multiplayer_empire: value,
-        };
+        let sd = rebellion_core::test_support::sdprtb_entry;
         let mut world = GameWorld {
-            gnprtb: rebellion_core::world::GnprtbParams::new(vec![
-                gn(0x1407, -10),
-                gn(0x1408, 101),
-                gn(0x1420, 10),
-                gn(7760, threshold),
-                gn(0x601, 40),
-                gn(0x602, 1),
-                gn(0x603, 10),
-                gn(7761, 60),
-                gn(7762, -10),
-                gn(0x1e03, 2),
-            ]),
+            gnprtb: rebellion_core::world::GnprtbParams::new(gnprtb_entries([
+                (0x1407, -10),
+                (0x1408, 101),
+                (0x1420, 10),
+                (7760, threshold),
+                (0x601, 40),
+                (0x602, 1),
+                (0x603, 10),
+                (7761, 60),
+                (7762, -10),
+                (0x1e03, 2),
+            ])),
             sdprtb: rebellion_core::world::SdprtbParams::new(vec![
                 sd(0x1410, 101),
                 sd(0x1411, 20),
@@ -6709,6 +6674,14 @@ mod tests {
         rebellion_core::uprising::support_points(&world.systems[system], Faction::Alliance)
     }
 
+    const fn opposing_faction(faction: Faction) -> Faction {
+        match faction {
+            Faction::Alliance => Faction::Empire,
+            Faction::Empire => Faction::Alliance,
+            Faction::Neutral => Faction::Neutral,
+        }
+    }
+
     /// A regiment class whose slot `+0x1c0` (TROOPSD `uprising_defense`)
     /// is `value`.
     fn valued_regiment_class(world: &mut GameWorld, value: u32) -> DatId {
@@ -6748,7 +6721,7 @@ mod tests {
             );
             assert_eq!(alliance_points(&world, system), expected, "{captor:?}");
             assert_eq!(alliance_points(&world, other), other_expected, "{captor:?}");
-            assert!(world.support_events.is_empty());
+            assert_empty!(world.support_events);
         }
     }
 
@@ -6774,8 +6747,8 @@ mod tests {
     fn a_space_force_summary_counts_its_sides_held_squadrons_and_each_fleets_living_ships() {
         let mut world = GameWorld::default();
         let mut sys = System::default();
-        sys.add_squadrons(Default::default(), 3, true);
-        sys.add_squadrons(Default::default(), 2, false);
+        sys.add_squadrons(rebellion_core::ids::FighterKey::default(), 3, true);
+        sys.add_squadrons(rebellion_core::ids::FighterKey::default(), 2, false);
         let system = world.systems.insert(sys);
         assert_eq!(
             summarize_space_force(&world, system, true, &[]).fighter_squadrons,
@@ -6787,7 +6760,11 @@ mod tests {
         );
         // Each fleet adds its living ships, their hull and its squadrons.
         let ship = |hull, alive| {
-            let mut ship = rebellion_core::world::ShipInstance::new(Default::default(), hull, true);
+            let mut ship = rebellion_core::world::ShipInstance::new(
+                rebellion_core::ids::CapitalShipKey::default(),
+                hull,
+                true,
+            );
             ship.alive = alive;
             ship
         };
@@ -6797,7 +6774,7 @@ mod tests {
                 world.fleets.insert(rebellion_core::world::Fleet {
                     capital_ships: vec![ship(hull, true), ship(50, false)],
                     fighters: vec![rebellion_core::world::FighterEntry {
-                        class: Default::default(),
+                        class: rebellion_core::ids::FighterKey::default(),
                         count: 2,
                         carrier: 0,
                     }],
@@ -6821,10 +6798,7 @@ mod tests {
         // No code on the control-change path captures, ejects or moves a
         // character (FUN_00515c00 -> FUN_005613f0 acts only at Coruscant;
         // ghidra/notes/ground-assault.md, section 4).
-        for (holder, captor) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, captor) in SIDE_CHANGES {
             let (mut world, system, _) = shift_sector(holder);
             let officer = world.characters.insert(rebellion_core::world::Character {
                 is_alliance: holder == Faction::Alliance,
@@ -6860,10 +6834,7 @@ mod tests {
         // regiments stand there; both words having them gives SDPRTB
         // 0x1444 (0 as shipped, here unset), not 0x1420's point per side
         // (FUN_0055de50.c:82-88).
-        for (holder, captor) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, captor) in SIDE_CHANGES {
             let (mut world, system, other) = shift_sector(holder);
             let regiment = |world: &mut GameWorld, side: Faction| {
                 world.troops.insert(rebellion_core::world::TroopUnit {
@@ -6876,15 +6847,7 @@ mod tests {
             rebellion_core::support_shift::refresh_all_troop_bits(&mut world);
             world.systems[system].ground_units.clear();
             let mut fixture = StrikeFixture::new();
-            let (fleet, _) = assault_fleet(
-                &mut world,
-                &mut fixture.transport,
-                system,
-                captor,
-                DatId::new(0x1000_0001),
-                1,
-            );
-            resolve_assault(&mut world, system, &[fleet], &mut fixture.states(), 0.5);
+            let _ = resolve_one_regiment_assault(&mut world, system, captor, &mut fixture);
             assert_eq!(
                 world.systems[system].control,
                 ControlKind::Controlled(captor)
@@ -6898,15 +6861,7 @@ mod tests {
     /// stands: the landing takes it.
     fn land_one(world: &mut GameWorld, system: SystemKey, captor: Faction) -> AssaultEffects {
         let mut fixture = StrikeFixture::new();
-        let (fleet, _) = assault_fleet(
-            world,
-            &mut fixture.transport,
-            system,
-            captor,
-            DatId::new(0x1000_0001),
-            1,
-        );
-        resolve_assault(world, system, &[fleet], &mut fixture.states(), 0.5)
+        resolve_one_regiment_assault(world, system, captor, &mut fixture)
     }
 
     /// A troop class with TROOPSD `attack`. port: test fixture values, not
@@ -6932,33 +6887,33 @@ mod tests {
         );
     }
 
+    fn assault_test(
+        holder: Faction,
+        captor: Faction,
+        count: usize,
+    ) -> (GameWorld, SystemKey, StrikeFixture, FleetKey, Vec<TroopKey>) {
+        let (mut world, system, _) = shift_sector(holder);
+        let mut fixture = StrikeFixture::new();
+        let (fleet, troops) = assault_fleet(
+            &mut world,
+            &mut fixture.transport,
+            system,
+            captor,
+            DatId::new(0x1000_0001),
+            count,
+        );
+        (world, system, fixture, fleet, troops)
+    }
+
     #[test]
     fn an_ai_assault_runs_the_players_order_and_takes_an_undefended_system() {
         // FUN_004b1070 builds 0x234 with the fleet as the team; the order
         // runs FUN_0058c120 as the player's does, and the landing turns the
         // holder (FUN_0050b610).
-        for (holder, captor) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system, _) = shift_sector(holder);
-            let mut fixture = StrikeFixture::new();
-            let (fleet, troops) = assault_fleet(
-                &mut world,
-                &mut fixture.transport,
-                system,
-                captor,
-                DatId::new(0x1000_0001),
-                2,
-            );
+        for (holder, captor) in SIDE_CHANGES {
+            let (mut world, system, mut fixture, fleet, troops) = assault_test(holder, captor, 2);
             blockaded(&mut fixture, &world);
-            let (outcome, effects) = resolve_ai_assault(
-                &AIAction::Assault { fleet, system },
-                fleet_side(&world, fleet),
-                &mut world,
-                &mut fixture.states(),
-                &mut || 0.5,
-            );
+            let (outcome, effects) = fixture.resolve_own_assault(&mut world, fleet, system);
             assert!(outcome.is_applied(), "{captor:?}");
             assert_eq!(effects.report.unwrap().landed, troops);
             assert_eq!(
@@ -6977,29 +6932,9 @@ mod tests {
         // FUN_004fddd0 (8/7) and FUN_00507d00 (0x90/5): the gate
         // FUN_004ae240 does not mirror them, so the order fails and the AI
         // restarts its module; it tries no bombardment instead.
-        for (holder, captor) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system, _) = shift_sector(holder);
-            let mut fixture = StrikeFixture::new();
-            let (fleet, troops) = assault_fleet(
-                &mut world,
-                &mut fixture.transport,
-                system,
-                captor,
-                DatId::new(0x1000_0001),
-                1,
-            );
-            let action = AIAction::Assault { fleet, system };
-            let (outcome, effects) =
-                resolve_ai_assault(
-                    &action,
-                    fleet_side(&world, fleet),
-                    &mut world,
-                    &mut fixture.states(),
-                    &mut || 0.5,
-                );
+        for (holder, captor) in SIDE_CHANGES {
+            let (mut world, system, mut fixture, fleet, troops) = assault_test(holder, captor, 1);
+            let (outcome, effects) = fixture.resolve_own_assault(&mut world, fleet, system);
             assert_eq!(
                 outcome,
                 AiOutcome::Refused(AiRefusal::Assault(
@@ -7008,19 +6943,7 @@ mod tests {
                 "{captor:?}"
             );
             assert!(effects.report.is_none());
-            world.gnprtb = rebellion_core::world::GnprtbParams::new(vec![
-                rebellion_core::world::GnprtbEntry {
-                    parameter_id: 0x1e03,
-                    development: 2,
-                    alliance_sp_easy: 2,
-                    alliance_sp_medium: 2,
-                    alliance_sp_hard: 2,
-                    empire_sp_easy: 2,
-                    empire_sp_medium: 2,
-                    empire_sp_hard: 2,
-                    multiplayer: 2,
-                },
-            ]);
+            world.gnprtb = rebellion_core::world::GnprtbParams::new(gnprtb_entries([(0x1e03, 2)]));
             for _ in 0..2 {
                 let shield = world.defense_facilities.insert(DefenseFacilityInstance {
                     class_dat_id: DatId::new(0x2400_0001),
@@ -7029,14 +6952,7 @@ mod tests {
                 world.systems[system].defense_facilities.push(shield);
             }
             blockaded(&mut fixture, &world);
-            let (outcome, _) =
-                resolve_ai_assault(
-                    &action,
-                    fleet_side(&world, fleet),
-                    &mut world,
-                    &mut fixture.states(),
-                    &mut || 0.5,
-                );
+            let (outcome, _) = fixture.resolve_own_assault(&mut world, fleet, system);
             assert_eq!(
                 outcome,
                 AiOutcome::Refused(AiRefusal::Assault(
@@ -7055,20 +6971,8 @@ mod tests {
         // the captor's own fleet clears the bit, so a second order in the
         // same step is refused 8/7 (FUN_004fddd0), and the end posts its
         // loss shift (FUN_00517ee0).
-        for (holder, captor) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
-            let (mut world, system, _) = shift_sector(holder);
-            let mut fixture = StrikeFixture::new();
-            let (fleet, _) = assault_fleet(
-                &mut world,
-                &mut fixture.transport,
-                system,
-                captor,
-                DatId::new(0x1000_0001),
-                8,
-            );
+        for (holder, captor) in SIDE_CHANGES {
+            let (mut world, system, mut fixture, fleet, _) = assault_test(holder, captor, 8);
             blockaded(&mut fixture, &world);
             assert!(fixture.blockade.is_blockaded(system));
             let first = order_assault(
@@ -7080,7 +6984,10 @@ mod tests {
             )
             .unwrap();
             assert_eq!(first[0].report.as_ref().unwrap().landed.len(), 6);
-            assert_eq!(world.systems[system].control, ControlKind::Controlled(captor));
+            assert_eq!(
+                world.systems[system].control,
+                ControlKind::Controlled(captor)
+            );
             assert!(!fixture.blockade.is_blockaded(system), "{captor:?}");
             let [(BlockadeEvent::BlockadeEnded { system: ended, .. }, payload)] =
                 first[0].blockade.as_slice()
@@ -7125,10 +7032,7 @@ mod tests {
         // listed at the system (+0x80). GNPRTB 0x203/0x204 out of reach of
         // rand[0, 10] leave every engagement standing; 0x205 = 100 makes
         // each one's collateral roll hit (FUN_0055eb80).
-        for (holder, captor) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, captor) in SIDE_CHANGES {
             let mut world = GameWorld::default();
             let mut entries = landing_limit();
             for (id, value) in [(0x202, 10), (0x203, -1), (0x204, 11), (0x205, 100)] {
@@ -7165,13 +7069,18 @@ mod tests {
                         ..Default::default()
                     },
                 );
-                let yard = world.manufacturing_facilities.insert(ManufacturingFacilityInstance {
-                    class_dat_id: DatId::new(raw),
-                    side: holder,
-                    is_shipyard: false,
-                });
+                let yard = world
+                    .manufacturing_facilities
+                    .insert(ManufacturingFacilityInstance {
+                        class_dat_id: DatId::new(raw),
+                        side: holder,
+                        is_shipyard: false,
+                    });
                 world.systems[system].manufacturing_facilities.push(yard);
-                named.push((rebellion_core::world::FacilityRef::Manufacturing(yard), name));
+                named.push((
+                    rebellion_core::world::FacilityRef::Manufacturing(yard),
+                    name,
+                ));
             }
             let mut fixture = StrikeFixture::new();
             let (fleet, _) = assault_fleet(
@@ -7199,10 +7108,7 @@ mod tests {
         // FUN_0058c8b0 clears the flags and nothing repeats the pass; a
         // second order counts the survivors afresh (FUN_0058c2d0). Attack
         // 100 kills every defender it engages (FUN_0055eb00).
-        for (holder, captor) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, captor) in SIDE_CHANGES {
             let (mut world, system, _) = shift_sector(holder);
             let defenders: Vec<TroopKey> = (0..2)
                 .map(|_| {
@@ -7229,7 +7135,7 @@ mod tests {
             .unwrap();
             let report = first[0].report.as_ref().unwrap();
             assert_eq!(report.defenders_lost.len(), 1, "{captor:?}");
-            assert!(report.landed.is_empty());
+            assert_empty!(report.landed);
             assert_eq!(
                 world.systems[system].control,
                 ControlKind::Controlled(holder)
@@ -7261,10 +7167,7 @@ mod tests {
         // event 0x300 adds the regiment's value to its side's A
         // (FUN_00508c60); with every attacker dead and the garrison
         // standing, FUN_0050b610 keeps the holder.
-        for (holder, captor) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, captor) in SIDE_CHANGES {
             let (mut world, system, _) = shift_sector(holder);
             let class = valued_regiment_class(&mut world, 9);
             let garrison = world.troops.insert(rebellion_core::world::TroopUnit {
@@ -7319,7 +7222,7 @@ mod tests {
         let effects = land_one(&mut world, system, Faction::Empire);
         assert!(!world.systems[system].is_headquarters);
         assert_eq!(alliance_points(&world, other), 40);
-        assert!(!effects.shifts.is_empty());
+        assert_not_empty!(effects.shifts);
         let (mut world, system, other) = shift_sector(Faction::Empire);
         land_one(&mut world, system, Faction::Alliance);
         assert_eq!(
@@ -7336,11 +7239,7 @@ mod tests {
         // regiment a side (S = the Empire, d = 0) the blockader's 40
         // points of losses give the holder (2*40 - 0) / 10 = 8.
         for (holder, expected) in [(Faction::Alliance, 58), (Faction::Empire, 42)] {
-            let blockader = if holder == Faction::Alliance {
-                Faction::Empire
-            } else {
-                Faction::Alliance
-            };
+            let blockader = opposing_faction(holder);
             // GNPRTB 7760 at 50: the shifted systems keep their holder
             // when the support hook reruns FUN_0050b610 (FUN_0055a080).
             let (mut world, system, other) = shift_sector_at(holder, 50);
@@ -7442,12 +7341,13 @@ mod tests {
     /// `bombarder`'s one-ship fleet (strength 5) at the first system of a
     /// [`shift_sector`] the other side holds.
     fn bombard_sector(bombarder: Faction) -> (GameWorld, SystemKey, SystemKey, FleetKey) {
-        let holder = if bombarder == Faction::Alliance {
-            Faction::Empire
-        } else {
-            Faction::Alliance
-        };
+        let holder = opposing_faction(bombarder);
         let (mut world, system, other) = shift_sector(holder);
+        let fleet = bombard_fleet(&mut world, system, bombarder);
+        (world, system, other, fleet)
+    }
+
+    fn bombard_fleet(world: &mut GameWorld, system: SystemKey, bombarder: Faction) -> FleetKey {
         let class = world.capital_ship_classes.insert(CapitalShipClass {
             family: 0x14,
             hull: 100,
@@ -7455,14 +7355,22 @@ mod tests {
             ..Default::default()
         });
         let is_alliance = bombarder == Faction::Alliance;
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
+        add_capital_fleet(
+            world,
+            system,
             is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(fleet);
-        (world, system, other, fleet)
+            vec![ShipInstance::new(class, 100, is_alliance)],
+        )
+    }
+
+    fn bombard_regiment_fixture(
+        bombarder: Faction,
+    ) -> (GameWorld, SystemKey, FleetKey, Faction, TroopKey) {
+        let (mut world, system, _, fleet) = bombard_sector(bombarder);
+        let holder = rebellion_core::bombardment::holder(&world, system);
+        let class = valued_regiment_class(&mut world, 6);
+        let troop = add_regiment(&mut world, system, class, holder == Faction::Alliance);
+        (world, system, fleet, holder, troop)
     }
 
     #[test]
@@ -7470,23 +7378,13 @@ mod tests {
         // FUN_00508c60 on event 0x300: reason 0xf at an enemy system adds
         // the regiment's slot +0x1c0 (TROOPSD uprising_defense) to B.
         for bombarder in [Faction::Empire, Faction::Alliance] {
-            let (mut world, system, _, fleet) = bombard_sector(bombarder);
-            let holder = rebellion_core::bombardment::holder(&world, system);
-            let class = valued_regiment_class(&mut world, 6);
-            let troop = world.troops.insert(rebellion_core::world::TroopUnit {
-                class_dat_id: class,
-                is_alliance: holder == Faction::Alliance,
-            });
-            world.systems[system].ground_units.push(troop);
+            let (mut world, system, fleet, holder, troop) = bombard_regiment_fixture(bombarder);
             let mut fixture = StrikeFixture::new();
-            order_strike(
+            fixture.run_strike(
                 &mut world,
-                &[fleet],
+                fleet,
                 rebellion_core::bombardment::BombardKind::Military,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            );
             assert!(!world.troops.contains_key(troop), "{bombarder:?}");
             let losses = fixture.blockade.losses(system).expect("a loss record");
             let index = usize::from(holder == Faction::Empire);
@@ -7536,14 +7434,11 @@ mod tests {
             rebellion_core::support_shift::fire(&mut world, 0);
             world.fleets[carrier].capital_ships[0].alive = false;
 
-            let runs = order_strike(
+            let runs = fixture.run_strike(
                 &mut world,
-                &[fleet],
+                fleet,
                 rebellion_core::bombardment::BombardKind::Military,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            );
 
             let report = runs[0].report.as_ref().expect("the run's report");
             assert_eq!(report.ships_destroyed, 0, "{bombarder:?}");
@@ -7559,17 +7454,14 @@ mod tests {
         let (mut world, system, other, fleet) = bombard_sector(Faction::Empire);
         world.systems[system].is_headquarters = true;
         let mut fixture = StrikeFixture::new();
-        order_strike(
+        fixture.run_strike(
             &mut world,
-            &[fleet],
+            fleet,
             rebellion_core::bombardment::BombardKind::Military,
-            &mut fixture.states(),
-            &mut || 0.5,
-        )
-        .expect("the gate passes");
+        );
         assert!(!world.systems[system].is_headquarters);
         assert_eq!(alliance_points(&world, other), 40);
-        assert!(world.support_events.is_empty());
+        assert_empty!(world.support_events);
     }
 
     #[test]
@@ -7578,26 +7470,15 @@ mod tests {
         // moves the bombarder's support at the system at once.
         for bombarder in [Faction::Empire, Faction::Alliance] {
             let (mut world, system, _, fleet) = bombard_sector(bombarder);
-            let gn = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
-                parameter_id: id,
-                development: value,
-                alliance_sp_easy: value,
-                alliance_sp_medium: value,
-                alliance_sp_hard: value,
-                empire_sp_easy: value,
-                empire_sp_medium: value,
-                empire_sp_hard: value,
-                multiplayer: value,
-            };
-            world.gnprtb = rebellion_core::world::GnprtbParams::new(vec![
-                gn(0x601, 40),
-                gn(0x602, 1),
-                gn(0x603, 10),
-                gn(0x1e19, -20),
+            world.gnprtb = rebellion_core::world::GnprtbParams::new(gnprtb_entries([
+                (0x601, 40),
+                (0x602, 1),
+                (0x603, 10),
+                (0x1e19, -20),
                 // The holder keeps the system at 70 when the setter's hook
                 // reruns FUN_0050b610 (GNPRTB 7760, FUN_0055a080).
-                gn(7760, 50),
-            ]);
+                (7760, 50),
+            ]));
             let holder = rebellion_core::bombardment::holder(&world, system);
             let yard = world.manufacturing_facilities.insert(
                 rebellion_core::world::ManufacturingFacilityInstance {
@@ -7609,14 +7490,11 @@ mod tests {
             let before =
                 rebellion_core::uprising::support_points(&world.systems[system], bombarder);
             let mut fixture = StrikeFixture::new();
-            let runs = order_strike(
+            let runs = fixture.run_strike(
                 &mut world,
-                &[fleet],
+                fleet,
                 rebellion_core::bombardment::BombardKind::Civilian,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            );
             assert_eq!(runs[0].support_change, -20, "{bombarder:?}");
             assert_eq!(
                 rebellion_core::uprising::support_points(&world.systems[system], bombarder),
@@ -7637,17 +7515,29 @@ mod tests {
 
     /// A Death Star ship added to `fleet` (family 0x18).
     fn arm_with_death_star(world: &mut GameWorld, fleet: FleetKey) {
-        let is_alliance = world.fleets[fleet].is_alliance;
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(rebellion_core::world::DEATH_STAR_CLASS_ID),
-            family: 0x18,
-            hull: 25_000,
-            bombardment_modifier: 15,
-            ..Default::default()
-        });
-        world.fleets[fleet]
-            .capital_ships
-            .push(ShipInstance::new(class, 25_000, is_alliance));
+        rebellion_core::test_support::add_death_star_ship(
+            world,
+            fleet,
+            CapitalShipClass {
+                hull: 25_000,
+                bombardment_modifier: 15,
+                ..Default::default()
+            },
+        );
+    }
+
+    fn destroy_with_fleet(
+        world: &mut GameWorld,
+        fleet: FleetKey,
+    ) -> (StrikeFixture, Vec<StrikeEffects>) {
+        arm_with_death_star(world, fleet);
+        let mut fixture = StrikeFixture::new();
+        let runs = fixture.run_strike(
+            world,
+            fleet,
+            rebellion_core::bombardment::BombardKind::DestroySystem,
+        );
+        (fixture, runs)
     }
 
     #[test]
@@ -7657,25 +7547,9 @@ mod tests {
         // slot +0x1c0 to B (FUN_00508c60). The populated clear reads the
         // owner as neutral (FUN_0050b5a0; the VM's Yaga Minor).
         for bombarder in [Faction::Empire, Faction::Alliance] {
-            let (mut world, system, _, fleet) = bombard_sector(bombarder);
-            arm_with_death_star(&mut world, fleet);
-            let holder = rebellion_core::bombardment::holder(&world, system);
-            let class = valued_regiment_class(&mut world, 6);
-            let troop = world.troops.insert(rebellion_core::world::TroopUnit {
-                class_dat_id: class,
-                is_alliance: holder == Faction::Alliance,
-            });
-            world.systems[system].ground_units.push(troop);
+            let (mut world, system, fleet, holder, _troop) = bombard_regiment_fixture(bombarder);
             let previous = world.systems[system].control;
-            let mut fixture = StrikeFixture::new();
-            let runs = order_strike(
-                &mut world,
-                &[fleet],
-                rebellion_core::bombardment::BombardKind::DestroySystem,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            let (fixture, runs) = destroy_with_fleet(&mut world, fleet);
             assert!(world.systems[system].is_destroyed, "{bombarder:?}");
             assert_eq!(
                 world.systems[system].control,
@@ -7716,16 +7590,7 @@ mod tests {
         // Minor "took 1 back", ghidra/notes/support-shifts.md).
         let (mut world, system, other, fleet) = bombard_sector(Faction::Empire);
         world.systems[system].is_headquarters = true;
-        arm_with_death_star(&mut world, fleet);
-        let mut fixture = StrikeFixture::new();
-        let runs = order_strike(
-            &mut world,
-            &[fleet],
-            rebellion_core::bombardment::BombardKind::DestroySystem,
-            &mut fixture.states(),
-            &mut || 0.5,
-        )
-        .expect("the gate passes");
+        let (_, runs) = destroy_with_fleet(&mut world, fleet);
         assert_eq!(runs.len(), 1);
         assert!(runs[0]
             .cascade
@@ -7810,30 +7675,8 @@ mod tests {
         // Empire's SDPRTB 0x1420 amount toward the Alliance, whoever fired.
         for bombarder in [Faction::Alliance, Faction::Empire] {
             let (mut world, system, other) = shift_sector(Faction::Empire);
-            let class = world.capital_ship_classes.insert(CapitalShipClass {
-                family: 0x14,
-                hull: 100,
-                bombardment_modifier: 5,
-                ..Default::default()
-            });
-            let is_alliance = bombarder == Faction::Alliance;
-            let fleet = world.fleets.insert(Fleet {
-                location: system,
-                capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
-                is_alliance,
-                ..Fleet::default()
-            });
-            world.systems[system].fleets.push(fleet);
-            arm_with_death_star(&mut world, fleet);
-            let mut fixture = StrikeFixture::new();
-            let runs = order_strike(
-                &mut world,
-                &[fleet],
-                rebellion_core::bombardment::BombardKind::DestroySystem,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            let fleet = bombard_fleet(&mut world, system, bombarder);
+            let (_, runs) = destroy_with_fleet(&mut world, fleet);
             assert!(world.systems[system].is_destroyed, "{bombarder:?}");
             assert!(
                 runs[0]
@@ -7854,10 +7697,7 @@ mod tests {
         // FUN_00508660 -> FUN_0050b610: its side's regiments alone set the
         // holder (.c:34-70); the support at 50 holds for no side (GNPRTB
         // 7760 (60), FUN_0055a080).
-        for (holder, builder) in [
-            (Faction::Alliance, Faction::Empire),
-            (Faction::Empire, Faction::Alliance),
-        ] {
+        for (holder, builder) in SIDE_CHANGES {
             let (mut world, system, _) = shift_sector_at(holder, 60);
             let class = DatId::new(0x1000_0003);
             world.buildable_classes.insert(
@@ -7895,37 +7735,12 @@ mod tests {
         // kill's phase 5: with none left the holder is 3, and the change
         // carries the troop bits of the old word only (FUN_0055de50).
         for holder in [Faction::Alliance, Faction::Empire] {
-            let bombarder = if holder == Faction::Alliance {
-                Faction::Empire
-            } else {
-                Faction::Alliance
-            };
+            let bombarder = opposing_faction(holder);
             let (mut world, system, _) = shift_sector_at(holder, 60);
             garrison(&mut world, system, holder);
             world.troop_held.insert(system);
-            let class = world.capital_ship_classes.insert(CapitalShipClass {
-                family: 0x14,
-                hull: 100,
-                ..Default::default()
-            });
-            let is_alliance = bombarder == Faction::Alliance;
-            let fleet = world.fleets.insert(Fleet {
-                location: system,
-                capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
-                is_alliance,
-                ..Fleet::default()
-            });
-            world.systems[system].fleets.push(fleet);
-            arm_with_death_star(&mut world, fleet);
-            let mut fixture = StrikeFixture::new();
-            let runs = order_strike(
-                &mut world,
-                &[fleet],
-                rebellion_core::bombardment::BombardKind::DestroySystem,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            let fleet = bombard_fleet(&mut world, system, bombarder);
+            let (_, runs) = destroy_with_fleet(&mut world, fleet);
             assert_eq!(world.systems[system].control, ControlKind::Uncontrolled);
             assert_eq!(
                 runs[0]
@@ -7941,7 +7756,10 @@ mod tests {
                 )],
                 "{holder:?}"
             );
-            assert_eq!(runs[0].previous_control, Some(ControlKind::Controlled(holder)));
+            assert_eq!(
+                runs[0].previous_control,
+                Some(ControlKind::Controlled(holder))
+            );
         }
     }
 
@@ -7957,29 +7775,8 @@ mod tests {
             world.systems[other].control = ControlKind::Uncontrolled;
             world.systems[other].popularity_alliance = 0.59;
             world.systems[other].popularity_empire = 0.41;
-            let class = world.capital_ship_classes.insert(CapitalShipClass {
-                family: 0x14,
-                hull: 100,
-                ..Default::default()
-            });
-            let is_alliance = bombarder == Faction::Alliance;
-            let fleet = world.fleets.insert(Fleet {
-                location: system,
-                capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
-                is_alliance,
-                ..Fleet::default()
-            });
-            world.systems[system].fleets.push(fleet);
-            arm_with_death_star(&mut world, fleet);
-            let mut fixture = StrikeFixture::new();
-            let runs = order_strike(
-                &mut world,
-                &[fleet],
-                rebellion_core::bombardment::BombardKind::DestroySystem,
-                &mut fixture.states(),
-                &mut || 0.5,
-            )
-            .expect("the gate passes");
+            let fleet = bombard_fleet(&mut world, system, bombarder);
+            let (_, runs) = destroy_with_fleet(&mut world, fleet);
             assert_eq!(
                 world.systems[other].control,
                 ControlKind::Controlled(Faction::Alliance),
@@ -8008,11 +7805,7 @@ mod tests {
         holder: Faction,
         step: u16,
     ) -> Vec<rebellion_core::support_shift::AppliedShift> {
-        let bombarder = if holder == Faction::Alliance {
-            Faction::Empire
-        } else {
-            Faction::Alliance
-        };
+        let bombarder = opposing_faction(holder);
         // Each system holds by support (GNPRTB 7760, 60) whatever the shifts
         // do to it (FUN_005109f0 -> FUN_0050b610): `captured` at 80 for the
         // bombarder, `target` at 80 for its holder.
@@ -8028,19 +7821,8 @@ mod tests {
         rebellion_core::uprising::apply_support_change(&mut world, captured, bombarder, 1);
         PerceptionIntegrator::new(1, 0)
             .fire_support_shifts(&mut world, &mut ManufacturingState::new());
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            family: 0x14,
-            hull: 100,
-            ..Default::default()
-        });
         let is_alliance = bombarder == Faction::Alliance;
-        let fleet = world.fleets.insert(Fleet {
-            location: target,
-            capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
-            is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[target].fleets.push(fleet);
+        let fleet = bombard_fleet(&mut world, target, bombarder);
         arm_with_death_star(&mut world, fleet);
         let mut ai = AIState::new(if is_alliance {
             AiFaction::Alliance
@@ -8155,7 +7937,10 @@ pub struct SystemSpaceCombatResult {
 /// (`FUN_0040c780`, `+0x64`) only steers the pass. Unwatched and played
 /// battles report the same.
 pub(crate) fn post_battle_outcome(world: &GameWorld, system: SystemKey) -> (CombatSide, bool) {
-    match (side_present(world, system, true), side_present(world, system, false)) {
+    match (
+        side_present(world, system, true),
+        side_present(world, system, false),
+    ) {
         (true, false) => (CombatSide::Attacker, false),
         (false, true) => (CombatSide::Defender, false),
         (true, true) => (CombatSide::Draw, true),
@@ -8239,7 +8024,7 @@ pub fn resolve_system_space_combat(
 /// (`FUN_004865b0`), a computer side's `FUN_004e6110`'s. `products` is the
 /// room squadron and regiment products hold aboard each ship
 /// (`tactical::apply::apply_results`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The battle reads the world, the transport, movement and product states and its seed."
 )]
@@ -8341,34 +8126,12 @@ pub fn resolve_system_space_combat_for(
 #[cfg(test)]
 mod combat_application_tests {
     use super::*;
-    use rebellion_core::dat::ExplorationStatus;
-    use rebellion_core::ids::SectorKey;
     use rebellion_core::world::{CapitalShipClass, Fleet, ShipInstance, System};
 
     fn add_combat_system(world: &mut GameWorld) -> SystemKey {
         world.systems.insert(System {
             dat_id: DatId::new(0x9000_0001),
-            name: "Test System".into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+            ..rebellion_core::test_support::system("Test System", ControlKind::Uncontrolled)
         })
     }
 
@@ -8482,12 +8245,9 @@ mod combat_application_tests {
             };
             assert_eq!(fleets, 1, "{is_alliance}");
             assert_eq!(
-                result.winner,
-                winner,
+                result.winner, winner,
                 "{is_alliance}: {:?} {:?} {:?}",
-                result.log,
-                result.alliance_after,
-                result.empire_after
+                result.log, result.alliance_after, result.empire_after
             );
             assert_eq!(result.winner_fleet, Some(standing), "{is_alliance}");
             assert!(!world.fleets.contains_key(enemy), "{is_alliance}");

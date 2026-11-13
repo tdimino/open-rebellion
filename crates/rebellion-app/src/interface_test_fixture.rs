@@ -47,14 +47,17 @@ use rebellion_render::object_menu::{ObjectMenuCommand, ObjectMenuState};
 use rebellion_render::quadrant_icons::Quadrant;
 use rebellion_render::system_window::reference_rail_slots;
 use rebellion_render::{
-    strategic_primary_controls, CockpitButton, CockpitFaction, CockpitState, GalaxyMapState,
-    GameMessage, GidMode, SectorWindowState, SystemWindowState,
+    strategic_primary_controls, CockpitButton, CockpitFaction, CockpitLayout, CockpitState,
+    GalaxyMapState, GameMessage, GidMode, MessageCategory, SectorWindowState, StrategicControlSpec,
+    SystemWindowState,
 };
 use rebellion_render::{DefensesPage, DefensesWindowState, MissionsTab, MissionsWindowState};
-use rebellion_windowing::{RoutingSnapshot, WindowKind};
+use rebellion_windowing::{RoutingSnapshot, WindowId, WindowKind};
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::encyclopedia_surface::{CanonicalFixtureStart, FixtureStart};
+use crate::interface_fixture_bridge;
 use crate::GameMode;
 
 const FIXTURE_ABSENT: u32 = 0;
@@ -63,9 +66,30 @@ const FIXTURE_ABSENT: u32 = 0;
 #[cfg(test)]
 const SCENARIO_COUNT: u8 = 75;
 
-extern "C" {
-    fn open_rebellion_interface_fixture_code() -> u32;
-    fn open_rebellion_interface_fixture_emit(ptr: *const u8, len: usize);
+/// Log one sequenced fixture observation only when its payload changed.
+fn log_changed_observation(state: Value, last_state: &mut Option<Value>, sequence: &mut u64) {
+    if last_state.as_ref() == Some(&state) {
+        return;
+    }
+    *sequence = sequence.saturating_add(1);
+    *last_state = Some(state.clone());
+    let mut report = state;
+    report
+        .as_object_mut()
+        .expect("fixture observation is an object")
+        .insert("sequence".into(), serde_json::json!(*sequence));
+    macroquad::logging::info!(
+        "[windowing-contract-state] {}",
+        serde_json::to_string(&report).expect("serialize fixture observation")
+    );
+}
+
+fn retain_changed<T: Clone + PartialEq>(last: &mut Option<T>, now: Option<T>) -> Option<T> {
+    if now.is_none() || *last == now {
+        return None;
+    }
+    last.clone_from(&now);
+    now
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -365,11 +389,11 @@ fn decode_request(code: u32) -> Option<FixtureRequest> {
 }
 
 pub fn requested() -> Option<FixtureRequest> {
-    decode_request(unsafe { open_rebellion_interface_fixture_code() })
+    decode_request(interface_fixture_bridge::requested_code())
 }
 
 #[allow(clippy::too_many_arguments)]
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep the deterministic browser fixture setup in its existing order."
 )]
@@ -497,10 +521,7 @@ pub fn apply(
     // (`FUN_005003d0`), so the Death Star scenario gives the first fleet one.
     let death_star = (request.scenario == Scenario::DeathStarIntel).then(|| {
         world
-            .capital_ship_classes
-            .iter()
-            .find(|(_, class)| class.is_death_star())
-            .map(|(key, class)| (key, class.hull.cast_signed()))
+            .death_star_class_and_hull()
             .expect("the Death Star scenario needs a family-0x18 capital ship class")
     });
     if let Some((fleet_key, fleet)) = world.fleets.iter_mut().next() {
@@ -689,10 +710,7 @@ fn place_moving_fleet(
     // ship (`FUN_005003d0`), so Destroy System is listed enabled.
     if request.scenario == Scenario::StrikeDeathStar {
         let (class, hull) = world
-            .capital_ship_classes
-            .iter()
-            .find(|(_, class)| class.is_death_star())
-            .map(|(key, class)| (key, class.hull.cast_signed()))
+            .death_star_class_and_hull()
             .expect("the strike scenario needs a family-0x18 capital ship class");
         world.fleets[player]
             .capital_ships
@@ -875,24 +893,21 @@ fn fixture_ship_class(
     wanted: impl Fn(&rebellion_core::world::CapitalShipClass) -> bool,
     template: rebellion_core::world::CapitalShipClass,
 ) -> rebellion_core::ids::CapitalShipKey {
-    world
-        .capital_ship_classes
-        .iter()
-        .find(|(_, class)| {
-            class.is_alliance == player_is_alliance
-                && class.hyperdrive > 0
-                && !class.is_death_star()
-                && wanted(class)
-        })
-        .map(|(key, _)| key)
-        .unwrap_or_else(|| {
-            world
-                .capital_ship_classes
-                .insert(rebellion_core::world::CapitalShipClass {
-                    is_alliance: player_is_alliance,
-                    ..template
-                })
-        })
+    if let Some((key, _)) = world.capital_ship_classes.iter().find(|(_, class)| {
+        class.is_alliance == player_is_alliance
+            && class.hyperdrive > 0
+            && !class.is_death_star()
+            && wanted(class)
+    }) {
+        key
+    } else {
+        world
+            .capital_ship_classes
+            .insert(rebellion_core::world::CapitalShipClass {
+                is_alliance: player_is_alliance,
+                ..template
+            })
+    }
 }
 
 /// A regiment class of the side: the class of one of its regiments, else
@@ -946,22 +961,23 @@ fn fixture_bombing_squadron(
     world: &mut GameWorld,
     player_is_alliance: bool,
 ) -> rebellion_core::ids::FighterKey {
-    world
+    if let Some((key, _)) = world
         .fighter_classes
         .iter()
         .find(|(_, class)| class.is_alliance == player_is_alliance && class.bombardment_defense > 0)
-        .map(|(key, _)| key)
-        .unwrap_or_else(|| {
-            world
-                .fighter_classes
-                .insert(rebellion_core::world::FighterClass {
-                    name: "Bomber Squadron".into(),
-                    is_alliance: player_is_alliance,
-                    is_empire: !player_is_alliance,
-                    bombardment_defense: 2,
-                    ..rebellion_core::world::FighterClass::default()
-                })
-        })
+    {
+        key
+    } else {
+        world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass {
+                name: "Bomber Squadron".into(),
+                is_alliance: player_is_alliance,
+                is_empire: !player_is_alliance,
+                bombardment_defense: 2,
+                ..rebellion_core::world::FighterClass::default()
+            })
+    }
 }
 
 /// The regiment-loading target: another system in the primary system's
@@ -1108,27 +1124,22 @@ fn place_loading_fleet(
         }
     }
     // One carrier of the player's side that can enter hyperspace.
-    let carrier = world
-        .capital_ship_classes
-        .iter()
-        .find(|(_, class)| {
-            class.is_alliance == player_is_alliance
-                && class.troop_capacity > 0
-                && class.hyperdrive > 0
-        })
-        .map(|(key, _)| key)
-        .unwrap_or_else(|| {
-            world
-                .capital_ship_classes
-                .insert(rebellion_core::world::CapitalShipClass {
-                    name: "Transport".into(),
-                    is_alliance: player_is_alliance,
-                    hull: 100,
-                    hyperdrive: 80,
-                    troop_capacity: 2,
-                    ..Default::default()
-                })
-        });
+    let carrier = if let Some((key, _)) = world.capital_ship_classes.iter().find(|(_, class)| {
+        class.is_alliance == player_is_alliance && class.troop_capacity > 0 && class.hyperdrive > 0
+    }) {
+        key
+    } else {
+        world
+            .capital_ship_classes
+            .insert(rebellion_core::world::CapitalShipClass {
+                name: "Transport".into(),
+                is_alliance: player_is_alliance,
+                hull: 100,
+                hyperdrive: 80,
+                troop_capacity: 2,
+                ..Default::default()
+            })
+    };
     let value = &mut world.fleets[fleet];
     value.location = primary;
     value.is_alliance = player_is_alliance;
@@ -1447,8 +1458,7 @@ pub fn emit_ready(request: FixtureRequest, world: &GameWorld, map: &GalaxyMapSta
         probe_screen_x: probe.1,
         probe_screen_y: probe.2,
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize interface fixture report");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// Where `system` is drawn in the 640 by 480 fixture canvas.
@@ -1582,16 +1592,14 @@ pub fn emit_object_menu(
     let Some(report) = object_menu_report(request, rect, menu, world, sectors, input_ready) else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the object menu report");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 pub fn emit_menu_lifecycle(request: FixtureRequest, open: bool, input_ready: bool) {
     let Some(report) = menu_lifecycle_report(request, open, input_ready) else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the menu lifecycle report");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// One Manufacturing window band as the Build Selection gate sees it.
@@ -1644,8 +1652,9 @@ fn production_report(
                 queued: queue.map_or(0, rebellion_core::manufacturing::ProductionQueue::len),
                 product: queue
                     .and_then(rebellion_core::manufacturing::ProductionQueue::active)
-                    .map(|item| rebellion_render::manufacturing_window::product(world, item.kind).0)
-                    .unwrap_or_default(),
+                    .map_or_else(String::new, |item| {
+                        rebellion_render::manufacturing_window::product(world, item.kind).0
+                    }),
             })
         })
         .collect();
@@ -1677,8 +1686,7 @@ pub fn emit_production(
     else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the production report");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -1751,8 +1759,7 @@ pub fn emit_fleet_move_setup(
     let Some(report) = fleet_move_setup(request, world, sectors, fleets) else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the fleet move setup");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// What the fleet-move gate checks after each step: the fleet's transit
@@ -1802,12 +1809,8 @@ pub struct FleetMoveWatch {
 }
 
 impl FleetMoveWatch {
-    fn changed(&mut self, now: Option<FleetMoveObservation>) -> Option<&FleetMoveObservation> {
-        if now.is_none() || now == self.last {
-            return None;
-        }
-        self.last = now;
-        self.last.as_ref()
+    fn changed(&mut self, now: Option<FleetMoveObservation>) -> Option<FleetMoveObservation> {
+        retain_changed(&mut self.last, now)
     }
 
     pub fn observe(
@@ -1819,18 +1822,23 @@ impl FleetMoveWatch {
         map: &GalaxyMapState,
         messages: &[GameMessage],
     ) {
-        let now =
-            fleet_move_observation(request, world, movement, confirmation_open, map, messages);
-        let Some(report) = self.changed(now) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(report).expect("serialize the fleet move observation");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_some(self.changed(fleet_move_observation(
+            request,
+            world,
+            movement,
+            confirmation_open,
+            map,
+            messages,
+        )));
     }
 }
 
 fn screen_center(rect: egui_macroquad::egui::Rect) -> (f32, f32) {
     (rect.center().x, rect.center().y)
+}
+
+fn fixture_rect(rect: egui_macroquad::egui::Rect) -> [f32; 4] {
+    [rect.min.x, rect.min.y, rect.width(), rect.height()]
 }
 
 /// One quadrant overlay's screen rect, as `[left, top, width, height]`.
@@ -1876,7 +1884,7 @@ fn quadrant_setup(
             quadrants.push(FixtureQuadrant {
                 system_dat_id: world.systems[system].dat_id.raw(),
                 quadrant: name,
-                rect: [rect.min.x, rect.min.y, rect.width(), rect.height()],
+                rect: fixture_rect(rect),
             });
         }
     }
@@ -1898,8 +1906,7 @@ pub fn emit_quadrant_setup(
     let Some(report) = quadrant_setup(request, world, sectors) else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the quadrant setup");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// One open Defenses window, for the quadrant gate: what it shows and where
@@ -1988,6 +1995,42 @@ fn reference_kind_name(kind: WindowKind) -> Option<&'static str> {
 
 fn rect_array(rect: egui_macroquad::egui::Rect) -> [f32; 4] {
     [rect.min.x, rect.min.y, rect.width(), rect.height()]
+}
+
+fn registered_window_ids(snapshot: &RoutingSnapshot) -> Vec<WindowId> {
+    let mut registered = snapshot
+        .paint_order()
+        .iter()
+        .chain(snapshot.presentation_history())
+        .copied()
+        .collect::<Vec<_>>();
+    registered.sort_unstable();
+    registered.dedup();
+    registered
+}
+
+fn focused_window_json(snapshot: &RoutingSnapshot) -> Option<serde_json::Value> {
+    snapshot.focused().map(|focus| {
+        serde_json::json!({
+            "window": focus.window.get(),
+            "control": focus.control.map(|control| control.0),
+        })
+    })
+}
+
+fn capture_window_id(snapshot: &RoutingSnapshot) -> Option<u64> {
+    snapshot.capture_owner().map(WindowId::get)
+}
+
+fn active_modal_id(snapshot: &RoutingSnapshot) -> Option<u64> {
+    snapshot.active_modal().map(WindowId::get)
+}
+
+fn strategic_control_center(layout: CockpitLayout, control: &StrategicControlSpec) -> [f32; 2] {
+    [
+        layout.canvas.x + (control.rect.x + control.rect.width / 2.0) * layout.scale,
+        layout.canvas.y + (control.rect.y + control.rect.height / 2.0) * layout.scale,
+    ]
 }
 
 /// Emits the open windows and the rail each time they change.
@@ -2095,11 +2138,7 @@ impl QuadrantWatch {
                 })
                 .collect(),
         };
-        if self.last.as_ref() == Some(&now) {
-            return None;
-        }
-        self.last = Some(now.clone());
-        Some(now)
+        retain_changed(&mut self.last, Some(now))
     }
 
     pub fn observe(
@@ -2108,11 +2147,7 @@ impl QuadrantWatch {
         world: &GameWorld,
         windows: &QuadrantWindows<'_>,
     ) {
-        let Some(report) = self.next(request, world, windows) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(&report).expect("serialize the quadrant observation");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_some(self.next(request, world, windows));
     }
 }
 
@@ -2190,8 +2225,7 @@ pub fn emit_fleet_load_setup(
     let Some(report) = fleet_load_setup(request, world, sectors, defenses) else {
         return;
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize the fleet load setup");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// One fleet the primary system's Fleet window lists: its living capital
@@ -2234,19 +2268,34 @@ struct FleetLoadObservation {
     last_regiment_message: Option<String>,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn fleet_load_observation(
+#[derive(Clone, Copy)]
+struct FleetLoadSources<'a> {
     request: FixtureRequest,
-    regiment: TroopKey,
-    world: &GameWorld,
-    fog: &FogState,
-    movement: &MovementState,
-    transport: &TroopTransportState,
-    fleets: &FleetWindowState,
-    snapshot: &RoutingSnapshot,
+    world: &'a GameWorld,
+    fog: &'a FogState,
+    movement: &'a MovementState,
+    transport: &'a TroopTransportState,
+    fleets: &'a FleetWindowState,
+    snapshot: &'a RoutingSnapshot,
     confirmation_open: bool,
-    messages: &[GameMessage],
+    messages: &'a [GameMessage],
+}
+
+fn fleet_load_observation(
+    regiment: TroopKey,
+    sources: FleetLoadSources<'_>,
 ) -> Option<FleetLoadObservation> {
+    let FleetLoadSources {
+        request,
+        world,
+        fog,
+        movement,
+        transport,
+        fleets,
+        snapshot,
+        confirmation_open,
+        messages,
+    } = sources;
     let layout = CockpitState::new(request.faction).layout_for(640.0, 480.0);
     let primary = world.systems.keys().next()?;
     let fleet = world.fleets.keys().next()?;
@@ -2272,35 +2321,31 @@ fn fleet_load_observation(
         enabled: report.as_ref().map_or([false; 4], |report| report.enabled),
         items: report
             .as_ref()
-            .map(|report| report.items.clone())
-            .unwrap_or_default(),
+            .map_or_else(Vec::new, |report| report.items.clone()),
         counts: report.as_ref().and_then(|report| report.counts),
         fleet_entry: report.as_ref().and_then(|_| {
             fleets
                 .entry_screen_rect(layout, primary, 0)
                 .map(screen_center)
         }),
-        fleets: report
-            .as_ref()
-            .map(|report| {
-                report
-                    .fleet_rows
-                    .iter()
-                    .filter_map(|&(listed, row)| {
-                        Some(FleetEntryObservation {
-                            ships: world
-                                .fleets
-                                .get(listed)?
-                                .capital_ships
-                                .iter()
-                                .filter(|ship| ship.alive)
-                                .count(),
-                            entry: screen_center(fleets.entry_screen_rect(layout, primary, row)?),
-                        })
+        fleets: report.as_ref().map_or_else(Vec::new, |report| {
+            report
+                .fleet_rows
+                .iter()
+                .filter_map(|&(listed, row)| {
+                    Some(FleetEntryObservation {
+                        ships: world
+                            .fleets
+                            .get(listed)?
+                            .capital_ships
+                            .iter()
+                            .filter(|ship| ship.alive)
+                            .count(),
+                        entry: screen_center(fleets.entry_screen_rect(layout, primary, row)?),
                     })
-                    .collect()
-            })
-            .unwrap_or_default(),
+                })
+                .collect()
+        }),
         troops_tab: report.as_ref().and_then(|_| {
             fleets
                 .tab_screen_rect(layout, primary, FleetWindowTab::Troops)
@@ -2345,19 +2390,10 @@ pub struct FleetLoadWatch {
 
 impl FleetLoadWatch {
     /// The observation when it differs from the last one.
-    #[allow(clippy::too_many_arguments)]
-    fn next(
-        &mut self,
-        request: FixtureRequest,
-        world: &GameWorld,
-        fog: &FogState,
-        movement: &MovementState,
-        transport: &TroopTransportState,
-        fleets: &FleetWindowState,
-        snapshot: &RoutingSnapshot,
-        confirmation_open: bool,
-        messages: &[GameMessage],
-    ) -> Option<FleetLoadObservation> {
+    fn next(&mut self, sources: FleetLoadSources<'_>) -> Option<FleetLoadObservation> {
+        let request = sources.request;
+        let world = sources.world;
+        let transport = sources.transport;
         if !request.scenario.uses_the_fleet_window() {
             return None;
         }
@@ -2372,23 +2408,8 @@ impl FleetLoadWatch {
                     transport.cargo(fleet).first().copied()
                 });
         }
-        let now = fleet_load_observation(
-            request,
-            self.regiment?,
-            world,
-            fog,
-            movement,
-            transport,
-            fleets,
-            snapshot,
-            confirmation_open,
-            messages,
-        );
-        if now.is_none() || now == self.last {
-            return None;
-        }
-        self.last.clone_from(&now);
-        now
+        let now = fleet_load_observation(self.regiment?, sources);
+        retain_changed(&mut self.last, now)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2404,7 +2425,7 @@ impl FleetLoadWatch {
         confirmation_open: bool,
         messages: &[GameMessage],
     ) {
-        let Some(report) = self.next(
+        interface_fixture_bridge::emit_some(self.next(FleetLoadSources {
             request,
             world,
             fog,
@@ -2414,11 +2435,7 @@ impl FleetLoadWatch {
             snapshot,
             confirmation_open,
             messages,
-        ) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(&report).expect("serialize the fleet load observation");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        }));
     }
 }
 
@@ -2672,11 +2689,7 @@ impl FleetFinderWatch {
         windows: &FinderWindows<'_>,
     ) -> Option<FleetFinderObservation> {
         let now = fleet_finder_observation(request, world, windows);
-        if now.is_none() || now == self.last {
-            return None;
-        }
-        self.last.clone_from(&now);
-        now
+        retain_changed(&mut self.last, now)
     }
 
     pub fn observe(
@@ -2685,11 +2698,7 @@ impl FleetFinderWatch {
         world: &GameWorld,
         windows: &FinderWindows<'_>,
     ) {
-        let Some(report) = self.next(request, world, windows) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(&report).expect("serialize the fleet finder observation");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_some(self.next(request, world, windows));
     }
 }
 
@@ -2852,11 +2861,7 @@ impl OperationReportWatch {
         request: FixtureRequest,
         state: &rebellion_render::OperationReportState,
     ) {
-        let Some(report) = self.next(request, state) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(&report).expect("serialize the operation report state");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_some(self.next(request, state));
     }
 
     fn next_live(
@@ -2941,7 +2946,7 @@ impl OperationReportWatch {
         let Some(bytes) = self.next_live(request, state, world, movement, windows) else {
             return;
         };
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_bytes(&bytes);
     }
 }
 
@@ -3021,11 +3026,7 @@ impl SpeedMenuWatch {
         rect: Option<egui_macroquad::egui::Rect>,
         input_ready: bool,
     ) {
-        let Some(report) = self.next(request, rect, input_ready) else {
-            return;
-        };
-        let bytes = serde_json::to_vec(&report).expect("serialize the speed menu report");
-        unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+        interface_fixture_bridge::emit_some(self.next(request, rect, input_ready));
     }
 }
 
@@ -3044,8 +3045,7 @@ pub fn emit_selected(request: FixtureRequest, mode: GidMode) {
         mode: mode.label(),
         command_id: mode.command_id(),
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize selected GID mode");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 #[derive(Serialize)]
@@ -3066,8 +3066,7 @@ pub fn emit_hover(request: FixtureRequest, world: &GameWorld, map: &GalaxyMapSta
         system_dat_id: system.dat_id.raw(),
         system_name: &system.name,
     };
-    let bytes = serde_json::to_vec(&report).expect("serialize hovered GID system");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(&report);
 }
 
 /// Opens the mission dialog for the mission-dialog scenarios, as a drop of the
@@ -3201,7 +3200,7 @@ mod tests {
             for (faction_byte, faction) in
                 [(1, CockpitFaction::Alliance), (2, CockpitFaction::Empire)]
             {
-                let external_code = u32::from(scenario_value) + 1 | (faction_byte << 8);
+                let external_code = (u32::from(scenario_value) + 1) | (faction_byte << 8);
                 let decoded = decode_request(external_code).expect("valid fixture request");
                 assert_eq!(decoded.scenario, scenario);
                 assert_eq!(decoded.faction, faction);
@@ -3210,11 +3209,11 @@ mod tests {
         }
 
         assert_eq!(
-            decode_request(66 | (1 << 8)).map(|request| request.scenario),
+            decode_request(0x42 | (1 << 8)).map(|request| request.scenario),
             Some(Scenario::WindowingContract)
         );
-        assert!(decode_request(66 | (3 << 8)).is_none());
-        assert!(decode_request(66 | (1 << 8) | (1 << 16)).is_none());
+        assert!(decode_request(0x42 | (3 << 8)).is_none());
+        assert!(decode_request(0x42 | (1 << 8) | (1 << 16)).is_none());
     }
 
     #[test]
@@ -3257,33 +3256,11 @@ mod tests {
     /// One system held by `side` with one recruited character of that side
     /// on it, and the shipped MISSNSD Diplomacy record `0x51000010`.
     fn diplomacy_world(side: Faction) -> GameWorld {
-        use rebellion_core::world::{
-            Character, MissionMemberRules, MissionRecord, MissionTargetRules, SkillPair, System,
-        };
+        use rebellion_core::world::{Character, SkillPair, System};
         let mut world = GameWorld::default();
         let here = world.systems.insert(System {
             dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
-            name: "System".into(),
-            sector: rebellion_core::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(side),
+            ..rebellion_core::test_support::system("System", ControlKind::Controlled(side))
         });
         world.characters.insert(Character {
             name: "Agent".into(),
@@ -3297,34 +3274,7 @@ mod tests {
             recruited: true,
             ..Default::default()
         });
-        world.mission_records = vec![MissionRecord {
-            dat_id: rebellion_core::ids::DatId::new(0x5100_0010),
-            timer_min_days: 5,
-            timer_spread_days: 10,
-            repeats: true,
-            hidden: false,
-            detection_phases: true,
-            can_resign: true,
-            return_policy: 1,
-            rules: MissionTargetRules {
-                container_loss_ends: true,
-                needs_populated_container: true,
-                target_loss_ends: true,
-                own_side_target: true,
-                other_side_target: true,
-                opponent_target: false,
-                revolting_target: false,
-                calm_target: true,
-                prisoner_target: false,
-                free_target: false,
-            },
-            members: MissionMemberRules {
-                alliance: true,
-                empire: true,
-                special_force_mask: 0,
-                character_mask: 0x1_0000,
-            },
-        }];
+        world.mission_records = vec![rebellion_core::test_support::diplomacy_mission_record()];
         world
     }
 
@@ -3336,19 +3286,96 @@ mod tests {
         }
     }
 
+    fn fleet_load_sources<'a>(
+        request: FixtureRequest,
+        applied: &'a Applied,
+        fog: &'a FogState,
+        fleets: &'a FleetWindowState,
+        snapshot: &'a RoutingSnapshot,
+    ) -> FleetLoadSources<'a> {
+        FleetLoadSources {
+            request,
+            world: &applied.world,
+            fog,
+            movement: &applied.movement,
+            transport: &applied.transport,
+            fleets,
+            snapshot,
+            confirmation_open: false,
+            messages: &[],
+        }
+    }
+
+    fn opened_mission_dialog(
+        scenario: Scenario,
+        faction: CockpitFaction,
+        world: &GameWorld,
+    ) -> MissionDialogState {
+        let mut dialog = MissionDialogState::default();
+        assert!(open_mission_dialog(
+            request(scenario, faction),
+            world,
+            &UprisingState::default(),
+            &mut dialog,
+        ));
+        dialog
+    }
+
+    fn fixture_sector(
+        world: &mut GameWorld,
+    ) -> (
+        rebellion_core::ids::SectorKey,
+        rebellion_core::ids::SystemKey,
+    ) {
+        let sector = world.sectors.insert(rebellion_core::world::Sector {
+            dat_id: rebellion_core::ids::DatId::new(0x8000_0001),
+            name: "Sector".into(),
+            group: rebellion_core::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: Vec::new(),
+        });
+        let here = world.systems.keys().next().unwrap();
+        world.systems[here].sector = sector;
+        (sector, here)
+    }
+
+    fn apply_targeting_fixture(
+        request: FixtureRequest,
+        world: &mut GameWorld,
+        cockpit: &mut CockpitState,
+        missions: &mut MissionState,
+        sectors: &mut SectorWindowState,
+        defenses: &mut DefensesWindowState,
+    ) {
+        apply(
+            request,
+            world,
+            &mut GameMode::MainMenu,
+            &mut MissionFaction::Alliance,
+            cockpit,
+            &mut GalaxyMapState::default(),
+            &mut MovementState::default(),
+            &mut ManufacturingState::default(),
+            &mut EconomyState::default(),
+            missions,
+            &mut BlockadeState::default(),
+            sectors,
+            &mut SystemWindowState::default(),
+            &mut FleetWindowState::default(),
+            defenses,
+            &mut TroopTransportState::default(),
+        );
+    }
+
     #[test]
     fn the_agents_scenario_opens_the_dialog_on_its_second_page() {
         let world = diplomacy_world(Faction::Alliance);
-        let mut dialog = MissionDialogState::default();
-
-        let opened = open_mission_dialog(
-            request(Scenario::MissionDialogAgents, CockpitFaction::Alliance),
+        let dialog = opened_mission_dialog(
+            Scenario::MissionDialogAgents,
+            CockpitFaction::Alliance,
             &world,
-            &UprisingState::default(),
-            &mut dialog,
         );
-
-        assert!(opened);
         let open = dialog.dialog().expect("the dialog is open");
         assert_eq!(open.page(), MissionDialogPage::Agents);
         assert_eq!(open.kind(), MissionKind::Diplomacy);
@@ -3358,16 +3385,11 @@ mod tests {
     #[test]
     fn the_mission_scenario_opens_the_empire_dialog_on_its_first_page() {
         let world = diplomacy_world(Faction::Empire);
-        let mut dialog = MissionDialogState::default();
-
-        let opened = open_mission_dialog(
-            request(Scenario::MissionDialogMission, CockpitFaction::Empire),
+        let mut dialog = opened_mission_dialog(
+            Scenario::MissionDialogMission,
+            CockpitFaction::Empire,
             &world,
-            &UprisingState::default(),
-            &mut dialog,
         );
-
-        assert!(opened);
         let open = dialog.dialog().expect("the dialog is open");
         assert_eq!(open.page(), MissionDialogPage::Mission);
         let Some(rebellion_render::mission_dialog::MissionDialogAction::Begin { faction, .. }) =
@@ -3407,16 +3429,7 @@ mod tests {
     #[test]
     fn the_targeting_scenario_frees_the_agent_and_shows_the_target_planet_clear_of_its_window() {
         let mut world = diplomacy_world(Faction::Alliance);
-        let sector = world.sectors.insert(rebellion_core::world::Sector {
-            dat_id: rebellion_core::ids::DatId::new(0x8000_0001),
-            name: "Sector".into(),
-            group: rebellion_core::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: Vec::new(),
-        });
-        let here = world.systems.keys().next().unwrap();
-        world.systems[here].sector = sector;
+        let (sector, here) = fixture_sector(&mut world);
         let mut second = world.systems[here].clone();
         second.dat_id = rebellion_core::ids::DatId::new(0x9000_0002);
         second.name = "Target".into();
@@ -3433,23 +3446,13 @@ mod tests {
         let mut sectors = SectorWindowState::default();
         let mut defenses = DefensesWindowState::default();
 
-        apply(
+        apply_targeting_fixture(
             request,
             &mut world,
-            &mut GameMode::MainMenu,
-            &mut MissionFaction::Alliance,
             &mut cockpit,
-            &mut GalaxyMapState::default(),
-            &mut MovementState::default(),
-            &mut ManufacturingState::default(),
-            &mut EconomyState::default(),
             &mut missions,
-            &mut BlockadeState::default(),
             &mut sectors,
-            &mut SystemWindowState::default(),
-            &mut FleetWindowState::default(),
             &mut defenses,
-            &mut TroopTransportState::default(),
         );
 
         // MissionState::mission_order_enabled enables the menu's Mission.
@@ -3562,16 +3565,7 @@ mod tests {
     fn fleet_world() -> GameWorld {
         use rebellion_core::world::{CapitalShipClass, Fleet};
         let mut world = diplomacy_world(Faction::Alliance);
-        let sector = world.sectors.insert(rebellion_core::world::Sector {
-            dat_id: rebellion_core::ids::DatId::new(0x8000_0001),
-            name: "Sector".into(),
-            group: rebellion_core::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: Vec::new(),
-        });
-        let here = world.systems.keys().next().unwrap();
-        world.systems[here].sector = sector;
+        let (sector, here) = fixture_sector(&mut world);
         let mut others = Vec::new();
         for (raw, x) in [(0x9000_0002, 26), (0x9000_0003, 300)] {
             let mut system = world.systems[here].clone();
@@ -3611,6 +3605,73 @@ mod tests {
         missions: MissionState,
     }
 
+    impl Applied {
+        fn new(world: GameWorld) -> Self {
+            Self {
+                world,
+                movement: MovementState::default(),
+                blockade: BlockadeState::default(),
+                map: GalaxyMapState::default(),
+                sectors: SectorWindowState::default(),
+                systems: SystemWindowState::default(),
+                fleets: FleetWindowState::default(),
+                defenses: DefensesWindowState::default(),
+                transport: TroopTransportState::default(),
+                missions: MissionState::default(),
+            }
+        }
+
+        fn run(&mut self, request: FixtureRequest) {
+            apply(
+                request,
+                &mut self.world,
+                &mut GameMode::MainMenu,
+                &mut MissionFaction::Alliance,
+                &mut CockpitState::new(request.faction),
+                &mut self.map,
+                &mut self.movement,
+                &mut ManufacturingState::default(),
+                &mut EconomyState::default(),
+                &mut self.missions,
+                &mut self.blockade,
+                &mut self.sectors,
+                &mut self.systems,
+                &mut self.fleets,
+                &mut self.defenses,
+                &mut self.transport,
+            );
+        }
+    }
+
+    fn loading_keys(
+        world: &GameWorld,
+        faction: CockpitFaction,
+    ) -> (
+        rebellion_core::ids::SystemKey,
+        rebellion_core::ids::SystemKey,
+        rebellion_core::ids::FleetKey,
+        bool,
+    ) {
+        let mut systems = world.systems.keys();
+        let here = systems.next().unwrap();
+        let target = systems.next().unwrap();
+        let fleet = world.fleets.keys().next().unwrap();
+        (here, target, fleet, faction == CockpitFaction::Alliance)
+    }
+
+    fn loading_setup(
+        request: FixtureRequest,
+        applied: &Applied,
+    ) -> (
+        rebellion_render::cockpit::CockpitLayout,
+        FixtureFleetLoadSetup,
+    ) {
+        let layout = CockpitState::new(request.faction).layout_for(640.0, 480.0);
+        let setup =
+            fleet_load_setup(request, &applied.world, &applied.sectors, &applied.defenses).unwrap();
+        (layout, setup)
+    }
+
     fn apply_to_fleet_world(request: FixtureRequest) -> Applied {
         apply_to_fleet_world_with(request, |_| {})
     }
@@ -3621,36 +3682,8 @@ mod tests {
     ) -> Applied {
         let mut world = fleet_world();
         prepare(&mut world);
-        let mut applied = Applied {
-            world,
-            movement: MovementState::default(),
-            blockade: BlockadeState::default(),
-            map: GalaxyMapState::default(),
-            sectors: SectorWindowState::default(),
-            systems: SystemWindowState::default(),
-            fleets: FleetWindowState::default(),
-            defenses: DefensesWindowState::default(),
-            transport: TroopTransportState::default(),
-            missions: MissionState::default(),
-        };
-        apply(
-            request,
-            &mut applied.world,
-            &mut GameMode::MainMenu,
-            &mut MissionFaction::Alliance,
-            &mut CockpitState::new(request.faction),
-            &mut applied.map,
-            &mut applied.movement,
-            &mut ManufacturingState::default(),
-            &mut EconomyState::default(),
-            &mut applied.missions,
-            &mut applied.blockade,
-            &mut applied.sectors,
-            &mut applied.systems,
-            &mut applied.fleets,
-            &mut applied.defenses,
-            &mut applied.transport,
-        );
+        let mut applied = Applied::new(world);
+        applied.run(request);
         applied
     }
 
@@ -3675,36 +3708,8 @@ mod tests {
         world.sectors[home].systems.retain(|&key| key != elsewhere);
         world.systems[elsewhere].sector = far;
         prepare(&mut world);
-        let mut applied = Applied {
-            world,
-            movement: MovementState::default(),
-            blockade: BlockadeState::default(),
-            map: GalaxyMapState::default(),
-            sectors: SectorWindowState::default(),
-            systems: SystemWindowState::default(),
-            fleets: FleetWindowState::default(),
-            defenses: DefensesWindowState::default(),
-            transport: TroopTransportState::default(),
-            missions: MissionState::default(),
-        };
-        apply(
-            request,
-            &mut applied.world,
-            &mut GameMode::MainMenu,
-            &mut MissionFaction::Alliance,
-            &mut CockpitState::new(request.faction),
-            &mut applied.map,
-            &mut applied.movement,
-            &mut ManufacturingState::default(),
-            &mut EconomyState::default(),
-            &mut applied.missions,
-            &mut applied.blockade,
-            &mut applied.sectors,
-            &mut applied.systems,
-            &mut applied.fleets,
-            &mut applied.defenses,
-            &mut applied.transport,
-        );
+        let mut applied = Applied::new(world);
+        applied.run(request);
         applied
     }
 
@@ -3746,10 +3751,7 @@ mod tests {
             let request = request(Scenario::FleetLoad, faction);
             let mut applied = apply_to_loading_world(request);
             let world = &applied.world;
-            let mut keys = world.systems.keys();
-            let (here, target) = (keys.next().unwrap(), keys.next().unwrap());
-            let fleet = world.fleets.keys().next().unwrap();
-            let is_alliance = faction == CockpitFaction::Alliance;
+            let (here, target, fleet, is_alliance) = loading_keys(world, faction);
             let player = if is_alliance {
                 Faction::Alliance
             } else {
@@ -3780,9 +3782,7 @@ mod tests {
                 .transport
                 .regiment_move_enabled(world, regiment, is_alliance));
 
-            let layout = CockpitState::new(faction).layout_for(640.0, 480.0);
-            let setup =
-                fleet_load_setup(request, world, &applied.sectors, &applied.defenses).unwrap();
+            let (layout, setup) = loading_setup(request, &applied);
             assert_eq!(setup.target_dat_id, world.systems[target].dat_id.raw());
             assert_eq!(setup.target_name, world.systems[target].name);
             assert_eq!(setup.capacity, Some(class.troop_capacity));
@@ -3900,17 +3900,13 @@ mod tests {
             layout,
         );
         let observe = |confirmation_open| {
+            let snapshot = WindowManager::new().begin_frame();
             fleet_load_observation(
-                request,
                 regiment,
-                &applied.world,
-                &fog,
-                &applied.movement,
-                &applied.transport,
-                &fleets,
-                &WindowManager::new().begin_frame(),
-                confirmation_open,
-                &[],
+                FleetLoadSources {
+                    confirmation_open,
+                    ..fleet_load_sources(request, &applied, &fog, &fleets, &snapshot)
+                },
             )
             .unwrap()
         };
@@ -3965,17 +3961,13 @@ mod tests {
         };
 
         let visible = watch
-            .next(
+            .next(fleet_load_sources(
                 request,
-                &applied.world,
+                &applied,
                 &fog,
-                &applied.movement,
-                &applied.transport,
                 &fleets,
                 &manager.begin_frame(),
-                false,
-                &[],
-            )
+            ))
             .unwrap();
         assert!(visible.window_open);
         assert_eq!(visible.origin, Some((300, 80)));
@@ -3983,17 +3975,13 @@ mod tests {
 
         manager.apply(WindowCommand::Minimize(id)).unwrap();
         let hidden = watch
-            .next(
+            .next(fleet_load_sources(
                 request,
-                &applied.world,
+                &applied,
                 &fog,
-                &applied.movement,
-                &applied.transport,
                 &fleets,
                 &manager.begin_frame(),
-                false,
-                &[],
-            )
+            ))
             .unwrap();
         assert!(!hidden.window_open);
         assert_eq!(hidden.origin, None);
@@ -4008,17 +3996,13 @@ mod tests {
 
         manager.apply(WindowCommand::Restore(id)).unwrap();
         let restored = watch
-            .next(
+            .next(fleet_load_sources(
                 request,
-                &applied.world,
+                &applied,
                 &fog,
-                &applied.movement,
-                &applied.transport,
                 &fleets,
                 &manager.begin_frame(),
-                false,
-                &[],
-            )
+            ))
             .unwrap();
         assert!(restored.window_open);
         assert_eq!(restored.origin, visible.origin);
@@ -4083,10 +4067,7 @@ mod tests {
             let request = request(Scenario::RegimentUnloadRefused, faction);
             let applied = apply_to_loading_world(request);
             let world = &applied.world;
-            let mut keys = world.systems.keys();
-            let (here, target) = (keys.next().unwrap(), keys.next().unwrap());
-            let fleet = world.fleets.keys().next().unwrap();
-            let is_alliance = faction == CockpitFaction::Alliance;
+            let (here, target, fleet, is_alliance) = loading_keys(world, faction);
             let enemy = if is_alliance {
                 Faction::Empire
             } else {
@@ -4107,9 +4088,7 @@ mod tests {
             assert_eq!(applied.defenses.window_count(), 1);
             assert!(applied.defenses.is_open(target));
 
-            let layout = CockpitState::new(faction).layout_for(640.0, 480.0);
-            let setup =
-                fleet_load_setup(request, world, &applied.sectors, &applied.defenses).unwrap();
+            let (layout, setup) = loading_setup(request, &applied);
             assert_eq!(setup.troop_item, None);
             assert!(applied
                 .defenses
@@ -4117,17 +4096,17 @@ mod tests {
 
             let mut watch = FleetLoadWatch::default();
             let start = watch
-                .next(
+                .next(FleetLoadSources {
                     request,
                     world,
-                    &FogState::new(enemy),
-                    &applied.movement,
-                    &applied.transport,
-                    &FleetWindowState::default(),
-                    &WindowManager::new().begin_frame(),
-                    false,
-                    &[],
-                )
+                    fog: &FogState::new(enemy),
+                    movement: &applied.movement,
+                    transport: &applied.transport,
+                    fleets: &FleetWindowState::default(),
+                    snapshot: &WindowManager::new().begin_frame(),
+                    confirmation_open: false,
+                    messages: &[],
+                })
                 .unwrap();
             assert!(start.aboard, "{faction:?}");
             assert_eq!((start.cargo, start.troop_system_dat_id), (1, None));
@@ -4238,17 +4217,10 @@ mod tests {
         let fog = FogState::new(Faction::Alliance);
         let fleets = FleetWindowState::default();
         let observe = |applied: &Applied| {
+            let snapshot = WindowManager::new().begin_frame();
             fleet_load_observation(
-                request,
                 regiment,
-                &applied.world,
-                &fog,
-                &applied.movement,
-                &applied.transport,
-                &fleets,
-                &WindowManager::new().begin_frame(),
-                false,
-                &[],
+                fleet_load_sources(request, applied, &fog, &fleets, &snapshot),
             )
             .unwrap()
         };
@@ -4284,24 +4256,19 @@ mod tests {
         assert!(travelling.regiment_travelling);
         assert_eq!(travelling.troop_system_dat_id, None);
 
-        use rebellion_render::MessageCategory;
         let line = |text: &str| GameMessage::new(0, text.to_string(), MessageCategory::Event);
         let messages = [
             line("Regiment move rejected: the destination is blockaded"),
             line("Regiment arrived at Cathar"),
             line("Luke Skywalker has reached Jedi Knight tier"),
         ];
+        let snapshot = WindowManager::new().begin_frame();
         let later = fleet_load_observation(
-            request,
             regiment,
-            &applied.world,
-            &fog,
-            &applied.movement,
-            &applied.transport,
-            &fleets,
-            &WindowManager::new().begin_frame(),
-            false,
-            &messages,
+            FleetLoadSources {
+                messages: &messages,
+                ..fleet_load_sources(request, &applied, &fog, &fleets, &snapshot)
+            },
         )
         .unwrap();
         assert_eq!(
@@ -4324,17 +4291,17 @@ mod tests {
         let mut watch = FleetLoadWatch::default();
         let layout = CockpitState::new(CockpitFaction::Alliance).layout_for(640.0, 480.0);
         let mut next = |applied: &Applied, fleets: &FleetWindowState| {
-            watch.next(
+            watch.next(FleetLoadSources {
                 request,
-                &applied.world,
-                &fog,
-                &applied.movement,
-                &applied.transport,
+                world: &applied.world,
+                fog: &fog,
+                movement: &applied.movement,
+                transport: &applied.transport,
                 fleets,
-                &WindowManager::new().begin_frame(),
-                false,
-                &[],
-            )
+                snapshot: &WindowManager::new().begin_frame(),
+                confirmation_open: false,
+                messages: &[],
+            })
         };
 
         let start = next(&applied, &fleets).unwrap();
@@ -4382,18 +4349,11 @@ mod tests {
             scenario: Scenario::FleetMove,
             ..request
         };
+        let snapshot = WindowManager::new().begin_frame();
         assert_eq!(
-            FleetLoadWatch::default().next(
-                moving,
-                &applied.world,
-                &fog,
-                &applied.movement,
-                &applied.transport,
-                &fleets,
-                &WindowManager::new().begin_frame(),
-                false,
-                &[],
-            ),
+            FleetLoadWatch::default().next(fleet_load_sources(
+                moving, &applied, &fog, &fleets, &snapshot,
+            )),
             None
         );
     }
@@ -4850,7 +4810,7 @@ mod tests {
                 expected.push(FixtureQuadrant {
                     system_dat_id: world.systems[system].dat_id.raw(),
                     quadrant: name,
-                    rect: [rect.min.x, rect.min.y, rect.width(), rect.height()],
+                    rect: fixture_rect(rect),
                 });
             }
         }
@@ -5071,37 +5031,45 @@ mod tests {
         );
     }
 
+    fn with_strike_states<T>(
+        applied: &mut Applied,
+        run: impl FnOnce(
+            &mut GameWorld,
+            rebellion_core::ids::FleetKey,
+            &mut rebellion_data::integrator::StrikeStates<'_>,
+        ) -> Vec<T>,
+    ) -> T {
+        let fleet = applied.world.fleets.keys().next().unwrap();
+        let mut manufacturing = ManufacturingState::default();
+        let mut deliveries = rebellion_core::delivery::DeliveryState::new();
+        let uprisings = UprisingState::new();
+        let mut states = rebellion_data::integrator::StrikeStates {
+            movement: &mut applied.movement,
+            manufacturing: &mut manufacturing,
+            transport: &mut applied.transport,
+            deliveries: &mut deliveries,
+            missions: &mut applied.missions,
+            uprisings: &uprisings,
+            blockade: &mut applied.blockade,
+            tick: 2,
+            step: 0,
+        };
+        run(&mut applied.world, fleet, &mut states)
+            .into_iter()
+            .next()
+            .expect("one run")
+    }
+
     /// The player's fleet's strike in `applied`, through the integrator the
     /// menu row reaches (`strike_orders::issue`).
     fn strike(
         applied: &mut Applied,
         kind: rebellion_core::bombardment::BombardKind,
     ) -> rebellion_data::integrator::StrikeEffects {
-        let fleet = applied.world.fleets.keys().next().unwrap();
-        let mut manufacturing = ManufacturingState::default();
-        let mut deliveries = rebellion_core::delivery::DeliveryState::new();
-        let uprisings = UprisingState::new();
-        rebellion_data::integrator::order_strike(
-            &mut applied.world,
-            &[fleet],
-            kind,
-            &mut rebellion_data::integrator::StrikeStates {
-                movement: &mut applied.movement,
-                manufacturing: &mut manufacturing,
-                transport: &mut applied.transport,
-                deliveries: &mut deliveries,
-                missions: &mut applied.missions,
-                uprisings: &uprisings,
-                blockade: &mut applied.blockade,
-                tick: 2,
-                step: 0,
-            },
-            &mut || 0.5,
-        )
-        .expect("the fixture's strike runs")
-        .into_iter()
-        .next()
-        .expect("one run")
+        with_strike_states(applied, |world, fleet, states| {
+            rebellion_data::integrator::order_strike(world, &[fleet], kind, states, &mut || 0.5)
+                .expect("the fixture's strike runs")
+        })
     }
 
     /// The player's fleet's assault in `applied` (`assault_orders::issue`).
@@ -5109,31 +5077,16 @@ mod tests {
         applied: &mut Applied,
         faction: CockpitFaction,
     ) -> rebellion_data::integrator::AssaultEffects {
-        let fleet = applied.world.fleets.keys().next().unwrap();
-        let mut manufacturing = ManufacturingState::default();
-        let mut deliveries = rebellion_core::delivery::DeliveryState::new();
-        let uprisings = UprisingState::new();
-        rebellion_data::integrator::order_assault(
-            &mut applied.world,
-            &[fleet],
-            Faction::of_alliance(faction == CockpitFaction::Alliance),
-            &mut rebellion_data::integrator::StrikeStates {
-                movement: &mut applied.movement,
-                manufacturing: &mut manufacturing,
-                transport: &mut applied.transport,
-                deliveries: &mut deliveries,
-                missions: &mut applied.missions,
-                uprisings: &uprisings,
-                blockade: &mut applied.blockade,
-                tick: 2,
-                step: 0,
-            },
-            &mut || 0.5,
-        )
-        .expect("the fixture's assault runs")
-        .into_iter()
-        .next()
-        .expect("one run")
+        with_strike_states(applied, |world, fleet, states| {
+            rebellion_data::integrator::order_assault(
+                world,
+                &[fleet],
+                Faction::of_alliance(faction == CockpitFaction::Alliance),
+                states,
+                &mut || 0.5,
+            )
+            .expect("the fixture's assault runs")
+        })
     }
 
     #[test]
@@ -5430,17 +5383,6 @@ mod tests {
     /// 6, 8), the shield limit `0x1e03` (2) and the landing's garrison
     /// figures 7761 (60) and 7762 (-10).
     fn assault_gnprtb(world: &mut GameWorld) {
-        let entry = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
-            parameter_id: id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
         world.gnprtb = rebellion_core::world::GnprtbParams::new(
             [
                 (0x200, 5),
@@ -5454,7 +5396,7 @@ mod tests {
                 (7762, -10),
             ]
             .into_iter()
-            .map(|(id, value)| entry(id, value))
+            .map(|(id, value)| rebellion_core::test_support::gnprtb_entry(id, value))
             .collect(),
         );
     }
@@ -5554,7 +5496,7 @@ mod tests {
                     .fleet_destroyed
                     .iter()
                     .filter(|unit| matches!(unit.object, Some(ReportObject::Destroyed { .. })))
-                    .map(|unit| unit.object.clone())
+                    .map(|unit| unit.object)
                     .collect::<Vec<_>>(),
                 [Some(ReportObject::Destroyed { damaged: true })],
                 "{faction:?}"
@@ -5758,10 +5700,10 @@ mod tests {
             ..first.clone()
         };
 
-        assert_eq!(watch.changed(Some(first.clone())), Some(&first));
+        assert_eq!(watch.changed(Some(first.clone())), Some(first.clone()));
         assert_eq!(watch.changed(Some(first.clone())), None);
         assert_eq!(watch.changed(None), None);
-        assert_eq!(watch.changed(Some(second.clone())), Some(&second));
+        assert_eq!(watch.changed(Some(second.clone())), Some(second.clone()));
     }
 
     #[test]

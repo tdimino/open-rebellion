@@ -74,6 +74,23 @@ const EMPIRE_CAPITAL_SHIP_MINIS: [u32; 15] = [
 /// Displayed size for GOKRES mini-icons in panel lists (original is 61x25).
 const MINI_ICON_HEIGHT: f32 = 20.0;
 
+fn draw_mini_icon(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    bmp_cache: &mut BmpCache,
+    resource_id: Option<u32>,
+) {
+    let Some(tex) = resource_id.and_then(|id| bmp_cache.get(ctx, DllSource::Gokres, id)) else {
+        return;
+    };
+    let size = tex.size();
+    let width = MINI_ICON_HEIGHT * size[0] as f32 / size[1] as f32;
+    ui.add(egui::Image::new(egui::load::SizedTexture::new(
+        tex.id(),
+        Vec2::new(width, MINI_ICON_HEIGHT),
+    )));
+}
+
 // ---------------------------------------------------------------------------
 // FleetsState
 // ---------------------------------------------------------------------------
@@ -93,11 +110,11 @@ pub struct FleetsState {
 ///
 /// `player_faction` filters which fleets are shown. Returns the map
 /// navigation action.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -210,21 +227,12 @@ pub fn draw_fleets(
                                         });
                                     ui.horizontal(|ui| {
                                         // GOKRES.DLL 61x25 mini-icon for this ship class.
-                                        if let Some(mini_id) = capital_ship_mini_id(dat_id) {
-                                            if let Some(tex) =
-                                                bmp_cache.get(ctx, DllSource::Gokres, mini_id)
-                                            {
-                                                let size = tex.size();
-                                                let h = MINI_ICON_HEIGHT;
-                                                let w = h * size[0] as f32 / size[1] as f32;
-                                                ui.add(egui::Image::new(
-                                                    egui::load::SizedTexture::new(
-                                                        tex.id(),
-                                                        Vec2::new(w, h),
-                                                    ),
-                                                ));
-                                            }
-                                        }
+                                        draw_mini_icon(
+                                            ui,
+                                            ctx,
+                                            bmp_cache,
+                                            capital_ship_mini_id(dat_id),
+                                        );
                                         ui.label(
                                             RichText::new(format!("{class_name} ×{count}"))
                                                 .color(theme::TEXT_PRIMARY)
@@ -252,21 +260,7 @@ pub fn draw_fleets(
                                         });
                                     ui.horizontal(|ui| {
                                         // GOKRES.DLL 61x25 mini-icon for this fighter class.
-                                        if let Some(mini_id) = fighter_mini_id(dat_id) {
-                                            if let Some(tex) =
-                                                bmp_cache.get(ctx, DllSource::Gokres, mini_id)
-                                            {
-                                                let size = tex.size();
-                                                let h = MINI_ICON_HEIGHT;
-                                                let w = h * size[0] as f32 / size[1] as f32;
-                                                ui.add(egui::Image::new(
-                                                    egui::load::SizedTexture::new(
-                                                        tex.id(),
-                                                        Vec2::new(w, h),
-                                                    ),
-                                                ));
-                                            }
-                                        }
+                                        draw_mini_icon(ui, ctx, bmp_cache, fighter_mini_id(dat_id));
                                         ui.label(
                                             RichText::new(format!(
                                                 "{} ×{}",
@@ -367,28 +361,27 @@ fn fleet_color(faction: MissionFaction) -> egui::Color32 {
     }
 }
 
+fn mini_id_from_faction_blocks(index: u32, blocks: [(u32, &[u32]); 2]) -> Option<u32> {
+    blocks
+        .into_iter()
+        .find_map(|(start, resources)| resources.get(index.checked_sub(start)? as usize).copied())
+}
+
 pub(crate) fn capital_ship_mini_id(dat_id: DatId) -> Option<u32> {
-    match dat_id.index() {
-        64..=78 => ALLIANCE_CAPITAL_SHIP_MINIS
-            .get((dat_id.index() - 64) as usize)
-            .copied(),
-        128..=142 => EMPIRE_CAPITAL_SHIP_MINIS
-            .get((dat_id.index() - 128) as usize)
-            .copied(),
-        _ => None,
-    }
+    mini_id_from_faction_blocks(
+        dat_id.index(),
+        [
+            (64, &ALLIANCE_CAPITAL_SHIP_MINIS),
+            (128, &EMPIRE_CAPITAL_SHIP_MINIS),
+        ],
+    )
 }
 
 pub(crate) fn fighter_mini_id(dat_id: DatId) -> Option<u32> {
-    match dat_id.index() {
-        1..=4 => ALLIANCE_FIGHTER_MINIS
-            .get((dat_id.index() - 1) as usize)
-            .copied(),
-        5..=8 => EMPIRE_FIGHTER_MINIS
-            .get((dat_id.index() - 5) as usize)
-            .copied(),
-        _ => None,
-    }
+    mini_id_from_faction_blocks(
+        dat_id.index(),
+        [(1, &ALLIANCE_FIGHTER_MINIS), (5, &EMPIRE_FIGHTER_MINIS)],
+    )
 }
 
 #[cfg(test)]
@@ -396,7 +389,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
@@ -417,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]

@@ -130,7 +130,6 @@ pub fn encyclopedia_keyboard_action(
 ) -> Option<EncyclopediaSurfaceAction> {
     match (mode, key) {
         (_, EncyclopediaSurfaceKey::Escape) => Some(EncyclopediaSurfaceAction::Close),
-        (_, EncyclopediaSurfaceKey::Tab) => None,
         (EncyclopediaSurfaceMode::Index, EncyclopediaSurfaceKey::Enter) => {
             selected_object_id.map(EncyclopediaSurfaceAction::OpenTopic)
         }
@@ -159,16 +158,17 @@ pub fn encyclopedia_keyboard_action(
         (EncyclopediaSurfaceMode::Topic, EncyclopediaSurfaceKey::Right) => {
             next_object_id.map(EncyclopediaSurfaceAction::OpenTopic)
         }
-        (EncyclopediaSurfaceMode::Topic, EncyclopediaSurfaceKey::Enter) => None,
         (
             _,
-            EncyclopediaSurfaceKey::Up
+            EncyclopediaSurfaceKey::Tab
+            | EncyclopediaSurfaceKey::Up
             | EncyclopediaSurfaceKey::Down
             | EncyclopediaSurfaceKey::PageUp
             | EncyclopediaSurfaceKey::PageDown
             | EncyclopediaSurfaceKey::Home
             | EncyclopediaSurfaceKey::End,
-        ) => None,
+        )
+        | (EncyclopediaSurfaceMode::Topic, EncyclopediaSurfaceKey::Enter) => None,
     }
 }
 
@@ -180,21 +180,18 @@ pub fn encyclopedia_index_list_action(
     topic_ids: &[u32],
     selected_object_id: Option<u32>,
 ) -> Option<EncyclopediaSurfaceAction> {
-    let last = topic_ids.len().checked_sub(1)?;
     let current =
         selected_object_id.and_then(|selected| topic_ids.iter().position(|id| *id == selected));
-    let current_or_first = current.unwrap_or(0);
-    let next = match key {
-        EncyclopediaSurfaceKey::Up => current_or_first.saturating_sub(1),
-        EncyclopediaSurfaceKey::Down => {
-            current.map_or(0, |index| index.saturating_add(1).min(last))
-        }
-        EncyclopediaSurfaceKey::PageUp => current_or_first.saturating_sub(9),
-        EncyclopediaSurfaceKey::PageDown => current_or_first.saturating_add(9).min(last),
-        EncyclopediaSurfaceKey::Home => 0,
-        EncyclopediaSurfaceKey::End => last,
+    let movement = match key {
+        EncyclopediaSurfaceKey::Up => crate::list_control::ListMove::Previous,
+        EncyclopediaSurfaceKey::Down => crate::list_control::ListMove::Next,
+        EncyclopediaSurfaceKey::PageUp => crate::list_control::ListMove::PagePrevious,
+        EncyclopediaSurfaceKey::PageDown => crate::list_control::ListMove::PageNext,
+        EncyclopediaSurfaceKey::Home => crate::list_control::ListMove::First,
+        EncyclopediaSurfaceKey::End => crate::list_control::ListMove::Last,
         _ => return None,
     };
+    let next = crate::list_control::move_selection(current, topic_ids.len(), 9, movement)?;
     Some(EncyclopediaSurfaceAction::SelectTopic(topic_ids[next]))
 }
 
@@ -214,25 +211,8 @@ pub fn encyclopedia_title_search_match(
         return None;
     }
 
-    topics
-        .iter()
-        .map(|topic| {
-            let prefix = topic
-                .title
-                .chars()
-                .zip(query.chars())
-                .take_while(|(title, query)| title.eq_ignore_ascii_case(query))
-                .count();
-            (topic.object_id, prefix)
-        })
-        .reduce(|best, candidate| {
-            if candidate.1 > best.1 {
-                candidate
-            } else {
-                best
-            }
-        })
-        .map(|(object_id, _)| object_id)
+    crate::list_control::longest_prefix_match(topics.iter().map(|topic| topic.title), query)
+        .map(|matched| topics[matched.index].object_id)
 }
 
 #[cfg(test)]

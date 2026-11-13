@@ -9,6 +9,7 @@
 //! channel opens only behind the dev gate and never in a browser build.
 //! `agent_docs/dev-commands.md` documents the protocol.
 
+use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -222,7 +223,7 @@ impl DevChannel {
         eprintln!("[dev-command] refused: {why}");
         if let Some(pending) = self.pending.as_mut() {
             pending.status = "refused";
-            pending.detail = why.to_owned();
+            why.clone_into(&mut pending.detail);
         }
     }
 
@@ -260,7 +261,7 @@ impl DevChannel {
             json_string(detail)
         );
         if let Some(path) = path {
-            json.push_str(&format!(",\"path\":{}", json_string(path)));
+            let _ = write!(json, ",\"path\":{}", json_string(path));
         }
         json.push('}');
         if writeln!(out, "{json}").and_then(|()| out.flush()).is_err() {
@@ -278,7 +279,9 @@ fn json_string(text: &str) -> String {
         match c {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
-            c if u32::from(c) < 0x20 => out.push_str(&format!("\\u{:04x}", u32::from(c))),
+            c if u32::from(c) < 0x20 => {
+                let _ = write!(out, "\\u{:04x}", u32::from(c));
+            }
             c => out.push(c),
         }
     }
@@ -291,7 +294,7 @@ fn json_string(text: &str) -> String {
 /// runs top row first. Alpha is forced opaque, as the window shows it.
 pub fn capture_frame(dir: &Path, name: &str) -> Result<(PathBuf, u16, u16), String> {
     let mut image = macroquad::texture::get_screen_data();
-    for pixel in image.bytes.chunks_exact_mut(4) {
+    for pixel in image.bytes.as_chunks_mut::<4>().0 {
         pixel[3] = 255;
     }
     std::fs::create_dir_all(dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;

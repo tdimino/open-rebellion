@@ -18,6 +18,11 @@ pub const SUBJECT_SECTOR: u32 = 1;
 pub const SUBJECT_SYSTEM: u32 = 2;
 /// Subject namespace for coordinator-allocated command contexts.
 pub const SUBJECT_COMMAND_CONTEXT: u32 = 3;
+
+#[cfg(test)]
+pub(crate) const fn command_context_subject(id: u64) -> SubjectId {
+    SubjectId::new(SUBJECT_COMMAND_CONTEXT, id)
+}
 /// Subject namespace for coordinator-allocated battle sessions.
 pub const SUBJECT_BATTLE: u32 = 4;
 /// Subject namespace for Galaxy Operation Reports keyed by stable message id.
@@ -78,27 +83,23 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
         // fact: FUN_0045aac0 restores/raises system-keyed modeless details;
         // FUN_00428b40/FUN_00429020 supply their shared presentation history.
         WindowKind::System | WindowKind::Fleet | WindowKind::Defenses | WindowKind::Missions => {
-            preserve_focus_policy(
-                Cardinality::Subject { max_open: None },
-                StackBand::Normal,
-                OpenPlacement::TopOfBand,
-                ExistingOpenPolicy::RaiseRestore,
-                InputPolicy::Modeless,
-                PresentationPolicy::History,
-                FocusRestoration::PreviousEligible,
-            )
+            WindowPolicy::restorable_modeless_history(FocusOnOpen::Preserve)
         }
 
         // fact: the four Finder openers, Message Index, and Encyclopedia use
         // canonical subjectless keys, no-op on duplicate, and bit-0 dialog
         // policy. The manual and retained Wine runs corroborate the strategic
-        // modal boundary for the reachable families.
+        // modal boundary for the reachable families. port: current Build
+        // Selection content is likewise a subjectless singleton; native
+        // duplicate behavior remains unresolved, while its strategic-modal
+        // boundary is corroborated by the 2026-10-12 runtime closeout.
         WindowKind::SystemFinder
         | WindowKind::FleetFinder
         | WindowKind::TroopFinder
         | WindowKind::PersonnelFinder
         | WindowKind::MessageIndex
-        | WindowKind::Encyclopedia => policy(
+        | WindowKind::Encyclopedia
+        | WindowKind::BuildSelection => policy(
             Cardinality::Singleton,
             StackBand::Normal,
             OpenPlacement::TopOfBand,
@@ -110,60 +111,17 @@ pub const fn policy_for(kind: WindowKind) -> WindowPolicy {
 
         // fact: the 2026-10-12 retained original-runtime closeout confirms the
         // blocking boundary for Status, Mission, and Move on both factions.
-        // Their per-open logical context remains app-owned.
+        // Their per-open logical context remains app-owned. Scrap conservatively
+        // uses that whole-view modal boundary. Battle Alert has native bit-0
+        // dialog policy but a conservatively bounded pointer scope; the manual
+        // and native type 0x1c bit-0 path classify Battle Results as modal.
         WindowKind::Status
         | WindowKind::MissionDialog
         | WindowKind::MoveConfirmation
-        | WindowKind::StopConfirmation => policy(
-            Cardinality::Subject { max_open: None },
-            StackBand::Normal,
-            OpenPlacement::TopOfBand,
-            ExistingOpenPolicy::NoOp,
-            InputPolicy::StrategicModal,
-            PresentationPolicy::None,
-            FocusRestoration::PreviousEligible,
-        ),
-
-        // port: current Build Selection content is a subjectless singleton;
-        // native duplicate behavior remains unresolved. Its strategic-modal
-        // boundary is corroborated by the 2026-10-12 runtime closeout.
-        WindowKind::BuildSelection => policy(
-            Cardinality::Singleton,
-            StackBand::Normal,
-            OpenPlacement::TopOfBand,
-            ExistingOpenPolicy::NoOp,
-            InputPolicy::StrategicModal,
-            PresentationPolicy::None,
-            FocusRestoration::PreviousEligible,
-        ),
-
-        // port: Scrap uses the same conservative whole-strategic-view modal
-        // safety boundary as the other command confirmations.
-        WindowKind::ScrapConfirmation => policy(
-            Cardinality::Subject { max_open: None },
-            StackBand::Normal,
-            OpenPlacement::TopOfBand,
-            ExistingOpenPolicy::NoOp,
-            InputPolicy::StrategicModal,
-            PresentationPolicy::None,
-            FocusRestoration::PreviousEligible,
-        ),
-
-        // port: Battle Alert has native bit-0 dialog policy, but its complete
-        // pointer scope remains an explicit conservative choice.
-        WindowKind::BattleAlert => policy(
-            Cardinality::Subject { max_open: None },
-            StackBand::Normal,
-            OpenPlacement::TopOfBand,
-            ExistingOpenPolicy::NoOp,
-            InputPolicy::StrategicModal,
-            PresentationPolicy::None,
-            FocusRestoration::PreviousEligible,
-        ),
-
-        // fact: the manual and native type 0x1c bit-0 path classify Battle
-        // Results/Summary as modal; visible original-runtime capture is open.
-        WindowKind::BattleResults => policy(
+        | WindowKind::StopConfirmation
+        | WindowKind::ScrapConfirmation
+        | WindowKind::BattleAlert
+        | WindowKind::BattleResults => policy(
             Cardinality::Subject { max_open: None },
             StackBand::Normal,
             OpenPlacement::TopOfBand,
@@ -212,47 +170,33 @@ pub const fn contextual_spec(
     }
 }
 
-const fn policy(
-    cardinality: Cardinality,
-    band: StackBand,
-    placement: OpenPlacement,
-    existing: ExistingOpenPolicy,
-    input: InputPolicy,
-    presentation: PresentationPolicy,
-    restoration: FocusRestoration,
-) -> WindowPolicy {
-    policy_with_focus(
-        cardinality,
-        band,
-        placement,
-        existing,
-        input,
-        presentation,
-        FocusOnOpen::Window,
-        restoration,
-    )
+macro_rules! policy_constructor {
+    ($name:ident, $focus:expr) => {
+        const fn $name(
+            cardinality: Cardinality,
+            band: StackBand,
+            placement: OpenPlacement,
+            existing: ExistingOpenPolicy,
+            input: InputPolicy,
+            presentation: PresentationPolicy,
+            restoration: FocusRestoration,
+        ) -> WindowPolicy {
+            policy_with_focus(
+                cardinality,
+                band,
+                placement,
+                existing,
+                input,
+                presentation,
+                $focus,
+                restoration,
+            )
+        }
+    };
 }
 
-const fn preserve_focus_policy(
-    cardinality: Cardinality,
-    band: StackBand,
-    placement: OpenPlacement,
-    existing: ExistingOpenPolicy,
-    input: InputPolicy,
-    presentation: PresentationPolicy,
-    restoration: FocusRestoration,
-) -> WindowPolicy {
-    policy_with_focus(
-        cardinality,
-        band,
-        placement,
-        existing,
-        input,
-        presentation,
-        FocusOnOpen::Preserve,
-        restoration,
-    )
-}
+policy_constructor!(policy, FocusOnOpen::Window);
+policy_constructor!(preserve_focus_policy, FocusOnOpen::Preserve);
 
 #[allow(clippy::too_many_arguments)]
 const fn policy_with_focus(
@@ -281,7 +225,7 @@ const fn policy_with_focus(
 mod tests {
     use std::collections::BTreeSet;
 
-    use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
+    use rebellion_core::dat::{Faction, SectorGroup};
     use rebellion_core::ids::DatId;
     use rebellion_core::world::{ControlKind, GameWorld, Sector, System};
     use rebellion_windowing::{
@@ -340,6 +284,33 @@ mod tests {
 
     const SUBJECT: Cardinality = Cardinality::Subject { max_open: None };
     const SINGLETON: Cardinality = Cardinality::Singleton;
+    const RESTORABLE_DETAIL: WindowPolicy = preserve_focus_policy(
+        SUBJECT,
+        StackBand::Normal,
+        OpenPlacement::TopOfBand,
+        ExistingOpenPolicy::RaiseRestore,
+        InputPolicy::Modeless,
+        PresentationPolicy::History,
+        FocusRestoration::PreviousEligible,
+    );
+    const SINGLETON_MODAL: WindowPolicy = policy(
+        SINGLETON,
+        StackBand::Normal,
+        OpenPlacement::TopOfBand,
+        ExistingOpenPolicy::NoOp,
+        InputPolicy::StrategicModal,
+        PresentationPolicy::None,
+        FocusRestoration::PreviousEligible,
+    );
+    const SUBJECT_MODAL: WindowPolicy = policy(
+        SUBJECT,
+        StackBand::Normal,
+        OpenPlacement::TopOfBand,
+        ExistingOpenPolicy::NoOp,
+        InputPolicy::StrategicModal,
+        PresentationPolicy::None,
+        FocusRestoration::PreviousEligible,
+    );
 
     #[test]
     fn operation_reports_use_a_distinct_galaxy_battle_results_identity() {
@@ -380,240 +351,24 @@ mod tests {
                 ),
                 false,
             ),
-            (
-                WindowKind::System,
-                preserve_focus_policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::RaiseRestore,
-                    InputPolicy::Modeless,
-                    PresentationPolicy::History,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
-            (
-                WindowKind::Fleet,
-                preserve_focus_policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::RaiseRestore,
-                    InputPolicy::Modeless,
-                    PresentationPolicy::History,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
-            (
-                WindowKind::Defenses,
-                preserve_focus_policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::RaiseRestore,
-                    InputPolicy::Modeless,
-                    PresentationPolicy::History,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
-            (
-                WindowKind::Missions,
-                preserve_focus_policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::RaiseRestore,
-                    InputPolicy::Modeless,
-                    PresentationPolicy::History,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
-            (
-                WindowKind::SystemFinder,
-                policy(
-                    SINGLETON,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                true,
-            ),
-            (
-                WindowKind::FleetFinder,
-                policy(
-                    SINGLETON,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                true,
-            ),
-            (
-                WindowKind::TroopFinder,
-                policy(
-                    SINGLETON,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                true,
-            ),
-            (
-                WindowKind::PersonnelFinder,
-                policy(
-                    SINGLETON,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                true,
-            ),
-            (
-                WindowKind::MessageIndex,
-                policy(
-                    SINGLETON,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                true,
-            ),
-            (
-                WindowKind::Encyclopedia,
-                policy(
-                    SINGLETON,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                true,
-            ),
-            (
-                WindowKind::Status,
-                policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
-            (
-                WindowKind::BuildSelection,
-                policy(
-                    SINGLETON,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                true,
-            ),
-            (
-                WindowKind::MissionDialog,
-                policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
-            (
-                WindowKind::MoveConfirmation,
-                policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
-            (
-                WindowKind::StopConfirmation,
-                policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
-            (
-                WindowKind::ScrapConfirmation,
-                policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
-            (
-                WindowKind::BattleAlert,
-                policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
-            (
-                WindowKind::BattleResults,
-                policy(
-                    SUBJECT,
-                    StackBand::Normal,
-                    OpenPlacement::TopOfBand,
-                    ExistingOpenPolicy::NoOp,
-                    InputPolicy::StrategicModal,
-                    PresentationPolicy::None,
-                    FocusRestoration::PreviousEligible,
-                ),
-                false,
-            ),
+            (WindowKind::System, RESTORABLE_DETAIL, false),
+            (WindowKind::Fleet, RESTORABLE_DETAIL, false),
+            (WindowKind::Defenses, RESTORABLE_DETAIL, false),
+            (WindowKind::Missions, RESTORABLE_DETAIL, false),
+            (WindowKind::SystemFinder, SINGLETON_MODAL, true),
+            (WindowKind::FleetFinder, SINGLETON_MODAL, true),
+            (WindowKind::TroopFinder, SINGLETON_MODAL, true),
+            (WindowKind::PersonnelFinder, SINGLETON_MODAL, true),
+            (WindowKind::MessageIndex, SINGLETON_MODAL, true),
+            (WindowKind::Encyclopedia, SINGLETON_MODAL, true),
+            (WindowKind::Status, SUBJECT_MODAL, false),
+            (WindowKind::BuildSelection, SINGLETON_MODAL, true),
+            (WindowKind::MissionDialog, SUBJECT_MODAL, false),
+            (WindowKind::MoveConfirmation, SUBJECT_MODAL, false),
+            (WindowKind::StopConfirmation, SUBJECT_MODAL, false),
+            (WindowKind::ScrapConfirmation, SUBJECT_MODAL, false),
+            (WindowKind::BattleAlert, SUBJECT_MODAL, false),
+            (WindowKind::BattleResults, SUBJECT_MODAL, false),
             (
                 WindowKind::Menu,
                 policy(
@@ -679,8 +434,14 @@ mod tests {
             system_subject(&world, system),
             Some(SubjectId::new(SUBJECT_SYSTEM, 0x9000_0123))
         );
-        assert_eq!(sector_subject(&world, Default::default()), None);
-        assert_eq!(system_subject(&world, Default::default()), None);
+        assert_eq!(
+            sector_subject(&world, rebellion_core::ids::SectorKey::default()),
+            None
+        );
+        assert_eq!(
+            system_subject(&world, rebellion_core::ids::SystemKey::default()),
+            None
+        );
     }
 
     fn fixture_world() -> (
@@ -700,27 +461,15 @@ mod tests {
         });
         let system = world.systems.insert(System {
             dat_id,
-            name: "Fixture System".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
             popularity_alliance: 1.0,
             popularity_empire: 0.0,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
+            ..rebellion_core::test_support::system_at(
+                "Fixture System",
+                sector,
+                0,
+                0,
+                ControlKind::Controlled(Faction::Alliance),
+            )
         });
         world.sectors[sector].systems.push(system);
         (world, sector, system)

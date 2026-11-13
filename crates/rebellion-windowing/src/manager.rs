@@ -135,6 +135,17 @@ pub enum WindowTransition {
     },
 }
 
+impl WindowTransition {
+    /// Newly allocated identity, when this transition is an open.
+    #[must_use]
+    pub const fn opened_id(&self) -> Option<WindowId> {
+        match self {
+            Self::Opened { id } => Some(*id),
+            _ => None,
+        }
+    }
+}
+
 /// Identity associated with a successful no-op transition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionSubject {
@@ -314,10 +325,14 @@ impl Default for WindowManager {
 }
 
 impl WindowManager {
-    /// Fixed original rail bound, recovered from FUN_00428b40.
+    /// Fixed original rail bound, recovered from `FUN_00428b40`.
     pub const PRESENTATION_HISTORY_CAPACITY: usize = 12;
 
     /// Creates an empty manager for one UI session.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the process-wide manager identity space is exhausted.
     #[must_use]
     pub fn new() -> Self {
         let manager_id = NEXT_MANAGER_ID.fetch_add(1, Ordering::Relaxed);
@@ -405,6 +420,11 @@ impl WindowManager {
     }
 
     /// Atomically selects the identities that participate in the active scene.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the set contains an unknown window, omits an
+    /// active owner, or would produce an invalid modal order.
     pub fn set_active_windows(
         &mut self,
         active: &BTreeSet<WindowId>,
@@ -437,14 +457,14 @@ impl WindowManager {
         }
         self.validate_modal_order(&proposed_order, active)
             .map_err(|_| WindowError::InvalidPlacement)?;
-        self.active_windows = active.clone();
+        self.active_windows.clone_from(active);
         self.visible_order = proposed_order;
         if self
             .capture_owner
             .is_some_and(|owner| !self.is_focus_eligible(owner))
         {
             events.extend(
-                self.cancel_capture(CaptureCancelReason::SceneChanged)?
+                self.cancel_capture(CaptureCancelReason::SceneChanged)
                     .events,
             );
         }
@@ -472,6 +492,11 @@ impl WindowManager {
     }
 
     /// Reconciles explicit feature-content reports against exactly one old snapshot.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an internally preflighted reconciliation root disappears
+    /// before its synchronous teardown completes.
     pub fn reconcile(
         &mut self,
         frame: &RoutingSnapshot,
@@ -650,6 +675,13 @@ impl WindowManager {
     }
 
     /// Validates the registry, semantic-key index, ownership, and visible order.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first broken registry invariant and the involved windows.
+    // Keeping the complete invariant audit together makes its ordering and
+    // first-failure behavior explicit.
+    #[allow(clippy::too_many_lines)]
     pub fn validate(&self) -> Result<(), InvariantViolation> {
         if let Some(id) = self
             .active_windows
@@ -931,6 +963,11 @@ impl WindowManager {
     }
 
     /// Applies one command atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the command references invalid state or violates
+    /// a window ownership, placement, focus, capture, or cardinality rule.
     pub fn apply(&mut self, command: WindowCommand) -> Result<WindowCommit, WindowError> {
         match command {
             WindowCommand::Open(spec) => self.open(spec),
@@ -945,7 +982,7 @@ impl WindowManager {
             WindowCommand::RestoreFocus => self.restore_focus(),
             WindowCommand::CapturePointer(id) => self.capture_pointer(id),
             WindowCommand::ReleasePointer(id) => self.release_pointer(id),
-            WindowCommand::CancelCapture(reason) => self.cancel_capture(reason),
+            WindowCommand::CancelCapture(reason) => Ok(self.cancel_capture(reason)),
             WindowCommand::Close(id) => self.close(id),
         }
     }
@@ -1087,9 +1124,8 @@ impl WindowManager {
             return Err(WindowError::InvalidReplacement(old));
         }
         let opened = proposed.open(new)?;
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            _ => return Err(WindowError::InvalidReplacement(old)),
+        let WindowTransition::Opened { id } = opened.transition else {
+            return Err(WindowError::InvalidReplacement(old));
         };
 
         // Capture on a survivor may become blocked by the new modal. Deliver that
@@ -1314,17 +1350,17 @@ impl WindowManager {
         })
     }
 
-    fn cancel_capture(&mut self, reason: CaptureCancelReason) -> Result<WindowCommit, WindowError> {
+    fn cancel_capture(&mut self, reason: CaptureCancelReason) -> WindowCommit {
         let Some(previous) = self.capture_owner.take() else {
-            return Ok(WindowCommit {
+            return WindowCommit {
                 transition: WindowTransition::Unchanged {
                     subject: TransitionSubject::StrategicRoot,
                     reason: UnchangedReason::NotCaptured,
                 },
                 events: Vec::new(),
-            });
+            };
         };
-        Ok(WindowCommit {
+        WindowCommit {
             transition: WindowTransition::CaptureChanged {
                 previous: Some(previous),
                 current: None,
@@ -1333,7 +1369,7 @@ impl WindowManager {
                 window: previous,
                 reason,
             }],
-        })
+        }
     }
 
     fn cancel_capture_if_ineligible(&mut self, reason: CaptureCancelReason) -> Option<WindowEvent> {
@@ -1525,7 +1561,7 @@ impl WindowManager {
             .capture_owner
             .is_some_and(|owner| owner == id || descendants.contains(&owner))
         {
-            events.extend(self.cancel_capture(CaptureCancelReason::Minimized)?.events);
+            events.extend(self.cancel_capture(CaptureCancelReason::Minimized).events);
         }
         for child in descendants {
             if self
@@ -1735,14 +1771,15 @@ impl WindowManager {
     /// (`FUN_00422ce0.c:1145-1148`, `:1181-1182`); otherwise the walk makes
     /// the topmost eligible child current (`:1157-1173`).
     fn current_child_walk(&mut self) -> Option<crate::FocusTarget> {
-        if self.current_child.is_none() {
-            return None;
-        }
+        self.current_child?;
         let walked = self.topmost_eligible_restoration();
         self.current_child = walked.map(|target| target.window);
         walked
     }
 
+    // This is a single ordered preflight: later checks rely on earlier owner
+    // and policy validation, so keeping it linear avoids partial assumptions.
+    #[allow(clippy::too_many_lines)]
     fn validate_new_spec(&self, spec: WindowSpec) -> Result<(), WindowError> {
         match spec.policy.cardinality {
             Cardinality::Singleton if spec.key.subject.is_some() => {
@@ -1856,32 +1893,23 @@ impl WindowManager {
     }
 
     fn band_insertion_index(&self, spec: WindowSpec) -> usize {
-        match spec.policy.placement {
-            OpenPlacement::BottomOfBand => self
-                .visible_order
-                .iter()
-                .position(|candidate| self.registry[candidate].spec.policy.band >= spec.policy.band)
-                .unwrap_or(self.visible_order.len()),
-            OpenPlacement::TopOfBand | OpenPlacement::AboveOwner => self
-                .visible_order
-                .iter()
-                .position(|candidate| self.registry[candidate].spec.policy.band > spec.policy.band)
-                .unwrap_or(self.visible_order.len()),
-        }
+        self.insertion_index_in(spec, &self.visible_order)
     }
 
     fn serialized_insertion_index(&self, spec: WindowSpec) -> usize {
+        self.insertion_index_in(spec, &self.serialized_order)
+    }
+
+    fn insertion_index_in(&self, spec: WindowSpec, order: &[WindowId]) -> usize {
         match spec.policy.placement {
-            OpenPlacement::BottomOfBand => self
-                .serialized_order
+            OpenPlacement::BottomOfBand => order
                 .iter()
                 .position(|candidate| self.registry[candidate].spec.policy.band >= spec.policy.band)
-                .unwrap_or(self.serialized_order.len()),
-            OpenPlacement::TopOfBand | OpenPlacement::AboveOwner => self
-                .serialized_order
+                .unwrap_or(order.len()),
+            OpenPlacement::TopOfBand | OpenPlacement::AboveOwner => order
                 .iter()
                 .position(|candidate| self.registry[candidate].spec.policy.band > spec.policy.band)
-                .unwrap_or(self.serialized_order.len()),
+                .unwrap_or(order.len()),
         }
     }
 
@@ -2063,26 +2091,43 @@ pub enum WindowError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        ExistingOpenPolicy, FocusOnOpen, FocusRestoration, PresentationPolicy, SubjectId,
-        WindowPolicy,
-    };
+    use crate::{FocusOnOpen, FocusRestoration, PresentationPolicy, SubjectId, WindowPolicy};
 
     fn modeless_spec(kind: WindowKind, subject: u64) -> WindowSpec {
         WindowSpec {
             key: WindowKey::contextual(kind, SubjectId::new(2, subject)),
             owner: WindowOwner::StrategicRoot,
-            policy: WindowPolicy {
-                cardinality: Cardinality::Subject { max_open: None },
-                band: StackBand::Normal,
-                placement: OpenPlacement::TopOfBand,
-                existing: ExistingOpenPolicy::RaiseRestore,
-                input: InputPolicy::Modeless,
-                presentation: PresentationPolicy::History,
-                focus_on_open: FocusOnOpen::Window,
-                restoration: FocusRestoration::PreviousEligible,
-            },
+            policy: WindowPolicy::restorable_modeless_history(FocusOnOpen::Window),
         }
+    }
+
+    fn open_id(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
+        manager
+            .apply(WindowCommand::Open(spec))
+            .expect("window opens")
+            .transition
+            .opened_id()
+            .expect("expected open transition")
+    }
+
+    fn focused_pair() -> (WindowManager, WindowId, WindowId) {
+        let mut manager = WindowManager::new();
+        let current = open_id(&mut manager, modeless_spec(WindowKind::System, 1));
+        let previous = open_id(&mut manager, modeless_spec(WindowKind::Fleet, 2));
+        manager
+            .apply(WindowCommand::Focus(crate::FocusTarget {
+                window: current,
+                control: None,
+            }))
+            .expect("first window regains focus");
+        assert_eq!(
+            manager.previous_eligible,
+            Some(crate::FocusTarget {
+                window: previous,
+                control: None,
+            })
+        );
+        (manager, current, previous)
     }
 
     #[test]
@@ -2090,14 +2135,7 @@ mod tests {
         // Port invariants: bounded, unique, registered hidden details, disjoint from order.
         for case in 0..6 {
             let mut manager = WindowManager::new();
-            let id = match manager
-                .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
-                .unwrap()
-                .transition
-            {
-                WindowTransition::Opened { id } => id,
-                other => panic!("expected open, got {other:?}"),
-            };
+            let id = open_id(&mut manager, modeless_spec(WindowKind::System, 1));
             manager.apply(WindowCommand::Minimize(id)).unwrap();
             let kind = match case {
                 0 => {
@@ -2211,14 +2249,7 @@ mod tests {
     #[test]
     fn validate_reports_unknown_private_active_membership() {
         let mut manager = WindowManager::new();
-        let id = match manager
-            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
-            .unwrap()
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected open, got {other:?}"),
-        };
+        let id = open_id(&mut manager, modeless_spec(WindowKind::System, 1));
         manager.registry.remove(&id);
         manager.key_index.clear();
         manager.visible_order.clear();
@@ -2235,36 +2266,7 @@ mod tests {
     fn close_clears_a_dead_global_previous_focus_candidate() {
         // Private-state assertion covers the contract that no dead focus reference
         // survives even when the current focus belongs to an unrelated window.
-        let mut manager = WindowManager::new();
-        let first = match manager
-            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
-            .expect("first window opens")
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected first open, got {other:?}"),
-        };
-        let previous = match manager
-            .apply(WindowCommand::Open(modeless_spec(WindowKind::Fleet, 2)))
-            .expect("second window opens")
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected second open, got {other:?}"),
-        };
-        manager
-            .apply(WindowCommand::Focus(crate::FocusTarget {
-                window: first,
-                control: None,
-            }))
-            .expect("first window regains focus");
-        assert_eq!(
-            manager.previous_eligible,
-            Some(crate::FocusTarget {
-                window: previous,
-                control: None,
-            })
-        );
+        let (mut manager, first, previous) = focused_pair();
 
         manager
             .apply(WindowCommand::Close(previous))
@@ -2279,36 +2281,7 @@ mod tests {
     fn close_clears_a_hidden_global_previous_focus_candidate() {
         // Private-state setup represents the later hidden/minimized state. A
         // registered identity outside visible order is not a viable restore target.
-        let mut manager = WindowManager::new();
-        let current = match manager
-            .apply(WindowCommand::Open(modeless_spec(WindowKind::System, 1)))
-            .expect("first window opens")
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected first open, got {other:?}"),
-        };
-        let hidden_previous = match manager
-            .apply(WindowCommand::Open(modeless_spec(WindowKind::Fleet, 2)))
-            .expect("second window opens")
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            other => panic!("expected second open, got {other:?}"),
-        };
-        manager
-            .apply(WindowCommand::Focus(crate::FocusTarget {
-                window: current,
-                control: None,
-            }))
-            .expect("first window regains focus");
-        assert_eq!(
-            manager.previous_eligible,
-            Some(crate::FocusTarget {
-                window: hidden_previous,
-                control: None,
-            })
-        );
+        let (mut manager, current, hidden_previous) = focused_pair();
         manager.visible_order.retain(|id| *id != hidden_previous);
 
         manager
@@ -2680,10 +2653,12 @@ mod tests {
         assert_eq!(manager.focused, None);
         assert_eq!(manager.previous_eligible, Some(owner_focus));
 
-        assert!(manager
-            .set_active_windows(&BTreeSet::from([owner, child]))
-            .unwrap()
-            .is_empty());
+        assert_eq!(
+            manager
+                .set_active_windows(&BTreeSet::from([owner, child]))
+                .unwrap(),
+            Vec::<WindowEvent>::new()
+        );
         assert_eq!(manager.focused, None);
 
         assert_eq!(

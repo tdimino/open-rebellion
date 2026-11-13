@@ -131,7 +131,11 @@ impl MusicSelector {
     /// `+0x170` (`FUN_004c48e0` Alliance 4..9, `FUN_004c2700` Empire 9..4),
     /// which the port does not track yet (or-q-advice-music-state-rkf2); it
     /// takes the slot's own default branch, `rand(3) + 1`.
-    pub fn default_pick(&mut self, in_session: bool, mut roll: impl FnMut(u32) -> u32) -> MdataTrack {
+    pub fn default_pick(
+        &mut self,
+        in_session: bool,
+        mut roll: impl FnMut(u32) -> u32,
+    ) -> MdataTrack {
         if !in_session {
             return MdataTrack::MENU;
         }
@@ -165,7 +169,7 @@ fn calm_track(index: u32) -> MdataTrack {
 /// `dirty` is set to `true` whenever a slider or mute toggle changes so the
 /// app layer knows to call `apply_volume` without polling every frame.
 #[derive(Debug, Clone)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
 )]
@@ -319,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -338,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]

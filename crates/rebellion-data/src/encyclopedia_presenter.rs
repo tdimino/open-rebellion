@@ -162,6 +162,7 @@ pub struct EncyclopediaPresentation<'a> {
 impl EncyclopediaPresentation<'_> {
     /// Build an in-view transition without reconstructing or changing the
     /// caller to which close/return must eventually navigate.
+    #[must_use]
     pub const fn follow_up(
         &self,
         mode: EncyclopediaPresentationMode,
@@ -223,10 +224,20 @@ impl EncyclopediaPresenter {
     /// Contextual misses follow the original unresolved-context behavior and
     /// open the full index while retaining the exact caller token. Invalid
     /// internal index/object selections fail closed instead of guessing.
-    pub fn present<'a>(
-        session: &'a EncyclopediaSession,
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the category, object, or presentation intent is
+    /// inconsistent with the validated session.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a session that bypassed validation lacks a topic binding for
+    /// one of its catalog entries.
+    pub fn present(
+        session: &EncyclopediaSession,
         intent: EncyclopediaEntryIntent,
-    ) -> Result<EncyclopediaPresentation<'a>, EncyclopediaPresenterError> {
+    ) -> Result<EncyclopediaPresentation<'_>, EncyclopediaPresenterError> {
         let normalized = NormalizedEntry::from_intent(session, intent)?;
         let catalog = session.catalog();
         let category = catalog.category(normalized.category_command).ok_or(
@@ -510,99 +521,26 @@ mod tests {
         EncyclopediaPresenter, EncyclopediaPresenterError, EncyclopediaReturnRoute,
         EncyclopediaTopicAvailability, EncyclopediaTopicContent,
     };
-    use crate::encyclopedia_catalog::{
-        EncyclopediaCatalog, EncyclopediaCatalogEntry, EncyclopediaCategory,
-    };
+    use crate::encyclopedia_catalog::{EncyclopediaCatalog, EncyclopediaCatalogEntry};
     use crate::encyclopedia_session::{
-        EncyclopediaResourceBytes, EncyclopediaSession, EncyclopediaSessionInput,
-        EncyclopediaSessionStore,
+        EncyclopediaSession, EncyclopediaSessionInput, EncyclopediaSessionStore,
     };
     use crate::encyclopedia_topics::EncyclopediaAudience;
+    use crate::test_support::{
+        encyclopedia_catalog, indexed_encyclopedia_artwork, indexed_encyclopedia_bmp,
+        representative_encyclopedia_catalog,
+    };
 
     const SHARED_SOURCE: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json");
     const SHARED_MANIFEST: &[u8] =
         include_bytes!("../../../tests/fixtures/encyclopedia/p66a/source.json.manifest.json");
 
-    fn category(
-        command_id: u16,
-        label_resource_id: u16,
-        family_range: Option<std::ops::Range<u8>>,
-    ) -> EncyclopediaCategory {
-        EncyclopediaCategory {
-            command_id,
-            label_resource_id,
-            label: format!("Category {command_id}"),
-            family_range,
-        }
-    }
-
-    fn fixture_catalog() -> EncyclopediaCatalog {
-        EncyclopediaCatalog {
-            title: "Galactic Encyclopedia".into(),
-            topic_label: "Topic".into(),
-            categories: [
-                category(0x6f, 0x1850, None),
-                category(0x70, 0x1855, Some(0x90..0x98)),
-                category(0x71, 0x1854, Some(0x14..0x20)),
-                category(0x72, 0x1852, Some(0x20..0x30)),
-                category(0x73, 0x1851, Some(0x40..0x80)),
-                category(0x74, 0x1856, Some(0x10..0x14)),
-                category(0x75, 0x1853, Some(0x30..0x40)),
-            ],
-            entries: vec![
-                EncyclopediaCatalogEntry {
-                    object_id: 0x9200_0064,
-                    text_resource_id: 0x2e00,
-                    name: "Abregado-rae".into(),
-                },
-                EncyclopediaCatalogEntry {
-                    object_id: 0x5100_0010,
-                    text_resource_id: 0x2c50,
-                    name: "Diplomacy".into(),
-                },
-                EncyclopediaCatalogEntry {
-                    object_id: 0x1400_0040,
-                    text_resource_id: 0x2740,
-                    name: "Mon Calamari Cruiser".into(),
-                },
-            ],
-        }
-    }
-
     fn indexed_bmp(pixel: [u8; 3]) -> Arc<[u8]> {
-        const WIDTH: u32 = 400;
-        const HEIGHT: u32 = 200;
-        const PIXEL_OFFSET: u32 = 14 + 40 + 1024;
-        const FILE_BYTES: u32 = PIXEL_OFFSET + WIDTH * HEIGHT;
-        let mut bytes = Vec::with_capacity(FILE_BYTES as usize);
-        bytes.extend_from_slice(b"BM");
-        bytes.extend_from_slice(&FILE_BYTES.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
-        bytes.extend_from_slice(&PIXEL_OFFSET.to_le_bytes());
-        bytes.extend_from_slice(&40_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH as i32).to_le_bytes());
-        bytes.extend_from_slice(&(HEIGHT as i32).to_le_bytes());
-        bytes.extend_from_slice(&1_u16.to_le_bytes());
-        bytes.extend_from_slice(&8_u16.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend_from_slice(&(WIDTH * HEIGHT).to_le_bytes());
-        bytes.extend_from_slice(&[0; 8]);
-        bytes.extend_from_slice(&256_u32.to_le_bytes());
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.resize(PIXEL_OFFSET as usize, 0);
-        bytes[58..62].copy_from_slice(&[pixel[2], pixel[1], pixel[0], 0]);
-        bytes.resize(FILE_BYTES as usize, 1);
-        bytes.into()
+        indexed_encyclopedia_bmp(pixel).into()
     }
 
     fn fixture_session_with_catalog(catalog: EncyclopediaCatalog) -> Arc<EncyclopediaSession> {
-        let artwork: EncyclopediaResourceBytes = BTreeMap::from([
-            ("EDATA.001".into(), indexed_bmp([1, 2, 3])),
-            ("EDATA.014".into(), indexed_bmp([14, 15, 16])),
-            ("EDATA.015".into(), indexed_bmp([15, 16, 17])),
-            ("EDATA.115".into(), indexed_bmp([115, 116, 117])),
-        ]);
         let mut store = EncyclopediaSessionStore::default();
         store
             .replace(EncyclopediaSessionInput {
@@ -610,14 +548,14 @@ mod tests {
                 source_catalog_bytes: Arc::from(SHARED_SOURCE),
                 source_manifest_bytes: Arc::from(SHARED_MANIFEST),
                 system_pictures: HashMap::from([(0x9200_0064, 1)]),
-                artwork,
+                artwork: indexed_encyclopedia_artwork(),
             })
             .unwrap();
         store.current().unwrap()
     }
 
     fn fixture_session() -> Arc<EncyclopediaSession> {
-        fixture_session_with_catalog(fixture_catalog())
+        fixture_session_with_catalog(representative_encyclopedia_catalog())
     }
 
     fn full_catalog() -> EncyclopediaCatalog {
@@ -651,20 +589,7 @@ mod tests {
         }
         assert_eq!(entries.len(), 346);
 
-        EncyclopediaCatalog {
-            title: "Galactic Encyclopedia".into(),
-            topic_label: "Topic".into(),
-            categories: [
-                category(0x6f, 0x1850, None),
-                category(0x70, 0x1855, Some(0x90..0x98)),
-                category(0x71, 0x1854, Some(0x14..0x20)),
-                category(0x72, 0x1852, Some(0x20..0x30)),
-                category(0x73, 0x1851, Some(0x40..0x80)),
-                category(0x74, 0x1856, Some(0x10..0x14)),
-                category(0x75, 0x1853, Some(0x30..0x40)),
-            ],
-            entries,
-        }
+        encyclopedia_catalog(entries)
     }
 
     fn full_session() -> Arc<EncyclopediaSession> {
@@ -886,7 +811,7 @@ mod tests {
 
     #[test]
     fn presenter_preserves_literal_mixed_case_and_equal_fold_catalog_order() {
-        let mut catalog = fixture_catalog();
+        let mut catalog = representative_encyclopedia_catalog();
         catalog.entries = vec![
             EncyclopediaCatalogEntry {
                 object_id: 0x1400_0040,

@@ -99,8 +99,7 @@ pub(crate) fn visible_members(
     system: SystemKey,
 ) -> Vec<(MissionMember, u8, bool)> {
     SystemContents::new(world, fog, player, system)
-        .map(|contents| contents.members().collect())
-        .unwrap_or_default()
+        .map_or_default(|contents| contents.members().collect())
 }
 
 /// `FUN_004a1f60(system, player side)` over what the player sees: the other
@@ -442,50 +441,12 @@ fn mission_side(contents: &SystemContents<'_>, missions: &MissionState) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::dat::SectorGroup;
-    use rebellion_core::ids::{CharacterKey, DatId};
-    use rebellion_core::missions::{MissionFaction, MissionKind, MissionRequest};
+    use crate::test_support::{add_character, send_on_mission, world};
+    use rebellion_core::ids::DatId;
     use rebellion_core::world::{
-        Character, ControlKind, DefenseFacilityInstance, ManufacturingFacilityInstance,
-        ProductionFacilityInstance, Sector, SpecialForceUnit, System, TroopUnit,
+        ControlKind, DefenseFacilityInstance, ManufacturingFacilityInstance,
+        ProductionFacilityInstance, TroopUnit,
     };
-
-    fn world(control: ControlKind) -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(36),
-            name: "Sesswenna".into(),
-            group: SectorGroup::Core,
-            x: 317,
-            y: 248,
-            systems: Vec::new(),
-        });
-        let system = world.systems.insert(System {
-            dat_id: DatId::new(100),
-            name: "Sluis Van".into(),
-            sector,
-            x: 320,
-            y: 250,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        });
-        (world, system)
-    }
 
     fn alliance_world() -> (GameWorld, SystemKey) {
         world(ControlKind::Controlled(Faction::Alliance))
@@ -531,29 +492,6 @@ mod tests {
                 is_mine: true,
             });
         world.systems[system].production_facilities.push(mine);
-    }
-
-    fn add_character(world: &mut GameWorld, system: SystemKey, is_alliance: bool) -> CharacterKey {
-        world.characters.insert(Character {
-            dat_id: DatId::new(832),
-            name: "Agent".into(),
-            is_alliance,
-            is_empire: !is_alliance,
-            current_system: Some(system),
-            recruited: true,
-            ..Default::default()
-        })
-    }
-
-    fn send_on_mission(missions: &mut MissionState, member: CharacterKey, system: SystemKey) {
-        missions.dispatch(MissionRequest::single(
-            MissionKind::Diplomacy,
-            MissionFaction::Alliance,
-            member,
-            system,
-            None,
-            0,
-        ));
     }
 
     #[test]
@@ -678,15 +616,7 @@ mod tests {
         assert_eq!(alliance_side(&world, system, Quadrant::Defenses), Some(1));
 
         let (mut world, system) = alliance_world();
-        let force = world.special_forces.insert(SpecialForceUnit {
-            class_dat_id: DatId::new(0x3c00_0001),
-            is_alliance: true,
-            skills: [0; 8],
-            on_mission: false,
-            en_route: false,
-            on_hidden_mission: false,
-        });
-        world.systems[system].special_forces.push(force);
+        crate::test_support::add_special_force(&mut world, system, 0x3c00_0001, true);
         assert_eq!(alliance_side(&world, system, Quadrant::Defenses), Some(1));
         assert_eq!(alliance_side(&world, system, Quadrant::System), None);
     }
@@ -696,7 +626,7 @@ mod tests {
         // FUN_0045ce80 counts a member when FUN_004ece60 finds no mission key
         // (+0x68) or role +0x78 bit 8 (OnHiddenMission) is set.
         let (mut world, system) = alliance_world();
-        let agent = add_character(&mut world, system, true);
+        let agent = add_character(&mut world, system, "Agent", true);
         let player = Faction::Alliance;
         assert_eq!(
             side(
@@ -727,7 +657,7 @@ mod tests {
     fn the_missions_icon_shows_the_players_side_for_its_own_visible_mission() {
         // FUN_0045d090 / FUN_004a1f60: the player's set only, so its side.
         let (mut world, system) = alliance_world();
-        let agent = add_character(&mut world, system, true);
+        let agent = add_character(&mut world, system, "Agent", true);
         let mut missions = MissionState::new();
         let player = Faction::Alliance;
         assert_eq!(
@@ -757,8 +687,8 @@ mod tests {
     fn the_other_sides_missions_take_the_missions_icon() {
         // FUN_004a1f60 returns the other side whenever its set is non-empty.
         let (mut world, system) = alliance_world();
-        let ours = add_character(&mut world, system, true);
-        let theirs = add_character(&mut world, system, false);
+        let ours = add_character(&mut world, system, "Agent", true);
+        let theirs = add_character(&mut world, system, "Agent", false);
         let mut missions = MissionState::new();
         send_on_mission(&mut missions, ours, system);
         send_on_mission(&mut missions, theirs, system);
@@ -788,7 +718,7 @@ mod tests {
     fn a_hidden_mission_does_not_light_the_missions_icon() {
         // FUN_004a1f60 skips members with role +0x78 bit 8.
         let (mut world, system) = alliance_world();
-        let agent = add_character(&mut world, system, true);
+        let agent = add_character(&mut world, system, "Agent", true);
         world.characters[agent].on_hidden_mission = true;
         let mut missions = MissionState::new();
         send_on_mission(&mut missions, agent, system);
@@ -808,9 +738,9 @@ mod tests {
     fn members_elsewhere_or_killed_do_not_count() {
         // FUN_00536da0 walks only the system's own members.
         let (mut world, system) = alliance_world();
-        let away = add_character(&mut world, system, true);
+        let away = add_character(&mut world, system, "Agent", true);
         world.characters[away].current_system = None;
-        let dead = add_character(&mut world, system, true);
+        let dead = add_character(&mut world, system, "Agent", true);
         world.characters[dead].is_killed = true;
         assert_eq!(alliance_side(&world, system, Quadrant::Defenses), None);
     }

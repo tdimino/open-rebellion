@@ -21,21 +21,17 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 use rebellion_core::ai::{AIState, AiFaction};
 use rebellion_core::commands::all_commands;
 use rebellion_core::dat::Faction;
-use rebellion_core::fog::{FogState, FogSystem};
-use rebellion_core::tick::{GameClock, GameSpeed};
+use rebellion_core::fog::FogSystem;
+use rebellion_core::tick::GameSpeed;
 use rebellion_core::world::{ControlKind, SeedOptions};
 use rebellion_data::simulation::{run_simulation_tick, SimulationStates};
 
-use logger::EventLogger;
+use logger::{describe_transit, EventLogger};
 
 #[derive(Parser)]
 #[command(
     name = "rebellion-playtest",
     about = "Headless playtest runner for Open Rebellion"
-)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "These independent flags preserve the existing state and serialization model."
 )]
 struct Args {
     /// Path to game data directory (containing .DAT files)
@@ -102,7 +98,7 @@ struct Args {
     save_out: Option<PathBuf>,
 
     /// Game speed: very-slow, slow, medium or fast. It sets the rounds the
-    /// AI runs a day (the per-day count, FUN_0051dea0). A new campaign
+    /// AI runs a day (the per-day count, `FUN_0051dea0`). A new campaign
     /// starts at fast; --load keeps the save's speed unless given.
     #[arg(long, value_enum)]
     speed: Option<Speed>,
@@ -159,14 +155,6 @@ fn write_save_out(
 
 /// Dispatch a single command against the current world/simulation state.
 /// Returns a human-readable result string.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Keep the existing explicit simulation state inputs at this integration boundary."
-)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
-)]
 #[expect(
     clippy::cast_possible_truncation,
     reason = "Elapsed milliseconds cannot approach the u64 limit during a playtest."
@@ -343,10 +331,9 @@ fn readout(
                 side,
             ))
         })
-    } else if lower.starts_with("show system") {
-        readouts::show_system(world, &lower["show system".len()..])
     } else {
-        return None;
+        let system = lower.strip_prefix("show system")?;
+        readouts::show_system(world, system)
     };
     Some(text.unwrap_or_else(|why| why))
 }
@@ -484,28 +471,8 @@ fn main() -> anyhow::Result<()> {
     };
 
     // Initialize simulation states
-    let mut states = SimulationStates {
-        clock: GameClock::new(),
-        manufacturing: rebellion_core::manufacturing::ManufacturingState::new(),
-        missions: rebellion_core::missions::MissionState::new(),
-        events: rebellion_core::events::EventState::new(),
-        ai: AIState::new(ai_faction),
-        ai2,
-        movement: rebellion_core::movement::MovementState::new(),
-        fog: FogState::new(fog_faction),
-        blockade: rebellion_core::blockade::BlockadeState::new(),
-        uprising: rebellion_core::uprising::UprisingState::new(),
-        research: rebellion_core::research::ResearchState::new(),
-        jedi: rebellion_core::jedi::JediState::new(),
-        victory,
-        betrayal: rebellion_core::betrayal::BetrayalState::new(),
-        economy: rebellion_core::economy::EconomyState::default(),
-        repair: rebellion_core::repair::RepairState::default(),
-        troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),
-        deliveries: rebellion_core::delivery::DeliveryState::default(),
-        stockpiles: rebellion_core::stockpiles::StockpileState::default(),
-        campaign_config: rebellion_core::world::CampaignConfig::default(),
-    };
+    let mut states = SimulationStates::new(ai_faction, fog_faction, victory);
+    states.ai2 = ai2;
 
     if let Some(staged) = staged.take() {
         // A save carries its own fog, story events and clock.
@@ -656,27 +623,13 @@ fn main() -> anyhow::Result<()> {
                     .orders()
                     .values()
                     .map(|order| {
-                        let origin = world
-                            .systems
-                            .get(order.origin)
-                            .map_or("?", |s| s.name.as_str());
-                        let dest = world
-                            .systems
-                            .get(order.destination)
-                            .map_or("?", |s| s.name.as_str());
-                        let faction = world.fleets.get(order.fleet).map_or("?", |f| {
-                            if f.is_alliance {
-                                "Alliance"
-                            } else {
-                                "Empire"
-                            }
-                        });
+                        let transit = describe_transit(&world, order);
                         serde_json::json!({
-                            "faction": faction,
-                            "origin": origin,
-                            "destination": dest,
-                            "progress": format!("{:.0}%", order.progress() * 100.0),
-                            "ticks_remaining": order.ticks_remaining(),
+                            "faction": transit.faction,
+                            "origin": transit.origin,
+                            "destination": transit.destination,
+                            "progress": format!("{:.0}%", transit.progress_percent),
+                            "ticks_remaining": transit.ticks_remaining,
                         })
                     })
                     .collect();

@@ -242,7 +242,9 @@ impl AISystem {
         // Module 11 reads the regional records' need bits (rec+0x64), which
         // module 8's turns refresh below.
         round.record_needs = state.regions.records.iter().map(|r| r.need).collect();
-        round.sabotage = state.regions.sabotage_requests(world, inputs.missions, side);
+        round.sabotage = state
+            .regions
+            .sabotage_requests(world, inputs.missions, side);
         let exhausted = TechType::ALL
             .map(|tech| ResearchSystem::tree_exhausted(world, inputs.research, alliance, tech));
         // port: one planner a round; its stream is the day's for round 0.
@@ -285,34 +287,28 @@ impl AISystem {
                                 planner,
                                 round,
                                 missions,
-                                faction,
-                                1,
-                                &mut actions,
+                                crate::ai::MissionEvaluation::new(faction, 1, &mut actions),
                             ),
                             Pseudo::Espionage => AISystem::evaluate_espionage(
                                 planner,
                                 round,
-                                faction,
-                                1,
-                                &mut actions,
+                                crate::ai::MissionEvaluation::new(faction, 1, &mut actions),
                             ),
-                            Pseudo::Rescue => {
-                                AISystem::evaluate_rescue(planner, round, faction, 1, &mut actions);
-                            }
+                            Pseudo::Rescue => AISystem::evaluate_rescue(
+                                planner,
+                                round,
+                                crate::ai::MissionEvaluation::new(faction, 1, &mut actions),
+                            ),
                             Pseudo::Reconnaissance => AISystem::evaluate_reconnaissance(
                                 planner,
                                 round,
-                                faction,
-                                1,
-                                &mut actions,
+                                crate::ai::MissionEvaluation::new(faction, 1, &mut actions),
                             ),
                             Pseudo::UprisingPrevention => AISystem::evaluate_uprising_prevention(
                                 planner,
                                 round,
                                 missions,
-                                faction,
-                                1,
-                                &mut actions,
+                                crate::ai::MissionEvaluation::new(faction, 1, &mut actions),
                             ),
                         }
                         actions.into_iter().next()
@@ -323,7 +319,9 @@ impl AISystem {
                     // Module 11 reads the live records (rec+0x64,
                     // ai_production.rs `capital_ships`), as module 8 leaves them.
                     round.record_needs = state.regions.records.iter().map(|r| r.need).collect();
-                    round.sabotage = state.regions.sabotage_requests(world, inputs.missions, side);
+                    round.sabotage = state
+                        .regions
+                        .sabotage_requests(world, inputs.missions, side);
                     turn
                 }
                 9 => state.fleet_tasks.turn(&mut round, &mut state.marks),

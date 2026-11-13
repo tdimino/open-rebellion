@@ -4,6 +4,132 @@ use std::collections::HashSet;
 use super::test_support::{test_death_star, test_fighter, test_session, test_ship};
 use super::*;
 
+struct FireResult {
+    projectiles: Vec<WeaponEffect>,
+    impacts: Vec<TacticalImpactEffect>,
+    audio: Vec<TacticalAudioCue>,
+}
+
+fn fire_test_side(
+    ships: &mut [TacticalShip],
+    attackers: &[usize],
+    defenders: &[usize],
+    player_is_attacker: bool,
+) -> FireResult {
+    let mut projectiles = Vec::new();
+    let mut impacts = Vec::new();
+    let mut audio = Vec::new();
+    BattleSession::fire_side(
+        ships,
+        &mut Vec::new(),
+        attackers,
+        defenders,
+        &mut projectiles,
+        &mut impacts,
+        &mut audio,
+        &mut Vec::new(),
+        player_is_attacker,
+        TacticalVoiceFaction::Alliance,
+        &mut OriginalTacticalRng::new(1),
+    );
+    FireResult {
+        projectiles,
+        impacts,
+        audio,
+    }
+}
+
+fn weapon_audio_events(
+    final_fire: TacticalAudioEvent,
+    final_impact: TacticalAudioEvent,
+) -> [TacticalAudioEvent; 6] {
+    [
+        TacticalAudioEvent::IonFire,
+        TacticalAudioEvent::IonImpact,
+        TacticalAudioEvent::LaserFire,
+        TacticalAudioEvent::LaserImpact,
+        final_fire,
+        final_impact,
+    ]
+}
+
+/// port: shared test fixture values, not rules.
+fn alliance_test_ships(count: usize) -> Vec<TacticalShip> {
+    (0..count)
+        .map(|index| test_ship(64, index, true, true))
+        .collect()
+}
+
+fn begin_test_trench_run(session: &mut BattleSession) {
+    session.death_star = Some(test_death_star(false));
+    session.fighters[0].source_position = session.trench_run_entry_point(true);
+    begin_original_attack_order(session, &[], &[0], TacticalOrder::AttackDeathStar);
+}
+
+/// port: shared test fixture values, not rules.
+fn battle_ship_class(
+    world: &mut GameWorld,
+    family: u8,
+    is_alliance: bool,
+    hyperdrive: u32,
+) -> crate::ids::CapitalShipKey {
+    world
+        .capital_ship_classes
+        .insert(crate::world::CapitalShipClass {
+            dat_id: DatId::new(if family == 0x18 {
+                crate::world::DEATH_STAR_CLASS_ID
+            } else {
+                0x1400_0001
+            }),
+            family,
+            is_alliance,
+            is_empire: !is_alliance,
+            hull: 100,
+            hyperdrive,
+            ..crate::world::CapitalShipClass::default()
+        })
+}
+
+/// port: shared test fixture values, not rules.
+fn simple_fleet(
+    world: &mut GameWorld,
+    system: SystemKey,
+    is_alliance: bool,
+    ships: u32,
+) -> FleetKey {
+    let class = battle_ship_class(world, 0x14, is_alliance, 0);
+    world.fleets.insert(crate::world::Fleet {
+        location: system,
+        capital_ships: crate::world::ShipInstance::make(class, 100, is_alliance, ships),
+        is_alliance,
+        ..crate::world::Fleet::default()
+    })
+}
+
+/// port: shared test fixture values, not rules.
+fn opposed_death_star_fleets(
+    world: &mut GameWorld,
+    system: SystemKey,
+    hyperdrive: u32,
+) -> (FleetKey, FleetKey) {
+    let death_star = battle_ship_class(world, 0x18, false, hyperdrive);
+    let cruiser = battle_ship_class(world, 0x14, true, hyperdrive);
+    let empire = world.fleets.insert(crate::world::Fleet {
+        location: system,
+        capital_ships: vec![crate::world::ShipInstance::new(death_star, 100, false)],
+        ..crate::world::Fleet::default()
+    });
+    let alliance = world.fleets.insert(crate::world::Fleet {
+        location: system,
+        capital_ships: vec![crate::world::ShipInstance::new(cruiser, 100, true)],
+        is_alliance: true,
+        ..crate::world::Fleet::default()
+    });
+    world.systems[system].fleets = vec![empire, alliance];
+    world.systems[system].fleets.sort_unstable();
+    (empire, alliance)
+}
+
 // Source: FUN_005d3e90 effect dispatcher; FUN_005a7500 hit ordering.
 #[test]
 fn original_effect_dispatch_preserves_resources_sizes_and_priority_groups() {
@@ -117,7 +243,7 @@ fn original_effect_frames_advance_at_ten_hertz_and_expire_exactly() {
     session.advance_presentational_effects(0.001_1);
     assert_eq!(session.impact_effects[0].frame, 1);
     session.advance_presentational_effects(0.5);
-    assert!(session.impact_effects.is_empty());
+    assert_empty!(session.impact_effects);
 }
 
 // Source: FUN_005d3de0 / FUN_005b1ea0 / FUN_005b1f60 projectile profiles.
@@ -207,7 +333,7 @@ fn retained_projectile_interpolates_and_expires_by_source_duration() {
     session.advance_presentational_effects(0.499);
     assert_eq!(session.weapon_effects.len(), 1);
     session.advance_presentational_effects(0.002);
-    assert!(session.weapon_effects.is_empty());
+    assert_empty!(session.weapon_effects);
 }
 
 // Source: FUN_005b24d0 through FUN_005b2550 field effects.
@@ -262,15 +388,13 @@ fn gravity_field_preempts_tractor_then_restores_it_at_ten_hertz() {
         OriginalTacticalFieldKind::Tractor,
         false,
     ));
-    assert!(session.field_effects.is_empty());
+    assert_empty!(session.field_effects);
 }
 
 // Source: FUN_005b24d0 through FUN_005b2550 field source limits.
 #[test]
 fn exact_field_sources_enforce_one_tractor_and_four_gravity_targets() {
-    let ships = (0..6)
-        .map(|index| test_ship(64, index, true, true))
-        .collect();
+    let ships = alliance_test_ships(6);
     let mut session = test_session(ships, Vec::new(), true);
 
     assert!(session.set_tractor_field(0, 1, true));
@@ -684,7 +808,7 @@ fn fighter_recovery_completion_waits_for_the_last_live_group_member() {
 
     assert!(!session.fighters[0].alive);
     assert!(session.fighters[1].alive);
-    assert!(session.take_pending_voice_cues().is_empty());
+    assert_empty!(session.take_pending_voice_cues());
 
     session.fighters[1].recovery_state = TacticalFighterRecoveryState::Docking;
     session.advance_original_fighter_recovery(250.0);
@@ -787,7 +911,7 @@ fn attack_target_lifecycle_reacquires_same_class_and_clears_exhausted_lists() {
         session.ships[0].attack_target, None,
         "an exhausted fighter list must not fall through to a capital target"
     );
-    assert!(session.take_pending_voice_cues().is_empty());
+    assert_empty!(session.take_pending_voice_cues());
 }
 
 // Source: FUN_005cf980 recovery state reset.
@@ -836,9 +960,9 @@ fn recovered_fighter_clears_attack_fighters_without_capital_fire_or_audio() {
         (ordered.ships[1].hull_current, ordered.ships[1].shield),
         ordered_capital_before
     );
-    assert!(ordered.weapon_effects.is_empty());
-    assert!(ordered.impact_effects.is_empty());
-    assert!(ordered.pending_audio_cues.is_empty());
+    assert_empty!(ordered.weapon_effects);
+    assert_empty!(ordered.impact_effects);
+    assert_empty!(ordered.pending_audio_cues);
 
     let mut autonomous = session_with_source_order(TacticalOrder::None);
     let autonomous_capital_before = (autonomous.ships[1].hull_current, autonomous.ships[1].shield);
@@ -851,7 +975,7 @@ fn recovered_fighter_clears_attack_fighters_without_capital_fire_or_audio() {
     );
     assert_eq!(autonomous.weapon_effects.len(), 1);
     assert_eq!(autonomous.impact_effects.len(), 1);
-    assert!(!autonomous.pending_audio_cues.is_empty());
+    assert_not_empty!(autonomous.pending_audio_cues);
 }
 
 // Source: FUN_005d0bb0 / FUN_005a8fc0 explicit attack targeting.
@@ -866,30 +990,12 @@ fn explicit_attack_order_never_redirects_an_invalid_target() {
     let live_target = test_ship(129, 1, false, true);
     let mut ships = vec![source, dead_target, live_target];
     let original_hull = ships[2].hull_current;
-    let mut fields = Vec::new();
-    let mut projectiles = Vec::new();
-    let mut impacts = Vec::new();
-    let mut audio_cues = Vec::new();
-    let mut voice_cues = Vec::new();
-
-    BattleSession::fire_side(
-        &mut ships,
-        &mut fields,
-        &[0],
-        &[2],
-        &mut projectiles,
-        &mut impacts,
-        &mut audio_cues,
-        &mut voice_cues,
-        true,
-        TacticalVoiceFaction::Alliance,
-        &mut OriginalTacticalRng::new(1),
-    );
+    let fired = fire_test_side(&mut ships, &[0], &[2], true);
 
     assert_eq!(ships[2].hull_current, original_hull);
-    assert!(projectiles.is_empty());
-    assert!(impacts.is_empty());
-    assert!(audio_cues.is_empty());
+    assert_empty!(fired.projectiles);
+    assert_empty!(fired.impacts);
+    assert_empty!(fired.audio);
 }
 
 // Source: FUN_005b5100 / FUN_005b5b60 / FUN_005b5f50 hull damage selection.
@@ -1064,7 +1170,7 @@ fn destroyed_tractor_subsystem_clears_its_live_field_source() {
     );
     assert_eq!(ships[0].subsystem_damage.tractor, 4);
     assert_eq!(ships[0].subsystem_condition.tractor, 0);
-    assert!(fields.is_empty());
+    assert_empty!(fields);
 }
 
 // Source: FUN_005b6530 weapon arc classifier.
@@ -1131,28 +1237,11 @@ fn direct_weapon_callback_fires_every_family_and_queues_the_arc_once() {
     target.shield = 1000;
     target.shield_max = 1000;
     let mut ships = vec![source, target];
-    let mut fields = Vec::new();
-    let mut projectiles = Vec::new();
-    let mut impacts = Vec::new();
-    let mut audio_cues = Vec::new();
-    let mut voice_cues = Vec::new();
-
-    BattleSession::fire_side(
-        &mut ships,
-        &mut fields,
-        &[0],
-        &[1],
-        &mut projectiles,
-        &mut impacts,
-        &mut audio_cues,
-        &mut voice_cues,
-        true,
-        TacticalVoiceFaction::Alliance,
-        &mut OriginalTacticalRng::new(1),
-    );
+    let fired = fire_test_side(&mut ships, &[0], &[1], true);
 
     assert_eq!(
-        projectiles
+        fired
+            .projectiles
             .iter()
             .map(|effect| effect.kind)
             .collect::<Vec<_>>(),
@@ -1167,17 +1256,13 @@ fn direct_weapon_callback_fires_every_family_and_queues_the_arc_once() {
     assert_eq!(ships[0].weapon_arcs[0].energy, 0.0);
     assert_eq!(ships[1].shield, 965);
     assert_eq!(
-        audio_cues.iter().map(|cue| cue.event).collect::<Vec<_>>(),
-        vec![
-            TacticalAudioEvent::IonFire,
-            TacticalAudioEvent::IonImpact,
-            TacticalAudioEvent::LaserFire,
-            TacticalAudioEvent::LaserImpact,
+        fired.audio.iter().map(|cue| cue.event).collect::<Vec<_>>(),
+        weapon_audio_events(
             TacticalAudioEvent::TurbolaserFire,
             TacticalAudioEvent::TurbolaserImpact,
-        ]
+        )
     );
-    assert!(audio_cues.iter().all(|cue| {
+    assert!(fired.audio.iter().all(|cue| {
         let base = cue.event.resource_base();
         cue.resource_id >= base && cue.resource_id < base + u32::from(cue.event.variant_count())
     }));
@@ -1206,33 +1291,18 @@ fn automatic_weapon_callback_keeps_first_arc_on_ties_and_fires_each_ready_arc() 
         z: 0.0,
     };
     let mut ships = vec![source, fore, starboard];
-    let mut projectiles = Vec::new();
-    let mut audio_cues = Vec::new();
-    let mut voice_cues = Vec::new();
-
-    BattleSession::fire_side(
-        &mut ships,
-        &mut Vec::new(),
-        &[0],
-        &[1, 2],
-        &mut projectiles,
-        &mut Vec::new(),
-        &mut audio_cues,
-        &mut voice_cues,
-        true,
-        TacticalVoiceFaction::Alliance,
-        &mut OriginalTacticalRng::new(1),
-    );
+    let fired = fire_test_side(&mut ships, &[0], &[1, 2], true);
 
     assert_eq!(
-        projectiles
+        fired
+            .projectiles
             .iter()
             .map(|effect| effect.target)
             .collect::<Vec<_>>(),
         vec![1, 2]
     );
     assert_eq!(ships[0].weapon_recharge_queue, vec![0, 1]);
-    assert_eq!(audio_cues.len(), 4);
+    assert_eq!(fired.audio.len(), 4);
 }
 
 // Source: FUN_005d2360 weapon strength coefficient.
@@ -1331,7 +1401,7 @@ fn destroyed_weapon_subsystem_disables_and_repair_recharges_live_arcs() {
     ship.advance_original_recharge(4.0);
     assert!(ship.weapon_arcs[0].ready);
     assert_eq!(ship.weapon_arcs[0].energy, 10.0);
-    assert!(ship.weapon_recharge_queue.is_empty());
+    assert_empty!(ship.weapon_recharge_queue);
 }
 
 // Source: FUN_005b3a40 / FUN_005b3f10 fire; FUN_005b5100's subsystem
@@ -1352,32 +1422,14 @@ fn live_ship_fire_uses_the_shared_subsystem_damage_path() {
     target.subsystem_capacity.shields = true;
     target.refresh_subsystem_condition();
     let mut ships = vec![source, target];
-    let mut fields = Vec::new();
-    let mut projectiles = Vec::new();
-    let mut impacts = Vec::new();
-    let mut audio_cues = Vec::new();
-    let mut voice_cues = Vec::new();
-
-    BattleSession::fire_side(
-        &mut ships,
-        &mut fields,
-        &[0],
-        &[1],
-        &mut projectiles,
-        &mut impacts,
-        &mut audio_cues,
-        &mut voice_cues,
-        false,
-        TacticalVoiceFaction::Alliance,
-        &mut OriginalTacticalRng::new(1),
-    );
+    let fired = fire_test_side(&mut ships, &[0], &[1], false);
 
     assert!(ships[1].hull_current < 1000);
     assert_eq!(ships[1].subsystem_damage.shields, 1);
     assert!(ships[1].subsystem_condition.shields < 100);
-    assert_eq!(projectiles.len(), 1);
-    assert_eq!(impacts.len(), 1);
-    assert_eq!(audio_cues.len(), 2);
+    assert_eq!(fired.projectiles.len(), 1);
+    assert_eq!(fired.impacts.len(), 1);
+    assert_eq!(fired.audio.len(), 2);
 }
 
 // Source: FUN_005a7500 / FUN_005bae60 audio event bank.
@@ -1719,8 +1771,15 @@ fn death_star_attack_entry_routes_each_local_perspective_once() {
             }]
         );
         assert_eq!(session.trench_run_group, Some(2));
-        assert_eq!(session.trench_run_remaining_ms, None, "state 2 until it arrives");
-        assert_eq!(session.tactical_rng, OriginalTacticalRng::new(0x5eed_ba77), "no draw yet");
+        assert_eq!(
+            session.trench_run_remaining_ms, None,
+            "state 2 until it arrives"
+        );
+        assert_eq!(
+            session.tactical_rng,
+            OriginalTacticalRng::new(0x5eed_ba77),
+            "no draw yet"
+        );
 
         session.fighters[0].source_position = session.trench_run_entry_point(true);
         session.advance_trench_run_approach(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
@@ -1878,9 +1937,7 @@ fn fighter_groups_follow_source_ordinals_for_both_factions() {
 // Source: FUN_005c81d0 task force leader selection and slots.
 #[test]
 fn task_force_leaders_follow_weapon_categories_square_root_counts_and_source_slots() {
-    let mut ships = (0..9)
-        .map(|index| test_ship(64, index, true, true))
-        .collect::<Vec<_>>();
+    let mut ships = alliance_test_ships(9);
     for ship in &mut ships[..4] {
         ship.weapon_arcs[0] = TacticalWeaponArc::new(0, 1, 0);
     }
@@ -1904,9 +1961,7 @@ fn task_force_leaders_follow_weapon_categories_square_root_counts_and_source_slo
 // Source: FUN_005c81d0 sorts by -(sublight + 10000 * range).
 #[test]
 fn task_force_capability_order_prioritizes_range_then_available_sublight() {
-    let mut ships = (0..4)
-        .map(|index| test_ship(64, index, true, true))
-        .collect::<Vec<_>>();
+    let mut ships = alliance_test_ships(4);
     for ship in &mut ships {
         ship.weapon_arcs[0] = TacticalWeaponArc::new(1, 0, 0);
     }
@@ -1932,9 +1987,7 @@ fn task_force_capability_order_prioritizes_range_then_available_sublight() {
 // Source: FUN_005ea250 / FUN_005ec400 formation footprint and slots.
 #[test]
 fn task_force_followers_use_largest_footprint_and_alternating_slots() {
-    let mut ships = (0..3)
-        .map(|index| test_ship(64, index, true, true))
-        .collect::<Vec<_>>();
+    let mut ships = alliance_test_ships(3);
     for ship in &mut ships {
         ship.weapon_arcs[0] = TacticalWeaponArc::new(1, 0, 0);
         ship.source_collision_envelope = Some(OriginalTacticalCollisionEnvelope {
@@ -1962,9 +2015,7 @@ fn task_force_followers_use_largest_footprint_and_alternating_slots() {
 // Source: FUN_005ea250 / FUN_005ec400 / FUN_005cbbc0 formation geometry.
 #[test]
 fn task_force_followers_rotate_and_move_with_the_retained_anchor() {
-    let mut ships = (0..2)
-        .map(|index| test_ship(64, index, true, true))
-        .collect::<Vec<_>>();
+    let mut ships = alliance_test_ships(2);
     for ship in &mut ships {
         ship.weapon_arcs[0] = TacticalWeaponArc::new(1, 0, 0);
         ship.subsystem_capacity.engines = true;
@@ -2081,7 +2132,7 @@ fn fighter_roster_expands_each_strategic_squadron_with_exact_dat_stats() {
 
     BattleSession::expand_fleet(&world, fleet, true, &mut ships, &mut fighters);
 
-    assert!(ships.is_empty());
+    assert_empty!(ships);
     assert_eq!(fighters.len(), 2);
     assert_eq!(fighters[0].fleet_squadron_index, 0);
     assert_eq!(fighters[1].fleet_squadron_index, 1);
@@ -2216,14 +2267,10 @@ fn fighter_fore_battery_fires_source_families_and_torpedoes_at_capitals() {
             .iter()
             .map(|cue| cue.event)
             .collect::<Vec<_>>(),
-        vec![
-            TacticalAudioEvent::IonFire,
-            TacticalAudioEvent::IonImpact,
-            TacticalAudioEvent::LaserFire,
-            TacticalAudioEvent::LaserImpact,
+        weapon_audio_events(
             TacticalAudioEvent::TorpedoFire,
             TacticalAudioEvent::TorpedoImpact,
-        ]
+        )
     );
 }
 
@@ -2321,7 +2368,7 @@ fn ordered_navigation_route_advances_without_losing_the_next_waypoint() {
     session.advance_original_tactical_movement(10.0);
     assert_eq!(session.ships[0].source_position, second);
     assert_eq!(session.ships[0].source_waypoint, None);
-    assert!(session.ships[0].navigation_route.is_empty());
+    assert_empty!(session.ships[0].navigation_route);
 }
 
 // Source: FUN_005d0b10 / FUN_005d0bb0 manual target list.
@@ -2356,7 +2403,7 @@ fn ordered_manual_targets_advance_and_clear_as_hostiles_are_destroyed() {
 
     session.ships[2].alive = false;
     refresh_original_attack_targets(&mut session);
-    assert!(session.ships[0].manual_targets.is_empty());
+    assert_empty!(session.ships[0].manual_targets);
     assert_eq!(session.ships[0].attack_target, None);
 }
 
@@ -2469,7 +2516,7 @@ fn death_star_ready_voice_fires_once_only_when_the_players_laser_crosses_full_ch
     );
     assert!(!session.step());
     assert_eq!(session.combat_tick, 2);
-    assert!(session.take_pending_voice_cues().is_empty());
+    assert_empty!(session.take_pending_voice_cues());
 
     let attacker = test_ship(64, 0, true, true);
     let defender = test_ship(128, 0, false, true);
@@ -2514,7 +2561,10 @@ fn battle_outcome_voice_distinguishes_draw_destruction_and_each_withdrawal_side(
     let alliance = TacticalVoiceFaction::Alliance;
     let empire = TacticalVoiceFaction::Empire;
 
-    assert!(voice(true, (true, false), (true, false)).is_empty(), "no outcome");
+    assert!(
+        voice(true, (true, false), (true, false)).is_empty(),
+        "no outcome"
+    );
     assert_eq!(
         voice(true, (true, false), (false, false)),
         vec![TacticalVoiceCue::battle_won(alliance, false)]
@@ -2611,10 +2661,7 @@ fn attack_death_star_order_uses_the_timed_native_result_producer() {
     // Seed 15 draws a maneuver of 8, which holds, then the certain success.
     session.tactical_rng = OriginalTacticalRng::new(15);
     session.selected_fighter_group = Some(0);
-    session.death_star = Some(test_death_star(false));
-    session.fighters[0].source_position = session.trench_run_entry_point(true);
-
-    begin_original_attack_order(&mut session, &[], &[0], TacticalOrder::AttackDeathStar);
+    begin_test_trench_run(&mut session);
     assert_eq!(session.trench_run_remaining_ms, None);
     session.advance_trench_run_approach(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
     assert_eq!(
@@ -2630,7 +2677,7 @@ fn attack_death_star_order_uses_the_timed_native_result_producer() {
     assert_eq!(death_star.hull, 0.0);
     assert_eq!(death_star.laser_charge, 0.0);
     assert_eq!(death_star.resource_id(), 5010);
-    assert!(session.weapon_effects.is_empty());
+    assert_empty!(session.weapon_effects);
     assert_eq!(
         session.trench_run_outcome,
         Some(TacticalTrenchRunOutcome::Success)
@@ -2673,10 +2720,7 @@ fn successful_trench_run_applies_the_source_half_group_casualty_rule() {
         .collect::<Vec<_>>();
     let mut session = test_session(Vec::new(), fighters, true);
     session.tactical_rng = OriginalTacticalRng::new(15);
-    session.death_star = Some(test_death_star(false));
-    session.fighters[0].source_position = session.trench_run_entry_point(true);
-
-    begin_original_attack_order(&mut session, &[], &[0], TacticalOrder::AttackDeathStar);
+    begin_test_trench_run(&mut session);
     session.advance_trench_run_approach(ORIGINAL_TACTICAL_STEP_MILLISECONDS);
     assert_eq!(session.trench_run_participants, vec![0, 1, 2, 3]);
     assert_eq!(
@@ -2740,10 +2784,8 @@ fn losing_the_committed_death_star_attackers_routes_failure_once() {
     )));
     assert_eq!(
         cues.iter()
-            .filter(|cue| **cue == TacticalVoiceCue::trench_run_outcome(
-                0,
-                TacticalTrenchRunOutcome::Failure,
-            ))
+            .filter(|cue| **cue
+                == TacticalVoiceCue::trench_run_outcome(0, TacticalTrenchRunOutcome::Failure,))
             .count(),
         1
     );
@@ -2837,45 +2879,30 @@ fn imperial_trench_run_observer_routes_failure_and_success_to_death_star_events(
 // so that ship dies with the station whatever its own ship result says.
 #[test]
 fn a_death_star_destroyed_in_battle_leaves_its_fleet_without_one_and_its_ship_dead() {
-    use crate::world::{CapitalShipClass, Fleet, ShipInstance, System};
+    use crate::world::{ShipInstance, System};
 
     // The rule takes no side: either side's fleet given the class loses it.
     for owner_is_alliance in [false, true] {
         let mut world = GameWorld::default();
         let system = world.systems.insert(System::default());
-        let mut class = |family, is_alliance: bool| {
-            world.capital_ship_classes.insert(CapitalShipClass {
-                dat_id: DatId::new(if family == 0x18 {
-                    crate::world::DEATH_STAR_CLASS_ID
-                } else {
-                    0x1400_0001
-                }),
-                family,
-                is_alliance,
-                is_empire: !is_alliance,
-                hull: 100,
-                ..CapitalShipClass::default()
-            })
-        };
-        let death_star = class(0x18, owner_is_alliance);
-        let destroyer = class(0x14, owner_is_alliance);
-        let cruiser = class(0x14, !owner_is_alliance);
-        let owner = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![
+        let death_star = battle_ship_class(&mut world, 0x18, owner_is_alliance, 0);
+        let destroyer = battle_ship_class(&mut world, 0x14, owner_is_alliance, 0);
+        let cruiser = battle_ship_class(&mut world, 0x14, !owner_is_alliance, 0);
+        let owner = crate::test_support::add_fleet_with_ships(
+            &mut world,
+            system,
+            vec![
                 ShipInstance::new(destroyer, 100, owner_is_alliance),
                 ShipInstance::new(death_star, 100, owner_is_alliance),
             ],
-            is_alliance: owner_is_alliance,
-            ..Fleet::default()
-        });
-        let enemy = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(cruiser, 100, !owner_is_alliance)],
-            is_alliance: !owner_is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets = vec![owner, enemy];
+            owner_is_alliance,
+        );
+        let enemy = crate::test_support::add_fleet_with_class(
+            &mut world,
+            system,
+            cruiser,
+            !owner_is_alliance,
+        );
         world.systems[system].fleets.sort_unstable();
         assert!(world.fleet_has_death_star(owner));
 
@@ -2886,14 +2913,7 @@ fn a_death_star_destroyed_in_battle_leaves_its_fleet_without_one_and_its_ship_de
         station.hull = 0.0;
         session.winner = Some(CombatWinner::Defender);
 
-        apply::apply_results(
-            &session,
-            &mut world,
-            &mut crate::troop_transport::TroopTransportState::default(),
-            &mut crate::movement::MovementState::new(),
-            &ProductRoom::default(),
-            &mut Vec::new(),
-        );
+        apply_battle(&session, &mut world);
 
         assert!(!world.fleet_has_death_star(owner));
         let classes: Vec<_> = world.fleets[owner]
@@ -2913,36 +2933,12 @@ fn a_death_star_destroyed_in_battle_leaves_its_fleet_without_one_and_its_ship_de
 // side that holds nothing retreats to the other side's system.
 #[test]
 fn a_side_retreats_to_a_system_it_holds_else_to_the_other_sides() {
-    use crate::world::{CapitalShipClass, ControlKind, Fleet, ShipInstance, System};
-
     for refuge_side in [crate::dat::Faction::Alliance, crate::dat::Faction::Empire] {
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System::default());
-        world.systems.insert(System {
-            x: 30,
-            control: ControlKind::Controlled(refuge_side),
-            ..System::default()
-        });
-        let mut fleet = |is_alliance: bool| {
-            let class = world.capital_ship_classes.insert(CapitalShipClass {
-                dat_id: DatId::new(0x1400_0001),
-                family: 0x14,
-                is_alliance,
-                is_empire: !is_alliance,
-                hull: 100,
-                ..CapitalShipClass::default()
-            });
-            world.fleets.insert(Fleet {
-                location: system,
-                capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
-                is_alliance,
-                ..Fleet::default()
-            })
-        };
-        let alliance = fleet(true);
-        let empire = fleet(false);
-        world.systems[system].fleets = vec![alliance, empire];
-        world.systems[system].fleets.sort_unstable();
+        let (mut world, system, _) =
+            super::test_support::battle_system_with_refuge(refuge_side, 30);
+        let alliance = simple_fleet(&mut world, system, true, 1);
+        let empire = simple_fleet(&mut world, system, false, 1);
+        super::test_support::attach_opposed_fleets(&mut world, system, alliance, empire);
 
         let mut session = BattleSession::new(&world, system, alliance, empire, true, 1, 0x5eed);
         apply::seat_morale(
@@ -2952,7 +2948,11 @@ fn a_side_retreats_to_a_system_it_holds_else_to_the_other_sides() {
             &crate::movement::MovementState::new(),
             Some(true),
         );
-        assert_eq!(session.morale.retreat_permitted, [true, true], "{refuge_side:?}");
+        assert_eq!(
+            session.morale.retreat_permitted,
+            [true, true],
+            "{refuge_side:?}"
+        );
     }
 }
 
@@ -3021,7 +3021,15 @@ fn battle_with_a_jump(
     winner_is_alliance: bool,
     jumper_is_alliance: bool,
 ) -> BattleSession {
-    let mut session = BattleSession::new(world, system, fleets[0], fleets[1], !winner_is_alliance, 0, 1);
+    let mut session = BattleSession::new(
+        world,
+        system,
+        fleets[0],
+        fleets[1],
+        !winner_is_alliance,
+        0,
+        1,
+    );
     for ship in &mut session.ships {
         if ship.identity.is_alliance == jumper_is_alliance {
             ship.retreated = true;
@@ -3052,7 +3060,13 @@ fn battle_with_a_jump(
 fn a_winner_whose_ship_jumped_stays_at_the_system_with_its_docked_squadrons() {
     for winner_is_alliance in [true, false] {
         let (mut world, system, fleets, _) = withdrawal_world();
-        let mut session = battle_with_a_jump(&world, system, fleets, winner_is_alliance, winner_is_alliance);
+        let mut session = battle_with_a_jump(
+            &world,
+            system,
+            fleets,
+            winner_is_alliance,
+            winner_is_alliance,
+        );
         // Its squadron flew on after the ship left (FUN_005c8780.c:102-125).
         for fighter in session
             .fighters
@@ -3062,18 +3076,12 @@ fn a_winner_whose_ship_jumped_stays_at_the_system_with_its_docked_squadrons() {
             fighter.docked = None;
             fighter.alive = true;
         }
-        let mut movement = crate::movement::MovementState::new();
-        let mut log = Vec::new();
-        apply::apply_results(
-            &session,
-            &mut world,
-            &mut crate::troop_transport::TroopTransportState::default(),
-            &mut movement,
-            &ProductRoom::default(),
-            &mut log,
-        );
+        let (_, movement, log) = apply_battle_with_movement(&session, &mut world);
         let winner = fleets[usize::from(!winner_is_alliance)];
-        assert!(movement.get(winner).is_none(), "{winner_is_alliance}: {log:?}");
+        assert!(
+            movement.get(winner).is_none(),
+            "{winner_is_alliance}: {log:?}"
+        );
         assert!(world.systems[system].fleets.contains(&winner), "{log:?}");
         assert_eq!(
             world.fleets[winner]
@@ -3104,20 +3112,19 @@ fn a_winner_whose_ship_jumped_stays_at_the_system_with_its_docked_squadrons() {
 // ship goes along.
 #[test]
 fn a_loser_that_withdrew_leaves_through_the_retreat_chain() {
-    for (loser_is_alliance, player_lost) in [(true, true), (false, true), (true, false), (false, false)] {
+    for (loser_is_alliance, player_lost) in
+        [(true, true), (false, true), (true, false), (false, false)]
+    {
         let (mut world, system, fleets, refuges) = withdrawal_world();
-        let mut session = battle_with_a_jump(&world, system, fleets, !loser_is_alliance, loser_is_alliance);
-        session.player_is_attacker = loser_is_alliance == player_lost;
-        let mut movement = crate::movement::MovementState::new();
-        let mut log = Vec::new();
-        let result = apply::apply_results(
-            &session,
-            &mut world,
-            &mut crate::troop_transport::TroopTransportState::default(),
-            &mut movement,
-            &ProductRoom::default(),
-            &mut log,
+        let mut session = battle_with_a_jump(
+            &world,
+            system,
+            fleets,
+            !loser_is_alliance,
+            loser_is_alliance,
         );
+        session.player_is_attacker = loser_is_alliance == player_lost;
+        let (result, movement, log) = apply_battle_with_movement(&session, &mut world);
         let (loser, winner) = if loser_is_alliance {
             (fleets[0], fleets[1])
         } else {
@@ -3130,7 +3137,11 @@ fn a_loser_that_withdrew_leaves_through_the_retreat_chain() {
             "{loser_is_alliance}: {log:?}"
         );
         assert_eq!(result.withdrawal, player_lost.then_some(refuge));
-        assert_eq!(world.fleets[loser].fighters.len(), 1, "its squadron rides along");
+        assert_eq!(
+            world.fleets[loser].fighters.len(),
+            1,
+            "its squadron rides along"
+        );
         assert!(world.systems[system].fleets.contains(&winner), "{log:?}");
     }
 }
@@ -3140,38 +3151,12 @@ fn a_loser_that_withdrew_leaves_through_the_retreat_chain() {
 // battle's own results leave bit 11 off its sector.
 #[test]
 fn a_death_star_lost_in_battle_clears_its_sector_with_the_results() {
-    use crate::world::{CapitalShipClass, Fleet, Sector, ShipInstance, System};
+    use crate::world::System;
 
     let mut world = GameWorld::default();
-    let sector = world.sectors.insert(Sector::default());
-    let system = world.systems.insert(System {
-        sector,
-        ..System::default()
-    });
-    let mut class = |family, is_alliance: bool| {
-        world.capital_ship_classes.insert(CapitalShipClass {
-            family,
-            is_alliance,
-            is_empire: !is_alliance,
-            hull: 100,
-            ..CapitalShipClass::default()
-        })
-    };
-    let death_star = class(0x18, false);
-    let cruiser = class(0x14, true);
-    let empire = world.fleets.insert(Fleet {
-        location: system,
-        capital_ships: vec![ShipInstance::new(death_star, 100, false)],
-        ..Fleet::default()
-    });
-    let alliance = world.fleets.insert(Fleet {
-        location: system,
-        capital_ships: vec![ShipInstance::new(cruiser, 100, true)],
-        is_alliance: true,
-        ..Fleet::default()
-    });
-    world.systems[system].fleets = vec![empire, alliance];
-    world.systems[system].fleets.sort_unstable();
+    let system = crate::test_support::insert_system(&mut world, System::default());
+    let sector = world.systems[system].sector;
+    let (empire, alliance) = opposed_death_star_fleets(&mut world, system, 0);
     world.death_star_sectors.insert(sector);
 
     let mut session = BattleSession::new(&world, system, alliance, empire, true, 1, 0x5eed);
@@ -3180,15 +3165,7 @@ fn a_death_star_lost_in_battle_clears_its_sector_with_the_results() {
         ship.alive = false;
     }
 
-    let mut log = Vec::new();
-    apply::apply_results(
-        &session,
-        &mut world,
-        &mut crate::troop_transport::TroopTransportState::default(),
-        &mut crate::movement::MovementState::new(),
-        &ProductRoom::default(),
-        &mut log,
-    );
+    let (_, log) = apply_battle(&session, &mut world);
     assert!(!world.fleet_has_death_star(empire), "{log:?}");
     assert!(world.death_star_sectors.is_empty(), "{log:?}");
 }
@@ -3201,16 +3178,18 @@ fn side_classes(
     is_alliance: bool,
     fighter_capacity: u32,
 ) -> (crate::ids::CapitalShipKey, FighterKey) {
-    let ship = world.capital_ship_classes.insert(crate::world::CapitalShipClass {
-        dat_id: DatId::new(0x1400_0001),
-        family: 0x14,
-        is_alliance,
-        is_empire: !is_alliance,
-        hull: 100,
-        hyperdrive: 1,
-        fighter_capacity,
-        ..crate::world::CapitalShipClass::default()
-    });
+    let ship = world
+        .capital_ship_classes
+        .insert(crate::world::CapitalShipClass {
+            dat_id: DatId::new(0x1400_0001),
+            family: 0x14,
+            is_alliance,
+            is_empire: !is_alliance,
+            hull: 100,
+            hyperdrive: 1,
+            fighter_capacity,
+            ..crate::world::CapitalShipClass::default()
+        });
     (ship, squadron_class(world, is_alliance))
 }
 
@@ -3248,17 +3227,33 @@ fn one_ship_fleet(
 }
 
 /// Run `apply_results` with fresh transport and movement states.
-fn apply_battle(session: &BattleSession, world: &mut GameWorld) -> (apply::BattleReturn, Vec<String>) {
+fn apply_battle(
+    session: &BattleSession,
+    world: &mut GameWorld,
+) -> (apply::BattleReturn, Vec<String>) {
+    let (result, _, log) = apply_battle_with_movement(session, world);
+    (result, log)
+}
+
+fn apply_battle_with_movement(
+    session: &BattleSession,
+    world: &mut GameWorld,
+) -> (
+    apply::BattleReturn,
+    crate::movement::MovementState,
+    Vec<String>,
+) {
+    let mut movement = crate::movement::MovementState::new();
     let mut log = Vec::new();
     let result = apply::apply_results(
         session,
         world,
         &mut crate::troop_transport::TroopTransportState::default(),
-        &mut crate::movement::MovementState::new(),
+        &mut movement,
         &ProductRoom::default(),
         &mut log,
     );
-    (result, log)
+    (result, movement, log)
 }
 
 fn winner_of(winner_is_alliance: bool) -> CombatWinner {
@@ -3270,6 +3265,52 @@ fn winner_of(winner_is_alliance: bool) -> CombatWinner {
     }
 }
 
+fn controlled_system(world: &mut GameWorld, is_alliance: bool) -> SystemKey {
+    world.systems.insert(crate::world::System {
+        control: crate::world::ControlKind::Controlled(crate::dat::Faction::of_alliance(
+            is_alliance,
+        )),
+        ..crate::world::System::default()
+    })
+}
+
+fn system_fighter_rows(world: &GameWorld, system: SystemKey) -> Vec<(FighterKey, u32, bool)> {
+    world.systems[system]
+        .fighters
+        .iter()
+        .map(|entry| (entry.class, entry.count, entry.is_alliance))
+        .collect()
+}
+
+fn winner_fleet_fixture(
+    world: &mut GameWorld,
+    system: SystemKey,
+    winner_is_alliance: bool,
+) -> (FleetKey, FleetKey, FleetKey, crate::ids::CapitalShipKey) {
+    let (winner_ship, _) = side_classes(world, winner_is_alliance, 0);
+    let (loser_ship, _) = side_classes(world, !winner_is_alliance, 0);
+    let lead = one_ship_fleet(world, system, winner_ship, winner_is_alliance, Vec::new());
+    let other = one_ship_fleet(world, system, winner_ship, winner_is_alliance, Vec::new());
+    let loser = one_ship_fleet(world, system, loser_ship, !winner_is_alliance, Vec::new());
+    (lead, other, loser, winner_ship)
+}
+
+/// port: shared post-battle test fixture values, not rules.
+fn winner_session(
+    world: &GameWorld,
+    system: SystemKey,
+    lead: FleetKey,
+    loser: FleetKey,
+    winner_is_alliance: bool,
+) -> BattleSession {
+    let (attacker, defender) = if winner_is_alliance {
+        (lead, loser)
+    } else {
+        (loser, lead)
+    };
+    BattleSession::new(world, system, attacker, defender, true, 0, 1)
+}
+
 // FUN_0040c780.c:171-177 imports the system's own squadrons through
 // FUN_0040d260; FUN_00503370 destroys one whose craft are all lost (slot
 // +0xac, reason 0xc), and FUN_0040d320.c:54-85 keeps each survivor in no
@@ -3277,20 +3318,16 @@ fn winner_of(winner_is_alliance: bool) -> CombatWinner {
 // entry, and each survivor stays on its own side.
 #[test]
 fn a_system_squadron_lost_in_battle_leaves_the_system_and_its_survivors_stay() {
-    use crate::world::{ControlKind, System};
-
     for winner_is_alliance in [true, false] {
         let mut world = GameWorld::default();
-        let system = world.systems.insert(System {
-            control: ControlKind::Controlled(crate::dat::Faction::of_alliance(winner_is_alliance)),
-            ..System::default()
-        });
+        let system = controlled_system(&mut world, winner_is_alliance);
         let mut fleets = [FleetKey::default(); 2];
         let mut classes = [FighterKey::default(); 2];
         for is_alliance in [true, false] {
             // No hangar room: every squadron ends in no hangar.
             let (ship, squadron) = side_classes(&mut world, is_alliance, 0);
-            fleets[usize::from(!is_alliance)] = one_ship_fleet(&mut world, system, ship, is_alliance, Vec::new());
+            fleets[usize::from(!is_alliance)] =
+                one_ship_fleet(&mut world, system, ship, is_alliance, Vec::new());
             classes[usize::from(!is_alliance)] = squadron;
         }
         let winner_side = usize::from(!winner_is_alliance);
@@ -3307,7 +3344,11 @@ fn a_system_squadron_lost_in_battle_leaves_the_system_and_its_survivors_stay() {
             .position(|fighter| fighter.class_key == survivor_class)
             .unwrap();
         session.fighters[first].destroy();
-        for fighter in session.fighters.iter_mut().filter(|fighter| fighter.class_key == lost_class) {
+        for fighter in session
+            .fighters
+            .iter_mut()
+            .filter(|fighter| fighter.class_key == lost_class)
+        {
             fighter.destroy();
         }
         for ship in session
@@ -3323,11 +3364,7 @@ fn a_system_squadron_lost_in_battle_leaves_the_system_and_its_survivors_stay() {
         let (_, log) = apply_battle(&session, &mut world);
 
         assert_eq!(
-            world.systems[system]
-                .fighters
-                .iter()
-                .map(|entry| (entry.class, entry.count, entry.is_alliance))
-                .collect::<Vec<_>>(),
+            system_fighter_rows(&world, system),
             vec![(survivor_class, 1, winner_is_alliance)],
             "{winner_is_alliance}: {log:?}"
         );
@@ -3360,7 +3397,11 @@ fn each_carrier_holds_per_class_the_squadrons_that_docked_in_it() {
             let single = squadron_class(&mut world, is_alliance);
             let lost = squadron_class(&mut world, is_alliance);
             let tag = world.last_ship_tag + 1;
-            let entry = |class, count| FighterEntry { class, count, carrier: tag };
+            let entry = |class, count| FighterEntry {
+                class,
+                count,
+                carrier: tag,
+            };
             fleets[usize::from(!is_alliance)] = one_ship_fleet(
                 &mut world,
                 system,
@@ -3372,7 +3413,11 @@ fn each_carrier_holds_per_class_the_squadrons_that_docked_in_it() {
         }
         let mut session = BattleSession::new(&world, system, fleets[0], fleets[1], true, 0, 1);
         for &(_, _, _, lost, _) in &kinds {
-            for fighter in session.fighters.iter_mut().filter(|fighter| fighter.class_key == lost) {
+            for fighter in session
+                .fighters
+                .iter_mut()
+                .filter(|fighter| fighter.class_key == lost)
+            {
                 fighter.destroy();
             }
         }
@@ -3405,28 +3450,30 @@ fn each_carrier_holds_per_class_the_squadrons_that_docked_in_it() {
 fn the_post_battle_steps_follow_the_winners_surviving_fleet() {
     use crate::world::{ControlKind, ShipTransit, System};
 
-    for (winner_is_alliance, lead_lost) in [(true, true), (false, true), (true, false), (false, false)] {
+    for (winner_is_alliance, lead_lost) in
+        [(true, true), (false, true), (true, false), (false, false)]
+    {
         let mut world = GameWorld::default();
         // The loser's own system, and another of its own 30 away that its
         // fleet leaves for (VM, `empire-day660-deathstar-pre-alert.sav`: a
         // loser at its own held Carida and Ando ended at Halowan).
-        let system = world.systems.insert(System {
-            control: ControlKind::Controlled(crate::dat::Faction::of_alliance(!winner_is_alliance)),
-            ..System::default()
-        });
+        let system = controlled_system(&mut world, !winner_is_alliance);
         let refuge = world.systems.insert(System {
             x: 30,
             control: ControlKind::Controlled(crate::dat::Faction::of_alliance(!winner_is_alliance)),
             ..System::default()
         });
-        let (winner_ship, _) = side_classes(&mut world, winner_is_alliance, 0);
-        let (loser_ship, _) = side_classes(&mut world, !winner_is_alliance, 0);
-        let lead = one_ship_fleet(&mut world, system, winner_ship, winner_is_alliance, Vec::new());
-        let other = one_ship_fleet(&mut world, system, winner_ship, winner_is_alliance, Vec::new());
-        let loser = one_ship_fleet(&mut world, system, loser_ship, !winner_is_alliance, Vec::new());
+        let (lead, other, loser, winner_ship) =
+            winner_fleet_fixture(&mut world, system, winner_is_alliance);
         // A fleet of the winner whose only ship is on its own leg, listed
         // first.
-        let travelling = one_ship_fleet(&mut world, system, winner_ship, winner_is_alliance, Vec::new());
+        let travelling = one_ship_fleet(
+            &mut world,
+            system,
+            winner_ship,
+            winner_is_alliance,
+            Vec::new(),
+        );
         world.fleets[travelling].capital_ships[0].transit = Some(ShipTransit {
             from: system,
             to: system,
@@ -3438,10 +3485,13 @@ fn the_post_battle_steps_follow_the_winners_surviving_fleet() {
             // The other fleet comes first at the system.
             vec![travelling, other, lead, loser]
         };
-        let (attacker, defender) = if winner_is_alliance { (lead, loser) } else { (loser, lead) };
-        let mut session = BattleSession::new(&world, system, attacker, defender, true, 0, 1);
+        let mut session = winner_session(&world, system, lead, loser, winner_is_alliance);
         if lead_lost {
-            for ship in session.ships.iter_mut().filter(|ship| ship.fleet == Some(lead)) {
+            for ship in session
+                .ships
+                .iter_mut()
+                .filter(|ship| ship.fleet == Some(lead))
+            {
                 ship.alive = false;
                 ship.hull_current = 0;
             }
@@ -3471,17 +3521,13 @@ fn the_post_battle_steps_follow_the_winners_surviving_fleet() {
 // the side's first usable fleet does. `apply::apply_results` picks it.
 #[test]
 fn a_surviving_lead_without_a_usable_ship_hands_the_steps_to_the_next_fleet() {
-    use crate::world::{ControlKind, ShipTransit, System};
+    use crate::world::ShipTransit;
 
     for winner_is_alliance in [true, false] {
         let mut world = GameWorld::default();
-        let system = world.systems.insert(System {
-            control: ControlKind::Controlled(crate::dat::Faction::of_alliance(!winner_is_alliance)),
-            ..System::default()
-        });
-        let (winner_ship, _) = side_classes(&mut world, winner_is_alliance, 0);
-        let (loser_ship, _) = side_classes(&mut world, !winner_is_alliance, 0);
-        let lead = one_ship_fleet(&mut world, system, winner_ship, winner_is_alliance, Vec::new());
+        let system = controlled_system(&mut world, !winner_is_alliance);
+        let (lead, other, loser, winner_ship) =
+            winner_fleet_fixture(&mut world, system, winner_is_alliance);
         let mut travelling = crate::world::ShipInstance::new(winner_ship, 100, winner_is_alliance);
         travelling.transit = Some(ShipTransit {
             from: system,
@@ -3489,11 +3535,12 @@ fn a_surviving_lead_without_a_usable_ship_hands_the_steps_to_the_next_fleet() {
             arrival_tick: 10,
         });
         world.fleets[lead].capital_ships.push(travelling);
-        let other = one_ship_fleet(&mut world, system, winner_ship, winner_is_alliance, Vec::new());
-        let loser = one_ship_fleet(&mut world, system, loser_ship, !winner_is_alliance, Vec::new());
-        let (attacker, defender) = if winner_is_alliance { (lead, loser) } else { (loser, lead) };
-        let mut session = BattleSession::new(&world, system, attacker, defender, true, 0, 1);
-        for ship in session.ships.iter_mut().filter(|ship| ship.fleet == Some(lead)) {
+        let mut session = winner_session(&world, system, lead, loser, winner_is_alliance);
+        for ship in session
+            .ships
+            .iter_mut()
+            .filter(|ship| ship.fleet == Some(lead))
+        {
             ship.alive = false;
             ship.hull_current = 0;
         }
@@ -3501,9 +3548,16 @@ fn a_surviving_lead_without_a_usable_ship_hands_the_steps_to_the_next_fleet() {
         session.phase = BattlePhase::Results;
         let (result, log) = apply_battle(&session, &mut world);
 
-        assert!(world.fleets.contains_key(lead), "the travelling ship keeps it");
+        assert!(
+            world.fleets.contains_key(lead),
+            "the travelling ship keeps it"
+        );
         assert!(!world.fleets[lead].usable());
-        assert_eq!(result.winner_fleet, Some(other), "{winner_is_alliance}: {log:?}");
+        assert_eq!(
+            result.winner_fleet,
+            Some(other),
+            "{winner_is_alliance}: {log:?}"
+        );
     }
 }
 
@@ -3539,11 +3593,27 @@ fn a_lead_fleet_without_a_usable_ship_puts_nothing_in_the_battle() {
         let standing = one_ship_fleet(&mut world, system, ship, is_alliance, Vec::new());
         let (enemy_ship, _) = side_classes(&mut world, !is_alliance, 0);
         let enemy = one_ship_fleet(&mut world, system, enemy_ship, !is_alliance, Vec::new());
-        let (attacker, defender) = if is_alliance { (lead, enemy) } else { (enemy, lead) };
+        let (attacker, defender) = if is_alliance {
+            (lead, enemy)
+        } else {
+            (enemy, lead)
+        };
         let session = BattleSession::new(&world, system, attacker, defender, true, 0, 1);
-        assert!(session.ships.iter().all(|ship| ship.fleet != Some(lead)), "{is_alliance}");
-        assert!(session.fighters.iter().all(|fighter| fighter.fleet != Some(lead)), "{is_alliance}");
-        assert!(session.ships.iter().any(|ship| ship.fleet == Some(standing)));
+        assert!(
+            session.ships.iter().all(|ship| ship.fleet != Some(lead)),
+            "{is_alliance}"
+        );
+        assert!(
+            session
+                .fighters
+                .iter()
+                .all(|fighter| fighter.fleet != Some(lead)),
+            "{is_alliance}"
+        );
+        assert!(session
+            .ships
+            .iter()
+            .any(|ship| ship.fleet == Some(standing)));
     }
 }
 
@@ -3555,7 +3625,7 @@ fn a_lead_fleet_without_a_usable_ship_puts_nothing_in_the_battle() {
 // its fleet, the Death Star ship aboard, along the retreat chain.
 #[test]
 fn a_death_star_that_carries_its_sides_retreat_leaves_with_its_fleet() {
-    use crate::world::{CapitalShipClass, ControlKind, Fleet, ShipInstance, System};
+    use crate::world::{ControlKind, System};
 
     let mut world = GameWorld::default();
     let system = world.systems.insert(System::default());
@@ -3564,36 +3634,7 @@ fn a_death_star_that_carries_its_sides_retreat_leaves_with_its_fleet() {
         control: ControlKind::Controlled(crate::dat::Faction::Empire),
         ..System::default()
     });
-    let mut class = |family, is_alliance: bool| {
-        world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(if family == 0x18 {
-                crate::world::DEATH_STAR_CLASS_ID
-            } else {
-                0x1400_0001
-            }),
-            family,
-            is_alliance,
-            is_empire: !is_alliance,
-            hull: 100,
-            hyperdrive: 1,
-            ..CapitalShipClass::default()
-        })
-    };
-    let death_star = class(0x18, false);
-    let cruiser = class(0x14, true);
-    let empire = world.fleets.insert(Fleet {
-        location: system,
-        capital_ships: vec![ShipInstance::new(death_star, 100, false)],
-        ..Fleet::default()
-    });
-    let alliance = world.fleets.insert(Fleet {
-        location: system,
-        capital_ships: vec![ShipInstance::new(cruiser, 100, true)],
-        is_alliance: true,
-        ..Fleet::default()
-    });
-    world.systems[system].fleets = vec![empire, alliance];
-    world.systems[system].fleets.sort_unstable();
+    let (empire, alliance) = opposed_death_star_fleets(&mut world, system, 1);
 
     let mut session = BattleSession::new(&world, system, alliance, empire, true, 1, 0x5eed);
     for ship in session.ships.iter_mut().filter(|ship| !ship.is_attacker) {
@@ -3605,16 +3646,7 @@ fn a_death_star_that_carries_its_sides_retreat_leaves_with_its_fleet() {
     assert!(session.finish_if_decided());
     assert_eq!(session.winner, Some(CombatWinner::Attacker));
 
-    let mut movement = crate::movement::MovementState::new();
-    let mut log = Vec::new();
-    apply::apply_results(
-        &session,
-        &mut world,
-        &mut crate::troop_transport::TroopTransportState::default(),
-        &mut movement,
-        &ProductRoom::default(),
-        &mut log,
-    );
+    let (_, movement, log) = apply_battle_with_movement(&session, &mut world);
     assert!(world.fleet_has_death_star(empire), "{log:?}");
     assert_eq!(
         movement.get(empire).map(|order| order.destination),
@@ -3631,11 +3663,17 @@ fn a_battle_starts_blockaded_only_at_a_held_system_without_the_holders_fleet() {
     use crate::dat::Faction;
     use crate::world::ControlKind;
     let (mut world, system) = super::hangar_tests::carried_world();
-    let [alliance, empire] = [world.systems[system].fleets[0], world.systems[system].fleets[1]];
+    let [alliance, empire] = [
+        world.systems[system].fleets[0],
+        world.systems[system].fleets[1],
+    ];
     let start = |world: &GameWorld| BattleSession::new(world, system, alliance, empire, true, 0, 1);
     for side in [Faction::Alliance, Faction::Empire] {
         world.systems[system].control = ControlKind::Controlled(side);
-        assert!(!start(&world).blockaded_at_start, "{side:?}: both fleets are there");
+        assert!(
+            !start(&world).blockaded_at_start,
+            "{side:?}: both fleets are there"
+        );
     }
     for (side, present, blockaded) in [
         (Faction::Empire, alliance, true),
@@ -3645,7 +3683,11 @@ fn a_battle_starts_blockaded_only_at_a_held_system_without_the_holders_fleet() {
     ] {
         world.systems[system].fleets = vec![present];
         world.systems[system].control = ControlKind::Controlled(side);
-        assert_eq!(start(&world).blockaded_at_start, blockaded, "{side:?} holds");
+        assert_eq!(
+            start(&world).blockaded_at_start,
+            blockaded,
+            "{side:?} holds"
+        );
     }
     world.systems[system].fleets = vec![alliance];
     world.systems[system].control = ControlKind::Uncontrolled;
@@ -3662,7 +3704,11 @@ fn the_ships_whose_class_projects_a_gravity_well_are_listed() {
     let class = world.fleets[empire].capital_ships[0].class;
     world.capital_ship_classes[class].gravity_well_projector = 1;
     let session = super::hangar_tests::battle_of(&world, system);
-    let well = session.ships.iter().position(|ship| !ship.identity.is_alliance).unwrap();
+    let well = session
+        .ships
+        .iter()
+        .position(|ship| !ship.identity.is_alliance)
+        .unwrap();
     assert_eq!(session.morale.gravity_wells, [well]);
 }
 
@@ -3671,30 +3717,12 @@ fn the_ships_whose_class_projects_a_gravity_well_are_listed() {
 // its own leg from its yard (`+0x50` bit 5, FUN_00556430) stays out.
 #[test]
 fn a_ship_on_its_own_leg_does_not_fight_for_either_side() {
-    use crate::world::{CapitalShipClass, Fleet, ShipInstance, ShipTransit, System};
+    use crate::world::ShipTransit;
 
     for is_alliance in [true, false] {
-        let mut world = GameWorld::default();
-        let origin = world.systems.insert(System::default());
-        let system = world.systems.insert(System::default());
-        let mut fleet = |is_alliance: bool, ships: u32| {
-            let class = world.capital_ship_classes.insert(CapitalShipClass {
-                dat_id: DatId::new(0x1400_0001),
-                family: 0x14,
-                is_alliance,
-                is_empire: !is_alliance,
-                hull: 100,
-                ..CapitalShipClass::default()
-            });
-            world.fleets.insert(Fleet {
-                location: system,
-                capital_ships: ShipInstance::make(class, 100, is_alliance, ships),
-                is_alliance,
-                ..Fleet::default()
-            })
-        };
-        let attacker = fleet(is_alliance, 2);
-        let defender = fleet(!is_alliance, 1);
+        let (mut world, [origin, system]) = crate::test_support::bare_systems();
+        let attacker = simple_fleet(&mut world, system, is_alliance, 2);
+        let defender = simple_fleet(&mut world, system, !is_alliance, 1);
         world.fleets[attacker].capital_ships[1].transit = Some(ShipTransit {
             from: origin,
             to: system,
@@ -3777,11 +3805,7 @@ fn a_fighters_only_side_that_withdrew_keeps_its_squadrons_at_the_system() {
 
         let (_, log) = apply_battle(&session, &mut world);
         assert_eq!(
-            world.systems[system]
-                .fighters
-                .iter()
-                .map(|entry| (entry.class, entry.count, entry.is_alliance))
-                .collect::<Vec<_>>(),
+            system_fighter_rows(&world, system),
             vec![(squadron, 2, loser_is_alliance)],
             "{loser_is_alliance}: {log:?}"
         );

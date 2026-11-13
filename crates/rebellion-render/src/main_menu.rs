@@ -96,6 +96,7 @@ pub struct LogicalRect {
 }
 
 impl LogicalRect {
+    #[must_use]
     pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
             x,
@@ -324,7 +325,7 @@ pub fn hit_test(canvas: Rect, pointer: Pos2) -> Option<MainMenuControl> {
         .find_map(|(control, rect)| rect.contains(logical).then_some(*control))
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
@@ -333,7 +334,36 @@ fn animation_resource(start: u32, count: u32, elapsed: f64) -> u32 {
     start + ((elapsed * ANIMATION_FPS) as u32 % count)
 }
 
-#[expect(
+fn hover_texture(hovered: bool, start: u32, count: u32, idle: u32, elapsed: f64) -> u32 {
+    if hovered {
+        animation_resource(start, count, elapsed)
+    } else {
+        idle
+    }
+}
+
+fn selected_texture(
+    selected: bool,
+    selected_resource: u32,
+    hovered: bool,
+    animation_start: u32,
+    animation_count: u32,
+    elapsed: f64,
+) -> u32 {
+    if selected {
+        selected_resource
+    } else {
+        hover_texture(
+            hovered,
+            animation_start,
+            animation_count,
+            animation_start,
+            elapsed,
+        )
+    }
+}
+
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
@@ -345,33 +375,30 @@ fn texture_for(
     elapsed: f64,
 ) -> u32 {
     match control {
-        MainMenuControl::Easy => {
-            if state.difficulty == Difficulty::Easy {
-                11273
-            } else if hovered {
-                animation_resource(11061, 30, elapsed)
-            } else {
-                11061
-            }
-        }
-        MainMenuControl::Intermediate => {
-            if state.difficulty == Difficulty::Medium {
-                11275
-            } else if hovered {
-                animation_resource(11091, 30, elapsed)
-            } else {
-                11091
-            }
-        }
-        MainMenuControl::Expert => {
-            if state.difficulty == Difficulty::Hard {
-                11274
-            } else if hovered {
-                animation_resource(11121, 30, elapsed)
-            } else {
-                11121
-            }
-        }
+        MainMenuControl::Easy => selected_texture(
+            state.difficulty == Difficulty::Easy,
+            11273,
+            hovered,
+            11061,
+            30,
+            elapsed,
+        ),
+        MainMenuControl::Intermediate => selected_texture(
+            state.difficulty == Difficulty::Medium,
+            11275,
+            hovered,
+            11091,
+            30,
+            elapsed,
+        ),
+        MainMenuControl::Expert => selected_texture(
+            state.difficulty == Difficulty::Hard,
+            11274,
+            hovered,
+            11121,
+            30,
+            elapsed,
+        ),
         MainMenuControl::GalaxyLever => match state.galaxy_size {
             GalaxySize::Standard => 10001,
             GalaxySize::Large => 10002,
@@ -387,34 +414,10 @@ fn texture_for(
                 10158
             }
         }
-        MainMenuControl::Empire => {
-            if hovered {
-                animation_resource(11001, 15, elapsed)
-            } else {
-                10009
-            }
-        }
-        MainMenuControl::Alliance => {
-            if hovered {
-                animation_resource(11031, 15, elapsed)
-            } else {
-                10007
-            }
-        }
-        MainMenuControl::Multiplayer => {
-            if hovered {
-                animation_resource(11151, 30, elapsed)
-            } else {
-                10005
-            }
-        }
-        MainMenuControl::LoadOptions => {
-            if hovered {
-                animation_resource(11241, 15, elapsed)
-            } else {
-                10013
-            }
-        }
+        MainMenuControl::Empire => hover_texture(hovered, 11001, 15, 10009, elapsed),
+        MainMenuControl::Alliance => hover_texture(hovered, 11031, 15, 10007, elapsed),
+        MainMenuControl::Multiplayer => hover_texture(hovered, 11151, 30, 10005, elapsed),
+        MainMenuControl::LoadOptions => hover_texture(hovered, 11241, 15, 10013, elapsed),
         MainMenuControl::Credits => {
             if hovered && ((elapsed * 5.0) as u32 % 2 == 1) {
                 11272
@@ -422,13 +425,7 @@ fn texture_for(
                 11271
             }
         }
-        MainMenuControl::Quit => {
-            if hovered {
-                animation_resource(11181, 30, elapsed)
-            } else {
-                10011
-            }
-        }
+        MainMenuControl::Quit => hover_texture(hovered, 11181, 30, 10011, elapsed),
         MainMenuControl::MusicToggle | MainMenuControl::FleetRegistry => {
             unreachable!("the Open Rebellion extension chips use vector cockpit chrome")
         }
@@ -519,11 +516,11 @@ fn adjacent_control(current: Option<MainMenuControl>, backwards: bool) -> MainMe
     CONTROL_RECTS[next].0
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
     clippy::cast_sign_loss,
@@ -672,7 +669,7 @@ fn draw_music_toggle(
 }
 
 /// Draw the assembled cockpit and return an action when a control activates.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -837,7 +834,7 @@ pub fn draw_main_menu(
             let resource_id = texture_for(control, &MainMenuState::default(), false, 0.0);
             cache
                 .get(ctx, DllSource::Common, resource_id)
-                .map(|texture| texture.id())
+                .map(egui_macroquad::egui::TextureHandle::id)
         });
         if draw_fleet_registry(ctx, canvas, registry, &mut state.fleet_naming, emblems)
             == RegistryOutcome::Close
@@ -916,13 +913,14 @@ fn draw_registry_chip(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::immediate_click_frames;
 
     fn viewport(width: f32, height: f32) -> Rect {
         Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height))
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -1093,7 +1091,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
@@ -1104,7 +1102,7 @@ mod tests {
         for (index, (control, _)) in CONTROL_RECTS.iter().enumerate() {
             assert_eq!(control.index(), index);
             assert_eq!(MainMenuControl::from_index(index as u32), Some(*control));
-            assert!(!control.label().is_empty());
+            assert_not_empty!(control.label());
         }
         assert_eq!(
             CONTROL_RECTS[ORIGINAL_CONTROL_COUNT].0,
@@ -1144,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -1223,7 +1221,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let mut actions = Vec::new();
-        for events in [vec![], vec![]].into_iter().chain(frames) {
+        for events in crate::test_support::warmed_frames(Vec::new(), frames) {
             let input = egui::RawInput {
                 screen_rect: Some(viewport(640.0, 480.0)),
                 events,
@@ -1237,27 +1235,16 @@ mod tests {
     }
 
     fn click_at(x: f32, y: f32) -> Vec<Vec<egui::Event>> {
-        let pos = Pos2::new(x, y);
-        let press = |pressed| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        vec![
-            vec![egui::Event::PointerMoved(pos)],
-            vec![press(true)],
-            vec![press(false)],
-        ]
+        immediate_click_frames(Pos2::new(x, y))
     }
 
     #[test]
     fn the_open_registry_holds_the_cockpit_until_escape_closes_it() {
         let mut state = MainMenuState::default();
         let empire = (184.0, 335.0);
-        assert!(run_menu(&mut state, click_at(573.0, 21.0)).is_empty());
+        assert_empty!(run_menu(&mut state, click_at(573.0, 21.0)));
         assert!(state.registry_open());
-        assert!(run_menu(&mut state, click_at(empire.0, empire.1)).is_empty());
+        assert_empty!(run_menu(&mut state, click_at(empire.0, empire.1)));
         assert!(state.registry_open());
         let arrow = egui::Event::Key {
             key: egui::Key::ArrowRight,
@@ -1276,7 +1263,7 @@ mod tests {
             repeat: false,
             modifiers: egui::Modifiers::default(),
         };
-        assert!(run_menu(&mut state, vec![vec![escape]]).is_empty());
+        assert_empty!(run_menu(&mut state, vec![vec![escape]]));
         assert!(!state.registry_open());
         assert_eq!(state.take_sfx(), Some(SfxKind::MenuSelect));
         let started = run_menu(&mut state, click_at(empire.0, empire.1));

@@ -235,11 +235,11 @@ fn indexed_frame(
     })
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
-#[expect(
+#[allow(
     clippy::cast_sign_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -653,30 +653,27 @@ impl AdvisorState {
             return;
         }
         self.loaded = true;
-        match self
+        if let Some(table) = self
             .asset(
                 SPRITE_MODULE,
                 AdvisorAsset::Table(self.faction.table_name()),
             )
             .and_then(|bytes| ActionTable::parse(&bytes))
         {
-            Some(table) => {
-                // Without the tour's records nothing would release the clock.
-                if table
-                    .records(AdviceAgent::opening_slot(self.faction))
-                    .is_empty()
-                {
-                    self.holds_clock = false;
-                }
-                self.table = table;
-            }
-            None => {
+            // Without the tour's records nothing would release the clock.
+            if table
+                .records(AdviceAgent::opening_slot(self.faction))
+                .is_empty()
+            {
                 self.holds_clock = false;
-                macroquad::logging::warn!(
-                    "[advisor] missing advice table {}; restage UI assets",
-                    self.faction.table_name()
-                );
             }
+            self.table = table;
+        } else {
+            self.holds_clock = false;
+            macroquad::logging::warn!(
+                "[advisor] missing advice table {}; restage UI assets",
+                self.faction.table_name()
+            );
         }
         let agent_rest = self
             .script(SPRITE_MODULE, AGENT_REST_SCRIPT)
@@ -701,7 +698,7 @@ impl AdvisorState {
     /// The scheduler's step count (`DAT_006b28cc`).
     #[must_use]
     pub fn now(&self) -> u32 {
-        #[expect(
+        #[allow(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
             reason = "the step count is a non-negative whole number of steps"
@@ -747,7 +744,8 @@ impl AdvisorState {
     #[must_use]
     pub fn voice_line(&self, list: u16) -> u16 {
         pick_voice_line(
-            self.asset(SPRITE_MODULE, AdvisorAsset::Script(list)).as_deref(),
+            self.asset(SPRITE_MODULE, AdvisorAsset::Script(list))
+                .as_deref(),
             |n| macroquad::rand::gen_range(0_u16, n),
         )
     }
@@ -963,7 +961,7 @@ impl AdvisorState {
             {
                 Some(Ok(image)) => {
                     run.textures
-                        .push(self.load_texture(ctx, frame.module, frame.anchor, &image))
+                        .push(self.load_texture(ctx, frame.module, frame.anchor, &image));
                 }
                 _ => run.broken = true,
             }
@@ -978,22 +976,19 @@ impl AdvisorState {
             let decoded = bytes
                 .zip(run.base.as_ref())
                 .map(|(bytes, base)| decode_type302_frame(&bytes, base));
-            match decoded {
-                Some(Ok(image)) => {
-                    if let Some(base) = run.base.as_mut() {
-                        base.indices.clone_from(&image.indices);
-                    }
-                    let texture = self.load_texture(ctx, frame.module, next, &image);
-                    self.runs.get_mut(&key)?.textures.push(texture);
+            if let Some(Ok(image)) = decoded {
+                if let Some(base) = run.base.as_mut() {
+                    base.indices.clone_from(&image.indices);
                 }
-                _ => {
-                    macroquad::logging::warn!(
-                        "[advisor] frame {} of run {} did not decode",
-                        next,
-                        frame.anchor
-                    );
-                    run.broken = true;
-                }
+                let texture = self.load_texture(ctx, frame.module, next, &image);
+                self.runs.get_mut(&key)?.textures.push(texture);
+            } else {
+                macroquad::logging::warn!(
+                    "[advisor] frame {} of run {} did not decode",
+                    next,
+                    frame.anchor
+                );
+                run.broken = true;
             }
         }
         let run = &self.runs[&key];
@@ -1096,7 +1091,7 @@ pub fn draw_advisor(ctx: &egui::Context, state: &mut AdvisorState) {
         let (x, y, width, height) = apertures[index];
         let scale = width / native[index].2;
         let corner = egui::pos2(screen.min.x + x, screen.min.y + y);
-        #[expect(clippy::cast_precision_loss, reason = "frame sizes are under 640")]
+        #[allow(clippy::cast_precision_loss, reason = "frame sizes are under 640")]
         let size = texture.size().map(|side| side as f32 * scale);
         painter
             .with_clip_rect(egui::Rect::from_min_size(corner, egui::vec2(width, height)))
@@ -1177,7 +1172,7 @@ mod tests {
         assert_close(empire[1].0, canvas_x + 302.0 * scale);
     }
 
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
@@ -1207,7 +1202,7 @@ mod tests {
         }
     }
 
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
     )]
@@ -1356,13 +1351,13 @@ mod tests {
             [CockpitStep { kind: 3, step: 1 }]
         );
         assert!(!bare.post_word(AD));
-        assert!(bare.take_cockpit_steps().is_empty());
+        assert_empty!(bare.take_cockpit_steps());
 
         let mut staged = AdvisorState::new(AdvisorFaction::Empire);
         staged.loaded = true;
         staged.table = table_with(84);
         assert!(staged.post_word(EW | GO | AD));
-        assert!(staged.take_cockpit_steps().is_empty());
+        assert_empty!(staged.take_cockpit_steps());
     }
 
     #[test]

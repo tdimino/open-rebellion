@@ -64,7 +64,7 @@ const fn officer_rank_bit(kind: crate::officer_rank::CommandKind) -> u32 {
 /// Reserved: a Diplomacy-capable object with diplomacy of 80 or more, or a
 /// research-capable one the side needs (`FUN_00402230`).
 const RESERVED: u32 = 0x800_0000;
-/// A special force (DatId family `0x3c..0x3f`, `FUN_00401d20`).
+/// A special force (`DatId` family `0x3c..0x3f`, `FUN_00401d20`).
 const SPECIAL_FORCE: u32 = 0x1000_0000;
 /// A character (`FUN_00401d20`).
 const CHARACTER: u32 = 0x2000_0000;
@@ -208,9 +208,9 @@ const fn unclaimed(q: Query) -> Query {
 
 /// Every decoy query takes an unassigned special force of the side with
 /// espionage of 51 or more (`FUN_0047d720` and siblings).
-const fn decoys(req_caps: u32, cap: DecoyCap) -> Option<(Query, DecoyCap)> {
+const fn decoys(req_caps: u32, cap: DecoyCap) -> (Query, DecoyCap) {
     let q = query(0x1080_0002, req_caps, 0x0740_0051, 0, Skill::Espionage, 51);
-    Some((q, cap))
+    (q, cap)
 }
 
 /// The selectors of `kind`'s planner (`FUN_0042f830`).
@@ -261,23 +261,23 @@ fn selectors(kind: MissionKind) -> Option<Selectors> {
         // FUN_004815a0; FUN_0047f500 takes no decoys.
         MissionKind::Diplomacy => (DIPLOMACY, 1, None),
         // FUN_004808c0, FUN_00480aa0.
-        MissionKind::Espionage => (ESPIONAGE, 2, decoys(0x8, DecoyCap::Posture)),
+        MissionKind::Espionage => (ESPIONAGE, 2, Some(decoys(0x8, DecoyCap::Posture))),
         // FUN_0047db40; the class has no decoy selector.
         MissionKind::Recruitment => (RECRUITMENT, 1, None),
         // FUN_0047ff90, FUN_00480110.
-        MissionKind::InciteUprising => (INCITE, 1, decoys(0x100, DecoyCap::Posture)),
+        MissionKind::InciteUprising => (INCITE, 1, Some(decoys(0x100, DecoyCap::Posture))),
         // FUN_0047cee0; no decoy selector.
         MissionKind::SubdueUprising => (SUBDUE, 1, None),
         // FUN_0047e270, FUN_0047e3f0 (cap slot +0x44 = 4).
-        MissionKind::Rescue => (RESCUE, 2, decoys(0x2, DecoyCap::Fixed(4))),
+        MissionKind::Rescue => (RESCUE, 2, Some(decoys(0x2, DecoyCap::Fixed(4)))),
         // FUN_00483290, FUN_00483410 (cap 4).
-        MissionKind::Abduction => (ABDUCTION, 2, decoys(0x10, DecoyCap::Fixed(4))),
+        MissionKind::Abduction => (ABDUCTION, 2, Some(decoys(0x10, DecoyCap::Fixed(4)))),
         // FUN_00482ce0, FUN_00482ec0 with +0x7c = 0x40.
-        MissionKind::Assassination => (ASSASSINATION, 2, decoys(0x40, DecoyCap::Posture)),
+        MissionKind::Assassination => (ASSASSINATION, 2, Some(decoys(0x40, DecoyCap::Posture))),
         // FUN_0047d520, FUN_0047d720.
-        MissionKind::Sabotage => (SABOTAGE, 2, decoys(0x4, DecoyCap::Posture)),
+        MissionKind::Sabotage => (SABOTAGE, 2, Some(decoys(0x4, DecoyCap::Posture))),
         // FUN_00482180, FUN_00482330 (cap 4).
-        MissionKind::DeathStarSabotage => (DS_SABOTAGE, 2, decoys(0x80, DecoyCap::Fixed(4))),
+        MissionKind::DeathStarSabotage => (DS_SABOTAGE, 2, Some(decoys(0x80, DecoyCap::Fixed(4)))),
         // The Research selectors stop after one member; no decoys.
         MissionKind::Research(TechType::Ship) => (SHIPS, 1, None),
         MissionKind::Research(TechType::Troop) => (TROOPS, 1, None),
@@ -370,7 +370,7 @@ impl<'a> Planner<'a> {
             // hyp: a planner with no target record reads +0xbc as 0, which
             // allows one decoy.
             Some((decoy, DecoyCap::Posture)) => {
-                let cap = usize::try_from((stack.unwrap_or(0) + 2) / 2).unwrap_or(0);
+                let cap = usize::try_from(i64::midpoint(stack.unwrap_or(0), 2)).unwrap_or(0);
                 self.select_near(&[decoy], staging, cap)
             }
             Some((decoy, DecoyCap::Fixed(cap))) => self.select_near(&[decoy], staging, cap),
@@ -544,7 +544,12 @@ impl<'a> Planner<'a> {
 
     /// [`Self::select`], with the nearness query to `staging` joining the
     /// lists when the planner has one (`FUN_00403750`).
-    fn select_near(&mut self, queries: &[Query], staging: Option<SystemKey>, size: usize) -> Vec<usize> {
+    fn select_near(
+        &mut self,
+        queries: &[Query],
+        staging: Option<SystemKey>,
+        size: usize,
+    ) -> Vec<usize> {
         let near = match (staging, queries.first()) {
             (Some(staging), Some(&q)) => Some(self.nearness(q, staging)),
             _ => None,
@@ -559,7 +564,12 @@ impl<'a> Planner<'a> {
         self.select_lists(queries, None, size)
     }
 
-    fn select_lists(&mut self, queries: &[Query], near: Option<Vec<usize>>, size: usize) -> Vec<usize> {
+    fn select_lists(
+        &mut self,
+        queries: &[Query],
+        near: Option<Vec<usize>>,
+        size: usize,
+    ) -> Vec<usize> {
         let mut lists: Vec<Vec<usize>> = queries
             .iter()
             .map(|q| ranked(&self.records, *q, &mut self.rng))
@@ -657,9 +667,9 @@ fn pop_best(lists: &mut [Vec<usize>]) -> Option<usize> {
 /// The records of every character and special force for the side
 /// (`FUN_00401d20` then `FUN_00402230`).
 ///
-/// port: the pool's order is the original's DatId order for characters
+/// port: the pool's order is the original's `DatId` order for characters
 /// (majors, then minors, by id); special forces, which the port gives no
-/// DatId, follow in arena order.
+/// `DatId`, follow in arena order.
 fn records(
     world: &GameWorld,
     busy: &HashSet<CharacterKey>,
@@ -678,10 +688,10 @@ fn records(
         let id = c.dat_id.raw();
         let mut flags = UNASSIGNED | CHARACTER;
         // FUN_00401d20: a prisoner counts on the side that holds it.
-        flags |= if (c.is_alliance == alliance) != c.is_captive {
-            OWN_SIDE
-        } else {
+        flags |= if (c.is_alliance == alliance) == c.is_captive {
             OTHER_SIDE
+        } else {
+            OWN_SIDE
         };
         let mut caps = 0;
         if c.is_major && MAIN_CHARACTERS.contains(&id) {
@@ -877,6 +887,20 @@ mod tests {
         }))
     }
 
+    fn sabotage_agent(world: &mut GameWorld, id: u32, skill: u32) -> MissionMember {
+        agent(world, id, |character| {
+            character.combat = pair(skill);
+            character.espionage = pair(skill);
+        })
+    }
+
+    fn set_en_route(world: &mut GameWorld, member: MissionMember, en_route: bool) {
+        match member {
+            MissionMember::Character(key) => world.characters[key].en_route = en_route,
+            MissionMember::SpecialForce(key) => world.special_forces[key].en_route = en_route,
+        }
+    }
+
     fn planner(world: &GameWorld) -> Planner<'_> {
         Planner::new(world, &HashSet::new(), true, 1, [false; 3])
     }
@@ -954,14 +978,7 @@ mod tests {
         // tie without it and the first in the combat list, the weakest
         // fighter, leads; nearness lifts the agent at the staging system.
         let mut world = world();
-        let sector = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId::new(0),
-            name: "Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
+        let sector = world.sectors.insert(crate::test_support::sector("Sector"));
         let at = |world: &mut GameWorld, x| {
             world.systems.insert(crate::world::System {
                 sector,
@@ -1092,21 +1109,13 @@ mod tests {
         // leader and FUN_0047b360 drops him; the failed plan frees him, and
         // the DS Sabotage planner picks him again before the next best.
         let mut world = world();
-        let skilled = |c: &mut Character| {
-            c.combat = pair(95);
-            c.espionage = pair(95);
-            c.leadership = pair(90);
-            c.on_mission = true;
-        };
-        let _busy = agent(&mut world, 1, skilled);
-        let second = agent(&mut world, 2, |c| {
-            c.combat = pair(80);
-            c.espionage = pair(80);
-        });
-        let _third = agent(&mut world, 3, |c| {
-            c.combat = pair(70);
-            c.espionage = pair(70);
-        });
+        let busy = sabotage_agent(&mut world, 1, 95);
+        if let MissionMember::Character(key) = busy {
+            world.characters[key].leadership = pair(90);
+            world.characters[key].on_mission = true;
+        }
+        let second = sabotage_agent(&mut world, 2, 80);
+        let _third = sabotage_agent(&mut world, 3, 70);
         let mut planner = planner(&world);
 
         assert_eq!(planner.plan(MissionKind::Recruitment), None);
@@ -1121,21 +1130,10 @@ mod tests {
         // 0x20 (FUN_00402230) is in no query's forbid mask, only in
         // FUN_0047b360's.
         let mut world = world();
-        let travelling = agent(&mut world, 1, |c| {
-            c.combat = pair(95);
-            c.espionage = pair(95);
-        });
-        let second = agent(&mut world, 2, |c| {
-            c.combat = pair(80);
-            c.espionage = pair(80);
-        });
-        let _third = agent(&mut world, 3, |c| {
-            c.combat = pair(70);
-            c.espionage = pair(70);
-        });
-        if let MissionMember::Character(key) = travelling {
-            world.characters[key].en_route = true;
-        }
+        let travelling = sabotage_agent(&mut world, 1, 95);
+        let second = sabotage_agent(&mut world, 2, 80);
+        let _third = sabotage_agent(&mut world, 3, 70);
+        set_en_route(&mut world, travelling, true);
         let mut planner = Planner::new(&world, &HashSet::new(), true, 1, [false; 3]);
 
         assert_eq!(
@@ -1162,9 +1160,7 @@ mod tests {
         if let MissionMember::SpecialForce(key) = busy {
             world.special_forces[key].on_mission = false;
         }
-        if let MissionMember::SpecialForce(key) = busy {
-            world.special_forces[key].en_route = true;
-        }
+        set_en_route(&mut world, busy, true);
         let mut planner = Planner::new(&world, &HashSet::new(), true, 1, [false; 3]);
 
         assert_eq!(

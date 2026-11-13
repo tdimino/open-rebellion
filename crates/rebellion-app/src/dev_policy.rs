@@ -142,7 +142,10 @@ impl DevPolicy {
                 o.day
             ))
         } else if o.ending {
-            Some(format!("the advisor's ending stops the clock day={}", o.day))
+            Some(format!(
+                "the advisor's ending stops the clock day={}",
+                o.day
+            ))
         } else if o.main_menu {
             Some(format!("main menu day={}", o.day))
         } else if o.paused
@@ -192,22 +195,19 @@ impl DevPolicy {
     /// Click the control the registry filed under `name` this frame; when it
     /// is not filed, note it for `blocker` and click nothing.
     fn click_control(&mut self, name: &str, input: &mut DevInput) -> bool {
-        match control_rect(name) {
-            Ok(rect) => {
-                let (x, y) = rect.center();
-                input.click(x, y, false, false);
-                self.missing = None;
-                true
-            }
-            Err(_) => {
-                let frames = self
-                    .missing
-                    .take()
-                    .filter(|(known, _)| known == name)
-                    .map_or(0, |(_, frames)| frames);
-                self.missing = Some((name.to_owned(), frames + 1));
-                false
-            }
+        if let Ok(rect) = control_rect(name) {
+            let (x, y) = rect.center();
+            input.click(x, y, false, false);
+            self.missing = None;
+            true
+        } else {
+            let frames = self
+                .missing
+                .take()
+                .filter(|(known, _)| known == name)
+                .map_or(0, |(_, frames)| frames);
+            self.missing = Some((name.to_owned(), frames + 1));
+            false
         }
     }
 
@@ -427,7 +427,10 @@ mod tests {
             ..observed(false)
         };
         let blocked = Some((30, "blocked: battle alert at Yavin day=9".to_owned()));
-        assert_eq!(refusal(&mut DevPolicy::default(), &alert, DAY, 200), blocked);
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &alert, DAY, 200),
+            blocked
+        );
         let mut simulate = DevPolicy {
             battle: BattlePolicy::Simulate,
             ..DevPolicy::default()
@@ -448,7 +451,12 @@ mod tests {
         assert_eq!(refusal(&mut gave_up, &alert, DAY, 200), blocked);
         // Waits for a battle never block.
         assert_eq!(
-            refusal(&mut DevPolicy::default(), &alert, WaitCondition::Battle, 200),
+            refusal(
+                &mut DevPolicy::default(),
+                &alert,
+                WaitCondition::Battle,
+                200
+            ),
             None
         );
     }
@@ -479,7 +487,10 @@ mod tests {
             results_attempts: BUTTON_ATTEMPTS,
             ..DevPolicy::default()
         };
-        assert_eq!(refusal(&mut { no_results }, &observed(false), DAY, 200), None);
+        assert_eq!(
+            refusal(&mut { no_results }, &observed(false), DAY, 200),
+            None
+        );
 
         let index = Observed {
             advice_index: true,
@@ -497,7 +508,10 @@ mod tests {
                 "blocked: MessageIndex/Close did not close the Advice index day=9".to_owned()
             ))
         );
-        assert_eq!(refusal(&mut close(BUTTON_ATTEMPTS - 1), &index, DAY, 200), None);
+        assert_eq!(
+            refusal(&mut close(BUTTON_ATTEMPTS - 1), &index, DAY, 200),
+            None
+        );
         let left_open = DevPolicy {
             advice_attempts: BUTTON_ATTEMPTS,
             ..DevPolicy::default()
@@ -511,10 +525,21 @@ mod tests {
             pause_alert: true,
             ..observed(false)
         };
-        let blocked = Some((30, "blocked: pause alert (Resume Game Play?) day=9".to_owned()));
-        assert_eq!(refusal(&mut DevPolicy::default(), &alert, DAY, 200), blocked);
+        let blocked = Some((
+            30,
+            "blocked: pause alert (Resume Game Play?) day=9".to_owned(),
+        ));
         assert_eq!(
-            refusal(&mut DevPolicy::default(), &alert, WaitCondition::PauseAlert, 200),
+            refusal(&mut DevPolicy::default(), &alert, DAY, 200),
+            blocked
+        );
+        assert_eq!(
+            refusal(
+                &mut DevPolicy::default(),
+                &alert,
+                WaitCondition::PauseAlert,
+                200
+            ),
             None
         );
         let answering = |advice, frames| DevPolicy {
@@ -522,7 +547,10 @@ mod tests {
             advice_alert_frames: frames,
             ..DevPolicy::default()
         };
-        assert_eq!(refusal(&mut answering(AdvicePolicy::Close, 5), &alert, DAY, 200), None);
+        assert_eq!(
+            refusal(&mut answering(AdvicePolicy::Close, 5), &alert, DAY, 200),
+            None
+        );
         assert_eq!(
             refusal(&mut answering(AdvicePolicy::Close, 0), &alert, DAY, 200),
             blocked
@@ -544,7 +572,12 @@ mod tests {
             Some((30, "blocked: the clock is paused day=9".to_owned()))
         );
         assert_eq!(
-            refusal(&mut DevPolicy::default(), &paused, WaitCondition::PauseAlert, 200),
+            refusal(
+                &mut DevPolicy::default(),
+                &paused,
+                WaitCondition::PauseAlert,
+                200
+            ),
             None
         );
     }
@@ -559,7 +592,10 @@ mod tests {
             missing(BLOCKED_FRAMES).blocker(&observed(false), DAY),
             Some("blocked: Results/Close not registered day=9".to_owned())
         );
-        assert_eq!(missing(BLOCKED_FRAMES - 1).blocker(&observed(false), DAY), None);
+        assert_eq!(
+            missing(BLOCKED_FRAMES - 1).blocker(&observed(false), DAY),
+            None
+        );
     }
 
     #[test]
@@ -571,7 +607,10 @@ mod tests {
         };
         let stuck = Some((120, "mode MultiplayerSetup for 120 frames day=9".to_owned()));
         assert_eq!(refusal(&mut DevPolicy::default(), &off, DAY, 200), stuck);
-        assert_eq!(refusal(&mut DevPolicy::default(), &observed(false), DAY, 200), None);
+        assert_eq!(
+            refusal(&mut DevPolicy::default(), &observed(false), DAY, 200),
+            None
+        );
         assert_eq!(
             refusal(&mut DevPolicy::default(), &off, WaitCondition::Galaxy, 200),
             None

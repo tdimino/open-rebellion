@@ -143,7 +143,7 @@ impl ScrollBar {
         let bar_x = owner_x + owner_width - f32::from(art.width);
         Self {
             art,
-            piece_x: bar_x + f32::from(art.width / 2) - (PIECE_WIDTH as u16 / 2) as f32,
+            piece_x: bar_x + f32::from(art.width / 2) - f32::from(PIECE_WIDTH as u16 / 2),
             top: owner_y,
             height: owner_height,
         }
@@ -257,7 +257,7 @@ impl ScrollBar {
     pub fn blits(
         self,
         range: ScrollRange,
-        drag: &ScrollDrag,
+        drag: ScrollDrag,
         pointer: ScrollPointer,
     ) -> Vec<ScrollBlit> {
         let mut blits = Vec::new();

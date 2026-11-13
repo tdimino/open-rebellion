@@ -19,12 +19,14 @@ use rebellion_core::tick::{GameClock, GameSpeed};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{
-    gid_popup_frame, logical_rect_to_screen, CockpitFaction, CockpitLayout, CockpitViewport,
-    STRATEGIC_LOGICAL_HEIGHT, STRATEGIC_LOGICAL_WIDTH,
+    gid_popup_frame, CockpitFaction, CockpitLayout, CockpitViewport, STRATEGIC_LOGICAL_HEIGHT,
+    STRATEGIC_LOGICAL_WIDTH,
 };
+#[cfg(test)]
+use crate::game_menu::consume_direct_menu_outcome;
 use crate::game_menu::{
-    draw_game_menu, faction_text_color, game_menu_rects, GameMenuEntry, GameMenuPlacement,
-    GameMenuResponse, OwnedMenuOutcome,
+    context_menu_anchor, draw_owned_flat_menu, faction_text_color, game_menu_rects, GameMenuEntry,
+    OwnedMenuOutcome,
 };
 use crate::theme::game_font_size;
 
@@ -63,21 +65,35 @@ const fn item(
     }
 }
 
-const ALLIANCE_ITEMS: [GameSpeedMenuItem; 5] = [
-    item(0x20, GameSpeed::Paused, 34304, "Pause", 11580),
-    item(0x21, GameSpeed::VerySlow, 34305, "Very Slow", 11581),
-    item(0x22, GameSpeed::Slow, 34306, "Slow", 11582),
-    item(0x23, GameSpeed::Medium, 34307, "Medium", 11583),
-    item(0x24, GameSpeed::Fast, 34308, "Fast", 11588),
+const SPEEDS: [(GameSpeed, u16, &str); 5] = [
+    (GameSpeed::Paused, 34304, "Pause"),
+    (GameSpeed::VerySlow, 34305, "Very Slow"),
+    (GameSpeed::Slow, 34306, "Slow"),
+    (GameSpeed::Medium, 34307, "Medium"),
+    (GameSpeed::Fast, 34308, "Fast"),
 ];
 
-const EMPIRE_ITEMS: [GameSpeedMenuItem; 5] = [
-    item(0x25, GameSpeed::Paused, 34304, "Pause", 11584),
-    item(0x26, GameSpeed::VerySlow, 34305, "Very Slow", 11585),
-    item(0x27, GameSpeed::Slow, 34306, "Slow", 11586),
-    item(0x28, GameSpeed::Medium, 34307, "Medium", 11587),
-    item(0x29, GameSpeed::Fast, 34308, "Fast", 11589),
-];
+const fn faction_items(item_base: u16, icons: [u32; 5]) -> [GameSpeedMenuItem; 5] {
+    let mut items = [item(0, GameSpeed::Paused, 0, "", 0); 5];
+    let mut index = 0;
+    while index < items.len() {
+        let (speed, label_string_id, label) = SPEEDS[index];
+        items[index] = item(
+            item_base + index as u16,
+            speed,
+            label_string_id,
+            label,
+            icons[index],
+        );
+        index += 1;
+    }
+    items
+}
+
+const ALLIANCE_ITEMS: [GameSpeedMenuItem; 5] =
+    faction_items(0x20, [11580, 11581, 11582, 11583, 11588]);
+const EMPIRE_ITEMS: [GameSpeedMenuItem; 5] =
+    faction_items(0x25, [11584, 11585, 11586, 11587, 11589]);
 
 /// Speed menu records in original order for a faction.
 #[must_use]
@@ -530,15 +546,9 @@ pub fn game_speed_menu_anchor(
     faction: CockpitFaction,
     point: (f32, f32),
 ) -> Option<(f32, f32)> {
-    (layout.scale > 0.0).then_some(())?;
-    let pointer = egui::pos2(point.0, point.1);
-    let hit = logical_rect_to_screen(layout, day_readout_rect(faction));
-    ((hit.x_range().min..hit.x_range().max).contains(&pointer.x)
-        && (hit.y_range().min..hit.y_range().max).contains(&pointer.y))
-    .then_some((
-        (pointer.x - layout.canvas.x) / layout.scale,
-        (pointer.y - layout.canvas.y) / layout.scale,
-    ))
+    context_menu_anchor(layout, point, |(x, y)| {
+        day_readout_rect(faction).contains(x, y)
+    })
 }
 
 /// Fixture-only direct-egui adapter. Production opens through the normalized
@@ -550,25 +560,12 @@ pub fn open_game_speed_menu_on_right_click(
     layout: CockpitLayout,
     faction: CockpitFaction,
 ) -> bool {
-    if layout.scale <= 0.0 || ctx.is_pointer_over_area() {
-        return false;
-    }
-    let (released, pointer) = ctx.input(|input| {
-        (
-            input
-                .pointer
-                .button_released(egui::PointerButton::Secondary),
-            input.pointer.interact_pos(),
-        )
-    });
-    let Some(pointer) = pointer.filter(|_| released) else {
-        return false;
-    };
-    let Some(anchor) = game_speed_menu_anchor(layout, faction, (pointer.x, pointer.y)) else {
-        return false;
-    };
-    ui_state.menu_anchor = Some(anchor);
-    true
+    crate::test_support::open_context_menu_on_secondary_release(
+        ctx,
+        layout,
+        &mut ui_state.menu_anchor,
+        |point| game_speed_menu_anchor(layout, faction, point),
+    )
 }
 
 /// Where the open speed menu lies on screen.
@@ -598,9 +595,6 @@ pub fn draw_owned_game_speed_menu(
     faction: CockpitFaction,
     input_enabled: bool,
 ) -> OwnedMenuOutcome<GameSpeed> {
-    let Some(anchor) = ui_state.menu_anchor else {
-        return OwnedMenuOutcome::Open;
-    };
     let items = game_speed_menu_items(faction);
     let entries = items.map(|item| GameMenuEntry {
         label: item.label,
@@ -609,23 +603,18 @@ pub fn draw_owned_game_speed_menu(
         submenu: false,
         children: &[],
     });
-    crate::control_registry::name_next_menu("SpeedMenu");
-    match draw_game_menu(
+    draw_owned_flat_menu(
         ctx,
         egui::Id::new(SPEED_MENU_ID),
+        "SpeedMenu",
         cache,
         layout,
         faction,
-        GameMenuPlacement::in_frame(anchor),
+        ui_state.menu_anchor,
         &entries,
         input_enabled,
-    ) {
-        GameMenuResponse::Open => OwnedMenuOutcome::Open,
-        GameMenuResponse::Dismissed | GameMenuResponse::ChosenChild { .. } => {
-            OwnedMenuOutcome::Dismissed
-        }
-        GameMenuResponse::Chosen(index) => OwnedMenuOutcome::Chosen(items[index].speed),
-    }
+        |index| Some(items[index].speed),
+    )
 }
 
 /// Fixture-only wrapper retaining direct content lifecycle.
@@ -638,22 +627,14 @@ pub fn draw_game_speed_menu(
     faction: CockpitFaction,
     input_enabled: bool,
 ) -> Option<GameSpeed> {
-    match draw_owned_game_speed_menu(ctx, ui_state, cache, layout, faction, input_enabled) {
-        OwnedMenuOutcome::Open => None,
-        OwnedMenuOutcome::Dismissed => {
-            ui_state.menu_anchor = None;
-            None
-        }
-        OwnedMenuOutcome::Chosen(speed) => {
-            ui_state.menu_anchor = None;
-            Some(speed)
-        }
-    }
+    let outcome = draw_owned_game_speed_menu(ctx, ui_state, cache, layout, faction, input_enabled);
+    consume_direct_menu_outcome(outcome, || ui_state.menu_anchor = None)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{key_press as key, pointer_button as primary};
 
     #[test]
     fn menu_records_match_strategy_rcdata() {
@@ -826,7 +807,7 @@ mod tests {
         clock.advance(5.0);
         assert_eq!(clock.tick, 1);
         choose_game_speed(&mut clock, GameSpeed::Paused);
-        assert!(clock.advance(5.0).is_empty());
+        assert_empty!(clock.advance(5.0));
         assert_eq!(clock.tick, 1);
     }
 
@@ -937,25 +918,6 @@ mod tests {
         assert!(!hit(left, bottom));
     }
 
-    fn primary(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
-    }
-
-    fn key(key: egui::Key) -> egui::Event {
-        egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }
-    }
-
     /// Run one egui frame with the pointer at `pointer` and `events` after it,
     /// returning the shapes it painted.
     fn frame(
@@ -980,6 +942,17 @@ mod tests {
     fn strategic_layout(scale: f32) -> CockpitLayout {
         crate::cockpit::CockpitState::new(CockpitFaction::Alliance)
             .layout_for(640.0 * scale, 480.0 * scale)
+    }
+
+    fn open_speed_menu() -> (CockpitLayout, egui::Context, BmpCache, GameSpeedUiState) {
+        (
+            strategic_layout(1.0),
+            egui::Context::default(),
+            BmpCache::new(),
+            GameSpeedUiState {
+                menu_anchor: Some((100.0, 100.0)),
+            },
+        )
     }
 
     fn screen(layout: CockpitLayout, (x, y): (f32, f32)) -> egui::Pos2 {
@@ -1054,12 +1027,7 @@ mod tests {
         // FUN_004424c0 reports the chosen item; FUN_0042d190's records map
         // the five rows to the five speeds in order.
         for index in 0..GameSpeed::ALL.len() {
-            let layout = strategic_layout(1.0);
-            let ctx = egui::Context::default();
-            let mut cache = BmpCache::new();
-            let mut state = GameSpeedUiState {
-                menu_anchor: Some((100.0, 100.0)),
-            };
+            let (layout, ctx, mut cache, mut state) = open_speed_menu();
             let mut chosen = None;
             let mut draw = |ctx: &egui::Context| {
                 chosen = chosen.or(draw_game_speed_menu(
@@ -1088,12 +1056,7 @@ mod tests {
 
     #[test]
     fn a_press_outside_the_speed_menu_closes_it_without_a_choice() {
-        let layout = strategic_layout(1.0);
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let mut state = GameSpeedUiState {
-            menu_anchor: Some((100.0, 100.0)),
-        };
+        let (layout, ctx, mut cache, mut state) = open_speed_menu();
         let mut chosen = None;
         let outside = screen(layout, (600.0, 450.0));
         for events in [vec![], vec![], vec![primary(outside, true)]] {

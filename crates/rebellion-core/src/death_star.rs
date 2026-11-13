@@ -221,7 +221,7 @@ const fn product_mover(kind: BuildableKind) -> Mover {
 /// with the most room, as the move's leg does (`FUN_00556390` ->
 /// `FUN_00552300`), and holds that room from then (`products`); the
 /// result's tag is that ship's, 0 for a system.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The request reads the world, the transport, movement and product states and the product."
 )]
@@ -245,7 +245,15 @@ fn place_product(
             Some(hint),
             is_alliance,
         ),
-        mover => request_place(world, transport, movement, system, Some(hint), is_alliance, mover),
+        mover => request_place(
+            world,
+            transport,
+            movement,
+            system,
+            Some(hint),
+            is_alliance,
+            mover,
+        ),
     }?;
     let Place::Fleet(fleet) = found else {
         return Some((found, 0));
@@ -345,7 +353,7 @@ enum Walk {
 /// ships from the yard to its new place. port: a queued special force
 /// whose class serves both sides keeps the side the port reads from its
 /// class.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The requests read and move the world, the transport, movement, production and delivery states."
 )]
@@ -408,7 +416,8 @@ fn request_bound_for(
                 Some((Place::Fleet(fleet), carrier)) => (Destination::Fleet(fleet), carrier),
                 None => return false,
             };
-            item.destination = (destination != Destination::System(producer)).then_some(destination);
+            item.destination =
+                (destination != Destination::System(producer)).then_some(destination);
             item.carrier = carrier;
             true
         }
@@ -521,9 +530,8 @@ fn request_bound_for(
             None => None,
         };
         // A leg with no ship left to carry it loses the squadron too.
-        let moved = leg.and_then(|leg| {
-            crate::troop_transport::reroute_squadron(world, &products, index, leg)
-        });
+        let moved = leg
+            .and_then(|leg| crate::troop_transport::reroute_squadron(world, &products, index, leg));
         if leg.is_none() {
             world.squadron_transits.remove(index);
         }
@@ -733,7 +741,7 @@ pub fn sweep_adrift(
 ///
 /// port: the port has no Bounty mission (MISSNSD family `0x65`), so the
 /// Jabba's Palace destination of `FUN_00543040` never applies.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The pass reads the chain's states and writes the missions and the started list."
 )]
@@ -792,7 +800,9 @@ fn sweep_groups(
     for (is_alliance, destination, members) in groups {
         let Some(destination) = destination else {
             for key in members {
-                strand(world, missions, transport, movement, system, key, tick, started);
+                strand(
+                    world, missions, transport, movement, system, key, tick, started,
+                );
             }
             continue;
         };
@@ -854,7 +864,7 @@ fn sweep_groups(
 ///
 /// port: the Return is the port's hidden Move, as Autorouting is; a port
 /// character rides its fleet, not a ship, so a `+0x70` ship is its fleet.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The return reads the chain's states and the battle bits and writes the missions."
 )]
@@ -920,8 +930,15 @@ pub fn return_members(
             ended.set_out_from
         } else {
             at.or(ended.origin).and_then(|from| {
-                match request_place(world, transport, movement, from, ended.origin, side, Mover::Other)
-                {
+                match request_place(
+                    world,
+                    transport,
+                    movement,
+                    from,
+                    ended.origin,
+                    side,
+                    Mover::Other,
+                ) {
                     Some(Place::System(to)) => Some(MoveDestination::System(to)),
                     Some(Place::Fleet(_)) | None => None,
                 }
@@ -1020,7 +1037,11 @@ pub fn deploy_special_forces(
     movement: &MovementState,
     system: SystemKey,
 ) {
-    if !world.systems.get(system).is_some_and(|sys| sys.is_destroyed) {
+    if !world
+        .systems
+        .get(system)
+        .is_some_and(|sys| sys.is_destroyed)
+    {
         return;
     }
     let units: Vec<SpecialForceKey> = world.systems[system]
@@ -1036,9 +1057,19 @@ pub fn deploy_special_forces(
         .collect();
     for unit in units {
         let is_alliance = world.special_forces[unit].is_alliance;
-        match request_place(world, transport, movement, system, None, is_alliance, Mover::Other) {
+        match request_place(
+            world,
+            transport,
+            movement,
+            system,
+            None,
+            is_alliance,
+            Mover::Other,
+        ) {
             Some(Place::System(to)) => {
-                world.systems[system].special_forces.retain(|&key| key != unit);
+                world.systems[system]
+                    .special_forces
+                    .retain(|&key| key != unit);
                 world.systems[to].special_forces.push(unit);
             }
             Some(Place::Fleet(_)) | None => crate::missions::destroy_special_force(world, unit),
@@ -1060,7 +1091,7 @@ const YAVIN: u32 = 0x9200_0121;
 /// hyp: the sweep of an abode was not traced (`jail.md`, "Escape"); a
 /// jailed escapee is swept from `FUN_005431e0`'s origin away from any
 /// system, Yavin for the Alliance and Coruscant for the Empire.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The release reads the chain's states and the battle bit and writes the missions."
 )]
@@ -1139,7 +1170,7 @@ pub fn free_escapee(
 /// with its en route bit clear, which no reader of an abode occupant sees
 /// (the Personnel Finder row of a family-`0x98` container shows no state,
 /// `jail.md`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The member's retry reads the chain's states and writes the missions and the started list."
 )]
@@ -1204,13 +1235,10 @@ pub fn hold_in_jail(world: &mut GameWorld, key: CharacterKey, tick: u64) {
 
 #[cfg(test)]
 mod tests {
-    use crate::carriage::ProductRoom;
     use super::*;
-    use crate::dat::{ExplorationStatus, Faction, SectorGroup};
     use crate::ids::FleetKey;
-    use crate::world::ControlKind;
-    use crate::ids::DatId;
-    use crate::world::{Fleet, GameWorld, Sector, System};
+    #[allow(unused_imports)]
+    use crate::test_support::world_fixture_prelude::*;
 
     fn make_world() -> (GameWorld, SystemKey) {
         let mut world = GameWorld::default();
@@ -1224,52 +1252,22 @@ mod tests {
         });
         let sys = world.systems.insert(System {
             dat_id: DatId::new(0x9000_0000),
-            name: "Alderaan".into(),
-            sector,
-            x: 100,
-            y: 100,
-            exploration_status: ExplorationStatus::Explored,
             popularity_alliance: 0.9,
             popularity_empire: 0.1,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
+            ..crate::test_support::system_at(
+                "Alderaan",
+                sector,
+                100,
+                100,
+                ControlKind::Controlled(Faction::Alliance),
+            )
         });
         (world, sys)
     }
 
     /// An Empire fleet at `sys` holding the Death Star ship (family `0x18`).
     fn add_ds_fleet(world: &mut GameWorld, sys: SystemKey) -> FleetKey {
-        let class = world
-            .capital_ship_classes
-            .insert(crate::world::CapitalShipClass {
-                dat_id: DatId::new(crate::world::DEATH_STAR_CLASS_ID),
-                family: 0x18,
-                is_empire: true,
-                hull: 100,
-                ..Default::default()
-            });
-        let fk = world.fleets.insert(Fleet {
-            location: sys,
-            capital_ships: vec![crate::world::ShipInstance::new(class, 100, false)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        world.systems.get_mut(sys).unwrap().fleets.push(fk);
-        fk
+        crate::test_support::add_death_star_fleet(world, sys, false)
     }
 
     // ── Construction tests ───────────────────────────────────────────────────
@@ -1313,7 +1311,7 @@ mod tests {
             10
         ));
         refresh_sectors(&mut world);
-        assert!(world.death_star_sectors.is_empty());
+        assert_empty!(world.death_star_sectors);
     }
 
     // ── The destroy cascade ──────────────────────────────────────────────────
@@ -1350,6 +1348,106 @@ mod tests {
         key
     }
 
+    fn system_like(
+        world: &mut GameWorld,
+        template: SystemKey,
+        raw: u32,
+        name: &str,
+        x: u16,
+        y: u16,
+        control: Faction,
+    ) -> SystemKey {
+        world.systems.insert(System {
+            dat_id: DatId::new(raw),
+            name: name.into(),
+            x,
+            y,
+            control: ControlKind::Controlled(control),
+            ..world.systems[template].clone()
+        })
+    }
+
+    fn regiment_in_transit(
+        world: &mut GameWorld,
+        transport: &mut TroopTransportState,
+        origin: SystemKey,
+        target: SystemKey,
+        is_alliance: bool,
+    ) -> TroopKey {
+        let regiment = troop(world, origin, is_alliance);
+        transport
+            .move_regiment(
+                world,
+                &MovementState::new(),
+                &std::collections::HashSet::new(),
+                &ProductRoom::default(),
+                regiment,
+                crate::troop_transport::RegimentTarget::System(target),
+                1,
+            )
+            .unwrap();
+        regiment
+    }
+
+    fn add_squadron_transit(
+        world: &mut GameWorld,
+        class: crate::ids::FighterKey,
+        is_alliance: bool,
+        origin: SystemKey,
+        target: SystemKey,
+        arrival_tick: u64,
+    ) {
+        world
+            .squadron_transits
+            .push(crate::troop_transport::SquadronTransit {
+                class,
+                is_alliance,
+                origin,
+                leg: RegimentLeg::Surface(target),
+                carrier: 0,
+                arrival_tick,
+                via: None,
+            });
+    }
+
+    fn fighter_with_speed(
+        world: &mut GameWorld,
+        is_alliance: bool,
+    ) -> (crate::ids::FighterKey, i64) {
+        let class = FighterClass {
+            is_alliance,
+            ..FighterClass::default()
+        };
+        let speed = crate::movement::fighter_speed(world, &class);
+        (world.fighter_classes.insert(class), speed)
+    }
+
+    fn defense_facility(is_alliance: bool) -> BuildableKind {
+        BuildableKind::DefenseFacility(FacilityBuild {
+            class: DatId::new(0x2400_0001),
+            is_alliance,
+        })
+    }
+
+    fn depart_to_system(
+        world: &GameWorld,
+        deliveries: &mut DeliveryState,
+        origin: SystemKey,
+        target: SystemKey,
+        kind: BuildableKind,
+    ) {
+        deliveries.depart(
+            world,
+            &[Departure {
+                origin,
+                destination: Destination::System(target),
+                tick: 1,
+                kind,
+                carrier: 0,
+            }],
+        );
+    }
+
     /// One completed capital ship of a side: the fleet override
     /// `FUN_004fe540` makes a fleet usable, and so present, only through
     /// such a ship.
@@ -1363,6 +1461,22 @@ mod tests {
                 ..crate::world::CapitalShipClass::default()
             });
         crate::world::ShipInstance::new(class, 100, is_alliance)
+    }
+
+    fn fleet_with_ship(world: &mut GameWorld, system: SystemKey, is_alliance: bool) -> FleetKey {
+        let ship = completed_ship(world, is_alliance);
+        crate::test_support::add_fleet_with_ship(world, system, ship, is_alliance)
+    }
+
+    fn opposing_fleets(
+        world: &mut GameWorld,
+        system: SystemKey,
+        own_is_alliance: bool,
+    ) -> (FleetKey, FleetKey) {
+        (
+            fleet_with_ship(world, system, own_is_alliance),
+            fleet_with_ship(world, system, !own_is_alliance),
+        )
     }
 
     fn destroy(
@@ -1391,6 +1505,71 @@ mod tests {
             &mut ManufacturingState::new(),
             &mut DeliveryState::new(),
         )
+    }
+
+    fn destroy_manufacturing(
+        world: &mut GameWorld,
+        system: SystemKey,
+        manufacturing: &mut ManufacturingState,
+    ) -> CascadeReport {
+        destroy(
+            world,
+            system,
+            &mut TroopTransportState::default(),
+            manufacturing,
+            &mut DeliveryState::new(),
+        )
+    }
+
+    fn enqueue_bound(
+        manufacturing: &mut ManufacturingState,
+        producer: SystemKey,
+        target: SystemKey,
+        kind: BuildableKind,
+    ) {
+        manufacturing.enqueue(
+            producer,
+            QueueItem::new(kind, 10).delivered_to(Destination::System(target)),
+        );
+    }
+
+    fn destroy_transport(
+        world: &mut GameWorld,
+        system: SystemKey,
+        transport: &mut TroopTransportState,
+    ) -> CascadeReport {
+        destroy(
+            world,
+            system,
+            transport,
+            &mut ManufacturingState::new(),
+            &mut DeliveryState::new(),
+        )
+    }
+
+    fn destroy_deliveries(
+        world: &mut GameWorld,
+        system: SystemKey,
+        deliveries: &mut DeliveryState,
+    ) -> CascadeReport {
+        destroy(
+            world,
+            system,
+            &mut TroopTransportState::default(),
+            &mut ManufacturingState::new(),
+            deliveries,
+        )
+    }
+
+    fn assert_destroy_leaves_deliveries(
+        world: &mut GameWorld,
+        system: SystemKey,
+        deliveries: &mut DeliveryState,
+    ) {
+        let before = deliveries.en_route().to_vec();
+        let report = destroy_deliveries(world, system, deliveries);
+        assert_empty!(report.autoscrapped);
+        assert_eq!(deliveries.en_route(), before.as_slice());
     }
 
     /// `FUN_00524fb0`, the fleet's slot `+0xb4`, returns 1 and does nothing:
@@ -1449,7 +1628,7 @@ mod tests {
         assert_eq!(transport.cargo(rebels), &[regiment]);
         assert!(world.troops.contains_key(regiment));
         assert!(!world.characters[pilot].adrift);
-        assert!(report.regiments.is_empty());
+        assert_empty!(report.regiments);
         refresh_sectors(&mut world);
         assert!(world.death_star_in_sector(&world.systems[sys]));
     }
@@ -1493,11 +1672,13 @@ mod tests {
         let report = destroy_plain(&mut world, sys);
 
         let value = &world.systems[sys];
-        assert!(value.ground_units.is_empty() && world.troops.is_empty());
-        assert!(value.fighters.is_empty());
-        assert!(value.defense_facilities.is_empty() && world.defense_facilities.is_empty());
-        assert!(value.manufacturing_facilities.is_empty());
-        assert!(value.production_facilities.is_empty());
+        assert_empty!(value.ground_units);
+        assert_empty!(world.troops);
+        assert_empty!(value.fighters);
+        assert_empty!(value.defense_facilities);
+        assert_empty!(world.defense_facilities);
+        assert_empty!(value.manufacturing_facilities);
+        assert_empty!(value.production_facilities);
         assert!(!value.is_headquarters && report.headquarters);
         assert!(!value.is_populated);
         assert_eq!(value.control, ControlKind::Controlled(Faction::Alliance));
@@ -1614,19 +1795,10 @@ mod tests {
             QueueItem::new(BuildableKind::CapitalShip(imperial), 10)
                 .delivered_to(Destination::System(refuge)),
         );
-        let shield = BuildableKind::DefenseFacility(FacilityBuild {
-            class: DatId::new(0x2400_0001),
-            is_alliance: true,
-        });
+        let shield = defense_facility(true);
         manufacturing.enqueue(sys, QueueItem::new(shield, 10));
 
-        let report = destroy(
-            &mut world,
-            sys,
-            &mut TroopTransportState::default(),
-            &mut manufacturing,
-            &mut DeliveryState::new(),
-        );
+        let report = destroy_manufacturing(&mut world, sys, &mut manufacturing);
 
         assert_eq!(
             report.products,
@@ -1636,9 +1808,9 @@ mod tests {
                 shield,
             ]
         );
-        assert!(report.autoscrapped.is_empty());
+        assert_empty!(report.autoscrapped);
         assert_eq!(manufacturing.queued_at(sys), 0);
-        assert!(world.systems[refuge].fleets.is_empty());
+        assert_empty!(world.systems[refuge].fleets);
     }
 
     /// Another yard's products bound for the destroyed system
@@ -1650,13 +1822,15 @@ mod tests {
     #[test]
     fn another_yards_products_bound_for_the_system_keep_their_slot_or_die_by_kind() {
         let (mut world, sys, refuge) = cascade_world(400, Faction::Alliance);
-        let yard = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0003),
-            name: "Kuat".into(),
-            y: 300,
-            control: ControlKind::Controlled(Faction::Empire),
-            ..world.systems[sys].clone()
-        });
+        let yard = system_like(
+            &mut world,
+            sys,
+            0x9000_0003,
+            "Kuat",
+            100,
+            300,
+            Faction::Empire,
+        );
         let ship = world.capital_ship_classes.insert(CapitalShipClass {
             is_alliance: true,
             ..CapitalShipClass::default()
@@ -1679,13 +1853,7 @@ mod tests {
         manufacturing.enqueue(yard, bound(BuildableKind::Troop(regiment)));
         manufacturing.enqueue(yard, QueueItem::new(BuildableKind::Troop(regiment), 10));
 
-        let report = destroy(
-            &mut world,
-            sys,
-            &mut TroopTransportState::default(),
-            &mut manufacturing,
-            &mut DeliveryState::new(),
-        );
+        let report = destroy_manufacturing(&mut world, sys, &mut manufacturing);
 
         assert_eq!(report.products, vec![BuildableKind::SpecialForce(commando)]);
         assert_eq!(
@@ -1698,23 +1866,28 @@ mod tests {
         let queued = |area| {
             manufacturing
                 .queue(yard, area)
-                .map(|queue| {
+                .map_or_else(Vec::new, |queue| {
                     queue
                         .items()
                         .iter()
                         .map(|item| (item.kind, item.destination))
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         assert_eq!(
             queued(ProductionArea::Shipyard),
-            vec![(BuildableKind::CapitalShip(ship), Some(Destination::System(sys)))]
+            vec![(
+                BuildableKind::CapitalShip(ship),
+                Some(Destination::System(sys))
+            )]
         );
         assert_eq!(
             queued(ProductionArea::TrainingFacility),
             vec![
-                (BuildableKind::Troop(regiment), Some(Destination::System(refuge))),
+                (
+                    BuildableKind::Troop(regiment),
+                    Some(Destination::System(refuge))
+                ),
                 (BuildableKind::Troop(regiment), None),
             ]
         );
@@ -1728,47 +1901,14 @@ mod tests {
     fn travellers_bound_for_the_destroyed_planet_go_back_to_their_origin() {
         let (mut world, sys, refuge) = cascade_world(400, Faction::Alliance);
         let mut transport = TroopTransportState::default();
-        let regiment = troop(&mut world, refuge, true);
-        transport
-            .move_regiment(
-                &mut world,
-                &MovementState::new(),
-                &std::collections::HashSet::new(),
-                &ProductRoom::default(),
-                regiment,
-                crate::troop_transport::RegimentTarget::System(sys),
-                1,
-            )
-            .unwrap();
+        let _regiment = regiment_in_transit(&mut world, &mut transport, refuge, sys, true);
         let fighter = world.fighter_classes.insert(FighterClass::default());
-        world
-            .squadron_transits
-            .push(crate::troop_transport::SquadronTransit {
-                class: fighter,
-                is_alliance: true,
-                origin: refuge,
-                leg: RegimentLeg::Surface(sys),
-                carrier: 0,
-                arrival_tick: 30,
-                via: None,
-            });
+        add_squadron_transit(&mut world, fighter, true, refuge, sys, 30);
         // A capital ship travels in the spare fleet, which the walk skips;
         // a facility product is the system's child.
-        let shield = BuildableKind::DefenseFacility(FacilityBuild {
-            class: DatId::new(0x2400_0001),
-            is_alliance: true,
-        });
+        let shield = defense_facility(true);
         let mut deliveries = DeliveryState::new();
-        deliveries.depart(
-            &world,
-            &[Departure {
-                origin: refuge,
-                destination: Destination::System(sys),
-                tick: 1,
-                kind: shield,
-                carrier: 0,
-            }],
-        );
+        depart_to_system(&world, &mut deliveries, refuge, sys, shield);
 
         let report = destroy(
             &mut world,
@@ -1788,7 +1928,7 @@ mod tests {
         assert_eq!(regiment_transit.leg, RegimentLeg::Surface(refuge));
         assert_eq!(world.squadron_transits[0].leg, RegimentLeg::Surface(refuge));
         assert_eq!(deliveries.en_route()[0].destination, refuge);
-        assert!(world.systems[refuge].ground_units.is_empty());
+        assert_empty!(world.systems[refuge].ground_units);
     }
 
     /// A regiment or squadron relocated on its way keeps its arrival day T
@@ -1800,45 +1940,13 @@ mod tests {
     fn a_relocated_regiment_or_squadron_keeps_its_arrival_day_then_travels_on() {
         let (mut world, sys, refuge) = cascade_world(400, Faction::Alliance);
         let mut transport = TroopTransportState::default();
-        let regiment = troop(&mut world, refuge, true);
-        transport
-            .move_regiment(
-                &mut world,
-                &MovementState::new(),
-                &std::collections::HashSet::new(),
-                &ProductRoom::default(),
-                regiment,
-                crate::troop_transport::RegimentTarget::System(sys),
-                1,
-            )
-            .unwrap();
+        let regiment = regiment_in_transit(&mut world, &mut transport, refuge, sys, true);
         let due = transport.transits()[0].arrival_tick;
         assert!(due > 7);
-        let class = FighterClass {
-            is_alliance: true,
-            ..FighterClass::default()
-        };
-        let speed = crate::movement::fighter_speed(&world, &class);
-        let fighter = world.fighter_classes.insert(class);
-        world
-            .squadron_transits
-            .push(crate::troop_transport::SquadronTransit {
-                class: fighter,
-                is_alliance: true,
-                origin: refuge,
-                leg: RegimentLeg::Surface(sys),
-                carrier: 0,
-                arrival_tick: 30,
-                via: None,
-            });
+        let (fighter, speed) = fighter_with_speed(&mut world, true);
+        add_squadron_transit(&mut world, fighter, true, refuge, sys, 30);
 
-        destroy(
-            &mut world,
-            sys,
-            &mut transport,
-            &mut ManufacturingState::new(),
-            &mut DeliveryState::new(),
-        );
+        destroy_transport(&mut world, sys, &mut transport);
         assert_eq!(transport.transits()[0].arrival_tick, due);
         assert_eq!(world.squadron_transits[0].arrival_tick, 30);
 
@@ -1879,44 +1987,27 @@ mod tests {
     #[test]
     fn a_relocated_delivery_keeps_its_arrival_day_then_travels_on_from_the_destroyed_system() {
         let (mut world, sys, refuge) = cascade_world(400, Faction::Alliance);
-        let shield = BuildableKind::DefenseFacility(FacilityBuild {
-            class: DatId::new(0x2400_0001),
-            is_alliance: true,
-        });
+        let shield = defense_facility(true);
         let mut deliveries = DeliveryState::new();
-        deliveries.depart(
-            &world,
-            &[Departure {
-                origin: refuge,
-                destination: Destination::System(sys),
-                tick: 1,
-                kind: shield,
-                carrier: 0,
-            }],
-        );
+        depart_to_system(&world, &mut deliveries, refuge, sys, shield);
         let leg = u64::from(crate::delivery::transit_days(&world, shield, refuge, sys));
         let due = 1 + leg;
         assert!(due > 7);
 
-        destroy(
-            &mut world,
-            sys,
-            &mut TroopTransportState::default(),
-            &mut ManufacturingState::new(),
-            &mut deliveries,
-        );
+        destroy_deliveries(&mut world, sys, &mut deliveries);
         assert_eq!(deliveries.en_route()[0].arrival_tick, due);
 
         let tick = |n| [crate::tick::TickEvent { tick: n }];
         let on_due = deliveries.advance(&world, &tick(due));
-        assert!(on_due.arrivals.is_empty() && on_due.lost.is_empty());
+        assert_empty!(on_due.arrivals);
+        assert_empty!(on_due.lost);
         let second = u64::from(crate::delivery::transit_days(&world, shield, sys, refuge));
         assert_eq!(deliveries.en_route()[0].arrival_tick, due + second);
 
         let arrived = deliveries.advance(&world, &tick(due + second));
         assert_eq!(arrived.arrivals.len(), 1);
         assert_eq!(arrived.arrivals[0].system, refuge);
-        assert!(deliveries.en_route().is_empty());
+        assert_empty!(deliveries.en_route());
     }
 
     /// With no system of its side left, the request destroys a travelling
@@ -1925,29 +2016,12 @@ mod tests {
     fn a_traveller_with_no_place_of_its_side_is_destroyed() {
         let (mut world, sys, origin) = cascade_world(400, Faction::Alliance);
         let mut transport = TroopTransportState::default();
-        let regiment = troop(&mut world, origin, true);
-        transport
-            .move_regiment(
-                &mut world,
-                &MovementState::new(),
-                &std::collections::HashSet::new(),
-                &ProductRoom::default(),
-                regiment,
-                crate::troop_transport::RegimentTarget::System(sys),
-                1,
-            )
-            .unwrap();
+        let regiment = regiment_in_transit(&mut world, &mut transport, origin, sys, true);
         world.systems[origin].control = ControlKind::Controlled(Faction::Empire);
 
-        let report = destroy(
-            &mut world,
-            sys,
-            &mut transport,
-            &mut ManufacturingState::new(),
-            &mut DeliveryState::new(),
-        );
+        let report = destroy_transport(&mut world, sys, &mut transport);
 
-        assert!(transport.transits().is_empty());
+        assert_empty!(transport.transits());
         assert!(!world.troops.contains_key(regiment));
         assert_eq!(
             report.autoscrapped,
@@ -1961,13 +2035,15 @@ mod tests {
     #[test]
     fn a_cleared_battle_bit_sends_each_sides_adrift_characters_on_a_hidden_trip() {
         let (mut world, sys, rebel_refuge) = cascade_world(400, Faction::Alliance);
-        let imperial_refuge = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0003),
-            name: "Kuat".into(),
-            y: 300,
-            control: ControlKind::Controlled(Faction::Empire),
-            ..world.systems[sys].clone()
-        });
+        let imperial_refuge = system_like(
+            &mut world,
+            sys,
+            0x9000_0003,
+            "Kuat",
+            100,
+            300,
+            Faction::Empire,
+        );
         let rebel = world.characters.insert(Character {
             is_alliance: true,
             current_system: Some(sys),
@@ -1979,17 +2055,7 @@ mod tests {
             ..Character::default()
         });
         destroy_plain(&mut world, sys);
-        let mut missions = MissionState::new();
-
-        let started = sweep_adrift(
-            &mut world,
-            &mut missions,
-            &TroopTransportState::default(),
-            &MovementState::new(),
-            sys,
-            false,
-            9,
-        );
+        let (missions, started) = sweep_new(&mut world, sys);
 
         assert_eq!(started.len(), 2);
         let trips: Vec<_> = missions
@@ -2052,8 +2118,9 @@ mod tests {
                 9,
             );
 
-            assert!(started.is_empty() && missions.is_empty());
-            assert!(world.fleets[fleet].characters.is_empty());
+            assert_empty!(started);
+            assert_empty!(missions);
+            assert_empty!(world.fleets[fleet].characters);
             assert_eq!(world.characters[aboard].current_fleet, None);
             assert!(world.characters[aboard].adrift);
         }
@@ -2071,15 +2138,87 @@ mod tests {
         )
     }
 
-    fn stranded_at(world: &mut GameWorld, sys: SystemKey, is_alliance: bool, captive: bool) -> CharacterKey {
+    fn sweep_changes(
+        world: &mut GameWorld,
+        missions: &mut MissionState,
+        blockade: &mut crate::blockade::BlockadeState,
+    ) -> Vec<(SystemKey, Vec<u64>)> {
+        sweep_battle_changes(
+            world,
+            missions,
+            blockade,
+            &TroopTransportState::default(),
+            &MovementState::new(),
+            9,
+        )
+    }
+
+    fn character_at(world: &mut GameWorld, sys: SystemKey, is_alliance: bool) -> CharacterKey {
         world.characters.insert(Character {
             is_alliance,
             is_empire: !is_alliance,
             current_system: Some(sys),
-            adrift: true,
-            is_captive: captive,
             ..Character::default()
         })
+    }
+
+    fn stranded_at(
+        world: &mut GameWorld,
+        sys: SystemKey,
+        is_alliance: bool,
+        captive: bool,
+    ) -> CharacterKey {
+        let character = character_at(world, sys, is_alliance);
+        world.characters[character].adrift = true;
+        world.characters[character].is_captive = captive;
+        character
+    }
+
+    fn sweep_new(world: &mut GameWorld, sys: SystemKey) -> (MissionState, Vec<u64>) {
+        let mut missions = MissionState::new();
+        let started = sweep(world, &mut missions, sys);
+        (missions, started)
+    }
+
+    fn assert_character_trip(missions: &MissionState, target: SystemKey, character: CharacterKey) {
+        let trip = &missions.missions()[0];
+        assert_eq!(
+            (trip.target_system, trip.team.clone()),
+            (target, vec![MissionMember::Character(character)])
+        );
+    }
+
+    fn destroyed_world_with_character(
+        refuge: Faction,
+        is_alliance: bool,
+        captive: bool,
+    ) -> (GameWorld, SystemKey, SystemKey, CharacterKey) {
+        let (mut world, sys, refuge_system) = cascade_world(400, refuge);
+        world.systems[sys].is_destroyed = true;
+        let character = stranded_at(&mut world, sys, is_alliance, captive);
+        (world, sys, refuge_system, character)
+    }
+
+    fn intact_world_with_adrift_character(
+        is_alliance: bool,
+    ) -> (GameWorld, SystemKey, CharacterKey) {
+        let side = crate::mission_detection::faction_of(is_alliance);
+        let (mut world, sys, _) = cascade_world(400, side);
+        world.systems[sys].control = ControlKind::Controlled(side);
+        let character = stranded_at(&mut world, sys, is_alliance, false);
+        (world, sys, character)
+    }
+
+    fn free(world: &mut GameWorld, missions: &mut MissionState, escapee: CharacterKey) -> Vec<u64> {
+        free_escapee(
+            world,
+            missions,
+            &TroopTransportState::default(),
+            &MovementState::new(),
+            &crate::blockade::BlockadeState::new(),
+            escapee,
+            9,
+        )
     }
 
     /// `FUN_00549580`: a member the retreat chain gives no destination is
@@ -2091,21 +2230,17 @@ mod tests {
     fn a_character_with_no_place_of_its_side_leaves_captive_for_the_other_sides() {
         for is_alliance in [true, false] {
             let other = crate::mission_detection::faction_of(!is_alliance);
-            let (mut world, sys, refuge) = cascade_world(400, other);
-            world.systems[sys].is_destroyed = true;
-            let stranded = stranded_at(&mut world, sys, is_alliance, false);
-            let mut missions = MissionState::new();
-
-            let started = sweep(&mut world, &mut missions, sys);
+            let (mut world, sys, refuge, stranded) =
+                destroyed_world_with_character(other, is_alliance, false);
+            let (missions, started) = sweep_new(&mut world, sys);
 
             let character = &world.characters[stranded];
-            assert!(character.is_captive && character.captured_by.is_none(), "{is_alliance}");
-            assert_eq!((character.abode, started.len()), (None, 1), "{is_alliance}");
-            let trip = &missions.missions()[0];
-            assert_eq!(
-                (trip.target_system, trip.team.clone()),
-                (refuge, vec![MissionMember::Character(stranded)])
+            assert!(
+                character.is_captive && character.captured_by.is_none(),
+                "{is_alliance}"
             );
+            assert_eq!((character.abode, started.len()), (None, 1), "{is_alliance}");
+            assert_character_trip(&missions, refuge, stranded);
         }
     }
 
@@ -2122,11 +2257,10 @@ mod tests {
             let stranded = stranded_at(&mut world, sys, is_alliance, false);
             world.characters[stranded].adrift = false;
             destroy_plain(&mut world, sys);
-            let mut missions = MissionState::new();
+            let (missions, started) = sweep_new(&mut world, sys);
 
-            let started = sweep(&mut world, &mut missions, sys);
-
-            assert!(started.is_empty() && missions.is_empty());
+            assert_empty!(started);
+            assert_empty!(missions);
             let character = &world.characters[stranded];
             assert_eq!(character.abode, Some(jail), "{is_alliance}");
             assert!(character.is_captive && character.captured_by.is_none());
@@ -2175,22 +2309,15 @@ mod tests {
     fn a_prisoner_with_no_place_of_its_captors_side_is_freed_for_its_own() {
         for is_alliance in [true, false] {
             let side = crate::mission_detection::faction_of(is_alliance);
-            let (mut world, sys, refuge) = cascade_world(400, side);
-            world.systems[sys].is_destroyed = true;
-            let captive = stranded_at(&mut world, sys, is_alliance, true);
-            let mut missions = MissionState::new();
-
-            let started = sweep(&mut world, &mut missions, sys);
+            let (mut world, sys, refuge, captive) =
+                destroyed_world_with_character(side, is_alliance, true);
+            let (missions, started) = sweep_new(&mut world, sys);
 
             let character = &world.characters[captive];
             assert!(!character.is_captive, "{is_alliance}");
             assert!(!character.adrift && character.on_hidden_mission);
             assert_eq!(started.len(), 1);
-            let trip = &missions.missions()[0];
-            assert_eq!(
-                (trip.target_system, trip.team.clone()),
-                (refuge, vec![MissionMember::Character(captive)])
-            );
+            assert_character_trip(&missions, refuge, captive);
         }
     }
 
@@ -2202,12 +2329,9 @@ mod tests {
     fn a_group_of_prisoners_with_a_place_of_their_captors_side_returns_there_captive() {
         for is_alliance in [true, false] {
             let other = crate::mission_detection::faction_of(!is_alliance);
-            let (mut world, sys, refuge) = cascade_world(400, other);
-            world.systems[sys].is_destroyed = true;
-            let captive = stranded_at(&mut world, sys, is_alliance, true);
-            let mut missions = MissionState::new();
-
-            let started = sweep(&mut world, &mut missions, sys);
+            let (mut world, sys, refuge, captive) =
+                destroyed_world_with_character(other, is_alliance, true);
+            let (missions, started) = sweep_new(&mut world, sys);
 
             let character = &world.characters[captive];
             assert!(character.is_captive && !character.adrift, "{is_alliance}");
@@ -2232,18 +2356,13 @@ mod tests {
             world.characters[escapee].escape_due = Some(9);
             let mut missions = MissionState::new();
 
-            let started = free_escapee(
-                &mut world,
-                &mut missions,
-                &TroopTransportState::default(),
-                &MovementState::new(),
-                &crate::blockade::BlockadeState::new(),
-                escapee,
-                9,
-            );
+            let started = free(&mut world, &mut missions, escapee);
 
             let character = &world.characters[escapee];
-            assert!(!character.is_captive && character.escape_due.is_none(), "{is_alliance}");
+            assert!(
+                !character.is_captive && character.escape_due.is_none(),
+                "{is_alliance}"
+            );
             assert_eq!(started.len(), 1, "{is_alliance}");
             assert_eq!(missions.missions()[0].target_system, refuge);
         }
@@ -2258,6 +2377,14 @@ mod tests {
         let old = world.systems[sys].control;
         world.systems[sys].control = new;
         crate::support_shift::control_changed(world, sys, old, (false, false), 1);
+    }
+
+    fn holder_change_world(is_alliance: bool) -> (GameWorld, SystemKey, SystemKey, Faction) {
+        let old = crate::mission_detection::faction_of(is_alliance);
+        let new = crate::mission_detection::faction_of(!is_alliance);
+        let (mut world, sys, refuge) = cascade_world(400, old);
+        world.systems[sys].control = ControlKind::Controlled(old);
+        (world, sys, refuge, new)
     }
 
     fn sweep_all(
@@ -2290,29 +2417,11 @@ mod tests {
     #[test]
     fn a_holder_change_sends_the_old_holders_characters_to_their_nearest_system() {
         for is_alliance in [true, false] {
-            let old = crate::mission_detection::faction_of(is_alliance);
-            let new = crate::mission_detection::faction_of(!is_alliance);
-            let (mut world, sys, refuge) = cascade_world(400, old);
-            world.systems[sys].control = ControlKind::Controlled(old);
-            let officer = world.characters.insert(Character {
-                is_alliance,
-                is_empire: !is_alliance,
-                current_system: Some(sys),
-                ..Character::default()
-            });
-            let away = world.characters.insert(Character {
-                is_alliance,
-                is_empire: !is_alliance,
-                current_system: Some(sys),
-                on_mission: true,
-                ..Character::default()
-            });
-            let captor = world.characters.insert(Character {
-                is_alliance: !is_alliance,
-                is_empire: is_alliance,
-                current_system: Some(sys),
-                ..Character::default()
-            });
+            let (mut world, sys, refuge, new) = holder_change_world(is_alliance);
+            let officer = character_at(&mut world, sys, is_alliance);
+            let away = character_at(&mut world, sys, is_alliance);
+            world.characters[away].on_mission = true;
+            let captor = character_at(&mut world, sys, !is_alliance);
             capture(&mut world, sys, ControlKind::Controlled(new));
             let mut missions = MissionState::new();
             let started = sweep_all(
@@ -2361,16 +2470,8 @@ mod tests {
     #[test]
     fn a_holder_change_in_a_battle_leaves_the_flagged_characters_waiting() {
         for is_alliance in [true, false] {
-            let old = crate::mission_detection::faction_of(is_alliance);
-            let new = crate::mission_detection::faction_of(!is_alliance);
-            let (mut world, sys, _) = cascade_world(400, old);
-            world.systems[sys].control = ControlKind::Controlled(old);
-            let officer = world.characters.insert(Character {
-                is_alliance,
-                is_empire: !is_alliance,
-                current_system: Some(sys),
-                ..Character::default()
-            });
+            let (mut world, sys, _, new) = holder_change_world(is_alliance);
+            let officer = character_at(&mut world, sys, is_alliance);
             capture(&mut world, sys, ControlKind::Controlled(new));
             let mut blockade = crate::blockade::BlockadeState::new();
             for fleet_alliance in [true, false] {
@@ -2389,7 +2490,7 @@ mod tests {
             blockade.refresh_battle(&world, sys);
             assert!(blockade.in_battle(sys));
             let mut missions = MissionState::new();
-            assert!(sweep_all(&mut world, &mut missions, &blockade).is_empty());
+            assert_empty!(sweep_all(&mut world, &mut missions, &blockade));
             assert!(world.characters[officer].adrift, "{is_alliance}");
         }
     }
@@ -2401,10 +2502,7 @@ mod tests {
     #[test]
     fn a_holder_change_turns_or_removes_the_special_forces_there() {
         for is_alliance in [true, false] {
-            let old = crate::mission_detection::faction_of(is_alliance);
-            let new = crate::mission_detection::faction_of(!is_alliance);
-            let (mut world, sys, _) = cascade_world(400, old);
-            world.systems[sys].control = ControlKind::Controlled(old);
+            let (mut world, sys, _, new) = holder_change_world(is_alliance);
             let unit = |world: &mut GameWorld, raw: u32, both: bool| {
                 let class = DatId::new(raw);
                 world.buildable_classes.insert(
@@ -2485,7 +2583,7 @@ mod tests {
         }
         let mut missions = MissionState::new();
         let blockade = crate::blockade::BlockadeState::new();
-        assert!(sweep_all(&mut world, &mut missions, &blockade).is_empty());
+        assert_empty!(sweep_all(&mut world, &mut missions, &blockade));
         assert_eq!(world.characters[aboard].current_fleet, Some(fleet));
     }
 
@@ -2510,19 +2608,14 @@ mod tests {
             });
             let mut missions = MissionState::new();
 
-            let started = free_escapee(
-                &mut world,
-                &mut missions,
-                &TroopTransportState::default(),
-                &MovementState::new(),
-                &crate::blockade::BlockadeState::new(),
-                escapee,
-                9,
-            );
+            let started = free(&mut world, &mut missions, escapee);
 
             let character = &world.characters[escapee];
             assert!(started.is_empty(), "{is_alliance}");
-            assert_eq!((character.abode, character.current_system), (None, Some(sys)));
+            assert_eq!(
+                (character.abode, character.current_system),
+                (None, Some(sys))
+            );
             assert!(!character.is_captive && !character.adrift);
         }
     }
@@ -2571,7 +2664,11 @@ mod tests {
         }
     }
 
-    fn return_after(world: &mut GameWorld, missions: &mut MissionState, ended: &crate::missions::MissionEnded) -> Vec<u64> {
+    fn return_after(
+        world: &mut GameWorld,
+        missions: &mut MissionState,
+        ended: &crate::missions::MissionEnded,
+    ) -> Vec<u64> {
         return_members(
             world,
             missions,
@@ -2583,6 +2680,45 @@ mod tests {
         )
     }
 
+    fn diplomacy_return_fixture(
+        is_alliance: bool,
+        return_policy: u8,
+    ) -> (GameWorld, SystemKey, SystemKey, CharacterKey) {
+        let own = crate::mission_detection::faction_of(is_alliance);
+        let (mut world, target, home) = cascade_world(400, own);
+        world.systems[target].control = ControlKind::Uncontrolled;
+        world.mission_records = vec![record(0x5100_0010, return_policy)];
+        let envoy = stranded_at(&mut world, target, is_alliance, false);
+        world.characters[envoy].adrift = false;
+        (world, target, home, envoy)
+    }
+
+    fn diplomacy_ended(
+        is_alliance: bool,
+        envoy: CharacterKey,
+        home: SystemKey,
+    ) -> crate::missions::MissionEnded {
+        ended(
+            crate::missions::MissionKind::Diplomacy,
+            is_alliance,
+            vec![MissionMember::Character(envoy)],
+            Vec::new(),
+            home,
+        )
+    }
+
+    fn return_destination(
+        world: &mut GameWorld,
+        sent: &crate::missions::MissionEnded,
+    ) -> Option<(SystemKey, Option<MissionTarget>)> {
+        let mut missions = MissionState::new();
+        assert_eq!(return_after(world, &mut missions, sent).len(), 1);
+        missions
+            .missions()
+            .front()
+            .map(|trip| (trip.target_system, trip.target_object))
+    }
+
     /// `FUN_00521220` under policy 1 (MISSNSD `+0x68`, Diplomacy): a member
     /// standing in another side's system goes home by the hidden Return to
     /// the container it set out from (`FUN_00542ee0`, `+0x70`), its captive
@@ -2591,12 +2727,7 @@ mod tests {
     fn a_member_at_another_sides_system_goes_home_with_its_captive() {
         use crate::missions::MissionKind;
         for is_alliance in [true, false] {
-            let own = crate::mission_detection::faction_of(is_alliance);
-            let (mut world, target, home) = cascade_world(400, own);
-            world.systems[target].control = ControlKind::Uncontrolled;
-            world.mission_records = vec![record(0x5100_0010, 1)];
-            let envoy = stranded_at(&mut world, target, is_alliance, false);
-            world.characters[envoy].adrift = false;
+            let (mut world, target, home, envoy) = diplomacy_return_fixture(is_alliance, 1);
             let captive = stranded_at(&mut world, target, !is_alliance, true);
             world.characters[captive].adrift = false;
             let mut missions = MissionState::new();
@@ -2618,7 +2749,10 @@ mod tests {
             assert_eq!(trip.target_system, home);
             assert_eq!(
                 trip.team,
-                vec![MissionMember::Character(envoy), MissionMember::Character(captive)]
+                vec![
+                    MissionMember::Character(envoy),
+                    MissionMember::Character(captive)
+                ]
             );
         }
     }
@@ -2706,7 +2840,10 @@ mod tests {
 
             assert!(started.is_empty(), "{is_alliance}");
             assert!(!world.special_forces.contains_key(unit), "{is_alliance}");
-            assert!(world.systems[target].special_forces.is_empty(), "{is_alliance}");
+            assert!(
+                world.systems[target].special_forces.is_empty(),
+                "{is_alliance}"
+            );
         }
     }
 
@@ -2715,32 +2852,21 @@ mod tests {
     /// destroyed or held by the other side; the chain then decides.
     #[test]
     fn a_container_the_move_test_refuses_sends_the_member_down_the_chain() {
-        use crate::missions::MissionKind;
         for is_alliance in [true, false] {
             let own = crate::mission_detection::faction_of(is_alliance);
-            let (mut world, target, home) = cascade_world(400, own);
-            world.systems[target].control = ControlKind::Uncontrolled;
-            world.mission_records = vec![record(0x5100_0010, 1)];
+            let (mut world, _target, home, envoy) = diplomacy_return_fixture(is_alliance, 1);
             let far = world.systems.insert(System {
                 x: 900,
                 control: ControlKind::Controlled(own),
                 ..world.systems[home].clone()
             });
-            let envoy = stranded_at(&mut world, target, is_alliance, false);
-            world.characters[envoy].adrift = false;
             let fleet = world.fleets.insert(Fleet {
                 location: far,
                 is_alliance,
                 ..Fleet::default()
             });
             world.systems[far].fleets.push(fleet);
-            let mut sent = ended(
-                MissionKind::Diplomacy,
-                is_alliance,
-                vec![MissionMember::Character(envoy)],
-                Vec::new(),
-                home,
-            );
+            let mut sent = diplomacy_ended(is_alliance, envoy, home);
             let goes_to = |world: &mut GameWorld,
                            sent: &crate::missions::MissionEnded,
                            movement: &MovementState| {
@@ -2770,18 +2896,38 @@ mod tests {
                 "{is_alliance}"
             );
             // En route: the chain's nearest own system, home.
-            assert_eq!(goes_to(&mut world, &sent, &away), Some((home, None)), "{is_alliance}");
+            assert_eq!(
+                goes_to(&mut world, &sent, &away),
+                Some((home, None)),
+                "{is_alliance}"
+            );
             world.fleets[fleet].is_alliance = !is_alliance;
-            assert_eq!(goes_to(&mut world, &sent, &still), Some((home, None)), "{is_alliance}");
+            assert_eq!(
+                goes_to(&mut world, &sent, &still),
+                Some((home, None)),
+                "{is_alliance}"
+            );
 
             sent.set_out_from = Some(MoveDestination::System(far));
-            assert_eq!(goes_to(&mut world, &sent, &still), Some((far, None)), "{is_alliance}");
+            assert_eq!(
+                goes_to(&mut world, &sent, &still),
+                Some((far, None)),
+                "{is_alliance}"
+            );
             world.systems[far].is_destroyed = true;
-            assert_eq!(goes_to(&mut world, &sent, &still), Some((home, None)), "{is_alliance}");
+            assert_eq!(
+                goes_to(&mut world, &sent, &still),
+                Some((home, None)),
+                "{is_alliance}"
+            );
             world.systems[far].is_destroyed = false;
             let enemy = crate::mission_detection::faction_of(!is_alliance);
             world.systems[far].control = ControlKind::Controlled(enemy);
-            assert_eq!(goes_to(&mut world, &sent, &still), Some((home, None)), "{is_alliance}");
+            assert_eq!(
+                goes_to(&mut world, &sent, &still),
+                Some((home, None)),
+                "{is_alliance}"
+            );
         }
     }
 
@@ -2789,7 +2935,6 @@ mod tests {
     /// standing where the chain sends it starts no Return.
     #[test]
     fn a_member_already_where_it_would_return_starts_no_trip() {
-        use crate::missions::MissionKind;
         for is_alliance in [true, false] {
             let own = crate::mission_detection::faction_of(is_alliance);
             let (mut world, _, home) = cascade_world(400, own);
@@ -2801,13 +2946,7 @@ mod tests {
             let started = return_after(
                 &mut world,
                 &mut missions,
-                &ended(
-                    MissionKind::Diplomacy,
-                    is_alliance,
-                    vec![MissionMember::Character(envoy)],
-                    Vec::new(),
-                    home,
-                ),
+                &diplomacy_ended(is_alliance, envoy, home),
             );
 
             assert!(started.is_empty(), "{is_alliance}");
@@ -2816,35 +2955,19 @@ mod tests {
 
     #[test]
     fn a_member_that_set_out_from_a_fleet_goes_home_to_that_fleet() {
-        use crate::missions::MissionKind;
         for is_alliance in [true, false] {
-            let own = crate::mission_detection::faction_of(is_alliance);
-            let (mut world, target, home) = cascade_world(400, own);
-            world.systems[target].control = ControlKind::Uncontrolled;
-            world.mission_records = vec![record(0x5100_0010, 1)];
-            let envoy = stranded_at(&mut world, target, is_alliance, false);
-            world.characters[envoy].adrift = false;
+            let (mut world, _, home, envoy) = diplomacy_return_fixture(is_alliance, 1);
             let fleet = world.fleets.insert(Fleet {
                 location: home,
                 is_alliance,
                 ..Fleet::default()
             });
             world.systems[home].fleets.push(fleet);
-            let mut sent = ended(
-                MissionKind::Diplomacy,
-                is_alliance,
-                vec![MissionMember::Character(envoy)],
-                Vec::new(),
-                home,
-            );
+            let mut sent = diplomacy_ended(is_alliance, envoy, home);
             sent.set_out_from = Some(MoveDestination::Fleet(fleet));
-            let mut missions = MissionState::new();
-
-            assert_eq!(return_after(&mut world, &mut missions, &sent).len(), 1);
-            let trip = &missions.missions()[0];
             assert_eq!(
-                (trip.target_system, trip.target_object),
-                (home, Some(MissionTarget::Fleet(fleet))),
+                return_destination(&mut world, &sent),
+                Some((home, Some(MissionTarget::Fleet(fleet)))),
                 "{is_alliance}"
             );
 
@@ -2852,10 +2975,11 @@ mod tests {
             // retreat chain picks the member's own system instead.
             world.fleets.remove(fleet);
             world.systems[home].fleets.retain(|&key| key != fleet);
-            let mut missions = MissionState::new();
-            assert_eq!(return_after(&mut world, &mut missions, &sent).len(), 1);
-            let trip = &missions.missions()[0];
-            assert_eq!((trip.target_system, trip.target_object), (home, None), "{is_alliance}");
+            assert_eq!(
+                return_destination(&mut world, &sent),
+                Some((home, None)),
+                "{is_alliance}"
+            );
         }
     }
 
@@ -2877,7 +3001,13 @@ mod tests {
             let stayed = return_after(
                 &mut world,
                 &mut missions,
-                &ended(MissionKind::Recruitment, is_alliance, team.clone(), Vec::new(), home),
+                &ended(
+                    MissionKind::Recruitment,
+                    is_alliance,
+                    team.clone(),
+                    Vec::new(),
+                    home,
+                ),
             );
             world.systems[target].control = ControlKind::Uncontrolled;
             let moved = return_after(
@@ -2886,7 +3016,10 @@ mod tests {
                 &ended(MissionKind::Move, is_alliance, team, Vec::new(), home),
             );
 
-            assert!(stayed.is_empty() && moved.is_empty() && missions.is_empty(), "{is_alliance}");
+            assert!(
+                stayed.is_empty() && moved.is_empty() && missions.is_empty(),
+                "{is_alliance}"
+            );
         }
     }
 
@@ -2898,28 +3031,13 @@ mod tests {
             let side = crate::mission_detection::faction_of(is_alliance);
             let (mut world, sys, _) = cascade_world(400, side);
             world.systems[sys].is_destroyed = true;
-            let held = world.characters.insert(Character {
-                is_alliance,
-                is_empire: !is_alliance,
-                current_system: Some(sys),
-                adrift: true,
-                is_captive: true,
-                captured_by: Some(crate::mission_detection::faction_of(!is_alliance)),
-                ..Character::default()
-            });
-            let mut missions = MissionState::new();
+            let held = stranded_at(&mut world, sys, is_alliance, true);
+            world.characters[held].captured_by =
+                Some(crate::mission_detection::faction_of(!is_alliance));
+            let (missions, started) = sweep_new(&mut world, sys);
 
-            let started = sweep_adrift(
-                &mut world,
-                &mut missions,
-                &TroopTransportState::default(),
-                &MovementState::new(),
-                sys,
-                false,
-                9,
-            );
-
-            assert!(started.is_empty() && missions.is_empty());
+            assert_empty!(started);
+            assert_empty!(missions);
             let character = &world.characters[held];
             assert!(character.adrift && character.is_captive, "{is_alliance}");
             assert_eq!(character.current_system, Some(sys));
@@ -2935,31 +3053,10 @@ mod tests {
     fn a_captive_travels_in_its_captors_groups_trip() {
         for is_alliance in [true, false] {
             let captor = crate::mission_detection::faction_of(!is_alliance);
-            let (mut world, sys, refuge) = cascade_world(400, captor);
-            world.systems[sys].is_destroyed = true;
-            let mut add = |is_alliance, is_captive| {
-                world.characters.insert(Character {
-                    is_alliance,
-                    is_empire: !is_alliance,
-                    current_system: Some(sys),
-                    adrift: true,
-                    is_captive,
-                    ..Character::default()
-                })
-            };
-            let captive = add(is_alliance, true);
-            let free = add(!is_alliance, false);
-            let mut missions = MissionState::new();
-
-            let started = sweep_adrift(
-                &mut world,
-                &mut missions,
-                &TroopTransportState::default(),
-                &MovementState::new(),
-                sys,
-                false,
-                9,
-            );
+            let (mut world, sys, refuge, captive) =
+                destroyed_world_with_character(captor, is_alliance, true);
+            let free = stranded_at(&mut world, sys, !is_alliance, false);
+            let (missions, started) = sweep_new(&mut world, sys);
 
             assert_eq!(started.len(), 1, "{is_alliance}");
             let trip = &missions.missions()[0];
@@ -2991,21 +3088,7 @@ mod tests {
             for control in [ControlKind::Controlled(enemy), ControlKind::Uncontrolled] {
                 let (mut world, sys, _) = cascade_world(400, side);
                 world.systems[sys].control = control;
-                let own_ship = completed_ship(&mut world, is_alliance);
-                let their_ship = completed_ship(&mut world, !is_alliance);
-                let own = world.fleets.insert(Fleet {
-                    location: sys,
-                    capital_ships: vec![own_ship],
-                    is_alliance,
-                    ..Fleet::default()
-                });
-                let theirs = world.fleets.insert(Fleet {
-                    location: sys,
-                    capital_ships: vec![their_ship],
-                    is_alliance: !is_alliance,
-                    ..Fleet::default()
-                });
-                world.systems[sys].fleets.extend([own, theirs]);
+                let (own, _) = opposing_fleets(&mut world, sys, is_alliance);
                 let aboard = world.characters.insert(Character {
                     is_alliance,
                     is_empire: !is_alliance,
@@ -3018,14 +3101,7 @@ mod tests {
                 let mut missions = MissionState::new();
                 let mut blockade = crate::blockade::BlockadeState::new();
 
-                let swept = sweep_battle_changes(
-                    &mut world,
-                    &mut missions,
-                    &mut blockade,
-                    &TroopTransportState::default(),
-                    &MovementState::new(),
-                    9,
-                );
+                let swept = sweep_changes(&mut world, &mut missions, &mut blockade);
 
                 assert!(missions.is_empty(), "{is_alliance} {control:?}");
                 let character = &world.characters[aboard];
@@ -3047,52 +3123,21 @@ mod tests {
             let enemy = crate::mission_detection::faction_of(!is_alliance);
             let (mut world, sys, refuge) = cascade_world(400, side);
             world.systems[sys].control = ControlKind::Controlled(enemy);
-            let own_ship = completed_ship(&mut world, is_alliance);
-            let their_ship = completed_ship(&mut world, !is_alliance);
-            let own = world.fleets.insert(Fleet {
-                location: sys,
-                capital_ships: vec![own_ship],
-                is_alliance,
-                ..Fleet::default()
-            });
-            let theirs = world.fleets.insert(Fleet {
-                location: sys,
-                capital_ships: vec![their_ship],
-                is_alliance: !is_alliance,
-                ..Fleet::default()
-            });
-            world.systems[sys].fleets.extend([own, theirs]);
-            let stranded = world.characters.insert(Character {
-                is_alliance,
-                is_empire: !is_alliance,
-                current_system: Some(sys),
-                adrift: true,
-                ..Character::default()
-            });
+            let (_, theirs) = opposing_fleets(&mut world, sys, is_alliance);
+            let stranded = stranded_at(&mut world, sys, is_alliance, false);
             let mut missions = MissionState::new();
             let mut blockade = crate::blockade::BlockadeState::new();
             let mut sweep = |world: &mut GameWorld, missions: &mut MissionState| {
-                sweep_battle_changes(
-                    world,
-                    missions,
-                    &mut blockade,
-                    &TroopTransportState::default(),
-                    &MovementState::new(),
-                    9,
-                )
+                sweep_changes(world, missions, &mut blockade)
             };
             let _ = sweep(&mut world, &mut missions);
-            assert!(missions.is_empty());
+            assert_empty!(missions);
             world.systems[sys].fleets.retain(|&fleet| fleet != theirs);
 
             let swept = sweep(&mut world, &mut missions);
 
             assert_eq!(swept.len(), 1, "{is_alliance}");
-            let trip = &missions.missions()[0];
-            assert_eq!(
-                (trip.target_system, trip.team.clone()),
-                (refuge, vec![MissionMember::Character(stranded)])
-            );
+            assert_character_trip(&missions, refuge, stranded);
         }
     }
 
@@ -3103,31 +3148,12 @@ mod tests {
     #[test]
     fn a_stalemate_keeps_the_earlier_holders_side_for_the_sweep() {
         for is_alliance in [true, false] {
-            let side = crate::mission_detection::faction_of(is_alliance);
-            let (mut world, sys, _) = cascade_world(400, side);
-            world.systems[sys].control = ControlKind::Controlled(side);
+            let (mut world, sys, home) = intact_world_with_adrift_character(is_alliance);
             troop(&mut world, sys, is_alliance);
             crate::support_shift::refresh_troop_bits(&mut world, sys);
             troop(&mut world, sys, !is_alliance);
             crate::support_shift::rebuild_control(&mut world, sys);
-            let home = world.characters.insert(Character {
-                is_alliance,
-                is_empire: !is_alliance,
-                current_system: Some(sys),
-                adrift: true,
-                ..Character::default()
-            });
-            let mut missions = MissionState::new();
-
-            let started = sweep_adrift(
-                &mut world,
-                &mut missions,
-                &TroopTransportState::default(),
-                &MovementState::new(),
-                sys,
-                false,
-                9,
-            );
+            let (missions, started) = sweep_new(&mut world, sys);
 
             assert!(started.is_empty() && missions.is_empty(), "{is_alliance}");
             let character = &world.characters[home];
@@ -3144,29 +3170,11 @@ mod tests {
     #[test]
     fn an_adrift_character_at_its_own_sides_intact_system_only_loses_its_flag() {
         for is_alliance in [true, false] {
-            let side = crate::mission_detection::faction_of(is_alliance);
-            let (mut world, sys, _) = cascade_world(400, side);
-            world.systems[sys].control = ControlKind::Controlled(side);
-            let home = world.characters.insert(Character {
-                is_alliance,
-                is_empire: !is_alliance,
-                current_system: Some(sys),
-                adrift: true,
-                ..Character::default()
-            });
-            let mut missions = MissionState::new();
+            let (mut world, sys, home) = intact_world_with_adrift_character(is_alliance);
+            let (missions, started) = sweep_new(&mut world, sys);
 
-            let started = sweep_adrift(
-                &mut world,
-                &mut missions,
-                &TroopTransportState::default(),
-                &MovementState::new(),
-                sys,
-                false,
-                9,
-            );
-
-            assert!(started.is_empty() && missions.is_empty());
+            assert_empty!(started);
+            assert_empty!(missions);
             let character = &world.characters[home];
             assert!(!character.adrift, "{is_alliance}");
             assert_eq!(character.current_system, Some(sys));
@@ -3183,13 +3191,15 @@ mod tests {
     fn a_queued_regiment_takes_a_blockaded_system_and_a_queued_squadron_a_carrier() {
         let (mut world, sys, refuge) = cascade_world(400, Faction::Alliance);
         add_ds_fleet(&mut world, refuge);
-        let kuat = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0003),
-            name: "Kuat".into(),
-            y: 300,
-            control: ControlKind::Controlled(Faction::Empire),
-            ..world.systems[sys].clone()
-        });
+        let kuat = system_like(
+            &mut world,
+            sys,
+            0x9000_0003,
+            "Kuat",
+            100,
+            300,
+            Faction::Empire,
+        );
         let carrier_class = world.capital_ship_classes.insert(CapitalShipClass {
             is_alliance: true,
             hull: 100,
@@ -3225,13 +3235,7 @@ mod tests {
             manufacturing.enqueue(kuat, item);
         }
 
-        let report = destroy(
-            &mut world,
-            sys,
-            &mut TroopTransportState::default(),
-            &mut manufacturing,
-            &mut DeliveryState::new(),
-        );
+        let report = destroy_manufacturing(&mut world, sys, &mut manufacturing);
 
         assert_eq!(
             report.autoscrapped,
@@ -3257,15 +3261,13 @@ mod tests {
     fn a_queued_squadron_the_cascade_sends_to_a_carrier_rides_its_ship_and_holds_its_room() {
         for side in [Faction::Alliance, Faction::Empire] {
             let is_alliance = side == Faction::Alliance;
-            let enemy = if is_alliance { Faction::Empire } else { Faction::Alliance };
+            let enemy = if is_alliance {
+                Faction::Empire
+            } else {
+                Faction::Alliance
+            };
             let (mut world, sys, refuge) = cascade_world(400, enemy);
-            let kuat = world.systems.insert(System {
-                dat_id: DatId::new(0x9000_0003),
-                name: "Kuat".into(),
-                y: 300,
-                control: ControlKind::Controlled(enemy),
-                ..world.systems[sys].clone()
-            });
+            let kuat = system_like(&mut world, sys, 0x9000_0003, "Kuat", 100, 300, enemy);
             let carrier_class = world.capital_ship_classes.insert(CapitalShipClass {
                 is_alliance,
                 hull: 100,
@@ -3286,16 +3288,13 @@ mod tests {
             let squadron = BuildableKind::Fighter(fighter);
             let mut manufacturing = ManufacturingState::new();
             for _ in 0..2 {
-                manufacturing.enqueue(kuat, QueueItem::new(squadron, 10).delivered_to(Destination::System(sys)));
+                manufacturing.enqueue(
+                    kuat,
+                    QueueItem::new(squadron, 10).delivered_to(Destination::System(sys)),
+                );
             }
 
-            let report = destroy(
-                &mut world,
-                sys,
-                &mut TroopTransportState::default(),
-                &mut manufacturing,
-                &mut DeliveryState::new(),
-            );
+            let report = destroy_manufacturing(&mut world, sys, &mut manufacturing);
 
             assert_eq!(
                 report.autoscrapped,
@@ -3344,18 +3343,7 @@ mod tests {
         })
         .collect();
         deliveries.depart(&world, &departures);
-        let before = deliveries.en_route().to_vec();
-
-        let report = destroy(
-            &mut world,
-            sys,
-            &mut TroopTransportState::default(),
-            &mut ManufacturingState::new(),
-            &mut deliveries,
-        );
-
-        assert!(report.autoscrapped.is_empty());
-        assert_eq!(deliveries.en_route(), before.as_slice());
+        assert_destroy_leaves_deliveries(&mut world, sys, &mut deliveries);
     }
 
     /// Only objects in the destroyed system's own container take the
@@ -3389,18 +3377,7 @@ mod tests {
                 },
             ],
         );
-        let before = deliveries.en_route().to_vec();
-
-        let report = destroy(
-            &mut world,
-            sys,
-            &mut TroopTransportState::default(),
-            &mut ManufacturingState::new(),
-            &mut deliveries,
-        );
-
-        assert!(report.autoscrapped.is_empty());
-        assert_eq!(deliveries.en_route(), before.as_slice());
+        assert_destroy_leaves_deliveries(&mut world, sys, &mut deliveries);
     }
 
     /// A squadron whose transit origin no longer accepts it goes to its
@@ -3409,30 +3386,17 @@ mod tests {
     #[test]
     fn a_squadron_refused_by_its_origin_travels_to_the_nearest_system_of_its_side() {
         let (mut world, sys, refuge) = cascade_world(400, Faction::Alliance);
-        let origin = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0004),
-            name: "Ord Mantell".into(),
-            x: 900,
-            control: ControlKind::Controlled(Faction::Empire),
-            ..world.systems[sys].clone()
-        });
-        let class = FighterClass {
-            is_alliance: true,
-            ..FighterClass::default()
-        };
-        let speed = crate::movement::fighter_speed(&world, &class);
-        let fighter = world.fighter_classes.insert(class);
-        world
-            .squadron_transits
-            .push(crate::troop_transport::SquadronTransit {
-                class: fighter,
-                is_alliance: true,
-                origin,
-                leg: RegimentLeg::Surface(sys),
-                carrier: 0,
-                arrival_tick: 30,
-                via: None,
-            });
+        let origin = system_like(
+            &mut world,
+            sys,
+            0x9000_0004,
+            "Ord Mantell",
+            900,
+            100,
+            Faction::Empire,
+        );
+        let (fighter, speed) = fighter_with_speed(&mut world, true);
+        add_squadron_transit(&mut world, fighter, true, origin, sys, 30);
         let days = crate::movement::transit_ticks_between(&world, (100, 100), (400, 100), speed);
 
         let report = destroy_plain(&mut world, sys);
@@ -3443,7 +3407,10 @@ mod tests {
         assert_eq!(transit.leg, RegimentLeg::Surface(refuge));
         assert_eq!(transit.arrival_tick, 30);
         TroopTransportState::default().advance_transit(&mut world, 30);
-        assert_eq!(world.squadron_transits[0].arrival_tick, 30 + u64::from(days));
+        assert_eq!(
+            world.squadron_transits[0].arrival_tick,
+            30 + u64::from(days)
+        );
         assert_eq!(report.autoscrapped[0].1, Relocation::Moved(refuge));
     }
 
@@ -3477,17 +3444,7 @@ mod tests {
         let dead = add(&|c| c.is_killed = true);
         let away = add(&|c| c.current_system = Some(refuge));
         let aboard = add(&|c| c.current_fleet = Some(fleet));
-        let mut missions = MissionState::new();
-
-        let started = sweep_adrift(
-            &mut world,
-            &mut missions,
-            &TroopTransportState::default(),
-            &MovementState::new(),
-            sys,
-            false,
-            9,
-        );
+        let (missions, started) = sweep_new(&mut world, sys);
 
         let ids: Vec<u64> = missions.missions().iter().map(|m| m.id).collect();
         assert_eq!(started, ids);
@@ -3522,13 +3479,7 @@ mod tests {
         };
         let (mut world, sys, yard) = cascade_world(400, own);
         world.systems[sys].control = ControlKind::Controlled(own);
-        let enemy_yard = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0003),
-            name: "Kuat".into(),
-            y: 300,
-            control: ControlKind::Controlled(enemy),
-            ..world.systems[sys].clone()
-        });
+        let enemy_yard = system_like(&mut world, sys, 0x9000_0003, "Kuat", 100, 300, enemy);
         let sector = world.systems[sys].sector;
         world.sectors[sector].systems.push(enemy_yard);
         (world, sys, yard, enemy_yard, enemy)
@@ -3549,12 +3500,24 @@ mod tests {
         )
     }
 
+    fn serve_manufacturing(
+        world: &mut GameWorld,
+        manufacturing: &mut ManufacturingState,
+    ) -> CascadeReport {
+        serve(
+            world,
+            &mut TroopTransportState::default(),
+            manufacturing,
+            &mut DeliveryState::new(),
+        )
+    }
+
     /// The holder change's walk flags another manager's unfinished product
-    /// in the system (FUN_004f8680.c:14-17), and event 0x307 runs the chain
-    /// (FUN_00515480): the new holder's own product stays (stage 1), the old
-    /// holder's goes to its producer's system, the hint (FUN_00515480.c:
+    /// in the system (`FUN_004f8680.c:14-17`), and event 0x307 runs the chain
+    /// (`FUN_00515480`): the new holder's own product stays (stage 1), the old
+    /// holder's goes to its producer's system, the hint (`FUN_00515480.c`:
     /// 82-124), keeping its queue slot; a capital ship sits in a fleet, which
-    /// the walk leaves (FUN_0051ebb0).
+    /// the walk leaves (`FUN_0051ebb0`).
     #[test]
     fn a_holder_change_sends_the_old_holders_products_to_their_yards_and_keeps_the_new_holders_for_either_side(
     ) {
@@ -3577,24 +3540,19 @@ mod tests {
                 (yard, BuildableKind::CapitalShip(ship)),
                 (enemy_yard, facility(enemy)),
             ] {
-                manufacturing.enqueue(
-                    at,
-                    QueueItem::new(kind, 10).delivered_to(Destination::System(sys)),
-                );
+                enqueue_bound(&mut manufacturing, at, sys, kind);
             }
 
             capture(&mut world, sys, ControlKind::Controlled(enemy));
-            let report = serve(
-                &mut world,
-                &mut TroopTransportState::default(),
-                &mut manufacturing,
-                &mut DeliveryState::new(),
-            );
+            let report = serve_manufacturing(&mut world, &mut manufacturing);
 
             assert_eq!(
                 report.autoscrapped,
                 vec![
-                    (Autoscrapped::Product(facility(own)), Relocation::Moved(yard)),
+                    (
+                        Autoscrapped::Product(facility(own)),
+                        Relocation::Moved(yard)
+                    ),
                     (Autoscrapped::Product(facility(enemy)), Relocation::Stayed),
                 ],
                 "{own:?}"
@@ -3602,13 +3560,22 @@ mod tests {
             let destinations = |at: SystemKey, area: ProductionArea| -> Vec<Option<Destination>> {
                 manufacturing
                     .queue(at, area)
-                    .map(|queue| queue.items().iter().map(|item| item.destination).collect())
-                    .unwrap_or_default()
+                    .map_or_else(Vec::new, |queue| {
+                        queue.items().iter().map(|item| item.destination).collect()
+                    })
             };
             let none: Vec<Option<Destination>> = vec![None];
             let here = vec![Some(Destination::System(sys))];
-            assert_eq!(destinations(yard, ProductionArea::ConstructionYard), none, "{own:?}");
-            assert_eq!(destinations(yard, ProductionArea::Shipyard), here, "{own:?}");
+            assert_eq!(
+                destinations(yard, ProductionArea::ConstructionYard),
+                none,
+                "{own:?}"
+            );
+            assert_eq!(
+                destinations(yard, ProductionArea::Shipyard),
+                here,
+                "{own:?}"
+            );
             assert_eq!(
                 destinations(enemy_yard, ProductionArea::ConstructionYard),
                 here,
@@ -3618,8 +3585,8 @@ mod tests {
         }
     }
 
-    /// A special force's slot +0xb0 is FUN_00503d90, not the request: it
-    /// takes the system's new side when its class serves it (FUN_004f27d0),
+    /// A special force's slot +0xb0 is `FUN_00503d90`, not the request: it
+    /// takes the system's new side when its class serves it (`FUN_004f27d0`),
     /// else dies with reason 3.
     #[test]
     fn a_holder_change_ends_a_special_force_product_its_class_cannot_serve_for_either_side() {
@@ -3642,69 +3609,47 @@ mod tests {
             }
             let mut manufacturing = ManufacturingState::new();
             for class in [one_side, both] {
-                manufacturing.enqueue(
+                enqueue_bound(
+                    &mut manufacturing,
                     yard,
-                    QueueItem::new(BuildableKind::SpecialForce(class), 10)
-                        .delivered_to(Destination::System(sys)),
+                    sys,
+                    BuildableKind::SpecialForce(class),
                 );
             }
 
             capture(&mut world, sys, ControlKind::Controlled(enemy));
-            let report = serve(
-                &mut world,
-                &mut TroopTransportState::default(),
-                &mut manufacturing,
-                &mut DeliveryState::new(),
-            );
+            let report = serve_manufacturing(&mut world, &mut manufacturing);
 
-            assert_eq!(report.products, [BuildableKind::SpecialForce(one_side)], "{own:?}");
+            assert_eq!(
+                report.products,
+                [BuildableKind::SpecialForce(one_side)],
+                "{own:?}"
+            );
             let kept: Vec<BuildableKind> = manufacturing
                 .queue(yard, ProductionArea::TrainingFacility)
-                .map(|queue| queue.items().iter().map(|item| item.kind).collect())
-                .unwrap_or_default();
+                .map_or_else(Vec::new, |queue| {
+                    queue.items().iter().map(|item| item.kind).collect()
+                });
             assert_eq!(kept, [BuildableKind::SpecialForce(both)], "{own:?}");
         }
     }
 
     /// A completed product or regiment on its way to the system is its
     /// child, en route (+0x50 0x20), and takes the request as well
-    /// (FUN_004f8680.c:14-17); the hint is its transit origin
-    /// (FUN_00515480.c:125-153), and the relocation keeps its arrival day
-    /// (FUN_00556390.c:17-21).
+    /// (`FUN_004f8680.c:14-17`); the hint is its transit origin
+    /// (`FUN_00515480.c:125-153`), and the relocation keeps its arrival day
+    /// (`FUN_00556390.c:17-21`).
     #[test]
     fn a_holder_change_sends_the_old_holders_travellers_back_to_their_origins_for_either_side() {
         for own in [Faction::Alliance, Faction::Empire] {
             let (mut world, sys, yard, _, enemy) = holder_world(own);
             let is_alliance = own == Faction::Alliance;
-            let shield = BuildableKind::DefenseFacility(FacilityBuild {
-                class: DatId::new(0x2400_0001),
-                is_alliance,
-            });
+            let shield = defense_facility(is_alliance);
             let mut deliveries = DeliveryState::new();
-            deliveries.depart(
-                &world,
-                &[Departure {
-                    origin: yard,
-                    destination: Destination::System(sys),
-                    tick: 1,
-                    kind: shield,
-                    carrier: 0,
-                }],
-            );
+            depart_to_system(&world, &mut deliveries, yard, sys, shield);
             let due = deliveries.en_route()[0].arrival_tick;
             let mut transport = TroopTransportState::default();
-            let regiment = troop(&mut world, yard, is_alliance);
-            transport
-                .move_regiment(
-                    &mut world,
-                    &MovementState::new(),
-                    &std::collections::HashSet::new(),
-                    &ProductRoom::default(),
-                    regiment,
-                    crate::troop_transport::RegimentTarget::System(sys),
-                    1,
-                )
-                .unwrap();
+            let regiment = regiment_in_transit(&mut world, &mut transport, yard, sys, is_alliance);
 
             capture(&mut world, sys, ControlKind::Controlled(enemy));
             let report = serve(
@@ -3733,8 +3678,8 @@ mod tests {
     }
 
     /// The new holder's own regiment and squadron on their way stay bound
-    /// for the system: its stage 1 accepts them (FUN_005073d0,
-    /// FUN_00553410), so nothing moves and their legs stand.
+    /// for the system: its stage 1 accepts them (`FUN_005073d0`,
+    /// `FUN_00553410`), so nothing moves and their legs stand.
     #[test]
     fn a_holder_change_keeps_the_new_holders_travellers_bound_for_the_system_for_either_side() {
         for own in [Faction::Alliance, Faction::Empire] {
@@ -3742,34 +3687,21 @@ mod tests {
             let is_alliance = enemy == Faction::Alliance;
             capture(&mut world, sys, ControlKind::Controlled(enemy));
             let mut transport = TroopTransportState::default();
-            let regiment = troop(&mut world, enemy_yard, is_alliance);
-            transport
-                .move_regiment(
-                    &mut world,
-                    &MovementState::new(),
-                    &std::collections::HashSet::new(),
-                    &ProductRoom::default(),
-                    regiment,
-                    crate::troop_transport::RegimentTarget::System(sys),
-                    1,
-                )
-                .unwrap();
+            let regiment =
+                regiment_in_transit(&mut world, &mut transport, enemy_yard, sys, is_alliance);
             let fighter = world.fighter_classes.insert(FighterClass {
                 is_alliance,
                 ..FighterClass::default()
             });
             for arrival_tick in [30, 40] {
-                world
-                    .squadron_transits
-                    .push(crate::troop_transport::SquadronTransit {
-                        class: fighter,
-                        is_alliance,
-                        origin: enemy_yard,
-                        leg: RegimentLeg::Surface(sys),
-                        carrier: 0,
-                        arrival_tick,
-                        via: None,
-                    });
+                add_squadron_transit(
+                    &mut world,
+                    fighter,
+                    is_alliance,
+                    enemy_yard,
+                    sys,
+                    arrival_tick,
+                );
             }
             let legs = |world: &GameWorld, transport: &TroopTransportState| {
                 (

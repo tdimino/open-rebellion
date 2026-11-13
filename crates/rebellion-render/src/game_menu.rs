@@ -12,8 +12,8 @@
 
 use egui_macroquad::egui;
 use rebellion_windowing::{
-    ContentReport, ContentStatus, RoutingSnapshot, WindowCommand, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
+    ContentReport, RoutingSnapshot, WindowCommand, WindowId, WindowKind, WindowOwner, WindowSpec,
+    WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
@@ -105,7 +105,7 @@ impl ManagedMenuState {
         prepared
     }
 
-    fn prepare_open_for(&self, owner: WindowOwner) -> PreparedMenuOpen {
+    fn prepare_open_for(self, owner: WindowOwner) -> PreparedMenuOpen {
         PreparedMenuOpen {
             spec: crate::windowing_policy::singleton_spec(WindowKind::Menu, owner),
             replacing: self.window,
@@ -161,24 +161,9 @@ impl ManagedMenuState {
     /// Explicit Menu content state for conservative reconciliation.
     #[must_use]
     pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::Menu)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
+        crate::singleton_window_common::content_reports(frame, WindowKind::Menu, |id| {
+            self.window == Some(id)
+        })
     }
 
     /// Exact close target while content remains attached through this frame.
@@ -369,6 +354,96 @@ pub enum OwnedMenuOutcome<T> {
     Chosen(T),
 }
 
+/// Map the common lifecycle response of a flat owned menu to its payload.
+pub(crate) fn flat_menu_outcome<T>(
+    response: GameMenuResponse,
+    selected: impl FnOnce(usize) -> Option<T>,
+) -> OwnedMenuOutcome<T> {
+    match response {
+        GameMenuResponse::Open => OwnedMenuOutcome::Open,
+        GameMenuResponse::Dismissed | GameMenuResponse::ChosenChild { .. } => {
+            OwnedMenuOutcome::Dismissed
+        }
+        GameMenuResponse::Chosen(index) => {
+            selected(index).map_or(OwnedMenuOutcome::Open, OwnedMenuOutcome::Chosen)
+        }
+    }
+}
+
+/// Convert a routed screen point into the original cockpit canvas and retain
+/// it only when the owning screen says the point opens its context menu.
+/// Coordinate conversion and invalid-scale rejection are menu-control
+/// behavior; the caller keeps the screen-specific hit region.
+pub(crate) fn context_menu_anchor(
+    layout: CockpitLayout,
+    point: (f32, f32),
+    hit_test: impl FnOnce((f32, f32)) -> bool,
+) -> Option<(f32, f32)> {
+    (layout.scale > 0.0).then_some(())?;
+    let logical = layout.logical_canvas_point(egui::pos2(point.0, point.1));
+    let logical = (logical.x, logical.y);
+    hit_test(logical).then_some(logical)
+}
+
+/// Draw one feature-owned flat menu through the common Game Menu control.
+/// Feature modules supply their records and map the selected row to their own
+/// command; this function owns anchor admission, placement and response
+/// normalization.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The shared menu control receives explicit rendering and feature-mapping inputs."
+)]
+pub(crate) fn draw_owned_flat_menu<T>(
+    ctx: &egui::Context,
+    area_id: egui::Id,
+    registry_name: &'static str,
+    cache: &mut BmpCache,
+    layout: CockpitLayout,
+    faction: CockpitFaction,
+    anchor: Option<(f32, f32)>,
+    entries: &[GameMenuEntry<'_>],
+    input_enabled: bool,
+    selected: impl FnOnce(usize) -> Option<T>,
+) -> OwnedMenuOutcome<T> {
+    let Some(anchor) = anchor else {
+        return OwnedMenuOutcome::Open;
+    };
+    crate::control_registry::name_next_menu(registry_name);
+    flat_menu_outcome(
+        draw_game_menu(
+            ctx,
+            area_id,
+            cache,
+            layout,
+            faction,
+            GameMenuPlacement::in_frame(anchor),
+            entries,
+            input_enabled,
+        ),
+        selected,
+    )
+}
+
+/// Consume the result of a fixture-owned menu. Dismissal and selection both
+/// close the direct payload; manager-owned callers retain the outcome until
+/// their exact close receipt arrives.
+pub(crate) fn consume_direct_menu_outcome<T>(
+    outcome: OwnedMenuOutcome<T>,
+    mut close: impl FnMut(),
+) -> Option<T> {
+    match outcome {
+        OwnedMenuOutcome::Open => None,
+        OwnedMenuOutcome::Dismissed => {
+            close();
+            None
+        }
+        OwnedMenuOutcome::Chosen(chosen) => {
+            close();
+            Some(chosen)
+        }
+    }
+}
+
 /// Submenu arrows, highlighted and normal: 10117 and 10118 for side 1, else
 /// 10128 and 10129 (`FUN_00442860`, loaded by `FUN_004ab3a0`).
 const fn submenu_arrows(faction: CockpitFaction) -> (u32, u32) {
@@ -484,7 +559,7 @@ fn measure(
             let icon = entry.icon.and_then(|id| {
                 cache
                     .get(ctx, DllSource::Strategy, id)
-                    .map(|texture| texture.size_vec2())
+                    .map(egui_macroquad::egui::TextureHandle::size_vec2)
             });
             (
                 entry_icon_width(entry, icon.map(|size| size.x)),
@@ -539,7 +614,7 @@ fn row_under(
 /// Paint one menu window at canvas `origin` (`FUN_004aab50`'s `WM_PAINT`):
 /// the rows, the icon or check mark at (6, row top) (`FUN_004aba60`), the
 /// submenu arrow at the same place (highlighted or normal), and the frame.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep the window's area, faction, layout and rows explicit at this drawing boundary."
 )]
@@ -653,7 +728,7 @@ fn paint_menu(
 /// (`FUN_00442cf0`).
 /// port: the timer fires whatever input is pending; the original skips a
 /// tick while a message waits for the window.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep the menu's owner, faction, placement and entries explicit at this drawing boundary."
 )]
@@ -813,6 +888,7 @@ pub fn draw_game_menu(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::pointer_button;
 
     fn entry(enabled: bool, submenu: bool) -> GameMenuEntry<'static> {
         GameMenuEntry {
@@ -825,6 +901,16 @@ mod tests {
     }
 
     const MENU_ID: &str = "game_menu_test";
+
+    fn assert_menu_on_top(ctx: &egui::Context) {
+        let menu = ctx
+            .memory(|memory| memory.area_rect(egui::Id::new(MENU_ID)))
+            .expect("the menu is laid out");
+        assert_eq!(
+            ctx.layer_id_at(menu.center()).map(|layer| layer.id),
+            Some(egui::Id::new(MENU_ID))
+        );
+    }
 
     #[test]
     fn the_menu_opens_above_a_dialog_shown_after_it() {
@@ -877,14 +963,7 @@ mod tests {
                 );
             });
         }
-        let menu = ctx
-            .memory(|memory| memory.area_rect(egui::Id::new(MENU_ID)))
-            .expect("the menu is laid out");
-
-        assert_eq!(
-            ctx.layer_id_at(menu.center()).map(|layer| layer.id),
-            Some(egui::Id::new(MENU_ID))
-        );
+        assert_menu_on_top(&ctx);
     }
 
     #[test]
@@ -897,21 +976,9 @@ mod tests {
         let window = egui::Id::new("raising_window");
         let entries = [labelled("Mission", true)];
         for _ in 0..3 {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(640.0, 480.0),
-                )),
-                ..Default::default()
-            };
+            let input = crate::test_support::raw_input(Vec::new(), egui::vec2(640.0, 480.0));
             let _ = ctx.run(input, |ctx| {
-                ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, window));
-                egui::Area::new(window)
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(egui::Pos2::ZERO)
-                    .show(ctx, |ui| {
-                        ui.allocate_response(egui::vec2(400.0, 400.0), egui::Sense::click());
-                    });
+                crate::test_support::show_self_raising_area(ctx, window, egui::vec2(400.0, 400.0));
                 let _ = draw_game_menu(
                     ctx,
                     egui::Id::new(MENU_ID),
@@ -924,14 +991,7 @@ mod tests {
                 );
             });
         }
-        let menu = ctx
-            .memory(|memory| memory.area_rect(egui::Id::new(MENU_ID)))
-            .expect("the menu is laid out");
-
-        assert_eq!(
-            ctx.layer_id_at(menu.center()).map(|layer| layer.id),
-            Some(egui::Id::new(MENU_ID))
-        );
+        assert_menu_on_top(&ctx);
     }
 
     fn labelled(label: &'static str, enabled: bool) -> GameMenuEntry<'static> {
@@ -941,15 +1001,6 @@ mod tests {
             enabled,
             submenu: false,
             children: &[],
-        }
-    }
-
-    fn pointer_button(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
         }
     }
 
@@ -983,7 +1034,7 @@ mod tests {
         let mut response = GameMenuResponse::Open;
         let mut rect = egui::Rect::NOTHING;
         let mut texts = Vec::new();
-        for (frame, extra) in [vec![], vec![]].into_iter().chain(frames).enumerate() {
+        for (frame, extra) in crate::test_support::warmed_frames(Vec::new(), frames).enumerate() {
             let pointer = if frame >= 2 {
                 rect = ctx
                     .memory(|memory| memory.area_rect(id))
@@ -1432,6 +1483,28 @@ mod tests {
         )
     }
 
+    fn open_managed_menu(
+        manager: &mut rebellion_windowing::WindowManager,
+        owner: rebellion_windowing::WindowId,
+    ) -> (ManagedMenuState, rebellion_windowing::WindowId) {
+        let mut menu = ManagedMenuState::default();
+        let prepared = menu.prepare_open(owner);
+        let opened = manager.apply(prepared.command()).unwrap();
+        let id = menu.commit_open(prepared, &opened.transition).unwrap();
+        (menu, id)
+    }
+
+    fn remove_closed_content(
+        menu: &mut ManagedMenuState,
+        commit: &rebellion_windowing::WindowCommit,
+    ) {
+        let rebellion_windowing::WindowTransition::Closed { closed, .. } = &commit.transition
+        else {
+            panic!("expected close, got {:?}", commit.transition);
+        };
+        menu.remove_content(closed);
+    }
+
     #[test]
     fn menu_replacement_is_atomic_and_saves_eligible_invoker_focus() {
         // FUN_00442380/FUN_00442430 save the invoker focus; port: changing
@@ -1525,10 +1598,7 @@ mod tests {
 
         let mut manager = rebellion_windowing::WindowManager::new();
         let owner = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
-        let mut menu = ManagedMenuState::default();
-        let prepared = menu.prepare_open(owner);
-        let opened = manager.apply(prepared.command()).unwrap();
-        let id = menu.commit_open(prepared, &opened.transition).unwrap();
+        let (mut menu, id) = open_managed_menu(&mut manager, owner);
         let frame = manager.begin_frame();
         let mut router = FrameInputRouter::default();
         router.begin_frame(1, &frame);
@@ -1549,11 +1619,7 @@ mod tests {
         let closed = manager
             .apply(rebellion_windowing::WindowCommand::Close(id))
             .unwrap();
-        let removed = match &closed.transition {
-            rebellion_windowing::WindowTransition::Closed { closed, .. } => closed,
-            other => panic!("expected close, got {other:?}"),
-        };
-        menu.remove_content(removed);
+        remove_closed_content(&mut menu, &closed);
         assert_eq!(menu.window_id(), None);
 
         router.begin_frame(2, &manager.begin_frame());
@@ -1579,10 +1645,7 @@ mod tests {
         // Break caught: orphaning Menu content or focusing through live teardown.
         let mut manager = rebellion_windowing::WindowManager::new();
         let owner = detail(&mut manager, rebellion_windowing::WindowKind::System, 1);
-        let mut menu = ManagedMenuState::default();
-        let prepared = menu.prepare_open(owner);
-        let opened = manager.apply(prepared.command()).unwrap();
-        let menu_id = menu.commit_open(prepared, &opened.transition).unwrap();
+        let (mut menu, menu_id) = open_managed_menu(&mut manager, owner);
 
         let closed = manager
             .apply(rebellion_windowing::WindowCommand::Close(owner))
@@ -1598,11 +1661,7 @@ mod tests {
                 rebellion_windowing::WindowEvent::FocusChanged { .. }
             ] if *window == menu_id && *closed_owner == owner
         ));
-        let removed = match &closed.transition {
-            rebellion_windowing::WindowTransition::Closed { closed, .. } => closed,
-            other => panic!("expected close, got {other:?}"),
-        };
-        menu.remove_content(removed);
+        remove_closed_content(&mut menu, &closed);
         assert_eq!(menu.window_id(), None);
     }
 
@@ -1683,10 +1742,7 @@ mod tests {
         // Break caught: registering Menu under a surrogate/root owner.
         let mut manager = rebellion_windowing::WindowManager::new();
         let owner = detail(&mut manager, rebellion_windowing::WindowKind::Defenses, 17);
-        let mut menu = ManagedMenuState::default();
-        let prepared = menu.prepare_open(owner);
-        let opened = manager.apply(prepared.command()).unwrap();
-        let id = menu.commit_open(prepared, &opened.transition).unwrap();
+        let (_menu, id) = open_managed_menu(&mut manager, owner);
         assert_eq!(
             manager.begin_frame().owner(id),
             Some(rebellion_windowing::WindowOwner::Window(owner))

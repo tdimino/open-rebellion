@@ -2,7 +2,7 @@
 //! `ghidra/notes/tactical-engagement-ai.md`, "Subsystem repair").
 
 use super::*;
-use crate::world::{CapitalShipClass, Fleet, ShipInstance, System};
+use crate::world::{CapitalShipClass, ShipInstance, System};
 
 /// One unarmed ship per side, damage control 100, each carrying `engines`
 /// engine hits and `weapons` weapon hits from the strategic game; the Alliance
@@ -26,16 +26,18 @@ fn carried(player_is_alliance: bool, engines: u8, weapons: u8) -> BattleSession 
         let mut ship = ShipInstance::new(class, 100, is_alliance);
         ship.set_damage_counter(3, engines);
         ship.set_damage_counter(1, weapons);
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ship],
-            is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(fleet);
+        let fleet = crate::test_support::add_fleet_with_ship(&mut world, system, ship, is_alliance);
         fleets.push(fleet);
     }
-    let mut session = BattleSession::new(&world, system, fleets[0], fleets[1], player_is_alliance, 0, 1);
+    let mut session = BattleSession::new(
+        &world,
+        system,
+        fleets[0],
+        fleets[1],
+        player_is_alliance,
+        0,
+        1,
+    );
     session.phase = BattlePhase::Combat;
     session.paused = false;
     session
@@ -104,7 +106,11 @@ fn carried_weapon_hits_alone_start_no_repair() {
     for player_is_alliance in [true, false] {
         let mut session = carried(player_is_alliance, 0, 1);
         steps(&mut session, 404);
-        let weapons: Vec<u8> = session.ships.iter().map(|ship| ship.subsystem_damage.weapons).collect();
+        let weapons: Vec<u8> = session
+            .ships
+            .iter()
+            .map(|ship| ship.subsystem_damage.weapons)
+            .collect();
         assert_eq!(weapons, vec![1, 1], "{player_is_alliance}");
     }
 }
@@ -157,9 +163,15 @@ fn a_repair_needs_a_draw_no_greater_than_damage_control() {
     for player_is_alliance in [true, false] {
         let mut stream = carried(player_is_alliance, 1, 0).tactical_rng;
         let draw = u8::try_from(stream.inclusive(1, 100)).unwrap();
-        assert!(one_pass(player_is_alliance, 1, draw).0, "{player_is_alliance}: at the draw");
+        assert!(
+            one_pass(player_is_alliance, 1, draw).0,
+            "{player_is_alliance}: at the draw"
+        );
         if draw > 1 {
-            assert!(!one_pass(player_is_alliance, 1, draw - 1).0, "{player_is_alliance}: below it");
+            assert!(
+                !one_pass(player_is_alliance, 1, draw - 1).0,
+                "{player_is_alliance}: below it"
+            );
         }
     }
 }
@@ -176,7 +188,10 @@ fn the_hit_to_repair_is_drawn_only_among_two_or_more() {
             }
             let (repaired, session) = one_pass(player_is_alliance, outstanding, 100);
             assert!(repaired);
-            assert_eq!(session.tactical_rng, expected, "{player_is_alliance} {outstanding}");
+            assert_eq!(
+                session.tactical_rng, expected,
+                "{player_is_alliance} {outstanding}"
+            );
         }
     }
 }
@@ -222,7 +237,13 @@ fn only_a_tractor_hit_that_empties_the_tractor_drops_its_field() {
         for _ in 0..3 {
             assert!(!ship.add_subsystem_hit(TacticalSubsystemKind::Tractor));
         }
-        assert!(ship.add_subsystem_hit(TacticalSubsystemKind::Tractor), "{is_alliance}");
-        assert!(!ship.add_subsystem_hit(TacticalSubsystemKind::Engines), "{is_alliance}");
+        assert!(
+            ship.add_subsystem_hit(TacticalSubsystemKind::Tractor),
+            "{is_alliance}"
+        );
+        assert!(
+            !ship.add_subsystem_hit(TacticalSubsystemKind::Engines),
+            "{is_alliance}"
+        );
     }
 }

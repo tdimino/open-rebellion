@@ -344,7 +344,7 @@ impl ReplayManifest {
     /// # Errors
     /// Returns an error if the manifest violates its schema, identity, ordering,
     /// or checkpoint consistency requirements.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Checkpoint counts are validated against the command list before indexing."
     )]
@@ -727,68 +727,15 @@ struct ReplayRuntime {
 
 impl ReplayRuntime {
     fn from_save_state(state: SaveState) -> Self {
-        let SaveState {
-            world,
-            clock,
-            manufacturing,
-            missions,
-            events,
-            ai,
-            movement,
-            fog_alliance,
-            fog_empire,
-            player_is_alliance,
-            blockade,
-            uprising,
-            research,
-            jedi,
-            victory,
-            betrayal,
-            economy,
-            sim_rng,
-            ai2,
-            repair,
-            game_config,
-            campaign_config,
-            troop_transport,
-            deliveries,
-            player_agent,
-            stockpiles,
-        } = state;
-        let (fog, inactive_fog) = if player_is_alliance {
-            (fog_alliance, fog_empire)
-        } else {
-            (fog_empire, fog_alliance)
-        };
+        let loaded = state.into_simulation();
         Self {
-            world,
-            states: SimulationStates {
-                clock,
-                manufacturing,
-                missions,
-                events,
-                ai,
-                ai2,
-                movement,
-                fog,
-                blockade,
-                uprising,
-                research,
-                jedi,
-                victory,
-                betrayal,
-                economy,
-                repair,
-                troop_transport,
-                deliveries,
-                stockpiles,
-                campaign_config,
-            },
-            inactive_fog,
-            player_is_alliance,
-            sim_rng,
-            game_config,
-            player_agent,
+            world: loaded.world,
+            states: loaded.states,
+            inactive_fog: loaded.inactive_fog,
+            player_is_alliance: loaded.player_is_alliance,
+            sim_rng: loaded.sim_rng,
+            game_config: loaded.game_config,
+            player_agent: loaded.player_agent,
         }
     }
 
@@ -860,39 +807,15 @@ impl ReplayRuntime {
     }
 
     fn snapshot(&self) -> SaveState {
-        let (fog_alliance, fog_empire) = if self.player_is_alliance {
-            (self.states.fog.clone(), self.inactive_fog.clone())
-        } else {
-            (self.inactive_fog.clone(), self.states.fog.clone())
-        };
-        SaveState {
-            world: self.world.clone(),
-            clock: self.states.clock.clone(),
-            manufacturing: self.states.manufacturing.clone(),
-            missions: self.states.missions.clone(),
-            events: self.states.events.clone(),
-            ai: self.states.ai.clone(),
-            movement: self.states.movement.clone(),
-            fog_alliance,
-            fog_empire,
-            player_is_alliance: self.player_is_alliance,
-            blockade: self.states.blockade.clone(),
-            uprising: self.states.uprising.clone(),
-            research: self.states.research.clone(),
-            jedi: self.states.jedi.clone(),
-            victory: self.states.victory.clone(),
-            betrayal: self.states.betrayal.clone(),
-            economy: self.states.economy.clone(),
-            sim_rng: self.sim_rng.clone(),
-            ai2: self.states.ai2.clone(),
-            repair: self.states.repair.clone(),
-            game_config: self.game_config.clone(),
-            campaign_config: self.states.campaign_config,
-            troop_transport: self.states.troop_transport.clone(),
-            deliveries: self.states.deliveries.clone(),
-            player_agent: self.player_agent.clone(),
-            stockpiles: self.states.stockpiles.clone(),
-        }
+        SaveState::from_simulation(
+            self.world.clone(),
+            self.states.clone(),
+            self.inactive_fog.clone(),
+            self.player_is_alliance,
+            self.sim_rng.clone(),
+            self.game_config.clone(),
+            self.player_agent.clone(),
+        )
     }
 }
 
@@ -1036,7 +959,7 @@ fn canonical_data_name(name: &str) -> anyhow::Result<String> {
     Ok(canonical)
 }
 
-#[expect(
+#[allow(
     clippy::case_sensitive_file_extension_comparisons,
     reason = "Replay manifests require canonical uppercase DAT names for stable identity."
 )]
@@ -1102,23 +1025,10 @@ impl Fnv1a64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::SeedableRng;
-    use rand_xoshiro::Xoshiro256PlusPlus;
-    use rebellion_core::betrayal::BetrayalState;
-    use rebellion_core::blockade::BlockadeState;
     use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
-    use rebellion_core::economy::EconomyState;
-    use rebellion_core::events::EventState;
-    use rebellion_core::jedi::JediState;
-    use rebellion_core::manufacturing::ManufacturingState;
-    use rebellion_core::missions::MissionState;
-    use rebellion_core::movement::MovementState;
-    use rebellion_core::repair::RepairState;
-    use rebellion_core::research::ResearchState;
-    use rebellion_core::tick::GameClock;
-    use rebellion_core::uprising::UprisingState;
-    use rebellion_core::victory::VictoryState;
-    use rebellion_core::world::{CampaignConfig, ControlKind, Sector, System};
+    use rebellion_core::world::{ControlKind, Sector, System};
+
+    use crate::test_support::save_state;
 
     fn sample_data() -> SimulationDataManifest {
         compute_simulation_data_manifest([
@@ -1135,6 +1045,52 @@ mod tests {
         }
     }
 
+    fn headquarters(
+        sector: rebellion_core::ids::SectorKey,
+        dat_id: u32,
+        name: &str,
+        x: u16,
+        y: u16,
+        side: Faction,
+    ) -> System {
+        let alliance = side == Faction::Alliance;
+        System {
+            dat_id: rebellion_core::ids::DatId::new(dat_id),
+            name: name.into(),
+            sector,
+            x,
+            y,
+            exploration_status: ExplorationStatus::Explored,
+            popularity_alliance: if alliance { 0.75 } else { 0.25 },
+            popularity_empire: if alliance { 0.25 } else { 0.75 },
+            is_populated: true,
+            is_headquarters: true,
+            control: ControlKind::Controlled(side),
+            ..System::default()
+        }
+    }
+
+    fn replay_environment(data: &SimulationDataManifest, seed: u64) -> ReplayEnvironment<'_> {
+        ReplayEnvironment {
+            engine_version: "0.1.0-test",
+            seed,
+            data,
+        }
+    }
+
+    fn recorded_fixture<I>(
+        data: &SimulationDataManifest,
+        commands: I,
+    ) -> (ReplayEnvironment<'_>, SaveState, ReplayRecording)
+    where
+        I: IntoIterator<Item = (ReplayActor, ReplayCommand)>,
+    {
+        let environment = replay_environment(data, 42);
+        let initial = sample_save_state(environment.seed);
+        let recording = record_replay(environment, initial.clone(), commands).unwrap();
+        (environment, initial, recording)
+    }
+
     fn sample_save_state(seed: u64) -> SaveState {
         let mut world = GameWorld::default();
         let sector = world.sectors.insert(Sector {
@@ -1145,84 +1101,25 @@ mod tests {
             y: 0,
             systems: Vec::new(),
         });
-        let alliance_hq = world.systems.insert(System {
-            dat_id: rebellion_core::ids::DatId::new(0x9000_0000),
-            name: "Alliance HQ".into(),
+        let alliance_hq = world.systems.insert(headquarters(
             sector,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.75,
-            popularity_empire: 0.25,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: true,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
-            espionage_rating: 0.0,
-        });
-        let empire_hq = world.systems.insert(System {
-            dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
-            name: "Empire HQ".into(),
+            0x9000_0000,
+            "Alliance HQ",
+            0,
+            0,
+            Faction::Alliance,
+        ));
+        let empire_hq = world.systems.insert(headquarters(
             sector,
-            x: 100,
-            y: 100,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.25,
-            popularity_empire: 0.75,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: true,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Empire),
-            espionage_rating: 0.0,
-        });
+            0x9000_0001,
+            "Empire HQ",
+            100,
+            100,
+            Faction::Empire,
+        ));
         world.sectors[sector].systems = vec![alliance_hq, empire_hq];
 
-        SaveState {
-            world,
-            clock: GameClock::default(),
-            manufacturing: ManufacturingState::new(),
-            missions: MissionState::new(),
-            events: EventState::new(),
-            ai: AIState::new(AiFaction::Empire),
-            movement: MovementState::new(),
-            fog_alliance: FogState::new(Faction::Alliance),
-            fog_empire: FogState::new(Faction::Empire),
-            player_is_alliance: true,
-            blockade: BlockadeState::new(),
-            uprising: UprisingState::new(),
-            research: ResearchState::new(),
-            jedi: JediState::new(),
-            victory: VictoryState::new(alliance_hq, empire_hq),
-            betrayal: BetrayalState::new(),
-            economy: EconomyState::default(),
-            sim_rng: Xoshiro256PlusPlus::seed_from_u64(seed),
-            ai2: None,
-            repair: RepairState::default(),
-            game_config: GameConfig::default(),
-            campaign_config: CampaignConfig::default(),
-            troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),
-            deliveries: rebellion_core::delivery::DeliveryState::default(),
-            player_agent: rebellion_core::agent_automation::PlayerAgent::default(),
-            stockpiles: rebellion_core::stockpiles::StockpileState::default(),
-        }
+        save_state(world, alliance_hq, empire_hq, seed, true)
     }
 
     #[test]
@@ -1436,11 +1333,7 @@ mod tests {
     #[test]
     fn recorder_and_executor_match_every_checkpoint() {
         let data = sample_data();
-        let environment = ReplayEnvironment {
-            engine_version: "0.1.0-test",
-            seed: 42,
-            data: &data,
-        };
+        let environment = replay_environment(&data, 42);
         let initial = sample_save_state(environment.seed);
         let recording = record_replay(
             environment,
@@ -1489,11 +1382,7 @@ mod tests {
     #[test]
     fn executor_accepts_an_initial_state_restored_from_a_save() {
         let data = sample_data();
-        let environment = ReplayEnvironment {
-            engine_version: "0.1.0-test",
-            seed: 77,
-            data: &data,
-        };
+        let environment = replay_environment(&data, 77);
         let initial = sample_save_state(environment.seed);
         let recording = record_replay(
             environment,
@@ -1519,21 +1408,13 @@ mod tests {
     #[test]
     fn executor_rejects_environment_command_and_checkpoint_mismatches() {
         let data = sample_data();
-        let environment = ReplayEnvironment {
-            engine_version: "0.1.0-test",
-            seed: 42,
-            data: &data,
-        };
-        let initial = sample_save_state(environment.seed);
-        let recording = record_replay(
-            environment,
-            initial.clone(),
+        let (environment, initial, recording) = recorded_fixture(
+            &data,
             [(
                 ReplayActor::Engine,
                 ReplayCommand::AdvanceTicks { count: 1 },
             )],
-        )
-        .unwrap();
+        );
 
         let wrong_seed = ReplayEnvironment {
             seed: 43,
@@ -1609,15 +1490,8 @@ mod tests {
     #[test]
     fn observed_executor_retains_the_failing_actual_checkpoint() {
         let data = sample_data();
-        let environment = ReplayEnvironment {
-            engine_version: "0.1.0-test",
-            seed: 42,
-            data: &data,
-        };
-        let initial = sample_save_state(environment.seed);
-        let recording = record_replay(
-            environment,
-            initial.clone(),
+        let (environment, initial, recording) = recorded_fixture(
+            &data,
             [
                 (ReplayActor::Engine, ReplayCommand::ToggleDualAi),
                 (
@@ -1625,8 +1499,7 @@ mod tests {
                     ReplayCommand::AdvanceTicks { count: 1 },
                 ),
             ],
-        )
-        .unwrap();
+        );
         let expected_actual = recording.manifest.checkpoints[1].clone();
         let mut changed = recording.manifest;
         changed.checkpoints[1].state_fingerprint = "v1:0000000000000000".into();

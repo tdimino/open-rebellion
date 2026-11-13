@@ -117,22 +117,20 @@ fn audio_base_path(path: &Path) -> PathBuf {
 // ---------------------------------------------------------------------------
 
 #[cfg(not(target_arch = "wasm32"))]
-fn sfx_file(kind: SfxKind) -> &'static str {
-    match kind {
-        SfxKind::MissionSuccess => "mission_success.wav",
-        SfxKind::MissionFail => "mission_fail.wav",
-        SfxKind::BuildComplete => "build_complete.wav",
-        SfxKind::FleetDeparture => "fleet_departure.wav",
-        SfxKind::FleetArrival => "fleet_arrival.wav",
-        SfxKind::CombatStart => "combat_start.wav",
-        SfxKind::UiClick => "ui_click.wav",
-        SfxKind::UiClose => "ui_close.wav",
-        SfxKind::MenuGalaxySize => "menu_galaxy_size.wav",
-        SfxKind::MenuLoadOptions => "menu_load_options.wav",
-        SfxKind::MenuQuit => "menu_quit.wav",
-        SfxKind::MenuSelect => "menu_select.wav",
-    }
-}
+const SFX_FILES: &[(SfxKind, &str)] = &[
+    (SfxKind::MissionSuccess, "mission_success.wav"),
+    (SfxKind::MissionFail, "mission_fail.wav"),
+    (SfxKind::BuildComplete, "build_complete.wav"),
+    (SfxKind::FleetDeparture, "fleet_departure.wav"),
+    (SfxKind::FleetArrival, "fleet_arrival.wav"),
+    (SfxKind::CombatStart, "combat_start.wav"),
+    (SfxKind::UiClick, "ui_click.wav"),
+    (SfxKind::UiClose, "ui_close.wav"),
+    (SfxKind::MenuGalaxySize, "menu_galaxy_size.wav"),
+    (SfxKind::MenuLoadOptions, "menu_load_options.wav"),
+    (SfxKind::MenuQuit, "menu_quit.wav"),
+    (SfxKind::MenuSelect, "menu_select.wav"),
+];
 
 /// Browser-pack filenames and COMMON.DLL resource identities for cockpit SFX.
 pub const MENU_SFX_ASSETS: &[(SfxKind, &str, u32)] = &[
@@ -334,22 +332,8 @@ impl AudioEngine {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load_sfx(&mut self, sounds_dir: &Path) {
         let sfx_dir = audio_base_path(sounds_dir).join("sfx");
-        let kinds = [
-            SfxKind::MissionSuccess,
-            SfxKind::MissionFail,
-            SfxKind::BuildComplete,
-            SfxKind::FleetDeparture,
-            SfxKind::FleetArrival,
-            SfxKind::CombatStart,
-            SfxKind::UiClick,
-            SfxKind::UiClose,
-            SfxKind::MenuGalaxySize,
-            SfxKind::MenuLoadOptions,
-            SfxKind::MenuQuit,
-            SfxKind::MenuSelect,
-        ];
-        for kind in kinds {
-            let path = sfx_dir.join(sfx_file(kind));
+        for &(kind, file) in SFX_FILES {
+            let path = sfx_dir.join(file);
             if !path.exists() {
                 continue;
             }
@@ -609,7 +593,7 @@ impl AudioEngine {
     /// Play a one-shot SFX at the current SFX volume.
     ///
     /// No-op when the SFX was not loaded or the effective volume is zero.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -630,7 +614,7 @@ impl AudioEngine {
     }
 
     /// Play one concrete original tactical event variant.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -655,7 +639,7 @@ impl AudioEngine {
     /// Play the sound of the message the Message Index now shows, stopping
     /// the last one first (`FUN_0046a6e0`, then `FUN_00610c30`). False when
     /// the sound is not loaded.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -698,7 +682,7 @@ impl AudioEngine {
 
     /// Play a message's voice line, a loaded sprite DLL sound (module 9),
     /// at the current SFX volume. False when the sound is not loaded.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -721,7 +705,7 @@ impl AudioEngine {
     }
 
     /// Play a loaded droid sound at the current SFX volume.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -744,7 +728,7 @@ impl AudioEngine {
     }
 
     /// Play one exact tactical voice at the current SFX volume.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -777,7 +761,7 @@ impl AudioEngine {
     /// If the same track is already playing, this is a no-op.
     /// Play `track` once from `mdata_dir` (`FUN_00417520`): a playing track
     /// stops first, which clears the forced flag.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -896,7 +880,7 @@ impl AudioEngine {
     /// Apply volume changes to the currently playing music.
     ///
     /// Call when `AudioVolumeState::dirty` is true, then clear `dirty`.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Audio gains are bounded values; the playback API takes f32."
     )]
@@ -914,7 +898,7 @@ impl AudioEngine {
     }
 
     /// Always returns `true` — `quad-snd` initialises unconditionally.
-    #[expect(
+    #[allow(
         clippy::unused_self,
         reason = "Keep the same instance API as the audio backend on other platforms."
     )]
@@ -927,6 +911,24 @@ impl AudioEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    const SILENT_WAV: &[u8] = b"RIFF(\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0D\xac\0\0\x88X\x01\0\x02\0\x10\0data\x04\0\0\0\0\0\0\0";
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_sfx_loader_uses_the_shared_file_table() {
+        let root = tempfile::tempdir().expect("temporary audio directory");
+        let sfx_dir = root.path().join("sfx");
+        std::fs::create_dir_all(&sfx_dir).expect("temporary SFX directory");
+        std::fs::write(sfx_dir.join("mission_success.wav"), SILENT_WAV)
+            .expect("temporary WAV fixture");
+
+        let mut audio = AudioEngine::new();
+        audio.load_sfx(root.path());
+        assert!(audio.sfx.contains_key(&SfxKind::MissionSuccess));
+        assert_eq!(audio.sfx.len(), 1);
+    }
 
     #[test]
     fn tactical_voice_assets_cover_complete_source_backed_banks() {

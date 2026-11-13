@@ -52,7 +52,7 @@ const PHASE_BETRAYAL: u8 = 9;
 
 /// port: a mission's draws for one tick event, taken by the detection run
 /// and the phase 10 roll. The original draws each roll inline from its
-/// global generator; the port seeds a SplitMix64 per mission and tick from
+/// global generator; the port seeds a `SplitMix64` per mission and tick from
 /// one caller roll, so the caller's budget stays fixed.
 #[cfg_attr(test, derive(Clone))]
 pub(crate) struct MissionRng {
@@ -61,9 +61,9 @@ pub(crate) struct MissionRng {
 
 impl MissionRng {
     /// port: the seed spreads the roll over 53 bits and mixes in the
-    /// mission id with the SplitMix64 increment.
+    /// mission id with the `SplitMix64` increment.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "a roll in [0, 1) scaled to 53 bits fits u64"
@@ -75,7 +75,7 @@ impl MissionRng {
         }
     }
 
-    /// port: one SplitMix64 step.
+    /// port: one `SplitMix64` step.
     fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9e37_79b9_7f4a_7c15);
         let mut z = self.state;
@@ -849,35 +849,14 @@ mod tests {
     use crate::missions::MissionKind;
     use crate::world::{
         Character, ControlKind, Fleet, MissionRecord, MissionTargetRules, MstbEntry, MstbTable,
-        ShipInstance, SkillPair, SpecialForceUnit, System, TroopClassDef, TroopUnit,
+        ShipInstance, SkillPair, SpecialForceUnit, TroopClassDef, TroopUnit,
     };
 
     /// A populated system held by `control`.
     fn system(world: &mut GameWorld, control: ControlKind) -> SystemKey {
-        world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: "System".into(),
-            sector: crate::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        })
+        let mut system = crate::test_support::system("System", control);
+        system.dat_id = DatId::new(0x9000_0001);
+        world.systems.insert(system)
     }
 
     fn imperial() -> ControlKind {
@@ -1087,18 +1066,71 @@ mod tests {
         member.character().expect("a character member")
     }
 
+    fn detection_fixture(
+        foil: u32,
+        evasion: u32,
+        can_resign: bool,
+    ) -> (GameWorld, SystemKey, MissionMember, ActiveMission) {
+        let (mut world, here) = world_with(imperial());
+        world.mission_records = vec![sabotage_record(can_resign)];
+        imperial_regiment(&mut world, here);
+        table(&mut world, FOILTB, foil);
+        table(&mut world, RLEVADTB, evasion);
+        let lead = agent(&mut world, here, 100);
+        let mission = sabotage(vec![lead], here, 2);
+        (world, here, lead, mission)
+    }
+
+    fn character_decoy_fixture(
+        defenders: usize,
+        foil: u32,
+        decoy_chance: u32,
+        evasion: u32,
+        can_resign: bool,
+    ) -> (
+        GameWorld,
+        SystemKey,
+        MissionMember,
+        MissionMember,
+        ActiveMission,
+    ) {
+        let (mut world, here) = world_with(imperial());
+        world.mission_records = vec![sabotage_record(can_resign)];
+        for _ in 0..defenders {
+            imperial_regiment(&mut world, here);
+        }
+        table(&mut world, FOILTB, foil);
+        table(&mut world, TDECOYTB, decoy_chance);
+        table(&mut world, RLEVADTB, evasion);
+        let lead = agent(&mut world, here, 100);
+        let decoy = agent(&mut world, here, 100);
+        let mut mission = sabotage(vec![lead], here, 2);
+        mission.decoys = vec![decoy];
+        (world, here, lead, decoy, mission)
+    }
+
+    fn captured_members(effects: &[MissionEffect]) -> Vec<MissionMember> {
+        effects
+            .iter()
+            .filter_map(|effect| match effect {
+                MissionEffect::CharacterCaptured { character, .. } => {
+                    Some(MissionMember::Character(*character))
+                }
+                MissionEffect::SpecialForceDestroyed { unit } => {
+                    Some(MissionMember::SpecialForce(*unit))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     #[test]
     fn an_opposing_regiment_detects_a_team_in_phase_two_and_the_evading_team_resigns() {
         // FUN_005896e0 detects on a FOILTB success; slot +0x1dc ends 3 at or
         // before phase 4 when members may resign; an evading member
         // (RLEVADTB success, slot +0x208) takes a resign request and the
         // injury roll, whose chance max(G2565, 100 - combat) is 100 here.
-        let (mut world, here) = world_with(imperial());
-        imperial_regiment(&mut world, here);
-        table(&mut world, FOILTB, 100);
-        table(&mut world, RLEVADTB, 100);
-        let lead = agent(&mut world, here, 100);
-        let mut mission = sabotage(vec![lead], here, 2);
+        let (world, _here, lead, mut mission) = detection_fixture(100, 100, true);
 
         let out = run_once(&mut mission, &world);
 
@@ -1114,12 +1146,7 @@ mod tests {
     fn a_member_who_fails_to_evade_is_injured_and_captured_by_the_defender_s_side() {
         // Slot +0x20c: the captured character takes the injury roll, then
         // becomes the defender side's prisoner at the location.
-        let (mut world, here) = world_with(imperial());
-        imperial_regiment(&mut world, here);
-        table(&mut world, FOILTB, 100);
-        table(&mut world, RLEVADTB, 0);
-        let lead = agent(&mut world, here, 100);
-        let mut mission = sabotage(vec![lead], here, 2);
+        let (world, here, _lead, mut mission) = detection_fixture(100, 0, true);
 
         let out = run_once(&mut mission, &world);
 
@@ -1175,7 +1202,7 @@ mod tests {
         let out = run_once(&mut mission, &world);
 
         assert_eq!(mission.end_code, 0);
-        assert!(out.is_empty());
+        assert_empty!(out);
     }
 
     #[test]
@@ -1191,7 +1218,7 @@ mod tests {
             let lead = agent(&mut world, here, 100);
             let mut mission = sabotage(vec![lead], here, 2);
 
-            assert!(run_once(&mut mission, &world).is_empty());
+            assert_empty!(run_once(&mut mission, &world));
             assert_eq!(mission.end_code, 0, "FOILTB {foil:?}");
         }
     }
@@ -1200,34 +1227,20 @@ mod tests {
     fn a_decoy_that_draws_off_the_only_regiment_leaves_the_team_undetected() {
         // FUN_0058a020: a TDECOYTB success decoys the defender, which the
         // detection walk then skips.
-        let (mut world, here) = world_with(imperial());
-        imperial_regiment(&mut world, here);
-        table(&mut world, FOILTB, 100);
-        table(&mut world, TDECOYTB, 100);
-        let lead = agent(&mut world, here, 100);
-        let decoy = agent(&mut world, here, 100);
-        let mut mission = sabotage(vec![lead], here, 2);
-        mission.decoys = vec![decoy];
+        let (world, _here, _lead, _decoy, mut mission) =
+            character_decoy_fixture(1, 100, 100, 0, true);
 
         let out = run_once(&mut mission, &world);
 
         assert_eq!(mission.end_code, 0);
-        assert!(out.is_empty());
-        assert!(mission.resigning.is_empty());
+        assert_empty!(out);
+        assert_empty!(mission.resigning);
     }
 
     #[test]
     fn a_decoy_that_fails_is_exposed_and_resigns_while_the_team_runs_on() {
         // FUN_00589620: a failed decoy roll exposes the decoy (FUN_005888f0).
-        let (mut world, here) = world_with(imperial());
-        imperial_regiment(&mut world, here);
-        table(&mut world, FOILTB, 0);
-        table(&mut world, TDECOYTB, 0);
-        table(&mut world, RLEVADTB, 100);
-        let lead = agent(&mut world, here, 100);
-        let decoy = agent(&mut world, here, 100);
-        let mut mission = sabotage(vec![lead], here, 2);
-        mission.decoys = vec![decoy];
+        let (world, _here, _lead, decoy, mut mission) = character_decoy_fixture(1, 0, 0, 100, true);
 
         run_once(&mut mission, &world);
 
@@ -1281,18 +1294,12 @@ mod tests {
     fn a_detected_team_that_may_not_resign_runs_on() {
         // Slot +0x1dc sets an end code only when the record lets members
         // resign (column 9), and FUN_00534640 requests nothing without it.
-        let (mut world, here) = world_with(imperial());
-        world.mission_records = vec![sabotage_record(false)];
-        imperial_regiment(&mut world, here);
-        table(&mut world, FOILTB, 100);
-        table(&mut world, RLEVADTB, 100);
-        let lead = agent(&mut world, here, 100);
-        let mut mission = sabotage(vec![lead], here, 2);
+        let (world, _here, _lead, mut mission) = detection_fixture(100, 100, false);
 
         run_once(&mut mission, &world);
 
         assert_eq!(mission.end_code, 0);
-        assert!(mission.resigning.is_empty());
+        assert_empty!(mission.resigning);
     }
 
     #[test]
@@ -1491,7 +1498,8 @@ mod tests {
         for is_alliance in [true, false] {
             let (mut world, here) = world_with(imperial());
             let ship = |tag, completed, travelling| {
-                let mut ship = ShipInstance::new(crate::ids::CapitalShipKey::default(), 1, is_alliance);
+                let mut ship =
+                    ShipInstance::new(crate::ids::CapitalShipKey::default(), 1, is_alliance);
                 ship.tag = tag;
                 ship.completed = completed;
                 if travelling {
@@ -1510,7 +1518,11 @@ mod tests {
             };
             let standing = world.fleets.insert(Fleet {
                 location: here,
-                capital_ships: vec![ship(1, true, false), ship(2, false, false), ship(3, true, true)],
+                capital_ships: vec![
+                    ship(1, true, false),
+                    ship(2, false, false),
+                    ship(3, true, true),
+                ],
                 fighters: vec![entry(1), entry(2), entry(0)],
                 characters: vec![],
                 is_alliance,
@@ -1563,18 +1575,7 @@ mod tests {
 
         let out = run_once(&mut mission, &world);
 
-        let order: Vec<MissionMember> = out
-            .iter()
-            .filter_map(|effect| match effect {
-                MissionEffect::CharacterCaptured { character, .. } => {
-                    Some(MissionMember::Character(*character))
-                }
-                MissionEffect::SpecialForceDestroyed { unit } => {
-                    Some(MissionMember::SpecialForce(*unit))
-                }
-                _ => None,
-            })
-            .collect();
+        let order = captured_members(&out);
         assert_eq!(order, vec![early, late, unit]);
     }
 
@@ -1597,15 +1598,7 @@ mod tests {
 
             let out = run_once(&mut mission, &world);
 
-            let order: Vec<MissionMember> = out
-                .iter()
-                .filter_map(|effect| match effect {
-                    MissionEffect::CharacterCaptured { character, .. } => {
-                        Some(MissionMember::Character(*character))
-                    }
-                    _ => None,
-                })
-                .collect();
+            let order = captured_members(&out);
             assert_eq!(order, vec![early, late], "{minor_id:#x} {major_id:#x}");
         }
     }
@@ -1716,16 +1709,8 @@ mod tests {
         // evading decoy stays in the decoy count, so the second regiment's
         // pick lands on it again; each evasion rolls the injury (combat 0,
         // chance 100).
-        let (mut world, here) = world_with(imperial());
-        world.mission_records = vec![sabotage_record(false)];
-        imperial_regiment(&mut world, here);
-        imperial_regiment(&mut world, here);
-        table(&mut world, FOILTB, 0);
-        table(&mut world, TDECOYTB, 0);
-        table(&mut world, RLEVADTB, 100);
-        let lead = agent(&mut world, here, 100);
-        let mut mission = sabotage(vec![lead], here, 2);
-        mission.decoys = vec![agent(&mut world, here, 100)];
+        let (world, _here, _lead, _decoy, mut mission) =
+            character_decoy_fixture(2, 0, 0, 100, false);
 
         let out = run_once(&mut mission, &world);
 
@@ -1739,16 +1724,7 @@ mod tests {
     fn a_captured_decoy_is_not_drawn_again() {
         // Slot +0x20c takes the decoy prisoner; port: the run marks it gone,
         // so without a resign request the next defender finds no decoy.
-        let (mut world, here) = world_with(imperial());
-        world.mission_records = vec![sabotage_record(false)];
-        imperial_regiment(&mut world, here);
-        imperial_regiment(&mut world, here);
-        table(&mut world, FOILTB, 0);
-        table(&mut world, TDECOYTB, 0);
-        table(&mut world, RLEVADTB, 0);
-        let lead = agent(&mut world, here, 100);
-        let mut mission = sabotage(vec![lead], here, 2);
-        mission.decoys = vec![agent(&mut world, here, 100)];
+        let (world, _here, _lead, _decoy, mut mission) = character_decoy_fixture(2, 0, 0, 0, false);
 
         let out = run_once(&mut mission, &world);
 

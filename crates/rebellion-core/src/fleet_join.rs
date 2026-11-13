@@ -22,8 +22,8 @@ use std::hash::{Hash, Hasher};
 
 use crate::ids::{FleetKey, SystemKey};
 use crate::movement::{
-    capital_ship_instance_speed, death_star_room, fleet_move_confirms, transit_ticks_between,
-    FleetDispatchError, MovementState,
+    capital_ship_instance_speed, death_star_room, fleet_move_confirms, movable_fleet,
+    transit_ticks_between, FleetDispatchError, MovementState,
 };
 use crate::troop_transport::TroopTransportState;
 use crate::world::{Fleet, GameWorld, ShipTransit};
@@ -116,17 +116,12 @@ fn movable<'a>(
     fleet: FleetKey,
     expected_is_alliance: bool,
 ) -> Result<&'a Fleet, FleetOrderError> {
-    let value = world
-        .fleets
-        .get(fleet)
-        .ok_or(FleetOrderError::MissingFleet)?;
-    if value.is_alliance != expected_is_alliance {
-        return Err(FleetOrderError::WrongFaction);
-    }
-    if movement.is_in_transit(fleet) {
-        return Err(FleetOrderError::InTransit);
-    }
-    Ok(value)
+    movable_fleet(movement, world, fleet, expected_is_alliance).map_err(|error| match error {
+        FleetDispatchError::MissingFleet => FleetOrderError::MissingFleet,
+        FleetDispatchError::WrongFaction => FleetOrderError::WrongFaction,
+        FleetDispatchError::AlreadyInTransit => FleetOrderError::InTransit,
+        error => FleetOrderError::Dispatch(error),
+    })
 }
 
 /// A fingerprint of `fleet`'s capital ships, in order. A ship order keeps
@@ -209,17 +204,12 @@ fn accept_destination<'a>(
     target: FleetKey,
     is_alliance: bool,
 ) -> Result<&'a Fleet, FleetOrderError> {
-    let value = world
-        .fleets
-        .get(target)
-        .ok_or(FleetOrderError::MissingFleet)?;
-    if value.is_alliance != is_alliance {
-        return Err(FleetOrderError::OtherSideDestination);
-    }
-    if movement.is_in_transit(target) {
-        return Err(FleetOrderError::DestinationInTransit);
-    }
-    Ok(value)
+    movable_fleet(movement, world, target, is_alliance).map_err(|error| match error {
+        FleetDispatchError::MissingFleet => FleetOrderError::MissingFleet,
+        FleetDispatchError::WrongFaction => FleetOrderError::OtherSideDestination,
+        FleetDispatchError::AlreadyInTransit => FleetOrderError::DestinationInTransit,
+        error => FleetOrderError::Dispatch(error),
+    })
 }
 
 /// Whether a fleet bound for `target` can join it on arriving at `system`:
@@ -389,8 +379,22 @@ pub fn create_fleet(
     chosen: u64,
     expected_is_alliance: bool,
 ) -> Result<FleetKey, FleetOrderError> {
+    let ships =
+        validated_selected_ships(world, movement, fleet, ships, chosen, expected_is_alliance)?;
+    refuse_unfinished(world, fleet, &ships)?;
+    Ok(split_off(world, troop_transport, fleet, &ships))
+}
+
+fn validated_selected_ships(
+    world: &GameWorld,
+    movement: &MovementState,
+    fleet: FleetKey,
+    ships: &[usize],
+    chosen: u64,
+    expected_is_alliance: bool,
+) -> Result<Vec<usize>, FleetOrderError> {
     let source = movable(world, movement, fleet, expected_is_alliance)?;
-    let ships = mover_ships(
+    mover_ships(
         world,
         source,
         &FleetMover::Ships {
@@ -398,9 +402,7 @@ pub fn create_fleet(
             ships: ships.to_vec(),
             roster: chosen,
         },
-    )?;
-    refuse_unfinished(world, fleet, &ships)?;
-    Ok(split_off(world, troop_transport, fleet, &ships))
+    )
 }
 
 /// `FUN_004f9860.c:45-50`: Create Fleet (`0x270`) refuses an object that is
@@ -505,9 +507,9 @@ pub fn validate_join(
 /// blockaded system of its side (`FUN_00487cc0`, [`fleet_move_confirms`]).
 /// A join within the fleet's own system departs nowhere.
 #[must_use]
-pub fn join_confirms(
+pub fn join_confirms<S: std::hash::BuildHasher>(
     world: &GameWorld,
-    blockaded: &HashSet<SystemKey>,
+    blockaded: &HashSet<SystemKey, S>,
     fleet: FleetKey,
     target: FleetKey,
     confirmed: bool,
@@ -533,7 +535,7 @@ pub fn join_confirms(
 ///
 /// # Errors
 /// As [`create_fleet`], and a refused departure.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The order's state, its ships with their roster, and its destination and side."
 )]
@@ -585,16 +587,8 @@ pub fn validate_ships_to_system(
     system: SystemKey,
     expected_is_alliance: bool,
 ) -> Result<Vec<usize>, FleetOrderError> {
-    let source = movable(world, movement, fleet, expected_is_alliance)?;
-    let ships = mover_ships(
-        world,
-        source,
-        &FleetMover::Ships {
-            fleet,
-            ships: ships.to_vec(),
-            roster: chosen,
-        },
-    )?;
+    let ships =
+        validated_selected_ships(world, movement, fleet, ships, chosen, expected_is_alliance)?;
     if world.fleets[fleet].location == system {
         // In their own system the ships form a fleet: Create Fleet.
         refuse_unfinished(world, fleet, &ships)?;
@@ -684,20 +678,22 @@ pub fn mover_of_tags(world: &GameWorld, fleet: FleetKey, tags: &[u32]) -> Option
     if tags.is_empty() {
         return Some(FleetMover::Fleet(fleet));
     }
-    let ships = world
-        .fleets
-        .get(fleet)?
-        .capital_ships
-        .iter()
-        .enumerate()
-        .filter(|(_, ship)| ship.tag != 0 && tags.contains(&ship.tag))
-        .map(|(index, _)| index)
-        .collect();
+    let ships = ship_indices_with_tags(world.fleets.get(fleet)?, tags);
     Some(FleetMover::Ships {
         fleet,
         ships,
         roster: roster(world, fleet)?,
     })
+}
+
+fn ship_indices_with_tags(fleet: &Fleet, tags: &[u32]) -> Vec<usize> {
+    fleet
+        .capital_ships
+        .iter()
+        .enumerate()
+        .filter(|(_, ship)| ship.tag != 0 && tags.contains(&ship.tag))
+        .map(|(index, _)| index)
+        .collect()
 }
 
 /// The AI's Create Fleet (`0x270`, `crate::ai_regions`): the ships of
@@ -707,7 +703,7 @@ pub fn mover_of_tags(world: &GameWorld, fleet: FleetKey, tags: &[u32]) -> Option
 /// # Errors
 /// As [`move_ships_to_system`]; a tag no ship of the fleet carries is
 /// left out.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The order's state, its fleet and tags, and its destination, side and day."
 )]
@@ -725,13 +721,7 @@ pub fn create_fleet_of_tags(
         .fleets
         .get(fleet)
         .ok_or(FleetOrderError::MissingFleet)?;
-    let ships: Vec<usize> = source
-        .capital_ships
-        .iter()
-        .enumerate()
-        .filter(|(_, ship)| ship.tag != 0 && tags.contains(&ship.tag))
-        .map(|(index, _)| index)
-        .collect();
+    let ships = ship_indices_with_tags(source, tags);
     let system = to_system.unwrap_or(source.location);
     let chosen = roster(world, fleet).ok_or(FleetOrderError::MissingFleet)?;
     move_ships_to_system(
@@ -854,11 +844,9 @@ fn send_ships(
 mod tests {
     use super::*;
     use crate::carriage::ProductRoom;
-    use crate::dat::{ExplorationStatus, SectorGroup};
     use crate::ids::{CapitalShipKey, DatId, TroopKey};
     use crate::world::{
-        CapitalShipClass, Character, ControlKind, FighterEntry, Sector, ShipInstance, System,
-        TroopUnit,
+        CapitalShipClass, Character, ControlKind, FighterEntry, ShipInstance, TroopUnit,
     };
 
     struct Setup {
@@ -868,45 +856,11 @@ mod tests {
         class: CapitalShipKey,
     }
 
-    fn system(sector: crate::ids::SectorKey, x: u16) -> System {
-        System {
-            dat_id: DatId::new(0x9000_0000),
-            name: format!("Sys{x}"),
-            sector,
-            x,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        }
-    }
-
     fn setup() -> Setup {
-        let mut world = GameWorld::default();
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(0x9200_0000),
-            name: "Test".into(),
-            group: SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let here = world.systems.insert(system(sector, 0));
-        let there = world.systems.insert(system(sector, 50));
+        let (mut world, systems) = crate::test_support::world_with_systems(&[(0, 0), (50, 0)]);
+        let [here, there] = systems[..] else {
+            unreachable!("fixture always returns two systems")
+        };
         let class = world.capital_ship_classes.insert(CapitalShipClass {
             name: "Cruiser".into(),
             is_alliance: true,
@@ -963,6 +917,148 @@ mod tests {
         troop
     }
 
+    fn create_selected(
+        setup: &mut Setup,
+        transport: &mut TroopTransportState,
+        source: FleetKey,
+        ships: &[usize],
+        is_alliance: bool,
+    ) -> Result<FleetKey, FleetOrderError> {
+        let chosen = roster(&setup.world, source).unwrap();
+        create_fleet(
+            &mut setup.world,
+            &MovementState::new(),
+            transport,
+            source,
+            ships,
+            chosen,
+            is_alliance,
+        )
+    }
+
+    fn move_selected(
+        setup: &mut Setup,
+        movement: &mut MovementState,
+        transport: &mut TroopTransportState,
+        source: FleetKey,
+        ships: &[usize],
+        destination: SystemKey,
+        is_alliance: bool,
+        now: u64,
+    ) -> Result<FleetOrderOutcome, FleetOrderError> {
+        let chosen = roster(&setup.world, source).unwrap();
+        move_ships_to_system(
+            &mut setup.world,
+            movement,
+            transport,
+            source,
+            ships,
+            chosen,
+            destination,
+            is_alliance,
+            now,
+        )
+    }
+
+    fn join_mover(
+        setup: &mut Setup,
+        movement: &mut MovementState,
+        transport: &mut TroopTransportState,
+        mover: &FleetMover,
+        target: FleetKey,
+        is_alliance: bool,
+        now: u64,
+    ) -> Result<FleetOrderOutcome, FleetOrderError> {
+        join_fleet(
+            &mut setup.world,
+            movement,
+            transport,
+            mover,
+            target,
+            is_alliance,
+            now,
+        )
+    }
+
+    fn join_whole(
+        setup: &mut Setup,
+        mover: FleetKey,
+        target: FleetKey,
+        is_alliance: bool,
+        now: u64,
+    ) -> (MovementState, Result<FleetOrderOutcome, FleetOrderError>) {
+        let mut movement = MovementState::new();
+        let outcome = join_mover(
+            setup,
+            &mut movement,
+            &mut TroopTransportState::default(),
+            &FleetMover::Fleet(mover),
+            target,
+            is_alliance,
+            now,
+        );
+        (movement, outcome)
+    }
+
+    fn source_fixture(hulls: &[i32], is_alliance: bool) -> (Setup, FleetKey) {
+        let mut setup = setup();
+        let here = setup.here;
+        let source = fleet(&mut setup, here, hulls, is_alliance);
+        (setup, source)
+    }
+
+    fn pair_fixture(
+        mover_hulls: &[i32],
+        target_hulls: &[i32],
+        is_alliance: bool,
+        distant: bool,
+    ) -> (Setup, FleetKey, FleetKey) {
+        let (mut setup, mover) = source_fixture(mover_hulls, is_alliance);
+        let target_system = if distant { setup.there } else { setup.here };
+        let target = fleet(&mut setup, target_system, target_hulls, is_alliance);
+        (setup, mover, target)
+    }
+
+    fn embarked_source(hulls: &[i32]) -> (Setup, FleetKey, TroopTransportState, TroopKey) {
+        let (mut setup, source) = source_fixture(hulls, true);
+        let mut transport = TroopTransportState::default();
+        let troop = embark(&mut setup, &mut transport, source);
+        (setup, source, transport, troop)
+    }
+
+    fn death_star_source(is_alliance: bool) -> (Setup, FleetKey) {
+        let (mut setup, source) = source_fixture(&[10, 20], is_alliance);
+        reclass(&mut setup, source, 1, 0, true);
+        (setup, source)
+    }
+
+    fn embarked_pair(
+        mover_hulls: &[i32],
+        target_hulls: &[i32],
+    ) -> (Setup, FleetKey, FleetKey, TroopTransportState, TroopKey) {
+        let (mut setup, mover, target) = pair_fixture(mover_hulls, target_hulls, true, false);
+        let mut transport = TroopTransportState::default();
+        let troop = embark(&mut setup, &mut transport, mover);
+        (setup, mover, target, transport, troop)
+    }
+
+    fn assert_joined(
+        setup: &Setup,
+        outcome: Result<FleetOrderOutcome, FleetOrderError>,
+        mover: FleetKey,
+        target: FleetKey,
+        expected_hulls: &[i32],
+        is_alliance: bool,
+    ) {
+        assert_eq!(
+            outcome,
+            Ok(FleetOrderOutcome::Joined(target)),
+            "{is_alliance}"
+        );
+        assert!(!setup.world.fleets.contains_key(mover), "{is_alliance}");
+        assert_eq!(hulls(&setup.world, target), expected_hulls, "{is_alliance}");
+    }
+
     // FUN_004ffc90 → FUN_004feca0: a fleet moved onto a fleet hands it every
     // ship; FUN_004fe630: the emptied fleet disbands. port: the fleet's
     // fighters, characters and cargo go with its ships.
@@ -972,7 +1068,10 @@ mod tests {
         let here = setup.here;
         let mover = fleet(&mut setup, here, &[10, 20], true);
         let target = fleet(&mut setup, here, &[30], true);
-        let fighter = setup.world.fighter_classes.insert(Default::default());
+        let fighter = setup
+            .world
+            .fighter_classes
+            .insert(crate::world::FighterClass::default());
         setup.world.fleets[mover].fighters.push(FighterEntry {
             class: fighter,
             count: 2,
@@ -1016,7 +1115,7 @@ mod tests {
         assert_eq!(world.characters[admiral].current_fleet, Some(target));
         assert!(world.fleet_has_death_star(target));
         assert_eq!(transport.cargo(target), [troop]);
-        assert!(movement.is_empty());
+        assert_empty!(movement);
     }
 
     // port: fleet_name_bank's signature names follow their flagship class.
@@ -1063,16 +1162,11 @@ mod tests {
 
     #[test]
     fn ships_moved_onto_another_fleet_leave_the_rest_of_their_fleet_behind() {
-        let mut setup = setup();
-        let here = setup.here;
-        let mover = fleet(&mut setup, here, &[10, 20, 30], true);
-        let target = fleet(&mut setup, here, &[40], true);
-        let mut transport = TroopTransportState::default();
-        let troop = embark(&mut setup, &mut transport, mover);
+        let (mut setup, mover, target, mut transport, troop) = embarked_pair(&[10, 20, 30], &[40]);
 
         let chosen = roster(&setup.world, mover).unwrap();
-        let outcome = join_fleet(
-            &mut setup.world,
+        let outcome = join_mover(
+            &mut setup,
             &mut MovementState::new(),
             &mut transport,
             &FleetMover::Ships {
@@ -1091,23 +1185,18 @@ mod tests {
         // The regiment boarded the first of the equal ships (FUN_00552b10)
         // and, a child of that ship, goes where it goes.
         assert_eq!(transport.cargo(target), [troop]);
-        assert!(transport.cargo(mover).is_empty());
+        assert_empty!(transport.cargo(mover));
     }
 
     // FUN_004fe630: a fleet whose last ship leaves disbands, so moving every
     // ship moves the fleet's contents with them.
     #[test]
     fn moving_every_ship_of_a_fleet_onto_another_disbands_it() {
-        let mut setup = setup();
-        let here = setup.here;
-        let mover = fleet(&mut setup, here, &[10, 20], true);
-        let target = fleet(&mut setup, here, &[40], true);
-        let mut transport = TroopTransportState::default();
-        let troop = embark(&mut setup, &mut transport, mover);
+        let (mut setup, mover, target, mut transport, troop) = embarked_pair(&[10, 20], &[40]);
 
         let chosen = roster(&setup.world, mover).unwrap();
-        join_fleet(
-            &mut setup.world,
+        join_mover(
+            &mut setup,
             &mut MovementState::new(),
             &mut transport,
             &FleetMover::Ships {
@@ -1312,22 +1401,9 @@ mod tests {
     #[test]
     fn a_fleet_moved_onto_a_fleet_elsewhere_hands_it_each_ship_at_once_for_either_side() {
         for is_alliance in [true, false] {
-            let mut setup = setup();
-            let (here, there) = (setup.here, setup.there);
-            let mover = fleet(&mut setup, here, &[10, 20], is_alliance);
+            let (mut setup, mover, target) = pair_fixture(&[10, 20], &[30], is_alliance, true);
             setup.world.fleets[mover].capital_ships[1].completed = false;
-            let target = fleet(&mut setup, there, &[30], is_alliance);
-            let mut movement = MovementState::new();
-
-            let outcome = join_fleet(
-                &mut setup.world,
-                &mut movement,
-                &mut TroopTransportState::default(),
-                &FleetMover::Fleet(mover),
-                target,
-                is_alliance,
-                100,
-            );
+            let (movement, outcome) = join_whole(&mut setup, mover, target, is_alliance, 100);
 
             assert_eq!(
                 outcome,
@@ -1338,6 +1414,7 @@ mod tests {
             assert!(movement.is_empty(), "{is_alliance}");
             assert_eq!(hulls(&setup.world, target), [30, 10, 20], "{is_alliance}");
             let ships = &setup.world.fleets[target].capital_ships;
+            let (here, there) = (setup.here, setup.there);
             assert_eq!(
                 ships[1].transit,
                 Some(crate::world::ShipTransit {
@@ -1356,10 +1433,8 @@ mod tests {
     #[test]
     fn ships_moved_onto_a_fleet_elsewhere_join_it_at_once_on_their_own_legs_for_either_side() {
         for is_alliance in [true, false] {
-            let mut setup = setup();
-            let (here, there) = (setup.here, setup.there);
-            let mover = fleet(&mut setup, here, &[10, 20], is_alliance);
-            let target = fleet(&mut setup, there, &[30], is_alliance);
+            let (mut setup, mover, target) = pair_fixture(&[10, 20], &[30], is_alliance, true);
+            let here = setup.here;
             let mut movement = MovementState::new();
             let mut transport = TroopTransportState::default();
             let troop = setup.world.troops.insert(TroopUnit {
@@ -1462,25 +1537,12 @@ mod tests {
         transport
             .load(&mut setup.world, &ProductRoom::default(), source, &troops)
             .unwrap();
-        let chosen = roster(&setup.world, source).unwrap();
-
-        let created = create_fleet(
-            &mut setup.world,
-            &MovementState::new(),
-            &mut transport,
-            source,
-            &[1, 2],
-            chosen,
-            true,
-        )
-        .unwrap();
+        let created = create_selected(&mut setup, &mut transport, source, &[1, 2], true).unwrap();
 
         assert_eq!(hulls(&setup.world, source), [10]);
-        assert!(transport.cargo(source).is_empty());
+        assert_empty!(transport.cargo(source));
         assert_eq!(transport.cargo(created), troops.as_slice());
-        assert!(transport
-            .destroy_untransportable_cargo(&mut setup.world)
-            .is_empty());
+        assert_empty!(transport.destroy_untransportable_cargo(&mut setup.world));
     }
 
     // FUN_00552b10: each regiment boards the ship with the most room, the
@@ -1488,25 +1550,10 @@ mod tests {
     // aboard the ships that leave.
     #[test]
     fn a_split_takes_the_regiments_aboard_the_ships_that_leave() {
-        let mut setup = setup();
-        let here = setup.here;
-        let source = fleet(&mut setup, here, &[10, 20], true);
-        let mut transport = TroopTransportState::default();
-        let aboard: Vec<_> = (0..3)
-            .map(|_| embark(&mut setup, &mut transport, source))
-            .collect();
-        let chosen = roster(&setup.world, source).unwrap();
-
-        let created = create_fleet(
-            &mut setup.world,
-            &MovementState::new(),
-            &mut transport,
-            source,
-            &[1],
-            chosen,
-            true,
-        )
-        .unwrap();
+        let (mut setup, source, mut transport, first) = embarked_source(&[10, 20]);
+        let mut aboard = vec![first];
+        aboard.extend((0..2).map(|_| embark(&mut setup, &mut transport, source)));
+        let created = create_selected(&mut setup, &mut transport, source, &[1], true).unwrap();
 
         assert_eq!(transport.cargo(source), [aboard[0], aboard[2]]);
         assert_eq!(transport.cargo(created), [aboard[1]]);
@@ -1521,7 +1568,10 @@ mod tests {
         let here = setup.here;
         let source = fleet(&mut setup, here, &[10, 20], true);
         setup.world.capital_ship_classes[setup.class].fighter_capacity = 1;
-        let fighter = setup.world.fighter_classes.insert(Default::default());
+        let fighter = setup
+            .world
+            .fighter_classes
+            .insert(crate::world::FighterClass::default());
         // Each ship has room for one, so a squadron boards each.
         for index in 0..2 {
             let tag = crate::carriage::tag_ship(&mut setup.world, source, index).unwrap();
@@ -1533,18 +1583,7 @@ mod tests {
         });
         setup.world.fleets[source].characters.push(admiral);
         let mut transport = TroopTransportState::default();
-        let chosen = roster(&setup.world, source).unwrap();
-
-        let created = create_fleet(
-            &mut setup.world,
-            &MovementState::new(),
-            &mut transport,
-            source,
-            &[0],
-            chosen,
-            true,
-        )
-        .unwrap();
+        let created = create_selected(&mut setup, &mut transport, source, &[0], true).unwrap();
 
         let world = &setup.world;
         let squadrons = |fleet: FleetKey| -> Vec<u32> {
@@ -1563,7 +1602,7 @@ mod tests {
             [world.fleets[source].capital_ships[0].tag]
         );
         assert_eq!(world.fleets[created].characters, [admiral]);
-        assert!(world.fleets[source].characters.is_empty());
+        assert_empty!(world.fleets[source].characters);
         assert_eq!(world.characters[admiral].current_fleet, Some(created));
     }
 
@@ -1582,15 +1621,12 @@ mod tests {
         troops.sort_unstable();
         setup.world.systems.remove(there);
         let fleets_before = setup.world.fleets.len();
-        let chosen = roster(&setup.world, source).unwrap();
-
-        let outcome = move_ships_to_system(
-            &mut setup.world,
+        let outcome = move_selected(
+            &mut setup,
             &mut MovementState::new(),
             &mut transport,
             source,
             &[1],
-            chosen,
             there,
             true,
             0,
@@ -1607,14 +1643,12 @@ mod tests {
 
         // A Death Star among the refused ships stays in the fleet.
         reclass(&mut setup, source, 1, 2, true);
-        let chosen = roster(&setup.world, source).unwrap();
-        let refused = move_ships_to_system(
-            &mut setup.world,
+        let refused = move_selected(
+            &mut setup,
             &mut MovementState::new(),
             &mut transport,
             source,
             &[1],
-            chosen,
             there,
             true,
             0,
@@ -1632,18 +1666,7 @@ mod tests {
         let source = fleet(&mut setup, here, &[10, 20], true);
         reclass(&mut setup, source, 1, 0, true);
         let mut transport = TroopTransportState::default();
-        let chosen = roster(&setup.world, source).unwrap();
-
-        let created = create_fleet(
-            &mut setup.world,
-            &MovementState::new(),
-            &mut transport,
-            source,
-            &[1],
-            chosen,
-            true,
-        )
-        .unwrap();
+        let created = create_selected(&mut setup, &mut transport, source, &[1], true).unwrap();
 
         assert!(!setup.world.fleet_has_death_star(source));
         assert!(setup.world.fleet_has_death_star(created));
@@ -1852,7 +1875,7 @@ mod tests {
         assert_eq!(hulls(&setup.world, mover), [10, 20, 30]);
         assert_eq!(setup.world.fleets.len(), fleets_before);
         assert_eq!(setup.world.systems[here].fleets, [mover]);
-        assert!(movement.is_empty());
+        assert_empty!(movement);
     }
 
     // FUN_00580b00 → FUN_00509b40: Create Fleet puts the selected ships in a
@@ -1865,17 +1888,7 @@ mod tests {
         let mut transport = TroopTransportState::default();
         let troop = embark(&mut setup, &mut transport, source);
 
-        let chosen = roster(&setup.world, source).unwrap();
-        let created = create_fleet(
-            &mut setup.world,
-            &MovementState::new(),
-            &mut transport,
-            source,
-            &[0, 2],
-            chosen,
-            true,
-        )
-        .unwrap();
+        let created = create_selected(&mut setup, &mut transport, source, &[0, 2], true).unwrap();
 
         let world = &setup.world;
         assert_ne!(created, source);
@@ -1888,30 +1901,17 @@ mod tests {
         assert_eq!(world.systems[here].fleets, expected);
         // The regiment rides ship 0 (FUN_00552b10), which leaves.
         assert_eq!(transport.cargo(created), [troop]);
-        assert!(transport.cargo(source).is_empty());
+        assert_empty!(transport.cargo(source));
     }
 
     // FUN_004fe630: when every ship leaves, the old fleet disbands and its
     // contents go with the ships.
     #[test]
     fn create_fleet_of_every_ship_replaces_the_fleet_and_keeps_its_contents() {
-        let mut setup = setup();
+        let (mut setup, source, mut transport, troop) = embarked_source(&[10, 20]);
         let here = setup.here;
-        let source = fleet(&mut setup, here, &[10, 20], true);
-        let mut transport = TroopTransportState::default();
-        let troop = embark(&mut setup, &mut transport, source);
 
-        let chosen = roster(&setup.world, source).unwrap();
-        let created = create_fleet(
-            &mut setup.world,
-            &MovementState::new(),
-            &mut transport,
-            source,
-            &[1, 0],
-            chosen,
-            true,
-        )
-        .unwrap();
+        let created = create_selected(&mut setup, &mut transport, source, &[1, 0], true).unwrap();
 
         assert!(!setup.world.fleets.contains_key(source));
         assert_eq!(hulls(&setup.world, created), [10, 20]);
@@ -1967,14 +1967,12 @@ mod tests {
             setup.world.fleets[source].capital_ships[2].completed = false;
             let mut movement = MovementState::new();
 
-            let chosen = roster(&setup.world, source).unwrap();
-            let outcome = move_ships_to_system(
-                &mut setup.world,
+            let outcome = move_selected(
+                &mut setup,
                 &mut movement,
                 &mut TroopTransportState::default(),
                 source,
                 &[1],
-                chosen,
                 there,
                 is_alliance,
                 100,
@@ -2003,14 +2001,12 @@ mod tests {
             assert_eq!(hulls(&setup.world, source), [10, 30], "{is_alliance}");
             assert!(movement.is_empty(), "{is_alliance}");
 
-            let chosen = roster(&setup.world, source).unwrap();
-            let outcome = move_ships_to_system(
-                &mut setup.world,
+            let outcome = move_selected(
+                &mut setup,
                 &mut movement,
                 &mut TroopTransportState::default(),
                 source,
                 &[0, 1],
-                chosen,
                 there,
                 is_alliance,
                 105,
@@ -2039,10 +2035,8 @@ mod tests {
     #[test]
     fn a_death_star_moved_to_a_system_holding_one_is_refused_for_either_side() {
         for is_alliance in [true, false] {
-            let mut setup = setup();
-            let (here, there) = (setup.here, setup.there);
-            let source = fleet(&mut setup, here, &[10, 20], is_alliance);
-            reclass(&mut setup, source, 1, 0, true);
+            let (mut setup, source) = death_star_source(is_alliance);
+            let there = setup.there;
             let other = fleet(&mut setup, there, &[30], !is_alliance);
             reclass(&mut setup, other, 0, 0, true);
             let mut movement = MovementState::new();
@@ -2189,10 +2183,8 @@ mod tests {
     fn a_death_star_sent_off_as_a_ship_clears_its_sectors_bit_at_once_for_either_side() {
         for is_alliance in [true, false] {
             for join in [false, true] {
-                let mut setup = setup();
-                let (here, there) = (setup.here, setup.there);
-                let source = fleet(&mut setup, here, &[10, 20], is_alliance);
-                reclass(&mut setup, source, 1, 0, true);
+                let (mut setup, source) = death_star_source(is_alliance);
+                let there = setup.there;
                 let target = fleet(&mut setup, there, &[30], is_alliance);
                 crate::death_star::refresh_sectors(&mut setup.world);
                 assert_eq!(setup.world.death_star_sectors.len(), 1, "{is_alliance}");
@@ -2317,9 +2309,8 @@ mod tests {
     #[test]
     fn a_ships_move_lists_its_own_legs_days_or_none_while_unfinished_for_either_side() {
         for is_alliance in [true, false] {
-            let mut setup = setup();
+            let (mut setup, key) = source_fixture(&[10, 20], is_alliance);
             let (here, there) = (setup.here, setup.there);
-            let key = fleet(&mut setup, here, &[10, 20], is_alliance);
             setup.world.fleets[key].capital_ships[1].completed = false;
             let leg = u32::try_from(arrival(&setup, 0)).unwrap();
             let days = |index, to| ship_move_days(&setup.world, key, index, to);
@@ -2337,9 +2328,8 @@ mod tests {
     #[test]
     fn a_ships_move_to_a_system_is_checked_without_changing_anything_for_either_side() {
         for is_alliance in [true, false] {
-            let mut setup = setup();
+            let (mut setup, key) = source_fixture(&[10, 20], is_alliance);
             let (here, there) = (setup.here, setup.there);
-            let key = fleet(&mut setup, here, &[10, 20], is_alliance);
             let movement = MovementState::new();
             let chosen = roster(&setup.world, key).unwrap();
             let check = |world: &GameWorld, side| {
@@ -2382,14 +2372,12 @@ mod tests {
         let source = fleet(&mut setup, here, &[10, 20], true);
         let mut movement = MovementState::new();
 
-        let chosen = roster(&setup.world, source).unwrap();
-        let outcome = move_ships_to_system(
-            &mut setup.world,
+        let outcome = move_selected(
+            &mut setup,
             &mut movement,
             &mut TroopTransportState::default(),
             source,
             &[1],
-            chosen,
             here,
             true,
             0,
@@ -2399,7 +2387,7 @@ mod tests {
             panic!("the ship forms a fleet: {outcome:?}");
         };
         assert_eq!(hulls(&setup.world, created), [20]);
-        assert!(movement.is_empty());
+        assert_empty!(movement);
     }
 
     #[test]
@@ -2427,7 +2415,7 @@ mod tests {
                 FleetDispatchError::MissingDestination
             ))
         );
-        assert!(movement.is_empty());
+        assert_empty!(movement);
         assert_eq!(setup.world.systems[here].fleets, [mover]);
     }
 
@@ -2470,31 +2458,12 @@ mod tests {
     #[test]
     fn a_fleet_with_no_usable_ship_moved_onto_a_fleet_elsewhere_joins_it_at_once_for_either_side() {
         for is_alliance in [true, false] {
-            let mut setup = setup();
-            let (here, there) = (setup.here, setup.there);
-            let mover = fleet(&mut setup, here, &[10], is_alliance);
+            let (mut setup, mover, target) = pair_fixture(&[10], &[30], is_alliance, true);
             setup.world.fleets[mover].capital_ships[0].completed = false;
-            let target = fleet(&mut setup, there, &[30], is_alliance);
-            let mut movement = MovementState::new();
+            let (movement, outcome) = join_whole(&mut setup, mover, target, is_alliance, 0);
 
-            let outcome = join_fleet(
-                &mut setup.world,
-                &mut movement,
-                &mut TroopTransportState::default(),
-                &FleetMover::Fleet(mover),
-                target,
-                is_alliance,
-                0,
-            );
-
-            assert_eq!(
-                outcome,
-                Ok(FleetOrderOutcome::Joined(target)),
-                "{is_alliance}"
-            );
-            assert!(!setup.world.fleets.contains_key(mover), "{is_alliance}");
+            assert_joined(&setup, outcome, mover, target, &[30, 10], is_alliance);
             assert!(!movement.is_in_transit(mover), "{is_alliance}");
-            assert_eq!(hulls(&setup.world, target), [30, 10], "{is_alliance}");
             assert!(
                 !setup.world.fleets[target].capital_ships[1].completed,
                 "{is_alliance}"
@@ -2511,16 +2480,14 @@ mod tests {
     #[test]
     fn a_join_carries_an_unfinished_ship_and_disbands_the_emptied_fleet_for_either_side() {
         for is_alliance in [true, false] {
-            let mut setup = setup();
+            let (mut setup, mover, target) = pair_fixture(&[10, 20], &[30], is_alliance, false);
             let here = setup.here;
-            let mover = fleet(&mut setup, here, &[10, 20], is_alliance);
             setup.world.fleets[mover].capital_ships[1].completed = false;
-            let target = fleet(&mut setup, here, &[30], is_alliance);
             let mut movement = MovementState::new();
             let mut transport = TroopTransportState::default();
 
-            let outcome = join_fleet(
-                &mut setup.world,
+            let outcome = join_mover(
+                &mut setup,
                 &mut movement,
                 &mut transport,
                 &FleetMover::Fleet(mover),
@@ -2529,13 +2496,7 @@ mod tests {
                 0,
             );
 
-            assert_eq!(
-                outcome,
-                Ok(FleetOrderOutcome::Joined(target)),
-                "{is_alliance}"
-            );
-            assert!(!setup.world.fleets.contains_key(mover), "{is_alliance}");
-            assert_eq!(hulls(&setup.world, target), [30, 10, 20], "{is_alliance}");
+            assert_joined(&setup, outcome, mover, target, &[30, 10, 20], is_alliance);
             assert!(
                 !setup.world.fleets[target].capital_ships[2].completed,
                 "{is_alliance}"
@@ -2544,8 +2505,8 @@ mod tests {
             let lone = fleet(&mut setup, here, &[40], is_alliance);
             setup.world.fleets[lone].capital_ships[0].completed = false;
             let chosen = roster(&setup.world, lone).unwrap();
-            let outcome = join_fleet(
-                &mut setup.world,
+            let outcome = join_mover(
+                &mut setup,
                 &mut movement,
                 &mut transport,
                 &FleetMover::Ships {

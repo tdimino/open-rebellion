@@ -588,6 +588,14 @@ impl MessageLog {
     }
 }
 
+impl Extend<GameMessage> for MessageLog {
+    fn extend<T: IntoIterator<Item = GameMessage>>(&mut self, iter: T) {
+        for message in iter {
+            self.push(message);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // MessageLogState
 // ---------------------------------------------------------------------------
@@ -596,7 +604,7 @@ impl MessageLog {
 ///
 /// Does not own any messages — those live in `MessageLog`.
 #[derive(Debug, Clone)]
-#[expect(
+#[allow(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
 )]
@@ -817,6 +825,15 @@ fn category_toggle(ui: &mut egui::Ui, label: &str, category: MessageCategory, en
 mod tests {
     use super::*;
 
+    fn rail_message(
+        tick: u64,
+        text: &'static str,
+        category: MessageCategory,
+        rail: MessageRail,
+    ) -> GameMessage {
+        GameMessage::new(tick, text, category).on_rail(rail, RailAudience::Both)
+    }
+
     #[test]
     fn only_the_fleet_owners_copy_of_a_report_opens_its_window() {
         // FUN_0048a060 by slot-4 class (FUN_00497530): 7 when the copy's
@@ -844,7 +861,7 @@ mod tests {
                 ),
             );
             assert_eq!(log.take_alerts(), [own], "{owner:?}");
-            assert!(log.take_alerts().is_empty());
+            assert_empty!(log.take_alerts());
             assert!(log.get(own).is_some_and(|message| message.report.is_some()));
         }
     }
@@ -960,18 +977,24 @@ mod tests {
     fn delete_by_ids_removes_matching_messages() {
         // FUN_005f54a0: delete a single message by key from the manager's list.
         let mut log = MessageLog::new(10);
-        let a = log.push(
-            GameMessage::new(1, "fleet", MessageCategory::Mission)
-                .on_rail(MessageRail::Fleet, RailAudience::Both),
-        );
-        let _b = log.push(
-            GameMessage::new(2, "built", MessageCategory::Manufacturing)
-                .on_rail(MessageRail::Manufacturing, RailAudience::Both),
-        );
-        let c = log.push(
-            GameMessage::new(3, "arrived", MessageCategory::Mission)
-                .on_rail(MessageRail::Fleet, RailAudience::Both),
-        );
+        let a = log.push(rail_message(
+            1,
+            "fleet",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
+        let _b = log.push(rail_message(
+            2,
+            "built",
+            MessageCategory::Manufacturing,
+            MessageRail::Manufacturing,
+        ));
+        let c = log.push(rail_message(
+            3,
+            "arrived",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
 
         log.delete_by_ids(&[a, c]);
 
@@ -984,14 +1007,18 @@ mod tests {
         // FUN_0048a2a0: after deletion the unread mask drops categories
         // that no longer have unread messages.
         let mut log = MessageLog::new(10);
-        let a = log.push(
-            GameMessage::new(1, "fleet", MessageCategory::Mission)
-                .on_rail(MessageRail::Fleet, RailAudience::Both),
-        );
-        log.push(
-            GameMessage::new(2, "built", MessageCategory::Manufacturing)
-                .on_rail(MessageRail::Manufacturing, RailAudience::Both),
-        );
+        let a = log.push(rail_message(
+            1,
+            "fleet",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
+        log.push(rail_message(
+            2,
+            "built",
+            MessageCategory::Manufacturing,
+            MessageRail::Manufacturing,
+        ));
 
         assert_eq!(log.unread_mask(true), 0x080 | 0x008);
 
@@ -1004,14 +1031,18 @@ mod tests {
     fn mark_all_read_clears_every_message() {
         // FUN_0048a530 with param 0: clears all unread bits.
         let mut log = MessageLog::new(10);
-        log.push(
-            GameMessage::new(1, "fleet", MessageCategory::Mission)
-                .on_rail(MessageRail::Fleet, RailAudience::Both),
-        );
-        log.push(
-            GameMessage::new(2, "built", MessageCategory::Manufacturing)
-                .on_rail(MessageRail::Manufacturing, RailAudience::Both),
-        );
+        log.push(rail_message(
+            1,
+            "fleet",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
+        log.push(rail_message(
+            2,
+            "built",
+            MessageCategory::Manufacturing,
+            MessageRail::Manufacturing,
+        ));
 
         log.mark_all_read();
 
@@ -1024,14 +1055,18 @@ mod tests {
         // port: the original only changes the list item's font; the port
         // sets the message's unread field.
         let mut log = MessageLog::new(10);
-        let a = log.push(
-            GameMessage::new(1, "fleet", MessageCategory::Mission)
-                .on_rail(MessageRail::Fleet, RailAudience::Both),
-        );
-        log.push(
-            GameMessage::new(2, "arrived", MessageCategory::Mission)
-                .on_rail(MessageRail::Fleet, RailAudience::Both),
-        );
+        let a = log.push(rail_message(
+            1,
+            "fleet",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
+        log.push(rail_message(
+            2,
+            "arrived",
+            MessageCategory::Mission,
+            MessageRail::Fleet,
+        ));
 
         log.mark_message_read(a);
 

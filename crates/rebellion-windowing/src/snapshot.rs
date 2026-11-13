@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    FocusTarget, InputPolicy, WindowEvent, WindowId, WindowKey, WindowOwner, WindowPolicy,
-    WindowSpec,
+    FocusTarget, InputPolicy, WindowEvent, WindowId, WindowKey, WindowKind, WindowOwner,
+    WindowPolicy, WindowSpec,
 };
 
 /// One semantic recipient selected for an input event.
@@ -141,22 +141,56 @@ impl RoutingSnapshot {
         &self.presentation_history
     }
 
+    fn record(&self, id: WindowId) -> Option<&SnapshotRecord> {
+        let record = self.records.get(&id)?;
+        self.members.contains(&id).then_some(record)
+    }
+
     /// Semantic key captured for an identity in this snapshot.
     #[must_use]
     pub fn key(&self, id: WindowId) -> Option<WindowKey> {
-        self.members
-            .contains(&id)
-            .then(|| self.records.get(&id).map(|record| record.key))
-            .flatten()
+        self.record(id).map(|record| record.key)
+    }
+
+    /// Input policy captured for an identity in this snapshot.
+    #[must_use]
+    pub fn input_policy(&self, id: WindowId) -> Option<InputPolicy> {
+        self.record(id).map(|record| record.policy.input)
+    }
+
+    /// Content reports for every visible member of `kind`, in paint order.
+    #[must_use]
+    pub fn content_reports_for(
+        &self,
+        kind: WindowKind,
+        status: impl Fn(WindowId) -> ContentStatus,
+    ) -> Vec<ContentReport> {
+        self.paint_order
+            .iter()
+            .copied()
+            .filter(|id| self.key(*id).is_some_and(|key| key.kind == kind))
+            .map(|window| ContentReport {
+                window,
+                status: status(window),
+            })
+            .collect()
+    }
+
+    /// Return `current` only while it owns this snapshot's keyboard route.
+    #[must_use]
+    pub fn keyboard_owner_for(&self, current: Option<WindowId>) -> Option<WindowId> {
+        let id = current?;
+        matches!(
+            self.keyboard_route().target,
+            RouteTarget::Window(target) if target.window == id
+        )
+        .then_some(id)
     }
 
     /// Lifecycle owner captured for an identity in this snapshot.
     #[must_use]
     pub fn owner(&self, id: WindowId) -> Option<WindowOwner> {
-        self.members
-            .contains(&id)
-            .then(|| self.records.get(&id).map(|record| record.owner))
-            .flatten()
+        self.record(id).map(|record| record.owner)
     }
 
     /// Semantic keyboard focus captured for this frame.
@@ -370,37 +404,80 @@ impl RoutingSnapshot {
         self.manager_id == manager_id
     }
 
-    pub(crate) fn is_descendant_of(&self, candidate: WindowId, ancestor: WindowId) -> bool {
-        let mut current = candidate;
-        for _ in 0..self.records.len() {
-            let Some(record) = self.records.get(&current) else {
-                return false;
-            };
-            let WindowOwner::Window(owner) = record.owner else {
-                return false;
-            };
-            if owner == ancestor {
-                return true;
-            }
-            current = owner;
-        }
-        false
-    }
-
-    fn owner_chain_is_within(&self, id: WindowId, active: &BTreeSet<WindowId>) -> bool {
+    fn walk_owner_chain(
+        &self,
+        id: WindowId,
+        root_result: bool,
+        mut inspect: impl FnMut(WindowId) -> Option<bool>,
+    ) -> bool {
         let mut current = id;
         for _ in 0..self.records.len() {
             let Some(record) = self.records.get(&current) else {
                 return false;
             };
             let WindowOwner::Window(owner) = record.owner else {
-                return true;
+                return root_result;
             };
-            if !active.contains(&owner) {
-                return false;
+            if let Some(result) = inspect(owner) {
+                return result;
             }
             current = owner;
         }
         false
+    }
+
+    pub(crate) fn is_descendant_of(&self, candidate: WindowId, ancestor: WindowId) -> bool {
+        self.walk_owner_chain(candidate, false, |owner| {
+            (owner == ancestor).then_some(true)
+        })
+    }
+
+    fn owner_chain_is_within(&self, id: WindowId, active: &BTreeSet<WindowId>) -> bool {
+        self.walk_owner_chain(id, true, |owner| {
+            (!active.contains(&owner)).then_some(false)
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{FocusOnOpen, SubjectId, WindowCommand, WindowManager};
+
+    fn open_with_policy(
+        manager: &mut WindowManager,
+        kind: WindowKind,
+        subject: u64,
+        input: InputPolicy,
+    ) -> WindowId {
+        manager
+            .apply(WindowCommand::Open(WindowSpec {
+                key: WindowKey::contextual(kind, SubjectId::new(2, subject)),
+                owner: WindowOwner::StrategicRoot,
+                policy: WindowPolicy::restorable_history(input, FocusOnOpen::Window),
+            }))
+            .expect("window opens")
+            .transition
+            .opened_id()
+            .expect("new window identity")
+    }
+
+    #[test]
+    fn snapshot_exposes_each_members_frozen_input_policy() {
+        let mut manager = WindowManager::new();
+        let modeless = open_with_policy(&mut manager, WindowKind::System, 1, InputPolicy::Modeless);
+        let modal = open_with_policy(
+            &mut manager,
+            WindowKind::Status,
+            2,
+            InputPolicy::StrategicModal,
+        );
+        let snapshot = manager.begin_frame();
+
+        assert_eq!(snapshot.input_policy(modeless), Some(InputPolicy::Modeless));
+        assert_eq!(
+            snapshot.input_policy(modal),
+            Some(InputPolicy::StrategicModal)
+        );
     }
 }

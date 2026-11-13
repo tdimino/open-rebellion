@@ -10,6 +10,31 @@ use std::hash::{BuildHasher, Hash};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+fn serialize_ordered_by_key<S, T, K>(
+    values: impl Iterator<Item = T>,
+    key: impl Fn(&T) -> &K,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    T: Serialize,
+    K: Serialize + ?Sized,
+{
+    let mut ordered = values
+        .map(|value| {
+            serde_json::to_vec(key(&value))
+                .map(|bytes| (bytes, value))
+                .map_err(serde::ser::Error::custom)
+        })
+        .collect::<Result<Vec<_>, S::Error>>()?;
+    ordered.sort_by(|left, right| left.0.cmp(&right.0));
+    ordered
+        .into_iter()
+        .map(|(_, value)| value)
+        .collect::<Vec<_>>()
+        .serialize(serializer)
+}
+
 pub fn serialize_hash_map<S, K, V, H>(
     values: &HashMap<K, V, H>,
     serializer: S,
@@ -24,20 +49,7 @@ where
         return values.serialize(serializer);
     }
 
-    let mut ordered = values
-        .iter()
-        .map(|(key, value)| {
-            serde_json::to_vec(key)
-                .map(|bytes| (bytes, key, value))
-                .map_err(serde::ser::Error::custom)
-        })
-        .collect::<Result<Vec<_>, S::Error>>()?;
-    ordered.sort_by(|left, right| left.0.cmp(&right.0));
-    ordered
-        .into_iter()
-        .map(|(_, key, value)| (key, value))
-        .collect::<Vec<_>>()
-        .serialize(serializer)
+    serialize_ordered_by_key(values.iter(), |(key, _)| key, serializer)
 }
 
 pub fn deserialize_hash_map<'de, D, K, V>(deserializer: D) -> Result<HashMap<K, V>, D::Error>
@@ -63,20 +75,7 @@ where
         return values.serialize(serializer);
     }
 
-    let mut ordered = values
-        .iter()
-        .map(|value| {
-            serde_json::to_vec(value)
-                .map(|bytes| (bytes, value))
-                .map_err(serde::ser::Error::custom)
-        })
-        .collect::<Result<Vec<_>, S::Error>>()?;
-    ordered.sort_by(|left, right| left.0.cmp(&right.0));
-    ordered
-        .into_iter()
-        .map(|(_, value)| value)
-        .collect::<Vec<_>>()
-        .serialize(serializer)
+    serialize_ordered_by_key(values.iter(), |value| *value, serializer)
 }
 
 pub fn deserialize_hash_set<'de, D, T>(deserializer: D) -> Result<HashSet<T>, D::Error>

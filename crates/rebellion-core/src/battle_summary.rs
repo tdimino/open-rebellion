@@ -484,12 +484,11 @@ fn death_star_survives(hull: f32) -> bool {
 mod tests {
     use super::*;
     use crate::carriage::ProductRoom;
-    use crate::ids::DatId;
+    use crate::ids::{DatId, SystemKey};
     use crate::tactical::test_support::{test_death_star, test_fighter, test_session, test_ship};
     use crate::tactical::{CombatWinner, TacticalDock};
     use crate::world::{
-        BuildableClass, CapitalShipClass, Character, FighterClass, Fleet, ShipInstance, System,
-        TroopUnit,
+        BuildableClass, CapitalShipClass, Character, Fleet, ShipInstance, System, TroopUnit,
     };
 
     /// port: test fixture values, not rules.
@@ -504,18 +503,7 @@ mod tests {
     fn battle(alliance: bool, tags: &[u32]) -> Battle {
         let mut world = GameWorld::default();
         let system = world.systems.insert(System::default());
-        let cruiser = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1400_0040),
-            name: "Cruiser".into(),
-            troop_capacity: 4,
-            ..CapitalShipClass::default()
-        });
-        let wing = world.fighter_classes.insert(FighterClass {
-            dat_id: DatId::new(0x1c00_0001),
-            name: "Wing".into(),
-            squadron_size: 12,
-            ..FighterClass::default()
-        });
+        let (cruiser, wing) = crate::test_support::add_cruiser_and_wing(&mut world, 4, 12);
         let ships = tags
             .iter()
             .map(|&tag| {
@@ -558,6 +546,101 @@ mod tests {
             .collect()
     }
 
+    fn recorded_side(
+        session: &BattleSession,
+        battle: &Battle,
+        alliance: bool,
+    ) -> BattleSummarySide {
+        BattleRecord::record(session, &battle.world, &battle.transport).side(
+            session,
+            &battle.world,
+            alliance,
+        )
+    }
+
+    fn install_death_star(battle: &mut Battle, index: usize, troop_capacity: u32) {
+        let class = battle.world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x1800_0001),
+            family: 0x18,
+            name: "Death Star".into(),
+            troop_capacity,
+            ..CapitalShipClass::default()
+        });
+        battle.world.fleets[battle.fleet].capital_ships[index] =
+            ShipInstance::new(class, 10, false);
+    }
+
+    fn station_session(battle: &Battle, index: usize, hull: f32) -> BattleSession {
+        let mut session = test_session(Vec::new(), Vec::new(), true);
+        let mut station = test_death_star(false);
+        station.ship = Some((battle.fleet, index));
+        station.hull = hull;
+        session.death_star = Some(station);
+        session
+    }
+
+    fn embark_troops(battle: &mut Battle, troops: &[crate::ids::TroopKey]) {
+        let system = battle.world.fleets[battle.fleet].location;
+        battle.world.systems[system].ground_units = troops.to_vec();
+        battle
+            .transport
+            .embark(
+                &mut battle.world,
+                &ProductRoom::default(),
+                battle.fleet,
+                troops,
+            )
+            .expect("room aboard");
+    }
+
+    fn crew_battle(alliance: bool) -> (Battle, [CharacterKey; 3], SystemKey, BattleSession) {
+        let mut battle = battle(alliance, &[0]);
+        let crew = crew_aboard(&mut battle, alliance);
+        let system = battle.world.fleets[battle.fleet].location;
+        let enemy_class = battle.world.capital_ship_classes.insert(CapitalShipClass {
+            dat_id: DatId::new(0x1400_0041),
+            hull: 10,
+            ..CapitalShipClass::default()
+        });
+        let enemy = battle.world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![ShipInstance::new(enemy_class, 10, !alliance)],
+            is_alliance: !alliance,
+            ..Fleet::default()
+        });
+        battle.world.systems[system].fleets.push(enemy);
+        for key in crew {
+            battle.world.characters[key].current_system = Some(system);
+            battle.world.characters[key].current_fleet = Some(battle.fleet);
+        }
+        let session =
+            BattleSession::new(&battle.world, system, enemy, battle.fleet, true, 1, 0x5eed);
+        (battle, crew, system, session)
+    }
+
+    fn destroy_fleet_ships(session: &mut BattleSession, fleet: FleetKey) {
+        for ship in session
+            .ships
+            .iter_mut()
+            .filter(|ship| ship.fleet == Some(fleet))
+        {
+            ship.alive = false;
+            ship.hull_current = 0;
+        }
+        session.winner = Some(CombatWinner::Attacker);
+    }
+
+    fn apply_battle_results(session: &BattleSession, battle: &mut Battle) {
+        crate::tactical::apply::apply_results(
+            session,
+            &mut battle.world,
+            &mut battle.transport,
+            &mut crate::movement::MovementState::new(),
+            &ProductRoom::default(),
+            &mut Vec::new(),
+        );
+    }
+
     #[test]
     fn a_ship_is_destroyed_only_with_no_hull_and_otherwise_operational_however_damaged() {
         // FUN_0040cfc0 -> FUN_00501ae0: only state 0xb destroys a ship; a
@@ -580,15 +663,14 @@ mod tests {
                 true,
             );
             session.attacker_is_alliance = alliance;
-            let record = BattleRecord::record(&session, &battle.world, &battle.transport);
-            let side = record.side(&session, &battle.world, alliance);
+            let side = recorded_side(&session, &battle, alliance);
 
             assert_eq!(
                 names(&side.operational),
                 ["Cruiser 1", "Cruiser 2", "Cruiser 4"]
             );
             assert_eq!(names(&side.destroyed), ["Cruiser 3"]);
-            assert!(side.captured.is_empty());
+            assert_empty!(side.captured);
             assert_eq!(
                 side.operational
                     .iter()
@@ -641,8 +723,7 @@ mod tests {
                 ],
                 true,
             );
-            let record = BattleRecord::record(&session, &battle.world, &battle.transport);
-            let side = record.side(&session, &battle.world, alliance);
+            let side = recorded_side(&session, &battle, alliance);
 
             assert_eq!(side.operational.len(), 3, "alliance {alliance}");
             assert_eq!(side.destroyed.len(), 1, "alliance {alliance}");
@@ -663,20 +744,9 @@ mod tests {
         // Death Star's 0x18 among them; FUN_0040d170 destroys it when the
         // station's hull, truncated, is 0.
         let mut battle = battle(false, &[0]);
-        let station_class = battle.world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1800_0001),
-            family: 0x18,
-            name: "Death Star".into(),
-            ..CapitalShipClass::default()
-        });
-        battle.world.fleets[battle.fleet].capital_ships[0] =
-            ShipInstance::new(station_class, 10, false);
+        install_death_star(&mut battle, 0, 0);
         let side = |hull: f32| {
-            let mut session = test_session(Vec::new(), Vec::new(), true);
-            let mut station = test_death_star(false);
-            station.ship = Some((battle.fleet, 0));
-            station.hull = hull;
-            session.death_star = Some(station);
+            let session = station_session(&battle, 0, hull);
             let record = BattleRecord::record(&session, &battle.world, &battle.transport);
             assert_eq!(
                 record.side(&session, &battle.world, true),
@@ -710,7 +780,6 @@ mod tests {
                     },
                 );
             }
-            let system = battle.world.fleets[battle.fleet].location;
             let troops: Vec<_> = [0x1000_0001, 0x1000_0001, 0x1000_0002]
                 .into_iter()
                 .map(|raw| {
@@ -720,16 +789,7 @@ mod tests {
                     })
                 })
                 .collect();
-            battle.world.systems[system].ground_units = troops.clone();
-            battle
-                .transport
-                .embark(
-                    &mut battle.world,
-                    &ProductRoom::default(),
-                    battle.fleet,
-                    &troops,
-                )
-                .expect("room aboard");
+            embark_troops(&mut battle, &troops);
             let carried_by_first = troops
                 .iter()
                 .filter(|&&troop| battle.transport.carrier(troop) == 1)
@@ -742,8 +802,7 @@ mod tests {
                 Vec::new(),
                 true,
             );
-            let record = BattleRecord::record(&session, &battle.world, &battle.transport);
-            let side = record.side(&session, &battle.world, alliance);
+            let side = recorded_side(&session, &battle, alliance);
 
             let regiments = |entries: &[SummaryEntry]| {
                 entries
@@ -789,16 +848,7 @@ mod tests {
                     })
                 })
                 .collect();
-            battle.world.systems[system].ground_units = troops.clone();
-            battle
-                .transport
-                .embark(
-                    &mut battle.world,
-                    &ProductRoom::default(),
-                    battle.fleet,
-                    &troops,
-                )
-                .expect("room aboard");
+            embark_troops(&mut battle, &troops);
             let carriers: Vec<u32> = troops
                 .iter()
                 .map(|&troop| battle.transport.carrier(troop))
@@ -842,8 +892,7 @@ mod tests {
                 vec![squadron(12, 96.0), squadron(12, 95.5), squadron(5, 96.0)],
                 true,
             );
-            let record = BattleRecord::record(&session, &battle.world, &battle.transport);
-            let side = record.side(&session, &battle.world, alliance);
+            let side = recorded_side(&session, &battle, alliance);
 
             assert_eq!(
                 side.operational
@@ -867,8 +916,7 @@ mod tests {
             let mut emptied = ship(&battle, 1, alliance, 0);
             emptied.alive = true;
             let session = test_session(vec![struck, emptied], Vec::new(), true);
-            let record = BattleRecord::record(&session, &battle.world, &battle.transport);
-            let side = record.side(&session, &battle.world, alliance);
+            let side = recorded_side(&session, &battle, alliance);
 
             assert!(side.operational.is_empty(), "alliance {alliance}");
             assert_eq!(names(&side.destroyed), ["Cruiser 1", "Cruiser 2"]);
@@ -899,27 +947,12 @@ mod tests {
         // FUN_004f8710: a destroyed container's children die with it.
         // port: a tag no battle ship carries lives on.
         let mut battle = battle(false, &[1, 3]);
-        let station_class = battle.world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1800_0001),
-            family: 0x18,
-            name: "Death Star".into(),
-            troop_capacity: 4,
-            ..CapitalShipClass::default()
-        });
-        let mut station_ship = ShipInstance::new(station_class, 10, false);
-        station_ship.tag = 3;
-        battle.world.fleets[battle.fleet].capital_ships[1] = station_ship;
+        install_death_star(&mut battle, 1, 4);
+        battle.world.fleets[battle.fleet].capital_ships[1].tag = 3;
         let riders = regiments_aboard(&battle, false);
         let side = |cruiser_hull: i32, station_hull: f32| {
-            let mut session = test_session(
-                vec![ship(&battle, 0, false, cruiser_hull)],
-                Vec::new(),
-                true,
-            );
-            let mut station = test_death_star(false);
-            station.ship = Some((battle.fleet, 1));
-            station.hull = station_hull;
-            session.death_star = Some(station);
+            let mut session = station_session(&battle, 1, station_hull);
+            session.ships = vec![ship(&battle, 0, false, cruiser_hull)];
             let mut record = BattleRecord::record(&session, &battle.world, &battle.transport);
             record.regiments.clone_from(&riders);
             let side = record.side(&session, &battle.world, false);
@@ -930,9 +963,9 @@ mod tests {
                 .collect::<Vec<_>>()
         };
 
-        assert!(side(10, 100.0).is_empty());
+        assert_empty!(side(10, 100.0));
         // The station alone keeps the fleet, and its own regiment.
-        assert!(side(0, 100.0).is_empty());
+        assert_empty!(side(0, 100.0));
         // The station's regiment goes with it; the cruiser keeps the fleet.
         assert_eq!(side(10, 0.0), ["Army 3"]);
         // Tag 9 names no ship of the battle.
@@ -1076,20 +1109,9 @@ mod tests {
         // ship of the fleet the battle never held is not written back. Only
         // the Empire fields a Death Star.
         let mut battle = battle(false, &[0, 0]);
-        let station_class = battle.world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1800_0001),
-            family: 0x18,
-            name: "Death Star".into(),
-            ..CapitalShipClass::default()
-        });
-        battle.world.fleets[battle.fleet].capital_ships[1] =
-            ShipInstance::new(station_class, 10, false);
+        install_death_star(&mut battle, 1, 0);
         crew_aboard(&mut battle, false);
-        let mut session = test_session(Vec::new(), Vec::new(), true);
-        let mut station = test_death_star(false);
-        station.ship = Some((battle.fleet, 1));
-        station.hull = 0.0;
-        session.death_star = Some(station);
+        let session = station_session(&battle, 1, 0.0);
         let members = crew(&session, &battle.world);
         assert!(members.iter().all(|member| member.ship == Some(0)));
 
@@ -1176,21 +1198,11 @@ mod tests {
         // the Death Star's 0x0065d930), so a lost station's characters take
         // the roll; FUN_004ef6d0 acts only on a wound above 0.
         let mut battle = battle(false, &[0, 0]);
-        let station_class = battle.world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId::new(0x1800_0001),
-            family: 0x18,
-            name: "Death Star".into(),
-            ..CapitalShipClass::default()
-        });
-        battle.world.fleets[battle.fleet].capital_ships[0] =
-            ShipInstance::new(station_class, 10, false);
+        install_death_star(&mut battle, 0, 0);
         crew_aboard(&mut battle, false);
         let fates = |hull: f32, world: &GameWorld| {
-            let mut session = test_session(vec![ship(&battle, 1, false, 10)], Vec::new(), true);
-            let mut station = test_death_star(false);
-            station.ship = Some((battle.fleet, 0));
-            station.hull = hull;
-            session.death_star = Some(station);
+            let mut session = station_session(&battle, 0, hull);
+            session.ships = vec![ship(&battle, 1, false, 10)];
             let members = crew(&session, world);
             crew_fates(&session, &members, world, &mut OriginalBattleRng::default())
         };
@@ -1213,53 +1225,19 @@ mod tests {
     #[test]
     fn the_summary_files_the_crew_fates_the_write_back_applies_for_either_side() {
         for alliance in [true, false] {
-            let mut battle = battle(alliance, &[0]);
-            let [officer, pilot, prisoner] = crew_aboard(&mut battle, alliance);
-            let system = battle.world.fleets[battle.fleet].location;
-            let enemy_class = battle.world.capital_ship_classes.insert(CapitalShipClass {
-                dat_id: DatId::new(0x1400_0041),
-                hull: 10,
-                ..CapitalShipClass::default()
-            });
-            let enemy = battle.world.fleets.insert(Fleet {
-                location: system,
-                capital_ships: vec![ShipInstance::new(enemy_class, 10, !alliance)],
-                is_alliance: !alliance,
-                ..Fleet::default()
-            });
-            battle.world.systems[system].fleets.push(enemy);
-            for key in [officer, pilot, prisoner] {
-                battle.world.characters[key].current_system = Some(system);
-                battle.world.characters[key].current_fleet = Some(battle.fleet);
-            }
-            let mut session =
-                BattleSession::new(&battle.world, system, enemy, battle.fleet, true, 1, 0x5eed);
+            let (mut battle, [officer, pilot, prisoner], _system, mut session) =
+                crew_battle(alliance);
             let record = BattleRecord::record(&session, &battle.world, &battle.transport);
             // The pilot leaves the fleet before the battle ends.
             battle.world.fleets[battle.fleet]
                 .characters
                 .retain(|&key| key != pilot);
             battle.world.characters[pilot].current_fleet = None;
-            for ship in session
-                .ships
-                .iter_mut()
-                .filter(|ship| ship.fleet == Some(battle.fleet))
-            {
-                ship.alive = false;
-                ship.hull_current = 0;
-            }
-            session.winner = Some(CombatWinner::Attacker);
+            destroy_fleet_ships(&mut session, battle.fleet);
 
             session.settle_crew(&battle.world);
             let summary = record.side(&session, &battle.world, alliance);
-            crate::tactical::apply::apply_results(
-                &session,
-                &mut battle.world,
-                &mut battle.transport,
-                &mut crate::movement::MovementState::new(),
-                &ProductRoom::default(),
-                &mut Vec::new(),
-            );
+            apply_battle_results(&session, &mut battle);
 
             let killed: Vec<&str> = [officer, pilot, prisoner]
                 .into_iter()
@@ -1287,45 +1265,11 @@ mod tests {
         // characters held adrift by the system for the adrift sweep
         // (FUN_004ef2e0 -> FUN_00534790); no path takes them captive.
         for alliance in [true, false] {
-            let mut battle = battle(alliance, &[0]);
-            let [officer, pilot, prisoner] = crew_aboard(&mut battle, alliance);
-            let system = battle.world.fleets[battle.fleet].location;
-            let enemy_class = battle.world.capital_ship_classes.insert(CapitalShipClass {
-                dat_id: DatId::new(0x1400_0041),
-                hull: 10,
-                ..CapitalShipClass::default()
-            });
-            let enemy = battle.world.fleets.insert(Fleet {
-                location: system,
-                capital_ships: vec![ShipInstance::new(enemy_class, 10, !alliance)],
-                is_alliance: !alliance,
-                ..Fleet::default()
-            });
-            battle.world.systems[system].fleets.push(enemy);
-            for key in [officer, pilot, prisoner] {
-                battle.world.characters[key].current_system = Some(system);
-                battle.world.characters[key].current_fleet = Some(battle.fleet);
-            }
-            let mut session =
-                BattleSession::new(&battle.world, system, enemy, battle.fleet, true, 1, 0x5eed);
-            for ship in session
-                .ships
-                .iter_mut()
-                .filter(|ship| ship.fleet == Some(battle.fleet))
-            {
-                ship.alive = false;
-                ship.hull_current = 0;
-            }
-            session.winner = Some(CombatWinner::Attacker);
+            let (mut battle, [officer, pilot, prisoner], system, mut session) =
+                crew_battle(alliance);
+            destroy_fleet_ships(&mut session, battle.fleet);
 
-            crate::tactical::apply::apply_results(
-                &session,
-                &mut battle.world,
-                &mut battle.transport,
-                &mut crate::movement::MovementState::new(),
-                &ProductRoom::default(),
-                &mut Vec::new(),
-            );
+            apply_battle_results(&session, &mut battle);
 
             assert!(!battle.world.fleets.contains_key(battle.fleet));
             let character = |key: CharacterKey| &battle.world.characters[key];

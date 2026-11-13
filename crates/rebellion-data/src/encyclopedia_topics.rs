@@ -419,10 +419,10 @@ pub fn load_encyclopedia_system_pictures(gdata_path: &Path) -> Result<HashMap<u3
 
 /// Pure binding helper used by the native loader, WASM loader, and tests.
 #[must_use]
-pub fn bind_encyclopedia_topics(
+pub fn bind_encyclopedia_topics<S: std::hash::BuildHasher>(
     index: &EncyclopediaCatalog,
     source: &EncyclopediaSourceCatalog,
-    system_pictures: &HashMap<u32, u32>,
+    system_pictures: &HashMap<u32, u32, S>,
     audience: EncyclopediaAudience,
 ) -> EncyclopediaTopicCatalog {
     let mut entries = Vec::with_capacity(index.entries.len());
@@ -599,15 +599,18 @@ mod tests {
     }
 
     fn generated_source_json(text_count: usize) -> String {
+        use std::fmt::Write as _;
+
         let digest = sha256_hex(b"x");
         let mut texts = String::new();
         for resource_id in 1..=text_count {
             if resource_id > 1 {
                 texts.push(',');
             }
-            texts.push_str(&format!(
+            let _ = write!(
+                texts,
                 r#""{resource_id}":{{"body":"x","body_sha256":"{digest}"}}"#
-            ));
+            );
         }
         format!(
             r#"{{"schema_version":1,"language_id":1033,"encoding":"windows-1252","source_code_page":0,"texts":{{{texts}}},"artwork":{{"1":"EDATA.001"}}}}"#

@@ -9,44 +9,25 @@
 //! Enter or a double click opens the Sector and System Defenses windows
 //! for the choice (`FUN_00429440`).
 
-use egui_macroquad::egui;
 use rebellion_core::ids::{FleetKey, SystemKey, TroopKey};
 use rebellion_core::troop_transport::TroopTransportState;
-use rebellion_core::world::GameWorld;
-use rebellion_windowing::{
-    ContentReport, ContentStatus, ControlId, ExistingEffect, FocusTarget, RoutingSnapshot,
-    WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
-};
 
-use crate::bmp_cache::{BmpCache, DllSource};
-use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::fleet_window::paint_native;
-use crate::mission_dialog::{button, galaxy_centered_rect};
-use crate::system_window::{fleet_label, logical_rect, rect_contains};
+use crate::finder_common::{self, prelude::*};
+use crate::system_window::fleet_label;
 
-pub const TROOP_FINDER_WIDTH: f32 = 470.0;
-pub const TROOP_FINDER_HEIGHT: f32 = 330.0;
-/// Stable child identity for the name edit (`0xcb`).
-pub const TROOP_FINDER_NAME_CONTROL: ControlId = ControlId(0xcb);
-/// Stable child identity for the result list (`0xca`).
-pub const TROOP_FINDER_LIST_CONTROL: ControlId = ControlId(0xca);
+finder_common::define_finder_interface!(
+    TROOP_FINDER_WIDTH,
+    TROOP_FINDER_HEIGHT,
+    TROOP_FINDER_NAME_CONTROL,
+    TROOP_FINDER_LIST_CONTROL
+);
 
 // STRATEGY bitmaps by side, Alliance then Empire (FUN_0046ce40).
-const BACKGROUND: [u32; 2] = [10335, 10336];
 // Panel bitmap chosen by SELECTED TAB (FUN_0046ce40: 0x292c, 0x292d).
 const PANEL: [u32; 2] = [10540, 10541];
 const RAIL: [u32; 2] = [10584, 10588];
-const PANEL_AT: (f32, f32) = (12.0, 13.0);
-const RAIL_AT: (f32, f32) = (412.0, 0.0);
 
-/// One bitmap button: its window rectangle and its normal and pressed art.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Control {
-    rect: (f32, f32, f32, f32),
-    art: (u32, u32),
-}
-
-/// The side's Close (`200`) and Display (`0xc9`) controls (FUN_0046ce40).
+/// The side's Close (`200`) and Display (`0xc9`) controls (`FUN_0046ce40`).
 struct SideControls {
     close: Control,
     display: Control,
@@ -55,87 +36,31 @@ struct SideControls {
 const CONTROLS: [SideControls; 2] = [
     // Alliance (side 1): (0x1ab, 0x19) = (427, 25) and (0x1ab, 0x5d) = (427, 93).
     SideControls {
-        close: Control {
-            rect: (427.0, 25.0, 32.0, 31.0),
-            art: (10514, 10515),
-        },
-        display: Control {
-            rect: (427.0, 93.0, 32.0, 31.0),
-            art: (10518, 10519),
-        },
+        close: Control::new((427.0, 25.0, 32.0, 31.0), (10514, 10515)),
+        display: Control::new((427.0, 93.0, 32.0, 31.0), (10518, 10519)),
     },
     // Empire (side 2): (0x1aa, 0x15) = (426, 21) and (0x1aa, 0x59) = (426, 89).
     SideControls {
-        close: Control {
-            rect: (426.0, 21.0, 44.0, 41.0),
-            art: (10516, 10517),
-        },
-        display: Control {
-            rect: (426.0, 89.0, 44.0, 41.0),
-            art: (10520, 10521),
-        },
-    },
-];
-
-/// The side tabs (group `100`) at (36, 72): Alliance, Imperial.
-/// FUN_0046ce40: tab 1 at (0, 0) 49x41 art 10502/10503; tab 2 at (52, 0)
-/// 49x41 art 10505/10506.
-const TABS: [Control; 2] = [
-    Control {
-        rect: (36.0, 72.0, 49.0, 41.0),
-        art: (10502, 10503),
-    },
-    Control {
-        rect: (88.0, 72.0, 49.0, 41.0),
-        art: (10505, 10506),
+        close: Control::new((426.0, 21.0, 44.0, 41.0), (10516, 10517)),
+        display: Control::new((426.0, 89.0, 44.0, 41.0), (10520, 10521)),
     },
 ];
 
 // Window rectangles (x, y, width, height), FUN_0046ce40.
-const TITLE_AT: (f32, f32) = (36.0, 14.0); // 0x24, 0x0e
-const NAME_LABEL_AT: (f32, f32) = (36.0, 48.0); // 0x24, 0x30
-const NAME_BOX: (f32, f32, f32, f32) = (143.0, 45.0, 250.0, 18.0); // 0x8f, 0x2d
 const TAB_LABEL_AT: (f32, f32) = (40.0, 119.0); // 0x28, 0x77
 const LIST: (f32, f32, f32, f32) = (37.0, 144.0, 349.0, 159.0); // 0x25, 0x90
 /// `FUN_00607ea0(.., 0xca, 330, 25)`: each row is 330 by 25.
 const ROW_HEIGHT: f32 = 25.0;
 
-/// The side tab (FUN_0046ea10's `param_1` 1 or 2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TroopTab {
-    #[default]
-    Alliance,
-    Imperial,
-}
-
-impl TroopTab {
-    const ALL: [Self; 2] = [Self::Alliance, Self::Imperial];
-
-    fn lists(self, is_alliance: bool) -> bool {
-        match self {
-            Self::Alliance => is_alliance,
-            Self::Imperial => !is_alliance,
-        }
-    }
-
-    /// TEXTSTRA `0x1950`/`0x1951`.
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Alliance => "Alliance Troops",
-            Self::Imperial => "Imperial Troops",
-        }
-    }
-
-    /// Index into the panel bitmap array: Alliance panel = 0, Imperial = 1.
-    const fn panel_index(self) -> usize {
-        match self {
-            Self::Alliance => 0,
-            Self::Imperial => 1,
-        }
+finder_common::define_side_tab! {
+    /// The side tab (`FUN_0046ea10`'s `param_1` 1 or 2).
+    pub enum TroopTab {
+        alliance: "Alliance Troops",
+        imperial: "Imperial Troops",
     }
 }
 
-/// Five troop DatIds per side (FUN_0046d8d0).
+/// Five troop `DatIds` per side (`FUN_0046d8d0`).
 const ALLIANCE_TROOP_CLASSES: [u32; 5] = [
     0x1000_0002, // Army Regiment
     0x1000_0001, // Fleet Regiment
@@ -161,12 +86,7 @@ fn troop_classes(tab: TroopTab) -> &'static [u32; 5] {
 /// One count cell in a row: the number of regiments and whether any are
 /// not usable. port: the port has no usable bit for regiments; all are
 /// treated as usable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct TroopCount {
-    pub count: u32,
-    /// port: always true (the port has no usable / `+0x50 bit 0` flag).
-    pub all_usable: bool,
-}
+pub use finder_common::FinderCount as TroopCount;
 
 /// One list row: its name and the five troop-class counts.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,53 +102,25 @@ pub struct TroopFinderRow {
     pub counts: [TroopCount; 5],
 }
 
-/// A typed name chooses the first row it best begins (FUN_00609650).
-#[must_use]
-pub fn prefix_choice(rows: &[TroopFinderRow], text: &str) -> Option<usize> {
-    let typed: Vec<char> = text.chars().map(|c| c.to_ascii_lowercase()).collect();
-    let mut best: Option<(usize, usize)> = None;
-    for (index, row) in rows.iter().enumerate() {
-        let common = row
-            .name
-            .chars()
-            .map(|c| c.to_ascii_lowercase())
-            .zip(&typed)
-            .take_while(|(a, b)| a == *b)
-            .count();
-        if common > 0 && best.is_none_or(|(_, length)| common > length) {
-            best = Some((index, common));
-        }
+impl FinderRowName for TroopFinderRow {
+    fn finder_name(&self) -> &str {
+        &self.name
     }
-    best.map(|(index, _)| index)
 }
 
-/// Count regiments of each class among the given troop keys.
-fn count_troops(world: &GameWorld, troops: &[TroopKey], tab: TroopTab) -> [TroopCount; 5] {
-    let classes = troop_classes(tab);
-    let mut counts = [TroopCount {
-        count: 0,
-        all_usable: true,
-    }; 5];
-    for &key in troops {
-        let Some(troop) = world.troops.get(key) else {
-            continue;
-        };
-        if !tab.lists(troop.is_alliance) {
-            continue;
-        }
-        let raw = troop.class_dat_id.raw();
-        for (i, &class_raw) in classes.iter().enumerate() {
-            if raw == class_raw {
-                counts[i].count += 1;
-                // port: all regiments treated as usable (no `+0x50` bit).
-                break;
-            }
-        }
-    }
-    counts
-}
+finder_common::define_prefix_choice!(TroopFinderRow);
 
-/// The rows FUN_0046ea10 lists for `tab`, in name order ignoring case.
+finder_common::define_world_class_counter!(
+    count_troops,
+    TroopKey,
+    TroopTab,
+    TroopCount,
+    5,
+    troop_classes,
+    troops
+);
+
+/// The rows `FUN_0046ea10` lists for `tab`, in name order ignoring case.
 ///
 /// For each system, if it holds regiments of the tab's side (direct
 /// children via `System.ground_units`), the system is listed. Then, for
@@ -248,17 +140,9 @@ pub fn rows(
     for (system_key, system) in &world.systems {
         // Check direct ground troops at this system. FUN_00504cc0 walks
         // them in mode 3, existing (+0x50 bit 6), with no visibility test.
-        let ground: Vec<TroopKey> = system
-            .ground_units
-            .iter()
-            .copied()
-            .filter(|&key| {
-                world
-                    .troops
-                    .get(key)
-                    .is_some_and(|troop| tab.lists(troop.is_alliance))
-            })
-            .collect();
+        let ground = finder_common::side_keys(&system.ground_units, tab.index(), |key| {
+            world.troops.get(key).map(|troop| troop.is_alliance)
+        });
         if !ground.is_empty() {
             let counts = count_troops(world, &ground, tab);
             rows.push(TroopFinderRow {
@@ -296,7 +180,7 @@ pub fn rows(
         }
     }
 
-    rows.sort_by_cached_key(|row| row.name.to_ascii_lowercase());
+    finder_common::sort_rows_by_name(&mut rows);
     rows
 }
 
@@ -304,7 +188,7 @@ pub fn rows(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TroopFinderAction {
     /// System row: open the Sector window and the System Defenses window
-    /// (FUN_00429440 kind 10) selecting the first regiment.
+    /// (`FUN_00429440` kind 10) selecting the first regiment.
     OpenDefenses { system: SystemKey },
     /// Fleet row: open the Sector window and the Fleet window (kind 4)
     /// for the fleet's system.
@@ -313,284 +197,60 @@ pub enum TroopFinderAction {
 
 /// Manager-owned Troop Finder intent. Dependent opens retain the exact Finder
 /// identity whose accepted close receipt gates their publication.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ManagedTroopFinderAction {
-    /// Close or Escape requests teardown of this exact manager identity.
-    Close(WindowId),
-    /// A selected destination paired with the Finder identity that must close.
-    Open {
-        finder: WindowId,
-        destination: TroopFinderAction,
-    },
-}
+pub type ManagedTroopFinderAction = finder_common::ManagedFinderAction<TroopFinderAction>;
 
 #[derive(Debug, Clone)]
 struct OpenFinder {
-    /// Shared strategic-window identity accepted at the app commit boundary.
-    id: Option<WindowId>,
-    faction: CockpitFaction,
+    ui: FinderUiState,
     tab: TroopTab,
-    /// The name box's text (`0xcb`).
-    name: String,
     /// The chosen row index into the current list.
     chosen: Option<usize>,
-    /// The first row the list shows.
-    first_row: usize,
-    /// The name box takes the focus when the window opens.
-    focus_name: bool,
-    /// Child focus requested by content input and committed by the app after
-    /// this immutable frame finishes.
-    pending_focus: Option<ControlId>,
-    /// The row the last click chose and when.
-    last_clicked: Option<(usize, f64)>,
 }
 
-/// The Troop Finder, one at most (FUN_0042a4d0).
-#[derive(Debug, Clone, Default)]
-pub struct TroopFinderState {
-    window: Option<OpenFinder>,
-}
-
-/// Candidate Troop Finder content. It remains inert until the app coordinator
-/// accepts the singleton identity and returns its open receipt.
-#[derive(Debug, Clone, Copy)]
-pub struct PreparedTroopFinder {
-    faction: CockpitFaction,
-}
-
-impl PreparedTroopFinder {
-    #[must_use]
-    pub const fn spec(self) -> WindowSpec {
-        crate::windowing_policy::singleton_spec(WindowKind::TroopFinder, WindowOwner::StrategicRoot)
+finder_common::define_finder_state! {
+    content: OpenFinder;
+    /// The Troop Finder, one at most (`FUN_0042a4d0`).
+    state: TroopFinderState;
+    /// Candidate Troop Finder content. It remains inert until the app coordinator
+    /// accepts the singleton identity and returns its open receipt.
+    prepared: PreparedTroopFinder;
+    kind: WindowKind::TroopFinder;
+    layer: "original-troop-finder";
+    open: |faction, window_id| {
+        OpenFinder {
+            ui: FinderUiState::new(window_id, faction),
+            tab: finder_common::side_value(faction, TroopTab::ALL),
+            chosen: None,
+        }
     }
 }
 
 impl TroopFinderState {
-    /// Prepares inert content for a manager-owned singleton open.
-    #[must_use]
-    pub const fn prepare_open(faction: CockpitFaction) -> PreparedTroopFinder {
-        PreparedTroopFinder { faction }
-    }
-
-    /// Publishes prepared content only for a new manager identity. A duplicate
-    /// NoOp acknowledges the existing identity without rebuilding its state.
-    pub fn commit_open(
-        &mut self,
-        prepared: PreparedTroopFinder,
-        transition: &WindowTransition,
-    ) -> Option<WindowId> {
-        match *transition {
-            WindowTransition::Opened { id } if self.window.is_none() => {
-                let tab = match prepared.faction {
-                    CockpitFaction::Alliance => TroopTab::Alliance,
-                    CockpitFaction::Empire => TroopTab::Imperial,
-                };
-                self.window = Some(OpenFinder {
-                    id: Some(id),
-                    faction: prepared.faction,
-                    tab,
-                    name: String::new(),
-                    chosen: None,
-                    first_row: 0,
-                    focus_name: true,
-                    pending_focus: None,
-                    last_clicked: None,
-                });
-                Some(id)
-            }
-            WindowTransition::Existing {
-                id,
-                effect: ExistingEffect::NoOp,
-            } if self.window_id() == Some(id) => Some(id),
-            _ => None,
-        }
-    }
-
-    /// Exact manager identity currently owning the published content.
-    #[must_use]
-    pub fn window_id(&self) -> Option<WindowId> {
-        self.window.as_ref().and_then(|window| window.id)
-    }
-
-    /// Egui layer attached to the exact manager-issued Troop Finder.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id() == Some(id)).then(|| {
-            egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("original-troop-finder"))
-        })
-    }
-
-    /// Exact focused manager identity that receives this frame's keys.
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id()?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
-
-    /// Manager-owned Finder hit for event-local pointer routing.
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id()?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::TroopFinder)
-            && frame.allows_input(id)
-            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    /// Explicit Troop Finder content state for the immutable manager frame.
-    #[must_use]
-    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::TroopFinder)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id() == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
-    }
-
-    /// Releases only content named by manager close/reconciliation receipts.
-    pub fn remove_content(&mut self, removed: &[WindowId]) {
-        if self.window_id().is_some_and(|id| removed.contains(&id)) {
-            self.window = None;
-        }
-    }
-
-    /// Takes one child-focus intent scoped to the exact owning identity.
-    pub fn take_focus_request(&mut self) -> Option<FocusTarget> {
-        let window = self.window.as_mut()?;
-        let window_id = window.id?;
-        let control = window.pending_focus.take()?;
-        Some(FocusTarget {
-            window: window_id,
-            control: Some(control),
-        })
-    }
-
-    /// The window's screen rectangle while it is open.
-    #[must_use]
-    pub fn screen_rect(&self, layout: CockpitLayout) -> Option<egui::Rect> {
-        self.window.as_ref().map(|_| window_rect(layout))
-    }
-
-    /// Open the Finder on the player's side tab with the focus in the
-    /// name box (FUN_0046ce40). An open Finder stays as it is.
-    pub fn open(&mut self, faction: CockpitFaction) -> bool {
-        if self.window.is_some() {
-            return false;
-        }
-        let tab = match faction {
-            CockpitFaction::Alliance => TroopTab::Alliance,
-            CockpitFaction::Empire => TroopTab::Imperial,
-        };
-        self.window = Some(OpenFinder {
-            id: None,
-            faction,
-            tab,
-            name: String::new(),
-            chosen: None,
-            first_row: 0,
-            focus_name: true,
-            pending_focus: None,
-            last_clicked: None,
-        });
-        true
-    }
-
-    pub fn close(&mut self) {
-        self.window = None;
-    }
-
-    #[must_use]
-    pub fn is_open(&self) -> bool {
-        self.window.is_some()
-    }
-
-    /// Whether `point` falls on the open window.
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
-    }
-
-    /// Show `tab` (group `100`): the list rebuilds and the choice clears
-    /// (FUN_0046ea10).
-    pub fn set_tab(&mut self, tab: TroopTab) {
-        if let Some(window) = &mut self.window {
-            if window.tab != tab {
-                window.tab = tab;
-                window.chosen = None;
-                window.first_row = 0;
-                window.last_clicked = None;
-            }
-        }
-    }
-}
-
-const fn side(faction: CockpitFaction) -> usize {
-    match faction {
-        CockpitFaction::Alliance => 0,
-        CockpitFaction::Empire => 1,
-    }
-}
-
-const fn tab_index(tab: TroopTab) -> usize {
-    match tab {
-        TroopTab::Alliance => 0,
-        TroopTab::Imperial => 1,
-    }
-}
-
-/// hyp: `FUN_00606980` places it in the galaxy view; the port centres it.
-fn window_rect(layout: CockpitLayout) -> egui::Rect {
-    galaxy_centered_rect(layout, TROOP_FINDER_WIDTH, TROOP_FINDER_HEIGHT)
-}
-
-fn at(frame: egui::Rect, scale: f32, (x, y, w, h): (f32, f32, f32, f32)) -> egui::Rect {
-    logical_rect(frame, scale, x, y, w, h)
+    finder_common::impl_finder_category_setter!(
+        /// Show `tab` (group `100`): the list rebuilds and the choice clears
+        /// (`FUN_0046ea10`).
+        set_tab(TroopTab) => tab
+    );
 }
 
 /// Rows the list shows at once: 159 / 25 = 6.
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Six whole rows of 25 in a list 159 tall."
-)]
-const VISIBLE_ROWS: usize = (LIST.3 / ROW_HEIGHT) as usize;
+const VISIBLE_ROWS: usize = crate::list_control::visible_row_capacity(LIST.3, ROW_HEIGHT);
 
-/// The first row that shows `row`, moving the list as little as possible.
-fn scrolled_to(first_row: usize, row: usize) -> usize {
-    if row < first_row {
-        row
-    } else if row >= first_row + VISIBLE_ROWS {
-        row + 1 - VISIBLE_ROWS
-    } else {
-        first_row
-    }
-}
+const FINDER_CONFIG: finder_common::SideFinderConfig<TroopTab> = finder_common::side_finder_config! {
+    TroopTab, &TroopTab::ALL;
+    area: "original-troop-finder",
+    name: "original-troop-finder-name",
+    list_id: "original-troop-finder-list",
+    row: "troop",
+    title: "Troop Finder",
+    name_label: "Troop Location";
+    list: LIST,
+    row_height: ROW_HEIGHT,
+    visible_rows: VISIBLE_ROWS;
+    controls: (TROOP_FINDER_NAME_CONTROL, TROOP_FINDER_LIST_CONTROL),
+};
 
-/// The five column cell colours (FUN_0046d8d0).
+/// The five column cell colours (`FUN_0046d8d0`).
 ///
 /// Brush index 0 = red (0x20000ff → RGB 255,0,0): tab Alliance, all usable.
 /// Brush index 1 = green (0x200ff00 → RGB 0,255,0): tab Imperial, all usable.
@@ -598,19 +258,7 @@ fn scrolled_to(first_row: usize, row: usize) -> usize {
 /// Brush index 4 = dark green (0x8000 → RGB 0,128,0): tab Imperial, some not usable.
 ///
 /// port: all regiments are treated as usable, so only bright colours appear.
-fn cell_colours(tab: TroopTab) -> (egui::Color32, egui::Color32) {
-    // (background_box, text_colour)
-    match tab {
-        TroopTab::Alliance => (egui::Color32::from_rgb(255, 0, 0), egui::Color32::WHITE),
-        TroopTab::Imperial => (egui::Color32::from_rgb(0, 255, 0), egui::Color32::BLACK),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TroopFinderDrawOutcome {
-    Close,
-    Open(TroopFinderAction),
-}
+type TroopFinderDrawOutcome = finder_common::FinderDrawOutcome<TroopFinderAction>;
 
 /// Draw a fixture-opened Troop Finder, if any, and report an action.
 pub fn draw_troop_finder(
@@ -621,17 +269,8 @@ pub fn draw_troop_finder(
     cache: &mut BmpCache,
     transport: &TroopTransportState,
 ) -> Option<TroopFinderAction> {
-    match draw_troop_finder_outcome(ctx, world, state, None, layout, cache, transport) {
-        Some(TroopFinderDrawOutcome::Open(action)) => {
-            state.close();
-            Some(action)
-        }
-        Some(TroopFinderDrawOutcome::Close) => {
-            state.close();
-            None
-        }
-        None => None,
-    }
+    let outcome = draw_troop_finder_outcome(ctx, world, state, None, layout, cache, transport);
+    finder_common::consume_direct_outcome(outcome, || state.close())
 }
 
 /// Draw the open manager-owned Troop Finder using the frozen semantic focus.
@@ -645,17 +284,11 @@ pub fn draw_troop_finder_focused(
     transport: &TroopTransportState,
 ) -> Option<ManagedTroopFinderAction> {
     let finder = state.window_id()?;
-    match draw_troop_finder_outcome(ctx, world, state, focus, layout, cache, transport) {
-        Some(TroopFinderDrawOutcome::Open(destination)) => Some(ManagedTroopFinderAction::Open {
-            finder,
-            destination,
-        }),
-        Some(TroopFinderDrawOutcome::Close) => Some(ManagedTroopFinderAction::Close(finder)),
-        None => None,
-    }
+    let outcome = draw_troop_finder_outcome(ctx, world, state, focus, layout, cache, transport);
+    finder_common::manage_outcome(finder, outcome)
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The window carries its existing render context plus semantic focus; splitting it hides the original control order."
 )]
@@ -668,430 +301,76 @@ fn draw_troop_finder_outcome(
     cache: &mut BmpCache,
     transport: &TroopTransportState,
 ) -> Option<TroopFinderDrawOutcome> {
-    let window = state.window.clone()?;
-    let focused_control = window
-        .id
-        .and_then(|id| focus.filter(|target| target.window == id))
-        .and_then(|target| target.control);
-    let side_idx = side(window.faction);
-    let controls = &CONTROLS[side_idx];
-    let scale = layout.scale;
-    let rect = window_rect(layout);
+    let (window, side_idx, controls) = finder_common::side_finder_snapshot!(state, CONTROLS);
     let list = rows(world, window.tab, transport);
-
-    let mut close = false;
-    let mut open_action: Option<TroopFinderAction> = None;
-    let mut tab = None;
-    let mut clicked_row = None;
-    let mut name = window.name.clone();
-    let mut name_changed = false;
-    let mut enter = false;
-    let mut wheel = 0.0;
-    let mut focus_request = None;
-
-    let id = egui::Id::new("original-troop-finder");
-    egui::Area::new(id)
-        .fixed_pos(rect.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(rect.size(), egui::Sense::click());
-            let painter = ui.painter().with_clip_rect(frame);
-            let paint = |cache: &mut BmpCache, id: u32, (x, y): (f32, f32)| {
-                paint_native(
-                    &painter,
-                    ctx,
-                    cache,
-                    DllSource::Strategy,
-                    id,
-                    frame,
-                    scale,
-                    x,
-                    y,
-                );
-            };
-
-            painter.rect_filled(frame, 0.0, egui::Color32::BLACK);
-            paint(cache, BACKGROUND[side_idx], (0.0, 0.0));
-            paint(cache, PANEL[window.tab.panel_index()], PANEL_AT);
-            paint(cache, RAIL[side_idx], RAIL_AT);
-
-            // Title (TEXTSTRA 0x1900) and label (0x1901).
-            let title_font = egui::FontId::proportional((12.0 * scale).max(8.0));
-            let font = egui::FontId::proportional((10.0 * scale).max(7.0));
-            painter.text(
-                at(frame, scale, (TITLE_AT.0, TITLE_AT.1, 0.0, 0.0)).min,
-                egui::Align2::LEFT_TOP,
-                "Troop Finder",
-                title_font.clone(),
-                egui::Color32::WHITE,
+    let outcome = finder_common::draw_coloured_side_finder_window!(
+        ctx, cache, layout, focus, window, list, &FINDER_CONFIG,
+        finder_common::side_finder_presentation!(
+            window.tab.label(), TAB_LABEL_AT, window.tab.index();
+            PANEL[window.tab.index()], side_idx, RAIL, (controls.close, controls.display)
+        );
+        extra_controls: |_, _, _| {}, paint_details: |canvas: &finder_common::FinderCanvas<'_>,
+                                                       painter: &egui::Painter,
+                                                       row: &TroopFinderRow,
+                                                       line: f32,
+                                                       cell_font: &egui::FontId,
+                                                       colours: (egui::Color32, egui::Color32)| {
+            // Five count columns at x = 194 + 28*i, y = 2 within the row
+            // (FUN_0046d8d0).
+            finder_common::paint_count_cells(
+                painter,
+                canvas.frame,
+                canvas.scale,
+                (LIST.0, LIST.1),
+                ROW_HEIGHT,
+                line,
+                194.0,
+                row.counts.iter().map(|cell| cell.count),
+                cell_font,
+                colours,
             );
-            painter.text(
-                at(frame, scale, (NAME_LABEL_AT.0, NAME_LABEL_AT.1, 0.0, 0.0)).min,
-                egui::Align2::LEFT_TOP,
-                "Troop Location",
-                font.clone(),
-                egui::Color32::WHITE,
-            );
-            painter.text(
-                at(frame, scale, (TAB_LABEL_AT.0, TAB_LABEL_AT.1, 0.0, 0.0)).min,
-                egui::Align2::LEFT_TOP,
-                window.tab.label(),
-                title_font,
-                egui::Color32::WHITE,
-            );
-
-            // Side tabs.
-            for candidate in TroopTab::ALL {
-                let control = TABS[tab_index(candidate)];
-                let down = candidate == window.tab;
-                if button(
-                    ui,
-                    cache,
-                    at(frame, scale, control.rect),
-                    ("troop-tab", tab_index(candidate)),
-                    control.art,
-                    down,
-                    scale,
-                ) {
-                    tab = Some(candidate);
-                }
-            }
-
-            // Close and Display buttons.
-            if button(
-                ui,
-                cache,
-                at(frame, scale, controls.close.rect),
-                "troop-close",
-                controls.close.art,
-                false,
-                scale,
-            ) {
-                close = true;
-            }
-            if button(
-                ui,
-                cache,
-                at(frame, scale, controls.display.rect),
-                "troop-display",
-                controls.display.art,
-                false,
-                scale,
-            ) {
-                if let Some(chosen) = window.chosen {
-                    if let Some(row) = list.get(chosen) {
-                        open_action = Some(action_for_row(row));
-                    }
-                }
-            }
-
-            // The name box (0xcb).
-            let name_rect = at(frame, scale, NAME_BOX);
-            let name_id = egui::Id::new("original-troop-finder-name");
-            let list_id = egui::Id::new("original-troop-finder-list");
-            if focused_control == Some(TROOP_FINDER_LIST_CONTROL) {
-                ui.memory_mut(|memory| memory.request_focus(list_id));
-            }
-            let edit = ui.put(
-                name_rect,
-                egui::TextEdit::singleline(&mut name)
-                    .id(name_id)
-                    .frame(false)
-                    .font(font.clone())
-                    .text_color(egui::Color32::WHITE)
-                    .desired_width(name_rect.width()),
-            );
-            if window.focus_name || focused_control == Some(TROOP_FINDER_NAME_CONTROL) {
-                edit.request_focus();
-            }
-            if window.id.is_some() && edit.gained_focus() {
-                focus_request = Some(TROOP_FINDER_NAME_CONTROL);
-            }
-            name_changed = edit.changed();
-            enter = edit.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
-
-            // The list (0xca).
-            let list_rect = at(frame, scale, LIST);
-            let list_painter = painter.with_clip_rect(list_rect);
-            let cell_font = egui::FontId::proportional((10.0 * scale).max(7.0));
-            let (box_colour, text_on_box) = cell_colours(window.tab);
-
-            for (offset, row) in list
-                .iter()
-                .enumerate()
-                .skip(window.first_row)
-                .take(VISIBLE_ROWS)
-            {
-                let line = (offset - window.first_row) as f32;
-                let row_rect = at(
-                    frame,
-                    scale,
-                    (LIST.0, LIST.1 + ROW_HEIGHT * line, LIST.2, ROW_HEIGHT),
-                );
-                let name_colour = if window.chosen == Some(offset) {
-                    egui::Color32::YELLOW
-                } else {
-                    egui::Color32::WHITE
-                };
-                list_painter.text(
-                    row_rect.left_center() + egui::vec2(4.0 * scale, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    &row.name,
-                    font.clone(),
-                    name_colour,
-                );
-
-                // Five count columns at x = 194 + 28*i, y = 2 within the row
-                // (FUN_0046d8d0).
-                for (i, cell) in row.counts.iter().enumerate() {
-                    if cell.count == 0 {
-                        // Count 0 → "-" in white, no box.
-                        let cell_x = 194.0 + 28.0 * i as f32;
-                        let cell_pos = at(
-                            frame,
-                            scale,
-                            (LIST.0 + cell_x, LIST.1 + ROW_HEIGHT * line + 2.0, 28.0, 0.0),
-                        )
-                        .min;
-                        list_painter.text(
-                            cell_pos + egui::vec2(10.0 * scale, 0.0),
-                            egui::Align2::CENTER_TOP,
-                            "-",
-                            cell_font.clone(),
-                            egui::Color32::WHITE,
-                        );
-                    } else {
-                        // Count > 0 → a 21x16 box behind the number.
-                        let cell_x = 194.0 + 28.0 * i as f32;
-                        let box_rect = at(
-                            frame,
-                            scale,
-                            (
-                                LIST.0 + cell_x,
-                                LIST.1 + ROW_HEIGHT * line + 2.0,
-                                21.0,
-                                16.0,
-                            ),
-                        );
-                        list_painter.rect_filled(box_rect, 0.0, box_colour);
-                        list_painter.text(
-                            box_rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            cell.count.to_string(),
-                            cell_font.clone(),
-                            text_on_box,
-                        );
-                    }
-                }
-
-                let response = ui.interact(
-                    row_rect,
-                    ui.id().with(("troop-row", offset)),
-                    egui::Sense::click(),
-                );
-                if response.clicked() {
-                    if window.id.is_some() {
-                        focus_request = Some(TROOP_FINDER_LIST_CONTROL);
-                    }
-                    let (now, delay) = (
-                        ui.input(|input| input.time),
-                        ctx.options(|options| options.input_options.max_double_click_delay),
-                    );
-                    if window
-                        .last_clicked
-                        .is_some_and(|(last, at_time)| last == offset && now - at_time <= delay)
-                    {
-                        open_action = Some(action_for_row(row));
-                    } else {
-                        clicked_row = Some((offset, now));
-                    }
-                }
-            }
-            let pointer = ui.input(|input| input.pointer.hover_pos());
-            if pointer.is_some_and(|point| rect_contains(list_rect, point)) {
-                wheel = ui.input(|input| input.raw_scroll_delta.y);
-            }
-        });
-
-    let escape = ctx.input(|input| input.key_pressed(egui::Key::Escape));
-    let arrow_up = ctx.input(|input| input.key_pressed(egui::Key::ArrowUp));
-    let arrow_down = ctx.input(|input| input.key_pressed(egui::Key::ArrowDown));
-    let arrow_left = ctx.input(|input| input.key_pressed(egui::Key::ArrowLeft));
-    let arrow_right = ctx.input(|input| input.key_pressed(egui::Key::ArrowRight));
-    let managed_enter = ctx.input(|input| input.key_pressed(egui::Key::Enter));
-    let open_window = state.window.as_mut()?;
-    open_window.focus_name = false;
-    if name_changed {
-        open_window.name.clone_from(&name);
-        let choice = prefix_choice(&list, &name);
-        open_window.chosen = choice;
-        if let Some(index) = choice {
-            open_window.first_row = scrolled_to(open_window.first_row, index);
-        }
-    }
-    if let Some((row, at_time)) = clicked_row {
-        open_window.last_clicked = Some((row, at_time));
-        open_window.chosen = Some(row);
-        open_window.name.clone_from(&list[row].name);
-    }
-    if focused_control == Some(TROOP_FINDER_NAME_CONTROL) && arrow_down && !list.is_empty() {
-        let row = open_window.chosen.unwrap_or(0).min(list.len() - 1);
-        open_window.chosen = Some(row);
-        open_window.name.clone_from(&list[row].name);
-        open_window.first_row = scrolled_to(open_window.first_row, row);
-        focus_request = Some(TROOP_FINDER_LIST_CONTROL);
-    }
-    if focused_control == Some(TROOP_FINDER_LIST_CONTROL) {
-        if list.is_empty() {
-            if arrow_up {
-                focus_request = Some(TROOP_FINDER_NAME_CONTROL);
-            }
-        } else {
-            let current = open_window.chosen.unwrap_or(0).min(list.len() - 1);
-            let next = if arrow_down {
-                (current + 1).min(list.len() - 1)
-            } else if arrow_up && current > 0 {
-                current - 1
-            } else {
-                current
-            };
-            if arrow_up && current == 0 {
-                focus_request = Some(TROOP_FINDER_NAME_CONTROL);
-            } else if arrow_up || arrow_down {
-                open_window.chosen = Some(next);
-                open_window.name.clone_from(&list[next].name);
-                open_window.first_row = scrolled_to(open_window.first_row, next);
-            }
-            if managed_enter {
-                open_action = open_action.or_else(|| {
-                    open_window
-                        .chosen
-                        .and_then(|chosen| list.get(chosen))
-                        .map(action_for_row)
-                });
-            }
-        }
-        if arrow_left || arrow_right {
-            let current = tab_index(open_window.tab);
-            let next = if arrow_left {
-                current.saturating_sub(1)
-            } else {
-                (current + 1).min(TroopTab::ALL.len() - 1)
-            };
-            tab = Some(TroopTab::ALL[next]);
-        }
-    }
-    if let Some(control) = focus_request {
-        open_window.pending_focus = Some(control);
-    }
-    if enter {
-        if let Some(chosen) = open_window.chosen {
-            if let Some(row) = list.get(chosen) {
-                open_action = Some(action_for_row(row));
-            }
-        }
-    }
-    if wheel != 0.0 {
-        let last = list.len().saturating_sub(VISIBLE_ROWS);
-        open_window.first_row = if wheel > 0.0 {
-            open_window.first_row.saturating_sub(1)
-        } else {
-            (open_window.first_row + 1).min(last)
         };
-    }
-    if let Some(new_tab) = tab {
-        state.set_tab(new_tab);
-    }
-    if let Some(action) = open_action {
-        return Some(TroopFinderDrawOutcome::Open(action));
-    }
-    if close || escape {
-        return Some(TroopFinderDrawOutcome::Close);
-    }
-    None
+        row_action: action_for_row,
+    );
+    let open_window = state.window.as_mut()?;
+    finder_common::commit_indexed_output(
+        &mut open_window.ui,
+        &mut open_window.tab,
+        &mut open_window.chosen,
+        &list,
+        outcome,
+        |index, _| index,
+    )
 }
 
-/// The action for opening a row (FUN_00429440).
+/// The action for opening a row (`FUN_00429440`).
 fn action_for_row(row: &TroopFinderRow) -> TroopFinderAction {
-    if let Some(fleet) = row.fleet {
-        TroopFinderAction::OpenFleet {
-            system: row.system,
-            fleet,
-        }
-    } else {
-        TroopFinderAction::OpenDefenses { system: row.system }
-    }
+    finder_common::location_action(
+        row.system,
+        row.fleet,
+        |system, fleet| TroopFinderAction::OpenFleet { system, fleet },
+        |system| TroopFinderAction::OpenDefenses { system },
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use super::*;
-    use crate::cockpit::CockpitViewport;
+    use crate::test_support::{
+        add_system, control_focus as focus, finder_escape_input as escape_input,
+        finder_layout as layout, key_press as key, tap_key as tap,
+    };
     use rebellion_core::carriage::ProductRoom;
-    use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
+    use rebellion_core::dat::Faction;
     use rebellion_core::ids::{DatId, FleetKey, SystemKey};
-    use rebellion_core::world::{
-        CapitalShipClass, ControlKind, Fleet, Sector, ShipInstance, System, TroopUnit,
-    };
-    use rebellion_windowing::{
-        ContentStatus, ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowManager,
-        WindowTransition,
-    };
+    use rebellion_core::world::{ControlKind, TroopUnit};
+    use rebellion_windowing::{FocusTarget, WindowCommand, WindowId, WindowManager, WindowOwner};
 
-    fn layout() -> CockpitLayout {
-        CockpitLayout {
-            canvas: CockpitViewport {
-                x: 0.0,
-                y: 0.0,
-                width: 640.0,
-                height: 480.0,
-            },
-            galaxy: CockpitViewport {
-                x: 65.0,
-                y: 60.0,
-                width: 485.0,
-                height: 350.0,
-            },
-            scale: 1.0,
-        }
-    }
-
-    fn add_system(world: &mut GameWorld, name: &str, control: ControlKind) -> SystemKey {
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(36),
-            name: "Sesswenna".into(),
-            group: SectorGroup::Core,
-            x: 317,
-            y: 248,
-            systems: Vec::new(),
-        });
-        world.systems.insert(System {
-            dat_id: DatId::new(100),
-            name: name.into(),
-            sector,
-            x: 320,
-            y: 250,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        })
-    }
+    crate::test_support::define_managed_finder_fixture!(
+        managed_finder,
+        TroopFinderState,
+        "Troop Finder"
+    );
 
     fn add_troop(
         world: &mut GameWorld,
@@ -1108,46 +387,22 @@ mod tests {
     }
 
     fn add_fleet(world: &mut GameWorld, system: SystemKey, is_alliance: bool) -> FleetKey {
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            name: "Transport".into(),
-            is_alliance,
-            hull: 100,
-            hyperdrive: 1,
-            troop_capacity: 4,
-            ..CapitalShipClass::default()
-        });
-        let fleet = world.insert_fleet(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 100, true)],
-            fighters: Vec::new(),
-            characters: Vec::new(),
-            is_alliance,
-            bombarding: false,
-        });
-        world.systems[system].fleets.push(fleet);
-        fleet
+        crate::test_support::add_transport_fleet(world, system, is_alliance, 4)
     }
 
-    fn names(rows: &[TroopFinderRow]) -> Vec<&str> {
-        rows.iter().map(|row| row.name.as_str()).collect()
-    }
-
-    fn key(key: egui::Key) -> egui::Event {
-        key_state(key, true)
-    }
-
-    fn key_state(key: egui::Key, pressed: bool) -> egui::Event {
-        egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }
-    }
-
-    fn tap(key: egui::Key) -> Vec<Vec<egui::Event>> {
-        vec![vec![key_state(key, true)], vec![key_state(key, false)]]
+    fn managed_navigation() -> (
+        WindowManager,
+        TroopFinderState,
+        WindowId,
+        FocusTarget,
+        FocusTarget,
+        egui::Context,
+    ) {
+        crate::test_support::finder_navigation_fixture(
+            managed_finder(),
+            TROOP_FINDER_NAME_CONTROL,
+            TROOP_FINDER_LIST_CONTROL,
+        )
     }
 
     fn drive_focused_in_context(
@@ -1160,31 +415,67 @@ mod tests {
         let layout = layout();
         let mut cache = BmpCache::new();
         let transport = TroopTransportState::default();
-        let mut emitted = None;
-        for events in frames {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
-                if let Some(action) = draw_troop_finder_focused(
-                    ctx,
-                    &galaxy.world,
-                    state,
-                    Some(focus),
-                    layout,
-                    &mut cache,
-                    &transport,
-                ) {
-                    emitted = Some(action);
-                }
-            });
-        }
-        emitted
+        crate::test_support::run_action_frames(ctx, frames, |ctx| {
+            draw_troop_finder_focused(
+                ctx,
+                &galaxy.world,
+                state,
+                Some(focus),
+                layout,
+                &mut cache,
+                &transport,
+            )
+        })
+    }
+
+    fn drive_tap_without_action(
+        ctx: &egui::Context,
+        galaxy: &Galaxy,
+        state: &mut TroopFinderState,
+        focus: FocusTarget,
+        key: egui::Key,
+    ) {
+        assert_eq!(
+            drive_focused_in_context(ctx, galaxy, state, focus, tap(key)),
+            None
+        );
+    }
+
+    fn drive_tab(
+        ctx: &egui::Context,
+        galaxy: &Galaxy,
+        state: &mut TroopFinderState,
+        focus: FocusTarget,
+        key: egui::Key,
+        expected: TroopTab,
+    ) {
+        drive_tap_without_action(ctx, galaxy, state, focus, key);
+        assert_eq!(state.window.as_ref().unwrap().tab, expected);
+    }
+
+    fn drive_tab_round_trip(
+        ctx: &egui::Context,
+        galaxy: &Galaxy,
+        state: &mut TroopFinderState,
+        focus: FocusTarget,
+    ) {
+        drive_tab(
+            ctx,
+            galaxy,
+            state,
+            focus,
+            egui::Key::ArrowRight,
+            TroopTab::Imperial,
+        );
+        assert_eq!(state.window.as_ref().unwrap().chosen, None);
+        drive_tab(
+            ctx,
+            galaxy,
+            state,
+            focus,
+            egui::Key::ArrowLeft,
+            TroopTab::Alliance,
+        );
     }
 
     struct Galaxy {
@@ -1213,6 +504,16 @@ mod tests {
         Galaxy { world }
     }
 
+    fn add_alliance_alderaan(galaxy: &mut Galaxy) -> SystemKey {
+        let alderaan = add_system(
+            &mut galaxy.world,
+            "Alderaan",
+            ControlKind::Controlled(Faction::Alliance),
+        );
+        add_troop(&mut galaxy.world, alderaan, 0x1000_0002, true);
+        alderaan
+    }
+
     #[test]
     fn the_troop_finder_lists_systems_holding_the_tabs_regiments() {
         // FUN_0046ea10: walk systems, check FUN_00504cc0 for regiments
@@ -1221,7 +522,7 @@ mod tests {
         let transport = TroopTransportState::default();
 
         let alliance = rows(&galaxy.world, TroopTab::Alliance, &transport);
-        assert_eq!(names(&alliance), ["Yavin"]);
+        assert_eq!(finder_common::row_names(&alliance), ["Yavin"]);
         assert_eq!(alliance[0].counts[0].count, 2, "Army Regiment column");
         assert_eq!(alliance[0].counts[1].count, 1, "Fleet Regiment column");
         assert_eq!(alliance[0].counts[2].count, 0);
@@ -1229,7 +530,7 @@ mod tests {
         let imperial = rows(&galaxy.world, TroopTab::Imperial, &transport);
         // FUN_0046ea10 walks all systems; ground troops are shown
         // regardless of fog.
-        assert_eq!(names(&imperial), ["Coruscant"]);
+        assert_eq!(finder_common::row_names(&imperial), ["Coruscant"]);
         assert_eq!(imperial[0].counts[0].count, 1, "Stormtrooper column");
     }
 
@@ -1278,31 +579,21 @@ mod tests {
         let transport = TroopTransportState::default();
 
         let listed = rows(&world, TroopTab::Alliance, &transport);
-        assert_eq!(names(&listed), ["Alpha", "beta"]);
+        assert_eq!(finder_common::row_names(&listed), ["Alpha", "beta"]);
     }
 
     #[test]
-    fn a_typed_name_chooses_the_first_row_it_best_begins() {
-        // FUN_00609650: the same prefix-match the Fleet Finder uses.
-        let rows = vec![
-            TroopFinderRow {
-                name: "Coruscant".into(),
+    fn typed_names_use_the_longest_prefix_and_a_tie_keeps_the_first_row() {
+        // FUN_00609650 keeps a row only for a strictly longer match.
+        crate::test_support::assert_finder_prefix_choices(
+            |name| TroopFinderRow {
+                name: name.into(),
                 system: SystemKey::default(),
                 fleet: None,
                 counts: [TroopCount::default(); 5],
             },
-            TroopFinderRow {
-                name: "Yavin".into(),
-                system: SystemKey::default(),
-                fleet: None,
-                counts: [TroopCount::default(); 5],
-            },
-        ];
-
-        assert_eq!(prefix_choice(&rows, "ya"), Some(1));
-        assert_eq!(prefix_choice(&rows, "cor"), Some(0));
-        assert_eq!(prefix_choice(&rows, "z"), None);
-        assert_eq!(prefix_choice(&rows, ""), None);
+            prefix_choice,
+        );
     }
 
     #[test]
@@ -1341,176 +632,60 @@ mod tests {
     }
 
     #[test]
-    fn the_list_scrolls_as_little_as_it_must_to_show_a_row() {
-        assert_eq!(scrolled_to(0, 5), 0);
-        assert_eq!(scrolled_to(0, 6), 1);
-        assert_eq!(scrolled_to(3, 1), 1);
-        assert_eq!(scrolled_to(3, 8), 3);
-        assert_eq!(scrolled_to(2, 8), 3);
-    }
-
-    #[test]
     fn opening_an_open_finder_keeps_its_state() {
         // FUN_0042a4d0 builds the window only when no type 0x16 is open.
-        let mut state = TroopFinderState::default();
-        assert!(state.open(CockpitFaction::Alliance));
-        state.set_tab(TroopTab::Imperial);
-
-        assert!(!state.open(CockpitFaction::Alliance));
-
-        assert_eq!(state.window.as_ref().unwrap().tab, TroopTab::Imperial);
-        assert!(state.is_open());
-        state.close();
-        assert!(!state.is_open());
+        crate::test_support::assert_finder_reopen_preserves::<TroopFinderState>(
+            |state| state.set_tab(TroopTab::Imperial),
+            |state| assert_eq!(state.window.as_ref().unwrap().tab, TroopTab::Imperial),
+        );
     }
 
     #[test]
     fn troop_finder_duplicate_preserves_content() {
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (mut manager, mut state, id) = managed_finder();
 
         let content = state.window.as_mut().unwrap();
         content.tab = TroopTab::Imperial;
-        content.name = "Coruscant".into();
         content.chosen = Some(0);
-        content.first_row = 2;
-        content.focus_name = false;
-        let focused = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_LIST_CONTROL),
-        };
-        manager.apply(WindowCommand::Focus(focused)).unwrap();
-
-        let duplicate = TroopFinderState::prepare_open(CockpitFaction::Empire);
-        let duplicate_commit = manager
-            .apply(WindowCommand::Open(duplicate.spec()))
-            .unwrap();
-        assert!(matches!(
-            duplicate_commit.transition,
-            WindowTransition::Existing {
-                id: existing,
-                effect: ExistingEffect::NoOp,
-            } if existing == id
-        ));
-        assert_eq!(
-            state.commit_open(duplicate, &duplicate_commit.transition),
-            Some(id)
+        let focused = focus(id, TROOP_FINDER_LIST_CONTROL);
+        crate::test_support::assert_focused_duplicate_finder_ui(
+            &mut manager,
+            &mut state,
+            id,
+            focused,
+            "Coruscant",
+            2,
+            false,
         );
-
         let content = state.window.as_ref().unwrap();
-        assert_eq!(state.window_id(), Some(id));
-        assert_eq!(content.faction, CockpitFaction::Alliance);
         assert_eq!(content.tab, TroopTab::Imperial);
-        assert_eq!(content.name, "Coruscant");
         assert_eq!(content.chosen, Some(0));
-        assert_eq!(content.first_row, 2);
-        assert!(!content.focus_name);
-        assert_eq!(manager.begin_frame().focused(), Some(focused));
     }
 
     #[test]
     fn troop_finder_rejects_stale_publication_receipts_without_retargeting() {
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        state.window.as_mut().unwrap().name = "Yavin".into();
+        let (mut manager, mut state, id) = managed_finder();
+        state.window.as_mut().unwrap().ui.name = "Yavin".into();
 
-        let other = match manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::PersonnelFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap()
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            ref transition => panic!("expected unrelated open, got {transition:?}"),
-        };
-        let replacement = TroopFinderState::prepare_open(CockpitFaction::Empire);
-
-        assert_eq!(
-            state.commit_open(replacement, &WindowTransition::Opened { id: other }),
-            None
+        crate::test_support::assert_stale_finder_publications_rejected(
+            &mut manager,
+            &mut state,
+            id,
+            WindowKind::PersonnelFinder,
         );
-        assert_eq!(
-            state.commit_open(
-                replacement,
-                &WindowTransition::Existing {
-                    id: other,
-                    effect: ExistingEffect::NoOp,
-                },
-            ),
-            None
-        );
-        assert_eq!(state.window_id(), Some(id));
         let content = state.window.as_ref().unwrap();
-        assert_eq!(content.faction, CockpitFaction::Alliance);
-        assert_eq!(content.name, "Yavin");
+        assert_eq!(content.ui.name, "Yavin");
     }
 
     #[test]
     fn troop_finder_modal_blocks_underlay() {
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let frame = manager.begin_frame();
-        let inside = state.screen_rect(layout()).unwrap().center();
-        let hit = state.hit_window(&frame, layout(), (inside.x, inside.y));
-        let hits = hit.into_iter().collect::<BTreeSet<_>>();
-
-        assert_eq!(
-            frame.pointer_route(&hits).target,
-            RouteTarget::Window(FocusTarget {
-                window: id,
-                control: None,
-            })
-        );
-        assert_eq!(
-            frame.pointer_route(&BTreeSet::new()).target,
-            RouteTarget::BlockedBy(id)
-        );
-        assert!(!frame.pointer_allows_root());
-        assert_eq!(
-            state.content_reports(&frame),
-            [rebellion_windowing::ContentReport {
-                window: id,
-                status: ContentStatus::Ready,
-            }]
-        );
+        let (manager, state, id) = managed_finder();
+        crate::test_support::assert_finder_modal_routing(&manager, &state, id, layout());
     }
 
     #[test]
     fn troop_finder_hit_requires_its_geometry_and_current_input_lease() {
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (mut manager, state, id) = managed_finder();
         let rect = state.screen_rect(layout()).unwrap();
         let frame = manager.begin_frame();
         assert_eq!(
@@ -1518,14 +693,12 @@ mod tests {
             None
         );
 
-        manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::PersonnelFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
+        crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::PersonnelFinder,
+            WindowOwner::StrategicRoot,
+            "modal cover",
+        );
         let blocked_frame = manager.begin_frame();
         assert!(!blocked_frame.allows_input(id));
         assert_eq!(
@@ -1535,50 +708,28 @@ mod tests {
     }
 
     #[test]
-    fn the_longest_common_beginning_wins_and_a_tie_keeps_the_first() {
-        // FUN_00609650 keeps a row only for a strictly longer match.
-        let rows: Vec<TroopFinderRow> = ["Corulag", "Coruscant", "Yavin"]
-            .into_iter()
-            .map(|name| TroopFinderRow {
-                name: name.into(),
-                system: SystemKey::default(),
-                fleet: None,
-                counts: [TroopCount::default(); 5],
-            })
-            .collect();
-        assert_eq!(prefix_choice(&rows, "corus"), Some(1));
-        assert_eq!(prefix_choice(&rows, "cor"), Some(0));
-    }
-
-    #[test]
     fn each_tab_names_its_side_and_paints_its_own_cells() {
         // TEXTSTRA 0x1950/0x1951; panels 10540/10541 (FUN_006075e0);
         // FUN_0046d8d0's brushes: red with white text for the Alliance,
         // green with black for the Empire.
         assert_eq!(TroopTab::Alliance.label(), "Alliance Troops");
         assert_eq!(TroopTab::Imperial.label(), "Imperial Troops");
-        assert_eq!(PANEL[TroopTab::Alliance.panel_index()], 10540);
-        assert_eq!(PANEL[TroopTab::Imperial.panel_index()], 10541);
-        assert_eq!(
-            cell_colours(TroopTab::Alliance),
-            (egui::Color32::from_rgb(255, 0, 0), egui::Color32::WHITE)
-        );
-        assert_eq!(
-            cell_colours(TroopTab::Imperial),
-            (egui::Color32::from_rgb(0, 255, 0), egui::Color32::BLACK)
+        assert_eq!(PANEL[TroopTab::Alliance.index()], 10540);
+        assert_eq!(PANEL[TroopTab::Imperial.index()], 10541);
+        crate::test_support::assert_finder_count_colours(
+            TroopTab::Alliance.index(),
+            TroopTab::Imperial.index(),
         );
     }
 
     #[test]
     fn a_new_tab_clears_the_choice() {
         // FUN_0046ea10: rebuilding clears the chosen row.
-        let mut state = TroopFinderState::default();
-        state.open(CockpitFaction::Alliance);
-        state.window.as_mut().unwrap().chosen = Some(0);
-
-        state.set_tab(TroopTab::Imperial);
-
-        assert_eq!(state.window.as_ref().unwrap().chosen, None);
+        crate::test_support::assert_finder_category_change_clears!(
+            TroopFinderState,
+            Some(0),
+            |state: &mut TroopFinderState| state.set_tab(TroopTab::Imperial),
+        );
     }
 
     #[test]
@@ -1592,20 +743,7 @@ mod tests {
         let layout = layout();
 
         // Run a frame with escape.
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(700.0, 520.0),
-            )),
-            events: vec![egui::Event::Key {
-                key: egui::Key::Escape,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::default(),
-            }],
-            ..Default::default()
-        };
+        let input = escape_input();
         let _ = ctx.run(input, |ctx| {
             draw_troop_finder(
                 ctx,
@@ -1628,13 +766,7 @@ mod tests {
         let transport = TroopTransportState::default();
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(700.0, 520.0),
-            )),
-            ..Default::default()
-        };
+        let input = crate::test_support::raw_input(Vec::new(), egui::vec2(700.0, 520.0));
 
         let _ = ctx.run(input, |ctx| {
             assert_eq!(
@@ -1651,79 +783,41 @@ mod tests {
         });
 
         assert_eq!(
-            ctx.memory(|memory| memory.focused()),
+            ctx.memory(egui::Memory::focused),
             Some(egui::Id::new("original-troop-finder-name"))
         );
     }
 
     #[test]
     fn troop_finder_close_consumes_trigger() {
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (mut manager, mut state, id) = managed_finder();
         let galaxy = galaxy();
         let transport = TroopTransportState::default();
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(700.0, 520.0),
-            )),
-            events: vec![egui::Event::Key {
-                key: egui::Key::Escape,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::default(),
-            }],
-            ..Default::default()
-        };
-        let mut action = None;
-        let _ = ctx.run(input, |ctx| {
-            action = draw_troop_finder_focused(
-                ctx,
-                &galaxy.world,
-                &mut state,
-                manager.begin_frame().focused(),
-                layout(),
-                &mut cache,
-                &transport,
-            );
-        });
-
-        assert_eq!(action, Some(ManagedTroopFinderAction::Close(id)));
-        assert!(
-            state.is_open(),
-            "managed content waits for the close receipt"
+        crate::test_support::assert_managed_finder_escape_close(
+            &mut manager,
+            &mut state,
+            id,
+            "Troop Finder",
+            ManagedTroopFinderAction::Close(id),
+            |ctx, state, focus, cache| {
+                draw_troop_finder_focused(
+                    ctx,
+                    &galaxy.world,
+                    state,
+                    focus,
+                    layout(),
+                    cache,
+                    &transport,
+                )
+            },
+            TroopFinderState::is_open,
+            TroopFinderState::remove_content,
         );
-
-        let closed = manager.apply(WindowCommand::Close(id)).unwrap();
-        let removed = match closed.transition {
-            WindowTransition::Closed { closed, .. } => closed,
-            ref other => panic!("expected Troop Finder close, got {other:?}"),
-        };
-        state.remove_content(&removed);
-        assert!(!state.is_open());
     }
 
     #[test]
     fn troop_finder_selection_waits_for_close_receipt() {
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (manager, mut state, id) = managed_finder();
         state.window.as_mut().unwrap().chosen = Some(0);
         let galaxy = galaxy();
         let expected_system = rows(
@@ -1736,7 +830,7 @@ mod tests {
         let mut cache = BmpCache::new();
         let layout = layout();
         let control = CONTROLS[0].display.rect;
-        let pos = window_rect(layout).min
+        let pos = finder_common::window_rect(layout).min
             + egui::vec2(control.0 + control.2 / 2.0, control.1 + control.3 / 2.0);
         let mut action = None;
         for events in [
@@ -1799,22 +893,9 @@ mod tests {
     #[test]
     fn troop_finder_focused_control_consumes_text_navigation_enter_and_escape() {
         let galaxy = galaxy();
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_NAME_CONTROL),
-        };
+        let (mut manager, mut state, id, name_focus, list_focus, ctx) = managed_navigation();
         manager.apply(WindowCommand::Focus(name_focus)).unwrap();
         assert_eq!(state.keyboard_owner(&manager.begin_frame()), Some(id));
-        let ctx = egui::Context::default();
 
         assert_eq!(
             drive_focused_in_context(
@@ -1826,7 +907,7 @@ mod tests {
             ),
             None
         );
-        assert_eq!(state.window.as_ref().unwrap().name, "Y");
+        assert_eq!(state.window.as_ref().unwrap().ui.name, "Y");
         assert_eq!(
             drive_focused_in_context(
                 &ctx,
@@ -1837,27 +918,13 @@ mod tests {
             ),
             None
         );
-        let list_focus = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_LIST_CONTROL),
-        };
         assert_eq!(state.take_focus_request(), Some(list_focus));
 
-        let name_before_list_text = state.window.as_ref().unwrap().name.clone();
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                vec![vec![egui::Event::Text("ignored".into())]],
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().name, name_before_list_text);
-        assert_eq!(
-            ctx.memory(|memory| memory.focused()),
-            Some(egui::Id::new("original-troop-finder-list"))
+        crate::test_support::assert_finder_list_focus_ignores_text(
+            &ctx,
+            &mut state,
+            "original-troop-finder-list",
+            |state, events| drive_focused_in_context(&ctx, &galaxy, state, list_focus, events),
         );
         assert_eq!(
             state.take_focus_request(),
@@ -1901,14 +968,9 @@ mod tests {
     #[test]
     fn troop_finder_child_navigation_respects_focus_bounds_and_tabs() {
         let mut galaxy = galaxy();
-        let alderaan = add_system(
-            &mut galaxy.world,
-            "Alderaan",
-            ControlKind::Controlled(Faction::Alliance),
-        );
-        add_troop(&mut galaxy.world, alderaan, 0x1000_0002, true);
+        add_alliance_alderaan(&mut galaxy);
         assert_eq!(
-            names(&rows(
+            finder_common::row_names(&rows(
                 &galaxy.world,
                 TroopTab::Alliance,
                 &TroopTransportState::default(),
@@ -1916,37 +978,10 @@ mod tests {
             ["Alderaan", "Yavin"]
         );
 
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_NAME_CONTROL),
-        };
-        let list_focus = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_LIST_CONTROL),
-        };
-        let ctx = egui::Context::default();
+        let (_manager, mut state, _id, name_focus, list_focus, ctx) = managed_navigation();
 
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                name_focus,
-                tap(egui::Key::ArrowDown),
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().chosen, Some(0));
-        assert_eq!(state.window.as_ref().unwrap().name, "Alderaan");
+        drive_tap_without_action(&ctx, &galaxy, &mut state, name_focus, egui::Key::ArrowDown);
+        crate::test_support::assert_indexed_finder_selection!(&state, 0, "Alderaan");
         assert_eq!(state.take_focus_request(), Some(list_focus));
 
         assert_eq!(
@@ -1960,61 +995,24 @@ mod tests {
             (egui::Key::ArrowDown, 1, "Yavin"),
             (egui::Key::ArrowUp, 0, "Alderaan"),
         ] {
-            assert_eq!(
-                drive_focused_in_context(&ctx, &galaxy, &mut state, list_focus, tap(key)),
-                None
-            );
-            assert_eq!(state.window.as_ref().unwrap().chosen, Some(chosen));
-            assert_eq!(state.window.as_ref().unwrap().name, name);
+            drive_tap_without_action(&ctx, &galaxy, &mut state, list_focus, key);
+            crate::test_support::assert_indexed_finder_selection!(&state, chosen, name);
         }
 
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                tap(egui::Key::ArrowUp),
-            ),
-            None
-        );
+        drive_tap_without_action(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowUp);
         assert_eq!(state.window.as_ref().unwrap().chosen, Some(0));
         assert_eq!(state.take_focus_request(), Some(name_focus));
 
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                tap(egui::Key::ArrowRight),
-            ),
-            None
+        drive_tab(
+            &ctx,
+            &galaxy,
+            &mut state,
+            list_focus,
+            egui::Key::ArrowRight,
+            TroopTab::Imperial,
         );
-        assert_eq!(state.window.as_ref().unwrap().tab, TroopTab::Imperial);
         assert_eq!(state.window.as_ref().unwrap().chosen, None);
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                tap(egui::Key::ArrowRight),
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().tab, TroopTab::Imperial);
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                tap(egui::Key::ArrowLeft),
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().tab, TroopTab::Alliance);
+        drive_tab_round_trip(&ctx, &galaxy, &mut state, list_focus);
     }
 
     #[test]
@@ -2025,85 +1023,31 @@ mod tests {
                 system.ground_units.clear();
             }
         }
-        assert!(rows(
+        assert_empty!(rows(
             &galaxy.world,
             TroopTab::Imperial,
             &TroopTransportState::default(),
-        )
-        .is_empty());
+        ));
 
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let list_focus = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_LIST_CONTROL),
-        };
-        let ctx = egui::Context::default();
+        let (_manager, mut state, _id, _name_focus, list_focus, ctx) = managed_navigation();
 
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                tap(egui::Key::ArrowRight),
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().tab, TroopTab::Imperial);
-        assert_eq!(state.window.as_ref().unwrap().chosen, None);
-
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                tap(egui::Key::ArrowLeft),
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().tab, TroopTab::Alliance);
+        drive_tab_round_trip(&ctx, &galaxy, &mut state, list_focus);
     }
 
     #[test]
     fn troop_finder_empty_results_allow_list_focus_to_return_to_name() {
         let mut galaxy = galaxy();
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
+        let (_manager, mut state, _id, name_focus, list_focus, ctx) = managed_navigation();
         let open_window = state.window.as_mut().unwrap();
         open_window.chosen = Some(0);
-        open_window.focus_name = false;
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_NAME_CONTROL),
-        };
-        let list_focus = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_LIST_CONTROL),
-        };
-        let ctx = egui::Context::default();
+        open_window.ui.focus_name = false;
 
         assert_eq!(
             drive_focused_in_context(&ctx, &galaxy, &mut state, list_focus, vec![vec![]]),
             None
         );
         assert_eq!(
-            ctx.memory(|memory| memory.focused()),
+            ctx.memory(egui::Memory::focused),
             Some(egui::Id::new("original-troop-finder-list"))
         );
         assert_eq!(state.take_focus_request(), None);
@@ -2111,93 +1055,35 @@ mod tests {
         for (_, system) in &mut galaxy.world.systems {
             system.ground_units.clear();
         }
-        assert!(rows(
+        assert_empty!(rows(
             &galaxy.world,
             TroopTab::Alliance,
             &TroopTransportState::default(),
-        )
-        .is_empty());
+        ));
 
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                tap(egui::Key::ArrowUp),
-            ),
-            None
-        );
+        drive_tap_without_action(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowUp);
         assert_eq!(state.take_focus_request(), Some(name_focus));
     }
 
     #[test]
     fn troop_finder_navigation_clamps_a_selection_from_disappeared_rows() {
         let mut galaxy = galaxy();
-        let alderaan = add_system(
-            &mut galaxy.world,
-            "Alderaan",
-            ControlKind::Controlled(Faction::Alliance),
-        );
-        add_troop(&mut galaxy.world, alderaan, 0x1000_0002, true);
-        let mut manager = WindowManager::new();
-        let mut state = TroopFinderState::default();
-        let prepared = TroopFinderState::prepare_open(CockpitFaction::Alliance);
-        let opened = manager.apply(WindowCommand::Open(prepared.spec())).unwrap();
-        let id = match opened.transition {
-            WindowTransition::Opened { id } => id,
-            ref other => panic!("expected Troop Finder open, got {other:?}"),
-        };
-        assert_eq!(state.commit_open(prepared, &opened.transition), Some(id));
-        let name_focus = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_NAME_CONTROL),
-        };
-        let list_focus = FocusTarget {
-            window: id,
-            control: Some(TROOP_FINDER_LIST_CONTROL),
-        };
-        let ctx = egui::Context::default();
+        add_alliance_alderaan(&mut galaxy);
+        let (_manager, mut state, _id, name_focus, list_focus, ctx) = managed_navigation();
 
         state.window.as_mut().unwrap().chosen = Some(usize::MAX);
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                name_focus,
-                tap(egui::Key::ArrowDown),
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().chosen, Some(1));
-        assert_eq!(state.window.as_ref().unwrap().name, "Yavin");
+        drive_tap_without_action(&ctx, &galaxy, &mut state, name_focus, egui::Key::ArrowDown);
+        crate::test_support::assert_indexed_finder_selection!(&state, 1, "Yavin");
 
         state.window.as_mut().unwrap().chosen = Some(usize::MAX);
-        assert_eq!(
-            drive_focused_in_context(
-                &ctx,
-                &galaxy,
-                &mut state,
-                list_focus,
-                tap(egui::Key::ArrowUp),
-            ),
-            None
-        );
-        assert_eq!(state.window.as_ref().unwrap().chosen, Some(0));
-        assert_eq!(state.window.as_ref().unwrap().name, "Alderaan");
+        drive_tap_without_action(&ctx, &galaxy, &mut state, list_focus, egui::Key::ArrowUp);
+        crate::test_support::assert_indexed_finder_selection!(&state, 0, "Alderaan");
     }
 
     #[test]
     fn the_finder_blocks_only_its_own_rectangle() {
         let mut state = TroopFinderState::default();
-        let rect = window_rect(layout());
-        assert!(!state.contains_screen_point(layout(), (rect.center().x, rect.center().y)));
-
-        state.open(CockpitFaction::Alliance);
-
-        assert!(state.contains_screen_point(layout(), (rect.center().x, rect.center().y)));
-        assert!(!state.contains_screen_point(layout(), (rect.max.x + 1.0, rect.center().y)));
+        crate::test_support::assert_finder_bounds(&mut state, layout());
     }
 
     #[test]

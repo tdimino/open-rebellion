@@ -237,7 +237,7 @@ impl<'a> Rolls<'a> {
 
     /// `FUN_0053e290(n)`: uniform over `0..=n`, or `-(0..=-n)` for negative
     /// `n`. An exhausted slice yields `n`.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "the roll is in [0, 1], so the product fits the draw range"
     )]
@@ -506,10 +506,11 @@ pub(crate) fn holder(sys: &System) -> Option<Faction> {
 }
 
 /// `FUN_00507270`: a side's support at a system, in points.
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
 )]
+#[must_use]
 pub fn support_points(sys: &System, side: Faction) -> i32 {
     let fraction = if side == Faction::Alliance {
         sys.popularity_alliance
@@ -1017,7 +1018,7 @@ fn shift_support(world: &mut GameWorld, system: SystemKey, side: Faction, points
 /// Shift `side`'s support at `sys` by `points`, the other side's by the
 /// opposite. port: the port keeps support as a `0..=1` fraction; the
 /// original keeps points at `+0x58` (`FUN_00507270`).
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "support changes are at most 100 points"
 )]
@@ -1109,51 +1110,20 @@ fn remove_facility(world: &mut GameWorld, system: SystemKey, facility: FacilityR
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dat::{ExplorationStatus, SectorGroup};
-    use crate::ids::{DatId, ProductionFacilityKey};
+    use crate::ids::{DatId, DefenseFacilityKey, ManufacturingFacilityKey, ProductionFacilityKey};
     use crate::missions::MissionFaction;
     use crate::missions::MissionRequest;
+    use crate::test_support::gnprtb_entry;
     use crate::world::{
-        Character, ControlKind, DefenseFacilityInstance, Fleet, GnprtbEntry, GnprtbParams,
-        ManufacturingFacilityInstance, MstbEntry, ProductionFacilityInstance, Sector, SkillPair,
-        TroopUnit,
+        Character, ControlKind, DefenseFacilityInstance, GnprtbParams,
+        ManufacturingFacilityInstance, MstbEntry, ProductionFacilityInstance, SkillPair, TroopUnit,
     };
 
     /// A usable Death Star at `system`, setting `+0x88` bit 11 across its
     /// sector (`FUN_005178b0`).
     fn with_death_star(world: &mut GameWorld, system: SystemKey) {
-        let class = world
-            .capital_ship_classes
-            .insert(crate::world::CapitalShipClass {
-                family: 0x18,
-                is_empire: true,
-                hull: 100,
-                ..Default::default()
-            });
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![crate::world::ShipInstance::new(class, 100, false)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        world.systems[system].fleets.push(fleet);
+        crate::test_support::add_death_star_fleet(world, system, false);
         crate::death_star::refresh_sectors(world);
-    }
-
-    fn gnprtb_entry(parameter_id: u16, value: i32) -> GnprtbEntry {
-        GnprtbEntry {
-            parameter_id: u32::from(parameter_id),
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        }
     }
 
     fn table(rows: &[(i32, u32)]) -> MstbTable {
@@ -1207,43 +1177,22 @@ mod tests {
             "UPRIS2TB".into(),
             table(&[(1, 0), (9, 3), (11, 4), (12, 5)]),
         );
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(0x9200_0000),
-            name: "Sector".into(),
-            group: SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
         let (alliance, empire) = if side == Faction::Alliance {
             (support, 1.0 - support)
         } else {
             (1.0 - support, support)
         };
-        let system = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: "Naboo".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: alliance,
-            popularity_empire: empire,
-            is_populated: true,
-            total_energy: 4,
-            raw_materials: 4,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(side),
-        });
+        let system = crate::test_support::insert_system(
+            &mut world,
+            System {
+                dat_id: DatId::new(0x9000_0001),
+                popularity_alliance: alliance,
+                popularity_empire: empire,
+                total_energy: 4,
+                raw_materials: 4,
+                ..crate::test_support::system("Naboo", ControlKind::Controlled(side))
+            },
+        );
         (world, system)
     }
 
@@ -1319,6 +1268,95 @@ mod tests {
             .expect("an uprising incident")
     }
 
+    fn advance_incident(
+        world: &GameWorld,
+        system: SystemKey,
+        missions: &MissionState,
+        rolls: &[f64],
+    ) -> Vec<UprisingEvent> {
+        let mut state = in_revolt(system, 5);
+        UprisingSystem::advance(
+            &mut state,
+            world,
+            &short_of_troops(system, -1),
+            missions,
+            &at(5),
+            rolls,
+        )
+    }
+
+    fn leadership_character(world: &mut GameWorld, base: u32) -> CharacterKey {
+        world.characters.insert(Character {
+            leadership: SkillPair { base, variance: 0 },
+            ..Character::default()
+        })
+    }
+
+    fn add_disaster_facilities(
+        world: &mut GameWorld,
+        system: SystemKey,
+    ) -> (DefenseFacilityKey, ManufacturingFacilityKey) {
+        let defense = world.defense_facilities.insert(DefenseFacilityInstance {
+            class_dat_id: DatId::new(0x2200_0001),
+            side: crate::dat::Faction::Alliance,
+        });
+        world.systems[system].defense_facilities.push(defense);
+        let shipyard = world
+            .manufacturing_facilities
+            .insert(ManufacturingFacilityInstance {
+                class_dat_id: DatId::new(0x2800_0001),
+                side: crate::dat::Faction::Empire,
+                is_shipyard: true,
+            });
+        world.systems[system]
+            .manufacturing_facilities
+            .push(shipyard);
+        (defense, shipyard)
+    }
+
+    fn single_mission(
+        kind: MissionKind,
+        faction: MissionFaction,
+        agent: CharacterKey,
+        system: SystemKey,
+    ) -> MissionState {
+        let mut missions = MissionState::new();
+        missions.dispatch(MissionRequest::single(
+            kind, faction, agent, system, None, 0,
+        ));
+        missions
+    }
+
+    fn two_character_mission(
+        kind: MissionKind,
+        faction: MissionFaction,
+        lead: CharacterKey,
+        second: CharacterKey,
+        system: SystemKey,
+    ) -> MissionState {
+        let mut missions = MissionState::new();
+        missions.dispatch(MissionRequest {
+            team: vec![
+                crate::missions::MissionMember::Character(lead),
+                crate::missions::MissionMember::Character(second),
+            ],
+            ..MissionRequest::single(kind, faction, lead, system, None, 0)
+        });
+        missions
+    }
+
+    fn assert_injury(events: &[UprisingEvent], agent: CharacterKey) {
+        let (codes, losses, _) = incident(events);
+        assert_eq!(codes, &[1, 3]);
+        assert_eq!(
+            losses,
+            &[IncidentLoss::CharacterInjured {
+                character: agent,
+                injury: 70,
+            }]
+        );
+    }
+
     #[test]
     fn a_held_system_short_of_troops_revolts_without_changing_hands() {
         // FUN_0050b800 sets +0x88 bit 2 when the troop surplus (+0x7c) is
@@ -1336,7 +1374,7 @@ mod tests {
             &at(1),
             &[],
         );
-        assert!(quiet.is_empty());
+        assert_empty!(quiet);
         assert!(!state.is_uprising(system));
 
         let events = UprisingSystem::advance(
@@ -1376,7 +1414,7 @@ mod tests {
             &at(1),
             &[],
         );
-        assert!(kept.is_empty());
+        assert_empty!(kept);
         assert!(state.is_uprising(system));
 
         world.systems[system].control = ControlKind::Uncontrolled;
@@ -1423,7 +1461,7 @@ mod tests {
             &at(39),
             &[],
         );
-        assert!(early.is_empty());
+        assert_empty!(early);
         // Two score draws, then the next delay draws the maximum 70.
         let fired = UprisingSystem::advance(
             &mut state,
@@ -1488,15 +1526,7 @@ mod tests {
         let (mut world, system) = world_with(Faction::Alliance, 0.0);
         let _enemy = add_mine(&mut world, system, false);
         let ours = add_mine(&mut world, system, true);
-        let mut state = in_revolt(system, 5);
-        let events = UprisingSystem::advance(
-            &mut state,
-            &world,
-            &short_of_troops(system, -1),
-            &MissionState::new(),
-            &at(5),
-            &[0.0, 0.0, 0.0],
-        );
+        let events = advance_incident(&world, system, &MissionState::new(), &[0.0, 0.0, 0.0]);
         let (codes, losses, support_delta) = incident(&events);
         assert_eq!(codes, &[1, 0]);
         assert_eq!(
@@ -1562,13 +1592,10 @@ mod tests {
         // A captive aboard a fleet belongs to the fleet, not the system.
         let aboard = prisoner(&mut world, Faction::Alliance);
         world.characters[aboard].current_fleet = Some(crate::ids::FleetKey::default());
-        let mut state = in_revolt(system, 5);
-        let events = UprisingSystem::advance(
-            &mut state,
+        let events = advance_incident(
             &world,
-            &short_of_troops(system, -1),
+            system,
             &MissionState::new(),
-            &at(5),
             &[0.999, 0.999, 0.0, 0.0],
         );
         let (codes, losses, _) = incident(&events);
@@ -1586,7 +1613,7 @@ mod tests {
             apply_uprising_event(&mut world, event);
         }
         assert!(!world.troops.contains_key(regiment));
-        assert!(world.systems[system].ground_units.is_empty());
+        assert_empty!(world.systems[system].ground_units);
         assert!(!world.characters[held].is_captive);
         assert!(!world.characters[also_held].is_captive);
         assert!(world.characters[other].is_captive);
@@ -1608,27 +1635,16 @@ mod tests {
             },
             ..Character::default()
         });
-        let mut state = in_revolt(system, 5);
         // Score draws 0 and 0.15 (1 + 2); code 1 has no facility to pick;
         // code 3 picks the agent, hits the 40 percent chance, and draws 40
         // then 29.
-        let events = UprisingSystem::advance(
-            &mut state,
+        let events = advance_incident(
             &world,
-            &short_of_troops(system, -1),
+            system,
             &MissionState::new(),
-            &at(5),
             &[0.0, 0.15, 0.0, 0.0, 0.999, 0.999],
         );
-        let (codes, losses, _) = incident(&events);
-        assert_eq!(codes, &[1, 3]);
-        assert_eq!(
-            losses,
-            &[IncidentLoss::CharacterInjured {
-                character: agent,
-                injury: 70
-            }]
-        );
+        assert_injury(&events, agent);
     }
 
     #[test]
@@ -1646,24 +1662,13 @@ mod tests {
             },
             ..Character::default()
         });
-        let mut missions = MissionState::new();
-        missions.dispatch(MissionRequest::single(
+        let missions = single_mission(
             MissionKind::InciteUprising,
             MissionFaction::Empire,
             agent,
             system,
-            None,
-            0,
-        ));
-        let mut state = in_revolt(system, 5);
-        let events = UprisingSystem::advance(
-            &mut state,
-            &world,
-            &short_of_troops(system, -1),
-            &missions,
-            &at(5),
-            &[0.0, 0.0, 0.0, 0.0],
         );
+        let events = advance_incident(&world, system, &missions, &[0.0, 0.0, 0.0, 0.0]);
         // Score 1 + 1 + ceil(30 / 10) + 40 / 10 = 9: codes 1 and 3.
         let (codes, _, support_delta) = incident(&events);
         assert_eq!(codes, &[1, 3]);
@@ -1833,8 +1838,8 @@ mod tests {
 
         apply_uprising_event(&mut world, &events[0]);
         assert_eq!(world.systems[system].total_energy, 0);
-        assert!(world.systems[system].production_facilities.is_empty());
-        assert!(world.systems[system].defense_facilities.is_empty());
+        assert_empty!(world.systems[system].production_facilities);
+        assert_empty!(world.systems[system].defense_facilities);
     }
 
     #[test]
@@ -1923,21 +1928,7 @@ mod tests {
         let (mut world, system) = world_with(Faction::Alliance, 0.5);
         world.systems[system].raw_materials = 0;
         world.systems[system].total_energy = 1;
-        let defense = world.defense_facilities.insert(DefenseFacilityInstance {
-            class_dat_id: DatId::new(0x2200_0001),
-            side: crate::dat::Faction::Alliance,
-        });
-        world.systems[system].defense_facilities.push(defense);
-        let shipyard = world
-            .manufacturing_facilities
-            .insert(ManufacturingFacilityInstance {
-                class_dat_id: DatId::new(0x2800_0001),
-                side: crate::dat::Faction::Empire,
-                is_shipyard: true,
-            });
-        world.systems[system]
-            .manufacturing_facilities
-            .push(shipyard);
+        let (defense, shipyard) = add_disaster_facilities(&mut world, system);
         let mine = add_mine(&mut world, system, true);
         // Pick, one energy check (5 percent, fails), shipyard (passes), mine
         // (fails at 10), defense (passes).
@@ -1950,7 +1941,7 @@ mod tests {
         ));
 
         apply_uprising_event(&mut world, &event);
-        assert!(world.systems[system].manufacturing_facilities.is_empty());
+        assert_empty!(world.systems[system].manufacturing_facilities);
         assert!(!world.manufacturing_facilities.contains_key(shipyard));
         assert_eq!(world.systems[system].production_facilities, vec![mine]);
     }
@@ -2066,29 +2057,15 @@ mod tests {
         // every team, decoy, and captured member, before FUN_005484d0
         // divides by GNPRTB 6144 (10). Leadership 20 and 40 average to 30.
         let (mut world, system) = world_with(Faction::Alliance, 0.3);
-        let agent = |world: &mut GameWorld, base| {
-            world.characters.insert(Character {
-                leadership: SkillPair { base, variance: 0 },
-                ..Character::default()
-            })
-        };
-        let lead = agent(&mut world, 20);
-        let second = agent(&mut world, 40);
-        let mut missions = MissionState::new();
-        missions.dispatch(MissionRequest {
-            team: vec![
-                crate::missions::MissionMember::Character(lead),
-                crate::missions::MissionMember::Character(second),
-            ],
-            ..MissionRequest::single(
-                MissionKind::SubdueUprising,
-                MissionFaction::Alliance,
-                lead,
-                system,
-                None,
-                0,
-            )
-        });
+        let lead = leadership_character(&mut world, 20);
+        let second = leadership_character(&mut world, 40);
+        let missions = two_character_mission(
+            MissionKind::SubdueUprising,
+            MissionFaction::Alliance,
+            lead,
+            second,
+            system,
+        );
 
         assert_eq!(
             uprising_mission_terms(&world, missions.missions(), system),
@@ -2172,29 +2149,15 @@ mod tests {
         // average to 20, and FUN_005484d0 then divides by GNPRTB 6144 (10)
         // for 2. Dividing each member first would give 1.
         let (mut world, system) = world_with(Faction::Alliance, 0.3);
-        let agent = |world: &mut GameWorld, base| {
-            world.characters.insert(Character {
-                leadership: SkillPair { base, variance: 0 },
-                ..Character::default()
-            })
-        };
-        let lead = agent(&mut world, 19);
-        let second = agent(&mut world, 22);
-        let mut missions = MissionState::new();
-        missions.dispatch(MissionRequest {
-            team: vec![
-                crate::missions::MissionMember::Character(lead),
-                crate::missions::MissionMember::Character(second),
-            ],
-            ..MissionRequest::single(
-                MissionKind::InciteUprising,
-                MissionFaction::Alliance,
-                lead,
-                system,
-                None,
-                0,
-            )
-        });
+        let lead = leadership_character(&mut world, 19);
+        let second = leadership_character(&mut world, 22);
+        let missions = two_character_mission(
+            MissionKind::InciteUprising,
+            MissionFaction::Alliance,
+            lead,
+            second,
+            system,
+        );
 
         assert_eq!(
             uprising_mission_terms(&world, missions.missions(), system),
@@ -2228,15 +2191,7 @@ mod tests {
         let (mut world, system) = world_with(Faction::Alliance, 0.5);
         with_death_star(&mut world, system);
         add_regiment(&mut world, system, 0x1000_0002, true);
-        let mut state = in_revolt(system, 5);
-        let events = UprisingSystem::advance(
-            &mut state,
-            &world,
-            &short_of_troops(system, -1),
-            &MissionState::new(),
-            &at(5),
-            &[0.45, 0.45, 0.0],
-        );
+        let events = advance_incident(&world, system, &MissionState::new(), &[0.45, 0.45, 0.0]);
         assert_eq!(incident(&events).0, &[2, 3]);
     }
 
@@ -2252,15 +2207,7 @@ mod tests {
                 with_death_star(&mut world, system);
             }
             add_regiment(&mut world, system, 0x1000_0008, false);
-            let mut state = in_revolt(system, 5);
-            let events = UprisingSystem::advance(
-                &mut state,
-                &world,
-                &short_of_troops(system, -1),
-                &MissionState::new(),
-                &at(5),
-                &[0.45, 0.45, 0.0],
-            );
+            let events = advance_incident(&world, system, &MissionState::new(), &[0.45, 0.45, 0.0]);
             assert_eq!(incident(&events).0, &codes, "death star {death_star}");
         }
     }
@@ -2280,24 +2227,13 @@ mod tests {
                 with_death_star(&mut world, system);
             }
             let agent = world.characters.insert(Character::default());
-            let mut missions = MissionState::new();
-            missions.dispatch(MissionRequest::single(
+            let missions = single_mission(
                 MissionKind::InciteUprising,
                 MissionFaction::Empire,
                 agent,
                 system,
-                None,
-                0,
-            ));
-            let mut state = in_revolt(system, 5);
-            let events = UprisingSystem::advance(
-                &mut state,
-                &world,
-                &short_of_troops(system, -1),
-                &missions,
-                &at(5),
-                &[0.0, 0.0, 0.0],
             );
+            let events = advance_incident(&world, system, &missions, &[0.0, 0.0, 0.0]);
             assert_eq!(incident(&events).2, expected, "{side:?} {death_star}");
         }
     }
@@ -2311,19 +2247,7 @@ mod tests {
         world.systems[system].total_energy = 9;
         add_mine(&mut world, system, true);
         add_mine(&mut world, system, false);
-        let defense = world.defense_facilities.insert(DefenseFacilityInstance {
-            class_dat_id: DatId::new(0x2200_0001),
-            side: crate::dat::Faction::Alliance,
-        });
-        world.systems[system].defense_facilities.push(defense);
-        let yard = world
-            .manufacturing_facilities
-            .insert(ManufacturingFacilityInstance {
-                class_dat_id: DatId::new(0x2800_0001),
-                side: crate::dat::Faction::Empire,
-                is_shipyard: true,
-            });
-        world.systems[system].manufacturing_facilities.push(yard);
+        add_disaster_facilities(&mut world, system);
         add_regiment(&mut world, system, 0x1000_0002, true);
         let mut state = in_revolt(system, 5);
         state.next_disaster_tick = Some(5);
@@ -2363,7 +2287,7 @@ mod tests {
             &[],
             &[0.0],
         );
-        assert!(events.is_empty());
+        assert_empty!(events);
         assert_eq!(state.active_uprisings[&system].next_incident_tick, Some(0));
         assert_eq!(state.next_disaster_tick, Some(u64::MAX));
     }
@@ -2385,15 +2309,7 @@ mod tests {
         add_regiment(&mut world, system, STORMTROOPER_REGIMENT, true);
         add_regiment(&mut world, system, 0x1000_0002, true);
         add_regiment(&mut world, system, 0x1000_0008, false);
-        let mut state = in_revolt(system, 5);
-        let events = UprisingSystem::advance(
-            &mut state,
-            &world,
-            &short_of_troops(system, -1),
-            &MissionState::new(),
-            &at(5),
-            &[0.0, 0.0],
-        );
+        let events = advance_incident(&world, system, &MissionState::new(), &[0.0, 0.0]);
         assert_eq!(incident(&events).0, &[1, 0]);
     }
 
@@ -2441,27 +2357,16 @@ mod tests {
             current_system: None,
             ..at_system(true)
         });
-        let mut state = in_revolt(system, 5);
         // Score draws 1 + 2 (score 9: codes 1 and 3); code 1 has nothing to
         // pick; the last-candidate pick, a 39 under the 40 percent chance,
         // then the largest injury draws.
-        let events = UprisingSystem::advance(
-            &mut state,
+        let events = advance_incident(
             &world,
-            &short_of_troops(system, -1),
+            system,
             &MissionState::new(),
-            &at(5),
             &[0.0, 0.15, 0.999, d(39), 0.999, 0.999],
         );
-        let (codes, losses, _) = incident(&events);
-        assert_eq!(codes, &[1, 3]);
-        assert_eq!(
-            losses,
-            &[IncidentLoss::CharacterInjured {
-                character: agent,
-                injury: 70
-            }]
-        );
+        assert_injury(&events, agent);
     }
 
     #[test]
@@ -2480,15 +2385,7 @@ mod tests {
         };
         let _first = prisoner(&mut world);
         let second = prisoner(&mut world);
-        let mut state = in_revolt(system, 5);
-        let events = UprisingSystem::advance(
-            &mut state,
-            &world,
-            &short_of_troops(system, -1),
-            &MissionState::new(),
-            &at(5),
-            &[0.0, 0.35, 0.999],
-        );
+        let events = advance_incident(&world, system, &MissionState::new(), &[0.0, 0.35, 0.999]);
         let (codes, losses, _) = incident(&events);
         assert_eq!(codes, &[2, 4]);
         assert_eq!(losses, &[IncidentLoss::PrisonerFreed(second)]);
@@ -2516,15 +2413,7 @@ mod tests {
             None,
             0,
         ));
-        let mut state = in_revolt(system, 5);
-        let events = UprisingSystem::advance(
-            &mut state,
-            &world,
-            &short_of_troops(system, -1),
-            &missions,
-            &at(5),
-            &[0.0, 0.0],
-        );
+        let events = advance_incident(&world, system, &missions, &[0.0, 0.0]);
         assert_eq!(incident(&events).0, &[0, 0]);
     }
 

@@ -3,22 +3,12 @@
 use anyhow::{bail, Context};
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
-use rebellion_core::ai::{AIState, AiFaction};
-use rebellion_core::betrayal::BetrayalState;
-use rebellion_core::blockade::BlockadeState;
+use rebellion_core::ai::AiFaction;
 use rebellion_core::dat::Faction;
-use rebellion_core::economy::EconomyState;
 use rebellion_core::events::EventState;
 use rebellion_core::fog::{FogState, FogSystem};
-use rebellion_core::jedi::JediState;
-use rebellion_core::manufacturing::ManufacturingState;
-use rebellion_core::missions::MissionState;
-use rebellion_core::movement::MovementState;
-use rebellion_core::repair::RepairState;
-use rebellion_core::research::ResearchState;
-use rebellion_core::tick::{GameClock, GameSpeed};
+use rebellion_core::tick::GameSpeed;
 use rebellion_core::tuning::GameConfig;
-use rebellion_core::uprising::UprisingState;
 use rebellion_core::victory::VictoryState;
 use rebellion_core::world::{CampaignConfig, GameWorld, SeedOptions, VictoryConditions};
 
@@ -29,6 +19,7 @@ use crate::replay::{
     ReplayManifest, SimulationDataManifest,
 };
 use crate::save::{compute_state_fingerprint, SaveState};
+use crate::simulation::SimulationStates;
 
 pub const SEED42_FIXTURE_ID: &str = "seed42-v1";
 pub const SEED42_ARTIFACT_BYTES: &[u8] = include_bytes!("../tests/fixtures/replay_seed42_v1.json");
@@ -165,42 +156,30 @@ pub fn seed42_initial_state(world: GameWorld) -> anyhow::Result<SaveState> {
         .map(|(key, _)| key)
         .context("seed-42 fixture is missing the Empire headquarters")?;
 
-    let mut fog_alliance = FogState::new(Faction::Alliance);
-    let mut fog_empire = FogState::new(Faction::Empire);
-    FogSystem::seed(&mut fog_alliance, &world);
-    FogSystem::seed(&mut fog_empire, &world);
+    let mut states = SimulationStates::new(
+        AiFaction::Empire,
+        Faction::Alliance,
+        VictoryState::new(alliance_hq, empire_hq),
+    );
+    FogSystem::seed(&mut states.fog, &world);
+    let mut inactive_fog = FogState::new(Faction::Empire);
+    FogSystem::seed(&mut inactive_fog, &world);
     let mut events = EventState::new();
     rebellion_core::story_events::define_story_events(&mut events, &world);
     let options = seed42_seed_options();
+    states.events = events;
+    states.campaign_config =
+        CampaignConfig::from_seed_options(options, VictoryConditions::Standard);
 
-    Ok(SaveState {
+    Ok(SaveState::from_simulation(
         world,
-        clock: GameClock::new(),
-        manufacturing: ManufacturingState::new(),
-        missions: MissionState::new(),
-        events,
-        ai: AIState::new(AiFaction::Empire),
-        movement: MovementState::new(),
-        fog_alliance,
-        fog_empire,
-        player_is_alliance: true,
-        blockade: BlockadeState::new(),
-        uprising: UprisingState::new(),
-        research: ResearchState::new(),
-        jedi: JediState::new(),
-        victory: VictoryState::new(alliance_hq, empire_hq),
-        betrayal: BetrayalState::new(),
-        economy: EconomyState::default(),
-        sim_rng: Xoshiro256PlusPlus::seed_from_u64(SEED42_SEED),
-        ai2: None,
-        repair: RepairState::default(),
-        game_config: GameConfig::default(),
-        campaign_config: CampaignConfig::from_seed_options(options, VictoryConditions::Standard),
-        troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),
-        deliveries: rebellion_core::delivery::DeliveryState::default(),
-        player_agent: rebellion_core::agent_automation::PlayerAgent::default(),
-        stockpiles: rebellion_core::stockpiles::StockpileState::default(),
-    })
+        states,
+        inactive_fog,
+        true,
+        Xoshiro256PlusPlus::seed_from_u64(SEED42_SEED),
+        GameConfig::default(),
+        rebellion_core::agent_automation::PlayerAgent::default(),
+    ))
 }
 
 /// Reject a syntactically valid replay that is not the complete reviewed fixture.

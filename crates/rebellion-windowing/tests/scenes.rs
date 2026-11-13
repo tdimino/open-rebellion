@@ -1,66 +1,54 @@
+mod common;
+
 use std::collections::BTreeSet;
 
+use common::{control_focus, menu, open, window_focus as focus};
+
 use rebellion_windowing::{
-    BubblePolicy, CaptureCancelReason, Cardinality, ControlId, ExistingOpenPolicy, FocusOnOpen,
-    FocusRestoration, FocusTarget, InputPolicy, KeyboardRoute, OpenPlacement, PresentationPolicy,
-    RouteTarget, StackBand, SubjectId, WindowCommand, WindowError, WindowEvent, WindowId,
-    WindowKey, WindowKind, WindowManager, WindowOwner, WindowPolicy, WindowSpec, WindowTransition,
+    BubblePolicy, CaptureCancelReason, KeyboardRoute, OpenPlacement, RouteTarget, StackBand,
+    SubjectId, WindowCommand, WindowError, WindowEvent, WindowId, WindowKey, WindowKind,
+    WindowManager, WindowOwner, WindowSpec, WindowTransition,
 };
 
 fn detail(subject: u64) -> WindowSpec {
-    WindowSpec {
-        key: WindowKey::contextual(WindowKind::System, SubjectId::new(2, subject)),
-        owner: WindowOwner::StrategicRoot,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Subject { max_open: None },
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::RaiseRestore,
-            input: InputPolicy::Modeless,
-            presentation: PresentationPolicy::History,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
-    }
+    common::root_detail(WindowKind::System, subject)
 }
 
 fn modal() -> WindowSpec {
-    let mut spec = detail(0);
-    spec.key = WindowKey::singleton(WindowKind::Encyclopedia);
-    spec.policy.cardinality = Cardinality::Singleton;
-    spec.policy.existing = ExistingOpenPolicy::NoOp;
-    spec.policy.input = InputPolicy::StrategicModal;
-    spec.policy.presentation = PresentationPolicy::None;
-    spec
-}
-
-fn menu(owner: WindowId) -> WindowSpec {
-    let mut spec = modal();
-    spec.key = WindowKey::singleton(WindowKind::Menu);
-    spec.owner = WindowOwner::Window(owner);
-    spec.policy.band = StackBand::Transient;
-    spec.policy.placement = OpenPlacement::AboveOwner;
-    spec.policy.input = InputPolicy::DismissOnOutsidePress;
-    spec.policy.restoration = FocusRestoration::SavedMenuTarget;
-    spec
-}
-
-fn open(manager: &mut WindowManager, spec: WindowSpec) -> WindowId {
-    match manager.apply(WindowCommand::Open(spec)).unwrap().transition {
-        WindowTransition::Opened { id } => id,
-        other => panic!("expected a fresh window: {other:?}"),
-    }
-}
-
-fn focus(window: WindowId) -> FocusTarget {
-    FocusTarget {
-        window,
-        control: None,
-    }
+    common::modal(WindowKind::Encyclopedia)
 }
 
 fn target(window: WindowId) -> RouteTarget {
     RouteTarget::Window(focus(window))
+}
+
+fn owned_fleet_detail(owner: WindowId) -> WindowSpec {
+    let mut spec = detail(2);
+    spec.key = WindowKey::contextual(WindowKind::Fleet, SubjectId::new(2, 2));
+    spec.owner = WindowOwner::Window(owner);
+    spec
+}
+
+fn transient_fleet_detail(owner: WindowId) -> WindowSpec {
+    let mut spec = owned_fleet_detail(owner);
+    spec.policy.band = StackBand::Transient;
+    spec.policy.placement = OpenPlacement::AboveOwner;
+    spec
+}
+
+fn activate_and_assert(manager: &mut WindowManager, windows: &[WindowId]) {
+    manager
+        .set_active_windows(&windows.iter().copied().collect())
+        .unwrap();
+    assert_eq!(manager.begin_frame().paint_order(), windows);
+    assert_eq!(manager.validate(), Ok(()));
+}
+
+fn transient_scene(manager: &mut WindowManager) -> (WindowId, WindowId, WindowId) {
+    let owner = open(manager, detail(1));
+    let menu = open(manager, menu(owner));
+    let child = open(manager, transient_fleet_detail(menu));
+    (owner, menu, child)
 }
 
 #[test]
@@ -159,10 +147,7 @@ fn scene_unknown_id_preserves_membership_and_focus() {
     manager
         .set_active_windows(&BTreeSet::from([active]))
         .unwrap();
-    let control = FocusTarget {
-        window: active,
-        control: Some(ControlId(9)),
-    };
+    let control = control_focus(active, 9);
     manager.apply(WindowCommand::Focus(control)).unwrap();
     manager
         .apply(WindowCommand::CapturePointer(active))
@@ -189,10 +174,7 @@ fn unknown_active_member_rejects_scene_update_without_mutation() {
     let stale = open(&mut manager, detail(1));
     manager.reset_session();
     let current = open(&mut manager, detail(2));
-    let control = FocusTarget {
-        window: current,
-        control: Some(ControlId(7)),
-    };
+    let control = control_focus(current, 7);
     manager.apply(WindowCommand::Focus(control)).unwrap();
     assert_eq!(
         manager.set_active_windows(&BTreeSet::from([stale, current])),
@@ -272,12 +254,14 @@ fn scene_change_cancels_capture_before_focus_and_preserves_old_lease() {
     assert_eq!(manager.begin_frame().capture_owner(), None);
     assert_eq!(old.capture_owner(), Some(first));
     assert_eq!(old.pointer_route(&BTreeSet::new()).target, target(first));
-    assert!(manager.set_active_windows(&active).unwrap().is_empty());
-    assert!(manager
-        .apply(WindowCommand::ReleasePointer(first))
-        .unwrap()
-        .events
-        .is_empty());
+    assert_eq!(manager.set_active_windows(&active).unwrap(), Vec::new());
+    assert_eq!(
+        manager
+            .apply(WindowCommand::ReleasePointer(first))
+            .unwrap()
+            .events,
+        Vec::new()
+    );
     assert_eq!(manager.validate(), Ok(()));
 }
 
@@ -292,13 +276,13 @@ fn scene_membership_retains_dormant_history_and_new_opens_are_active() {
         .set_active_windows(&BTreeSet::from([active]))
         .unwrap();
     assert_eq!(manager.presentation_history(), &[hidden]);
-    assert!(manager.begin_frame().presentation_history().is_empty());
+    assert_eq!(manager.begin_frame().presentation_history(), []);
     assert_eq!(manager.id_for(detail(1).key), Some(hidden));
     let fresh = open(&mut manager, detail(3));
     assert_eq!(manager.begin_frame().paint_order(), &[active, fresh]);
     let view = manager.begin_frame().restrict_to(&BTreeSet::from([hidden]));
-    assert!(view.paint_order().is_empty());
-    assert!(view.presentation_history().is_empty());
+    assert_eq!(view.paint_order(), []);
+    assert_eq!(view.presentation_history(), []);
     manager
         .set_active_windows(&BTreeSet::from([active, fresh, hidden]))
         .unwrap();
@@ -371,11 +355,7 @@ fn active_modal_can_open_while_another_scenes_menu_is_dormant() {
         RouteTarget::BlockedBy(modal)
     );
     assert_eq!(manager.validate(), Ok(()));
-    manager
-        .set_active_windows(&BTreeSet::from([owner, dormant_menu]))
-        .unwrap();
-    assert_eq!(manager.begin_frame().paint_order(), &[owner, dormant_menu]);
-    assert_eq!(manager.validate(), Ok(()));
+    activate_and_assert(&mut manager, &[owner, dormant_menu]);
 }
 
 #[test]
@@ -401,11 +381,7 @@ fn reopening_an_owner_keeps_its_dormant_menu_in_the_transient_band() {
         assert_eq!(manager.visible_order().last(), Some(&dormant_menu));
         assert!(!manager.begin_frame().is_visible(dormant_menu));
         assert_eq!(manager.begin_frame().keyboard_route().target, target(modal));
-        manager
-            .set_active_windows(&BTreeSet::from([owner, dormant_menu]))
-            .unwrap();
-        assert_eq!(manager.begin_frame().paint_order(), &[owner, dormant_menu]);
-        assert_eq!(manager.validate(), Ok(()));
+        activate_and_assert(&mut manager, &[owner, dormant_menu]);
     }
 }
 
@@ -415,9 +391,7 @@ fn owner_reopen_rejects_an_incompatible_active_child_reorder_atomically() {
     let mut manager = WindowManager::new();
     let owner_spec = detail(1);
     let owner = open(&mut manager, owner_spec);
-    let mut child_spec = detail(2);
-    child_spec.key = WindowKey::contextual(WindowKind::Fleet, SubjectId::new(2, 2));
-    child_spec.owner = WindowOwner::Window(owner);
+    let child_spec = owned_fleet_detail(owner);
     let child = open(&mut manager, child_spec);
     let modal = open(&mut manager, modal());
     manager
@@ -441,14 +415,7 @@ fn modal_open_and_replace_reject_an_unrelated_active_transient_atomically() {
     // Break caught: an unrelated transient subtree is mistaken for modal ancestry.
     for replacing in [false, true] {
         let mut manager = WindowManager::new();
-        let owner = open(&mut manager, detail(1));
-        let menu = open(&mut manager, menu(owner));
-        let mut child_spec = detail(2);
-        child_spec.key = WindowKey::contextual(WindowKind::Fleet, SubjectId::new(2, 2));
-        child_spec.owner = WindowOwner::Window(menu);
-        child_spec.policy.band = StackBand::Transient;
-        child_spec.policy.placement = OpenPlacement::AboveOwner;
-        let child = open(&mut manager, child_spec);
+        let (owner, menu, child) = transient_scene(&mut manager);
         let old = open(&mut manager, detail(3));
         manager
             .set_active_windows(&BTreeSet::from([owner, menu, child]))
@@ -477,14 +444,7 @@ fn modal_open_and_replace_reject_an_unrelated_active_transient_atomically() {
 fn scene_update_rejects_active_children_that_only_borrow_dormant_owner_order() {
     // Break caught: owner position above a modal substitutes for actual modal ancestry.
     let mut manager = WindowManager::new();
-    let owner = open(&mut manager, detail(1));
-    let menu = open(&mut manager, menu(owner));
-    let mut child_spec = detail(2);
-    child_spec.key = WindowKey::contextual(WindowKind::Fleet, SubjectId::new(2, 2));
-    child_spec.owner = WindowOwner::Window(menu);
-    child_spec.policy.band = StackBand::Transient;
-    child_spec.policy.placement = OpenPlacement::AboveOwner;
-    let child = open(&mut manager, child_spec);
+    let (_, _, child) = transient_scene(&mut manager);
     manager.set_active_windows(&BTreeSet::new()).unwrap();
     let modal = open(&mut manager, modal());
     manager.apply(WindowCommand::CapturePointer(modal)).unwrap();
@@ -581,9 +541,7 @@ fn owner_reopen_with_mixed_band_modals_rejects_temporary_child_clamp_inversion()
     let mut owner_spec = detail(1);
     owner_spec.policy.band = StackBand::Low;
     let owner = open(&mut manager, owner_spec);
-    let mut child_spec = detail(2);
-    child_spec.key = WindowKey::contextual(WindowKind::Fleet, SubjectId::new(2, 2));
-    child_spec.owner = WindowOwner::Window(owner);
+    let child_spec = owned_fleet_detail(owner);
     let child = open(&mut manager, child_spec);
     let mut normal_spec = modal();
     normal_spec.owner = WindowOwner::Window(owner);

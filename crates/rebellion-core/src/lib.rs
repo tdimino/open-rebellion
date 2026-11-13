@@ -1,3 +1,35 @@
+// The original simulation mixes fixed-width counters with f32 calculations.
+// These casts preserve the game's truncation, wrapping and precision semantics;
+// replacing them with checked conversions would change recovered behavior.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+#[macro_export]
+#[allow(clippy::assert_is_empty)]
+macro_rules! assert_empty {
+    ($value:expr $(,)?) => {{
+        let value = &$value;
+        assert!(value.is_empty(), "expected an empty value, got {value:?}");
+    }};
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+#[macro_export]
+#[allow(clippy::assert_is_empty)]
+macro_rules! assert_not_empty {
+    ($value:expr $(,)?) => {{
+        let value = &$value;
+        assert!(!value.is_empty(), "expected a non-empty value");
+    }};
+}
+
 pub mod agent_automation;
 pub mod ai;
 pub mod ai_production;
@@ -37,6 +69,7 @@ pub mod movement;
 pub mod net_protocol;
 pub mod officer_rank;
 pub mod operation_report;
+pub mod ordering;
 pub mod post_battle;
 pub mod repair;
 pub mod research;
@@ -49,6 +82,9 @@ pub mod stockpiles;
 pub mod story_events;
 pub mod support_shift;
 pub mod tactical;
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support;
 pub mod tick;
 pub mod trace;
 pub mod troop_transport;

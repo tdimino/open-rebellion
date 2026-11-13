@@ -8,6 +8,7 @@ use macroquad::prelude::*;
 
 use crate::audio::AudioVolumeState;
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::native_geometry::NativeRect;
 
 const LOGICAL_WIDTH: f32 = 640.0;
 const LOGICAL_HEIGHT: f32 = 480.0;
@@ -108,29 +109,6 @@ enum GameOptionsControl {
     Restart,
     Return,
     Exit,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct NativeRect {
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-}
-
-impl NativeRect {
-    const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-
-    fn contains(self, x: f32, y: f32) -> bool {
-        x >= self.x && x < self.x + self.width && y >= self.y && y < self.y + self.height
-    }
 }
 
 // Control rectangles from the window's control constructor `FUN_00407180`.
@@ -369,8 +347,9 @@ impl GameOptionsState {
             }
             // FUN_00407180 never disables Restart (0x91): it is built with
             // its normal and pressed art only, in every context.
-            GameOptionsAction::Restart => true,
-            GameOptionsAction::Return | GameOptionsAction::Exit => true,
+            GameOptionsAction::Restart | GameOptionsAction::Return | GameOptionsAction::Exit => {
+                true
+            }
             GameOptionsAction::None => false,
         }
     }
@@ -1219,7 +1198,7 @@ mod tests {
                         pos,
                         button: egui::PointerButton::Primary,
                         pressed,
-                        modifiers: Default::default(),
+                        modifiers: egui::Modifiers::default(),
                     });
                 }
                 let _ = ctx.run(
@@ -1255,15 +1234,7 @@ mod tests {
         let dir = root.join("common-dll/BMP");
         std::fs::create_dir_all(&dir).unwrap();
         let (width, height, stride, offset) = (19usize, 35usize, 20usize, 1078usize);
-        let mut bmp = vec![0u8; offset + stride * height];
-        bmp[..2].copy_from_slice(b"BM");
-        bmp[10..14].copy_from_slice(&(offset as u32).to_le_bytes());
-        bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
-        bmp[18..22].copy_from_slice(&(width as i32).to_le_bytes());
-        bmp[22..26].copy_from_slice(&(height as i32).to_le_bytes());
-        bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
-        bmp[28..30].copy_from_slice(&8u16.to_le_bytes());
-        bmp[offset..].fill(3);
+        let mut bmp = crate::test_support::bitmap_fixture(width, height, stride, offset, 8, 3);
         bmp[offset] = 7;
         bmp[offset + (height - 2) * stride + 1] = 7;
         std::fs::write(dir.join("10040.bmp"), bmp).unwrap();

@@ -18,6 +18,7 @@ use rebellion_render::{
 };
 use serde::Serialize;
 
+use crate::interface_fixture_bridge;
 use crate::tactical_flow::{self, BattleEntry};
 use crate::GameMode;
 
@@ -108,12 +109,11 @@ impl TacticalLodFixture {
     }
 }
 
-extern "C" {
-    fn open_rebellion_interface_fixture_code() -> u32;
-    fn open_rebellion_interface_fixture_emit(ptr: *const u8, len: usize);
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The browser fixture wire format records independent requested proof flags."
+)]
 pub(crate) struct TacticalFixtureRequest {
     pub faction: CockpitFaction,
     pub code: u32,
@@ -250,17 +250,6 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             false,
             TacticalLodFixture::CameraJourney,
         ),
-        PRODUCTION_PARTICIPANTS_SCENARIO => (
-            false,
-            true,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            TacticalLodFixture::Default,
-        ),
         PRODUCTION_PARTICIPANTS_CONTROL_SCENARIO => (
             false,
             false,
@@ -327,29 +316,10 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
             true,
             TacticalLodFixture::Default,
         ),
-        SUBSYSTEM_FIELD_COMMAND_PRESENTATION_SCENARIO => (
-            false,
-            true,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            TacticalLodFixture::Default,
-        ),
-        LIVE_SUBSYSTEM_DAMAGE_PRESENTATION_SCENARIO => (
-            false,
-            true,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            TacticalLodFixture::Default,
-        ),
-        SUBSYSTEM_REPAIR_MOBILITY_PRESENTATION_SCENARIO
+        PRODUCTION_PARTICIPANTS_SCENARIO
+        | SUBSYSTEM_FIELD_COMMAND_PRESENTATION_SCENARIO
+        | LIVE_SUBSYSTEM_DAMAGE_PRESENTATION_SCENARIO
+        | SUBSYSTEM_REPAIR_MOBILITY_PRESENTATION_SCENARIO
         | MANEUVER_MOVEMENT_PRESENTATION_SCENARIO
         | COMMAND_ASSIGNMENT_PRESENTATION_SCENARIO
         | COMMAND_EXECUTION_PRESENTATION_SCENARIO
@@ -459,12 +429,12 @@ fn decode(code: u32) -> Option<TacticalFixtureRequest> {
 }
 
 pub(crate) fn requested() -> Option<TacticalFixtureRequest> {
-    decode(unsafe { open_rebellion_interface_fixture_code() })
+    decode(interface_fixture_bridge::requested_code())
 }
 
 /// Add a minimal opposing encounter and enter it through the same function as
 /// campaign-triggered battles. This function is not compiled into production.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep every mutated campaign state explicit at this test-only bridge."
 )]
@@ -679,38 +649,25 @@ fn synthetic_encounter(
         })
         .map(|(key, _)| key)
         .ok_or("fixture system is not empty and intact")?;
-    let alliance_ship = world
-        .capital_ship_classes
-        .iter()
-        .find(|(_, class)| {
-            class.is_alliance
-                && !class.is_empire
-                && class.hull > 0
-                && (!request.battle_options_presentation || class.hyperdrive > 0)
-                && (!(request.command_execution_presentation
-                    || request.command_progression_presentation
-                    || request.attack_targeting_presentation
-                    || request.attack_target_lifecycle_presentation)
-                    || class.fighter_capacity > 0)
-        })
-        .map(|(key, class)| (key, class.hull))
-        .ok_or("no Alliance capital-ship class")?;
-    let empire_ship = world
-        .capital_ship_classes
-        .iter()
-        .find(|(_, class)| {
-            class.is_empire
-                && !class.is_alliance
-                && class.hull > 0
-                && (!request.battle_options_presentation || class.hyperdrive > 0)
-                && (!(request.command_execution_presentation
-                    || request.command_progression_presentation
-                    || request.attack_targeting_presentation
-                    || request.attack_target_lifecycle_presentation)
-                    || class.fighter_capacity > 0)
-        })
-        .map(|(key, class)| (key, class.hull))
-        .ok_or("no Imperial capital-ship class")?;
+    let capital_ship = |is_alliance| {
+        world
+            .capital_ship_classes
+            .iter()
+            .find(|(_, class)| {
+                class.is_alliance == is_alliance
+                    && class.is_empire != is_alliance
+                    && class.hull > 0
+                    && (!request.battle_options_presentation || class.hyperdrive > 0)
+                    && (!(request.command_execution_presentation
+                        || request.command_progression_presentation
+                        || request.attack_targeting_presentation
+                        || request.attack_target_lifecycle_presentation)
+                        || class.fighter_capacity > 0)
+            })
+            .map(|(key, class)| (key, class.hull))
+    };
+    let alliance_ship = capital_ship(true).ok_or("no Alliance capital-ship class")?;
+    let empire_ship = capital_ship(false).ok_or("no Imperial capital-ship class")?;
     // The Imperial fleet has the Death Star when it holds the family-0x18
     // ship (`FUN_005003d0`); the battle raises the station from it.
     let death_star_ship = if request.death_star_presentation {
@@ -741,7 +698,7 @@ fn synthetic_encounter(
                       ship: CapitalShipKey,
                       hull: u32,
                       fighter: Option<FighterKey>| {
-        let expanded = request.projectile_field_presentation
+        let expanded_base = request.projectile_field_presentation
             || request.detail_escort_presentation
             || request.subsystem_field_command_presentation
             || request.live_subsystem_damage_presentation
@@ -753,25 +710,13 @@ fn synthetic_encounter(
             || request.attack_target_lifecycle_presentation
             || request.battle_results_presentation
             || request.selected_navigation_presentation
-            || request.navigation_camera_presentation
+            || request.navigation_camera_presentation;
+        let expanded = expanded_base
             || ((request.group_presentation || request.effect_presentation)
                 && is_alliance == player_is_alliance);
         let ship_count = if request.battle_options_withdrawal {
             2
-        } else if request.projectile_field_presentation
-            || request.detail_escort_presentation
-            || request.subsystem_field_command_presentation
-            || request.live_subsystem_damage_presentation
-            || request.subsystem_repair_mobility_presentation
-            || request.maneuver_movement_presentation
-            || request.command_execution_presentation
-            || request.command_progression_presentation
-            || request.attack_targeting_presentation
-            || request.attack_target_lifecycle_presentation
-            || request.battle_results_presentation
-            || request.selected_navigation_presentation
-            || request.navigation_camera_presentation
-        {
+        } else if expanded_base {
             3
         } else if request.effect_presentation && expanded {
             6
@@ -802,16 +747,18 @@ fn synthetic_encounter(
                     ShipInstance::new(ship, i32::try_from(hull).unwrap_or(i32::MAX), is_alliance)
                 })
                 .collect(),
-            fighters: fighter
-                .map(|class| {
-                    (0..fighter_count)
-                        // `FighterEntry::count` is the number of strategic
-                        // squadrons. `FIGHTSD.squadron_size` supplies the
-                        // twelve craft inside each tactical object.
-                        .map(|_| FighterEntry { class, count: 1, carrier: 0 })
-                        .collect()
-                })
-                .unwrap_or_default(),
+            fighters: fighter.map_or_else(Vec::new, |class| {
+                (0..fighter_count)
+                    // `FighterEntry::count` is the number of strategic
+                    // squadrons. `FIGHTSD.squadron_size` supplies the
+                    // twelve craft inside each tactical object.
+                    .map(|_| FighterEntry {
+                        class,
+                        count: 1,
+                        carrier: 0,
+                    })
+                    .collect()
+            }),
             characters: vec![],
             is_alliance,
             bombarding: false,
@@ -1210,6 +1157,10 @@ fn coruscant_transit_day149_encounter(
 }
 
 #[derive(Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The serialized fixture record reports independent observed proof flags."
+)]
 struct FixtureRecord<'a> {
     schema_version: u32,
     status: &'a str,
@@ -1276,6 +1227,80 @@ struct FixtureRecord<'a> {
     selected_ship: Option<FixtureSelectedShip<'a>>,
     death_star: Option<FixtureDeathStar>,
     error: Option<&'a str>,
+}
+
+fn fixture_record<'a>(
+    request: TacticalFixtureRequest,
+    status: &'a str,
+    error: Option<&'a str>,
+) -> FixtureRecord<'a> {
+    FixtureRecord {
+        schema_version: 38,
+        status,
+        family: "tactical",
+        fixture_code: request.code,
+        faction: if request.faction == CockpitFaction::Alliance {
+            "alliance"
+        } else {
+            "empire"
+        },
+        proof_enabled: request.proof_enabled,
+        production_participants: request.production_participants,
+        suppress_capital_fallback: request.suppress_capital_fallback,
+        focus_player_fighter: request.focus_player_fighter,
+        group_presentation: request.group_presentation,
+        effect_presentation: request.effect_presentation,
+        projectile_field_presentation: request.projectile_field_presentation,
+        selected_damage_presentation: request.selected_damage_presentation,
+        selected_navigation_presentation: request.selected_navigation_presentation,
+        navigation_camera_presentation: request.navigation_camera_presentation,
+        empty_space_presentation: request.empty_space_presentation,
+        detail_escort_presentation: request.detail_escort_presentation,
+        battle_alert_presentation: request.battle_alert_presentation,
+        tactical_audio_presentation: request.tactical_audio_presentation,
+        battle_alert_open: false,
+        tactical_music_mdata_id: None,
+        tactical_weapon_audio_wave_first: 13_033,
+        tactical_weapon_audio_wave_last: 13_054,
+        tactical_weapon_audio_variant_count: 22,
+        tactical_voice_variant_count: 285,
+        subsystem_field_command_presentation: request.subsystem_field_command_presentation,
+        live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
+        subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
+        maneuver_movement_presentation: request.maneuver_movement_presentation,
+        command_assignment_presentation: request.command_assignment_presentation,
+        command_execution_presentation: request.command_execution_presentation,
+        command_progression_presentation: request.command_progression_presentation,
+        attack_targeting_presentation: request.attack_targeting_presentation,
+        attack_target_lifecycle_presentation: request.attack_target_lifecycle_presentation,
+        death_star_presentation: request.death_star_presentation,
+        battle_results_presentation: request.battle_results_presentation,
+        battle_options_presentation: request.battle_options_presentation,
+        battle_options_withdrawal: request.battle_options_withdrawal,
+        death_star_laser_journey: request.death_star_laser_journey,
+        trench_run_outcome: None,
+        trench_run_remaining_ms: None,
+        trench_run_group: None,
+        tactical_rng_state: 0,
+        tactical_lod: request.lod_fixture.label(),
+        system: "",
+        system_picture_id: 0,
+        planet_resource_id: 0,
+        palette_resource_id: 0,
+        attacker_ships: 0,
+        defender_ships: 0,
+        fighters: 0,
+        source_layout: None,
+        controls: Vec::new(),
+        participants: Vec::new(),
+        effects: Vec::new(),
+        projectiles: Vec::new(),
+        fields: Vec::new(),
+        subsystem_repairs: Vec::new(),
+        selected_ship: None,
+        death_star: None,
+        error,
+    }
 }
 
 #[derive(Serialize)]
@@ -1629,7 +1654,7 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
             class_dat_id: ship.identity.class_dat_id.index(),
             hud_resource: ship
                 .tactical_resource
-                .map(|resource| resource.hud_resource()),
+                .map(rebellion_render::TacticalCapitalShipResource::hud_resource),
             hull_current: ship.hull_current,
             hull_max: ship.hull_max,
             shield_current: ship.shield,
@@ -1706,52 +1731,11 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         ],
     });
     emit(&FixtureRecord {
-        schema_version: 38,
-        status: "battle-ready",
-        family: "tactical",
-        fixture_code: request.code,
-        faction: if request.faction == CockpitFaction::Alliance {
-            "alliance"
-        } else {
-            "empire"
-        },
-        proof_enabled: request.proof_enabled,
-        production_participants: request.production_participants,
-        suppress_capital_fallback: request.suppress_capital_fallback,
-        focus_player_fighter: request.focus_player_fighter,
-        group_presentation: request.group_presentation,
-        effect_presentation: request.effect_presentation,
-        projectile_field_presentation: request.projectile_field_presentation,
-        selected_damage_presentation: request.selected_damage_presentation,
-        selected_navigation_presentation: request.selected_navigation_presentation,
-        navigation_camera_presentation: request.navigation_camera_presentation,
-        empty_space_presentation: request.empty_space_presentation,
-        detail_escort_presentation: request.detail_escort_presentation,
-        battle_alert_presentation: request.battle_alert_presentation,
-        tactical_audio_presentation: request.tactical_audio_presentation,
         battle_alert_open: tactical.battle_alert_open(),
         tactical_music_mdata_id: tactical.battle_alert_open().then(|| {
             let alliance = request.faction == CockpitFaction::Alliance;
             300 + u32::from(rebellion_render::MdataTrack::battle_alert(alliance).index())
         }),
-        tactical_weapon_audio_wave_first: 13_033,
-        tactical_weapon_audio_wave_last: 13_054,
-        tactical_weapon_audio_variant_count: 22,
-        tactical_voice_variant_count: 285,
-        subsystem_field_command_presentation: request.subsystem_field_command_presentation,
-        live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
-        subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
-        maneuver_movement_presentation: request.maneuver_movement_presentation,
-        command_assignment_presentation: request.command_assignment_presentation,
-        command_execution_presentation: request.command_execution_presentation,
-        command_progression_presentation: request.command_progression_presentation,
-        attack_targeting_presentation: request.attack_targeting_presentation,
-        attack_target_lifecycle_presentation: request.attack_target_lifecycle_presentation,
-        death_star_presentation: request.death_star_presentation,
-        battle_results_presentation: request.battle_results_presentation,
-        battle_options_presentation: request.battle_options_presentation,
-        battle_options_withdrawal: request.battle_options_withdrawal,
-        death_star_laser_journey: request.death_star_laser_journey,
         trench_run_outcome: session.trench_run_outcome.map(|outcome| match outcome {
             TacticalTrenchRunOutcome::Success => "success",
             TacticalTrenchRunOutcome::Failure => "failure",
@@ -1759,7 +1743,6 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         trench_run_remaining_ms: session.trench_run_remaining_ms,
         trench_run_group: session.trench_run_group,
         tactical_rng_state: session.tactical_rng.state(),
-        tactical_lod: request.lod_fixture.label(),
         system: &session.system_name,
         system_picture_id: session.system_picture_id,
         planet_resource_id: 5500 + u32::from(session.system_picture_id),
@@ -1788,88 +1771,60 @@ pub(crate) fn emit_ready(request: TacticalFixtureRequest, tactical: &TacticalSta
         subsystem_repairs,
         selected_ship,
         death_star,
-        error: None,
+        ..fixture_record(request, "battle-ready", None)
     });
 }
 
 pub(crate) fn emit_failed(request: TacticalFixtureRequest, error: &str) {
-    emit(&FixtureRecord {
-        schema_version: 38,
-        status: "failed",
-        family: "tactical",
-        fixture_code: request.code,
-        faction: if request.faction == CockpitFaction::Alliance {
-            "alliance"
-        } else {
-            "empire"
-        },
-        proof_enabled: request.proof_enabled,
-        production_participants: request.production_participants,
-        suppress_capital_fallback: request.suppress_capital_fallback,
-        focus_player_fighter: request.focus_player_fighter,
-        group_presentation: request.group_presentation,
-        effect_presentation: request.effect_presentation,
-        projectile_field_presentation: request.projectile_field_presentation,
-        selected_damage_presentation: request.selected_damage_presentation,
-        selected_navigation_presentation: request.selected_navigation_presentation,
-        navigation_camera_presentation: request.navigation_camera_presentation,
-        empty_space_presentation: request.empty_space_presentation,
-        detail_escort_presentation: request.detail_escort_presentation,
-        battle_alert_presentation: request.battle_alert_presentation,
-        tactical_audio_presentation: request.tactical_audio_presentation,
-        battle_alert_open: false,
-        tactical_music_mdata_id: None,
-        tactical_weapon_audio_wave_first: 13_033,
-        tactical_weapon_audio_wave_last: 13_054,
-        tactical_weapon_audio_variant_count: 22,
-        tactical_voice_variant_count: 285,
-        subsystem_field_command_presentation: request.subsystem_field_command_presentation,
-        live_subsystem_damage_presentation: request.live_subsystem_damage_presentation,
-        subsystem_repair_mobility_presentation: request.subsystem_repair_mobility_presentation,
-        maneuver_movement_presentation: request.maneuver_movement_presentation,
-        command_assignment_presentation: request.command_assignment_presentation,
-        command_execution_presentation: request.command_execution_presentation,
-        command_progression_presentation: request.command_progression_presentation,
-        attack_targeting_presentation: request.attack_targeting_presentation,
-        attack_target_lifecycle_presentation: request.attack_target_lifecycle_presentation,
-        death_star_presentation: request.death_star_presentation,
-        battle_results_presentation: request.battle_results_presentation,
-        battle_options_presentation: request.battle_options_presentation,
-        battle_options_withdrawal: request.battle_options_withdrawal,
-        death_star_laser_journey: request.death_star_laser_journey,
-        trench_run_outcome: None,
-        trench_run_remaining_ms: None,
-        trench_run_group: None,
-        tactical_rng_state: 0,
-        tactical_lod: request.lod_fixture.label(),
-        system: "",
-        system_picture_id: 0,
-        planet_resource_id: 0,
-        palette_resource_id: 0,
-        attacker_ships: 0,
-        defender_ships: 0,
-        fighters: 0,
-        source_layout: None,
-        controls: Vec::new(),
-        participants: Vec::new(),
-        effects: Vec::new(),
-        projectiles: Vec::new(),
-        fields: Vec::new(),
-        subsystem_repairs: Vec::new(),
-        selected_ship: None,
-        death_star: None,
-        error: Some(error),
-    });
+    emit(&fixture_record(request, "failed", Some(error)));
 }
 
 fn emit(record: &FixtureRecord<'_>) {
-    let bytes = serde_json::to_vec(record).expect("serialize tactical fixture record");
-    unsafe { open_rebellion_interface_fixture_emit(bytes.as_ptr(), bytes.len()) };
+    interface_fixture_bridge::emit(record);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn saved_world(
+        ship_indices: &[u32],
+        control: ControlKind,
+        squadron_is_alliance: bool,
+    ) -> (GameWorld, SystemKey, FighterKey) {
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(rebellion_core::world::System {
+            name: "Coruscant".into(),
+            control,
+            ..Default::default()
+        });
+        for &index in ship_indices {
+            world
+                .capital_ship_classes
+                .insert(rebellion_core::world::CapitalShipClass {
+                    dat_id: rebellion_core::ids::DatId::new(0x1400_0000 | index),
+                    hull: 100,
+                    ..Default::default()
+                });
+        }
+        let tie = world
+            .fighter_classes
+            .insert(rebellion_core::world::FighterClass {
+                dat_id: rebellion_core::ids::DatId::new(0x1c00_0005),
+                ..Default::default()
+            });
+        let seeded = world.fleets.insert(Fleet {
+            location: system,
+            capital_ships: vec![],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance: false,
+            bombarding: false,
+        });
+        world.systems[system].fleets.push(seeded);
+        world.systems[system].add_squadrons(tie, 2, squadron_is_alliance);
+        (world, system, tie)
+    }
 
     #[test]
     fn tactical_codes_are_versioned_and_do_not_accept_gid_codes() {
@@ -1963,35 +1918,7 @@ mod tests {
 
     #[test]
     fn a_saved_fleet_alone_holds_coruscant_with_each_squadron_aboard_its_own_ship() {
-        use rebellion_core::ids::DatId;
-        use rebellion_core::world::{CapitalShipClass, FighterClass, System};
-
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System {
-            name: "Coruscant".into(),
-            ..Default::default()
-        });
-        for index in [0x85, 0x88] {
-            world.capital_ship_classes.insert(CapitalShipClass {
-                dat_id: DatId::new(0x1400_0000 | index),
-                hull: 100,
-                ..Default::default()
-            });
-        }
-        let tie = world.fighter_classes.insert(FighterClass {
-            dat_id: DatId::new(0x1c00_0005),
-            ..Default::default()
-        });
-        let seeded = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        world.systems[system].fleets.push(seeded);
-        world.systems[system].add_squadrons(tie, 2, false);
+        let (mut world, system, tie) = saved_world(&[0x85, 0x88], ControlKind::Uncontrolled, false);
 
         let coruscant = saved_coruscant(&mut world, Faction::Empire).unwrap();
         let fleet = saved_fleet(
@@ -2047,36 +1974,11 @@ mod tests {
     /// Medium Transport 1, `0x46`) is bound there from Ithor with no squadron.
     #[test]
     fn the_transit_save_battle_brings_alliance_fleet_1_against_tyrant_and_judicator() {
-        use rebellion_core::ids::DatId;
-        use rebellion_core::world::{CapitalShipClass, FighterClass, System};
-
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System {
-            name: "Coruscant".into(),
-            control: ControlKind::Controlled(Faction::Alliance),
-            ..Default::default()
-        });
-        for index in [0x45, 0x46, 0x84, 0x85] {
-            world.capital_ship_classes.insert(CapitalShipClass {
-                dat_id: DatId::new(0x1400_0000 | index),
-                hull: 100,
-                ..Default::default()
-            });
-        }
-        let tie = world.fighter_classes.insert(FighterClass {
-            dat_id: DatId::new(0x1c00_0005),
-            ..Default::default()
-        });
-        let seeded = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        world.systems[system].fleets.push(seeded);
-        world.systems[system].add_squadrons(tie, 2, true);
+        let (mut world, system, tie) = saved_world(
+            &[0x45, 0x46, 0x84, 0x85],
+            ControlKind::Controlled(Faction::Alliance),
+            true,
+        );
 
         let (coruscant, attacker, defender) =
             coruscant_transit_day149_encounter(&mut world).unwrap();

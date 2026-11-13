@@ -102,7 +102,7 @@ pub const fn ending_movie(code: u8) -> Option<u8> {
 /// The intro, the first movie at the start of the program (`FUN_00414830`,
 /// state 1).
 pub const INTRO: u8 = 0x65;
-/// The Credits movie the main menu's LucasArts logo plays (`FUN_00406000`,
+/// The Credits movie the main menu's `LucasArts` logo plays (`FUN_00406000`,
 /// control `0x73`).
 pub const CREDITS: u8 = 0x6e;
 
@@ -270,7 +270,7 @@ pub fn clear_for_movie(
 }
 
 /// The movie window's caption field (`FUN_00421790`, `WM_CREATE`): a
-/// TextScrollField at (4, 404), 580 by 70, in the 640 by 480 window, white
+/// `TextScrollField` at (4, 404), 580 by 70, in the 640 by 480 window, white
 /// (`0x2ffffff`) font 4, made only for a caption.
 const CAPTION: (f32, f32, f32, f32) = (4.0, 404.0, 580.0, 70.0);
 /// The movie window's logical size.
@@ -565,17 +565,18 @@ mod tests {
         }
     }
 
+    fn assert_message_ready(queue: &mut MovieQueue, message: MessageMovie) {
+        assert_eq!(queue.next(false), None);
+        assert_eq!(queue.next(true), Some(Showing::Message(message)));
+    }
+
     #[test]
     fn message_movies_wait_for_a_free_window_then_play_in_filing_order() {
         // FUN_00422ce0 0x482: the modal pump waits on FUN_00601340;
         // FUN_00488b90 plays the head of list +0x28.
         let mut queue = MovieQueue::default();
         queue.file([movie(HEADQUARTERS_DESTROYED), movie(CORUSCANT_CAPTURED)]);
-        assert_eq!(queue.next(false), None);
-        assert_eq!(
-            queue.next(true),
-            Some(Showing::Message(movie(HEADQUARTERS_DESTROYED)))
-        );
+        assert_message_ready(&mut queue, movie(HEADQUARTERS_DESTROYED));
         assert_eq!(
             queue.next(true),
             Some(Showing::Message(movie(CORUSCANT_CAPTURED)))
@@ -596,11 +597,7 @@ mod tests {
             let mut queue = MovieQueue::default();
             queue.end(word, viewer);
             queue.file([movie(HEADQUARTERS_DESTROYED)]);
-            assert_eq!(queue.next(false), None);
-            assert_eq!(
-                queue.next(true),
-                Some(Showing::Message(movie(HEADQUARTERS_DESTROYED)))
-            );
+            assert_message_ready(&mut queue, movie(HEADQUARTERS_DESTROYED));
             assert_eq!(queue.next(true), Some(Showing::Ending(ending)));
             assert_eq!(queue.next(true), None);
         }

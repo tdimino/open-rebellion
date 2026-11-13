@@ -13,17 +13,18 @@ use rebellion_core::ids::SystemKey;
 use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember, MissionTarget};
 use rebellion_core::research::TechType;
 use rebellion_core::world::GameWorld;
-use rebellion_windowing::{
-    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, SubjectId, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
-};
+use rebellion_windowing::{ExistingEffect, WindowId, WindowKind, WindowTransition};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
+use crate::list_control::wheel_step;
+use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::sector_window::planet_resource_id;
-use crate::system_window::{
-    character_mini_resource_id, exact_clicked, logical_rect, rect_contains, special_force_mini,
+use crate::singleton_window_common::{
+    self, impl_singleton_content_reports, impl_singleton_window_routing, PreparedContextualWindow,
+    PreparedWindowConfirm,
 };
+use crate::system_window::{character_mini_resource_id, special_force_mini};
 
 pub const MISSION_DIALOG_WIDTH: f32 = 259.0;
 pub const MISSION_DIALOG_HEIGHT: f32 = 355.0;
@@ -183,42 +184,11 @@ pub struct MissionDialogState {
 /// Validated Mission content kept inert until the manager accepts its fresh
 /// command-context identity. A valid logical open replaces the exact prior
 /// dialog atomically; invalid preparation leaves published content untouched.
-#[derive(Debug, Clone)]
-pub struct PreparedMissionDialog {
-    dialog: MissionDialog,
-    replacing: Option<WindowId>,
-}
-
-impl PreparedMissionDialog {
-    #[must_use]
-    pub fn spec(&self, subject: SubjectId) -> WindowSpec {
-        crate::windowing_policy::contextual_spec(
-            WindowKind::MissionDialog,
-            subject,
-            WindowOwner::StrategicRoot,
-        )
-    }
-
-    #[must_use]
-    pub const fn replacing(&self) -> Option<WindowId> {
-        self.replacing
-    }
-}
+pub type PreparedMissionDialog = PreparedContextualWindow<MissionDialog>;
 
 /// Exact Mission confirmation candidate paired with one manager close. It is
 /// gameplay-free and can be released only by the matching teardown receipt.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedMissionDialogConfirm {
-    window: WindowId,
-    action: MissionDialogAction,
-}
-
-impl PreparedMissionDialogConfirm {
-    #[must_use]
-    pub const fn window_id(&self) -> WindowId {
-        self.window
-    }
-}
+pub type PreparedMissionDialogConfirm = PreparedWindowConfirm<MissionDialogAction>;
 
 impl MissionDialogState {
     /// Prepares publication of an existing legacy dialog that has no manager
@@ -226,10 +196,14 @@ impl MissionDialogState {
     #[must_use]
     pub fn prepare_adoption(&self) -> Option<PreparedMissionDialog> {
         let dialog = self.dialog.as_ref()?.clone();
-        dialog.window_id.is_none().then_some(PreparedMissionDialog {
-            dialog,
-            replacing: None,
-        })
+        dialog
+            .window_id
+            .is_none()
+            .then_some(PreparedMissionDialog::new(
+                dialog,
+                None,
+                WindowKind::MissionDialog,
+            ))
     }
 
     /// Prepares a fresh logical Mission context without changing the currently
@@ -247,8 +221,8 @@ impl MissionDialogState {
         if kinds.is_empty() || team.is_empty() {
             return None;
         }
-        Some(PreparedMissionDialog {
-            dialog: MissionDialog {
+        Some(PreparedMissionDialog::new(
+            MissionDialog {
                 window_id: None,
                 faction,
                 target,
@@ -263,8 +237,9 @@ impl MissionDialogState {
                 decoys_row: 0,
                 object,
             },
-            replacing: self.window_id(),
-        })
+            self.window_id(),
+            WindowKind::MissionDialog,
+        ))
     }
 
     /// Publishes prepared content only for the exact open/replacement receipt.
@@ -276,21 +251,21 @@ impl MissionDialogState {
     ) -> Option<WindowId> {
         match *transition {
             WindowTransition::Opened { id }
-                if prepared.replacing.is_none()
+                if prepared.replacing().is_none()
                     && (self.dialog.is_none()
                         || self.dialog.as_ref().is_some_and(|dialog| {
-                            dialog.window_id.is_none() && dialog == &prepared.dialog
+                            dialog.window_id.is_none() && dialog == &prepared.content
                         })) =>
             {
-                prepared.dialog.window_id = Some(id);
-                self.dialog = Some(prepared.dialog);
+                prepared.content.window_id = Some(id);
+                self.dialog = Some(prepared.content);
                 Some(id)
             }
             WindowTransition::Replaced { old, new }
-                if self.window_id() == Some(old) && prepared.replacing == Some(old) =>
+                if self.window_id() == Some(old) && prepared.replacing() == Some(old) =>
             {
-                prepared.dialog.window_id = Some(new);
-                self.dialog = Some(prepared.dialog);
+                prepared.content.window_id = Some(new);
+                self.dialog = Some(prepared.content);
                 Some(new)
             }
             WindowTransition::Existing {
@@ -305,68 +280,6 @@ impl MissionDialogState {
     #[must_use]
     pub fn window_id(&self) -> Option<WindowId> {
         self.dialog.as_ref().and_then(|dialog| dialog.window_id)
-    }
-
-    /// Egui layer attached to the exact manager-issued Mission Dialog.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id() == Some(id)).then(|| {
-            egui::LayerId::new(
-                egui::Order::Tooltip,
-                egui::Id::new("original-mission-dialog"),
-            )
-        })
-    }
-
-    /// Manager-owned Mission hit for event-local pointer routing.
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id()?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::MissionDialog)
-            && frame.allows_input(id)
-            && rect_contains(dialog_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    /// Exact manager identity holding this frame's keyboard lease.
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id()?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
-
-    /// Explicit content state for fail-closed manager reconciliation.
-    #[must_use]
-    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::MissionDialog)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id() == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
     }
 
     #[must_use]
@@ -385,10 +298,10 @@ impl MissionDialogState {
     #[must_use]
     pub fn prepare_confirm(&self) -> Option<PreparedMissionDialogConfirm> {
         let dialog = self.dialog.as_ref()?;
-        Some(PreparedMissionDialogConfirm {
-            window: dialog.window_id?,
-            action: dialog.begin_action(),
-        })
+        Some(PreparedMissionDialogConfirm::new(
+            dialog.window_id?,
+            dialog.begin_action(),
+        ))
     }
 
     /// Consumes one confirmation only after the exact manager close and while
@@ -398,15 +311,16 @@ impl MissionDialogState {
         prepared: PreparedMissionDialogConfirm,
         removed: &[WindowId],
     ) -> Option<MissionDialogAction> {
-        if !removed.contains(&prepared.window) {
+        let (window, action) = prepared.into_parts();
+        if !removed.contains(&window) {
             return None;
         }
         let dialog = self.dialog.as_ref()?;
-        if dialog.window_id != Some(prepared.window) || dialog.begin_action() != prepared.action {
+        if dialog.window_id != Some(window) || dialog.begin_action() != action {
             return None;
         }
         self.dialog = None;
-        Some(prepared.action)
+        Some(action)
     }
 
     /// Open the dialog for an order's team and target (a system, or an object
@@ -443,33 +357,6 @@ impl MissionDialogState {
         true
     }
 
-    #[must_use]
-    pub fn is_open(&self) -> bool {
-        self.dialog.is_some()
-    }
-
-    #[must_use]
-    pub fn dialog(&self) -> Option<&MissionDialog> {
-        self.dialog.as_ref()
-    }
-
-    pub fn dialog_mut(&mut self) -> Option<&mut MissionDialog> {
-        self.dialog.as_mut()
-    }
-
-    pub fn close(&mut self) {
-        if self.window_id().is_none() {
-            self.dialog = None;
-        }
-    }
-
-    /// Legacy hit testing for the ID-less compatibility path. Managed Mission
-    /// dialogs derive modal blocking from the frame routing snapshot instead.
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.dialog.is_some() && rect_contains(dialog_rect(layout), egui::pos2(point.0, point.1))
-    }
-
     /// "Begin Mission" (`0x66`): the order's mission becomes the selected
     /// kind and the order is submitted; the dialog closes whether or not the
     /// validator accepts it.
@@ -481,6 +368,20 @@ impl MissionDialogState {
         Some(dialog.begin_action())
     }
 }
+
+crate::singleton_window_common::impl_singleton_dialog_state!(
+    MissionDialogState,
+    MissionDialog,
+    dialog_rect
+);
+
+impl_singleton_window_routing!(
+    MissionDialogState,
+    WindowKind::MissionDialog,
+    "original-mission-dialog",
+    dialog_rect
+);
+impl_singleton_content_reports!(MissionDialogState, WindowKind::MissionDialog);
 
 impl MissionDialog {
     fn begin_action(&self) -> MissionDialogAction {
@@ -556,7 +457,10 @@ pub fn kind_icon(kind: MissionKind, faction: MissionFaction) -> u32 {
 /// A member's list image and name: the GOKRES mini `FUN_0042c3b0(.., 0, 1)`
 /// draws first. port: its status overlays (STRATEGY 11500..11502, 11570,
 /// 11572, GOKRES `+0x7000`) are not drawn.
-fn member_item(world: &GameWorld, member: MissionMember) -> Option<(Option<u32>, String)> {
+pub(crate) fn member_item(
+    world: &GameWorld,
+    member: MissionMember,
+) -> Option<(Option<u32>, String)> {
     match member {
         MissionMember::Character(key) => {
             let character = world.characters.get(key)?;
@@ -583,18 +487,6 @@ fn centered(bounds: egui::Rect, size: egui::Vec2, scale: f32) -> egui::Rect {
         ),
         size * scale,
     )
-}
-
-/// One wheel step through `len` items from `row`: down (a negative delta)
-/// goes one on, up goes one back, and neither leaves the list.
-pub(crate) fn scrolled(row: usize, len: usize, wheel: f32) -> usize {
-    if wheel < 0.0 && row + 1 < len {
-        row + 1
-    } else if wheel > 0.0 {
-        row.saturating_sub(1)
-    } else {
-        row
-    }
 }
 
 /// Paint a bitmap at its own size scaled with the dialog, centered in `bounds`.
@@ -627,19 +519,23 @@ fn native(rect: egui::Rect, size: egui::Vec2, scale: f32) -> egui::Rect {
     egui::Rect::from_min_size(rect.min, size * scale)
 }
 
-pub(crate) fn paint(
+fn paint_resource(
     painter: &egui::Painter,
     ctx: &egui::Context,
     cache: &mut BmpCache,
     resource_id: u32,
     rect: egui::Rect,
     scale: f32,
+    button: bool,
 ) {
     #[cfg(test)]
-    crate::fleet_window::tests::PAINTED.with(|painted| {
-        painted.borrow_mut().push((resource_id, rect.min));
-    });
-    if let Some(texture) = cache.get(ctx, DllSource::Strategy, resource_id) {
+    crate::test_support::record_painted(resource_id, rect.min);
+    let texture = if button {
+        cache.get_button(ctx, DllSource::Strategy, resource_id)
+    } else {
+        cache.get(ctx, DllSource::Strategy, resource_id)
+    };
+    if let Some(texture) = texture {
         painter
             .with_clip_rect(painter.clip_rect().intersect(rect))
             .image(
@@ -651,32 +547,28 @@ pub(crate) fn paint(
     }
 }
 
-/// A CoolStrobeButton's bitmap (`FUN_00602150`), keyed on its first stored
-/// pixel as `FUN_00602d30` blits it over the window behind
-/// ([`BmpCache::get_button`]), at native size clipped to the control.
-pub(crate) fn paint_button(
-    painter: &egui::Painter,
-    ctx: &egui::Context,
-    cache: &mut BmpCache,
-    resource_id: u32,
-    rect: egui::Rect,
-    scale: f32,
-) {
-    #[cfg(test)]
-    crate::fleet_window::tests::PAINTED.with(|painted| {
-        painted.borrow_mut().push((resource_id, rect.min));
-    });
-    if let Some(texture) = cache.get_button(ctx, DllSource::Strategy, resource_id) {
-        painter
-            .with_clip_rect(painter.clip_rect().intersect(rect))
-            .image(
-                texture.id(),
-                native(rect, texture.size_vec2(), scale),
-                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
-    }
+macro_rules! paint_resource_fn {
+    ($(#[$meta:meta])* $name:ident, $button:literal) => {
+        $(#[$meta])*
+        pub(crate) fn $name(
+            painter: &egui::Painter,
+            ctx: &egui::Context,
+            cache: &mut BmpCache,
+            resource_id: u32,
+            rect: egui::Rect,
+            scale: f32,
+        ) {
+            paint_resource(painter, ctx, cache, resource_id, rect, scale, $button);
+        }
+    };
 }
+
+paint_resource_fn!(paint, false);
+
+// A CoolStrobeButton's bitmap (`FUN_00602150`), keyed on its first stored
+// pixel as `FUN_00602d30` blits it over the window behind
+// ([`BmpCache::get_button`]), at native size clipped to the control.
+paint_resource_fn!(paint_button, true);
 
 /// A two-state bitmap button (`FUN_00602150`): the second bitmap shows while
 /// it is held or, for a tab, while it is the current page.
@@ -726,7 +618,7 @@ pub(crate) fn galaxy_centered_rect(layout: CockpitLayout, width: f32, height: f3
 }
 
 /// Draw the open dialog, if any, and report what the player asked for.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The dialog paints in the original's control order; splitting it hides that order."
 )]
@@ -748,13 +640,15 @@ pub fn draw_mission_dialog(
 
     // Above the modeless windows, which share Foreground and raise the
     // focused one each frame (`system_window.rs`).
-    egui::Area::new(egui::Id::new("original-mission-dialog"))
-        .fixed_pos(window.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(window.size(), egui::Sense::hover());
-            let painter = ui.painter().with_clip_rect(frame);
-            let at = |x: f32, y: f32, w: f32, h: f32| logical_rect(frame, scale, x, y, w, h);
+    singleton_window_common::show_popup_canvas(
+        ctx,
+        egui::Id::new("original-mission-dialog"),
+        window,
+        scale,
+        |ui, canvas| {
+            let frame = canvas.frame;
+            let painter = canvas.painter.clone();
+            let at = |x: f32, y: f32, w: f32, h: f32| canvas.rect(x, y, w, h);
             let name = |control: &str, rect: egui::Rect| {
                 crate::control_registry::register_screen("MissionDialog", control, rect);
             };
@@ -1021,7 +915,7 @@ pub fn draw_mission_dialog(
                 let response = ui.interact(popup, ui.id().with("kind-list"), egui::Sense::click());
                 if response.hovered() {
                     let wheel = ctx.input(|input| input.raw_scroll_delta.y);
-                    dialog.select_kind(scrolled(dialog.kind, dialog.kinds.len(), wheel));
+                    dialog.select_kind(wheel_step(dialog.kind, dialog.kinds.len(), wheel));
                 }
                 paint_kind(
                     &painter,
@@ -1039,7 +933,8 @@ pub fn draw_mission_dialog(
                     dialog.list_open = false;
                 }
             }
-        });
+        },
+    );
 
     if begin {
         return if managed {
@@ -1059,7 +954,7 @@ pub fn draw_mission_dialog(
 
 /// One mission kind item: the 130 by 65 GOKRES icon centered in the box, and
 /// its name. hyp: the name sits under the icon, centered.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit painter, cache and geometry inputs at this drawing boundary."
 )]
@@ -1101,7 +996,7 @@ struct ListResult {
 /// An agents or decoys list (`CoolDragList`, `FUN_00607ea0`): 107 by 59
 /// items, each a centered mini with its name under it. port: its scroll bar
 /// (base 0x29fc) is not drawn; the wheel scrolls it by one item.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit painter, cache and geometry inputs at this drawing boundary."
 )]
@@ -1128,7 +1023,7 @@ fn draw_list(
         .is_some_and(|point| rect_contains(list, point));
     if over {
         let wheel = ui.ctx().input(|input| input.raw_scroll_delta.y);
-        *row = scrolled(*row, members.len(), wheel);
+        *row = wheel_step(*row, members.len(), wheel);
     }
     for (index, &member) in members.iter().enumerate().skip(*row) {
         let offset = (index - *row) as f32 * ITEM_SIZE.1;
@@ -1190,9 +1085,13 @@ fn draw_list(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{
+        offset_strategic_layout, pointer_button as press, pointer_raw_input, raw_input,
+    };
     use rebellion_core::world::Character;
     use rebellion_windowing::{
-        SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
+        ContentReport, ContentStatus, SubjectId, WindowCommand, WindowKind, WindowManager,
+        WindowOwner, WindowTransition,
     };
 
     fn members(n: usize) -> Vec<MissionMember> {
@@ -1227,6 +1126,13 @@ mod tests {
                 vec![MissionKind::Diplomacy, MissionKind::Espionage],
             )
             .expect("valid Mission context");
+        commit_prepared_open(state, prepared)
+    }
+
+    fn commit_prepared_open(
+        state: &mut MissionDialogState,
+        prepared: PreparedMissionDialog,
+    ) -> (WindowManager, rebellion_windowing::WindowId) {
         let mut manager = WindowManager::new();
         let committed = manager
             .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
@@ -1247,7 +1153,7 @@ mod tests {
         // Mission dialog; FUN_00521030 later reads the same order object.
         for faction in [MissionFaction::Alliance, MissionFaction::Empire] {
             let mut state = MissionDialogState::default();
-            let target = MissionTarget::Fleet(Default::default());
+            let target = MissionTarget::Fleet(rebellion_core::ids::FleetKey::default());
             let prepared = state
                 .prepare_open(
                     faction,
@@ -1317,19 +1223,12 @@ mod tests {
             )
             .unwrap();
         assert_eq!(replacement.replacing(), Some(id));
-        let stale_id = match manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap()
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            transition => panic!("expected unrelated open, got {transition:?}"),
-        };
+        let stale_id = crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+            "unrelated window",
+        );
         assert_ne!(stale_id, id);
         assert!(manager.apply(WindowCommand::Close(stale_id)).is_ok());
         assert!(manager
@@ -1344,28 +1243,19 @@ mod tests {
         assert_eq!(state.dialog(), Some(&before));
         assert_eq!(state.window_id(), Some(id));
 
-        let committed = manager
-            .apply(WindowCommand::Replace {
-                old: id,
-                new: replacement.spec(SubjectId::new(
-                    crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
-                    3,
-                )),
-            })
-            .expect("fresh valid context replaces atomically");
-        let WindowTransition::Replaced { new, .. } = committed.transition else {
-            panic!("expected Mission replacement");
-        };
-        assert_eq!(
-            state.commit_open(replacement, &committed.transition),
-            Some(new)
+        let new = crate::test_support::commit_prepared_replacement!(
+            &mut manager,
+            &mut state,
+            id,
+            replacement,
+            "Mission"
         );
         assert_ne!(new, id);
         let dialog = state.dialog().unwrap();
         assert_eq!(dialog.faction, MissionFaction::Empire);
         assert_eq!(dialog.kind(), MissionKind::Espionage);
         assert_eq!(dialog.page(), MissionDialogPage::Mission);
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
     }
 
     #[test]
@@ -1384,22 +1274,8 @@ mod tests {
         let prepared = state
             .prepare_adoption()
             .expect("unmanaged content is adoptable");
-        let mut manager = WindowManager::new();
-        let committed = manager
-            .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
-                crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
-                1,
-            ))))
-            .expect("manager accepts Mission dialog");
-        let WindowTransition::Opened { id } = committed.transition else {
-            panic!("expected new Mission identity");
-        };
+        let (_manager, id) = commit_prepared_open(&mut state, prepared);
 
-        assert_eq!(
-            state.commit_open(prepared, &committed.transition),
-            Some(id),
-            "an existing identity-less fixture dialog must adopt the exact manager receipt"
-        );
         let dialog = state.dialog().expect("adopted content remains open");
         assert_eq!(dialog.page(), MissionDialogPage::Agents);
         assert_eq!(dialog.agents(), team);
@@ -1456,17 +1332,12 @@ mod tests {
         let team = members(1);
         let mut empty = MissionDialogState::default();
         let mut manager = WindowManager::new();
-        let unrelated = manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::FleetFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let WindowTransition::Opened { id: unrelated_id } = unrelated.transition else {
-            panic!("expected unrelated identity")
-        };
+        let unrelated_id = crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::FleetFinder,
+            WindowOwner::StrategicRoot,
+            "unrelated window",
+        );
         let opened = manager
             .apply(WindowCommand::Open(
                 empty
@@ -1617,14 +1488,12 @@ mod tests {
             }]
         );
 
-        manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::FleetFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
+        crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::FleetFinder,
+            WindowOwner::StrategicRoot,
+            "modal cover",
+        );
         let covered = manager.begin_frame();
         assert_eq!(
             state.hit_window(&covered, layout, (inside.x, inside.y)),
@@ -1666,7 +1535,7 @@ mod tests {
         let dialog = state.dialog().unwrap();
 
         assert_eq!(dialog.agents(), team.as_slice());
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
         assert_eq!(dialog.page(), MissionDialogPage::Mission);
         assert_eq!(dialog.kind(), MissionKind::Diplomacy);
     }
@@ -1702,7 +1571,7 @@ mod tests {
         dialog.move_selected(true);
 
         assert_eq!(dialog.agents(), &[team[1], team[0]]);
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
     }
 
     #[test]
@@ -1715,7 +1584,7 @@ mod tests {
         dialog.move_selected(false);
 
         assert_eq!(dialog.agents(), team.as_slice());
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
     }
 
     #[test]
@@ -1785,31 +1654,7 @@ mod tests {
     }
 
     fn layout(scale: f32) -> CockpitLayout {
-        use crate::cockpit::CockpitViewport;
-        CockpitLayout {
-            canvas: CockpitViewport {
-                x: 10.0,
-                y: 20.0,
-                width: 640.0 * scale,
-                height: 480.0 * scale,
-            },
-            galaxy: CockpitViewport {
-                x: 10.0 + 55.0 * scale,
-                y: 20.0 + 40.0 * scale,
-                width: 485.0 * scale,
-                height: 350.0 * scale,
-            },
-            scale,
-        }
-    }
-
-    fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
+        offset_strategic_layout(scale)
     }
 
     /// Run one frame per entry of `frames` with the pointer at dialog pixel
@@ -1825,20 +1670,8 @@ mod tests {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let mut emitted = None;
-        for extra in [vec![], vec![]].into_iter().chain(frames) {
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
+        for extra in crate::test_support::warmed_frames(Vec::new(), frames) {
+            let input = pointer_raw_input(pos, extra, egui::vec2(700.0, 520.0));
             let _ = ctx.run(input, |ctx| {
                 if let Some(action) = draw_mission_dialog(ctx, world, state, layout, &mut cache) {
                     emitted = Some(action);
@@ -1966,21 +1799,9 @@ mod tests {
         let mut cache = BmpCache::new();
         let window = egui::Id::new("raising_window");
         for _ in 0..3 {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                ..Default::default()
-            };
+            let input = raw_input(vec![], egui::vec2(700.0, 520.0));
             let _ = ctx.run(input, |ctx| {
-                ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, window));
-                egui::Area::new(window)
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(egui::Pos2::ZERO)
-                    .show(ctx, |ui| {
-                        ui.allocate_response(egui::vec2(700.0, 520.0), egui::Sense::click());
-                    });
+                crate::test_support::show_self_raising_area(ctx, window, egui::vec2(700.0, 520.0));
                 let _ = draw_mission_dialog(ctx, &world, &mut state, layout, &mut cache);
             });
         }
@@ -2066,11 +1887,16 @@ mod tests {
 
     #[test]
     fn a_wheel_step_moves_one_item_and_stays_in_the_list() {
-        assert_eq!(scrolled(0, 3, -1.0), 1);
-        assert_eq!(scrolled(2, 3, -1.0), 2);
-        assert_eq!(scrolled(2, 3, 1.0), 1);
-        assert_eq!(scrolled(0, 3, 1.0), 0);
-        assert_eq!(scrolled(1, 3, 0.0), 1);
+        assert_eq!(
+            [
+                wheel_step(0, 3, -1.0),
+                wheel_step(2, 3, -1.0),
+                wheel_step(2, 3, 1.0),
+                wheel_step(0, 3, 1.0),
+                wheel_step(1, 3, 0.0),
+            ],
+            [1, 2, 1, 0, 1]
+        );
     }
 
     #[test]

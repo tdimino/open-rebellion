@@ -1,0 +1,10 @@
+# Recovered game flows are often long, stateful translations where preserving
+# phase order matters more than forcing a generic function-size limit.
+too-many-lines-threshold = 350
+too-many-arguments-threshold = 12
+
+# Runtime records intentionally mirror the original game's flag-oriented state,
+# and tactical math conventionally uses compact coordinate names.
+max-struct-bools = 16
+max-fn-params-bools = 8
+single-char-binding-names-threshold = 8

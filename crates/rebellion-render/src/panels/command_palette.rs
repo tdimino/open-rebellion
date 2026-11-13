@@ -61,7 +61,10 @@ fn script_commands() -> Vec<CommandItem> {
     };
     let mut items = vec![
         item("Capture".into(), "Save this frame as a numbered PNG"),
-        item("Skip briefing".into(), "Skip the opening briefing as Escape does"),
+        item(
+            "Skip briefing".into(),
+            "Skip the opening briefing as Escape does",
+        ),
     ];
     for category in [
         "All",
@@ -338,7 +341,7 @@ impl Default for CommandPaletteState {
 }
 
 /// Draw the command palette overlay. Returns actions to execute.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -523,7 +526,7 @@ mod tests {
         let mut state = CommandPaletteState::new();
         state.query = "adv".to_string();
         state.update_filter();
-        assert!(!state.filtered_indices.is_empty());
+        assert_not_empty!(state.filtered_indices);
         let first_cmd = &state.commands[state.filtered_indices[0].0];
         assert!(
             first_cmd.label.contains("Advance"),

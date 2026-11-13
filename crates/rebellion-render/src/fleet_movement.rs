@@ -16,8 +16,8 @@
 //! ```
 
 use macroquad::prelude::*;
-use rebellion_core::movement::MovementState;
-use rebellion_core::world::GameWorld;
+use rebellion_core::movement::{MovementOrder, MovementState};
+use rebellion_core::world::{Fleet, GameWorld};
 
 use crate::CameraView;
 
@@ -129,6 +129,41 @@ pub fn draw_fleet_overlays(world: &GameWorld, movement_state: &MovementState, ca
     draw_transit_routes(world, movement_state, camera);
 }
 
+fn stationary_position(
+    world: &GameWorld,
+    camera: &CameraView,
+    fleet: &Fleet,
+) -> Option<(f32, f32, f32)> {
+    let system = world.systems.get(fleet.location)?;
+    let (x, y) = camera.to_screen(f32::from(system.x), f32::from(system.y));
+    camera
+        .contains_with_margin(x, y, camera.scale_pixels(20.0))
+        .then(|| {
+            let radius = (FLEET_ICON_RADIUS * camera.logical_zoom).max(2.5) * camera.display_scale;
+            (x, y, radius)
+        })
+}
+
+type ScreenPoint = (f32, f32);
+type TransitPoints = (ScreenPoint, ScreenPoint, ScreenPoint);
+
+fn transit_position(
+    world: &GameWorld,
+    camera: &CameraView,
+    order: &MovementOrder,
+) -> Option<TransitPoints> {
+    let origin = world.systems.get(order.origin)?;
+    let destination = world.systems.get(order.destination)?;
+    let from = camera.to_screen(f32::from(origin.x), f32::from(origin.y));
+    let to = camera.to_screen(f32::from(destination.x), f32::from(destination.y));
+    let progress = order.progress();
+    let position = (
+        from.0 + (to.0 - from.0) * progress,
+        from.1 + (to.1 - from.1) * progress,
+    );
+    Some((from, to, position))
+}
+
 /// Find the fleet (if any) under the mouse cursor at (mx, my) screen position.
 ///
 /// Checks stationary fleet diamonds and in-transit fleet dots.
@@ -154,16 +189,11 @@ pub fn hovered_fleet(
         if movement_state.get(fleet_key).is_some() {
             continue;
         }
-        let Some(system) = world.systems.get(fleet.location) else {
+        let Some((sx, sy, radius)) = stationary_position(world, camera, fleet) else {
             continue;
         };
-        let (sx, sy) = camera.to_screen(f32::from(system.x), f32::from(system.y));
-        if !camera.contains_with_margin(sx, sy, camera.scale_pixels(20.0)) {
-            continue;
-        }
-        let r = (FLEET_ICON_RADIUS * camera.logical_zoom).max(2.5) * camera.display_scale;
         // Diamond is offset above system dot
-        let dy = sy - r - 2.0 * camera.zoom;
+        let dy = sy - radius - 2.0 * camera.zoom;
         let dist = ((mx - sx).powi(2) + (my - dy).powi(2)).sqrt();
         if dist < hit_radius && best.is_none_or(|(_, bd)| dist < bd) {
             best = Some((fleet_key, dist));
@@ -172,17 +202,9 @@ pub fn hovered_fleet(
 
     // Check in-transit fleets
     for order in movement_state.orders().values() {
-        let Some(origin_sys) = world.systems.get(order.origin) else {
+        let Some((_, _, (fx, fy))) = transit_position(world, camera, order) else {
             continue;
         };
-        let Some(dest_sys) = world.systems.get(order.destination) else {
-            continue;
-        };
-        let (ox, oy) = camera.to_screen(f32::from(origin_sys.x), f32::from(origin_sys.y));
-        let (dx, dy) = camera.to_screen(f32::from(dest_sys.x), f32::from(dest_sys.y));
-        let t = order.progress();
-        let fx = ox + (dx - ox) * t;
-        let fy = oy + (dy - oy) * t;
         let dist = ((mx - fx).powi(2) + (my - fy).powi(2)).sqrt();
         if dist < hit_radius && best.is_none_or(|(_, bd)| dist < bd) {
             best = Some((order.fleet, dist));
@@ -200,15 +222,9 @@ fn draw_stationary_fleets(world: &GameWorld, movement_state: &MovementState, cam
             continue;
         }
 
-        let Some(system) = world.systems.get(fleet.location) else {
+        let Some((sx, sy, radius)) = stationary_position(world, camera, fleet) else {
             continue;
         };
-
-        let (sx, sy) = camera.to_screen(f32::from(system.x), f32::from(system.y));
-
-        if !camera.contains_with_margin(sx, sy, camera.scale_pixels(20.0)) {
-            continue;
-        }
 
         let color = if fleet.is_alliance {
             ALLIANCE_FLEET_COLOR
@@ -216,12 +232,11 @@ fn draw_stationary_fleets(world: &GameWorld, movement_state: &MovementState, cam
             EMPIRE_FLEET_COLOR
         };
 
-        let r = (FLEET_ICON_RADIUS * camera.logical_zoom).max(2.5) * camera.display_scale;
         // Offset slightly above the system dot so they don't overlap.
         draw_fleet_diamond(
             sx,
-            sy - r - 2.0 * camera.zoom,
-            r,
+            sy - radius - 2.0 * camera.zoom,
+            radius,
             camera.scale_pixels(1.5),
             color,
         );
@@ -231,23 +246,12 @@ fn draw_stationary_fleets(world: &GameWorld, movement_state: &MovementState, cam
 /// Draw route lines and transit dots for in-transit fleets.
 fn draw_transit_routes(world: &GameWorld, movement_state: &MovementState, camera: &CameraView) {
     for order in movement_state.orders().values() {
-        let Some(origin_sys) = world.systems.get(order.origin) else {
+        let Some(((ox, oy), (dx, dy), (fx, fy))) = transit_position(world, camera, order) else {
             continue;
         };
-        let Some(dest_sys) = world.systems.get(order.destination) else {
-            continue;
-        };
-
-        let (ox, oy) = camera.to_screen(f32::from(origin_sys.x), f32::from(origin_sys.y));
-        let (dx, dy) = camera.to_screen(f32::from(dest_sys.x), f32::from(dest_sys.y));
 
         // Draw dashed route from origin to destination.
         draw_dashed_line(ox, oy, dx, dy, camera.display_scale, ROUTE_COLOR);
-
-        // Interpolate fleet position along the route.
-        let t = order.progress();
-        let fx = ox + (dx - ox) * t;
-        let fy = oy + (dy - oy) * t;
 
         if camera.contains_with_margin(fx, fy, camera.scale_pixels(20.0)) {
             // Determine fleet color — look up the fleet to find its faction.

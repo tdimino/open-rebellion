@@ -90,7 +90,7 @@ pub fn original_isqrt(value: i64) -> i64 {
     let mut upper = high;
     let mut previous = high;
     loop {
-        let mid = (low + upper) / 2;
+        let mid = i64::midpoint(low, upper);
         let square = mid * mid;
         let mut next_upper = mid;
         if square <= value {
@@ -133,6 +133,21 @@ pub fn transit_ticks_between(
     let percent = gnprtb_or_shipped(world, GNPRTB_DEFAULT_SPEED, SHIPPED_DEFAULT_SPEED);
     let ticks = (distance / divisor) * speed / percent;
     u32::try_from(ticks.max(1)).unwrap_or(u32::MAX)
+}
+
+/// Transit days between two systems using their galaxy coordinates.
+///
+/// Missing system keys retain the original engine-facing fallback position
+/// `(0, 0)`, shared by fleets, deliveries, missions and carried units.
+#[must_use]
+pub fn transit_ticks_between_systems(
+    world: &GameWorld,
+    from: SystemKey,
+    to: SystemKey,
+    speed: i64,
+) -> u32 {
+    let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
+    transit_ticks_between(world, position(from), position(to), speed)
 }
 
 /// Speed of one capital ship (`FUN_00500820`): the class `hyperdrive`, else
@@ -243,13 +258,7 @@ pub fn fleet_transit_ticks(
     if speed == 0 {
         return None;
     }
-    let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
-    Some(transit_ticks_between(
-        world,
-        position(origin),
-        position(dest),
-        speed,
-    ))
+    Some(transit_ticks_between_systems(world, origin, dest, speed))
 }
 
 // ---------------------------------------------------------------------------
@@ -295,7 +304,7 @@ impl MovementOrder {
 
     /// Progress fraction in [0.0, 1.0] — 0.0 = just departed, 1.0 = arrived.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_precision_loss,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -500,7 +509,7 @@ impl fmt::Display for FleetDispatchError {
 /// the object check `FUN_004f9860` through `FUN_004fdc70`: the order's side
 /// and not en route. The blockade escape `FUN_005555e0` covers only ALLFACSD
 /// objects, so it never refuses a fleet.
-fn movable_fleet<'a>(
+pub(crate) fn movable_fleet<'a>(
     state: &MovementState,
     world: &'a GameWorld,
     fleet: FleetKey,
@@ -539,9 +548,9 @@ pub fn fleet_move_enabled(
 /// equal the fleet's. port: an uprising keeps its faction's side, as
 /// [`ControlKind::is_controlled_by`](crate::world::ControlKind::is_controlled_by) reads it.
 #[must_use]
-pub fn fleet_move_confirms(
+pub fn fleet_move_confirms<S: std::hash::BuildHasher>(
     world: &GameWorld,
-    blockaded: &HashSet<SystemKey>,
+    blockaded: &HashSet<SystemKey, S>,
     fleet: FleetKey,
     confirmed: bool,
 ) -> bool {
@@ -781,10 +790,10 @@ pub fn validate_fleets_dispatch(
 /// # Errors
 /// Returns [`FleetDispatchError::Blockaded`] for a fleet in a blockaded
 /// system, or any error [`validate_fleet_dispatch`] returns.
-pub fn validate_fleet_destination(
+pub fn validate_fleet_destination<S: std::hash::BuildHasher>(
     state: &MovementState,
     world: &GameWorld,
-    blockaded: &HashSet<SystemKey>,
+    blockaded: &HashSet<SystemKey, S>,
     fleet: FleetKey,
     destination: SystemKey,
     expected_is_alliance: bool,
@@ -916,8 +925,7 @@ pub fn listed_fleets(state: &MovementState, world: &GameWorld, system: SystemKey
     let mut fleets: Vec<FleetKey> = world
         .systems
         .get(system)
-        .map(|value| value.fleets.clone())
-        .unwrap_or_default();
+        .map_or_default(|value| value.fleets.clone());
     fleets.extend(
         state
             .orders
@@ -1048,7 +1056,7 @@ impl MovementSystem {
     /// Returns one `ArrivalEvent` per fleet that completes transit this frame.
     /// The caller applies each event through [`apply_fleet_arrival`] so world
     /// fleet records and system orbit indexes remain canonical.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -1115,6 +1123,7 @@ impl MovementSystem {
 mod tests {
     use super::*;
     use crate::carriage::ProductRoom;
+    use crate::test_support::gnprtb_entry;
     use crate::tick::TickEvent;
     use crate::world::{ControlKind, FighterEntry};
 
@@ -1178,7 +1187,7 @@ mod tests {
         state.order(fleet, origin, dest, 10);
         let removed = state.cancel(fleet);
         assert!(removed.is_some());
-        assert!(state.is_empty());
+        assert_empty!(state);
     }
 
     #[test]
@@ -1207,7 +1216,7 @@ mod tests {
         let mut state = MovementState::new();
         state.order(fleet, origin, dest, 5);
         let arrivals = MovementSystem::advance(&mut state, &[]);
-        assert!(arrivals.is_empty());
+        assert_empty!(arrivals);
         assert_eq!(state.len(), 1); // order still active
     }
 
@@ -1217,7 +1226,7 @@ mod tests {
         let mut state = MovementState::new();
         state.order(fleet, origin, dest, 10);
         let arrivals = MovementSystem::advance(&mut state, &ticks(5));
-        assert!(arrivals.is_empty());
+        assert_empty!(arrivals);
         assert_eq!(state.get(fleet).unwrap().ticks_elapsed, 5);
     }
 
@@ -1233,7 +1242,7 @@ mod tests {
         assert_eq!(arrivals[0].origin, origin);
         assert_eq!(arrivals[0].tick, 5);
         // Order removed on arrival
-        assert!(state.is_empty());
+        assert_empty!(state);
     }
 
     #[test]
@@ -1244,7 +1253,7 @@ mod tests {
         // 10 ticks for a 3-tick journey
         let arrivals = MovementSystem::advance(&mut state, &ticks(10));
         assert_eq!(arrivals.len(), 1);
-        assert!(state.is_empty());
+        assert_empty!(state);
     }
 
     #[test]
@@ -1291,7 +1300,7 @@ mod tests {
 
     // --- Distance-based transit tests ---
 
-    use crate::dat::{ExplorationStatus, SectorGroup};
+    use crate::dat::SectorGroup;
     use crate::ids::DatId;
     use crate::world::{
         CapitalShipClass, Character, Fleet, GameWorld, Sector, ShipInstance, System, TroopUnit,
@@ -1321,30 +1330,15 @@ mod tests {
     }
 
     fn make_system(sector: crate::ids::SectorKey, x: u16, y: u16) -> System {
-        System {
-            dat_id: DatId::new(0x9000_0000),
-            name: format!("Sys@{x},{y}"),
+        let mut system = crate::test_support::system_at(
+            format!("Sys@{x},{y}"),
             sector,
             x,
             y,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        }
+            ControlKind::Uncontrolled,
+        );
+        system.dat_id = DatId::new(0x9000_0000);
+        system
     }
 
     fn make_transit_world(x1: u16, y1: u16, x2: u16, y2: u16) -> (GameWorld, SystemKey, SystemKey) {
@@ -1379,11 +1373,97 @@ mod tests {
         fleet
     }
 
-    #[test]
-    fn transit_owns_position_until_arrival() {
+    fn single_fleet_transit_world() -> (GameWorld, SystemKey, SystemKey, FleetKey) {
         let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
         let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
         let fleet = add_test_fleet(&mut world, origin, ship_key);
+        (world, origin, destination, fleet)
+    }
+
+    fn two_fleet_transit_world() -> (GameWorld, SystemKey, SystemKey, FleetKey, FleetKey) {
+        let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
+        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
+        let stationed = add_test_fleet(&mut world, destination, ship_key);
+        let arriving = add_test_fleet(&mut world, origin, ship_key);
+        (world, origin, destination, stationed, arriving)
+    }
+
+    fn complete_first_arrival(
+        world: &mut GameWorld,
+        movement: &mut MovementState,
+        tick: u64,
+    ) -> AppliedArrival {
+        let arrival = MovementSystem::advance(movement, &ticks(tick)).remove(0);
+        apply_fleet_arrival(
+            world,
+            movement,
+            &mut TroopTransportState::default(),
+            &arrival,
+        )
+        .unwrap()
+    }
+
+    fn embark_test_troop(
+        world: &mut GameWorld,
+        origin: SystemKey,
+        fleet: FleetKey,
+        transport: &mut TroopTransportState,
+    ) -> crate::ids::TroopKey {
+        let troop = world.troops.insert(TroopUnit {
+            class_dat_id: DatId::new(0x1000_0001),
+            is_alliance: true,
+        });
+        world.systems[origin].ground_units.push(troop);
+        transport
+            .embark(world, &ProductRoom::default(), fleet, &[troop])
+            .unwrap();
+        troop
+    }
+
+    fn death_star_dispatch_world(
+        is_alliance: bool,
+    ) -> (
+        GameWorld,
+        SystemKey,
+        SystemKey,
+        crate::ids::CapitalShipKey,
+        FleetKey,
+    ) {
+        let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
+        let death_star = world.capital_ship_classes.insert(CapitalShipClass {
+            family: 0x18,
+            ..test_ship_class(80)
+        });
+        let mover = add_test_fleet(&mut world, origin, death_star);
+        world.fleets[mover].is_alliance = is_alliance;
+        (world, origin, destination, death_star, mover)
+    }
+
+    fn side_speed_classes(
+        world: &mut GameWorld,
+        is_alliance: bool,
+    ) -> (crate::ids::CapitalShipKey, crate::ids::CapitalShipKey) {
+        let class = |world: &mut GameWorld, hyperdrive| {
+            world.capital_ship_classes.insert(CapitalShipClass {
+                is_alliance,
+                is_empire: !is_alliance,
+                hull: 100,
+                hyperdrive,
+                ..CapitalShipClass::default()
+            })
+        };
+        (class(world, 60), class(world, 140))
+    }
+
+    fn assert_fast_ship_is_only_carrier(world: &GameWorld, fleet: &mut Fleet, is_alliance: bool) {
+        assert_eq!(fleet_speed(fleet, world), Some(60), "{is_alliance}");
+        fleet.capital_ships.remove(0);
+        assert_eq!(fleet_speed(fleet, world), None, "{is_alliance}");
+    }
+
+    #[test]
+    fn transit_owns_position_until_arrival() {
+        let (mut world, origin, destination, fleet) = single_fleet_transit_world();
         let mut movement = MovementState::new();
 
         assert!(begin_fleet_transit(
@@ -1456,13 +1536,7 @@ mod tests {
             ));
             assert!(world.death_star_sectors.is_empty(), "{is_alliance}");
 
-            let arrival = MovementSystem::advance(&mut movement, &ticks(5)).remove(0);
-            apply_fleet_arrival(
-                &mut world,
-                &movement,
-                &mut TroopTransportState::default(),
-                &arrival,
-            );
+            complete_first_arrival(&mut world, &mut movement, 5);
             assert_eq!(
                 world.death_star_sectors,
                 std::iter::once(far).collect(),
@@ -1493,13 +1567,7 @@ mod tests {
         assert_eq!(listed_location(&movement, &world, fleet), Some(destination));
         assert_eq!(listed_location(&movement, &world, stationed), Some(origin));
 
-        let arrival = MovementSystem::advance(&mut movement, &ticks(5)).remove(0);
-        apply_fleet_arrival(
-            &mut world,
-            &movement,
-            &mut TroopTransportState::default(),
-            &arrival,
-        );
+        complete_first_arrival(&mut world, &mut movement, 5);
         assert_eq!(listed_fleets(&movement, &world, destination), vec![fleet]);
         assert!(!movement.is_in_transit(fleet));
     }
@@ -1517,7 +1585,7 @@ mod tests {
         assert!(movement.order(transit, origin, destination, 5));
         reconcile_fleet_orbits(&movement, &mut world);
 
-        assert!(world.systems[origin].fleets.is_empty());
+        assert_empty!(world.systems[origin].fleets);
         assert_eq!(world.systems[destination].fleets, vec![stationary]);
     }
 
@@ -1525,10 +1593,7 @@ mod tests {
     // meet; only a move onto a fleet joins it.
     #[test]
     fn fleets_of_one_side_meeting_on_arrival_stay_apart() {
-        let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
-        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
-        let stationed = add_test_fleet(&mut world, destination, ship_key);
-        let arriving = add_test_fleet(&mut world, origin, ship_key);
+        let (mut world, origin, destination, stationed, arriving) = two_fleet_transit_world();
         let arrival = ArrivalEvent {
             fleet: arriving,
             tick: 5,
@@ -1536,15 +1601,8 @@ mod tests {
             system: destination,
             join: None,
         };
-        let troop = world.troops.insert(TroopUnit {
-            class_dat_id: DatId::new(0x1000_0001),
-            is_alliance: true,
-        });
-        world.systems[origin].ground_units.push(troop);
         let mut transport = TroopTransportState::default();
-        transport
-            .embark(&mut world, &ProductRoom::default(), arriving, &[troop])
-            .unwrap();
+        let troop = embark_test_troop(&mut world, origin, arriving, &mut transport);
 
         let applied =
             apply_fleet_arrival(&mut world, &MovementState::new(), &mut transport, &arrival)
@@ -1562,19 +1620,9 @@ mod tests {
     // ends with the movers in that fleet (FUN_004feca0; port: on arrival).
     #[test]
     fn a_fleet_sent_onto_another_joins_it_on_arrival_with_its_cargo() {
-        let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
-        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
-        let target = add_test_fleet(&mut world, destination, ship_key);
-        let arriving = add_test_fleet(&mut world, origin, ship_key);
-        let troop = world.troops.insert(TroopUnit {
-            class_dat_id: DatId::new(0x1000_0001),
-            is_alliance: true,
-        });
-        world.systems[origin].ground_units.push(troop);
+        let (mut world, origin, destination, target, arriving) = two_fleet_transit_world();
         let mut transport = TroopTransportState::default();
-        transport
-            .embark(&mut world, &ProductRoom::default(), arriving, &[troop])
-            .unwrap();
+        let troop = embark_test_troop(&mut world, origin, arriving, &mut transport);
         let mut movement = MovementState::new();
         assert!(begin_fleet_transit(
             &mut movement,
@@ -1641,10 +1689,7 @@ mod tests {
     // fleet joins only a target still in the system it arrives at.
     #[test]
     fn a_fleet_whose_target_has_left_stays_a_fleet_of_its_own() {
-        let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
-        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
-        let target = add_test_fleet(&mut world, destination, ship_key);
-        let arriving = add_test_fleet(&mut world, origin, ship_key);
+        let (mut world, origin, destination, target, arriving) = two_fleet_transit_world();
         let mut movement = MovementState::new();
         assert!(begin_fleet_transit(
             &mut movement,
@@ -1678,10 +1723,7 @@ mod tests {
 
     #[test]
     fn character_task_force_remains_separate_on_arrival() {
-        let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
-        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
-        let stationed = add_test_fleet(&mut world, destination, ship_key);
-        let arriving = add_test_fleet(&mut world, origin, ship_key);
+        let (mut world, origin, destination, stationed, arriving) = two_fleet_transit_world();
         let character = world.characters.insert(test_character("Commander", 0));
         world.fleets[arriving].characters.push(character);
         let arrival = ArrivalEvent {
@@ -1711,9 +1753,7 @@ mod tests {
     fn a_fleet_may_take_a_move_on_its_own_side_outside_hyperspace() {
         // FUN_00578c00 → FUN_004fdc70 → FUN_004f9860: the order's side, and
         // not en route (ghidra/notes/move-order.md, "The move command").
-        let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
-        let ship_key = world.capital_ship_classes.insert(test_ship_class(80));
-        let fleet = add_test_fleet(&mut world, origin, ship_key);
+        let (mut world, _origin, destination, fleet) = single_fleet_transit_world();
         let mut movement = MovementState::new();
 
         assert!(fleet_move_enabled(&movement, &world, fleet, true));
@@ -1873,7 +1913,9 @@ mod tests {
         let fleet = add_test_fleet(&mut world, origin, ship_key);
         world.fleets[fleet].capital_ships.clear();
         world.fleets[fleet].fighters.push(FighterEntry {
-            class: world.fighter_classes.insert(FighterClass::default()),
+            class: world
+                .fighter_classes
+                .insert(crate::world::FighterClass::default()),
             count: 1,
             carrier: 0,
         });
@@ -1929,14 +1971,9 @@ mod tests {
     #[test]
     fn a_death_star_is_refused_a_system_that_holds_or_awaits_another() {
         for is_alliance in [true, false] {
-            let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
-            let station = world.capital_ship_classes.insert(CapitalShipClass {
-                family: 0x18,
-                ..test_ship_class(80)
-            });
+            let (mut world, origin, destination, station, mover) =
+                death_star_dispatch_world(is_alliance);
             let frigate = world.capital_ship_classes.insert(test_ship_class(80));
-            let mover = add_test_fleet(&mut world, origin, station);
-            world.fleets[mover].is_alliance = is_alliance;
             let escort = add_test_fleet(&mut world, origin, frigate);
             world.fleets[escort].is_alliance = is_alliance;
             let movement = MovementState::new();
@@ -1983,13 +2020,8 @@ mod tests {
     #[test]
     fn a_death_star_is_refused_a_system_building_one() {
         for is_alliance in [true, false] {
-            let (mut world, origin, destination) = make_transit_world(0, 0, 30, 40);
-            let station = world.capital_ship_classes.insert(CapitalShipClass {
-                family: 0x18,
-                ..test_ship_class(80)
-            });
-            let mover = add_test_fleet(&mut world, origin, station);
-            world.fleets[mover].is_alliance = is_alliance;
+            let (mut world, _origin, destination, station, mover) =
+                death_star_dispatch_world(is_alliance);
             let movement = MovementState::new();
             let building = add_test_fleet(&mut world, destination, station);
             world.fleets[building].is_alliance = !is_alliance;
@@ -2111,18 +2143,8 @@ mod tests {
     #[test]
     fn loaded_gnprtb_values_replace_the_shipped_divisor_and_base() {
         let (mut world, _, _) = make_transit_world(0, 0, 0, 0);
-        let entry = |id, value| crate::world::GnprtbEntry {
-            parameter_id: id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
-        world.gnprtb = crate::world::GnprtbParams::new(vec![entry(5120, 10), entry(1, 50)]);
+        world.gnprtb =
+            crate::world::GnprtbParams::new(vec![gnprtb_entry(5120, 10), gnprtb_entry(1, 50)]);
         // 50 / 10 = 5; 5 * 100 / 50 = 10.
         assert_eq!(transit_ticks_between(&world, (0, 0), (30, 40), 100), 10);
     }
@@ -2174,7 +2196,9 @@ mod tests {
         let (mut world, origin, dest) = make_transit_world(0, 0, 300, 320);
         let mut fleet = fleet_of(&mut world, origin, &[]);
         fleet.fighters.push(FighterEntry {
-            class: world.fighter_classes.insert(Default::default()),
+            class: world
+                .fighter_classes
+                .insert(crate::world::FighterClass::default()),
             count: 1,
             carrier: 0,
         });
@@ -2206,21 +2230,10 @@ mod tests {
     // still on its own leg from its yard neither slows nor carries it.
     #[test]
     fn a_ship_on_its_own_leg_neither_slows_nor_carries_its_fleet_for_either_side() {
-        use crate::world::{CapitalShipClass, Fleet, ShipInstance, ShipTransit, System};
+        use crate::world::ShipTransit;
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let origin = world.systems.insert(System::default());
-            let system = world.systems.insert(System::default());
-            let class = |world: &mut GameWorld, hyperdrive| {
-                world.capital_ship_classes.insert(CapitalShipClass {
-                    is_alliance,
-                    is_empire: !is_alliance,
-                    hull: 100,
-                    hyperdrive,
-                    ..CapitalShipClass::default()
-                })
-            };
-            let (fast, slow) = (class(&mut world, 60), class(&mut world, 140));
+            let (mut world, [origin, system]) = crate::test_support::bare_systems();
+            let (fast, slow) = side_speed_classes(&mut world, is_alliance);
             let mut leg = ShipInstance::new(slow, 100, is_alliance);
             leg.transit = Some(ShipTransit {
                 from: origin,
@@ -2233,9 +2246,7 @@ mod tests {
                 is_alliance,
                 ..Fleet::default()
             };
-            assert_eq!(fleet_speed(&fleet, &world), Some(60), "{is_alliance}");
-            fleet.capital_ships.remove(0);
-            assert_eq!(fleet_speed(&fleet, &world), None, "{is_alliance}");
+            assert_fast_ship_is_only_carrier(&world, &mut fleet, is_alliance);
         }
     }
     // FUN_004fd900.c:21-45 takes the speed of the fleet's mode-3 ships that
@@ -2245,20 +2256,10 @@ mod tests {
     // 0x42), so it neither slows its fleet nor carries it.
     #[test]
     fn a_fleet_of_unfinished_ships_has_no_speed_for_either_side() {
-        use crate::world::{CapitalShipClass, Fleet, ShipInstance, System};
         for is_alliance in [true, false] {
             let mut world = GameWorld::default();
             let system = world.systems.insert(System::default());
-            let class = |world: &mut GameWorld, hyperdrive| {
-                world.capital_ship_classes.insert(CapitalShipClass {
-                    is_alliance,
-                    is_empire: !is_alliance,
-                    hull: 100,
-                    hyperdrive,
-                    ..CapitalShipClass::default()
-                })
-            };
-            let (fast, slow) = (class(&mut world, 60), class(&mut world, 140));
+            let (fast, slow) = side_speed_classes(&mut world, is_alliance);
             let mut fleet = Fleet {
                 location: system,
                 capital_ships: vec![
@@ -2268,9 +2269,7 @@ mod tests {
                 is_alliance,
                 ..Fleet::default()
             };
-            assert_eq!(fleet_speed(&fleet, &world), Some(60), "{is_alliance}");
-            fleet.capital_ships.remove(0);
-            assert_eq!(fleet_speed(&fleet, &world), None, "{is_alliance}");
+            assert_fast_ship_is_only_carrier(&world, &mut fleet, is_alliance);
         }
     }
 
@@ -2326,15 +2325,12 @@ mod tests {
                     }),
                     "{is_alliance}"
                 );
-                assert!(!state.is_in_transit(fleet), "{is_alliance}");
-                assert_eq!(world.fleets[fleet].location, destination, "{is_alliance}");
-                assert!(
-                    world.systems[destination].fleets.contains(&fleet),
-                    "{is_alliance}"
-                );
-                assert!(
-                    !world.systems[origin].fleets.contains(&fleet),
-                    "{is_alliance}"
+                crate::test_support::assert_fleet_arrived(
+                    &world,
+                    &state,
+                    fleet,
+                    origin,
+                    destination,
                 );
             }
         }

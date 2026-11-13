@@ -74,6 +74,8 @@ use rebellion_core::uprising::UprisingState;
 use rebellion_core::victory::VictoryState;
 use rebellion_core::world::{CampaignConfig, GameWorld};
 
+use crate::simulation::SimulationStates;
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -263,6 +265,134 @@ pub struct SaveState {
     // travelling on their own.
 }
 
+/// Runtime-ready state recovered from a complete save snapshot.
+///
+/// The active fog always belongs to the player's faction; the other faction's
+/// fog is retained separately so callers that save again can preserve it.
+pub struct LoadedSimulation {
+    pub world: GameWorld,
+    pub states: SimulationStates,
+    pub inactive_fog: FogState,
+    pub player_is_alliance: bool,
+    pub sim_rng: Xoshiro256PlusPlus,
+    pub game_config: GameConfig,
+    pub player_agent: rebellion_core::agent_automation::PlayerAgent,
+}
+
+impl SaveState {
+    /// Assemble a serializable snapshot from the state used by live runtimes.
+    ///
+    /// `states.fog` is the active player's fog and `inactive_fog` belongs to
+    /// the other side. Keeping that ordering here prevents every runtime and
+    /// replay harness from duplicating the full save-field mapping.
+    #[must_use]
+    pub fn from_simulation(
+        world: GameWorld,
+        states: SimulationStates,
+        inactive_fog: FogState,
+        player_is_alliance: bool,
+        sim_rng: Xoshiro256PlusPlus,
+        game_config: GameConfig,
+        player_agent: rebellion_core::agent_automation::PlayerAgent,
+    ) -> Self {
+        let SimulationStates {
+            clock,
+            manufacturing,
+            missions,
+            events,
+            ai,
+            ai2,
+            movement,
+            fog,
+            blockade,
+            uprising,
+            research,
+            jedi,
+            victory,
+            betrayal,
+            economy,
+            repair,
+            troop_transport,
+            deliveries,
+            stockpiles,
+            campaign_config,
+        } = states;
+        let (fog_alliance, fog_empire) = if player_is_alliance {
+            (fog, inactive_fog)
+        } else {
+            (inactive_fog, fog)
+        };
+        Self {
+            world,
+            clock,
+            manufacturing,
+            missions,
+            events,
+            ai,
+            movement,
+            fog_alliance,
+            fog_empire,
+            player_is_alliance,
+            blockade,
+            uprising,
+            research,
+            jedi,
+            victory,
+            betrayal,
+            economy,
+            sim_rng,
+            ai2,
+            repair,
+            game_config,
+            campaign_config,
+            troop_transport,
+            deliveries,
+            player_agent,
+            stockpiles,
+        }
+    }
+
+    /// Split a serialized snapshot into the common state used by live runtimes.
+    #[must_use]
+    pub fn into_simulation(self) -> LoadedSimulation {
+        let (fog, inactive_fog) = if self.player_is_alliance {
+            (self.fog_alliance, self.fog_empire)
+        } else {
+            (self.fog_empire, self.fog_alliance)
+        };
+        LoadedSimulation {
+            world: self.world,
+            states: SimulationStates {
+                clock: self.clock,
+                manufacturing: self.manufacturing,
+                missions: self.missions,
+                events: self.events,
+                ai: self.ai,
+                ai2: self.ai2,
+                movement: self.movement,
+                fog,
+                blockade: self.blockade,
+                uprising: self.uprising,
+                research: self.research,
+                jedi: self.jedi,
+                victory: self.victory,
+                betrayal: self.betrayal,
+                economy: self.economy,
+                repair: self.repair,
+                troop_transport: self.troop_transport,
+                deliveries: self.deliveries,
+                stockpiles: self.stockpiles,
+                campaign_config: self.campaign_config,
+            },
+            inactive_fog,
+            player_is_alliance: self.player_is_alliance,
+            sim_rng: self.sim_rng,
+            game_config: self.game_config,
+            player_agent: self.player_agent,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // SaveMeta — slot metadata (no heavy world data)
 // ---------------------------------------------------------------------------
@@ -441,7 +571,7 @@ mod native {
     ///
     /// # Errors
     /// As [`save_file`].
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Keep the existing fixed-width save encoding; changing overflow handling is outside this lint cleanup."
     )]
@@ -659,14 +789,7 @@ mod native {
         // ── Body ────────────────────────────────────────────────────────────
         let mut body = Vec::new();
         file.read_to_end(&mut body).context("reading save body")?;
-        let (mut state, interface) = super::decode_body(&body)?;
-        let state_fingerprint = compute_state_fingerprint(&state)?;
-        anyhow::ensure!(
-            expected == state_fingerprint,
-            "save state fingerprint mismatch: expected {expected}, computed {state_fingerprint}"
-        );
-        // Bit 11 is not saved (FUN_005178b0 rebuilds it).
-        rebellion_core::death_star::refresh_sectors(&mut state.world);
+        let (state, interface, state_fingerprint) = super::decode_verified_body(&body, expected)?;
 
         let meta = SaveMeta {
             slot,
@@ -730,6 +853,21 @@ fn decode_body(body: &[u8]) -> anyhow::Result<(SaveState, SavedInterface)> {
         rest.len()
     );
     Ok((state, interface))
+}
+
+fn decode_verified_body(
+    body: &[u8],
+    expected: StateFingerprint,
+) -> anyhow::Result<(SaveState, SavedInterface, StateFingerprint)> {
+    let (mut state, interface) = decode_body(body)?;
+    let state_fingerprint = compute_state_fingerprint(&state)?;
+    anyhow::ensure!(
+        expected == state_fingerprint,
+        "save state fingerprint mismatch: expected {expected}, computed {state_fingerprint}"
+    );
+    // Bit 11 is not saved (FUN_005178b0 rebuilds it).
+    rebellion_core::death_star::refresh_sectors(&mut state.world);
+    Ok((state, interface, state_fingerprint))
 }
 
 // ---------------------------------------------------------------------------
@@ -1016,14 +1154,7 @@ pub mod wasm_impl {
         let bytes = b64_decode(&b64)?;
         let browser_meta = parse_meta(&meta_encoded)?;
         let expected = browser_meta.state_fingerprint.to_fingerprint()?;
-        let (mut state, interface) = super::decode_body(&bytes)?;
-        let state_fingerprint = compute_state_fingerprint(&state)?;
-        anyhow::ensure!(
-            expected == state_fingerprint,
-            "save state fingerprint mismatch: expected {expected}, computed {state_fingerprint}"
-        );
-        // Bit 11 is not saved (FUN_005178b0 rebuilds it).
-        rebellion_core::death_star::refresh_sectors(&mut state.world);
+        let (state, interface, state_fingerprint) = super::decode_verified_body(&bytes, expected)?;
 
         let meta = SaveMeta {
             slot,
@@ -1089,6 +1220,31 @@ mod tests {
     use rebellion_core::ids::SystemKey;
     use rebellion_core::world::ControlKind;
 
+    use crate::test_support::save_state;
+
+    fn save_system(
+        sector: rebellion_core::ids::SectorKey,
+        dat_id: u32,
+        name: &str,
+        position: (u16, u16),
+        side: Faction,
+    ) -> rebellion_core::world::System {
+        rebellion_core::world::System {
+            dat_id: rebellion_core::ids::DatId::new(dat_id),
+            name: name.into(),
+            sector,
+            x: position.0,
+            y: position.1,
+            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
+            popularity_alliance: 0.5,
+            popularity_empire: 0.5,
+            is_populated: true,
+            is_headquarters: true,
+            control: ControlKind::Controlled(side),
+            ..Default::default()
+        }
+    }
+
     fn minimal_save_state() -> SaveState {
         // Create a minimal world with two systems for VictoryState
         let mut world = GameWorld::default();
@@ -1100,82 +1256,115 @@ mod tests {
             y: 0,
             systems: vec![],
         });
-        let sys_a = world.systems.insert(rebellion_core::world::System {
-            dat_id: rebellion_core::ids::DatId::new(0x9000_0000),
-            name: "A".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: true,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
-            espionage_rating: 0.0,
+        let sys_a = world.systems.insert(save_system(
+            sector_key,
+            0x9000_0000,
+            "A",
+            (0, 0),
+            Faction::Alliance,
+        ));
+        let sys_b = world.systems.insert(save_system(
+            sector_key,
+            0x9000_0001,
+            "B",
+            (100, 100),
+            Faction::Empire,
+        ));
+        save_state(world, sys_a, sys_b, 42, false)
+    }
+
+    fn insert_ship_fleet(
+        state: &mut SaveState,
+        system: SystemKey,
+        ship: rebellion_core::world::ShipInstance,
+        is_alliance: bool,
+        bombarding: bool,
+    ) -> rebellion_core::ids::FleetKey {
+        let fleet = state.world.fleets.insert(rebellion_core::world::Fleet {
+            location: system,
+            capital_ships: vec![ship],
+            fighters: vec![],
+            characters: vec![],
+            is_alliance,
+            bombarding,
         });
-        let sys_b = world.systems.insert(rebellion_core::world::System {
-            dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
-            name: "B".into(),
-            sector: sector_key,
-            x: 100,
-            y: 100,
-            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: true,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Empire),
-            espionage_rating: 0.0,
+        state.world.systems[system].fleets.push(fleet);
+        fleet
+    }
+
+    fn settle_embarkation(state: &mut SaveState) {
+        crate::integrator::fire_holder_changes(
+            &mut state.world,
+            &mut state.manufacturing,
+            rebellion_core::support_shift::step(state.clock.tick, 0),
+        );
+        rebellion_core::death_star::serve_holder_requests(
+            &mut state.world,
+            &state.movement,
+            &mut state.troop_transport,
+            &mut state.manufacturing,
+            &mut state.deliveries,
+        );
+    }
+
+    fn embark_test_troop(
+        state: &mut SaveState,
+        system: SystemKey,
+        fleet: rebellion_core::ids::FleetKey,
+    ) -> rebellion_core::ids::TroopKey {
+        let troop = state.world.troops.insert(rebellion_core::world::TroopUnit {
+            class_dat_id: rebellion_core::ids::DatId::new(0x1000_0008),
+            is_alliance: false,
         });
-        SaveState {
-            world,
-            clock: GameClock::default(),
-            manufacturing: ManufacturingState::new(),
-            missions: MissionState::new(),
-            events: EventState::new(),
-            ai: AIState::new(AiFaction::Empire),
-            movement: MovementState::new(),
-            fog_alliance: FogState::new(Faction::Alliance),
-            fog_empire: FogState::new(Faction::Empire),
-            player_is_alliance: false,
-            blockade: BlockadeState::new(),
-            uprising: UprisingState::new(),
-            research: ResearchState::new(),
-            jedi: JediState::new(),
-            victory: rebellion_core::victory::VictoryState::new(sys_a, sys_b),
-            betrayal: BetrayalState::new(),
-            economy: EconomyState::default(),
-            sim_rng: Xoshiro256PlusPlus::seed_from_u64(42),
-            ai2: None,
-            repair: RepairState::default(),
-            game_config: GameConfig::default(),
-            campaign_config: CampaignConfig::default(),
-            troop_transport: TroopTransportState::default(),
-            deliveries: DeliveryState::default(),
-            player_agent: rebellion_core::agent_automation::PlayerAgent::default(),
-            stockpiles: rebellion_core::stockpiles::StockpileState::default(),
-        }
+        state.world.systems[system].ground_units.push(troop);
+        state
+            .troop_transport
+            .embark(&mut state.world, &ProductRoom::default(), fleet, &[troop])
+            .unwrap();
+        settle_embarkation(state);
+        troop
+    }
+
+    fn round_trip_state(directory: &str, label: &str, state: &SaveState) -> SaveState {
+        let saves_dir = tmp_dir(directory);
+        save_slot(&saves_dir, 0, label, state, &[]).unwrap();
+        load_slot(&saves_dir, 0).expect("the save should load").1
+    }
+
+    fn diplomacy_mission_state() -> (
+        SaveState,
+        SystemKey,
+        SystemKey,
+        rebellion_core::ids::CharacterKey,
+    ) {
+        use rebellion_core::missions::{MissionFaction, MissionKind, MissionRequest};
+        let mut state = minimal_save_state();
+        let mut systems = state.world.systems.keys();
+        let (from, to) = (systems.next().unwrap(), systems.next().unwrap());
+        let envoy = state
+            .world
+            .characters
+            .insert(rebellion_core::world::Character {
+                is_alliance: true,
+                current_system: Some(from),
+                ..Default::default()
+            });
+        state
+            .missions
+            .dispatch_validated(
+                MissionRequest::single(
+                    MissionKind::Diplomacy,
+                    MissionFaction::Alliance,
+                    envoy,
+                    to,
+                    None,
+                    0,
+                ),
+                &mut state.world,
+                &rebellion_core::uprising::UprisingState::default(),
+            )
+            .expect("the mission should dispatch");
+        (state, from, to, envoy)
     }
 
     /// Create a unique temp directory scoped to this test.
@@ -1204,7 +1393,7 @@ mod tests {
         assert_eq!(meta.slot, 0);
         assert_eq!(meta.name, "Test Save");
         assert_eq!(meta.game_tick, loaded.clock.tick);
-        assert!(meta.mod_names.is_empty());
+        assert_empty!(meta.mod_names);
         assert_eq!(meta.mod_hash, compute_mod_hash(&[]));
         assert_eq!(
             meta.state_fingerprint,
@@ -1269,15 +1458,13 @@ mod tests {
                     troop_capacity: 1,
                     ..Default::default()
                 });
-        let fleet = state.world.fleets.insert(rebellion_core::world::Fleet {
-            location: system,
-            capital_ships: vec![rebellion_core::world::ShipInstance::new(class, 75, false)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        state.world.systems[system].fleets.push(fleet);
+        let fleet = insert_ship_fleet(
+            &mut state,
+            system,
+            rebellion_core::world::ShipInstance::new(class, 75, false),
+            false,
+            false,
+        );
         let repair_events = rebellion_core::repair::RepairSystem::advance(
             &mut state.repair,
             &state.world,
@@ -1285,34 +1472,13 @@ mod tests {
             &[rebellion_core::tick::TickEvent { tick: 1 }],
             &[],
         );
-        assert!(!repair_events.is_empty());
+        assert_not_empty!(repair_events);
         assert!(state.repair.is_repairing(fleet));
 
-        let troop = state.world.troops.insert(rebellion_core::world::TroopUnit {
-            class_dat_id: rebellion_core::ids::DatId::new(0x1000_0008),
-            is_alliance: false,
-        });
-        state.world.systems[system].ground_units.push(troop);
-        state
-            .troop_transport
-            .embark(&mut state.world, &ProductRoom::default(), fleet, &[troop])
-            .unwrap();
+        let troop = embark_test_troop(&mut state, system, fleet);
         // The embarkation's holder rerun is served before any save, as the
         // game serves it within the order (support_shift::fire), with any
         // holder change's autoscrap requests.
-        crate::integrator::fire_holder_changes(
-            &mut state.world,
-            &mut state.manufacturing,
-            rebellion_core::support_shift::step(state.clock.tick, 0),
-        );
-        rebellion_core::death_star::serve_holder_requests(
-            &mut state.world,
-            &state.movement,
-            &mut state.troop_transport,
-            &mut state.manufacturing,
-            &mut state.deliveries,
-        );
-
         save_slot(&saves_dir, 0, "Continuation", &state, &[]).unwrap();
         let mut uninterrupted_rng = state.sim_rng.clone();
         let expected_rolls = (0..8)
@@ -1431,7 +1597,7 @@ mod tests {
     fn list_saves_empty_dir() {
         let saves_dir = tmp_dir("list_empty");
         let metas = list_saves(&saves_dir);
-        assert!(metas.is_empty());
+        assert_empty!(metas);
     }
 
     #[test]
@@ -1681,39 +1847,17 @@ mod tests {
                     troop_capacity: 1,
                     ..Default::default()
                 });
-        let fleet = state.world.fleets.insert(rebellion_core::world::Fleet {
-            location: system,
-            capital_ships: vec![rebellion_core::world::ShipInstance::new(class, 100, false)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: false,
-            bombarding: false,
-        });
-        state.world.systems[system].fleets.push(fleet);
-        let troop = state.world.troops.insert(rebellion_core::world::TroopUnit {
-            class_dat_id: rebellion_core::ids::DatId::new(0x1000_0008),
-            is_alliance: false,
-        });
-        state.world.systems[system].ground_units.push(troop);
-        state
-            .troop_transport
-            .embark(&mut state.world, &ProductRoom::default(), fleet, &[troop])
-            .unwrap();
+        let fleet = insert_ship_fleet(
+            &mut state,
+            system,
+            rebellion_core::world::ShipInstance::new(class, 100, false),
+            false,
+            false,
+        );
+        let troop = embark_test_troop(&mut state, system, fleet);
         // The embarkation's holder rerun is served before any save, as the
         // game serves it within the order (support_shift::fire), with any
         // holder change's autoscrap requests.
-        crate::integrator::fire_holder_changes(
-            &mut state.world,
-            &mut state.manufacturing,
-            rebellion_core::support_shift::step(state.clock.tick, 0),
-        );
-        rebellion_core::death_star::serve_holder_requests(
-            &mut state.world,
-            &state.movement,
-            &mut state.troop_transport,
-            &mut state.manufacturing,
-            &mut state.deliveries,
-        );
         BlockadeSystem::running_regiments(
             &mut state.blockade,
             &state.world,
@@ -1795,19 +1939,13 @@ mod tests {
                         is_empire: !is_alliance,
                         ..Default::default()
                     });
-            let fleet = state.world.fleets.insert(rebellion_core::world::Fleet {
-                location: system,
-                capital_ships: vec![rebellion_core::world::ShipInstance::new(
-                    class,
-                    100,
-                    is_alliance,
-                )],
-                fighters: vec![],
-                characters: vec![],
+            let fleet = insert_ship_fleet(
+                &mut state,
+                system,
+                rebellion_core::world::ShipInstance::new(class, 100, is_alliance),
                 is_alliance,
-                bombarding: true,
-            });
-            state.world.systems[system].fleets.push(fleet);
+                true,
+            );
             save_slot(&saves_dir, 0, "Bombarding", &state, &[]).unwrap();
 
             let (_, loaded) = load_slot(&saves_dir, 0).unwrap();
@@ -1920,7 +2058,7 @@ mod tests {
         use rebellion_core::missions::{
             MissionFaction, MissionKind, MissionMember, MissionRequest,
         };
-        use rebellion_core::world::{Character, MissionRecord, SpecialForceUnit};
+        use rebellion_core::world::{Character, SpecialForceUnit};
         let saves_dir = tmp_dir("v17_mission_members_round_trip");
         let mut state = minimal_save_state();
         let system = state.world.systems.keys().next().unwrap();
@@ -1945,37 +2083,13 @@ mod tests {
             on_hidden_mission: false,
         });
         state.world.systems[system].special_forces.push(unit);
-        state.world.mission_records.push(MissionRecord {
-            dat_id: rebellion_core::ids::DatId::new(0x5100_0010),
-            timer_min_days: 5,
-            timer_spread_days: 10,
-            repeats: true,
-            hidden: false,
-            detection_phases: true,
-            can_resign: false,
-            return_policy: 1,
-            // The shipped MISSNSD Diplomacy record 0x51000010's columns
-            // 11..21 = 1 1 1 1 1 0 0 1 0 0, which the creation validator reads
-            // (base rules, FUN_00523450).
-            rules: rebellion_core::world::MissionTargetRules {
-                container_loss_ends: true,
-                needs_populated_container: true,
-                target_loss_ends: true,
-                own_side_target: true,
-                other_side_target: true,
-                opponent_target: false,
-                revolting_target: false,
-                calm_target: true,
-                prisoner_target: false,
-                free_target: false,
-            },
-            members: rebellion_core::world::MissionMemberRules {
-                alliance: true,
-                empire: false,
-                special_force_mask: 0x402,
-                character_mask: 0x1_0000,
-            },
-        });
+        // Use the shipped Diplomacy target rules, then tailor membership for
+        // this save fixture's force and captive decoys.
+        let mut record = rebellion_core::test_support::diplomacy_mission_record();
+        record.can_resign = false;
+        record.members.empire = false;
+        record.members.special_force_mask = 0x402;
+        state.world.mission_records.push(record);
         let request = MissionRequest {
             kind: MissionKind::Diplomacy,
             faction: MissionFaction::Alliance,
@@ -2056,35 +2170,10 @@ mod tests {
     #[test]
     fn a_round_trip_keeps_mission_phases_and_members_in_transit() {
         use rebellion_core::missions::{
-            apply_advance_effects, MissionFaction, MissionKind, MissionMember, MissionRequest,
-            MissionSystem, PHASE_TRANSIT,
+            apply_advance_effects, MissionMember, MissionSystem, PHASE_TRANSIT,
         };
         use rebellion_core::tick::TickEvent;
-        use rebellion_core::world::Character;
-        let saves_dir = tmp_dir("v18_mission_transit_round_trip");
-        let mut state = minimal_save_state();
-        let mut systems = state.world.systems.keys();
-        let (from, to) = (systems.next().unwrap(), systems.next().unwrap());
-        let envoy = state.world.characters.insert(Character {
-            is_alliance: true,
-            current_system: Some(from),
-            ..Default::default()
-        });
-        state
-            .missions
-            .dispatch_validated(
-                MissionRequest::single(
-                    MissionKind::Diplomacy,
-                    MissionFaction::Alliance,
-                    envoy,
-                    to,
-                    None,
-                    0,
-                ),
-                &mut state.world,
-                &rebellion_core::uprising::UprisingState::default(),
-            )
-            .expect("the mission should dispatch");
+        let (mut state, from, to, envoy) = diplomacy_mission_state();
         let advance = MissionSystem::advance(
             &mut state.missions,
             &state.world,
@@ -2093,9 +2182,7 @@ mod tests {
             &[],
         );
         apply_advance_effects(&mut state.world, &advance.effects);
-        save_slot(&saves_dir, 0, "V18 Save", &state, &[]).unwrap();
-
-        let (_, loaded) = load_slot(&saves_dir, 0).expect("the save should load");
+        let loaded = round_trip_state("v18_mission_transit_round_trip", "V18 Save", &state);
 
         let (before, after) = (
             &state.missions.missions()[0],
@@ -2122,36 +2209,9 @@ mod tests {
 
     #[test]
     fn a_round_trip_keeps_a_mission_s_armed_timer_and_its_seen_loss() {
-        use rebellion_core::missions::{
-            apply_advance_effects, MissionFaction, MissionKind, MissionRequest, MissionSystem,
-            PHASE_TIMER,
-        };
+        use rebellion_core::missions::{apply_advance_effects, MissionSystem, PHASE_TIMER};
         use rebellion_core::tick::TickEvent;
-        use rebellion_core::world::Character;
-        let saves_dir = tmp_dir("mission_timer_round_trip");
-        let mut state = minimal_save_state();
-        let mut systems = state.world.systems.keys();
-        let (from, to) = (systems.next().unwrap(), systems.next().unwrap());
-        let envoy = state.world.characters.insert(Character {
-            is_alliance: true,
-            current_system: Some(from),
-            ..Default::default()
-        });
-        state
-            .missions
-            .dispatch_validated(
-                MissionRequest::single(
-                    MissionKind::Diplomacy,
-                    MissionFaction::Alliance,
-                    envoy,
-                    to,
-                    None,
-                    0,
-                ),
-                &mut state.world,
-                &rebellion_core::uprising::UprisingState::default(),
-            )
-            .expect("the mission should dispatch");
+        let (mut state, _from, to, _envoy) = diplomacy_mission_state();
         let step = |state: &mut SaveState, tick: u64| {
             let advance = MissionSystem::advance(
                 &mut state.missions,
@@ -2167,9 +2227,7 @@ mod tests {
         state.world.systems[to].is_destroyed = true;
         step(&mut state, 2);
         step(&mut state, arrival);
-        save_slot(&saves_dir, 0, "Timer Save", &state, &[]).unwrap();
-
-        let (_, loaded) = load_slot(&saves_dir, 0).expect("the save should load");
+        let loaded = round_trip_state("mission_timer_round_trip", "Timer Save", &state);
 
         let (before, after) = (
             &state.missions.missions()[0],

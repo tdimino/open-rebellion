@@ -9,7 +9,10 @@ use crate::world::{CapitalShipClass, DefenseFacilityInstance, Fleet, ShipInstanc
 /// A system holding a Death Star fleet of the side `owner_is_alliance` and an
 /// opposing fleet; the Death Star ship has taken `damage`.
 /// port: test fixture values, not rules.
-fn station_world(owner_is_alliance: bool, damage: i32) -> (GameWorld, SystemKey, FleetKey, FleetKey) {
+fn station_world(
+    owner_is_alliance: bool,
+    damage: i32,
+) -> (GameWorld, SystemKey, FleetKey, FleetKey) {
     let mut world = GameWorld::default();
     let system = world.systems.insert(System::default());
     let mut class = |family, is_alliance: bool, fighter_capacity| {
@@ -30,24 +33,33 @@ fn station_world(owner_is_alliance: bool, damage: i32) -> (GameWorld, SystemKey,
     let death_star = class(0x18, owner_is_alliance, 4);
     let destroyer = class(0x14, owner_is_alliance, 0);
     let cruiser = class(0x14, !owner_is_alliance, 0);
-    let owner = world.fleets.insert(Fleet {
-        location: system,
-        capital_ships: vec![
+    let owner = crate::test_support::add_fleet_with_ships(
+        &mut world,
+        system,
+        vec![
             ShipInstance::new(destroyer, 100, owner_is_alliance),
             ShipInstance::new(death_star, 100 - damage, owner_is_alliance),
         ],
-        is_alliance: owner_is_alliance,
-        ..Fleet::default()
-    });
-    let enemy = world.fleets.insert(Fleet {
-        location: system,
-        capital_ships: vec![ShipInstance::new(cruiser, 100, !owner_is_alliance)],
-        is_alliance: !owner_is_alliance,
-        ..Fleet::default()
-    });
-    world.systems[system].fleets = vec![owner, enemy];
+        owner_is_alliance,
+    );
+    let enemy =
+        crate::test_support::add_fleet_with_class(&mut world, system, cruiser, !owner_is_alliance);
     world.systems[system].fleets.sort_unstable();
     (world, system, owner, enemy)
+}
+
+/// port: shared test fixture values, not rules.
+fn session_with_fleet_ship() -> (FleetKey, BattleSession) {
+    let fleet = FleetKey::default();
+    let mut ship = test_ship(64, 0, true, true);
+    ship.fleet = Some(fleet);
+    (fleet, test_session(vec![ship], Vec::new(), true))
+}
+
+fn arm_death_star(session: &mut BattleSession) {
+    let mut station = test_death_star(false);
+    station.laser_charge = ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE;
+    session.death_star = Some(station);
 }
 
 // FUN_0040b0e0.c:86-118 exports a family-0x18 ship only as the station's
@@ -120,7 +132,11 @@ fn the_trench_chance_is_half_the_torpedo_term_plus_the_rating_truncated() {
     let mut fighter = test_fighter(3, true);
     fighter.torpedo_strength = 48;
     assert_eq!(trench_run_success_chance(&fighter, 9.0), 17);
-    assert_eq!(trench_run_success_chance(&fighter, 12.0), 17, "the rating caps at 9");
+    assert_eq!(
+        trench_run_success_chance(&fighter, 12.0),
+        17,
+        "the rating caps at 9"
+    );
     fighter.hull_current = 48.0;
     assert_eq!(trench_run_success_chance(&fighter, 1.0), 6);
     fighter.torpedo_strength = 0;
@@ -132,10 +148,7 @@ fn the_trench_chance_is_half_the_torpedo_term_plus_the_rating_truncated() {
 // else 1.0.
 #[test]
 fn the_commander_rating_is_combat_over_twenty_plus_one_while_its_fleet_fights() {
-    let fleet = FleetKey::default();
-    let mut ship = test_ship(64, 0, true, true);
-    ship.fleet = Some(fleet);
-    let mut session = test_session(vec![ship], Vec::new(), true);
+    let (fleet, mut session) = session_with_fleet_ship();
     assert_eq!(session.trench_run_rating(), 1.0);
     for (combat, rating) in [(0, 1.0), (60, 4.0), (70, 4.5), (160, 9.0)] {
         session.trench_run_commander = Some(TacticalTrenchCommander {
@@ -148,13 +161,21 @@ fn the_commander_rating_is_combat_over_twenty_plus_one_while_its_fleet_fights() 
         combat: 60,
         fleet: None,
     });
-    assert_eq!(session.trench_run_rating(), 1.0, "one the system holds rides no ship");
+    assert_eq!(
+        session.trench_run_rating(),
+        1.0,
+        "one the system holds rides no ship"
+    );
     session.trench_run_commander = Some(TacticalTrenchCommander {
         combat: 60,
         fleet: Some(fleet),
     });
     session.ships[0].alive = false;
-    assert_eq!(session.trench_run_rating(), 1.0, "the carrying ship is gone");
+    assert_eq!(
+        session.trench_run_rating(),
+        1.0,
+        "the carrying ship is gone"
+    );
 }
 
 // FUN_0040c200.c:68-70: the record's +0x50 is FUN_0040d680 (FILD the
@@ -194,7 +215,10 @@ fn the_alliance_commander_is_rated_on_effective_combat_over_twenty_with_its_frac
         let commander =
             TacticalTrenchCommander::of_battle(&world, system, &side_fleets, attacker_is_alliance)
                 .unwrap();
-        assert_eq!(commander.fleet, Some(side_fleets[usize::from(!attacker_is_alliance)][0]));
+        assert_eq!(
+            commander.fleet,
+            Some(side_fleets[usize::from(!attacker_is_alliance)][0])
+        );
         assert_eq!(commander.combat, 70);
         assert_eq!(commander.rating(), 4.5);
     }
@@ -208,7 +232,8 @@ fn the_highest_alliance_commander_rates_the_run_and_a_tie_keeps_the_systems() {
     use crate::officer_rank::CommandKind;
     use crate::world::{Character, SkillPair};
     for attacker_is_alliance in [true, false] {
-        for (at_system, in_fleet, system_wins) in [(50, 70, false), (70, 50, true), (60, 60, true)] {
+        for (at_system, in_fleet, system_wins) in [(50, 70, false), (70, 50, true), (60, 60, true)]
+        {
             let mut world = GameWorld::default();
             let system = world.systems.insert(System::default());
             let fleet = world.fleets.insert(Fleet {
@@ -218,9 +243,10 @@ fn the_highest_alliance_commander_rates_the_run_and_a_tie_keeps_the_systems() {
             });
             let mut side_fleets = [Vec::new(), Vec::new()];
             side_fleets[usize::from(!attacker_is_alliance)].push(fleet);
-            for (combat, current_fleet, current_system) in
-                [(at_system, None, Some(system)), (in_fleet, Some(fleet), None)]
-            {
+            for (combat, current_fleet, current_system) in [
+                (at_system, None, Some(system)),
+                (in_fleet, Some(fleet), None),
+            ] {
                 world.characters.insert(Character {
                     is_alliance: true,
                     can_be_commander: true,
@@ -234,10 +260,18 @@ fn the_highest_alliance_commander_rates_the_run_and_a_tie_keeps_the_systems() {
                     ..Character::default()
                 });
             }
-            let commander =
-                TacticalTrenchCommander::of_battle(&world, system, &side_fleets, attacker_is_alliance)
-                    .unwrap();
-            let expected = if system_wins { (at_system, None) } else { (in_fleet, Some(fleet)) };
+            let commander = TacticalTrenchCommander::of_battle(
+                &world,
+                system,
+                &side_fleets,
+                attacker_is_alliance,
+            )
+            .unwrap();
+            let expected = if system_wins {
+                (at_system, None)
+            } else {
+                (in_fleet, Some(fleet))
+            };
             assert_eq!((commander.combat, commander.fleet), expected);
         }
     }
@@ -250,16 +284,8 @@ fn the_highest_alliance_commander_rates_the_run_and_a_tie_keeps_the_systems() {
 // rates 1.
 #[test]
 fn the_headless_rating_needs_the_commanders_carrier_in_the_battle_alive_or_not() {
-    let fleet = FleetKey::default();
-    let mut ship = test_ship(64, 0, true, true);
-    ship.fleet = Some(fleet);
-    let mut session = test_session(vec![ship], Vec::new(), true);
-    let commander = |fleet| {
-        Some(TacticalTrenchCommander {
-            combat: 160,
-            fleet,
-        })
-    };
+    let (fleet, mut session) = session_with_fleet_ship();
+    let commander = |fleet| Some(TacticalTrenchCommander { combat: 160, fleet });
     session.trench_run_commander = commander(Some(fleet));
     assert_eq!(session.headless_trench_rating(), 9.0);
     session.ships[0].alive = false;
@@ -272,7 +298,11 @@ fn the_headless_rating_needs_the_commanders_carrier_in_the_battle_alive_or_not()
     assert_eq!(session.headless_trench_rating(), 1.0, "the system holds it");
     let outside = slotmap::SlotMap::<FleetKey, ()>::with_key().insert(());
     session.trench_run_commander = commander(Some(outside));
-    assert_eq!(session.headless_trench_rating(), 1.0, "its fleet is not in the battle");
+    assert_eq!(
+        session.headless_trench_rating(),
+        1.0,
+        "its fleet is not in the battle"
+    );
 }
 
 /// A trench squadron of the Alliance group 0 with `craft` craft, eight hull
@@ -302,16 +332,19 @@ fn trench_session(fighters: Vec<TacticalFighter>, seed: u32) -> BattleSession {
 // rand(1,100).
 #[test]
 fn a_maneuver_miss_takes_one_to_n_craft_and_a_last_craft_dies_without_a_draw() {
-    let seed = (0..)
+    let seed = (0..100_000)
         .find(|&seed| OriginalTacticalRng::new(seed).inclusive(1, 10) >= 2)
-        .unwrap();
+        .expect("a maneuver-miss seed exists in the bounded search");
     let mut single = trench_squadron(1);
     single.sublight_engine_power = 0.0;
     let mut session = trench_session(vec![single], seed);
     session.prepare_original_trench_run();
     let mut expected = OriginalTacticalRng::new(seed);
     let _ = expected.inclusive(1, 10);
-    assert_eq!(session.tactical_rng, expected, "one draw, then the list is empty");
+    assert_eq!(
+        session.tactical_rng, expected,
+        "one draw, then the list is empty"
+    );
     assert!(!session.fighters[0].alive);
     assert_eq!(
         session.trench_run_pending_outcome,
@@ -360,12 +393,12 @@ fn the_trench_roll_pops_the_lowest_squadron_first_and_a_success_restores_every_h
         let _ = rng.inclusive(1, 100);
         (first_pops, second_holds, rng)
     };
-    let seed = (0..)
+    let seed = (0..100_000)
         .find(|&seed| {
             let (first_pops, second_holds, _) = oracle(seed);
             first_pops > 0 && second_holds
         })
-        .unwrap();
+        .expect("a two-squadron ordering seed exists in the bounded search");
     let mut doomed = trench_squadron(1);
     doomed.maneuverability = 8;
     let mut striker = trench_squadron(1);
@@ -379,8 +412,14 @@ fn the_trench_roll_pops_the_lowest_squadron_first_and_a_success_restores_every_h
         session.trench_run_pending_outcome,
         Some(TacticalTrenchRunOutcome::Success)
     );
-    assert_eq!(session.trench_run_chatter, ORIGINAL_TRENCH_RUN_DAMAGED_SUCCESS_CHATTER);
-    assert_eq!(session.fighters[0].hull_current, 8.0, "the snapshot is restored");
+    assert_eq!(
+        session.trench_run_chatter,
+        ORIGINAL_TRENCH_RUN_DAMAGED_SUCCESS_CHATTER
+    );
+    assert_eq!(
+        session.fighters[0].hull_current, 8.0,
+        "the snapshot is restored"
+    );
     assert!(session.fighters[0].alive);
     assert!(session.fighters.iter().all(|fighter| fighter.off_field));
 }
@@ -405,7 +444,10 @@ fn the_trench_loop_gives_up_after_the_thousand_and_first_pop() {
         session.trench_run_pending_outcome,
         Some(TacticalTrenchRunOutcome::Failure)
     );
-    assert!(session.fighters.iter().any(|fighter| fighter.hull_current > 0.0));
+    assert!(session
+        .fighters
+        .iter()
+        .any(|fighter| fighter.hull_current > 0.0));
 
     // The draws of exactly 1001 pops; a survivor pops again at once.
     let mut hull = 1_000_000.0 * ORIGINAL_FIGHTER_HULL_PER_CRAFT;
@@ -442,7 +484,10 @@ fn a_successful_run_zeroes_the_hull_and_charge_and_leaves_the_flags() {
     assert!(!station.not_completed);
     assert!(!station.action_committed);
     assert!(!station.operational());
-    assert!(!session.fighters[0].off_field, "the survivor is listed again");
+    assert!(
+        !session.fighters[0].off_field,
+        "the survivor is listed again"
+    );
 }
 
 // FUN_005d0ce0.c:78-103: an operational station adds 20000000.0 to the
@@ -488,7 +533,10 @@ fn the_empire_may_retreat_on_its_station_while_operational_or_unfinished() {
     station.not_completed = false;
     station.hull = 0.0;
     session.death_star = Some(station);
-    assert!(!session.death_star_allows_retreat(false), "a destroyed station");
+    assert!(
+        !session.death_star_allows_retreat(false),
+        "a destroyed station"
+    );
 
     let mut rebel = test_death_star(false);
     rebel.is_alliance = true;
@@ -509,23 +557,30 @@ fn the_computer_empire_fires_a_full_charge_at_the_first_live_enemy_ship_every_si
         test_ship(0x1400_0002, 0, false, true),
     ];
     let mut session = test_session(ships, Vec::new(), true);
-    let mut station = test_death_star(false);
-    station.laser_charge = ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE;
-    session.death_star = Some(station);
+    arm_death_star(&mut session);
     session.death_star_ai.countdown = 6.0;
     for _ in 0..5 {
         session.advance_computer_controller();
     }
-    assert!(session.death_star_beam.is_none(), "no decision before the sixth update");
+    assert!(
+        session.death_star_beam.is_none(),
+        "no decision before the sixth update"
+    );
     session.advance_computer_controller();
     assert_eq!(session.death_star_beam.map(|beam| beam.target), Some(1));
     assert_eq!(session.death_star.unwrap().laser_charge, 0.0);
     // FUN_005ba520.c:23-31: the local Alliance hears its warning 0x91 and
     // event 0x14; the targeting voice 0x111 is the player's (FUN_005a5740).
-    assert_eq!(session.pending_voice_cues, vec![TacticalVoiceCue::death_star_fire_warning()]);
+    assert_eq!(
+        session.pending_voice_cues,
+        vec![TacticalVoiceCue::death_star_fire_warning()]
+    );
     assert_eq!(
         session.pending_audio_cues,
-        vec![TacticalAudioCue::from_variant(TacticalAudioEvent::TorpedoImpact, 0)]
+        vec![TacticalAudioCue::from_variant(
+            TacticalAudioEvent::TorpedoImpact,
+            0
+        )]
     );
     assert_eq!(session.pending_audio_cues[0].resource_id, 13_054);
     session.death_star_beam = None;
@@ -533,23 +588,37 @@ fn the_computer_empire_fires_a_full_charge_at_the_first_live_enemy_ship_every_si
     for _ in 0..5 {
         session.advance_computer_controller();
     }
-    assert!(session.death_star_beam.is_none(), "the countdown restarts at 6.0");
+    assert!(
+        session.death_star_beam.is_none(),
+        "the countdown restarts at 6.0"
+    );
     session.advance_computer_controller();
     assert!(session.death_star_beam.is_some());
 
-    let mut session = test_session(vec![test_ship(0x1400_0001, 0, true, true)], Vec::new(), true);
+    let mut session = test_session(
+        vec![test_ship(0x1400_0001, 0, true, true)],
+        Vec::new(),
+        true,
+    );
     let mut station = test_death_star(false);
     station.laser_charge = ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE - 1.0;
     session.death_star = Some(station);
     session.advance_computer_controller();
-    assert!(session.death_star_beam.is_none(), "the charge must be exactly 100.0");
+    assert!(
+        session.death_star_beam.is_none(),
+        "the charge must be exactly 100.0"
+    );
 }
 
 // FUN_005c8780.c:178-209: the computer Alliance gives one group order 6,
 // once, when FUN_005ad930 holds.
 #[test]
 fn the_computer_alliance_orders_one_trench_run_when_the_station_is_open_to_it() {
-    let mut fighters = vec![test_fighter(3, true), test_fighter(3, true), test_fighter(5, false)];
+    let mut fighters = vec![
+        test_fighter(3, true),
+        test_fighter(3, true),
+        test_fighter(5, false),
+    ];
     fighters[0].fighter_group = 2;
     fighters[1].fighter_group = 1;
     let mut session = test_session(Vec::new(), fighters, false);
@@ -565,7 +634,10 @@ fn the_computer_alliance_orders_one_trench_run_when_the_station_is_open_to_it() 
     let mut session = test_session(Vec::new(), fighters, false);
     session.death_star = Some(test_death_star(false));
     session.advance_computer_controller();
-    assert_eq!(session.trench_run_group, None, "squadrons must outnumber the Empire's");
+    assert_eq!(
+        session.trench_run_group, None,
+        "squadrons must outnumber the Empire's"
+    );
 }
 
 // port: the computer Alliance's head group (FUN_005c8780.c:198, slot 0x10 of
@@ -590,7 +662,11 @@ fn the_computer_alliance_skips_a_spent_group_and_never_sends_the_unassigned_one(
         session
     };
     let spent = session_with(&[(0, 0), (2, 12), (3, 12)]);
-    assert_eq!(spent.trench_run_group, Some(2), "group 0 has no squadrons left");
+    assert_eq!(
+        spent.trench_run_group,
+        Some(2),
+        "group 0 has no squadrons left"
+    );
 
     let unassigned = session_with(&[(4, 12), (4, 12)]);
     assert_eq!(unassigned.trench_run_group, None);
@@ -612,9 +688,15 @@ fn the_attack_order_needs_an_open_station_more_alliance_squadrons_and_no_run() {
     let open = test_death_star(false);
     assert!(session_with(open, 2, 1).trench_run_order_available());
     assert!(!session_with(open, 1, 1).trench_run_order_available());
-    let shielded = TacticalDeathStar { shielded: true, ..open };
+    let shielded = TacticalDeathStar {
+        shielded: true,
+        ..open
+    };
     assert!(!session_with(shielded, 2, 1).trench_run_order_available());
-    let unfinished = TacticalDeathStar { not_completed: true, ..open };
+    let unfinished = TacticalDeathStar {
+        not_completed: true,
+        ..open
+    };
     assert!(!session_with(unfinished, 2, 1).trench_run_order_available());
     let mut ordered = session_with(open, 2, 1);
     ordered.fighters[0].order = TacticalOrder::AttackDeathStar;
@@ -632,22 +714,36 @@ fn the_attack_order_needs_an_open_station_more_alliance_squadrons_and_no_run() {
 fn a_trench_group_flies_to_its_entry_point_and_starts_the_run_on_arrival() {
     let mut fighter = trench_squadron(4);
     fighter.fighter_group = 0;
-    fighter.source_position = TacticalWorldPosition { x: -40.0, y: 0.0, z: 0.0 };
+    fighter.source_position = TacticalWorldPosition {
+        x: -40.0,
+        y: 0.0,
+        z: 0.0,
+    };
     fighter.sublight_engine_power = 10.0;
     let mut session = trench_session(vec![fighter], 1);
     session.source_layout.battle_extent = 100.0;
     assert_eq!(
         session.trench_run_entry_point(true),
-        TacticalWorldPosition { x: -50.0, y: 0.0, z: 0.0 }
+        TacticalWorldPosition {
+            x: -50.0,
+            y: 0.0,
+            z: 0.0
+        }
     );
     assert_eq!(session.trench_run_entry_point(false).x, 50.0);
     session.advance_trench_run_approach(1000.0);
     let position = session.fighters[0].source_position;
-    assert!((position.x + 49.5).abs() < 1e-4, "10 * 0.95 per second: {position:?}");
+    assert!(
+        (position.x + 49.5).abs() < 1e-4,
+        "10 * 0.95 per second: {position:?}"
+    );
     assert_eq!(session.trench_run_remaining_ms, None);
     session.advance_trench_run_approach(1000.0);
     assert_eq!(session.fighters[0].source_position.x, -50.0);
-    assert!(session.trench_run_remaining_ms.is_some(), "arrival starts the state-5 timer");
+    assert!(
+        session.trench_run_remaining_ms.is_some(),
+        "arrival starts the state-5 timer"
+    );
 }
 
 // FUN_0040b0e0.c:184-203: with no Death Star in a fleet, a Death Star at
@@ -659,25 +755,29 @@ fn a_trench_group_flies_to_its_entry_point_and_starts_the_run_on_arrival() {
 fn a_death_star_at_the_head_of_its_queue_is_an_uncompleted_station_for_either_role() {
     use crate::manufacturing::{BuildableKind, ManufacturingState, QueueItem};
     let (world, system, _, _) = station_world(false, 0);
-    let death_star_class = world
-        .capital_ship_classes
-        .iter()
-        .find(|(_, class)| class.is_death_star())
-        .map(|(key, _)| key)
-        .unwrap();
+    let death_star_class = world.death_star_class().map(|(key, _)| key).unwrap();
     let other_class = world
         .capital_ship_classes
         .iter()
         .find(|(_, class)| !class.is_death_star())
         .map(|(key, _)| key)
         .unwrap();
-    for attacker_is_alliance in [true, false] {
-        let mut manufacturing = ManufacturingState::default();
-        manufacturing.enqueue(system, QueueItem::new(BuildableKind::CapitalShip(death_star_class), 10));
+    let unfinished = |manufacturing: &ManufacturingState, attacker_is_alliance| {
         let mut session = test_session(Vec::new(), Vec::new(), true);
         session.system = system;
-        session.attacker_is_alliance = attacker_is_alliance;
-        session.seat_unfinished_station(&world, &manufacturing);
+        if let Some(attacker_is_alliance) = attacker_is_alliance {
+            session.attacker_is_alliance = attacker_is_alliance;
+        }
+        session.seat_unfinished_station(&world, manufacturing);
+        session
+    };
+    for attacker_is_alliance in [true, false] {
+        let mut manufacturing = ManufacturingState::default();
+        manufacturing.enqueue(
+            system,
+            QueueItem::new(BuildableKind::CapitalShip(death_star_class), 10),
+        );
+        let session = unfinished(&manufacturing, Some(attacker_is_alliance));
         let station = session.death_star.expect("an uncompleted station");
         assert!(station.not_completed && !station.operational());
         assert_eq!(station.is_attacker, !attacker_is_alliance);
@@ -688,11 +788,15 @@ fn a_death_star_at_the_head_of_its_queue_is_an_uncompleted_station_for_either_ro
         assert_eq!(station.ship, None);
     }
     let mut manufacturing = ManufacturingState::default();
-    manufacturing.enqueue(system, QueueItem::new(BuildableKind::CapitalShip(other_class), 10));
-    manufacturing.enqueue(system, QueueItem::new(BuildableKind::CapitalShip(death_star_class), 10));
-    let mut session = test_session(Vec::new(), Vec::new(), true);
-    session.system = system;
-    session.seat_unfinished_station(&world, &manufacturing);
+    manufacturing.enqueue(
+        system,
+        QueueItem::new(BuildableKind::CapitalShip(other_class), 10),
+    );
+    manufacturing.enqueue(
+        system,
+        QueueItem::new(BuildableKind::CapitalShip(death_star_class), 10),
+    );
+    let session = unfinished(&manufacturing, None);
     assert!(session.death_star.is_none(), "only queue position 0 counts");
 }
 
@@ -770,18 +874,25 @@ fn the_headless_empire_fires_its_full_charge_once_at_its_first_ranked_capital_sh
     session.death_star = Some(station);
 
     session.headless_death_star(true);
-    assert!(session.ships[target].alive, "the Alliance side never fires it");
+    assert!(
+        session.ships[target].alive,
+        "the Alliance side never fires it"
+    );
     assert!(session.fighters[1].alive);
     session.headless_death_star(false);
 
     assert!(!session.ships[target].alive);
     assert_eq!(session.ships[target].hull_current, 0);
     assert_eq!(session.ships.iter().filter(|ship| ship.alive).count(), 2);
-    assert_eq!(session.fighters[0].squad_count, 0, "its hangar goes with it");
+    assert_eq!(
+        session.fighters[0].squad_count, 0,
+        "its hangar goes with it"
+    );
     assert!(session.fighters[1].alive, "a squadron out of it flies on");
     assert_eq!(session.death_star.unwrap().laser_charge, 0.0);
     assert!(session.death_star_beam.is_none());
-    assert!(session.pending_voice_cues.is_empty() && session.pending_audio_cues.is_empty());
+    assert_empty!(session.pending_voice_cues);
+    assert_empty!(session.pending_audio_cues);
 
     session.headless_death_star(false);
     assert_eq!(session.death_star.unwrap().laser_charge, 1.0 / 3.0 * 0.001);
@@ -832,7 +943,11 @@ fn the_headless_alliance_runs_while_it_outnumbers_the_empires_squadrons_at_an_op
     assert!(!ran(session_with(2, 1, true)), "the shield closes it");
     let mut session = session_with(2, 1, false);
     session.headless_death_star(false);
-    assert_eq!(session.battle_rng, OriginalBattleRng::default(), "the Empire never runs");
+    assert_eq!(
+        session.battle_rng,
+        OriginalBattleRng::default(),
+        "the Empire never runs"
+    );
 }
 
 // FUN_005d14d0.c:28-37 sends the side's first group of kind 4 (its +0x70
@@ -871,9 +986,15 @@ fn a_headless_trench_run_ends_with_every_member_left_destroyed_after_a_hundred_v
 
     session.headless_trench_run(vec![0, 1]);
 
-    assert!(session.fighters.iter().all(|fighter| fighter.squad_count == 0 && !fighter.alive));
+    assert!(session
+        .fighters
+        .iter()
+        .all(|fighter| fighter.squad_count == 0 && !fighter.alive));
     assert!(session.death_star.unwrap().operational());
-    assert_eq!(session.battle_rng, advanced(OriginalBattleRng::default(), 200));
+    assert_eq!(
+        session.battle_rng,
+        advanced(OriginalBattleRng::default(), 200)
+    );
 }
 
 // FUN_005aefc0 (0x5af0ba-0x5af0d8): a member that misses its maneuver with
@@ -884,12 +1005,21 @@ fn a_headless_member_of_one_craft_that_misses_dies_without_a_draw() {
     let mut lone = trench_squadron(1);
     lone.sublight_engine_power = 0.0;
     let mut session = trench_session(vec![lone, steady_squadron()], 1);
-    assert!(OriginalBattleRng::default().between(1, 10) > 1, "the fixed stream misses");
+    assert!(
+        OriginalBattleRng::default().between(1, 10) > 1,
+        "the fixed stream misses"
+    );
 
     session.headless_trench_run(vec![0, 1]);
 
-    assert!(session.fighters.iter().all(|fighter| fighter.squad_count == 0));
-    assert_eq!(session.battle_rng, advanced(OriginalBattleRng::default(), 1 + 99 * 2));
+    assert!(session
+        .fighters
+        .iter()
+        .all(|fighter| fighter.squad_count == 0));
+    assert_eq!(
+        session.battle_rng,
+        advanced(OriginalBattleRng::default(), 1 + 99 * 2)
+    );
 }
 
 // FUN_005aefc0: a miss takes rand(1,n) craft through FUN_005b54d0 (no
@@ -985,7 +1115,11 @@ fn a_headless_squadron_hit_draws_for_its_shield_and_for_its_overflow() {
         let draws = (0..3)
             .find(|&n| advanced(OriginalBattleRng::default(), n) == session.battle_rng)
             .expect("at most two draws");
-        (session.fighters[0].shield, session.fighters[0].hull_current, draws)
+        (
+            session.fighters[0].shield,
+            session.fighters[0].hull_current,
+            draws,
+        )
     };
 
     assert_eq!(hit(5.0, 32.0, 3.0), (2.0, 32.0, 1));
@@ -1005,9 +1139,7 @@ fn a_battle_run_without_its_window_fires_the_station_on_its_first_step() {
         test_ship(0x1400_0003, 0, false, true),
     ];
     let mut session = test_session(ships, Vec::new(), true);
-    let mut station = test_death_star(false);
-    station.laser_charge = ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE;
-    session.death_star = Some(station);
+    arm_death_star(&mut session);
 
     session.headless_step();
 

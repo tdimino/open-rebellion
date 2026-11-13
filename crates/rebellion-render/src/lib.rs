@@ -1,5 +1,46 @@
 //! Galaxy map rendering and egui UI panels.
 
+// Renderer coordinates intentionally cross integer asset indices and f32
+// screen-space geometry. Checked conversions would change established pixel
+// placement and hit-testing semantics. Exact recovered geometry also compares
+// authored floating-point constants directly.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::float_cmp
+)]
+// Public renderer APIs describe fallible asset and window operations in their
+// type signatures. Repeating generic error/panic sections would obscure the
+// recovered-behaviour documentation that explains each operation.
+#![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
+// Nested options represent explicit tri-state UI values, and renderer record
+// names intentionally retain the vocabulary of the original game structures.
+#![allow(
+    clippy::option_option,
+    clippy::struct_field_names,
+    clippy::similar_names
+)]
+
+#[cfg(test)]
+#[allow(clippy::assert_is_empty)]
+macro_rules! assert_empty {
+    ($value:expr $(,)?) => {{
+        let length = ($value).len();
+        assert_eq!(length, 0, "expected an empty value, got length {length}");
+    }};
+}
+
+#[cfg(test)]
+#[allow(clippy::assert_is_empty)]
+macro_rules! assert_not_empty {
+    ($value:expr $(,)?) => {{
+        let length = ($value).len();
+        assert_ne!(length, 0, "expected a non-empty value");
+    }};
+}
+
 pub mod advice_topics;
 pub mod advisor;
 pub mod advisor_script;
@@ -14,6 +55,7 @@ pub mod defenses_window;
 pub mod encyclopedia;
 pub mod encyclopedia_surface;
 pub mod encyclopedia_textures;
+mod finder_common;
 pub mod fleet_finder;
 pub mod fleet_movement;
 pub mod fleet_registry;
@@ -23,6 +65,7 @@ pub mod game_menu;
 pub mod game_options;
 pub mod game_speed;
 pub mod gid_legend;
+mod list_control;
 pub mod main_menu;
 pub mod main_menu_destinations;
 pub mod manufacturing_window;
@@ -31,6 +74,7 @@ pub mod message_log;
 pub mod mission_dialog;
 pub mod missions_window;
 pub mod move_confirmation;
+mod native_geometry;
 pub mod object_menu;
 pub mod operation_report;
 pub mod panels;
@@ -39,13 +83,18 @@ pub mod quadrant_icons;
 mod scroll_bar;
 pub mod sector_hover;
 pub mod sector_window;
+mod singleton_window_common;
 pub mod status_rows;
 pub mod status_window;
+mod strategic_window_common;
 pub mod system_window;
 mod tactical_asset_cache;
 mod tactical_assets;
 pub mod tactical_view;
 pub mod targeting;
+#[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(all(feature = "test-support", not(test)), allow(dead_code))]
+pub mod test_support;
 pub mod theme;
 pub mod tooltip;
 pub mod troop_finder;
@@ -439,10 +488,9 @@ pub fn update_galaxy_map_input(
     if in_viewport {
         let mut best_dist = hover_radius;
         for (key, system) in &world.systems {
-            let (sx, sy) = cam.to_screen(f32::from(system.x), f32::from(system.y));
-            if !cam.contains_with_margin(sx, sy, cam.scale_pixels(20.0)) {
+            let Some((sx, sy)) = visible_system_position(cam, system) else {
                 continue;
-            }
+            };
             let dist = ((mx - sx).powi(2) + (my - sy).powi(2)).sqrt();
             if dist < best_dist {
                 best_dist = dist;
@@ -480,10 +528,9 @@ pub fn draw_galaxy_map(
     // deliberately absent from the parity surface.
     if gid_mode.is_active() {
         for (key, system) in &world.systems {
-            let (sx, sy) = cam.to_screen(f32::from(system.x), f32::from(system.y));
-            if !cam.contains_with_margin(sx, sy, cam.scale_pixels(20.0)) {
+            let Some((sx, sy)) = visible_system_position(cam, system) else {
                 continue;
-            }
+            };
             draw_gid_marker(
                 cache, world, key, system, faction, gid_mode, gid, cam, sx, sy,
             );
@@ -491,6 +538,12 @@ pub fn draw_galaxy_map(
     }
 
     cam
+}
+
+fn visible_system_position(cam: CameraView, system: &System) -> Option<(f32, f32)> {
+    let position = cam.to_screen(f32::from(system.x), f32::from(system.y));
+    cam.contains_with_margin(position.0, position.1, cam.scale_pixels(20.0))
+        .then_some(position)
 }
 
 /// Top of the GID caption's text box in the 640x480 canvas. hyp: measured,
@@ -536,7 +589,7 @@ pub fn draw_gid_caption(
     );
 }
 
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit state and rendering inputs at this existing UI boundary."
 )]
@@ -638,7 +691,7 @@ fn gid_marker_for_system(
     gid_marker_resource_for_size(system.control, true, size)
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     clippy::cast_possible_truncation,
     reason = "Preserve upstream metric count conversion and keep the GID mode table together."
@@ -864,36 +917,37 @@ fn gid_metric(
                     .map(|entry| entry.count)
                     .sum::<u32>()
         }
-        GidMode::DeathStarShields => system
-            .defense_facilities
-            .iter()
-            .filter(|key| {
-                world.defense_facilities.get(**key).is_some_and(|facility| {
-                    facility.side == player_faction && facility.class_dat_id.index() == 4
-                })
+        GidMode::DeathStarShields => {
+            defense_facility_count(world, system, player_faction, |index| index == 4)
+        }
+        GidMode::PlanetaryShieldGenerators => {
+            defense_facility_count(world, system, player_faction, |index| {
+                matches!(index, 3 | 6)
             })
-            .count() as u32,
-        GidMode::PlanetaryShieldGenerators => system
-            .defense_facilities
-            .iter()
-            .filter(|key| {
-                world.defense_facilities.get(**key).is_some_and(|facility| {
-                    facility.side == player_faction
-                        && matches!(facility.class_dat_id.index(), 3 | 6)
-                })
+        }
+        GidMode::PlanetaryDefenseBatteries => {
+            defense_facility_count(world, system, player_faction, |index| {
+                matches!(index, 1 | 2 | 5)
             })
-            .count() as u32,
-        GidMode::PlanetaryDefenseBatteries => system
-            .defense_facilities
-            .iter()
-            .filter(|key| {
-                world.defense_facilities.get(**key).is_some_and(|facility| {
-                    facility.side == player_faction
-                        && matches!(facility.class_dat_id.index(), 1 | 2 | 5)
-                })
-            })
-            .count() as u32,
+        }
     }
+}
+
+fn defense_facility_count(
+    world: &GameWorld,
+    system: &System,
+    faction: rebellion_core::dat::Faction,
+    matches_index: impl Fn(u32) -> bool,
+) -> u32 {
+    system
+        .defense_facilities
+        .iter()
+        .filter(|key| {
+            world.defense_facilities.get(**key).is_some_and(|facility| {
+                facility.side == faction && matches_index(facility.class_dat_id.index())
+            })
+        })
+        .count() as u32
 }
 
 fn gid_metric_size(mode: GidMode, value: u32) -> usize {
@@ -964,7 +1018,7 @@ fn gid_marker_resource_for_size(control: ControlKind, explored: bool, size: usiz
     }
 }
 
-#[expect(
+#[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     reason = "Popularity is clamped to 0..=1 and rounded to a 0..=100 marker percentage."
@@ -1023,7 +1077,7 @@ fn in_map_viewport(sx: f32, sy: f32, cam: &CameraView) -> bool {
 /// Scale with zoom up to a cap so they stay readable without dominating.
 ///
 /// Pass the `CameraView` returned by `draw_galaxy_map`.
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -1163,7 +1217,7 @@ fn sector_boundary_color(group: rebellion_core::dat::SectorGroup) -> Color {
 /// labels are hidden, boundaries are also hidden.
 ///
 /// Pass the `CameraView` returned by `draw_galaxy_map`.
-#[expect(
+#[allow(
     clippy::cast_precision_loss,
     reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
 )]
@@ -1272,8 +1326,39 @@ pub fn draw_blockade_indicators(world: &GameWorld, blockade: &BlockadeState, cam
 mod interaction_tests {
     use super::*;
 
+    struct GidFixture {
+        movement: rebellion_core::movement::MovementState,
+        manufacturing: ManufacturingState,
+        economy: rebellion_core::economy::EconomyState,
+        missions: rebellion_core::missions::MissionState,
+        uprisings: rebellion_core::uprising::UprisingState,
+    }
+
+    impl GidFixture {
+        fn new(manufacturing: ManufacturingState) -> Self {
+            Self {
+                movement: rebellion_core::movement::MovementState::new(),
+                manufacturing,
+                economy: rebellion_core::economy::EconomyState::default(),
+                missions: rebellion_core::missions::MissionState::new(),
+                uprisings: rebellion_core::uprising::UprisingState::default(),
+            }
+        }
+
+        fn context(&self) -> GidOverlayContext<'_> {
+            GidOverlayContext {
+                movement: &self.movement,
+                manufacturing: &self.manufacturing,
+                economy: &self.economy,
+                missions: &self.missions,
+                uprisings: &self.uprisings,
+                highlight: &[],
+            }
+        }
+    }
+
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -1346,7 +1431,7 @@ mod interaction_tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -1379,7 +1464,7 @@ mod interaction_tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::float_cmp,
         reason = "These regression checks require exact copied values, endpoints, and pixel coordinates."
     )]
@@ -1467,7 +1552,7 @@ mod interaction_tests {
         assert!((text.pos.x + text.galley.size().x / 2.0 - 720.0).abs() < 0.01);
         assert_eq!(text.pos.y, 82.0);
         assert_eq!(text.fallback_color, egui::Color32::from_rgb(0, 255, 0));
-        assert!(shapes(GidMode::DisplayOff).is_empty());
+        assert_empty!(shapes(GidMode::DisplayOff));
     }
 
     #[test]
@@ -1507,27 +1592,15 @@ mod interaction_tests {
         });
         let key = world.systems.insert(System {
             dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
-            name: "Naboo".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
             popularity_alliance: 0.2,
             popularity_empire: 0.8,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(rebellion_core::dat::Faction::Empire),
+            ..rebellion_core::test_support::system_at(
+                "Naboo",
+                sector,
+                0,
+                0,
+                ControlKind::Controlled(rebellion_core::dat::Faction::Empire),
+            )
         });
         let movement = rebellion_core::movement::MovementState::new();
         let manufacturing = rebellion_core::manufacturing::ManufacturingState::new();
@@ -1608,7 +1681,6 @@ mod interaction_tests {
             is_destroyed: false,
             control: ControlKind::Controlled(rebellion_core::dat::Faction::Alliance),
         });
-        let movement = rebellion_core::movement::MovementState::new();
         let mut manufacturing = ManufacturingState::new();
         manufacturing.enqueue(
             key,
@@ -1619,17 +1691,8 @@ mod interaction_tests {
                 5,
             ),
         );
-        let economy = rebellion_core::economy::EconomyState::default();
-        let missions = rebellion_core::missions::MissionState::new();
-        let uprisings = rebellion_core::uprising::UprisingState::default();
-        let gid = GidOverlayContext {
-            movement: &movement,
-            manufacturing: &manufacturing,
-            economy: &economy,
-            missions: &missions,
-            uprisings: &uprisings,
-            highlight: &[],
-        };
+        let fixture = GidFixture::new(manufacturing);
+        let gid = fixture.context();
         let metric = |mode| gid_metric(&world, key, &world.systems[key], true, mode, &gid);
 
         assert_eq!(metric(GidMode::IdleShipyards), 1);
@@ -1648,41 +1711,12 @@ mod interaction_tests {
         let mut world = GameWorld::default();
         let key = world.systems.insert(System {
             dat_id: rebellion_core::ids::DatId::new(0x9000_0001),
-            name: "Yaga Minor".into(),
-            sector: rebellion_core::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: rebellion_core::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
             is_populated: false,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
             is_destroyed: true,
-            control: ControlKind::Uncontrolled,
+            ..rebellion_core::test_support::system("Yaga Minor", ControlKind::Uncontrolled)
         });
-        let movement = rebellion_core::movement::MovementState::new();
-        let manufacturing = ManufacturingState::new();
-        let economy = rebellion_core::economy::EconomyState::default();
-        let missions = rebellion_core::missions::MissionState::new();
-        let uprisings = rebellion_core::uprising::UprisingState::default();
-        let gid = GidOverlayContext {
-            movement: &movement,
-            manufacturing: &manufacturing,
-            economy: &economy,
-            missions: &missions,
-            uprisings: &uprisings,
-            highlight: &[],
-        };
+        let fixture = GidFixture::new(ManufacturingState::new());
+        let gid = fixture.context();
         for faction in [CockpitFaction::Empire, CockpitFaction::Alliance] {
             let marker = |world: &GameWorld, mode| {
                 gid_marker_for_system(world, key, &world.systems[key], faction, mode, &gid)

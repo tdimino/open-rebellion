@@ -1,55 +1,17 @@
+mod common;
+
 use std::collections::BTreeSet;
 
+use common::{control_focus, menu, root_detail as detail, window_focus};
+
 use rebellion_windowing::{
-    BubblePolicy, CaptureCancelReason, CloseReason, ContentReport, ContentStatus, ControlId,
-    FocusTarget, RouteTarget, WindowCommand, WindowError, WindowEvent, WindowId, WindowKind,
-    WindowManager, WindowOwner, WindowTransition,
+    BubblePolicy, CaptureCancelReason, CloseReason, ContentReport, ContentStatus, RouteTarget,
+    WindowCommand, WindowError, WindowEvent, WindowId, WindowKind, WindowManager, WindowOwner,
+    WindowTransition,
 };
 
-fn detail(kind: WindowKind, subject: u64) -> rebellion_windowing::WindowSpec {
-    use rebellion_windowing::{
-        Cardinality, ExistingOpenPolicy, FocusOnOpen, FocusRestoration, InputPolicy, OpenPlacement,
-        PresentationPolicy, StackBand, SubjectId, WindowKey, WindowPolicy, WindowSpec,
-    };
-    WindowSpec {
-        key: WindowKey::contextual(kind, SubjectId::new(2, subject)),
-        owner: WindowOwner::StrategicRoot,
-        policy: WindowPolicy {
-            cardinality: Cardinality::Subject { max_open: None },
-            band: StackBand::Normal,
-            placement: OpenPlacement::TopOfBand,
-            existing: ExistingOpenPolicy::RaiseRestore,
-            input: InputPolicy::Modeless,
-            presentation: PresentationPolicy::History,
-            focus_on_open: FocusOnOpen::Window,
-            restoration: FocusRestoration::PreviousEligible,
-        },
-    }
-}
-
 fn modal() -> rebellion_windowing::WindowSpec {
-    use rebellion_windowing::{
-        Cardinality, ExistingOpenPolicy, InputPolicy, PresentationPolicy, WindowKey,
-    };
-    let mut spec = detail(WindowKind::Encyclopedia, 0);
-    spec.key = WindowKey::singleton(WindowKind::Encyclopedia);
-    spec.policy.cardinality = Cardinality::Singleton;
-    spec.policy.existing = ExistingOpenPolicy::NoOp;
-    spec.policy.input = InputPolicy::StrategicModal;
-    spec.policy.presentation = PresentationPolicy::None;
-    spec
-}
-
-fn menu(owner: WindowId) -> rebellion_windowing::WindowSpec {
-    use rebellion_windowing::{FocusRestoration, InputPolicy, OpenPlacement, StackBand, WindowKey};
-    let mut spec = modal();
-    spec.key = WindowKey::singleton(WindowKind::Menu);
-    spec.owner = WindowOwner::Window(owner);
-    spec.policy.input = InputPolicy::DismissOnOutsidePress;
-    spec.policy.band = StackBand::Transient;
-    spec.policy.placement = OpenPlacement::AboveOwner;
-    spec.policy.restoration = FocusRestoration::SavedMenuTarget;
-    spec
+    common::modal(WindowKind::Encyclopedia)
 }
 
 fn checked(
@@ -70,11 +32,19 @@ fn open(manager: &mut WindowManager, spec: rebellion_windowing::WindowSpec) -> W
     }
 }
 
+fn suspend_owned_child(
+    manager: &mut WindowManager,
+    spec: rebellion_windowing::WindowSpec,
+) -> (WindowId, WindowId) {
+    let child = open(manager, spec);
+    checked(manager, WindowCommand::Minimize(child));
+    let peer = open(manager, detail(WindowKind::Defenses, 3));
+    manager.set_active_windows(&BTreeSet::from([peer])).unwrap();
+    (child, peer)
+}
+
 fn target(window: WindowId) -> RouteTarget {
-    RouteTarget::Window(FocusTarget {
-        window,
-        control: None,
-    })
+    RouteTarget::Window(window_focus(window))
 }
 
 fn reports(
@@ -97,6 +67,9 @@ fn reports(
 }
 
 #[test]
+// This deliberately exercises one continuous stateful contract sequence; splitting
+// it would hide the authority handoffs that the test is intended to verify.
+#[allow(clippy::too_many_lines)]
 fn contract_sequence_preserves_all_authorities() {
     // Port: deterministic fixture permutations compose the replacement, lifecycle,
     // and reconciliation contracts.
@@ -115,10 +88,7 @@ fn contract_sequence_preserves_all_authorities() {
         let mut child_spec = detail(WindowKind::Fleet, seed * 100 + 2);
         child_spec.owner = WindowOwner::Window(root);
         let child = open(&mut manager, child_spec);
-        let control = FocusTarget {
-            window: root,
-            control: Some(ControlId(seed + 1)),
-        };
+        let control = control_focus(root, seed + 1);
         checked(&mut manager, WindowCommand::Focus(control));
         checked(&mut manager, WindowCommand::CapturePointer(child));
         let captured = manager.begin_frame();
@@ -137,7 +107,7 @@ fn contract_sequence_preserves_all_authorities() {
         );
         assert_eq!(captured.owner(child), Some(WindowOwner::Window(root)));
         checked(&mut manager, WindowCommand::Restore(child));
-        assert!(manager.presentation_history().is_empty());
+        assert_eq!(manager.presentation_history(), []);
         checked(&mut manager, WindowCommand::Focus(control));
         let menu_id = open(&mut manager, menu(root));
         let menu_lease = manager.begin_frame();
@@ -175,24 +145,18 @@ fn contract_sequence_preserves_all_authorities() {
         let ids = [root, peer, child, modal_id, modal_menu, fresh];
         let frame = manager.begin_frame();
         let retained = manager.reconcile(&frame, &reports(&frame, &ids, None));
-        assert!(retained.removed.is_empty());
-        assert!(retained.invalid_reports.is_empty());
-        assert!(retained.events.is_empty());
-        assert!(retained.blocking_unpainted.is_empty());
+        assert_eq!(retained.removed, Vec::new());
+        assert_eq!(retained.invalid_reports, Vec::new());
+        assert_eq!(retained.events, Vec::new());
+        assert_eq!(retained.blocking_unpainted, Vec::new());
         assert_eq!(manager.validate(), Ok(()));
 
-        checked(
-            &mut manager,
-            WindowCommand::Focus(FocusTarget {
-                window: peer,
-                control: None,
-            }),
-        );
+        checked(&mut manager, WindowCommand::Focus(window_focus(peer)));
         checked(&mut manager, WindowCommand::CapturePointer(peer));
         let frame = manager.begin_frame();
         let absent = manager.reconcile(&frame, &reports(&frame, &ids, Some(peer)));
         assert_eq!(absent.removed, vec![peer]);
-        assert!(absent.invalid_reports.is_empty());
+        assert_eq!(absent.invalid_reports, Vec::new());
         assert_eq!(
             absent.events[0],
             WindowEvent::CaptureCancelled {
@@ -257,8 +221,8 @@ fn contract_sequence_preserves_all_authorities() {
             status: ContentStatus::Absent,
         });
         let late = manager.reconcile(&before_replace, &late_reports);
-        assert!(late.removed.is_empty());
-        assert!(late.events.is_empty());
+        assert_eq!(late.removed, Vec::new());
+        assert_eq!(late.events, Vec::new());
         assert_eq!(
             late.invalid_reports,
             vec![root.min(child), root.max(child), replacement]
@@ -284,7 +248,7 @@ fn contract_sequence_preserves_all_authorities() {
             }
         );
         assert_eq!(manager.validate(), Ok(()));
-        assert!(manager.begin_frame().paint_order().is_empty());
+        assert_eq!(manager.begin_frame().paint_order(), []);
         let reopened = open(&mut manager, replacement_spec);
         assert!(reopened.get() > replacement.get());
         let before = format!("{manager:?}");
@@ -308,7 +272,7 @@ fn contract_sequence_preserves_all_authorities() {
                 },
             ],
         );
-        assert!(late.removed.is_empty());
+        assert_eq!(late.removed, Vec::new());
         assert!(late.invalid_reports.contains(&reopened));
         assert_eq!(manager.id_for(replacement_spec.key), Some(reopened));
         assert_eq!(format!("{manager:?}"), before);
@@ -339,6 +303,9 @@ fn contract_sequence_preserves_all_authorities() {
 }
 
 #[test]
+// Every rejection is checked against the same live manager so allocator and
+// state-preservation regressions remain observable across commands.
+#[allow(clippy::too_many_lines)]
 fn contract_rejected_commands_preserve_complete_state() {
     // Port: semantic failures must not publish partial teardown or consume allocation.
     let mut manager = WindowManager::new();
@@ -352,13 +319,7 @@ fn contract_rejected_commands_preserve_complete_state() {
     let child = open(&mut manager, child_spec);
     let hidden = open(&mut manager, detail(WindowKind::Missions, 4));
     checked(&mut manager, WindowCommand::Minimize(hidden));
-    checked(
-        &mut manager,
-        WindowCommand::Focus(FocusTarget {
-            window: root,
-            control: Some(ControlId(99)),
-        }),
-    );
+    checked(&mut manager, WindowCommand::Focus(control_focus(root, 99)));
     checked(&mut manager, WindowCommand::CapturePointer(root));
     let mut removed_owner = detail(WindowKind::System, 10);
     removed_owner.owner = WindowOwner::Window(child);
@@ -392,14 +353,8 @@ fn contract_rejected_commands_preserve_complete_state() {
             WindowError::UnknownWindow(stale),
         ),
         (
-            WindowCommand::Focus(FocusTarget {
-                window: hidden,
-                control: None,
-            }),
-            WindowError::IneligibleFocus(FocusTarget {
-                window: hidden,
-                control: None,
-            }),
+            WindowCommand::Focus(window_focus(hidden)),
+            WindowError::IneligibleFocus(window_focus(hidden)),
         ),
         (
             WindowCommand::CapturePointer(hidden),
@@ -437,17 +392,11 @@ fn contract_rejected_commands_preserve_complete_state() {
     for command in [
         WindowCommand::Activate(root),
         WindowCommand::Raise(root),
-        WindowCommand::Focus(FocusTarget {
-            window: root,
-            control: None,
-        }),
+        WindowCommand::Focus(window_focus(root)),
     ] {
         assert_eq!(
             manager.apply(command),
-            Err(WindowError::IneligibleFocus(FocusTarget {
-                window: root,
-                control: None
-            }))
+            Err(WindowError::IneligibleFocus(window_focus(root)))
         );
         assert_eq!(format!("{manager:?}"), before);
     }
@@ -466,16 +415,13 @@ fn contract_dormant_normal_restore_preserves_scene_membership_and_focus() {
     let owner = open(&mut manager, detail(WindowKind::System, 1));
     let mut spec = detail(WindowKind::Fleet, 2);
     spec.owner = WindowOwner::Window(owner);
-    let child = open(&mut manager, spec);
-    checked(&mut manager, WindowCommand::Minimize(child));
-    let peer = open(&mut manager, detail(WindowKind::Defenses, 3));
-    manager.set_active_windows(&BTreeSet::from([peer])).unwrap();
+    let (child, peer) = suspend_owned_child(&mut manager, spec);
     let focus_before = manager.focused();
     let lease = manager.begin_frame();
     let commit = checked(&mut manager, WindowCommand::Restore(child));
     assert_eq!(commit.transition, WindowTransition::Restored { id: child });
-    assert!(commit.events.is_empty());
-    assert!(manager.presentation_history().is_empty());
+    assert_eq!(commit.events, Vec::new());
+    assert_eq!(manager.presentation_history(), []);
     assert_eq!(manager.begin_frame().paint_order(), &[peer]);
     assert_eq!(manager.focused(), focus_before);
     assert_eq!(manager.id_for(spec.key), Some(child));
@@ -496,10 +442,7 @@ fn contract_transient_restore_rejects_a_dormant_owner_atomically() {
     spec.owner = WindowOwner::Window(owner);
     spec.policy.band = rebellion_windowing::StackBand::Transient;
     spec.policy.placement = rebellion_windowing::OpenPlacement::AboveOwner;
-    let child = open(&mut manager, spec);
-    checked(&mut manager, WindowCommand::Minimize(child));
-    let peer = open(&mut manager, detail(WindowKind::Defenses, 3));
-    manager.set_active_windows(&BTreeSet::from([peer])).unwrap();
+    let (child, _peer) = suspend_owned_child(&mut manager, spec);
     let before = format!("{manager:?}");
     assert_eq!(
         manager.apply(WindowCommand::Restore(child)),

@@ -165,7 +165,7 @@ pub fn draw_sector_hover_label(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::dat::{ExplorationStatus, SectorGroup};
+    use rebellion_core::dat::SectorGroup;
     use rebellion_core::ids::DatId;
     use rebellion_core::world::{ControlKind, Sector, System};
 
@@ -225,27 +225,15 @@ mod tests {
         let mut add = |x: u16, y: u16| {
             let system = world.systems.insert(System {
                 dat_id: DatId::new(u32::from(x)),
-                name: String::new(),
-                sector,
-                x,
-                y,
-                exploration_status: ExplorationStatus::Explored,
                 popularity_alliance: 0.0,
                 popularity_empire: 0.0,
-                is_populated: true,
-                total_energy: 0,
-                raw_materials: 0,
-                espionage_rating: 0.0,
-                fleets: Vec::new(),
-                ground_units: Vec::new(),
-                special_forces: Vec::new(),
-                fighters: Vec::new(),
-                defense_facilities: Vec::new(),
-                manufacturing_facilities: Vec::new(),
-                production_facilities: Vec::new(),
-                is_headquarters: false,
-                is_destroyed: false,
-                control: ControlKind::Uncontrolled,
+                ..rebellion_core::test_support::system_at(
+                    "",
+                    sector,
+                    x,
+                    y,
+                    ControlKind::Uncontrolled,
+                )
             });
             world.sectors[sector].systems.push(system);
         };
@@ -253,7 +241,7 @@ mod tests {
         add(400, 330);
         let (left, top) = galaxy_canvas_point(CockpitFaction::Empire, 330, 260);
         let (right, bottom) = galaxy_canvas_point(CockpitFaction::Empire, 400, 330);
-        let middle = ((left + right) / 2.0, (top + bottom) / 2.0);
+        let middle = (f32::midpoint(left, right), f32::midpoint(top, bottom));
         assert_eq!(
             sector_at(&world, CockpitFaction::Empire, middle),
             Some(sector)

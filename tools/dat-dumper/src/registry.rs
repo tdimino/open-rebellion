@@ -28,7 +28,7 @@ fn parse_and_dump<T: DatRecord>(data: &[u8], filename: &str) -> anyhow::Result<S
 }
 
 #[must_use]
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]

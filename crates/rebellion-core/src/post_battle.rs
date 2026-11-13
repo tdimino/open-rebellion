@@ -6,7 +6,7 @@
 
 use crate::blockade::BlockadeSystem;
 use crate::carriage::ProductRoom;
-use crate::combat::side_present;
+use crate::combat::{fighting_fleets, side_present};
 use crate::dat::Faction;
 use crate::ids::{CharacterKey, FighterKey, FleetKey, SystemKey};
 use crate::movement::{begin_faction_fleet_transit, capital_ship_instance_speed, MovementState};
@@ -88,7 +88,7 @@ pub enum Mover {
 /// (`pass_winner`). A squadron that boards a fleet takes a ship with room
 /// besides the squadron `products` built for it. Log lines go to `log`.
 /// Returns what became of each of the loser's fleets.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The pass threads the world's movement, transport and product state through each object."
 )]
@@ -130,19 +130,7 @@ pub fn run_pass(
     // FUN_004f78e0(obj, 1) on every usable fleet (mode 1, `FUN_004ffef0`,
     // `FUN_00516ef0.c:143`) and system squadron of the loser.
     let loser = !winner_is_alliance;
-    let fleets: Vec<FleetKey> = world.systems.get(system).map_or_else(Vec::new, |value| {
-        value
-            .fleets
-            .iter()
-            .copied()
-            .filter(|&fleet| {
-                world
-                    .fleets
-                    .get(fleet)
-                    .is_some_and(|f| f.is_alliance == loser && f.usable())
-            })
-            .collect()
-    });
+    let fleets = fighting_fleets(world, system, loser);
     let mut relocations = Vec::with_capacity(fleets.len());
     for fleet in fleets {
         let outcome = relocate_fleet(world, movement, troop_transport, system, fleet, tick, log);
@@ -194,7 +182,7 @@ pub fn run_pass(
 /// port: stage 4 (an en-route squadron, or one whose origin `+0x38` lies
 /// elsewhere, in a system the other side blockades) has no counterpart: the
 /// port keeps no origin for a squadron the system holds.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The pass threads the world's movement and transport state through each object."
 )]
@@ -327,7 +315,7 @@ fn relocate_fleet(
 
 /// `FUN_00515480` for one squadron the system holds. A squadron's speed is
 /// `FUN_004f63f0`'s 100, so it always travels to an accepted place.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The move threads the world's movement, transport and product state."
 )]
@@ -426,7 +414,7 @@ fn relocate_squadron(
 /// `from`.
 /// "Nearest" is the straight-line distance the original's nearness table
 /// sorts by (`FUN_00554150` → `FUN_0058afd0`).
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The chain reads the world, the transport and movement states and the object's place."
 )]
@@ -501,8 +489,14 @@ fn place(
     if mover != Mover::Fleet {
         return None;
     }
-    let has_room = |key: SystemKey| crate::movement::death_star_room(movement, world, key, death_stars);
-    let held_by = |key: SystemKey| world.systems.get(key).and_then(|value| value.control.faction());
+    let has_room =
+        |key: SystemKey| crate::movement::death_star_room(movement, world, key, death_stars);
+    let held_by = |key: SystemKey| {
+        world
+            .systems
+            .get(key)
+            .and_then(|value| value.control.faction())
+    };
     let own = side(is_alliance);
     let is_enemy = |key: SystemKey| held_by(key) == Some(side(!is_alliance));
     // Stage 6: the neutral systems (side bits 3), nearest first.
@@ -768,6 +762,83 @@ mod tests {
         })
     }
 
+    fn retreat(
+        world: &GameWorld,
+        battle: SystemKey,
+        is_alliance: bool,
+        death_stars: usize,
+    ) -> Option<SystemKey> {
+        retreat_destination(
+            world,
+            &TroopTransportState::default(),
+            &MovementState::default(),
+            battle,
+            is_alliance,
+            death_stars,
+        )
+    }
+
+    fn resolve(
+        world: &mut GameWorld,
+        movement: &mut MovementState,
+        battle: SystemKey,
+        winner_is_alliance: bool,
+    ) -> Vec<(FleetKey, Relocation)> {
+        run_pass(
+            world,
+            movement,
+            &mut TroopTransportState::default(),
+            &ProductRoom::default(),
+            battle,
+            winner_is_alliance,
+            0,
+            &mut Vec::new(),
+        )
+    }
+
+    fn death_star_room_world(
+        side: Faction,
+        far_control: ControlKind,
+    ) -> (GameWorld, SystemKey, SystemKey, SystemKey) {
+        let is_alliance = side == Faction::Alliance;
+        let mut world = GameWorld::default();
+        let battle = system_at(&mut world, 0, ControlKind::Controlled(opponent(side)));
+        let near = system_at(&mut world, 10, ControlKind::Controlled(side));
+        let far = system_at(&mut world, 50, far_control);
+        let station = world
+            .capital_ship_classes
+            .insert(crate::world::CapitalShipClass {
+                family: 0x19,
+                ..Default::default()
+            });
+        let other = world.fleets.insert(Fleet {
+            location: near,
+            is_alliance,
+            capital_ships: vec![crate::world::ShipInstance::new(station, 100, is_alliance)],
+            ..Default::default()
+        });
+        world.systems[near].fleets.push(other);
+        (world, battle, near, far)
+    }
+
+    fn three_system_retreat(
+        side: Faction,
+        battle_control: ControlKind,
+    ) -> (GameWorld, SystemKey, SystemKey) {
+        let mut world = GameWorld::default();
+        let battle = system_at(&mut world, 0, battle_control);
+        system_at(&mut world, 10, ControlKind::Controlled(opponent(side)));
+        let own = system_at(&mut world, 50, ControlKind::Controlled(side));
+        (world, battle, own)
+    }
+
+    fn loser_world(loser: Faction) -> (GameWorld, SystemKey, SystemKey, bool) {
+        let mut world = GameWorld::default();
+        let battle = system_at(&mut world, 0, ControlKind::Controlled(loser));
+        let refuge = system_at(&mut world, 30, ControlKind::Controlled(loser));
+        (world, battle, refuge, loser == Faction::Alliance)
+    }
+
     /// VM, original game, `empire-day660-deathstar-pre-alert.sav`: the
     /// Imperial fleet withdrew from the Imperial-held Carida (day 669, the
     /// Alliance fleet in orbit) after a countdown and the result read "The
@@ -777,18 +848,8 @@ mod tests {
     #[test]
     fn a_withdrawing_fleet_at_its_own_system_retreats_to_the_nearest_other_own_system() {
         for side in [Faction::Empire, Faction::Alliance] {
-            let mut world = GameWorld::default();
-            let battle = system_at(&mut world, 0, ControlKind::Controlled(side));
-            system_at(&mut world, 10, ControlKind::Controlled(opponent(side)));
-            let own = system_at(&mut world, 50, ControlKind::Controlled(side));
-            let destination = retreat_destination(
-                &world,
-                &TroopTransportState::default(),
-                &MovementState::default(),
-                battle,
-                side == Faction::Alliance,
-                0,
-            );
+            let (world, battle, own) = three_system_retreat(side, ControlKind::Controlled(side));
+            let destination = retreat(&world, battle, side == Faction::Alliance, 0);
             assert_eq!(destination, Some(own), "{side:?}");
         }
     }
@@ -796,18 +857,9 @@ mod tests {
     #[test]
     fn a_withdrawing_fleet_leaves_a_battle_system_its_side_does_not_hold_for_the_nearest_own() {
         for side in [Faction::Empire, Faction::Alliance] {
-            let mut world = GameWorld::default();
-            let battle = system_at(&mut world, 0, ControlKind::Controlled(opponent(side)));
-            system_at(&mut world, 10, ControlKind::Controlled(opponent(side)));
-            let own = system_at(&mut world, 50, ControlKind::Controlled(side));
-            let destination = retreat_destination(
-                &world,
-                &TroopTransportState::default(),
-                &MovementState::default(),
-                battle,
-                side == Faction::Alliance,
-                0,
-            );
+            let (world, battle, own) =
+                three_system_retreat(side, ControlKind::Controlled(opponent(side)));
+            let destination = retreat(&world, battle, side == Faction::Alliance, 0);
             assert_eq!(destination, Some(own), "{side:?}");
         }
     }
@@ -819,14 +871,7 @@ mod tests {
         for side in [Faction::Empire, Faction::Alliance] {
             let mut world = GameWorld::default();
             let battle = system_at(&mut world, 0, ControlKind::Controlled(side));
-            let destination = retreat_destination(
-                &world,
-                &TroopTransportState::default(),
-                &MovementState::default(),
-                battle,
-                side == Faction::Alliance,
-                0,
-            );
+            let destination = retreat(&world, battle, side == Faction::Alliance, 0);
             assert_eq!(destination, None, "{side:?}");
         }
     }
@@ -850,14 +895,7 @@ mod tests {
                 at(&mut world, x, y, ControlKind::Controlled(side));
             }
             let nearest = at(&mut world, 131, 83, ControlKind::Controlled(side));
-            let destination = retreat_destination(
-                &world,
-                &TroopTransportState::default(),
-                &MovementState::default(),
-                battle,
-                side == Faction::Alliance,
-                0,
-            );
+            let destination = retreat(&world, battle, side == Faction::Alliance, 0);
             assert_eq!(destination, Some(nearest), "{side:?}");
         }
     }
@@ -873,10 +911,12 @@ mod tests {
             let battle = system_at(&mut world, 0, ControlKind::Controlled(side));
             let near = system_at(&mut world, 10, ControlKind::Controlled(side));
             let far = system_at(&mut world, 50, ControlKind::Controlled(side));
-            let class = world.capital_ship_classes.insert(crate::world::CapitalShipClass {
-                family: 0x14,
-                ..Default::default()
-            });
+            let class = world
+                .capital_ship_classes
+                .insert(crate::world::CapitalShipClass {
+                    family: 0x14,
+                    ..Default::default()
+                });
             let blockader = world.fleets.insert(Fleet {
                 location: near,
                 is_alliance: !is_alliance,
@@ -894,10 +934,17 @@ mod tests {
                     0,
                 )
             };
-            assert!(BlockadeSystem::system_is_blockaded(&world, &world.systems[near]));
+            assert!(BlockadeSystem::system_is_blockaded(
+                &world,
+                &world.systems[near]
+            ));
             assert_eq!(retreat(&world), Some(far), "{side:?}");
             world.systems[far].control = ControlKind::Controlled(opponent(side));
-            assert_eq!(retreat(&world), Some(near), "{side:?} only the blockaded one");
+            assert_eq!(
+                retreat(&world),
+                Some(near),
+                "{side:?} only the blockaded one"
+            );
         }
     }
 
@@ -912,14 +959,16 @@ mod tests {
             let battle = system_at(&mut world, 0, ControlKind::Controlled(side));
             let refuge = system_at(&mut world, 30, ControlKind::Controlled(side));
             let mut fleet = |own: bool| {
-                let class = world.capital_ship_classes.insert(crate::world::CapitalShipClass {
-                    dat_id: crate::ids::DatId::new(0x1400_0001),
-                    family: 0x14,
-                    is_alliance: own,
-                    is_empire: !own,
-                    hull: 100,
-                    ..Default::default()
-                });
+                let class = world
+                    .capital_ship_classes
+                    .insert(crate::world::CapitalShipClass {
+                        dat_id: crate::ids::DatId::new(0x1400_0001),
+                        family: 0x14,
+                        is_alliance: own,
+                        is_empire: !own,
+                        hull: 100,
+                        ..Default::default()
+                    });
                 world.fleets.insert(Fleet {
                     location: battle,
                     capital_ships: vec![crate::world::ShipInstance::new(class, 100, own)],
@@ -955,24 +1004,8 @@ mod tests {
     fn a_retreating_death_star_passes_over_a_system_that_holds_another() {
         for side in [Faction::Empire, Faction::Alliance] {
             let is_alliance = side == Faction::Alliance;
-            let mut world = GameWorld::default();
-            // The battle system is the other side's, so it is no candidate.
-            let battle = system_at(&mut world, 0, ControlKind::Controlled(opponent(side)));
-            let near = system_at(&mut world, 10, ControlKind::Controlled(side));
-            let far = system_at(&mut world, 50, ControlKind::Controlled(side));
-            let station = world
-                .capital_ship_classes
-                .insert(crate::world::CapitalShipClass {
-                    family: 0x19,
-                    ..Default::default()
-                });
-            let other = world.fleets.insert(Fleet {
-                location: near,
-                is_alliance,
-                capital_ships: vec![crate::world::ShipInstance::new(station, 100, is_alliance)],
-                ..Default::default()
-            });
-            world.systems[near].fleets.push(other);
+            let (world, battle, near, far) =
+                death_star_room_world(side, ControlKind::Controlled(side));
             let retreat = |death_stars| {
                 retreat_destination(
                     &world,
@@ -1013,7 +1046,7 @@ mod tests {
             world.characters[crew].current_fleet = Some(fleet);
             destroy_fleet(&mut world, &mut TroopTransportState::default(), fleet, 7);
             assert!(!world.fleets.contains_key(fleet));
-            assert!(world.systems[here].fleets.is_empty());
+            assert_empty!(world.systems[here].fleets);
             let character = &world.characters[crew];
             assert!(character.is_captive);
             assert_eq!(character.captured_by, Some(side(!is_alliance)));
@@ -1027,14 +1060,16 @@ mod tests {
 
     /// A fleet of one ship that can jump, at `at`.
     fn jumping_fleet(world: &mut GameWorld, at: SystemKey, is_alliance: bool) -> FleetKey {
-        let class = world.capital_ship_classes.insert(crate::world::CapitalShipClass {
-            family: 0x14,
-            hull: 100,
-            hyperdrive: 1,
-            is_alliance,
-            is_empire: !is_alliance,
-            ..Default::default()
-        });
+        let class = world
+            .capital_ship_classes
+            .insert(crate::world::CapitalShipClass {
+                family: 0x14,
+                hull: 100,
+                hyperdrive: 1,
+                is_alliance,
+                is_empire: !is_alliance,
+                ..Default::default()
+            });
         let fleet = world.fleets.insert(Fleet {
             location: at,
             is_alliance,
@@ -1043,6 +1078,37 @@ mod tests {
         });
         world.systems[at].fleets.push(fleet);
         fleet
+    }
+
+    fn opposed_fleets(
+        world: &mut GameWorld,
+        battle: SystemKey,
+        loser_is_alliance: bool,
+    ) -> FleetKey {
+        let loser = jumping_fleet(world, battle, loser_is_alliance);
+        jumping_fleet(world, battle, !loser_is_alliance);
+        loser
+    }
+
+    fn assert_retreat_and_relocation(
+        world: &mut GameWorld,
+        battle: SystemKey,
+        destination: SystemKey,
+        is_alliance: bool,
+        label: Faction,
+    ) {
+        assert_eq!(
+            retreat(world, battle, is_alliance, 0),
+            Some(destination),
+            "{label:?}"
+        );
+        let fleet = opposed_fleets(world, battle, is_alliance);
+        let relocations = resolve(world, &mut MovementState::default(), battle, !is_alliance);
+        assert_eq!(
+            relocations,
+            [(fleet, Relocation::Moved(destination))],
+            "{label:?}"
+        );
     }
 
     /// VM, `empire-day660-deathstar-pre-alert.sav`: the Imperial fleets lost
@@ -1054,30 +1120,21 @@ mod tests {
     #[test]
     fn a_loser_at_its_own_system_leaves_for_the_nearest_other_own_system() {
         for loser in [Faction::Empire, Faction::Alliance] {
-            let loser_is_alliance = loser == Faction::Alliance;
-            let mut world = GameWorld::default();
-            let battle = system_at(&mut world, 0, ControlKind::Controlled(loser));
+            let (mut world, battle, refuge, loser_is_alliance) = loser_world(loser);
             system_at(&mut world, 10, ControlKind::Controlled(opponent(loser)));
-            let refuge = system_at(&mut world, 30, ControlKind::Controlled(loser));
-            let fleet = jumping_fleet(&mut world, battle, loser_is_alliance);
-            jumping_fleet(&mut world, battle, !loser_is_alliance);
+            let fleet = opposed_fleets(&mut world, battle, loser_is_alliance);
             let mut movement = MovementState::default();
 
-            let relocations = run_pass(
-                &mut world,
-                &mut movement,
-                &mut TroopTransportState::default(),
-                &ProductRoom::default(),
-                battle,
-                !loser_is_alliance,
-                0,
-                &mut Vec::new(),
-            );
+            let relocations = resolve(&mut world, &mut movement, battle, !loser_is_alliance);
 
             // The pass takes no "withdrew" input: a loser that never jumped
             // leaves just the same (Wine, day 669, Carida auto-resolved: the
             // fleet arrived at Halowan on day 672 and no battle reopened).
-            assert_eq!(relocations, [(fleet, Relocation::Moved(refuge))], "{loser:?}");
+            assert_eq!(
+                relocations,
+                [(fleet, Relocation::Moved(refuge))],
+                "{loser:?}"
+            );
             assert!(movement.is_in_transit(fleet), "{loser:?}");
             // With the loser away only the winner is there: the system ends
             // blockaded, as the results text reads.
@@ -1091,7 +1148,7 @@ mod tests {
     /// Stage 6 (`FUN_005551e0`) takes the systems whose side bits are 3,
     /// nearest first, before stage 7 (`FUN_005552e0`) takes the other side's;
     /// a fleet is accepted at a system of any side (`FUN_005073d0.c:103-113`).
-    /// FUN_00516730 runs the same chain from stage 3, so the withdrawal's
+    /// `FUN_00516730` runs the same chain from stage 3, so the withdrawal's
     /// retreat system follows it too.
     #[test]
     fn a_side_holding_only_the_battle_system_retreats_to_the_nearest_neutral_system() {
@@ -1102,29 +1159,7 @@ mod tests {
             system_at(&mut world, 10, ControlKind::Controlled(opponent(side)));
             let neutral = system_at(&mut world, 30, ControlKind::Uncontrolled);
             system_at(&mut world, 60, ControlKind::Uncontrolled);
-            let retreat = retreat_destination(
-                &world,
-                &TroopTransportState::default(),
-                &MovementState::default(),
-                battle,
-                is_alliance,
-                0,
-            );
-            assert_eq!(retreat, Some(neutral), "{side:?}");
-
-            let fleet = jumping_fleet(&mut world, battle, is_alliance);
-            jumping_fleet(&mut world, battle, !is_alliance);
-            let relocations = run_pass(
-                &mut world,
-                &mut MovementState::default(),
-                &mut TroopTransportState::default(),
-                &ProductRoom::default(),
-                battle,
-                !is_alliance,
-                0,
-                &mut Vec::new(),
-            );
-            assert_eq!(relocations, [(fleet, Relocation::Moved(neutral))], "{side:?}");
+            assert_retreat_and_relocation(&mut world, battle, neutral, is_alliance, side);
         }
     }
 
@@ -1136,29 +1171,7 @@ mod tests {
             let battle = system_at(&mut world, 0, ControlKind::Controlled(side));
             let near = system_at(&mut world, 10, ControlKind::Controlled(opponent(side)));
             system_at(&mut world, 60, ControlKind::Controlled(opponent(side)));
-            let retreat = retreat_destination(
-                &world,
-                &TroopTransportState::default(),
-                &MovementState::default(),
-                battle,
-                is_alliance,
-                0,
-                );
-            assert_eq!(retreat, Some(near), "{side:?}");
-
-            let fleet = jumping_fleet(&mut world, battle, is_alliance);
-            jumping_fleet(&mut world, battle, !is_alliance);
-            let relocations = run_pass(
-                &mut world,
-                &mut MovementState::default(),
-                &mut TroopTransportState::default(),
-                &ProductRoom::default(),
-                battle,
-                !is_alliance,
-                0,
-                &mut Vec::new(),
-            );
-            assert_eq!(relocations, [(fleet, Relocation::Moved(near))], "{side:?}");
+            assert_retreat_and_relocation(&mut world, battle, near, is_alliance, side);
         }
     }
 
@@ -1168,34 +1181,32 @@ mod tests {
     #[test]
     fn the_pass_leaves_a_loser_fleet_on_its_own_leg_alone() {
         for loser in [Faction::Empire, Faction::Alliance] {
-            let loser_is_alliance = loser == Faction::Alliance;
-            let mut world = GameWorld::default();
-            let battle = system_at(&mut world, 0, ControlKind::Controlled(loser));
-            let refuge = system_at(&mut world, 30, ControlKind::Controlled(loser));
+            let (mut world, battle, refuge, loser_is_alliance) = loser_world(loser);
             let travelling = jumping_fleet(&mut world, battle, loser_is_alliance);
-            world.fleets[travelling].capital_ships[0].transit =
-                Some(crate::world::ShipTransit {
-                    from: refuge,
-                    to: battle,
-                    arrival_tick: 9,
-                });
-            let usable = jumping_fleet(&mut world, battle, loser_is_alliance);
-            jumping_fleet(&mut world, battle, !loser_is_alliance);
+            world.fleets[travelling].capital_ships[0].transit = Some(crate::world::ShipTransit {
+                from: refuge,
+                to: battle,
+                arrival_tick: 9,
+            });
+            let usable = opposed_fleets(&mut world, battle, loser_is_alliance);
 
-            let relocations = run_pass(
+            let relocations = resolve(
                 &mut world,
                 &mut MovementState::default(),
-                &mut TroopTransportState::default(),
-                &ProductRoom::default(),
                 battle,
                 !loser_is_alliance,
-                0,
-                &mut Vec::new(),
             );
 
-            assert_eq!(relocations, [(usable, Relocation::Moved(refuge))], "{loser:?}");
+            assert_eq!(
+                relocations,
+                [(usable, Relocation::Moved(refuge))],
+                "{loser:?}"
+            );
             assert!(world.fleets.contains_key(travelling), "{loser:?}");
-            assert!(world.systems[battle].fleets.contains(&travelling), "{loser:?}");
+            assert!(
+                world.systems[battle].fleets.contains(&travelling),
+                "{loser:?}"
+            );
         }
     }
 
@@ -1211,36 +1222,34 @@ mod tests {
             let mut world = GameWorld::default();
             let battle = system_at(&mut world, 0, ControlKind::Uncontrolled);
             let other = system_at(&mut world, 30, ControlKind::Uncontrolled);
-            let fleet = jumping_fleet(&mut world, battle, loser_is_alliance);
-            jumping_fleet(&mut world, battle, !loser_is_alliance);
+            let fleet = opposed_fleets(&mut world, battle, loser_is_alliance);
 
-            let relocations = run_pass(
+            let relocations = resolve(
                 &mut world,
                 &mut MovementState::default(),
-                &mut TroopTransportState::default(),
-                &ProductRoom::default(),
                 battle,
                 !loser_is_alliance,
-                0,
-                &mut Vec::new(),
             );
-            assert_eq!(relocations, [(fleet, Relocation::Moved(other))], "{loser:?}");
+            assert_eq!(
+                relocations,
+                [(fleet, Relocation::Moved(other))],
+                "{loser:?}"
+            );
 
             let mut alone = GameWorld::default();
             let only = system_at(&mut alone, 0, ControlKind::Uncontrolled);
-            let stuck = jumping_fleet(&mut alone, only, loser_is_alliance);
-            jumping_fleet(&mut alone, only, !loser_is_alliance);
-            let relocations = run_pass(
+            let stuck = opposed_fleets(&mut alone, only, loser_is_alliance);
+            let relocations = resolve(
                 &mut alone,
                 &mut MovementState::default(),
-                &mut TroopTransportState::default(),
-                &ProductRoom::default(),
                 only,
                 !loser_is_alliance,
-                0,
-                &mut Vec::new(),
             );
-            assert_eq!(relocations, [(stuck, Relocation::Destroyed(2))], "{loser:?}");
+            assert_eq!(
+                relocations,
+                [(stuck, Relocation::Destroyed(2))],
+                "{loser:?}"
+            );
         }
     }
 
@@ -1251,32 +1260,9 @@ mod tests {
     fn stage_six_takes_only_neutral_systems() {
         for side in [Faction::Empire, Faction::Alliance] {
             let is_alliance = side == Faction::Alliance;
-            let mut world = GameWorld::default();
-            // The battle system is the other side's, so it is no candidate.
-            let battle = system_at(&mut world, 0, ControlKind::Controlled(opponent(side)));
-            let near = system_at(&mut world, 10, ControlKind::Controlled(side));
-            let neutral = system_at(&mut world, 50, ControlKind::Uncontrolled);
-            let station = world
-                .capital_ship_classes
-                .insert(crate::world::CapitalShipClass {
-                    family: 0x19,
-                    ..Default::default()
-                });
-            let other = world.fleets.insert(Fleet {
-                location: near,
-                is_alliance,
-                capital_ships: vec![crate::world::ShipInstance::new(station, 100, is_alliance)],
-                ..Default::default()
-            });
-            world.systems[near].fleets.push(other);
-            let retreat = retreat_destination(
-                &world,
-                &TroopTransportState::default(),
-                &MovementState::default(),
-                battle,
-                is_alliance,
-                1,
-            );
+            let (world, battle, _near, neutral) =
+                death_star_room_world(side, ControlKind::Uncontrolled);
+            let retreat = retreat(&world, battle, is_alliance, 1);
             assert_eq!(retreat, Some(neutral), "{side:?}");
         }
     }
@@ -1307,8 +1293,16 @@ mod tests {
                     true,
                 )
             };
-            assert_eq!(retreat(Mover::Fleet), Some(Place::System(wreck)), "{side:?}");
-            assert_eq!(retreat(Mover::Squadron), Some(Place::System(whole)), "{side:?}");
+            assert_eq!(
+                retreat(Mover::Fleet),
+                Some(Place::System(wreck)),
+                "{side:?}"
+            );
+            assert_eq!(
+                retreat(Mover::Squadron),
+                Some(Place::System(whole)),
+                "{side:?}"
+            );
         }
     }
 
@@ -1358,28 +1352,15 @@ mod tests {
     #[test]
     fn a_refused_transit_traces_the_side_that_won_the_battle() {
         for loser in [Faction::Empire, Faction::Alliance] {
-            let loser_is_alliance = loser == Faction::Alliance;
-            let mut world = GameWorld::default();
-            let battle = system_at(&mut world, 0, ControlKind::Controlled(loser));
-            let refuge = system_at(&mut world, 30, ControlKind::Controlled(loser));
-            let fleet = jumping_fleet(&mut world, battle, loser_is_alliance);
-            jumping_fleet(&mut world, battle, !loser_is_alliance);
+            let (mut world, battle, refuge, loser_is_alliance) = loser_world(loser);
+            let fleet = opposed_fleets(&mut world, battle, loser_is_alliance);
             let mut movement = MovementState::default();
             // An order already held refuses the new departure.
             assert!(movement.order(fleet, battle, refuge, 5));
             crate::trace::set_mask(crate::trace::TraceMask::COMBAT);
             let _ = crate::trace::drain();
 
-            let relocations = run_pass(
-                &mut world,
-                &mut movement,
-                &mut TroopTransportState::default(),
-                &ProductRoom::default(),
-                battle,
-                !loser_is_alliance,
-                0,
-                &mut Vec::new(),
-            );
+            let relocations = resolve(&mut world, &mut movement, battle, !loser_is_alliance);
             let records = crate::trace::drain();
             crate::trace::set_mask(crate::trace::TraceMask::default());
 
@@ -1393,7 +1374,11 @@ mod tests {
                 })
                 .collect();
             assert_eq!(refused.len(), 1, "{loser:?} {records:?}");
-            let winner = if loser_is_alliance { "empire" } else { "alliance" };
+            let winner = if loser_is_alliance {
+                "empire"
+            } else {
+                "alliance"
+            };
             assert_eq!(refused[0].details["winner"], winner, "{loser:?}");
         }
     }
@@ -1406,12 +1391,14 @@ mod tests {
         completed: bool,
         travelling: Option<SystemKey>,
     ) -> crate::world::ShipInstance {
-        let class = world.capital_ship_classes.insert(crate::world::CapitalShipClass {
-            family: 0x14,
-            hull: 100,
-            hyperdrive: 1,
-            ..Default::default()
-        });
+        let class = world
+            .capital_ship_classes
+            .insert(crate::world::CapitalShipClass {
+                family: 0x14,
+                hull: 100,
+                hyperdrive: 1,
+                ..Default::default()
+            });
         let mut ship = crate::world::ShipInstance::new(class, 100, is_alliance);
         ship.set_hyperdrive_damage_hits(&world.capital_ship_classes[class].clone(), 1);
         ship.completed = completed;
@@ -1436,7 +1423,9 @@ mod tests {
             let fine = jumping_fleet(&mut world, here, is_alliance);
             let unfinished = stranded_ship(&mut world, is_alliance, false, None);
             let travelling = stranded_ship(&mut world, is_alliance, true, Some(here));
-            world.fleets[fine].capital_ships.extend([unfinished, travelling]);
+            world.fleets[fine]
+                .capital_ships
+                .extend([unfinished, travelling]);
             assert!(!fleet_speed_is_zero(&world, fine), "{is_alliance}");
 
             let stuck = stranded_ship(&mut world, is_alliance, true, None);
@@ -1469,7 +1458,11 @@ mod tests {
                 .iter()
                 .map(|ship| (ship.completed, ship.transit.is_some()))
                 .collect();
-            assert_eq!(kept, [(true, false), (false, false), (true, true)], "{is_alliance}");
+            assert_eq!(
+                kept,
+                [(true, false), (false, false), (true, true)],
+                "{is_alliance}"
+            );
         }
     }
 
@@ -1484,18 +1477,18 @@ mod tests {
             let battle = system_at(&mut world, 0, ControlKind::Controlled(loser));
             let fleet = jumping_fleet(&mut world, battle, loser_is_alliance);
 
-            let relocations = run_pass(
+            let relocations = resolve(
                 &mut world,
                 &mut MovementState::default(),
-                &mut TroopTransportState::default(),
-                &ProductRoom::default(),
                 battle,
                 !loser_is_alliance,
-                0,
-                &mut Vec::new(),
             );
 
-            assert_eq!(relocations, [(fleet, Relocation::Destroyed(2))], "{loser:?}");
+            assert_eq!(
+                relocations,
+                [(fleet, Relocation::Destroyed(2))],
+                "{loser:?}"
+            );
             assert!(!world.fleets.contains_key(fleet), "{loser:?}");
         }
     }

@@ -549,13 +549,31 @@ mod tests {
             })
             .collect();
         world.fleets.insert(Fleet {
-            location: Default::default(),
+            location: SystemKey::default(),
             capital_ships: ships,
             fighters: Vec::new(),
             characters: Vec::new(),
             is_alliance: true,
             bombarding: false,
         })
+    }
+
+    fn side_fleet(is_alliance: bool, capacities: &[u32]) -> (GameWorld, FleetKey) {
+        let mut world = GameWorld::default();
+        let key = fleet(&mut world, capacities);
+        world.fleets[key].is_alliance = is_alliance;
+        (world, key)
+    }
+
+    fn side_fleet_with_fighter(
+        is_alliance: bool,
+        capacities: &[u32],
+    ) -> (GameWorld, FleetKey, FighterKey) {
+        let (mut world, key) = side_fleet(is_alliance, capacities);
+        let class = world
+            .fighter_classes
+            .insert(crate::world::FighterClass::default());
+        (world, key, class)
     }
 
     fn carriers(world: &GameWorld, fleet: FleetKey) -> Vec<(u32, u32)> {
@@ -601,7 +619,9 @@ mod tests {
     fn a_squadron_boards_the_ship_with_the_most_room() {
         let mut world = GameWorld::default();
         let key = fleet(&mut world, &[2, 3]);
-        let class = world.fighter_classes.insert(Default::default());
+        let class = world
+            .fighter_classes
+            .insert(crate::world::FighterClass::default());
         assert_eq!(
             ship_for_squadron(&world, &ProductRoom::default(), key),
             Some(1)
@@ -632,7 +652,9 @@ mod tests {
             let key = fleet(&mut world, &[2, 3]);
             world.fleets[key].is_alliance = is_alliance;
             let tag = tag_ship(&mut world, key, 1).unwrap();
-            let class = world.fighter_classes.insert(Default::default());
+            let class = world
+                .fighter_classes
+                .insert(crate::world::FighterClass::default());
             let yard = world.systems.insert(crate::world::System::default());
             let squadron = BuildableKind::Fighter(class);
             let manufacturing = queued(yard, key, &[(squadron, tag)]);
@@ -693,10 +715,7 @@ mod tests {
     #[test]
     fn products_ordered_for_a_fleet_take_its_ships_in_queue_order() {
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let key = fleet(&mut world, &[1, 2]);
-            world.fleets[key].is_alliance = is_alliance;
-            let class = world.fighter_classes.insert(Default::default());
+            let (mut world, key, class) = side_fleet_with_fighter(is_alliance, &[1, 2]);
             let ship = world
                 .capital_ship_classes
                 .insert(CapitalShipClass::default());
@@ -741,9 +760,7 @@ mod tests {
     #[test]
     fn regiments_ordered_together_fill_the_roomiest_ships_in_turn() {
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let key = fleet(&mut world, &[0, 0, 0]);
-            world.fleets[key].is_alliance = is_alliance;
+            let (mut world, key) = side_fleet(is_alliance, &[0, 0, 0]);
             for (ship, troops) in world.fleets[key].capital_ships.iter().zip([1, 2, 0]) {
                 world.capital_ship_classes[ship.class].troop_capacity = troops;
             }
@@ -767,10 +784,7 @@ mod tests {
     #[test]
     fn an_untagged_squadron_is_not_lost_with_a_ship() {
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let key = fleet(&mut world, &[1, 2]);
-            world.fleets[key].is_alliance = is_alliance;
-            let class = world.fighter_classes.insert(Default::default());
+            let (mut world, key, class) = side_fleet_with_fighter(is_alliance, &[1, 2]);
             let [first, second] = [0, 1].map(|index| tag_ship(&mut world, key, index).unwrap());
             for (carrier, count) in [(0, 1), (first, 2), (second, 1)] {
                 world.fleets[key].fighters.push(FighterEntry {
@@ -806,7 +820,9 @@ mod tests {
     fn squadrons_aboard_a_lost_ship_are_lost_with_it() {
         let mut world = GameWorld::default();
         let key = fleet(&mut world, &[1, 2]);
-        let class = world.fighter_classes.insert(Default::default());
+        let class = world
+            .fighter_classes
+            .insert(crate::world::FighterClass::default());
         board(&mut world, key, class, 3);
         world.fleets[key].capital_ships[0].alive = false;
         assert_eq!(drop_lost_squadrons(&mut world.fleets[key]), 1);
@@ -828,7 +844,9 @@ mod tests {
                 let class = world.fleets[key].capital_ships[0].class;
                 world.capital_ship_classes[class].troop_capacity = 1;
             }
-            let class = world.fighter_classes.insert(Default::default());
+            let class = world
+                .fighter_classes
+                .insert(crate::world::FighterClass::default());
             let squadron = BuildableKind::Fighter(class);
             let regiment = BuildableKind::Troop(crate::ids::DatId::new(0x1000_0001));
             let yard = world.systems.insert(crate::world::System::default());
@@ -881,13 +899,11 @@ mod tests {
     #[test]
     fn characters_ride_the_first_usable_ship_else_the_first_living_one_for_either_side() {
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let key = fleet(&mut world, &[0, 0, 0]);
-            world.fleets[key].is_alliance = is_alliance;
+            let (mut world, key) = side_fleet(is_alliance, &[0, 0, 0]);
             let ships = &mut world.fleets[key].capital_ships;
             ships[0].transit = Some(crate::world::ShipTransit {
-                from: Default::default(),
-                to: Default::default(),
+                from: SystemKey::default(),
+                to: SystemKey::default(),
                 arrival_tick: 9,
             });
             ships[1].completed = false;
@@ -931,8 +947,15 @@ mod tests {
             });
             let products = ProductRoom::default();
             let transport = TroopTransportState::default();
-            assert_eq!(ship_for_squadron(&world, &products, fleet), Some(1), "{is_alliance}");
-            assert_eq!(ship_for_regiment(&world, &transport, &products, fleet), Some(1));
+            assert_eq!(
+                ship_for_squadron(&world, &products, fleet),
+                Some(1),
+                "{is_alliance}"
+            );
+            assert_eq!(
+                ship_for_regiment(&world, &transport, &products, fleet),
+                Some(1)
+            );
             assert_eq!(
                 ships_for(&world, &transport, &products, fleet, Cargo::Squadron, 2),
                 None,
