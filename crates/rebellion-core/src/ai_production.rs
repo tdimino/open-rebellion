@@ -2301,6 +2301,28 @@ const MINE: u32 = 0x2c00_0001;
 /// The Refinery class (`FUN_004db2f0` step 6, `0x2d000002`).
 const REFINERY: u32 = 0x2d00_0002;
 
+/// Append same-side facilities of one recovered family from a heterogeneous
+/// world arena as typed Scrap targets.
+macro_rules! extend_scrap_facilities {
+    (
+        $out:expr, $keys:expr, $arena:expr, $side:expr, $family:expr,
+        $family_of:expr, $target:path $(,)?
+    ) => {{
+        let family_of = $family_of;
+        $out.extend(
+            ($keys)
+                .iter()
+                .copied()
+                .filter(|&key| {
+                    ($arena).get(key).is_some_and(|facility| {
+                        facility.side == $side && family_of(facility) == $family
+                    })
+                })
+                .map($target),
+        );
+    }};
+}
+
 impl Round<'_> {
     /// Every candidate of a system query, best first (`FUN_004357b0`
     /// popped until empty).
@@ -2356,36 +2378,42 @@ impl Round<'_> {
         let mut out = Vec::new();
         for &family in families {
             match family {
-                0x22..=0x25 => out.extend(
-                    sys.defense_facilities
-                        .iter()
-                        .filter(|k| {
-                            world.defense_facilities.get(**k).is_some_and(|d| {
-                                d.side == side && d.class_dat_id.family() == family
-                            })
-                        })
-                        .map(|k| ScrapTarget::Defense(*k)),
+                0x22..=0x25 => extend_scrap_facilities!(
+                    out,
+                    &sys.defense_facilities,
+                    &world.defense_facilities,
+                    side,
+                    family,
+                    |facility: &crate::world::DefenseFacilityInstance| {
+                        facility.class_dat_id.family()
+                    },
+                    ScrapTarget::Defense,
                 ),
-                0x28..=0x2a => out.extend(
-                    sys.manufacturing_facilities
-                        .iter()
-                        .filter(|k| {
-                            world.manufacturing_facilities.get(**k).is_some_and(|y| {
-                                y.side == side && y.class_dat_id.family() == family
-                            })
-                        })
-                        .map(|k| ScrapTarget::Manufacturing(*k)),
+                0x28..=0x2a => extend_scrap_facilities!(
+                    out,
+                    &sys.manufacturing_facilities,
+                    &world.manufacturing_facilities,
+                    side,
+                    family,
+                    |facility: &crate::world::ManufacturingFacilityInstance| {
+                        facility.class_dat_id.family()
+                    },
+                    ScrapTarget::Manufacturing,
                 ),
-                0x2c | 0x2d => out.extend(
-                    sys.production_facilities
-                        .iter()
-                        .filter(|k| {
-                            world
-                                .production_facilities
-                                .get(**k)
-                                .is_some_and(|p| p.side == side && p.is_mine == (family == 0x2c))
-                        })
-                        .map(|k| ScrapTarget::Production(*k)),
+                0x2c | 0x2d => extend_scrap_facilities!(
+                    out,
+                    &sys.production_facilities,
+                    &world.production_facilities,
+                    side,
+                    family,
+                    |facility: &crate::world::ProductionFacilityInstance| {
+                        if facility.is_mine {
+                            0x2c
+                        } else {
+                            0x2d
+                        }
+                    },
+                    ScrapTarget::Production,
                 ),
                 _ => {}
             }

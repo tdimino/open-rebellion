@@ -1088,6 +1088,17 @@ fn joined_resource_ids(resource_ids: impl Iterator<Item = u32>) -> String {
         .join(",")
 }
 
+fn unique_sorted_resource_ids<T>(items: &[T], resource_id: impl Fn(&T) -> u32) -> Vec<u32> {
+    let mut resource_ids = items
+        .iter()
+        .map(resource_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    resource_ids.sort_unstable();
+    resource_ids
+}
+
 fn build_lod_asset(
     resource_id: u32,
     mut decoded: DecodedMeshObject,
@@ -1251,6 +1262,27 @@ macro_rules! forward_original_camera_controls {
 }
 
 impl TacticalAssetRenderer {
+    fn source_camera_for<T>(&self, objects: &[T]) -> Option<OriginalTacticalCamera> {
+        if objects.is_empty() {
+            None
+        } else {
+            self.source_camera
+        }
+    }
+
+    fn prepare_scene_resources<T>(
+        &mut self,
+        objects: &[T],
+        resource_id: impl Fn(&T) -> u32,
+        mut prepare: impl FnMut(&mut Self, &[T], u32),
+    ) -> Option<OriginalTacticalCamera> {
+        let source_camera = self.source_camera_for(objects)?;
+        for resource_id in unique_sorted_resource_ids(objects, resource_id) {
+            prepare(self, objects, resource_id);
+        }
+        Some(source_camera)
+    }
+
     pub(crate) fn set_high_detail(&mut self, enabled: bool) {
         if self.high_detail_models != enabled {
             self.high_detail_models = enabled;
@@ -1712,27 +1744,19 @@ impl TacticalAssetRenderer {
         objects: &[TacticalRenderObject],
     ) -> TacticalDrawReport {
         let mut report = TacticalDrawReport::default();
-        if objects.is_empty() || self.source_camera.is_none() {
+        let Some(source_camera) = self.prepare_scene_resources(
+            objects,
+            |object| object.resource_base,
+            |renderer, _, resource_base| renderer.ensure_participant_family(resource_base),
+        ) else {
             return report;
-        }
-
-        let mut resource_bases = objects
-            .iter()
-            .map(|object| object.resource_base)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        resource_bases.sort_unstable();
-        for resource_base in resource_bases {
-            self.ensure_participant_family(resource_base);
-        }
+        };
         if self.material.is_none() {
             return report;
         }
 
         self.log_source_layout();
 
-        let source_camera = self.source_camera.unwrap();
         let pose = self.log_source_camera(source_camera);
         let camera = scene_camera(pose, aperture, true);
         let camera_matrix = camera.matrix();
@@ -1822,43 +1846,37 @@ impl TacticalAssetRenderer {
         objects: &[TacticalFighterRenderObject],
     ) -> TacticalDrawReport {
         let mut report = TacticalDrawReport::default();
-        let Some(source_camera) = self.source_camera else {
+        let Some(source_camera) = self.prepare_scene_resources(
+            objects,
+            |object| object.close_resource_id,
+            |renderer, objects, close_resource_id| {
+                if renderer.fighter_families.contains_key(&close_resource_id)
+                    || renderer
+                        .unavailable_fighter_families
+                        .contains(&close_resource_id)
+                {
+                    return;
+                }
+                let Some(object) = objects
+                    .iter()
+                    .find(|object| object.close_resource_id == close_resource_id)
+                else {
+                    return;
+                };
+                if let Err(error) = renderer.load_fighter_family(*object) {
+                    renderer
+                        .unavailable_fighter_families
+                        .insert(close_resource_id);
+                    macroquad::logging::warn!(
+                        "[tactical_3d] fighter family close={} unavailable: {}",
+                        close_resource_id,
+                        error
+                    );
+                }
+            },
+        ) else {
             return report;
         };
-        if objects.is_empty() {
-            return report;
-        }
-
-        let mut close_resources = objects
-            .iter()
-            .map(|object| object.close_resource_id)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        close_resources.sort_unstable();
-        for close_resource_id in close_resources {
-            if self.fighter_families.contains_key(&close_resource_id)
-                || self
-                    .unavailable_fighter_families
-                    .contains(&close_resource_id)
-            {
-                continue;
-            }
-            let Some(object) = objects
-                .iter()
-                .find(|object| object.close_resource_id == close_resource_id)
-            else {
-                continue;
-            };
-            if let Err(error) = self.load_fighter_family(*object) {
-                self.unavailable_fighter_families.insert(close_resource_id);
-                macroquad::logging::warn!(
-                    "[tactical_3d] fighter family close={} unavailable: {}",
-                    close_resource_id,
-                    error
-                );
-            }
-        }
 
         let pose = source_camera.pose();
         let camera = scene_camera(pose, aperture, false);
@@ -1947,34 +1965,26 @@ impl TacticalAssetRenderer {
         label: &str,
     ) -> Option<(TacticalDrawReport, String)> {
         let mut report = TacticalDrawReport::default();
-        let source_camera = self.source_camera?;
-        if objects.is_empty() {
-            return None;
-        }
-
-        let mut resource_ids = objects
-            .iter()
-            .map(|object| object.resource_id)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        resource_ids.sort_unstable();
-        for resource_id in resource_ids {
-            if self.effect_textures.contains_key(&resource_id)
-                || self.unavailable_effect_textures.contains(&resource_id)
-            {
-                continue;
-            }
-            if let Err(error) = self.load_effect_texture(resource_id) {
-                self.unavailable_effect_textures.insert(resource_id);
-                macroquad::logging::warn!(
-                    "[tactical_3d] {} resource={} unavailable: {}",
-                    label,
-                    resource_id,
-                    error
-                );
-            }
-        }
+        let source_camera = self.prepare_scene_resources(
+            objects,
+            |object| object.resource_id,
+            |renderer, _, resource_id| {
+                if renderer.effect_textures.contains_key(&resource_id)
+                    || renderer.unavailable_effect_textures.contains(&resource_id)
+                {
+                    return;
+                }
+                if let Err(error) = renderer.load_effect_texture(resource_id) {
+                    renderer.unavailable_effect_textures.insert(resource_id);
+                    macroquad::logging::warn!(
+                        "[tactical_3d] {} resource={} unavailable: {}",
+                        label,
+                        resource_id,
+                        error
+                    );
+                }
+            },
+        )?;
 
         let camera = scene_camera(source_camera.pose(), aperture, false);
         let camera_matrix = camera.matrix();
@@ -2083,12 +2093,9 @@ impl TacticalAssetRenderer {
         objects: &[TacticalProjectileRenderObject],
     ) -> TacticalDrawReport {
         let mut report = TacticalDrawReport::default();
-        let Some(source_camera) = self.source_camera else {
+        let Some(source_camera) = self.source_camera_for(objects) else {
             return report;
         };
-        if objects.is_empty() {
-            return report;
-        }
         let (x, y, width, height) = aperture;
         let pose = source_camera.pose();
         let camera = scene_camera(pose, aperture, true);

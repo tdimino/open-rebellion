@@ -3566,29 +3566,30 @@ impl MissionSystem {
                         effects.extend(raise(Skill::Leadership, GNPRTB_RECRUITMENT_RAISE));
                     }
                 }
-                // FUN_0056ae50: the target's slot +0x210 frees it.
-                MissionKind::Rescue => {
+                MissionKind::Rescue | MissionKind::Abduction => {
+                    let (raise_id, captures) = match mission.kind {
+                        // FUN_0056ae50: the target's slot +0x210 frees it.
+                        MissionKind::Rescue => (GNPRTB_RESCUE_RAISE, false),
+                        // FUN_00576eb0: the target's slot +0x20c takes it prisoner.
+                        MissionKind::Abduction => (GNPRTB_ABDUCTION_RAISE, true),
+                        _ => unreachable!(),
+                    };
                     result = 3;
-                    effects.extend(raise(Skill::Combat, GNPRTB_RESCUE_RAISE));
+                    effects.extend(raise(Skill::Combat, raise_id));
                     if let Some(character) = mission.target_character.filter(|_| !target_taken) {
                         target_taken = true;
-                        effects.push(MissionEffect::CharacterRescued {
-                            character,
-                            returned_to: mission.faction,
-                            at_system: target,
-                        });
-                    }
-                }
-                // FUN_00576eb0: the target's slot +0x20c takes it prisoner.
-                MissionKind::Abduction => {
-                    result = 3;
-                    effects.extend(raise(Skill::Combat, GNPRTB_ABDUCTION_RAISE));
-                    if let Some(character) = mission.target_character.filter(|_| !target_taken) {
-                        target_taken = true;
-                        effects.push(MissionEffect::CharacterCaptured {
-                            character,
-                            captured_by: mission.faction,
-                            at_system: target,
+                        effects.push(if captures {
+                            MissionEffect::CharacterCaptured {
+                                character,
+                                captured_by: mission.faction,
+                                at_system: target,
+                            }
+                        } else {
+                            MissionEffect::CharacterRescued {
+                                character,
+                                returned_to: mission.faction,
+                                at_system: target,
+                            }
                         });
                     }
                 }
