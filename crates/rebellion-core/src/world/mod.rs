@@ -332,7 +332,7 @@ pub struct Sector {
 ///
 /// Individual hulls are `ShipInstance` records in `Fleet::capital_ships`, each
 /// carrying a `CapitalShipKey` back to this class definition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CapitalShipClass {
     pub dat_id: DatId,
     /// The record's family byte (CAPSHPSD `family_id`): `0x18` for the Death
@@ -441,61 +441,8 @@ impl CapitalShipClass {
     }
 }
 
-impl Default for CapitalShipClass {
-    fn default() -> Self {
-        Self {
-            dat_id: DatId::new(0),
-            family: 0,
-            name: String::new(),
-            is_alliance: false,
-            is_empire: false,
-            refined_material_cost: 0,
-            maintenance_cost: 0,
-            research_order: 0,
-            research_difficulty: 0,
-            hull: 0,
-            shield_strength: 0,
-            sub_light_engine: 0,
-            maneuverability: 0,
-            hyperdrive: 0,
-            fighter_capacity: 0,
-            troop_capacity: 0,
-            detection: 0,
-            turbolaser_fore: 0,
-            turbolaser_aft: 0,
-            turbolaser_port: 0,
-            turbolaser_starboard: 0,
-            ion_cannon_fore: 0,
-            ion_cannon_aft: 0,
-            ion_cannon_port: 0,
-            ion_cannon_starboard: 0,
-            laser_cannon_fore: 0,
-            laser_cannon_aft: 0,
-            laser_cannon_port: 0,
-            laser_cannon_starboard: 0,
-            shield_recharge_rate: 0,
-            damage_control: 0,
-            bombardment_modifier: 0,
-            overall_attack_strength: 0,
-            weapon_recharge_rate: 0,
-            turbolaser_attack_strength: 0,
-            ion_cannon_attack_strength: 0,
-            laser_cannon_attack_strength: 0,
-            turbolaser_range: 0,
-            ion_cannon_range: 0,
-            laser_cannon_range: 0,
-            tractor_beam_power: 0,
-            tractor_beam_range: 0,
-            gravity_well_projector: 0,
-            interdiction_strength: 0,
-            uprising_defense: 0,
-            hyperdrive_if_damaged: 0,
-        }
-    }
-}
-
 /// Class definition for a fighter squadron — template, not an instance.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FighterClass {
     pub dat_id: DatId,
     pub name: String,
@@ -566,42 +513,6 @@ pub struct FighterClass {
     pub hyperdrive_if_damaged: u32,
 }
 
-impl Default for FighterClass {
-    fn default() -> Self {
-        Self {
-            dat_id: DatId::new(0),
-            name: String::new(),
-            is_alliance: false,
-            is_empire: false,
-            refined_material_cost: 0,
-            maintenance_cost: 0,
-            research_order: 0,
-            research_difficulty: 0,
-            squadron_size: 0,
-            torpedoes: 0,
-            torpedoes_range: 0,
-            overall_attack_strength: 0,
-            bombardment_defense: 0,
-            shield_strength: 0,
-            sub_light_engine: 0,
-            maneuverability: 0,
-            detection: 0,
-            uprising_defense: 0,
-            turbolaser_fore: 0,
-            ion_cannon_fore: 0,
-            laser_cannon_fore: 0,
-            turbolaser_range: 0,
-            ion_cannon_range: 0,
-            laser_cannon_range: 0,
-            turbolaser_attack_strength: 0,
-            ion_cannon_attack_strength: 0,
-            laser_cannon_attack_strength: 0,
-            hyperdrive: 0,
-            hyperdrive_if_damaged: 0,
-        }
-    }
-}
-
 /// A jail abode (ABODESD, family `0x98`), the character group a stranded
 /// character is held in (`FUN_00549580`; `ghidra/notes/death-star-strategic.md`,
 /// "Jail abodes"). It has no system: an occupant sits in no system or fleet
@@ -645,7 +556,7 @@ impl Abode {
 /// Characters can be assigned as admirals, generals, or diplomats.
 /// Their skills are stored as `SkillPair` (base + variance) to support
 /// both fixed major characters and procedurally-generated minors.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[allow(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
@@ -851,89 +762,11 @@ impl Character {
     }
 }
 
-impl Default for Character {
-    fn default() -> Self {
-        Self {
-            dat_id: DatId::new(0),
-            name: String::new(),
-            is_alliance: false,
-            is_empire: false,
-            is_major: false,
-            diplomacy: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            espionage: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            ship_design: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            troop_training: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            facility_design: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            combat: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            leadership: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            loyalty: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            jedi_probability: 0,
-            jedi_level: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            can_be_admiral: false,
-            can_be_commander: false,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            en_route: false,
-            adrift: false,
-            abode: None,
-            escape_due: None,
-            heritage_known: false,
-            is_killed: false,
-            recruited: false,
-            command_kind: crate::officer_rank::CommandKind::None,
-            command_post: None,
-            ranked_names: Default::default(),
-        }
-    }
-}
-
 /// A base value paired with a random variance for character skill generation.
 ///
 /// Final skill = `base + rng(0..=variance)` at scenario start.
 /// Major characters typically use `variance = 0` to lock their stats.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct SkillPair {
     pub base: u32,
     pub variance: u32,
@@ -1855,63 +1688,50 @@ pub struct SpecialForceClassDef {
     pub mission_mask: u32,
 }
 
-/// The eight person skills, in the order of the character and special-force
-/// slots `+0x1dc..+0x1f8` (`ghidra/notes/decoy-roll.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Skill {
-    Diplomacy,
-    Espionage,
-    ShipDesign,
-    TroopTraining,
-    FacilityDesign,
-    Combat,
-    Leadership,
-    Loyalty,
+/// Declares skill identity, slot order, and the matching [`Character`] field
+/// together so immutable and mutable access cannot drift apart.
+macro_rules! skill_catalog {
+    ($( $skill:ident => $field:ident; )+) => {
+        /// The eight person skills, in the order of the character and special-force
+        /// slots `+0x1dc..+0x1f8` (`ghidra/notes/decoy-roll.md`).
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+        pub enum Skill {
+            $($skill,)+
+        }
+
+        impl Skill {
+            /// Every skill in slot order.
+            pub const ALL: [Skill; 8] = [$(Skill::$skill,)+];
+        }
+
+        impl Character {
+            /// The skill template for `skill`.
+            #[must_use]
+            pub fn skill(&self, skill: Skill) -> SkillPair {
+                match skill {
+                    $(Skill::$skill => self.$field,)+
+                }
+            }
+
+            /// The skill pair for `skill`, to change it.
+            pub fn skill_mut(&mut self, skill: Skill) -> &mut SkillPair {
+                match skill {
+                    $(Skill::$skill => &mut self.$field,)+
+                }
+            }
+        }
+    };
 }
 
-impl Skill {
-    /// Every skill in slot order.
-    pub const ALL: [Skill; 8] = [
-        Skill::Diplomacy,
-        Skill::Espionage,
-        Skill::ShipDesign,
-        Skill::TroopTraining,
-        Skill::FacilityDesign,
-        Skill::Combat,
-        Skill::Leadership,
-        Skill::Loyalty,
-    ];
-}
-
-impl Character {
-    /// The skill template for `skill`.
-    #[must_use]
-    pub fn skill(&self, skill: Skill) -> SkillPair {
-        match skill {
-            Skill::Diplomacy => self.diplomacy,
-            Skill::Espionage => self.espionage,
-            Skill::ShipDesign => self.ship_design,
-            Skill::TroopTraining => self.troop_training,
-            Skill::FacilityDesign => self.facility_design,
-            Skill::Combat => self.combat,
-            Skill::Leadership => self.leadership,
-            Skill::Loyalty => self.loyalty,
-        }
-    }
-
-    /// The skill pair for `skill`, to change it.
-    pub fn skill_mut(&mut self, skill: Skill) -> &mut SkillPair {
-        match skill {
-            Skill::Diplomacy => &mut self.diplomacy,
-            Skill::Espionage => &mut self.espionage,
-            Skill::ShipDesign => &mut self.ship_design,
-            Skill::TroopTraining => &mut self.troop_training,
-            Skill::FacilityDesign => &mut self.facility_design,
-            Skill::Combat => &mut self.combat,
-            Skill::Leadership => &mut self.leadership,
-            Skill::Loyalty => &mut self.loyalty,
-        }
-    }
+skill_catalog! {
+    Diplomacy => diplomacy;
+    Espionage => espionage;
+    ShipDesign => ship_design;
+    TroopTraining => troop_training;
+    FacilityDesign => facility_design;
+    Combat => combat;
+    Leadership => leadership;
+    Loyalty => loyalty;
 }
 
 /// Class definition for a defense facility — a template loaded from DEFFACSD.DAT.

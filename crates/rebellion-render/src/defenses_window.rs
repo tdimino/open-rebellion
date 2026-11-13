@@ -125,18 +125,22 @@ impl DefensesPage {
 /// bitmap into the selected state they leave unset.
 #[must_use]
 pub const fn tab_resource(page: DefensesPage, side: u8, selected: bool, empty: bool) -> u32 {
-    let base = match (page, side) {
-        (DefensesPage::Batteries, _) => 10550,
-        (DefensesPage::Shields, _) => 10553,
-        (DefensesPage::Squadrons, 1) => 10556,
-        (DefensesPage::Squadrons, 2) => 10559,
-        (DefensesPage::Squadrons, _) => return 10562,
-        (DefensesPage::Regiments, 1) => 10563,
-        (DefensesPage::Regiments, 2) => 10566,
-        (DefensesPage::Regiments, _) => return 10569,
-        (DefensesPage::Personnel, 1) => 10570,
-        (DefensesPage::Personnel, 2) => 10573,
-        (DefensesPage::Personnel, _) => return 10576,
+    let factional = !matches!(page, DefensesPage::Batteries | DefensesPage::Shields);
+    let first_side_base = match page {
+        DefensesPage::Batteries => 10550,
+        DefensesPage::Shields => 10553,
+        DefensesPage::Squadrons => 10556,
+        DefensesPage::Regiments => 10563,
+        DefensesPage::Personnel => 10570,
+    };
+    let base = if factional {
+        match side {
+            1 => first_side_base,
+            2 => first_side_base + 3,
+            _ => return first_side_base + 6,
+        }
+    } else {
+        first_side_base
     };
     if selected {
         base + 1
