@@ -68,32 +68,20 @@ pub fn bombard_gates(
     }
 }
 
-/// Post an order to `fleets` as the menu row or the `Bombard`/`Destroy
-/// system` dev command does (`integrator::order_strike`), then record each
-/// run and file its messages; the caller files the runs' movies
-/// ([`strike_movies`]).
-///
-/// # Errors
-/// The order's refusal (`bombardment::gate`).
-pub fn issue(
-    world: &mut GameWorld,
-    fleets: &[FleetKey],
-    kind: BombardKind,
-    states: &mut StrikeStates<'_>,
-    roll: &mut dyn FnMut() -> f64,
-    templates: &TextTemplates,
-    log: &mut MessageLog,
-) -> Result<Vec<StrikeEffects>, BombardRefusal> {
-    let tick = states.tick;
-    let runs = rebellion_data::integrator::order_strike(world, fleets, kind, states, roll)?;
-    Ok(crate::strategic_order_common::file_order_runs(
-        world,
-        tick,
-        runs,
-        log,
-        rebellion_data::telemetry::native_strike,
-        |world, tick, strike| strike_messages(world, templates, tick, strike),
-    ))
+crate::strategic_order_common::define_order_issue! {
+    /// Post an order to `fleets` as the menu row or the `Bombard`/`Destroy
+    /// system` dev command does (`integrator::order_strike`), then record each
+    /// run and file its messages; the caller files the runs' movies
+    /// ([`strike_movies`]).
+    ///
+    /// # Errors
+    /// The order's refusal (`bombardment::gate`).
+    argument: kind: BombardKind;
+    run: StrikeEffects;
+    error: BombardRefusal;
+    issue: rebellion_data::integrator::order_strike;
+    record: rebellion_data::telemetry::native_strike;
+    messages: strike_messages;
 }
 
 /// The sides told of a strike. The fleet's bombard bit changes in each

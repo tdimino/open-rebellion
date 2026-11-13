@@ -65,21 +65,35 @@ const fn item(
     }
 }
 
-const ALLIANCE_ITEMS: [GameSpeedMenuItem; 5] = [
-    item(0x20, GameSpeed::Paused, 34304, "Pause", 11580),
-    item(0x21, GameSpeed::VerySlow, 34305, "Very Slow", 11581),
-    item(0x22, GameSpeed::Slow, 34306, "Slow", 11582),
-    item(0x23, GameSpeed::Medium, 34307, "Medium", 11583),
-    item(0x24, GameSpeed::Fast, 34308, "Fast", 11588),
+const SPEEDS: [(GameSpeed, u16, &str); 5] = [
+    (GameSpeed::Paused, 34304, "Pause"),
+    (GameSpeed::VerySlow, 34305, "Very Slow"),
+    (GameSpeed::Slow, 34306, "Slow"),
+    (GameSpeed::Medium, 34307, "Medium"),
+    (GameSpeed::Fast, 34308, "Fast"),
 ];
 
-const EMPIRE_ITEMS: [GameSpeedMenuItem; 5] = [
-    item(0x25, GameSpeed::Paused, 34304, "Pause", 11584),
-    item(0x26, GameSpeed::VerySlow, 34305, "Very Slow", 11585),
-    item(0x27, GameSpeed::Slow, 34306, "Slow", 11586),
-    item(0x28, GameSpeed::Medium, 34307, "Medium", 11587),
-    item(0x29, GameSpeed::Fast, 34308, "Fast", 11589),
-];
+const fn faction_items(item_base: u16, icons: [u32; 5]) -> [GameSpeedMenuItem; 5] {
+    let mut items = [item(0, GameSpeed::Paused, 0, "", 0); 5];
+    let mut index = 0;
+    while index < items.len() {
+        let (speed, label_string_id, label) = SPEEDS[index];
+        items[index] = item(
+            item_base + index as u16,
+            speed,
+            label_string_id,
+            label,
+            icons[index],
+        );
+        index += 1;
+    }
+    items
+}
+
+const ALLIANCE_ITEMS: [GameSpeedMenuItem; 5] =
+    faction_items(0x20, [11580, 11581, 11582, 11583, 11588]);
+const EMPIRE_ITEMS: [GameSpeedMenuItem; 5] =
+    faction_items(0x25, [11584, 11585, 11586, 11587, 11589]);
 
 /// Speed menu records in original order for a faction.
 #[must_use]

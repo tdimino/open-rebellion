@@ -724,6 +724,39 @@ fn manufacturing_rows(world: &GameWorld, system: SystemKey, class: DatId) -> Vec
     ]
 }
 
+fn manufacturing_status_view(
+    sources: StatusSources<'_>,
+    system: SystemKey,
+    side: Faction,
+    class: DatId,
+    mini: Option<u32>,
+) -> StatusView {
+    StatusView {
+        title: "Manufacturing Status",
+        manager_title: false,
+        side: faction_index(side),
+        picture: picture(mini),
+        name: class_name(sources.world, class),
+        rows: manufacturing_rows(sources.world, system, class),
+    }
+}
+
+macro_rules! manufacturing_facility_status {
+    ($sources:expr, $key:expr, $facilities:ident, $mini:path $(,)?) => {{
+        let world = $sources.world;
+        let facility = world.$facilities.get($key)?;
+        let system = facility_system(world, &$key, |value| &value.$facilities)?;
+        let class = facility.class_dat_id;
+        manufacturing_status_view(
+            $sources,
+            system,
+            facility.side,
+            class,
+            $mini(class).map(|(mini, _)| mini),
+        )
+    }};
+}
+
 /// A mission's target by name (`+0x70`), or 34087 "Target Unknown".
 fn target_name(world: &GameWorld, mission: &rebellion_core::missions::ActiveMission) -> String {
     let named = |name: Option<String>| name.filter(|name| !name.is_empty());
@@ -971,28 +1004,18 @@ pub fn status_view(sources: StatusSources<'_>, object: StatusObject) -> Option<S
                 defense_facility_rows(sources, key)?,
             )
         }
-        StatusObject::ManufacturingFacility(key) => {
-            let facility = world.manufacturing_facilities.get(key)?;
-            let system = facility_system(world, &key, |value| &value.manufacturing_facilities)?;
-            view(
-                "Manufacturing Status",
-                faction_index(facility.side),
-                picture(manufacturing_facility_mini(facility.class_dat_id).map(|(mini, _)| mini)),
-                class_name(world, facility.class_dat_id),
-                manufacturing_rows(world, system, facility.class_dat_id),
-            )
-        }
-        StatusObject::ProductionFacility(key) => {
-            let facility = world.production_facilities.get(key)?;
-            let system = facility_system(world, &key, |value| &value.production_facilities)?;
-            view(
-                "Manufacturing Status",
-                faction_index(facility.side),
-                picture(production_facility_mini(facility.class_dat_id).map(|(mini, _)| mini)),
-                class_name(world, facility.class_dat_id),
-                manufacturing_rows(world, system, facility.class_dat_id),
-            )
-        }
+        StatusObject::ManufacturingFacility(key) => manufacturing_facility_status!(
+            sources,
+            key,
+            manufacturing_facilities,
+            manufacturing_facility_mini,
+        ),
+        StatusObject::ProductionFacility(key) => manufacturing_facility_status!(
+            sources,
+            key,
+            production_facilities,
+            production_facility_mini,
+        ),
         StatusObject::Mission(id) => {
             let mission = sources
                 .missions

@@ -39,31 +39,19 @@ pub fn assault_gate(
     .is_ok()
 }
 
-/// Post the order to `fleets` as the menu row or the `Assault` dev command
-/// does (`integrator::order_assault`), then record each run and file its
-/// messages.
-///
-/// # Errors
-/// The order's refusal (`assault::order_enabled`).
-pub fn issue(
-    world: &mut GameWorld,
-    fleets: &[FleetKey],
-    side: Faction,
-    states: &mut StrikeStates<'_>,
-    roll: &mut dyn FnMut() -> f64,
-    templates: &TextTemplates,
-    log: &mut MessageLog,
-) -> Result<Vec<AssaultEffects>, AssaultRefusal> {
-    let tick = states.tick;
-    let runs = rebellion_data::integrator::order_assault(world, fleets, side, states, roll)?;
-    Ok(crate::strategic_order_common::file_order_runs(
-        world,
-        tick,
-        runs,
-        log,
-        rebellion_data::telemetry::native_assault,
-        |world, tick, assault| assault_messages(world, templates, tick, assault),
-    ))
+crate::strategic_order_common::define_order_issue! {
+    /// Post the order to `fleets` as the menu row or the `Assault` dev command
+    /// does (`integrator::order_assault`), then record each run and file its
+    /// messages.
+    ///
+    /// # Errors
+    /// The order's refusal (`assault::order_enabled`).
+    argument: side: Faction;
+    run: AssaultEffects;
+    error: AssaultRefusal;
+    issue: rebellion_data::integrator::order_assault;
+    record: rebellion_data::telemetry::native_assault;
+    messages: assault_messages;
 }
 
 /// The messages of an assault, the player's or the AI's: event `0x150`

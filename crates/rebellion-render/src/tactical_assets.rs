@@ -301,23 +301,20 @@ pub struct TacticalLodView {
 
 impl TacticalLodView {
     #[cfg(any(feature = "interface-test-fixtures", test))]
-    pub const CLOSE_FIXTURE: Self = Self {
-        view_depth: 10.0,
-        projection_scale: 1.0,
-        high_detail: true,
-    };
+    const fn fixture(view_depth: f32) -> Self {
+        Self {
+            view_depth,
+            projection_scale: 1.0,
+            high_detail: true,
+        }
+    }
+
     #[cfg(any(feature = "interface-test-fixtures", test))]
-    pub const MEDIUM_FIXTURE: Self = Self {
-        view_depth: 25.0,
-        projection_scale: 1.0,
-        high_detail: true,
-    };
+    pub const CLOSE_FIXTURE: Self = Self::fixture(10.0);
     #[cfg(any(feature = "interface-test-fixtures", test))]
-    pub const FAR_FIXTURE: Self = Self {
-        view_depth: 50.0,
-        projection_scale: 1.0,
-        high_detail: true,
-    };
+    pub const MEDIUM_FIXTURE: Self = Self::fixture(25.0);
+    #[cfg(any(feature = "interface-test-fixtures", test))]
+    pub const FAR_FIXTURE: Self = Self::fixture(50.0);
 
     /// Test-only bridge from the working tactical zoom control to a source
     /// view-depth range that crosses all three original LOD thresholds.
