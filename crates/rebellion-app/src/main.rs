@@ -16586,6 +16586,16 @@ async fn main() {
                         }
                     }
 
+                    // A regiment bound for a planet lists there at once, en
+                    // route (FUN_00556430 moves it into the new container).
+                    defenses_window_state.set_arriving_regiments(
+                        troop_transport_state.transits().iter().filter_map(|transit| {
+                            match transit.leg {
+                                RegimentLeg::Surface(system) => Some((transit.troop, system)),
+                                RegimentLeg::Fleet(_) => None,
+                            }
+                        }),
+                    );
                     for action in with_strategic_input(ctx, retained_window_input, || {
                         draw_managed_defenses_windows_shown(
                             ctx,
@@ -16717,6 +16727,50 @@ async fn main() {
                                     strategic_dispatch_restricted = true;
                                 }
                             }
+                            // A Troops page drop: 0x201 or, with Ctrl, 0x202
+                            // against the release window (FUN_00422ce0).
+                            DefensesWindowAction::DragRegiment {
+                                troop,
+                                confirmed,
+                                point,
+                            } => {
+                                let windows = ReleaseWindows {
+                                    sector: &sector_window_state,
+                                    system: &system_window_state,
+                                    fleet: &fleet_window_state,
+                                    defenses: &defenses_window_state,
+                                    missions: &missions_window_state,
+                                };
+                                let Some(target) = release_destination(
+                                    ctx,
+                                    &world,
+                                    &movement_state,
+                                    fog_state,
+                                    cockpit_layout,
+                                    windows,
+                                    point,
+                                ) else {
+                                    continue;
+                                };
+                                if issue_unit_move(
+                                    &FleetMoveContext {
+                                        world: &world,
+                                        movement: &movement_state,
+                                        blockaded: blockade_state.blockaded_systems(),
+                                        faction: player_faction,
+                                    },
+                                    &troop_transport_state,
+                                    &ProductRoom::new(&mfg_state, &delivery_state),
+                                    UnitMover::Regiment(troop),
+                                    confirmed,
+                                    target,
+                                    &mut move_confirmation_state,
+                                    &mut strategic_windowing,
+                                    &mut panel_actions,
+                                ) {
+                                    strategic_dispatch_restricted = true;
+                                }
+                            }
                             DefensesWindowAction::DragSquadron {
                                 system,
                                 class,
@@ -16827,6 +16881,33 @@ async fn main() {
                                         .enqueue(rebellion_windowing::WindowCommand::Close(window));
                                 }
                             }
+                        }
+                    }
+
+                    // A held list or icon drag carries the dragged item under
+                    // the pointer, above every window (FUN_0060df00).
+                    if let Some(pointer) = ctx.input(|input| {
+                        input
+                            .pointer
+                            .primary_down()
+                            .then(|| input.pointer.latest_pos())
+                            .flatten()
+                    }) {
+                        if let Some(image) = fleet_window_state
+                            .drag_image()
+                            .or_else(|| defenses_window_state.drag_image())
+                            .or_else(|| {
+                                sector_window_state.drag_image(
+                                    &world,
+                                    fog_state,
+                                    &mission_state,
+                                    &movement_state,
+                                    cockpit_layout,
+                                )
+                            })
+                            .filter(|image| image.shown(pointer))
+                        {
+                            image.paint(ctx, &mut bmp_cache, cockpit_layout.scale, pointer);
                         }
                     }
 

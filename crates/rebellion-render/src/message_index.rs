@@ -532,6 +532,7 @@ pub fn draw_message_index_shell(
     origin: egui::Pos2,
     scale: f32,
     categories: bool,
+    active: Option<u16>,
 ) -> Option<u16> {
     if scale <= 0.0 {
         return None;
@@ -592,11 +593,7 @@ pub fn draw_message_index_shell(
                     ui.painter(),
                     ctx,
                     cache,
-                    if pressed {
-                        control.pressed_resource
-                    } else {
-                        control.normal_resource
-                    },
+                    category_control_resource(control, active, pressed),
                     rect,
                 );
                 if response.clicked()
@@ -609,6 +606,24 @@ pub fn draw_message_index_shell(
             }
         });
     selected
+}
+
+/// The bitmap a category control paints: its pressed one while the mouse
+/// holds it down, and while it is the shown category. `FUN_004665f0` adds all
+/// ten to the tab group at `+0x160` (`FUN_0060d700`), which copies a
+/// button's pressed bitmap into its selected state 4; the group's selected
+/// button paints that state (`FUN_00602d30`).
+const fn category_control_resource(
+    control: MessageCategoryControlSpec,
+    active: Option<u16>,
+    held: bool,
+) -> u32 {
+    let shown = matches!(active, Some(command) if command == control.command_id);
+    if held || shown {
+        control.pressed_resource
+    } else {
+        control.normal_resource
+    }
 }
 
 /// The index surface's layers in `FUN_004665f0`'s order, as (resource,
@@ -1381,6 +1396,7 @@ pub fn draw_message_index(
         origin,
         scale,
         state.mode == IndexMode::List,
+        Some(state.category),
     ) {
         actions.extend(state.set_category(command));
     }
@@ -1978,7 +1994,7 @@ pub fn draw_message_index_fixture(
     cache: &mut BmpCache,
     faction: CockpitFaction,
 ) {
-    let _ = draw_message_index_shell(ctx, cache, faction, egui::pos2(85.0, 55.0), 1.0, true);
+    let _ = draw_message_index_shell(ctx, cache, faction, egui::pos2(85.0, 55.0), 1.0, true, None);
 }
 
 // ---------------------------------------------------------------------------
@@ -2385,6 +2401,7 @@ mod tests {
                         egui::pos2(85.0, 55.0),
                         1.0,
                         true,
+                        None,
                     );
                 });
             }
@@ -2423,6 +2440,46 @@ mod tests {
             controls.last().unwrap().x + controls.last().unwrap().width,
             375
         );
+    }
+
+    #[test]
+    fn the_shown_category_stays_lit_and_the_others_lift() {
+        // FUN_004665f0 adds the ten controls to the tab group at +0x160
+        // (FUN_0060d700), which gives each its pressed bitmap as the selected
+        // state 4; the group's selected button paints it (FUN_00602d30).
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let controls = message_category_control_specs(faction);
+            for active in 0x79..=0x82_u16 {
+                for control in controls {
+                    let expected = if control.command_id == active {
+                        control.pressed_resource
+                    } else {
+                        control.normal_resource
+                    };
+                    assert_eq!(
+                        category_control_resource(control, Some(active), false),
+                        expected,
+                        "{faction:?} active 0x{active:x} control 0x{:x}",
+                        control.command_id
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_held_category_shows_pressed_whatever_is_shown() {
+        let controls = message_category_control_specs(CockpitFaction::Alliance);
+        for control in controls {
+            assert_eq!(
+                category_control_resource(control, Some(0x79), true),
+                control.pressed_resource
+            );
+            assert_eq!(
+                category_control_resource(control, None, false),
+                control.normal_resource
+            );
+        }
     }
 
     #[test]

@@ -30,8 +30,9 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::drag_image::DragImage;
 use crate::fleet_window::{
-    control_side, faction_side, fleet_side, mini_layers, paint_native, MiniObject,
+    control_side, drag_image_of, faction_side, fleet_side, mini_layers, paint_native, MiniObject,
     DRAG_DISTANCE_SQUARED,
 };
 use crate::object_menu::MenuObject;
@@ -261,6 +262,9 @@ struct RowDrag {
     is_alliance: bool,
     press: egui::Pos2,
     list: egui::Rect,
+    /// The row's mini, which follows the pointer while the press is held
+    /// (`FUN_006083c0`, [`DragImage`]).
+    image: DragImage,
 }
 
 /// The open Defenses windows. The last is focused and paints on top.
@@ -272,6 +276,9 @@ pub struct DefensesWindowState {
     drag_owner: Option<WindowId>,
     /// A window drag in progress.
     title_drag: Option<TitleDrag>,
+    /// Regiments travelling to a planet's surface, by destination
+    /// ([`Self::set_arriving_regiments`]).
+    arriving: Vec<(TroopKey, SystemKey)>,
 }
 
 impl Default for DefensesWindowState {
@@ -282,6 +289,7 @@ impl Default for DefensesWindowState {
             drag: None,
             drag_owner: None,
             title_drag: None,
+            arriving: Vec::new(),
         }
     }
 }
@@ -677,7 +685,15 @@ impl DefensesWindowState {
     ) -> Option<DefensesWindowReport> {
         let window = self.windows.iter().find(|window| window.system == system)?;
         let player = cockpit_faction(self.faction);
-        let rows = page_rows(world, fog, missions, player, system, window.page);
+        let rows = page_rows(
+            world,
+            fog,
+            missions,
+            &self.arriving,
+            player,
+            system,
+            window.page,
+        );
         let selected = window
             .selected
             .and_then(|item| rows.iter().position(|row| row.item == item));
@@ -686,8 +702,9 @@ impl DefensesWindowState {
             side: shown_side(world, system),
             page: window.page,
             first_row: window.first_row,
-            counts: DefensesPage::ALL
-                .map(|page| page_rows(world, fog, missions, player, system, page).len()),
+            counts: DefensesPage::ALL.map(|page| {
+                page_rows(world, fog, missions, &self.arriving, player, system, page).len()
+            }),
             rows: rows.into_iter().map(|row| row.label).collect(),
             selected,
             garrison: garrison_line(world, player, system, window.page),
@@ -767,6 +784,26 @@ impl DefensesWindowState {
         self.drag.is_some()
     }
 
+    /// The regiments travelling to each planet's surface, as `(regiment,
+    /// destination)`. The original moves a regiment into its new container
+    /// on the order and marks it en route (`FUN_00556430`, `FUN_004f7640`
+    /// `+0x50` bit 5; regiment-unload.md), so the destination's Troops page
+    /// lists it at once with the en route mark. The port holds it in
+    /// `TroopTransportState` until it lands, so the caller hands the list in.
+    pub fn set_arriving_regiments(
+        &mut self,
+        arriving: impl IntoIterator<Item = (TroopKey, SystemKey)>,
+    ) {
+        self.arriving.clear();
+        self.arriving.extend(arriving);
+    }
+
+    /// The held drag's image, which follows the pointer ([`DragImage`]).
+    #[must_use]
+    pub fn drag_image(&self) -> Option<DragImage> {
+        self.drag.map(|drag| drag.image)
+    }
+
     /// Exact manager capture owner of the active Defenses drag, if migrated.
     #[must_use]
     pub const fn drag_owner(&self) -> Option<WindowId> {
@@ -785,6 +822,7 @@ impl DefensesWindowState {
             is_alliance: true,
             press: egui::Pos2::ZERO,
             list: egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            image: DragImage::default(),
         });
         self.drag_owner = Some(window);
     }
@@ -874,7 +912,12 @@ impl DefensesWindowState {
                 confirmed: ctrl,
                 point,
             },
-            DefensesItem::Troop(_) | DefensesItem::Defense(_) => return result,
+            DefensesItem::Troop(troop) => DefensesWindowAction::DragRegiment {
+                troop,
+                confirmed: ctrl,
+                point,
+            },
+            DefensesItem::Defense(_) => return result,
         };
         result.actions.push(action);
         result
@@ -1070,6 +1113,16 @@ pub enum DefensesWindowAction {
         confirmed: bool,
         point: egui::Pos2,
     },
+    /// A Troops page row dragged out of the list (`0x29a`): the galaxy view
+    /// issues `0x201`, or `0x202` with Ctrl, against the release window, so
+    /// the regiment boards a fleet, lands or travels
+    /// (`TroopTransportState::move_regiment`; fleet-window.md, "From the
+    /// Fleet window or type 10").
+    DragRegiment {
+        troop: TroopKey,
+        confirmed: bool,
+        point: egui::Pos2,
+    },
     /// A Personnel page row dragged out of the list: the galaxy view
     /// issues `0x201`, or `0x202` with Ctrl, and the character or special
     /// force goes on a Move mission (`0x241`).
@@ -1137,6 +1190,7 @@ fn page_rows(
     world: &GameWorld,
     fog: &FogState,
     missions: &MissionState,
+    arriving: &[(TroopKey, SystemKey)],
     player: Faction,
     system: SystemKey,
     page: DefensesPage,
@@ -1181,23 +1235,34 @@ fn page_rows(
                 })
                 .collect()
         }
-        // FUN_00504cc0.
-        DefensesPage::Regiments => value
-            .ground_units
-            .iter()
-            .filter_map(|&key| {
-                let troop = world.troops.get(key)?;
-                if fleet_side(troop.is_alliance) != side {
-                    return None;
-                }
-                let (mini, label) = troop_mini(troop.class_dat_id)?;
-                Some(DefensesRow {
-                    item: DefensesItem::Troop(key),
-                    mini,
-                    label: label.into(),
-                })
+        // FUN_00504cc0, with the regiments bound here, which the original
+        // has already put in the planet's container (`FUN_00556430`).
+        DefensesPage::Regiments => {
+            let mut keys = value.ground_units.clone();
+            keys.extend(
+                arriving
+                    .iter()
+                    .filter(|(_, destination)| *destination == system)
+                    .map(|(key, _)| *key),
+            );
+            keys.sort_unstable();
+            keys.dedup();
+            keys
+        }
+        .into_iter()
+        .filter_map(|key| {
+            let troop = world.troops.get(key)?;
+            if fleet_side(troop.is_alliance) != side {
+                return None;
+            }
+            let (mini, label) = troop_mini(troop.class_dat_id)?;
+            Some(DefensesRow {
+                item: DefensesItem::Troop(key),
+                mini,
+                label: label.into(),
             })
-            .collect(),
+        })
+        .collect(),
         // FUN_00503a50: the system's own squadrons, one item each.
         DefensesPage::Squadrons => value
             .fighters
@@ -1552,8 +1617,9 @@ fn draw_defenses_windows_with_snapshot(
             Some(id) => focused_manager == Some(id),
             None => focused_fixture_system == Some(window.system),
         };
+        let arriving = state.arriving.clone();
         let result = draw_defenses_window(
-            ctx, world, fog, missions, window, focused, faction, layout, cache,
+            ctx, world, fog, missions, window, &arriving, focused, faction, layout, cache,
         );
         if let Some(grab) = result.drag_grab {
             state.title_drag = Some(TitleDrag {
@@ -1680,6 +1746,7 @@ fn draw_defenses_window(
     fog: &FogState,
     missions: &MissionState,
     window: &OpenDefensesWindow,
+    arriving: &[(TroopKey, SystemKey)],
     focused: bool,
     faction: CockpitFaction,
     layout: CockpitLayout,
@@ -1692,7 +1759,15 @@ fn draw_defenses_window(
     };
     let player = cockpit_faction(faction);
     let side = shown_side(world, window.system);
-    let rows = page_rows(world, fog, missions, player, window.system, window.page);
+    let rows = page_rows(
+        world,
+        fog,
+        missions,
+        arriving,
+        player,
+        window.system,
+        window.page,
+    );
     let scale = layout.scale;
     let screen_rect = window_screen_rect(window, layout);
     let id = area_id(window);
@@ -1771,7 +1846,8 @@ fn draw_defenses_window(
             // shown.
             for page in DefensesPage::ALL {
                 let rect = tab_rect(local, scale, page);
-                let empty = page_rows(world, fog, missions, player, window.system, page).is_empty();
+                let empty = page_rows(world, fog, missions, arriving, player, window.system, page)
+                    .is_empty();
                 crate::control_registry::register_screen("Defenses", page.name(), rect);
                 paint_native(
                     &painter,
@@ -1939,16 +2015,23 @@ fn draw_defenses_window(
                         .map_or((MiniObject::Craft, false), |force| {
                             (MiniObject::SpecialForce(force.class_dat_id), force.en_route)
                         }),
+                    // An arriving regiment carries the en route mark
+                    // (FUN_004f8240: its own +0x50 bit 5).
                     DefensesItem::Troop(key) => (
                         world.troops.get(key).map_or(MiniObject::Craft, |troop| {
                             MiniObject::Regiment(troop.class_dat_id)
                         }),
-                        false,
+                        arriving.iter().any(|(troop, _)| *troop == key),
                     ),
                     DefensesItem::Squadron { .. } | DefensesItem::Defense(_) => {
                         (MiniObject::Craft, false)
                     }
                 };
+                let drawn: Vec<(DllSource, u32, f32, f32)> =
+                    mini_layers(object, row.mini, en_route, None)
+                        .into_iter()
+                        .map(|(source, bitmap)| (source, bitmap, 0.0, 0.0))
+                        .collect();
                 for (source, bitmap) in mini_layers(object, row.mini, en_route, None) {
                     paint_native(
                         &list_painter,
@@ -2009,13 +2092,16 @@ fn draw_defenses_window(
                     result.focus = true;
                     result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Secondary));
                 }
-                // A left press on a squadron, character or special force
-                // captures the mouse for a drag (FUN_006083c0).
+                // A left press on a character, special force, regiment or
+                // squadron captures the mouse for a drag (FUN_006083c0):
+                // pages 1 to 3 clear the list's no-drag flag 0x20000, the
+                // facility pages 4 and 5 set it (sector-quadrants.md).
                 let draggable = matches!(
                     row.item,
                     DefensesItem::Squadron { .. }
                         | DefensesItem::Character(_)
                         | DefensesItem::SpecialForce(_)
+                        | DefensesItem::Troop(_)
                 );
                 if let (true, Some(press)) = (
                     draggable,
@@ -2034,6 +2120,7 @@ fn draw_defenses_window(
                             is_alliance: side == 1,
                             press,
                             list,
+                            image: drag_image_of(&drawn, cell, press, scale),
                         });
                         result.note_pointer_phase(PointerPhase::Press(PointerButtonId::Primary));
                     }
@@ -2198,7 +2285,7 @@ mod tests {
         system: SystemKey,
         page: DefensesPage,
     ) -> Vec<String> {
-        page_rows(world, fog, missions, Faction::Alliance, system, page)
+        page_rows(world, fog, missions, &[], Faction::Alliance, system, page)
             .into_iter()
             .map(|row| row.label)
             .collect()
@@ -3280,6 +3367,137 @@ mod tests {
                     })
                     .collect();
                 assert_eq!(drops, [(class, confirmed)], "{faction:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_regiment_bound_for_the_planet_lists_there_at_once_with_the_en_route_mark() {
+        // FUN_00556430 moves a moving regiment into its new container on the
+        // order and FUN_004f7640 sets its en route bit (+0x50 bit 5), which
+        // FUN_0042c3b0 draws under the mini (regiment-unload.md).
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let is_alliance = faction == CockpitFaction::Alliance;
+            let (mut world, system) = world(ControlKind::Controlled(if is_alliance {
+                Faction::Alliance
+            } else {
+                Faction::Empire
+            }));
+            let class = if is_alliance {
+                ALLIANCE_ARMY
+            } else {
+                STORMTROOPERS
+            };
+            add_troop(&mut world, system, class, is_alliance);
+            // Bound here, so not yet on the planet's surface.
+            let troop = world.systems[system].ground_units.remove(0);
+            let missions = MissionState::new();
+            let fog = FogState::new(cockpit_faction(faction));
+            let mut state = DefensesWindowState::default();
+            assert!(state.open(&world, system, ORIGIN, faction, scaled()));
+            let plain = (faction, egui::Modifiers::default());
+            let _ = run_as(&world, &missions, &mut state, click(at(80.0, 30.0)), plain);
+            let rows = |state: &DefensesWindowState| {
+                state
+                    .report(&world, &fog, &missions, system)
+                    .map(|report| report.rows.len())
+            };
+            assert_eq!(rows(&state), Some(0), "{faction:?}");
+
+            state.set_arriving_regiments([(troop, system)]);
+            assert_eq!(rows(&state), Some(1), "{faction:?}");
+            let start = at(30.0, 100.0);
+            let mut frames = hover(start);
+            frames.push(vec![press(start, true)]);
+            let _ = run_as(&world, &missions, &mut state, frames, plain);
+            let (mini, _) = troop_mini(DatId::new(class)).expect("a regiment mini");
+            let expected: Vec<_> =
+                mini_layers(MiniObject::Regiment(DatId::new(class)), mini, true, None)
+                    .into_iter()
+                    .map(|(_, bitmap)| bitmap)
+                    .collect();
+            let drawn: Vec<_> = state
+                .drag_image()
+                .expect("the row is pressed")
+                .layers()
+                .map(|layer| layer.bitmap)
+                .collect();
+            assert_eq!(drawn, expected, "{faction:?}");
+            assert_ne!(
+                expected,
+                mini_layers(MiniObject::Regiment(DatId::new(class)), mini, false, None)
+                    .into_iter()
+                    .map(|(_, bitmap)| bitmap)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    // Pages 1 to 3 clear the list's no-drag flag 0x20000
+    // (sector-quadrants.md), so a regiment drags out of the Troops page as
+    // a squadron does, and FUN_00422ce0 issues 0x201, or 0x202 with Ctrl,
+    // for a type 10 list drop (fleet-window.md, "From the Fleet window or
+    // type 10").
+    #[test]
+    fn a_regiment_dragged_out_of_the_troops_page_is_a_move_for_either_side() {
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let is_alliance = faction == CockpitFaction::Alliance;
+            let (mut world, system) = world(ControlKind::Controlled(if is_alliance {
+                Faction::Alliance
+            } else {
+                Faction::Empire
+            }));
+            add_troop(
+                &mut world,
+                system,
+                if is_alliance {
+                    ALLIANCE_ARMY
+                } else {
+                    STORMTROOPERS
+                },
+                is_alliance,
+            );
+            let troop = world.systems[system].ground_units[0];
+            let missions = MissionState::new();
+            for (modifiers, confirmed) in [
+                (egui::Modifiers::default(), false),
+                (egui::Modifiers::CTRL, true),
+            ] {
+                let mut state = DefensesWindowState::default();
+                assert!(state.open(&world, system, ORIGIN, faction, scaled()));
+                let plain = (faction, egui::Modifiers::default());
+                let _ = run_as(&world, &missions, &mut state, click(at(80.0, 30.0)), plain);
+                let (start, end) = (at(30.0, 100.0), at(300.0, 100.0));
+                let mut frames = hover(start);
+                frames.extend([
+                    vec![press(start, true)],
+                    vec![egui::Event::PointerMoved(end)],
+                ]);
+                let _ = run_as(&world, &missions, &mut state, frames, plain);
+                assert!(
+                    state.drag_image().is_some(),
+                    "{faction:?}: the mini follows"
+                );
+                let released = run_as(
+                    &world,
+                    &missions,
+                    &mut state,
+                    vec![vec![egui::Event::PointerMoved(end), press(end, false)]],
+                    (faction, modifiers),
+                );
+                let drops: Vec<_> = released
+                    .actions
+                    .iter()
+                    .filter_map(|action| match *action {
+                        DefensesWindowAction::DragRegiment {
+                            troop: dropped,
+                            confirmed,
+                            ..
+                        } => Some((dropped, confirmed)),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(drops, [(troop, confirmed)], "{faction:?}");
             }
         }
     }
