@@ -468,11 +468,7 @@ impl SystemWindowState {
         system: SystemKey,
         tab: SystemWindowTab,
     ) -> Option<egui::Rect> {
-        Some(tab_rect(
-            self.detail_screen_rect(layout, system)?,
-            layout.scale,
-            tab,
-        ))
+        self.control_screen_rect(layout, system, |window| tab_rect(window, layout.scale, tab))
     }
 
     /// The screen rect of `area`'s overview band in `system`'s visible
@@ -484,17 +480,24 @@ impl SystemWindowState {
         system: SystemKey,
         area: ProductionArea,
     ) -> Option<egui::Rect> {
-        Some(band_rect(
-            self.detail_screen_rect(layout, system)?,
-            layout.scale,
-            area,
-        ))
+        self.control_screen_rect(layout, system, |window| {
+            band_rect(window, layout.scale, area)
+        })
     }
 
     fn detail_screen_rect(&self, layout: CockpitLayout, system: SystemKey) -> Option<egui::Rect> {
         strategic_window_common::screen_rect(&self.windows, system, |window| {
             window_screen_rect(*window, layout)
         })
+    }
+
+    fn control_screen_rect(
+        &self,
+        layout: CockpitLayout,
+        system: SystemKey,
+        control: impl FnOnce(egui::Rect) -> egui::Rect,
+    ) -> Option<egui::Rect> {
+        self.detail_screen_rect(layout, system).map(control)
     }
 
     #[must_use]
@@ -850,10 +853,10 @@ impl SystemWindowState {
         system: SystemKey,
         logical_position: (i16, i16),
     ) -> Option<WindowId> {
-        Self::evicted_fleet(self.push_rail(RailEntry::Defenses {
+        self.minimize_reference_window(RailEntry::Defenses {
             system,
             logical_position,
-        }))
+        })
     }
 
     /// Put a minimized Missions window on the rail (`0x466`), above every
@@ -872,10 +875,14 @@ impl SystemWindowState {
         system: SystemKey,
         logical_position: (i16, i16),
     ) -> Option<WindowId> {
-        Self::evicted_fleet(self.push_rail(RailEntry::Missions {
+        self.minimize_reference_window(RailEntry::Missions {
             system,
             logical_position,
-        }))
+        })
+    }
+
+    fn minimize_reference_window(&mut self, entry: RailEntry) -> Option<WindowId> {
+        Self::evicted_fleet(self.push_rail(entry))
     }
 
     /// Put a load's hidden Fleet window on the rail at `index`, its place
@@ -3599,6 +3606,18 @@ mod tests {
         state
     }
 
+    #[track_caller]
+    fn open_fixture_window(
+        state: &mut SystemWindowState,
+        world: &GameWorld,
+        system: SystemKey,
+        position: (i16, i16),
+        faction: CockpitFaction,
+        layout: CockpitLayout,
+    ) {
+        assert!(state.open(world, system, position, faction, layout));
+    }
+
     fn text<'a>(run: &'a Run, words: &str) -> &'a RailText {
         run.texts
             .iter()
@@ -3658,7 +3677,14 @@ mod tests {
         let (world, systems) = fixture_world(2);
         let mut state = opened(&world, systems[0]);
         let layout = layout(CockpitFaction::Alliance, 2.0);
-        state.open(&world, systems[1], ORIGIN, CockpitFaction::Alliance, layout);
+        open_fixture_window(
+            &mut state,
+            &world,
+            systems[1],
+            ORIGIN,
+            CockpitFaction::Alliance,
+            layout,
+        );
         assert!(!state.begin_band_rename(SystemKey::default(), ProductionArea::Shipyard, "X"));
         assert!(state.begin_band_rename(systems[0], ProductionArea::Shipyard, "Death Star 1"));
         assert!(state.band_rename_open());
@@ -4175,16 +4201,24 @@ mod tests {
         let (world, systems) = fixture_world(1);
         let mut state = SystemWindowState::default();
         let layout = layout(CockpitFaction::Alliance, 2.0);
-        assert!(state.open(
+        open_fixture_window(
+            &mut state,
             &world,
             systems[0],
             (620, 470),
             CockpitFaction::Alliance,
-            layout
-        ));
+            layout,
+        );
         assert_eq!(state.windows[0].logical_position, (314, 86));
         assert_eq!(state.windows[0].tab, SystemWindowTab::Overview);
-        assert!(state.open(&world, systems[0], (0, 0), CockpitFaction::Alliance, layout));
+        open_fixture_window(
+            &mut state,
+            &world,
+            systems[0],
+            (0, 0),
+            CockpitFaction::Alliance,
+            layout,
+        );
         assert_eq!(state.window_count(), 1);
     }
 
@@ -4196,7 +4230,7 @@ mod tests {
             let mut state = SystemWindowState::default();
             let layout = layout(faction, 1.0);
             for system in &systems {
-                assert!(state.open(&world, *system, (100, 50), faction, layout));
+                open_fixture_window(&mut state, &world, *system, (100, 50), faction, layout);
             }
             assert!(state.close_window(systems[1]));
             let open: Vec<_> = state.windows.iter().map(|window| window.system).collect();
@@ -4225,7 +4259,7 @@ mod tests {
                 faction,
                 layout,
             );
-            state.open(&world, systems[1], (150, 80), faction, layout);
+            open_fixture_window(&mut state, &world, systems[1], (150, 80), faction, layout);
             let saved = state.saved_windows(&world);
             let placed: Vec<_> = state
                 .windows
@@ -4261,7 +4295,7 @@ mod tests {
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
             let mut state = SystemWindowState::default();
             let layout = layout(faction, 1.0);
-            state.open(&world, systems[0], (120, 70), faction, layout);
+            open_fixture_window(&mut state, &world, systems[0], (120, 70), faction, layout);
             assert!(state.minimize(systems[0]));
             let opened_first = state.windows.is_empty();
             assert!(opened_first);
@@ -4304,7 +4338,8 @@ mod tests {
         let (world, systems) = fixture_world(3);
         let mut state = SystemWindowState::default();
         let layout = layout(CockpitFaction::Empire, 1.0);
-        state.open(
+        open_fixture_window(
+            &mut state,
             &world,
             systems[0],
             (120, 70),
@@ -4340,7 +4375,8 @@ mod tests {
         let (world, systems) = fixture_world(1);
         let mut state = SystemWindowState::default();
         let layout = layout(CockpitFaction::Empire, 1.0);
-        state.open(
+        open_fixture_window(
+            &mut state,
             &world,
             systems[0],
             (150, 80),
@@ -4405,7 +4441,8 @@ mod tests {
         let (world, systems) = fixture_world(2);
         let layout = layout(CockpitFaction::Alliance, 1.0);
         let mut state = SystemWindowState::default();
-        state.open(
+        open_fixture_window(
+            &mut state,
             &world,
             systems[0],
             (120, 70),
@@ -4414,7 +4451,8 @@ mod tests {
         );
         assert!(state.minimize(systems[0]));
         state.minimize_defenses_window(systems[0], (130, 75));
-        state.open(
+        open_fixture_window(
+            &mut state,
             &world,
             systems[1],
             (140, 80),
@@ -4456,7 +4494,14 @@ mod tests {
         let mut state = SystemWindowState::default();
         let layout = layout(CockpitFaction::Alliance, 1.0);
         for system in &systems {
-            state.open(&world, *system, (100, 50), CockpitFaction::Alliance, layout);
+            open_fixture_window(
+                &mut state,
+                &world,
+                *system,
+                (100, 50),
+                CockpitFaction::Alliance,
+                layout,
+            );
             assert!(state.minimize(*system));
         }
         assert_eq!(state.rail_count(), REFERENCE_RAIL_SLOTS);
@@ -4531,7 +4576,8 @@ mod tests {
         let mine = add_mine(&mut world, systems[0]);
         let mut state = SystemWindowState::default();
         let layout = layout(CockpitFaction::Alliance, 1.0);
-        state.open(
+        open_fixture_window(
+            &mut state,
             &world,
             systems[0],
             (100, 60),
@@ -4560,14 +4606,16 @@ mod tests {
         let (world, systems) = fixture_world(2);
         let mut state = SystemWindowState::default();
         let alliance = layout(CockpitFaction::Alliance, 1.0);
-        state.open(
+        open_fixture_window(
+            &mut state,
             &world,
             systems[0],
             (100, 60),
             CockpitFaction::Alliance,
             alliance,
         );
-        state.open(
+        open_fixture_window(
+            &mut state,
             &world,
             systems[1],
             (100, 60),
@@ -5244,7 +5292,8 @@ mod tests {
         state.minimize_fleet_window(fleet0, systems[0], (100, 80));
         state.minimize_fleet_window(fleet0, systems[0], (100, 80));
         assert_eq!(state.rail_count(), 1);
-        state.open(
+        open_fixture_window(
+            &mut state,
             &world,
             systems[0],
             (60, 40),
@@ -5368,7 +5417,8 @@ mod tests {
         let (world, systems) = fixture_world(1);
         let mut state = SystemWindowState::default();
         let layout = layout(CockpitFaction::Alliance, 2.0);
-        state.open(
+        open_fixture_window(
+            &mut state,
             &world,
             systems[0],
             (100, 60),
@@ -5391,8 +5441,8 @@ mod tests {
         for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
             let mut state = SystemWindowState::default();
             let layout = layout(faction, 1.0);
-            assert!(state.open(&world, first, (100, 50), faction, layout));
-            assert!(state.open(&world, second, (100, 50), faction, layout));
+            open_fixture_window(&mut state, &world, first, (100, 50), faction, layout);
+            open_fixture_window(&mut state, &world, second, (100, 50), faction, layout);
             assert_eq!(state.children().count(), 2, "{faction:?}");
             assert!(state.raise(first), "{faction:?}");
             assert_eq!(state.windows.len(), 2, "{faction:?}");

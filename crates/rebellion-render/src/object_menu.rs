@@ -166,224 +166,95 @@ pub struct ObjectMenuItem {
     pub submenu: bool,
 }
 
-const fn item(
-    kind: u16,
-    command: ObjectMenuCommand,
-    sort_key: u16,
-    label_string_id: u16,
-    label: &'static str,
-    submenu: bool,
-) -> ObjectMenuItem {
-    ObjectMenuItem {
-        kind,
-        command,
-        sort_key,
-        label_string_id,
-        label,
-        submenu,
-    }
+/// Declares the recovered STRATEGY menu-record catalog.
+///
+/// Each row supplies only record data. The generated type owns the shared
+/// conversion into the public menu-item shape.
+macro_rules! object_menu_catalog {
+    ($( $record:ident => ($kind:expr, $command:ident $(($argument:expr))?, $sort_key:expr,
+        $label_string_id:expr, $label:literal $(, $submenu:ident)?); )+) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum ObjectMenuRecord {
+            $( $record, )+
+        }
+
+        impl ObjectMenuRecord {
+            const fn item(self) -> ObjectMenuItem {
+                match self {
+                    $( Self::$record => ObjectMenuItem {
+                        kind: $kind,
+                        command: ObjectMenuCommand::$command $(($argument))?,
+                        sort_key: $sort_key,
+                        label_string_id: $label_string_id,
+                        label: $label,
+                        submenu: object_menu_catalog!(@submenu $($submenu)?),
+                    }, )+
+                }
+            }
+        }
+    };
+    (@submenu) => { false };
+    (@submenu submenu) => { true };
 }
 
-const MOVE: ObjectMenuItem = item(0x201, ObjectMenuCommand::Move, 10, 12312, "Move", false);
-const CONFIRMED_MOVE: ObjectMenuItem = item(
-    0x202,
-    ObjectMenuCommand::ConfirmedMove,
-    12,
-    12311,
-    "Confirmed Move",
-    false,
-);
-const MISSION: ObjectMenuItem = item(
-    0x240,
-    ObjectMenuCommand::Mission,
-    300,
-    12320,
-    "Mission",
-    false,
-);
-/// The parent of None, Admiral, General and Commander (`0x260..0x263`).
-const COMMAND: ObjectMenuItem = item(
-    0x160,
-    ObjectMenuCommand::Command,
-    400,
-    12352,
-    "Command",
-    true,
-);
-/// The Command submenu's orders, in sort-key order: None (402), Admiral
+object_menu_catalog! {
+    Move => (0x201, Move, 10, 12312, "Move");
+    ConfirmedMove => (0x202, ConfirmedMove, 12, 12311, "Confirmed Move");
+    Mission => (0x240, Mission, 300, 12320, "Mission");
+    // Parent of None, Admiral, General and Commander (`0x260..0x263`).
+    Command => (0x160, Command, 400, 12352, "Command", submenu);
+    RankNone => (0x260, Rank(CommandKind::None), 402, 12354, "None");
+    RankAdmiral => (0x262, Rank(CommandKind::Admiral), 406, 12358, "Admiral");
+    RankGeneral => (0x263, Rank(CommandKind::General), 408, 12360, "General");
+    RankCommander => (0x261, Rank(CommandKind::Commander), 409, 12356, "Commander");
+    Encyclopedia => (0x100, Encyclopedia, 1000, 12292, "Encyclopedia");
+    Status => (0x103, Status, 1001, 12293, "Status");
+    Retire => (0x242, Retire, 2002, 12336, "Retire");
+    // Parent of the four bombardment targets (`0x220..0x223`).
+    Bombardment => (0x120, Bombardment, 200, 12313, "Planetary Bombardment", submenu);
+    BombardMilitary => (0x220, Bombard(BombardKind::Military), 202, 12314, "Target Military Facilities");
+    BombardCivilian => (0x221, Bombard(BombardKind::Civilian), 204, 12315, "Target Civilian Facilities");
+    BombardGeneral => (0x222, Bombard(BombardKind::General), 206, 12316, "General Bombardment");
+    BombardDestroySystem => (0x223, Bombard(BombardKind::DestroySystem), 208, 12317, "Destroy System");
+    Assault => (0x234, Assault, 220, 12318, "Planetary Assault");
+    Rename => (0x203, Rename, 500, 12291, "Rename");
+    Scrap => (0x200, Scrap, 2000, 12295, "Scrap");
+    // STRATEGY.DLL record 624 (`ghidra/notes/fleet-join-split.md`).
+    CreateFleet => (0x270, CreateFleet, 50, 12319, "Create Fleet");
+    // STRATEGY records 532, 534 and 592.
+    Destination => (0x214, Destination, 120, 12290, "Destination");
+    Reserved => (0x216, Reserved, 1002, 12294, "Reserved");
+    Abort => (0x250, Abort, 2003, 12362, "Abort");
+    // STRATEGY records `0x210..0x212`.
+    BuildFacilities => (0x210, Build, 100, 12288, "Build");
+    BuildShips => (0x211, Build, 100, 12288, "Build");
+    BuildTroops => (0x212, Build, 100, 12288, "Build");
+    Stop => (0x213, Stop, 110, 12289, "Stop");
+    ProducerRename => (0x215, Rename, 500, 12291, "Rename");
+}
+
+/// The Command submenu's records, in sort-key order: None (402), Admiral
 /// (406), General (408), Commander (409); each record's word 10 is the
 /// check mark 11902.
-const COMMAND_RANKS: [ObjectMenuItem; 4] = [
-    item(
-        0x260,
-        ObjectMenuCommand::Rank(CommandKind::None),
-        402,
-        12354,
-        "None",
-        false,
-    ),
-    item(
-        0x262,
-        ObjectMenuCommand::Rank(CommandKind::Admiral),
-        406,
-        12358,
-        "Admiral",
-        false,
-    ),
-    item(
-        0x263,
-        ObjectMenuCommand::Rank(CommandKind::General),
-        408,
-        12360,
-        "General",
-        false,
-    ),
-    item(
-        0x261,
-        ObjectMenuCommand::Rank(CommandKind::Commander),
-        409,
-        12356,
-        "Commander",
-        false,
-    ),
+const COMMAND_RANKS: [ObjectMenuRecord; 4] = [
+    ObjectMenuRecord::RankNone,
+    ObjectMenuRecord::RankAdmiral,
+    ObjectMenuRecord::RankGeneral,
+    ObjectMenuRecord::RankCommander,
+];
+
+/// The Planetary Bombardment submenu's records: STRATEGY records
+/// `0x220..0x223`, parent `0x120`, sort keys 202 to 208
+/// (`ghidra/notes/move-order.md`, "The Fleet menu").
+const BOMBARD_TARGETS: [ObjectMenuRecord; 4] = [
+    ObjectMenuRecord::BombardMilitary,
+    ObjectMenuRecord::BombardCivilian,
+    ObjectMenuRecord::BombardGeneral,
+    ObjectMenuRecord::BombardDestroySystem,
 ];
 
 /// The bitmap record word 10 names, drawn for a checked item.
 const CHECK_BITMAP: u32 = 11902;
-
-const ENCYCLOPEDIA: ObjectMenuItem = item(
-    0x100,
-    ObjectMenuCommand::Encyclopedia,
-    1000,
-    12292,
-    "Encyclopedia",
-    false,
-);
-const STATUS: ObjectMenuItem = item(
-    0x103,
-    ObjectMenuCommand::Status,
-    1001,
-    12293,
-    "Status",
-    false,
-);
-const RETIRE: ObjectMenuItem = item(
-    0x242,
-    ObjectMenuCommand::Retire,
-    2002,
-    12336,
-    "Retire",
-    false,
-);
-
-/// The parent of the four bombardment targets (`0x220..0x223`).
-const BOMBARDMENT: ObjectMenuItem = item(
-    0x120,
-    ObjectMenuCommand::Bombardment,
-    200,
-    12313,
-    "Planetary Bombardment",
-    true,
-);
-/// The Planetary Bombardment submenu's orders: STRATEGY records
-/// `0x220..0x223`, parent `0x120`, sort keys 202 to 208
-/// (`ghidra/notes/move-order.md`, "The Fleet menu").
-const BOMBARD_TARGETS: [ObjectMenuItem; 4] = [
-    item(
-        0x220,
-        ObjectMenuCommand::Bombard(BombardKind::Military),
-        202,
-        12314,
-        "Target Military Facilities",
-        false,
-    ),
-    item(
-        0x221,
-        ObjectMenuCommand::Bombard(BombardKind::Civilian),
-        204,
-        12315,
-        "Target Civilian Facilities",
-        false,
-    ),
-    item(
-        0x222,
-        ObjectMenuCommand::Bombard(BombardKind::General),
-        206,
-        12316,
-        "General Bombardment",
-        false,
-    ),
-    item(
-        0x223,
-        ObjectMenuCommand::Bombard(BombardKind::DestroySystem),
-        208,
-        12317,
-        "Destroy System",
-        false,
-    ),
-];
-const ASSAULT: ObjectMenuItem = item(
-    0x234,
-    ObjectMenuCommand::Assault,
-    220,
-    12318,
-    "Planetary Assault",
-    false,
-);
-const RENAME: ObjectMenuItem = item(
-    0x203,
-    ObjectMenuCommand::Rename,
-    500,
-    12291,
-    "Rename",
-    false,
-);
-const SCRAP: ObjectMenuItem = item(0x200, ObjectMenuCommand::Scrap, 2000, 12295, "Scrap", false);
-/// STRATEGY.DLL record 624 (`ghidra/notes/fleet-join-split.md`).
-const CREATE_FLEET: ObjectMenuItem = item(
-    0x270,
-    ObjectMenuCommand::CreateFleet,
-    50,
-    12319,
-    "Create Fleet",
-    false,
-);
-/// STRATEGY records 532, 534 and 592.
-const DESTINATION: ObjectMenuItem = item(
-    0x214,
-    ObjectMenuCommand::Destination,
-    120,
-    12290,
-    "Destination",
-    false,
-);
-const RESERVED: ObjectMenuItem = item(
-    0x216,
-    ObjectMenuCommand::Reserved,
-    1002,
-    12294,
-    "Reserved",
-    false,
-);
-const ABORT: ObjectMenuItem = item(0x250, ObjectMenuCommand::Abort, 2003, 12362, "Abort", false);
-/// STRATEGY records `0x210..0x216` (`ghidra/notes/manufacturing-build-selection.md`,
-/// "Selection and menu"): Build for facilities, ships and troops, Stop, and a
-/// manager's Rename.
-const BUILD_FACILITIES: ObjectMenuItem =
-    item(0x210, ObjectMenuCommand::Build, 100, 12288, "Build", false);
-const BUILD_SHIPS: ObjectMenuItem =
-    item(0x211, ObjectMenuCommand::Build, 100, 12288, "Build", false);
-const BUILD_TROOPS: ObjectMenuItem =
-    item(0x212, ObjectMenuCommand::Build, 100, 12288, "Build", false);
-const STOP: ObjectMenuItem = item(0x213, ObjectMenuCommand::Stop, 110, 12289, "Stop", false);
-const PRODUCER_RENAME: ObjectMenuItem = item(
-    0x215,
-    ObjectMenuCommand::Rename,
-    500,
-    12291,
-    "Rename",
-    false,
-);
 
 /// One row of an open object menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -493,64 +364,123 @@ pub fn object_menu_rows(selection: Option<MenuObject>, gates: OrderGates) -> Vec
         selection,
         Some(MenuObject::Fighter { .. } | MenuObject::SystemFighter { .. })
     );
-    let offered: &[ObjectMenuItem] = match selection {
-        Some(MenuObject::Character(_)) => &[MOVE, CONFIRMED_MOVE, RETIRE, MISSION, COMMAND],
-        Some(MenuObject::SpecialForce(_)) => &[MOVE, CONFIRMED_MOVE, RETIRE, MISSION],
-        Some(MenuObject::Fleet(_)) => &[MOVE, CONFIRMED_MOVE, BOMBARDMENT, ASSAULT, RENAME, SCRAP],
-        Some(MenuObject::Troop(_)) => &[MOVE, CONFIRMED_MOVE, SCRAP],
-        Some(MenuObject::Ship { .. }) => &[MOVE, CONFIRMED_MOVE, SCRAP, RENAME, CREATE_FLEET],
+    let offered: &[ObjectMenuRecord] = match selection {
+        Some(MenuObject::Character(_)) => &[
+            ObjectMenuRecord::Move,
+            ObjectMenuRecord::ConfirmedMove,
+            ObjectMenuRecord::Retire,
+            ObjectMenuRecord::Mission,
+            ObjectMenuRecord::Command,
+        ],
+        Some(MenuObject::SpecialForce(_)) => &[
+            ObjectMenuRecord::Move,
+            ObjectMenuRecord::ConfirmedMove,
+            ObjectMenuRecord::Retire,
+            ObjectMenuRecord::Mission,
+        ],
+        Some(MenuObject::Fleet(_)) => &[
+            ObjectMenuRecord::Move,
+            ObjectMenuRecord::ConfirmedMove,
+            ObjectMenuRecord::Bombardment,
+            ObjectMenuRecord::Assault,
+            ObjectMenuRecord::Rename,
+            ObjectMenuRecord::Scrap,
+        ],
+        // A squadron's order list (FUN_00503930 → FUN_00557d80) is the
+        // regiment's base list: Move, Confirmed Move and Scrap
+        // (`ghidra/notes/squadron-menu-and-transit.md`).
+        Some(
+            MenuObject::Troop(_) | MenuObject::Fighter { .. } | MenuObject::SystemFighter { .. },
+        ) => &[
+            ObjectMenuRecord::Move,
+            ObjectMenuRecord::ConfirmedMove,
+            ObjectMenuRecord::Scrap,
+        ],
+        Some(MenuObject::Ship { .. }) => &[
+            ObjectMenuRecord::Move,
+            ObjectMenuRecord::ConfirmedMove,
+            ObjectMenuRecord::Scrap,
+            ObjectMenuRecord::Rename,
+            ObjectMenuRecord::CreateFleet,
+        ],
         Some(MenuObject::SystemIcon { quadrant, .. }) => match quadrant {
-            Quadrant::System => &[SCRAP, DESTINATION, RESERVED],
-            Quadrant::Defenses => &[MOVE, CONFIRMED_MOVE, SCRAP],
-            Quadrant::Fleets => &[MOVE, CONFIRMED_MOVE, SCRAP, BOMBARDMENT, ASSAULT],
-            Quadrant::Missions => &[ABORT],
+            Quadrant::System => &[
+                ObjectMenuRecord::Scrap,
+                ObjectMenuRecord::Destination,
+                ObjectMenuRecord::Reserved,
+            ],
+            Quadrant::Defenses => &[
+                ObjectMenuRecord::Move,
+                ObjectMenuRecord::ConfirmedMove,
+                ObjectMenuRecord::Scrap,
+            ],
+            Quadrant::Fleets => &[
+                ObjectMenuRecord::Move,
+                ObjectMenuRecord::ConfirmedMove,
+                ObjectMenuRecord::Scrap,
+                ObjectMenuRecord::Bombardment,
+                ObjectMenuRecord::Assault,
+            ],
+            Quadrant::Missions => &[ObjectMenuRecord::Abort],
         },
         Some(MenuObject::Producer { area, .. }) => match area {
-            ProductionArea::Shipyard => {
-                &[BUILD_SHIPS, STOP, DESTINATION, PRODUCER_RENAME, RESERVED]
-            }
-            ProductionArea::TrainingFacility => &[BUILD_TROOPS, STOP, DESTINATION, RESERVED],
-            ProductionArea::ConstructionYard => &[BUILD_FACILITIES, STOP, DESTINATION, RESERVED],
+            ProductionArea::Shipyard => &[
+                ObjectMenuRecord::BuildShips,
+                ObjectMenuRecord::Stop,
+                ObjectMenuRecord::Destination,
+                ObjectMenuRecord::ProducerRename,
+                ObjectMenuRecord::Reserved,
+            ],
+            ProductionArea::TrainingFacility => &[
+                ObjectMenuRecord::BuildTroops,
+                ObjectMenuRecord::Stop,
+                ObjectMenuRecord::Destination,
+                ObjectMenuRecord::Reserved,
+            ],
+            ProductionArea::ConstructionYard => &[
+                ObjectMenuRecord::BuildFacilities,
+                ObjectMenuRecord::Stop,
+                ObjectMenuRecord::Destination,
+                ObjectMenuRecord::Reserved,
+            ],
         },
-        // A squadron's order list (FUN_00503930 → FUN_00557d80): Move,
-        // Confirmed Move and Scrap, the regiment's base list
-        // (`ghidra/notes/squadron-menu-and-transit.md`).
-        Some(MenuObject::Fighter { .. } | MenuObject::SystemFighter { .. }) => {
-            &[MOVE, CONFIRMED_MOVE, SCRAP]
-        }
         // Every facility class's order list (FUN_005399e0 -> FUN_00539c20)
         // is Scrap alone (`ghidra/notes/facility-order-lists.md`).
-        Some(MenuObject::DefenseFacility(_)) => &[SCRAP],
+        Some(MenuObject::DefenseFacility(_)) => &[ObjectMenuRecord::Scrap],
         None => &[],
     };
     let mut rows: Vec<ObjectMenuRow> = offered
         .iter()
-        .chain(&[ENCYCLOPEDIA, STATUS])
-        .map(|&item| ObjectMenuRow {
-            item,
-            checked: false,
-            enabled: match item.command {
-                ObjectMenuCommand::Mission => gates.mission,
-                ObjectMenuCommand::Move | ObjectMenuCommand::ConfirmedMove => {
-                    gates.movement_enabled(fleet, troop, squadron, ship, member)
-                }
-                ObjectMenuCommand::CreateFleet => ship && gates.create_fleet,
-                ObjectMenuCommand::Rename => (fleet_entry || ship || producer) && gates.rename,
-                ObjectMenuCommand::Destination => gates.destination,
-                ObjectMenuCommand::Stop => producer && gates.stop,
-                ObjectMenuCommand::Build => producer && gates.build,
-                ObjectMenuCommand::Scrap => gates.scrap,
-                ObjectMenuCommand::Assault => fleet && gates.assault,
-                ObjectMenuCommand::Command | ObjectMenuCommand::Bombardment => {
-                    submenu_rows(item, gates).iter().any(|row| row.enabled)
-                }
-                ObjectMenuCommand::Encyclopedia => selection.is_some(),
-                // FUN_0051d990: a single selection that is not a system.
-                ObjectMenuCommand::Status => {
-                    selection.and_then(MenuObject::status_object).is_some()
-                }
-                _ => false,
-            },
+        .copied()
+        .chain([ObjectMenuRecord::Encyclopedia, ObjectMenuRecord::Status])
+        .map(|record| {
+            let item = record.item();
+            ObjectMenuRow {
+                item,
+                checked: false,
+                enabled: match item.command {
+                    ObjectMenuCommand::Mission => gates.mission,
+                    ObjectMenuCommand::Move | ObjectMenuCommand::ConfirmedMove => {
+                        gates.movement_enabled(fleet, troop, squadron, ship, member)
+                    }
+                    ObjectMenuCommand::CreateFleet => ship && gates.create_fleet,
+                    ObjectMenuCommand::Rename => (fleet_entry || ship || producer) && gates.rename,
+                    ObjectMenuCommand::Destination => gates.destination,
+                    ObjectMenuCommand::Stop => producer && gates.stop,
+                    ObjectMenuCommand::Build => producer && gates.build,
+                    ObjectMenuCommand::Scrap => gates.scrap,
+                    ObjectMenuCommand::Assault => fleet && gates.assault,
+                    ObjectMenuCommand::Command | ObjectMenuCommand::Bombardment => {
+                        submenu_rows(item, gates).iter().any(|row| row.enabled)
+                    }
+                    ObjectMenuCommand::Encyclopedia => selection.is_some(),
+                    // FUN_0051d990: a single selection that is not a system.
+                    ObjectMenuCommand::Status => {
+                        selection.and_then(MenuObject::status_object).is_some()
+                    }
+                    _ => false,
+                },
+            }
         })
         .collect();
     rows.sort_by_key(|row| row.item.sort_key);
@@ -569,10 +499,14 @@ pub fn submenu_rows(parent: ObjectMenuItem, gates: OrderGates) -> Vec<ObjectMenu
     if parent.command == ObjectMenuCommand::Bombardment {
         return BOMBARD_TARGETS
             .iter()
-            .map(|&item| ObjectMenuRow {
-                item,
-                enabled: matches!(item.command, ObjectMenuCommand::Bombard(kind) if gates.bombard.enabled(kind)),
-                checked: false,
+            .copied()
+            .map(|record| {
+                let item = record.item();
+                ObjectMenuRow {
+                    item,
+                    enabled: matches!(item.command, ObjectMenuCommand::Bombard(kind) if gates.bombard.enabled(kind)),
+                    checked: false,
+                }
             })
             .collect();
     }
@@ -581,7 +515,9 @@ pub fn submenu_rows(parent: ObjectMenuItem, gates: OrderGates) -> Vec<ObjectMenu
     }
     COMMAND_RANKS
         .iter()
-        .map(|&item| {
+        .copied()
+        .map(|record| {
+            let item = record.item();
             let ObjectMenuCommand::Rank(kind) = item.command else {
                 unreachable!("COMMAND_RANKS holds rank orders only");
             };
@@ -876,8 +812,12 @@ mod tests {
         assault: false,
     };
 
+    fn item_values<T>(rows: &[ObjectMenuRow], value: impl Fn(ObjectMenuItem) -> T) -> Vec<T> {
+        rows.iter().map(|row| value(row.item)).collect()
+    }
+
     fn labels(rows: &[ObjectMenuRow]) -> Vec<&'static str> {
-        rows.iter().map(|row| row.item.label).collect()
+        item_values(rows, |item| item.label)
     }
 
     fn enabled(rows: &[ObjectMenuRow]) -> Vec<&'static str> {
@@ -887,8 +827,18 @@ mod tests {
             .collect()
     }
 
-    fn kinds(rows: &[ObjectMenuRow]) -> Vec<u16> {
-        rows.iter().map(|row| row.item.kind).collect()
+    fn submenu_labels(rows: &[ObjectMenuRow]) -> Vec<&'static str> {
+        rows.iter()
+            .filter(|row| row.item.submenu)
+            .map(|row| row.item.label)
+            .collect()
+    }
+
+    fn canvas_point(layout: CockpitLayout, point: (f32, f32)) -> egui::Pos2 {
+        egui::pos2(
+            layout.canvas.x + point.0 * layout.scale,
+            layout.canvas.y + point.1 * layout.scale,
+        )
     }
 
     fn frame_input(events: Vec<egui::Event>, time: Option<f64>) -> egui::RawInput {
@@ -924,27 +874,19 @@ mod tests {
             ]
         );
         assert_eq!(
-            kinds(&rows),
+            item_values(&rows, |item| item.kind),
             [0x201, 0x202, 0x240, 0x160, 0x100, 0x103, 0x242]
         );
         assert_eq!(
-            rows.iter()
-                .map(|row| row.item.label_string_id)
-                .collect::<Vec<_>>(),
+            item_values(&rows, |item| item.label_string_id),
             [12312, 12311, 12320, 12352, 12292, 12293, 12336]
         );
         assert_eq!(
-            rows.iter().map(|row| row.item.sort_key).collect::<Vec<_>>(),
+            item_values(&rows, |item| item.sort_key),
             [10, 12, 300, 400, 1000, 1001, 2002]
         );
         // Record 0x160's word 4 marks the Command submenu parent.
-        assert_eq!(
-            rows.iter()
-                .filter(|row| row.item.submenu)
-                .map(|row| row.item.label)
-                .collect::<Vec<_>>(),
-            ["Command"]
-        );
+        assert_eq!(submenu_labels(&rows), ["Command"]);
     }
 
     #[test]
@@ -986,26 +928,18 @@ mod tests {
             ]
         );
         assert_eq!(
-            kinds(&rows),
+            item_values(&rows, |item| item.kind),
             [0x201, 0x202, 0x120, 0x234, 0x203, 0x100, 0x103, 0x200]
         );
         assert_eq!(
-            rows.iter()
-                .map(|row| row.item.label_string_id)
-                .collect::<Vec<_>>(),
+            item_values(&rows, |item| item.label_string_id),
             [12312, 12311, 12313, 12318, 12291, 12292, 12293, 12295]
         );
         assert_eq!(
-            rows.iter().map(|row| row.item.sort_key).collect::<Vec<_>>(),
+            item_values(&rows, |item| item.sort_key),
             [10, 12, 200, 220, 500, 1000, 1001, 2000]
         );
-        assert_eq!(
-            rows.iter()
-                .filter(|row| row.item.submenu)
-                .map(|row| row.item.label)
-                .collect::<Vec<_>>(),
-            ["Planetary Bombardment"]
-        );
+        assert_eq!(submenu_labels(&rows), ["Planetary Bombardment"]);
         // A fleet is no mission member, so Mission's gate never reaches it.
         assert_eq!(enabled(&rows), ["Encyclopedia", "Status"]);
     }
@@ -1170,10 +1104,10 @@ mod tests {
         // manual Fig. 3.50 shows the mission icon's Encyclopedia, Status,
         // Abort.
         let kinds = |quadrant| -> Vec<u16> {
-            object_menu_rows(icon(quadrant), OrderGates::default())
-                .iter()
-                .map(|row| row.item.kind)
-                .collect()
+            item_values(
+                &object_menu_rows(icon(quadrant), OrderGates::default()),
+                |item| item.kind,
+            )
         };
         assert_eq!(
             kinds(Quadrant::Fleets),
@@ -1400,7 +1334,7 @@ mod tests {
             ["Move", "Confirmed Move", "Encyclopedia", "Status", "Scrap"]
         );
         assert_eq!(
-            rows.iter().map(|row| row.item.kind).collect::<Vec<_>>(),
+            item_values(&rows, |item| item.kind),
             [0x201, 0x202, 0x100, 0x103, 0x200]
         );
     }
@@ -1765,7 +1699,7 @@ mod tests {
         // FUN_00580d80 -> FUN_004ed680: +0x14 is the held rank, never None.
         let checked = |held| {
             submenu_rows(
-                COMMAND,
+                ObjectMenuRecord::Command.item(),
                 OrderGates {
                     command: CommandGates {
                         allowed: [true; 4],
@@ -2184,22 +2118,10 @@ mod tests {
         let agent = Some(MenuObject::Character(CharacterKey::default()));
         let mut inside = Some(ObjectMenuState::new(agent, MISSION_GATE, (100, 100)));
         let (_, rect) = click_row(&mut inside, 0);
-        assert_eq!(
-            rect.min,
-            egui::pos2(
-                layout.canvas.x + 100.0 * layout.scale,
-                layout.canvas.y + 100.0 * layout.scale
-            )
-        );
+        assert_eq!(rect.min, canvas_point(layout, (100.0, 100.0)));
         // Near the galaxy view's bottom right, inside the canvas: it flips.
         let mut corner = Some(ObjectMenuState::new(agent, MISSION_GATE, (530, 380)));
         let (_, rect) = click_row(&mut corner, 0);
-        assert_eq!(
-            rect.max,
-            egui::pos2(
-                layout.canvas.x + 530.0 * layout.scale,
-                layout.canvas.y + 380.0 * layout.scale
-            )
-        );
+        assert_eq!(rect.max, canvas_point(layout, (530.0, 380.0)));
     }
 }

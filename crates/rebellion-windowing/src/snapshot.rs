@@ -141,13 +141,21 @@ impl RoutingSnapshot {
         &self.presentation_history
     }
 
+    fn record(&self, id: WindowId) -> Option<&SnapshotRecord> {
+        let record = self.records.get(&id)?;
+        self.members.contains(&id).then_some(record)
+    }
+
     /// Semantic key captured for an identity in this snapshot.
     #[must_use]
     pub fn key(&self, id: WindowId) -> Option<WindowKey> {
-        self.members
-            .contains(&id)
-            .then(|| self.records.get(&id).map(|record| record.key))
-            .flatten()
+        self.record(id).map(|record| record.key)
+    }
+
+    /// Input policy captured for an identity in this snapshot.
+    #[must_use]
+    pub fn input_policy(&self, id: WindowId) -> Option<InputPolicy> {
+        self.record(id).map(|record| record.policy.input)
     }
 
     /// Content reports for every visible member of `kind`, in paint order.
@@ -182,10 +190,7 @@ impl RoutingSnapshot {
     /// Lifecycle owner captured for an identity in this snapshot.
     #[must_use]
     pub fn owner(&self, id: WindowId) -> Option<WindowOwner> {
-        self.members
-            .contains(&id)
-            .then(|| self.records.get(&id).map(|record| record.owner))
-            .flatten()
+        self.record(id).map(|record| record.owner)
     }
 
     /// Semantic keyboard focus captured for this frame.
@@ -431,5 +436,48 @@ impl RoutingSnapshot {
         self.walk_owner_chain(id, true, |owner| {
             (!active.contains(&owner)).then_some(false)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{FocusOnOpen, SubjectId, WindowCommand, WindowManager};
+
+    fn open_with_policy(
+        manager: &mut WindowManager,
+        kind: WindowKind,
+        subject: u64,
+        input: InputPolicy,
+    ) -> WindowId {
+        manager
+            .apply(WindowCommand::Open(WindowSpec {
+                key: WindowKey::contextual(kind, SubjectId::new(2, subject)),
+                owner: WindowOwner::StrategicRoot,
+                policy: WindowPolicy::restorable_history(input, FocusOnOpen::Window),
+            }))
+            .expect("window opens")
+            .transition
+            .opened_id()
+            .expect("new window identity")
+    }
+
+    #[test]
+    fn snapshot_exposes_each_members_frozen_input_policy() {
+        let mut manager = WindowManager::new();
+        let modeless = open_with_policy(&mut manager, WindowKind::System, 1, InputPolicy::Modeless);
+        let modal = open_with_policy(
+            &mut manager,
+            WindowKind::Status,
+            2,
+            InputPolicy::StrategicModal,
+        );
+        let snapshot = manager.begin_frame();
+
+        assert_eq!(snapshot.input_policy(modeless), Some(InputPolicy::Modeless));
+        assert_eq!(
+            snapshot.input_policy(modal),
+            Some(InputPolicy::StrategicModal)
+        );
     }
 }

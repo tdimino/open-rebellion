@@ -2297,112 +2297,39 @@ type TacticalHudControlSpec = TacticalButtonSpec<TacticalHudControl>;
 type TacticalBattleOptionsSpec = TacticalButtonSpec<TacticalBattleOptionsControl>;
 type TacticalWithdrawConfirmationSpec = TacticalButtonSpec<TacticalWithdrawConfirmationControl>;
 
-const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 17] = [
-    TacticalHudControlSpec::new(
-        TacticalHudControl::NavigationSet(0),
-        NativeRect::new(485.0, 272.0, 27.0, 27.0),
-        resources::tactical::BTN_NAVIGATION_SET_NORMAL[0],
-        resources::tactical::BTN_NAVIGATION_SET_SELECTED[0],
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::NavigationSet(1),
-        NativeRect::new(521.0, 272.0, 27.0, 27.0),
-        resources::tactical::BTN_NAVIGATION_SET_NORMAL[1],
-        resources::tactical::BTN_NAVIGATION_SET_SELECTED[1],
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::NavigationSet(2),
-        NativeRect::new(560.0, 272.0, 27.0, 27.0),
-        resources::tactical::BTN_NAVIGATION_SET_NORMAL[2],
-        resources::tactical::BTN_NAVIGATION_SET_SELECTED[2],
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::NavigationSet(3),
-        NativeRect::new(601.0, 272.0, 27.0, 27.0),
-        resources::tactical::BTN_NAVIGATION_SET_NORMAL[3],
-        resources::tactical::BTN_NAVIGATION_SET_SELECTED[3],
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::Pause,
-        NativeRect::new(560.0, 307.0, 28.0, 21.0),
-        resources::tactical::BTN_PAUSE_RUNNING,
-        resources::tactical::BTN_PAUSE_PAUSED,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::ZoomIn,
-        NativeRect::new(486.0, 343.0, 24.0, 24.0),
-        resources::tactical::BTN_CAMERA_ZOOM_IN_NORMAL,
-        resources::tactical::BTN_CAMERA_ZOOM_IN_PRESSED,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::ZoomOut,
-        NativeRect::new(603.0, 343.0, 24.0, 24.0),
-        resources::tactical::BTN_CAMERA_ZOOM_OUT_NORMAL,
-        resources::tactical::BTN_CAMERA_ZOOM_OUT_PRESSED,
-    ),
-    // The target button is painted above the four overlapping D-pad arms and
-    // therefore owns opaque pixels in their shared bounding region.
-    TacticalHudControlSpec::new(
-        TacticalHudControl::CameraTarget,
-        NativeRect::new(538.0, 379.0, 23.0, 23.0),
-        resources::tactical::BTN_CAMERA_TARGET_NORMAL,
-        resources::tactical::BTN_CAMERA_TARGET_PRESSED,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::CameraLeft,
-        NativeRect::new(511.0, 376.0, 42.0, 43.0),
-        resources::tactical::BTN_CAMERA_LEFT_NORMAL,
-        resources::tactical::BTN_CAMERA_LEFT_PRESSED,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::CameraRight,
-        NativeRect::new(557.0, 376.0, 43.0, 43.0),
-        resources::tactical::BTN_CAMERA_RIGHT_NORMAL,
-        resources::tactical::BTN_CAMERA_RIGHT_PRESSED,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::CameraUp,
-        NativeRect::new(537.0, 344.0, 43.0, 43.0),
-        resources::tactical::BTN_CAMERA_UP_NORMAL,
-        resources::tactical::BTN_CAMERA_UP_PRESSED,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::CameraDown,
-        NativeRect::new(537.0, 412.0, 43.0, 43.0),
-        resources::tactical::BTN_CAMERA_DOWN_NORMAL,
-        resources::tactical::BTN_CAMERA_DOWN_PRESSED,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::CameraRecall,
-        NativeRect::new(484.0, 430.0, 43.0, 25.0),
-        resources::tactical::BTN_CAMERA_RECALL_NORMAL,
-        resources::tactical::BTN_CAMERA_RECALL_PRESSED,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::CameraMemorize,
-        NativeRect::new(585.0, 430.0, 43.0, 25.0),
-        resources::tactical::BTN_CAMERA_MEMORIZE_NORMAL,
-        resources::tactical::BTN_CAMERA_MEMORIZE_PRESSED,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::HighlightAlliance,
-        NativeRect::new(517.0, 304.0, 30.0, 26.0),
-        resources::tactical::DIM_ALLIANCE_SHIPS,
-        resources::tactical::HIGHLIGHT_ALLIANCE_SHIPS,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::HighlightEmpire,
-        NativeRect::new(482.0, 304.0, 30.0, 26.0),
-        resources::tactical::DIM_EMPIRE_SHIPS,
-        resources::tactical::HIGHLIGHT_EMPIRE_SHIPS,
-    ),
-    TacticalHudControlSpec::new(
-        TacticalHudControl::BattleOptions,
-        NativeRect::new(606.0, 308.0, 20.0, 20.0),
-        resources::tactical::BTN_BATTLE_OPTIONS_NORMAL,
-        resources::tactical::BTN_BATTLE_OPTIONS_PRESSED,
-    ),
-];
+/// Declares tactical button records that share geometry and two-state art.
+macro_rules! tactical_button_specs {
+    ($( $control:expr => ($x:expr, $y:expr, $width:expr, $height:expr,
+        $normal:expr, $pressed:expr); )+) => {
+        [$( TacticalButtonSpec::new(
+            $control,
+            NativeRect::new($x, $y, $width, $height),
+            $normal,
+            $pressed,
+        ), )+]
+    };
+}
+
+const TACTICAL_HUD_CONTROLS: [TacticalHudControlSpec; 17] = tactical_button_specs! {
+    TacticalHudControl::NavigationSet(0) => (485.0, 272.0, 27.0, 27.0, resources::tactical::BTN_NAVIGATION_SET_NORMAL[0], resources::tactical::BTN_NAVIGATION_SET_SELECTED[0]);
+    TacticalHudControl::NavigationSet(1) => (521.0, 272.0, 27.0, 27.0, resources::tactical::BTN_NAVIGATION_SET_NORMAL[1], resources::tactical::BTN_NAVIGATION_SET_SELECTED[1]);
+    TacticalHudControl::NavigationSet(2) => (560.0, 272.0, 27.0, 27.0, resources::tactical::BTN_NAVIGATION_SET_NORMAL[2], resources::tactical::BTN_NAVIGATION_SET_SELECTED[2]);
+    TacticalHudControl::NavigationSet(3) => (601.0, 272.0, 27.0, 27.0, resources::tactical::BTN_NAVIGATION_SET_NORMAL[3], resources::tactical::BTN_NAVIGATION_SET_SELECTED[3]);
+    TacticalHudControl::Pause => (560.0, 307.0, 28.0, 21.0, resources::tactical::BTN_PAUSE_RUNNING, resources::tactical::BTN_PAUSE_PAUSED);
+    TacticalHudControl::ZoomIn => (486.0, 343.0, 24.0, 24.0, resources::tactical::BTN_CAMERA_ZOOM_IN_NORMAL, resources::tactical::BTN_CAMERA_ZOOM_IN_PRESSED);
+    TacticalHudControl::ZoomOut => (603.0, 343.0, 24.0, 24.0, resources::tactical::BTN_CAMERA_ZOOM_OUT_NORMAL, resources::tactical::BTN_CAMERA_ZOOM_OUT_PRESSED);
+    // The target paints above the overlapping D-pad arms.
+    TacticalHudControl::CameraTarget => (538.0, 379.0, 23.0, 23.0, resources::tactical::BTN_CAMERA_TARGET_NORMAL, resources::tactical::BTN_CAMERA_TARGET_PRESSED);
+    TacticalHudControl::CameraLeft => (511.0, 376.0, 42.0, 43.0, resources::tactical::BTN_CAMERA_LEFT_NORMAL, resources::tactical::BTN_CAMERA_LEFT_PRESSED);
+    TacticalHudControl::CameraRight => (557.0, 376.0, 43.0, 43.0, resources::tactical::BTN_CAMERA_RIGHT_NORMAL, resources::tactical::BTN_CAMERA_RIGHT_PRESSED);
+    TacticalHudControl::CameraUp => (537.0, 344.0, 43.0, 43.0, resources::tactical::BTN_CAMERA_UP_NORMAL, resources::tactical::BTN_CAMERA_UP_PRESSED);
+    TacticalHudControl::CameraDown => (537.0, 412.0, 43.0, 43.0, resources::tactical::BTN_CAMERA_DOWN_NORMAL, resources::tactical::BTN_CAMERA_DOWN_PRESSED);
+    TacticalHudControl::CameraRecall => (484.0, 430.0, 43.0, 25.0, resources::tactical::BTN_CAMERA_RECALL_NORMAL, resources::tactical::BTN_CAMERA_RECALL_PRESSED);
+    TacticalHudControl::CameraMemorize => (585.0, 430.0, 43.0, 25.0, resources::tactical::BTN_CAMERA_MEMORIZE_NORMAL, resources::tactical::BTN_CAMERA_MEMORIZE_PRESSED);
+    TacticalHudControl::HighlightAlliance => (517.0, 304.0, 30.0, 26.0, resources::tactical::DIM_ALLIANCE_SHIPS, resources::tactical::HIGHLIGHT_ALLIANCE_SHIPS);
+    TacticalHudControl::HighlightEmpire => (482.0, 304.0, 30.0, 26.0, resources::tactical::DIM_EMPIRE_SHIPS, resources::tactical::HIGHLIGHT_EMPIRE_SHIPS);
+    TacticalHudControl::BattleOptions => (606.0, 308.0, 20.0, 20.0, resources::tactical::BTN_BATTLE_OPTIONS_NORMAL, resources::tactical::BTN_BATTLE_OPTIONS_PRESSED);
+};
 
 /// Back-to-front paint order. The target follows the overlapping camera arms,
 /// matching the original window's topmost button ownership.
@@ -2437,55 +2364,20 @@ fn tactical_hud_control_spec(control: TacticalHudControl) -> TacticalHudControlS
 // REBEXE FUN_005dab90 places these at panel-local (18, 19), (14, 93),
 // (87, 93), (23, 184) and (97, 184) on panel 1306, whose container
 // `FUN_0059cac0` places at (482, 28) (0x1e2, 0x1c).
-const TACTICAL_BATTLE_OPTIONS_CONTROLS: [TacticalBattleOptionsSpec; 5] = [
-    TacticalBattleOptionsSpec::new(
-        TacticalBattleOptionsControl::Withdraw,
-        NativeRect::new(500.0, 47.0, 48.0, 34.0),
-        resources::tactical::BTN_WITHDRAW_FROM_BATTLE_NORMAL,
-        resources::tactical::BTN_WITHDRAW_FROM_BATTLE_PRESSED,
-    ),
-    TacticalBattleOptionsSpec::new(
-        TacticalBattleOptionsControl::SimulateRemainder,
-        NativeRect::new(496.0, 121.0, 44.0, 25.0),
-        resources::tactical::BTN_SIMULATE_REMAINDER_NORMAL,
-        resources::tactical::BTN_SIMULATE_REMAINDER_PRESSED,
-    ),
-    TacticalBattleOptionsSpec::new(
-        TacticalBattleOptionsControl::ObserveToggle,
-        NativeRect::new(569.0, 121.0, 45.0, 25.0),
-        resources::tactical::BTN_OBSERVE_TOGGLE_NORMAL,
-        resources::tactical::BTN_OBSERVE_TOGGLE_PRESSED,
-    ),
-    TacticalBattleOptionsSpec::new(
-        TacticalBattleOptionsControl::GameOptions,
-        NativeRect::new(505.0, 212.0, 52.0, 33.0),
-        resources::tactical::BTN_GAME_OPTIONS_NORMAL,
-        resources::tactical::BTN_GAME_OPTIONS_PRESSED,
-    ),
-    TacticalBattleOptionsSpec::new(
-        TacticalBattleOptionsControl::Close,
-        NativeRect::new(579.0, 212.0, 29.0, 33.0),
-        resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_NORMAL,
-        resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_PRESSED,
-    ),
-];
+const TACTICAL_BATTLE_OPTIONS_CONTROLS: [TacticalBattleOptionsSpec; 5] = tactical_button_specs! {
+    TacticalBattleOptionsControl::Withdraw => (500.0, 47.0, 48.0, 34.0, resources::tactical::BTN_WITHDRAW_FROM_BATTLE_NORMAL, resources::tactical::BTN_WITHDRAW_FROM_BATTLE_PRESSED);
+    TacticalBattleOptionsControl::SimulateRemainder => (496.0, 121.0, 44.0, 25.0, resources::tactical::BTN_SIMULATE_REMAINDER_NORMAL, resources::tactical::BTN_SIMULATE_REMAINDER_PRESSED);
+    TacticalBattleOptionsControl::ObserveToggle => (569.0, 121.0, 45.0, 25.0, resources::tactical::BTN_OBSERVE_TOGGLE_NORMAL, resources::tactical::BTN_OBSERVE_TOGGLE_PRESSED);
+    TacticalBattleOptionsControl::GameOptions => (505.0, 212.0, 52.0, 33.0, resources::tactical::BTN_GAME_OPTIONS_NORMAL, resources::tactical::BTN_GAME_OPTIONS_PRESSED);
+    TacticalBattleOptionsControl::Close => (579.0, 212.0, 29.0, 33.0, resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_NORMAL, resources::tactical::BTN_BATTLE_OPTIONS_CLOSE_PRESSED);
+};
 
 // REBEXE FUN_005f0f40 constructs these controls at panel-local (66, 202)
 // and (106, 202), each 27x25, with TACTICAL resources 1113 through 1116.
-const TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS: [TacticalWithdrawConfirmationSpec; 2] = [
-    TacticalWithdrawConfirmationSpec::new(
-        TacticalWithdrawConfirmationControl::Confirm,
-        NativeRect::new(548.0, 230.0, 27.0, 25.0),
-        resources::tactical::BTN_ASSIGN_CONFIRM_NORMAL,
-        resources::tactical::BTN_ASSIGN_CONFIRM_PRESSED,
-    ),
-    TacticalWithdrawConfirmationSpec::new(
-        TacticalWithdrawConfirmationControl::Cancel,
-        NativeRect::new(588.0, 230.0, 27.0, 25.0),
-        resources::tactical::BTN_ASSIGN_CANCEL_NORMAL,
-        resources::tactical::BTN_ASSIGN_CANCEL_PRESSED,
-    ),
-];
+const TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS: [TacticalWithdrawConfirmationSpec; 2] = tactical_button_specs! {
+    TacticalWithdrawConfirmationControl::Confirm => (548.0, 230.0, 27.0, 25.0, resources::tactical::BTN_ASSIGN_CONFIRM_NORMAL, resources::tactical::BTN_ASSIGN_CONFIRM_PRESSED);
+    TacticalWithdrawConfirmationControl::Cancel => (588.0, 230.0, 27.0, 25.0, resources::tactical::BTN_ASSIGN_CANCEL_NORMAL, resources::tactical::BTN_ASSIGN_CANCEL_PRESSED);
+};
 
 const DEATH_STAR_LASER_GAUGE_RECT: NativeRect = NativeRect::new(474.0, 0.0, 166.0, 25.0);
 /// `FUN_005c4ed0`: the gauge window's `CoolStrobeButton` at (0x89, 2),
@@ -2643,92 +2535,79 @@ const MISSION_COMMAND_CONTROLS: [TacticalCommandControl; 6] = [
     TacticalCommandControl::Cancel,
 ];
 
-fn tactical_command_spec(
-    control: TacticalCommandControl,
-    player_is_alliance: bool,
-) -> (NativeRect, u32) {
-    use resources::tactical as art;
-    match control {
-        TacticalCommandControl::PreviousCapital => (
-            NativeRect::new(489.0, 38.0, 11.0, 53.0),
-            art::BTN_PREVIOUS_CAPITAL_NORMAL,
-        ),
-        TacticalCommandControl::NextCapital => (
-            NativeRect::new(614.0, 38.0, 11.0, 53.0),
-            art::BTN_NEXT_CAPITAL_NORMAL,
-        ),
-        // FUN_005e4110: 1107 at panel x 12 and 1105 at x 80. The original
-        // opens Maneuvers and Tactics from the left and Missions from the
-        // right (A0 TAC-05-C006, TAC-05-C012).
-        TacticalCommandControl::OpenMissions => (
-            NativeRect::new(562.0, 238.0, 58.0, 22.0),
-            art::BTN_MISSIONS_NORMAL,
-        ),
-        TacticalCommandControl::OpenManeuvers => (
-            NativeRect::new(494.0, 238.0, 58.0, 22.0),
-            art::BTN_MANEUVERS_TACTICS_NORMAL,
-        ),
-        TacticalCommandControl::LeftHook => (
-            NativeRect::new(495.0, 187.0, 28.0, 28.0),
-            art::BTN_LEFT_HOOK_NORMAL,
-        ),
-        TacticalCommandControl::RightHook => (
-            NativeRect::new(525.0, 187.0, 28.0, 28.0),
-            art::BTN_RIGHT_HOOK_NORMAL,
-        ),
-        TacticalCommandControl::Hammer => (
-            NativeRect::new(495.0, 157.0, 28.0, 28.0),
-            art::BTN_HAMMER_NORMAL,
-        ),
-        TacticalCommandControl::Anvil => (
-            NativeRect::new(525.0, 157.0, 28.0, 28.0),
-            art::BTN_ANVIL_NORMAL,
-        ),
-        TacticalCommandControl::HoldPosition => (
-            NativeRect::new(557.0, 172.0, 28.0, 28.0),
-            art::BTN_HOLD_POSITION_NORMAL,
-        ),
-        TacticalCommandControl::ToggleTactic => (
-            NativeRect::new(593.0, 160.0, 24.0, 52.0),
-            art::BTN_TACTIC_STAND_OFF,
-        ),
-        TacticalCommandControl::AttackCapitalShips => (
-            NativeRect::new(500.0, 157.0, 46.0, 26.0),
-            if player_is_alliance {
-                art::BTN_ATTACK_CAPITAL_SHIPS_ALLIANCE_NORMAL
-            } else {
-                art::BTN_ATTACK_CAPITAL_SHIPS_EMPIRE_NORMAL
-            },
-        ),
-        TacticalCommandControl::AttackFighters => (
-            NativeRect::new(500.0, 187.0, 46.0, 26.0),
-            if player_is_alliance {
-                art::BTN_ATTACK_FIGHTERS_ALLIANCE_NORMAL
-            } else {
-                art::BTN_ATTACK_FIGHTERS_EMPIRE_NORMAL
-            },
-        ),
-        TacticalCommandControl::Recover => (
-            NativeRect::new(568.0, 157.0, 46.0, 26.0),
-            if player_is_alliance {
-                art::BTN_RECOVER_ALLIANCE_NORMAL
-            } else {
-                art::BTN_RECOVER_EMPIRE_NORMAL
-            },
-        ),
-        TacticalCommandControl::AttackDeathStar => (
-            NativeRect::new(568.0, 187.0, 46.0, 26.0),
-            art::BTN_ATTACK_DEATH_STAR_NORMAL,
-        ),
-        TacticalCommandControl::Confirm => (
-            NativeRect::new(548.0, 230.0, 27.0, 25.0),
-            art::BTN_ASSIGN_CONFIRM_NORMAL,
-        ),
-        TacticalCommandControl::Cancel => (
-            NativeRect::new(588.0, 230.0, 27.0, 25.0),
-            art::BTN_ASSIGN_CANCEL_NORMAL,
-        ),
+/// Declares the fixed and faction-specific tactical command catalog.
+macro_rules! tactical_command_catalog {
+    (
+        fixed { $( $control:ident => ($x:expr, $y:expr, $width:expr, $height:expr, $resource:ident); )+ }
+        faction { $( $faction_control:ident => ($fx:expr, $fy:expr, $fwidth:expr, $fheight:expr,
+            $alliance_resource:ident, $empire_resource:ident); )+ }
+    ) => {
+        fn tactical_command_spec(
+            control: TacticalCommandControl,
+            player_is_alliance: bool,
+        ) -> (NativeRect, u32) {
+            use resources::tactical as art;
+            match control {
+                $( TacticalCommandControl::$control => (
+                    NativeRect::new($x, $y, $width, $height),
+                    art::$resource,
+                ), )+
+                $( TacticalCommandControl::$faction_control => (
+                    NativeRect::new($fx, $fy, $fwidth, $fheight),
+                    if player_is_alliance {
+                        art::$alliance_resource
+                    } else {
+                        art::$empire_resource
+                    },
+                ), )+
+            }
+        }
+    };
+}
+
+tactical_command_catalog! {
+    fixed {
+        PreviousCapital => (489.0, 38.0, 11.0, 53.0, BTN_PREVIOUS_CAPITAL_NORMAL);
+        NextCapital => (614.0, 38.0, 11.0, 53.0, BTN_NEXT_CAPITAL_NORMAL);
+        // FUN_005e4110: 1107 at panel x 12 and 1105 at x 80.
+        OpenMissions => (562.0, 238.0, 58.0, 22.0, BTN_MISSIONS_NORMAL);
+        OpenManeuvers => (494.0, 238.0, 58.0, 22.0, BTN_MANEUVERS_TACTICS_NORMAL);
+        LeftHook => (495.0, 187.0, 28.0, 28.0, BTN_LEFT_HOOK_NORMAL);
+        RightHook => (525.0, 187.0, 28.0, 28.0, BTN_RIGHT_HOOK_NORMAL);
+        Hammer => (495.0, 157.0, 28.0, 28.0, BTN_HAMMER_NORMAL);
+        Anvil => (525.0, 157.0, 28.0, 28.0, BTN_ANVIL_NORMAL);
+        HoldPosition => (557.0, 172.0, 28.0, 28.0, BTN_HOLD_POSITION_NORMAL);
+        ToggleTactic => (593.0, 160.0, 24.0, 52.0, BTN_TACTIC_STAND_OFF);
+        AttackDeathStar => (568.0, 187.0, 46.0, 26.0, BTN_ATTACK_DEATH_STAR_NORMAL);
+        Confirm => (548.0, 230.0, 27.0, 25.0, BTN_ASSIGN_CONFIRM_NORMAL);
+        Cancel => (588.0, 230.0, 27.0, 25.0, BTN_ASSIGN_CANCEL_NORMAL);
     }
+    faction {
+        AttackCapitalShips => (500.0, 157.0, 46.0, 26.0, BTN_ATTACK_CAPITAL_SHIPS_ALLIANCE_NORMAL, BTN_ATTACK_CAPITAL_SHIPS_EMPIRE_NORMAL);
+        AttackFighters => (500.0, 187.0, 46.0, 26.0, BTN_ATTACK_FIGHTERS_ALLIANCE_NORMAL, BTN_ATTACK_FIGHTERS_EMPIRE_NORMAL);
+        Recover => (568.0, 157.0, 46.0, 26.0, BTN_RECOVER_ALLIANCE_NORMAL, BTN_RECOVER_EMPIRE_NORMAL);
+    }
+}
+
+fn tactical_command_order(control: TacticalCommandControl) -> Option<TacticalOrder> {
+    Some(match control {
+        TacticalCommandControl::LeftHook => TacticalOrder::LeftHook,
+        TacticalCommandControl::RightHook => TacticalOrder::RightHook,
+        TacticalCommandControl::Hammer => TacticalOrder::Hammer,
+        TacticalCommandControl::Anvil => TacticalOrder::Anvil,
+        TacticalCommandControl::HoldPosition => TacticalOrder::HoldPosition,
+        TacticalCommandControl::AttackCapitalShips => TacticalOrder::AttackCapitalShips,
+        TacticalCommandControl::AttackFighters => TacticalOrder::AttackFighters,
+        TacticalCommandControl::Recover => TacticalOrder::Recover,
+        TacticalCommandControl::AttackDeathStar => TacticalOrder::AttackDeathStar,
+        TacticalCommandControl::PreviousCapital
+        | TacticalCommandControl::NextCapital
+        | TacticalCommandControl::OpenManeuvers
+        | TacticalCommandControl::OpenMissions
+        | TacticalCommandControl::ToggleTactic
+        | TacticalCommandControl::Confirm
+        | TacticalCommandControl::Cancel => return None,
+    })
 }
 
 /// A fixed tactical control by name, in the 640×480 screen.
@@ -3997,10 +3876,41 @@ fn draw_original_button(
     y: f32,
     source_rect: Option<Rect>,
 ) {
-    let Some(texture) = cache.get_macroquad_button(source, id) else {
-        return;
+    draw_original_art(
+        cache,
+        OriginalArtKind::PaletteKeyedButton,
+        source,
+        id,
+        canvas,
+        x,
+        y,
+        source_rect,
+    );
+}
+
+#[derive(Debug, Clone, Copy)]
+enum OriginalArtKind {
+    Bitmap,
+    PaletteKeyedButton,
+}
+
+fn draw_original_art(
+    cache: &mut BmpCache,
+    kind: OriginalArtKind,
+    source: DllSource,
+    id: u32,
+    canvas: TacticalCanvas,
+    x: f32,
+    y: f32,
+    source_rect: Option<Rect>,
+) {
+    let texture = match kind {
+        OriginalArtKind::Bitmap => cache.get_macroquad_original(source, id),
+        OriginalArtKind::PaletteKeyedButton => cache.get_macroquad_button(source, id),
     };
-    draw_texture_in_tactical_canvas(texture, canvas, x, y, source_rect);
+    if let Some(texture) = texture {
+        draw_texture_in_tactical_canvas(texture, canvas, x, y, source_rect);
+    }
 }
 
 /// Draw one cached texture in tactical-canvas coordinates, preserving an
@@ -4047,10 +3957,16 @@ fn draw_original_bitmap(
     y: f32,
     source_rect: Option<Rect>,
 ) {
-    let Some(texture) = cache.get_macroquad_original(source, id) else {
-        return;
-    };
-    draw_texture_in_tactical_canvas(texture, canvas, x, y, source_rect);
+    draw_original_art(
+        cache,
+        OriginalArtKind::Bitmap,
+        source,
+        id,
+        canvas,
+        x,
+        y,
+        source_rect,
+    );
 }
 
 /// Cache every glyph and size that the macroquad tactical pass can emit before
@@ -4326,54 +4242,54 @@ fn draw_tactical_assignment_panel(
             for (control, normal, pressed_art, selected) in [
                 (
                     TacticalCommandControl::AttackCapitalShips,
-                    if player_is_alliance {
-                        art::BTN_ATTACK_CAPITAL_SHIPS_ALLIANCE_NORMAL
-                    } else {
-                        art::BTN_ATTACK_CAPITAL_SHIPS_EMPIRE_NORMAL
-                    },
-                    if player_is_alliance {
-                        art::BTN_ATTACK_CAPITAL_SHIPS_ALLIANCE_PRESSED
-                    } else {
-                        art::BTN_ATTACK_CAPITAL_SHIPS_EMPIRE_PRESSED
-                    },
+                    for_player_faction(
+                        player_is_alliance,
+                        art::BTN_ATTACK_CAPITAL_SHIPS_ALLIANCE_NORMAL,
+                        art::BTN_ATTACK_CAPITAL_SHIPS_EMPIRE_NORMAL,
+                    ),
+                    for_player_faction(
+                        player_is_alliance,
+                        art::BTN_ATTACK_CAPITAL_SHIPS_ALLIANCE_PRESSED,
+                        art::BTN_ATTACK_CAPITAL_SHIPS_EMPIRE_PRESSED,
+                    ),
                     pending_order == TacticalOrder::AttackCapitalShips,
                 ),
                 (
                     TacticalCommandControl::AttackFighters,
-                    if player_is_alliance {
-                        art::BTN_ATTACK_FIGHTERS_ALLIANCE_NORMAL
-                    } else {
-                        art::BTN_ATTACK_FIGHTERS_EMPIRE_NORMAL
-                    },
-                    if player_is_alliance {
-                        art::BTN_ATTACK_FIGHTERS_ALLIANCE_PRESSED
-                    } else {
-                        art::BTN_ATTACK_FIGHTERS_EMPIRE_PRESSED
-                    },
+                    for_player_faction(
+                        player_is_alliance,
+                        art::BTN_ATTACK_FIGHTERS_ALLIANCE_NORMAL,
+                        art::BTN_ATTACK_FIGHTERS_EMPIRE_NORMAL,
+                    ),
+                    for_player_faction(
+                        player_is_alliance,
+                        art::BTN_ATTACK_FIGHTERS_ALLIANCE_PRESSED,
+                        art::BTN_ATTACK_FIGHTERS_EMPIRE_PRESSED,
+                    ),
                     pending_order == TacticalOrder::AttackFighters,
                 ),
                 (
                     TacticalCommandControl::Recover,
-                    if player_is_alliance {
-                        art::BTN_RECOVER_ALLIANCE_NORMAL
-                    } else {
-                        art::BTN_RECOVER_EMPIRE_NORMAL
-                    },
-                    if player_is_alliance {
-                        art::BTN_RECOVER_ALLIANCE_PRESSED
-                    } else {
-                        art::BTN_RECOVER_EMPIRE_PRESSED
-                    },
+                    for_player_faction(
+                        player_is_alliance,
+                        art::BTN_RECOVER_ALLIANCE_NORMAL,
+                        art::BTN_RECOVER_EMPIRE_NORMAL,
+                    ),
+                    for_player_faction(
+                        player_is_alliance,
+                        art::BTN_RECOVER_ALLIANCE_PRESSED,
+                        art::BTN_RECOVER_EMPIRE_PRESSED,
+                    ),
                     pending_order == TacticalOrder::Recover,
                 ),
             ] {
                 let resource =
                     if control == TacticalCommandControl::Recover && fighter_group.is_none() {
-                        if player_is_alliance {
-                            art::BTN_RECOVER_ALLIANCE_DISABLED
-                        } else {
-                            art::BTN_RECOVER_EMPIRE_DISABLED
-                        }
+                        for_player_faction(
+                            player_is_alliance,
+                            art::BTN_RECOVER_ALLIANCE_DISABLED,
+                            art::BTN_RECOVER_EMPIRE_DISABLED,
+                        )
                     } else if selected || pressed == Some(control) {
                         pressed_art
                     } else {
@@ -4858,14 +4774,8 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
         | TacticalCommandControl::Hammer
         | TacticalCommandControl::Anvil
         | TacticalCommandControl::HoldPosition) => {
-            let order = match control {
-                TacticalCommandControl::LeftHook => TacticalOrder::LeftHook,
-                TacticalCommandControl::RightHook => TacticalOrder::RightHook,
-                TacticalCommandControl::Hammer => TacticalOrder::Hammer,
-                TacticalCommandControl::Anvil => TacticalOrder::Anvil,
-                TacticalCommandControl::HoldPosition => TacticalOrder::HoldPosition,
-                _ => unreachable!("the outer pattern admits only maneuver orders"),
-            };
+            let order = tactical_command_order(control)
+                .expect("the outer pattern admits only maneuver orders");
             if let TacticalCommandPanel::Maneuvers { pending_order, .. } = &mut state.command_panel
             {
                 *pending_order = order;
@@ -4885,13 +4795,8 @@ fn activate_tactical_command(state: &mut TacticalState, control: TacticalCommand
         | TacticalCommandControl::AttackFighters
         | TacticalCommandControl::Recover
         | TacticalCommandControl::AttackDeathStar) => {
-            let order = match control {
-                TacticalCommandControl::AttackCapitalShips => TacticalOrder::AttackCapitalShips,
-                TacticalCommandControl::AttackFighters => TacticalOrder::AttackFighters,
-                TacticalCommandControl::Recover => TacticalOrder::Recover,
-                TacticalCommandControl::AttackDeathStar => TacticalOrder::AttackDeathStar,
-                _ => unreachable!("the outer pattern admits only mission orders"),
-            };
+            let order = tactical_command_order(control)
+                .expect("the outer pattern admits only mission orders");
             if let TacticalCommandPanel::Missions { pending_order, .. } = &mut state.command_panel {
                 *pending_order = order;
             }
@@ -5374,6 +5279,23 @@ fn run_tactical_key_action(state: &mut TacticalState, action: TacticalKeyAction)
     }
 }
 
+fn captured_control_on_release<Control: Copy + PartialEq>(
+    pressed: &mut Option<Control>,
+    hovered: Option<Control>,
+) -> Option<Control> {
+    if is_mouse_button_pressed(MouseButton::Left) {
+        *pressed = hovered;
+    }
+    if is_mouse_button_released(MouseButton::Left) {
+        pressed.take().filter(|captured| Some(*captured) == hovered)
+    } else {
+        if !is_mouse_button_down(MouseButton::Left) {
+            *pressed = None;
+        }
+        None
+    }
+}
+
 fn handle_original_tactical_controls(
     state: &mut TacticalState,
     cache: &mut BmpCache,
@@ -5383,16 +5305,10 @@ fn handle_original_tactical_controls(
     let (x, y) = canvas.logical_pointer(mouse_x, mouse_y);
     if state.withdraw_confirmation_open {
         let hovered = tactical_withdraw_confirmation_control_at(x, y);
-        if is_mouse_button_pressed(MouseButton::Left) {
-            state.withdraw_confirmation_pressed = hovered;
-        }
-        if is_mouse_button_released(MouseButton::Left) {
-            let captured = state.withdraw_confirmation_pressed.take();
-            if let Some(captured) = captured.filter(|captured| Some(*captured) == hovered) {
-                return activate_tactical_withdraw_confirmation(state, captured);
-            }
-        } else if !is_mouse_button_down(MouseButton::Left) {
-            state.withdraw_confirmation_pressed = None;
+        if let Some(captured) =
+            captured_control_on_release(&mut state.withdraw_confirmation_pressed, hovered)
+        {
+            return activate_tactical_withdraw_confirmation(state, captured);
         }
         return TacticalAction::None;
     }
@@ -5427,16 +5343,10 @@ fn handle_original_tactical_controls(
             .as_ref()
             .is_some_and(tactical_withdraw_enabled);
         let hovered = tactical_battle_options_control_at(withdraw_enabled, x, y);
-        if is_mouse_button_pressed(MouseButton::Left) {
-            state.battle_options_pressed = hovered;
-        }
-        if is_mouse_button_released(MouseButton::Left) {
-            let captured = state.battle_options_pressed.take();
-            if let Some(captured) = captured.filter(|captured| Some(*captured) == hovered) {
-                return activate_tactical_battle_options(state, captured);
-            }
-        } else if !is_mouse_button_down(MouseButton::Left) {
-            state.battle_options_pressed = None;
+        if let Some(captured) =
+            captured_control_on_release(&mut state.battle_options_pressed, hovered)
+        {
+            return activate_tactical_battle_options(state, captured);
         }
         return TacticalAction::None;
     }
@@ -5670,34 +5580,95 @@ fn tactical_faction_text_color(player_is_alliance: bool) -> Color {
     }
 }
 
+fn for_player_faction<T>(player_is_alliance: bool, alliance: T, empire: T) -> T {
+    if player_is_alliance {
+        alliance
+    } else {
+        empire
+    }
+}
+
+fn battle_faction_tabs(player_is_alliance: bool, final_tab: [u32; 2]) -> [[u32; 2]; 4] {
+    use resources::strategy as art;
+    [
+        for_player_faction(
+            player_is_alliance,
+            [
+                art::BATTLE_SUMMARY_ALLIANCE_NORMAL,
+                art::BATTLE_SUMMARY_ALLIANCE_PRESSED,
+            ],
+            [
+                art::BATTLE_SUMMARY_EMPIRE_NORMAL,
+                art::BATTLE_SUMMARY_EMPIRE_PRESSED,
+            ],
+        ),
+        for_player_faction(
+            player_is_alliance,
+            [
+                art::BATTLE_ALLIANCE_FORCES_ALLIANCE_NORMAL,
+                art::BATTLE_ALLIANCE_FORCES_ALLIANCE_PRESSED,
+            ],
+            [
+                art::BATTLE_ALLIANCE_FORCES_EMPIRE_NORMAL,
+                art::BATTLE_ALLIANCE_FORCES_EMPIRE_PRESSED,
+            ],
+        ),
+        for_player_faction(
+            player_is_alliance,
+            [
+                art::BATTLE_EMPIRE_FORCES_ALLIANCE_NORMAL,
+                art::BATTLE_EMPIRE_FORCES_ALLIANCE_PRESSED,
+            ],
+            [
+                art::BATTLE_EMPIRE_FORCES_EMPIRE_NORMAL,
+                art::BATTLE_EMPIRE_FORCES_EMPIRE_PRESSED,
+            ],
+        ),
+        final_tab,
+    ]
+}
+
 fn battle_alert_skin(player_is_alliance: bool) -> BattleAlertSkin {
     use resources::strategy as art;
-    if player_is_alliance {
-        BattleAlertSkin {
-            frame: art::BATTLE_ALERT_WINDOW_ALLIANCE,
-            scene: art::BATTLE_ALERT_SCENE_ALLIANCE,
-            list_scene: art::BATTLE_ALERT_SCENE_ALLIANCE_DISABLED,
-            rail: art::BATTLE_RAIL_ALLIANCE,
-            tabs: [
-                [
-                    art::BATTLE_SUMMARY_ALLIANCE_NORMAL,
-                    art::BATTLE_SUMMARY_ALLIANCE_PRESSED,
-                ],
-                [
-                    art::BATTLE_ALLIANCE_FORCES_ALLIANCE_NORMAL,
-                    art::BATTLE_ALLIANCE_FORCES_ALLIANCE_PRESSED,
-                ],
-                [
-                    art::BATTLE_EMPIRE_FORCES_ALLIANCE_NORMAL,
-                    art::BATTLE_EMPIRE_FORCES_ALLIANCE_PRESSED,
-                ],
+    BattleAlertSkin {
+        frame: for_player_faction(
+            player_is_alliance,
+            art::BATTLE_ALERT_WINDOW_ALLIANCE,
+            art::BATTLE_ALERT_WINDOW_EMPIRE,
+        ),
+        scene: for_player_faction(
+            player_is_alliance,
+            art::BATTLE_ALERT_SCENE_ALLIANCE,
+            art::BATTLE_ALERT_SCENE_EMPIRE,
+        ),
+        list_scene: for_player_faction(
+            player_is_alliance,
+            art::BATTLE_ALERT_SCENE_ALLIANCE_DISABLED,
+            art::BATTLE_ALERT_SCENE_EMPIRE_DISABLED,
+        ),
+        rail: for_player_faction(
+            player_is_alliance,
+            art::BATTLE_RAIL_ALLIANCE,
+            art::BATTLE_RAIL_EMPIRE,
+        ),
+        tabs: battle_faction_tabs(
+            player_is_alliance,
+            for_player_faction(
+                player_is_alliance,
                 [
                     art::BATTLE_SYSTEM_ALLIANCE_NORMAL,
                     art::BATTLE_SYSTEM_ALLIANCE_PRESSED,
                 ],
-            ],
-            tab_rects: battle_alert_tab_rects(true),
-            buttons: [
+                [
+                    art::BATTLE_SYSTEM_EMPIRE_NORMAL,
+                    art::BATTLE_SYSTEM_EMPIRE_PRESSED,
+                ],
+            ),
+        ),
+        tab_rects: battle_alert_tab_rects(player_is_alliance),
+        buttons: for_player_faction(
+            player_is_alliance,
+            [
                 [
                     art::BATTLE_ALERT_RETREAT_ALLIANCE_NORMAL,
                     art::BATTLE_ALERT_RETREAT_ALLIANCE_PRESSED,
@@ -5714,33 +5685,7 @@ fn battle_alert_skin(player_is_alliance: bool) -> BattleAlertSkin {
                     art::BATTLE_ALERT_COMMAND_ALLIANCE_DISABLED,
                 ],
             ],
-        }
-    } else {
-        BattleAlertSkin {
-            frame: art::BATTLE_ALERT_WINDOW_EMPIRE,
-            scene: art::BATTLE_ALERT_SCENE_EMPIRE,
-            list_scene: art::BATTLE_ALERT_SCENE_EMPIRE_DISABLED,
-            rail: art::BATTLE_RAIL_EMPIRE,
-            tabs: [
-                [
-                    art::BATTLE_SUMMARY_EMPIRE_NORMAL,
-                    art::BATTLE_SUMMARY_EMPIRE_PRESSED,
-                ],
-                [
-                    art::BATTLE_ALLIANCE_FORCES_EMPIRE_NORMAL,
-                    art::BATTLE_ALLIANCE_FORCES_EMPIRE_PRESSED,
-                ],
-                [
-                    art::BATTLE_EMPIRE_FORCES_EMPIRE_NORMAL,
-                    art::BATTLE_EMPIRE_FORCES_EMPIRE_PRESSED,
-                ],
-                [
-                    art::BATTLE_SYSTEM_EMPIRE_NORMAL,
-                    art::BATTLE_SYSTEM_EMPIRE_PRESSED,
-                ],
-            ],
-            tab_rects: battle_alert_tab_rects(false),
-            buttons: [
+            [
                 [
                     art::BATTLE_ALERT_RETREAT_EMPIRE_NORMAL,
                     art::BATTLE_ALERT_RETREAT_EMPIRE_PRESSED,
@@ -5757,80 +5702,68 @@ fn battle_alert_skin(player_is_alliance: bool) -> BattleAlertSkin {
                     art::BATTLE_ALERT_COMMAND_EMPIRE_DISABLED,
                 ],
             ],
-        }
+        ),
     }
 }
 
 fn battle_result_skin(player_is_alliance: bool) -> BattleResultSkin {
     use resources::strategy as art;
-    if player_is_alliance {
-        BattleResultSkin {
-            frame: art::BATTLE_WINDOW_ALLIANCE,
-            rail: art::BATTLE_RAIL_ALLIANCE,
-            close: [
+    BattleResultSkin {
+        frame: for_player_faction(
+            player_is_alliance,
+            art::BATTLE_WINDOW_ALLIANCE,
+            art::BATTLE_WINDOW_EMPIRE,
+        ),
+        rail: for_player_faction(
+            player_is_alliance,
+            art::BATTLE_RAIL_ALLIANCE,
+            art::BATTLE_RAIL_EMPIRE,
+        ),
+        close: for_player_faction(
+            player_is_alliance,
+            [
                 art::BATTLE_CLOSE_ALLIANCE_NORMAL,
                 art::BATTLE_CLOSE_ALLIANCE_PRESSED,
             ],
-            tabs: [
-                [
-                    art::BATTLE_SUMMARY_ALLIANCE_NORMAL,
-                    art::BATTLE_SUMMARY_ALLIANCE_PRESSED,
-                ],
-                [
-                    art::BATTLE_ALLIANCE_FORCES_ALLIANCE_NORMAL,
-                    art::BATTLE_ALLIANCE_FORCES_ALLIANCE_PRESSED,
-                ],
-                [
-                    art::BATTLE_EMPIRE_FORCES_ALLIANCE_NORMAL,
-                    art::BATTLE_EMPIRE_FORCES_ALLIANCE_PRESSED,
-                ],
-                [
-                    art::BATTLE_DESTINATION_ALLIANCE_NORMAL,
-                    art::BATTLE_DESTINATION_ALLIANCE_PRESSED,
-                ],
-            ],
-            close_rect: NativeRect::new(423.0, 25.0, 32.0, 31.0),
-            tab_rects: [
-                NativeRect::new(418.0, 88.0, 41.0, 41.0),
-                NativeRect::new(418.0, 142.0, 41.0, 41.0),
-                NativeRect::new(418.0, 196.0, 41.0, 41.0),
-                NativeRect::new(418.0, 250.0, 41.0, 41.0),
-            ],
-        }
-    } else {
-        BattleResultSkin {
-            frame: art::BATTLE_WINDOW_EMPIRE,
-            rail: art::BATTLE_RAIL_EMPIRE,
-            close: [
+            [
                 art::BATTLE_CLOSE_EMPIRE_NORMAL,
                 art::BATTLE_CLOSE_EMPIRE_PRESSED,
             ],
-            tabs: [
+        ),
+        tabs: battle_faction_tabs(
+            player_is_alliance,
+            for_player_faction(
+                player_is_alliance,
                 [
-                    art::BATTLE_SUMMARY_EMPIRE_NORMAL,
-                    art::BATTLE_SUMMARY_EMPIRE_PRESSED,
-                ],
-                [
-                    art::BATTLE_ALLIANCE_FORCES_EMPIRE_NORMAL,
-                    art::BATTLE_ALLIANCE_FORCES_EMPIRE_PRESSED,
-                ],
-                [
-                    art::BATTLE_EMPIRE_FORCES_EMPIRE_NORMAL,
-                    art::BATTLE_EMPIRE_FORCES_EMPIRE_PRESSED,
+                    art::BATTLE_DESTINATION_ALLIANCE_NORMAL,
+                    art::BATTLE_DESTINATION_ALLIANCE_PRESSED,
                 ],
                 [
                     art::BATTLE_DESTINATION_EMPIRE_NORMAL,
                     art::BATTLE_DESTINATION_EMPIRE_PRESSED,
                 ],
+            ),
+        ),
+        close_rect: for_player_faction(
+            player_is_alliance,
+            NativeRect::new(423.0, 25.0, 32.0, 31.0),
+            NativeRect::new(426.0, 17.0, 44.0, 41.0),
+        ),
+        tab_rects: for_player_faction(
+            player_is_alliance,
+            [
+                NativeRect::new(418.0, 88.0, 41.0, 41.0),
+                NativeRect::new(418.0, 142.0, 41.0, 41.0),
+                NativeRect::new(418.0, 196.0, 41.0, 41.0),
+                NativeRect::new(418.0, 250.0, 41.0, 41.0),
             ],
-            close_rect: NativeRect::new(426.0, 17.0, 44.0, 41.0),
-            tab_rects: [
+            [
                 NativeRect::new(426.0, 89.0, 44.0, 41.0),
                 NativeRect::new(426.0, 148.0, 44.0, 41.0),
                 NativeRect::new(426.0, 207.0, 44.0, 41.0),
                 NativeRect::new(426.0, 266.0, 44.0, 41.0),
             ],
-        }
+        ),
     }
 }
 

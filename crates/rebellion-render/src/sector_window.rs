@@ -1024,6 +1024,19 @@ struct ManagedSectorDraw {
     pressed_control: Option<(SectorControl, (f32, f32))>,
 }
 
+fn routed_managed_draw<'a>(
+    router: &FrameInputRouter,
+    event: SectorWindowInputEvent,
+    draws: &'a mut [ManagedSectorDraw],
+) -> Option<&'a mut ManagedSectorDraw> {
+    let InputRecipient::Window(window) = router.pointer_recipient(event.id) else {
+        return None;
+    };
+    draws
+        .iter_mut()
+        .find(|managed| managed.window.id == Some(window))
+}
+
 #[derive(Default, Clone, Copy)]
 struct AggregateSectorReleases {
     selected: Option<InputEventId>,
@@ -1221,11 +1234,10 @@ fn shown_icon_at_screen_point(
     let window_rect = window_screen_rect(faction, window.column, layout);
     let player = faction.player();
     for &system_key in sector.systems.iter().rev() {
-        let Some(system) = world.systems.get(system_key) else {
+        let Some(planet) = sector_planet_rect(world, sector, system_key, window_rect, layout.scale)
+        else {
             continue;
         };
-        let (x, y) = sector_planet_position(sector.x, sector.y, system.x, system.y);
-        let planet = planet_rect(window_rect, layout.scale, x, y);
         for quadrant in Quadrant::ALL.into_iter().rev() {
             let Some((art, _)) =
                 quadrant_icon(world, fog, missions, movement, player, system_key, quadrant)
@@ -1264,11 +1276,21 @@ fn sector_system_at_point(
     let sector = world.sectors.get(window.sector)?;
     let window_rect = window_screen_rect(faction, window.column, layout);
     sector.systems.iter().copied().find(|system_key| {
-        world.systems.get(*system_key).is_some_and(|system| {
-            let (x, y) = sector_planet_position(sector.x, sector.y, system.x, system.y);
-            rect_contains(planet_rect(window_rect, layout.scale, x, y), point)
-        })
+        sector_planet_rect(world, sector, *system_key, window_rect, layout.scale)
+            .is_some_and(|planet| rect_contains(planet, point))
     })
+}
+
+fn sector_planet_rect(
+    world: &GameWorld,
+    sector: &rebellion_core::world::Sector,
+    system: SystemKey,
+    window: egui::Rect,
+    scale: f32,
+) -> Option<egui::Rect> {
+    let system = world.systems.get(system)?;
+    let (x, y) = sector_planet_position(sector.x, sector.y, system.x, system.y);
+    Some(planet_rect(window, scale, x, y))
 }
 
 #[allow(
@@ -1653,13 +1675,7 @@ fn draw_sector_windows_with_snapshot(
             if event.phase != PointerPhase::Release(PointerButtonId::Primary) {
                 continue;
             }
-            let InputRecipient::Window(id) = router.pointer_recipient(event.id) else {
-                continue;
-            };
-            let Some(managed) = managed_draws
-                .iter_mut()
-                .find(|managed| managed.window.id == Some(id))
-            else {
+            let Some(managed) = routed_managed_draw(router, event, &mut managed_draws) else {
                 continue;
             };
             let target = sector_click_target(
@@ -1715,13 +1731,7 @@ fn draw_sector_windows_with_snapshot(
             }
         }
         for &event in pointer_events {
-            let InputRecipient::Window(window) = router.pointer_recipient(event.id) else {
-                continue;
-            };
-            let Some(managed) = managed_draws
-                .iter_mut()
-                .find(|managed| managed.window.id == Some(window))
-            else {
+            let Some(managed) = routed_managed_draw(router, event, &mut managed_draws) else {
                 continue;
             };
             route_managed_sector_event(
@@ -2484,106 +2494,83 @@ fn paint_window_border(
             2.0,
         ),
     );
-    paint_tiled_horizontal(
-        painter,
-        ctx,
-        cache,
-        BORDER_TOP,
-        rect,
-        scale,
-        2.0,
-        SECTOR_WINDOW_WIDTH - 2.0,
-        0.0,
-    );
-    paint_tiled_horizontal(
-        painter,
-        ctx,
-        cache,
-        BORDER_BOTTOM,
-        rect,
-        scale,
-        2.0,
-        SECTOR_WINDOW_WIDTH - 2.0,
-        SECTOR_WINDOW_HEIGHT - 1.0,
-    );
-    paint_tiled_vertical(
-        painter,
-        ctx,
-        cache,
-        BORDER_LEFT,
-        rect,
-        scale,
-        0.0,
-        2.0,
-        SECTOR_WINDOW_HEIGHT - 2.0,
-    );
-    paint_tiled_vertical(
-        painter,
-        ctx,
-        cache,
-        BORDER_RIGHT,
-        rect,
-        scale,
-        SECTOR_WINDOW_WIDTH - 1.0,
-        2.0,
-        SECTOR_WINDOW_HEIGHT - 2.0,
-    );
+    for (resource_id, end, axis) in [
+        (
+            BORDER_TOP,
+            SECTOR_WINDOW_WIDTH - 2.0,
+            TileAxis::Horizontal(0.0),
+        ),
+        (
+            BORDER_BOTTOM,
+            SECTOR_WINDOW_WIDTH - 2.0,
+            TileAxis::Horizontal(SECTOR_WINDOW_HEIGHT - 1.0),
+        ),
+        (
+            BORDER_LEFT,
+            SECTOR_WINDOW_HEIGHT - 2.0,
+            TileAxis::Vertical(0.0),
+        ),
+        (
+            BORDER_RIGHT,
+            SECTOR_WINDOW_HEIGHT - 2.0,
+            TileAxis::Vertical(SECTOR_WINDOW_WIDTH - 1.0),
+        ),
+    ] {
+        paint_tiled(
+            painter,
+            tiled_mesh(ctx, cache, resource_id),
+            rect,
+            scale,
+            2.0,
+            end,
+            axis,
+        );
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TileAxis {
+    Horizontal(f32),
+    Vertical(f32),
 }
 
 #[allow(clippy::too_many_arguments)]
-fn paint_tiled_horizontal(
+fn paint_tiled(
     painter: &egui::Painter,
-    ctx: &egui::Context,
-    cache: &mut BmpCache,
-    resource_id: u32,
+    mesh: Option<egui::Mesh>,
     parent: egui::Rect,
     scale: f32,
     start: f32,
     end: f32,
-    y: f32,
-) {
-    let Some(mut mesh) = tiled_mesh(ctx, cache, resource_id) else {
-        return;
+    axis: TileAxis,
+) -> usize {
+    let Some(mut mesh) = mesh else {
+        return 0;
     };
-    let mut x = start;
-    while x < end {
-        let width = (end - x).min(2.0);
+    let mut tiles = 0;
+    let mut offset = start;
+    while offset < end {
+        let length = (end - offset).min(2.0);
+        let (rect, uv_max) = match axis {
+            TileAxis::Horizontal(y) => (
+                logical_rect(parent, scale, offset, y, length, 1.0),
+                egui::pos2(length / 2.0, 1.0),
+            ),
+            TileAxis::Vertical(x) => (
+                logical_rect(parent, scale, x, offset, 1.0, length),
+                egui::pos2(1.0, length / 2.0),
+            ),
+        };
         mesh.add_rect_with_uv(
-            logical_rect(parent, scale, x, y, width, 1.0),
-            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(width / 2.0, 1.0)),
+            rect,
+            egui::Rect::from_min_max(egui::Pos2::ZERO, uv_max),
             egui::Color32::WHITE,
         );
-        x += 2.0;
+        tiles += 1;
+        offset += 2.0;
     }
     painter.add(mesh);
-}
-
-#[allow(clippy::too_many_arguments)]
-fn paint_tiled_vertical(
-    painter: &egui::Painter,
-    ctx: &egui::Context,
-    cache: &mut BmpCache,
-    resource_id: u32,
-    parent: egui::Rect,
-    scale: f32,
-    x: f32,
-    start: f32,
-    end: f32,
-) {
-    let Some(mut mesh) = tiled_mesh(ctx, cache, resource_id) else {
-        return;
-    };
-    let mut y = start;
-    while y < end {
-        let height = (end - y).min(2.0);
-        mesh.add_rect_with_uv(
-            logical_rect(parent, scale, x, y, 1.0, height),
-            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, height / 2.0)),
-            egui::Color32::WHITE,
-        );
-        y += 2.0;
-    }
-    painter.add(mesh);
+    tiles
 }
 
 fn tiled_mesh(ctx: &egui::Context, cache: &mut BmpCache, resource_id: u32) -> Option<egui::Mesh> {
@@ -2724,6 +2711,65 @@ mod tests {
         CaptureCancelReason, ExistingEffect, FocusTarget, RouteTarget, WindowCommand, WindowId,
         WindowManager, WindowTransition,
     };
+
+    #[test]
+    fn tiled_border_geometry_covers_both_axes_and_a_partial_final_tile() {
+        let ctx = egui::Context::default();
+        let parent = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(30.0, 30.0));
+        let horizontal_texture = egui::TextureId::Managed(7_001);
+        let vertical_texture = egui::TextureId::Managed(7_002);
+        let mut horizontal_tiles = 0;
+        let mut vertical_tiles = 0;
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("tiled-border-contract"),
+            ));
+            horizontal_tiles = paint_tiled(
+                &painter,
+                Some(egui::Mesh::with_texture(horizontal_texture)),
+                parent,
+                2.0,
+                1.0,
+                6.0,
+                TileAxis::Horizontal(4.0),
+            );
+            vertical_tiles = paint_tiled(
+                &painter,
+                Some(egui::Mesh::with_texture(vertical_texture)),
+                parent,
+                2.0,
+                1.0,
+                6.0,
+                TileAxis::Vertical(4.0),
+            );
+        });
+        assert_eq!((horizontal_tiles, vertical_tiles), (3, 3));
+
+        let mesh = |texture| {
+            output
+                .shapes
+                .iter()
+                .find_map(|clipped| match &clipped.shape {
+                    egui::Shape::Mesh(mesh) if mesh.texture_id == texture => Some(mesh.as_ref()),
+                    _ => None,
+                })
+                .expect("tiled border mesh")
+        };
+        let horizontal = mesh(horizontal_texture);
+        assert_eq!(horizontal.vertices.len(), 12);
+        assert_eq!(horizontal.vertices[3].pos, egui::pos2(16.0, 30.0));
+        assert_eq!(horizontal.vertices[7].pos, egui::pos2(20.0, 30.0));
+        assert_eq!(horizontal.vertices[11].pos, egui::pos2(22.0, 30.0));
+        assert_eq!(horizontal.vertices[11].uv, egui::pos2(0.5, 1.0));
+
+        let vertical = mesh(vertical_texture);
+        assert_eq!(vertical.vertices.len(), 12);
+        assert_eq!(vertical.vertices[3].pos, egui::pos2(20.0, 26.0));
+        assert_eq!(vertical.vertices[7].pos, egui::pos2(20.0, 30.0));
+        assert_eq!(vertical.vertices[11].pos, egui::pos2(20.0, 32.0));
+        assert_eq!(vertical.vertices[11].uv, egui::pos2(1.0, 0.5));
+    }
 
     #[test]
     fn system_names_take_their_sides_color_whoever_plays() {

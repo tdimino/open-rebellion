@@ -97,51 +97,91 @@ pub enum CockpitButton {
     GalacticInformationDisplay,
 }
 
-/// Strategic map overlay selected through the original GID menu.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GidMode {
+/// Declares the GID mode identity and recovered text metadata together.
+macro_rules! gid_mode_catalog {
+    ($(
+        $(#[$metadata:meta])*
+        $mode:ident => ($command_id:expr, $label:expr);
+    )+) => {
+        /// Strategic map overlay selected through the original GID menu.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum GidMode {
+            $($(#[$metadata])* $mode,)+
+        }
+
+        impl GidMode {
+            /// Every mode, in declaration order.
+            pub const ALL: [Self; 30] = [$(Self::$mode,)+];
+
+            /// The mode whose command byte is `id`, as a save's interface records
+            /// it (view `+0xc8`; `FUN_00440f80` replays it as `WM_COMMAND` 0x140).
+            #[must_use]
+            pub fn from_command_id(id: u8) -> Option<Self> {
+                Self::ALL.into_iter().find(|mode| mode.command_id() == id)
+            }
+
+            /// Native command identifier dispatched by the code-built GID menu.
+            #[must_use]
+            pub const fn command_id(self) -> u8 {
+                match self {
+                    $(Self::$mode => $command_id,)+
+                }
+            }
+
+            /// English text carried by TEXTSTRA.DLL for the selected display.
+            #[must_use]
+            pub const fn label(self) -> &'static str {
+                match self {
+                    $(Self::$mode => $label,)+
+                }
+            }
+        }
+    };
+}
+
+gid_mode_catalog! {
     /// Default campaign view, sized by the player's popular support.
-    PopularSupport,
-    Uprisings,
-    IdleFleets,
-    FleetsEnRoute,
-    IdlePersonnel,
-    ActivePersonnel,
-    AvailableEnergy,
-    AvailableRawMaterial,
-    Mines,
-    Refineries,
-    Shipyards,
-    IdleShipyards,
-    TrainingFacilities,
-    IdleTrainingFacilities,
-    ConstructionYards,
-    IdleConstructionYards,
-    Troopers,
-    FighterSquadrons,
-    DeathStarShields,
-    PlanetaryShieldGenerators,
-    PlanetaryDefenseBatteries,
+    PopularSupport => (0x11, "Popular Support");
+    Uprisings => (0x12, "Uprisings");
+    IdleFleets => (0x21, "Idle Fleets");
+    FleetsEnRoute => (0x22, "Fleets Enroute");
+    IdlePersonnel => (0x43, "Idle Personnel");
+    ActivePersonnel => (0x44, "Active Personnel");
+    AvailableEnergy => (0x51, "Available Energy");
+    AvailableRawMaterial => (0x52, "Available Raw Material");
+    Mines => (0x53, "Mines");
+    Refineries => (0x54, "Refineries");
+    Shipyards => (0x62, "Shipyards");
+    IdleShipyards => (0x65, "Idle Shipyards");
+    TrainingFacilities => (0x63, "Training Facilities");
+    IdleTrainingFacilities => (0x66, "Idle Training Facilities");
+    ConstructionYards => (0x64, "Construction Yards");
+    IdleConstructionYards => (0x67, "Idle Construction Yards");
+    Troopers => (0x71, "Troopers");
+    FighterSquadrons => (0x72, "Fighter Squadrons");
+    DeathStarShields => (0x73, "Death Star Shields");
+    PlanetaryShieldGenerators => (0x74, "Planetary Shield Generators");
+    PlanetaryDefenseBatteries => (0x75, "Planetary Defense Batteries");
     /// Native Display Off item, which removes markers and uses bright resource 902.
-    DisplayOff,
+    DisplayOff => (0x80, "Display Off");
     /// The briefing tour's displays (`FUN_004c30c0`), which the GID menu
     /// does not offer. Markers come from `FUN_0042b330`.
     /// Mode 0x13: systems the player controls that are loyal to it.
-    LoyalToPlayer,
+    LoyalToPlayer => (0x13, "Systems Loyal");
     /// Mode 0x14: systems the player controls that are not loyal to it.
-    PlayerMilitaryControl,
+    PlayerMilitaryControl => (0x14, "Systems Under Military Control");
     /// Mode 0x15: systems the enemy controls that are loyal to it.
-    LoyalToEnemy,
+    LoyalToEnemy => (0x15, "Systems Loyal");
     /// Mode 0x16: systems the enemy controls that are not loyal to it.
-    EnemyMilitaryControl,
+    EnemyMilitaryControl => (0x16, "Systems Under Military Control");
     /// Mode 0x17: unexplored systems, in the largest neutral marker.
-    UnexploredSystems,
+    UnexploredSystems => (0x17, "Unexplored Systems");
     /// Mode 0x91: troops, shields and fighters together.
-    AllDefenses,
+    AllDefenses => (0x91, "All Defenses");
     /// Mode 0x92: the systems in [`GidHighlight`], in Imperial markers.
-    HighlightEmpire,
+    HighlightEmpire => (0x92, "");
     /// Mode 0x93: the systems in [`GidHighlight`], in Alliance markers.
-    HighlightAlliance,
+    HighlightAlliance => (0x93, "");
 }
 
 /// The systems and caption of a highlight display (modes 0x92 and 0x93):
@@ -154,120 +194,6 @@ pub struct GidHighlight {
 }
 
 impl GidMode {
-    /// Every mode, in declaration order.
-    pub const ALL: [Self; 30] = [
-        Self::PopularSupport,
-        Self::Uprisings,
-        Self::IdleFleets,
-        Self::FleetsEnRoute,
-        Self::IdlePersonnel,
-        Self::ActivePersonnel,
-        Self::AvailableEnergy,
-        Self::AvailableRawMaterial,
-        Self::Mines,
-        Self::Refineries,
-        Self::Shipyards,
-        Self::IdleShipyards,
-        Self::TrainingFacilities,
-        Self::IdleTrainingFacilities,
-        Self::ConstructionYards,
-        Self::IdleConstructionYards,
-        Self::Troopers,
-        Self::FighterSquadrons,
-        Self::DeathStarShields,
-        Self::PlanetaryShieldGenerators,
-        Self::PlanetaryDefenseBatteries,
-        Self::DisplayOff,
-        Self::LoyalToPlayer,
-        Self::PlayerMilitaryControl,
-        Self::LoyalToEnemy,
-        Self::EnemyMilitaryControl,
-        Self::UnexploredSystems,
-        Self::AllDefenses,
-        Self::HighlightEmpire,
-        Self::HighlightAlliance,
-    ];
-
-    /// The mode whose command byte is `id`, as a save's interface records
-    /// it (view `+0xc8`; `FUN_00440f80` replays it as `WM_COMMAND` 0x140).
-    #[must_use]
-    pub fn from_command_id(id: u8) -> Option<Self> {
-        Self::ALL.into_iter().find(|mode| mode.command_id() == id)
-    }
-
-    /// Native command identifier dispatched by the code-built GID menu.
-    #[must_use]
-    pub const fn command_id(self) -> u8 {
-        match self {
-            Self::PopularSupport => 0x11,
-            Self::Uprisings => 0x12,
-            Self::IdleFleets => 0x21,
-            Self::FleetsEnRoute => 0x22,
-            Self::IdlePersonnel => 0x43,
-            Self::ActivePersonnel => 0x44,
-            Self::AvailableEnergy => 0x51,
-            Self::AvailableRawMaterial => 0x52,
-            Self::Mines => 0x53,
-            Self::Refineries => 0x54,
-            Self::Shipyards => 0x62,
-            Self::IdleShipyards => 0x65,
-            Self::TrainingFacilities => 0x63,
-            Self::IdleTrainingFacilities => 0x66,
-            Self::ConstructionYards => 0x64,
-            Self::IdleConstructionYards => 0x67,
-            Self::Troopers => 0x71,
-            Self::FighterSquadrons => 0x72,
-            Self::DeathStarShields => 0x73,
-            Self::PlanetaryShieldGenerators => 0x74,
-            Self::PlanetaryDefenseBatteries => 0x75,
-            Self::DisplayOff => 0x80,
-            Self::LoyalToPlayer => 0x13,
-            Self::PlayerMilitaryControl => 0x14,
-            Self::LoyalToEnemy => 0x15,
-            Self::EnemyMilitaryControl => 0x16,
-            Self::UnexploredSystems => 0x17,
-            Self::AllDefenses => 0x91,
-            Self::HighlightEmpire => 0x92,
-            Self::HighlightAlliance => 0x93,
-        }
-    }
-
-    /// English text carried by TEXTSTRA.DLL for the selected display.
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::PopularSupport => "Popular Support",
-            Self::Uprisings => "Uprisings",
-            Self::IdleFleets => "Idle Fleets",
-            Self::FleetsEnRoute => "Fleets Enroute",
-            Self::IdlePersonnel => "Idle Personnel",
-            Self::ActivePersonnel => "Active Personnel",
-            Self::AvailableEnergy => "Available Energy",
-            Self::AvailableRawMaterial => "Available Raw Material",
-            Self::Mines => "Mines",
-            Self::Refineries => "Refineries",
-            Self::Shipyards => "Shipyards",
-            Self::IdleShipyards => "Idle Shipyards",
-            Self::TrainingFacilities => "Training Facilities",
-            Self::IdleTrainingFacilities => "Idle Training Facilities",
-            Self::ConstructionYards => "Construction Yards",
-            Self::IdleConstructionYards => "Idle Construction Yards",
-            Self::Troopers => "Troopers",
-            Self::FighterSquadrons => "Fighter Squadrons",
-            Self::DeathStarShields => "Death Star Shields",
-            Self::PlanetaryShieldGenerators => "Planetary Shield Generators",
-            Self::PlanetaryDefenseBatteries => "Planetary Defense Batteries",
-            Self::DisplayOff => "Display Off",
-            Self::LoyalToPlayer | Self::LoyalToEnemy => "Systems Loyal",
-            Self::PlayerMilitaryControl | Self::EnemyMilitaryControl => {
-                "Systems Under Military Control"
-            }
-            Self::UnexploredSystems => "Unexplored Systems",
-            Self::AllDefenses => "All Defenses",
-            Self::HighlightEmpire | Self::HighlightAlliance => "",
-        }
-    }
-
     /// The title `FUN_00425d00` paints for `faction`'s player, or `None`
     /// when it paints none. Highlight displays carry their own caption.
     #[must_use]
@@ -562,95 +488,70 @@ const fn strategic_control(
     }
 }
 
-const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
-    strategic_control(
-        CockpitButton::SystemFinder,
-        0x12d,
-        CockpitViewport::new(106.0, 408.0, 27.0, 16.0),
-        resources::strategy::ALLIANCE_SYSTEM_FINDER_NORMAL,
-        resources::strategy::ALLIANCE_SYSTEM_FINDER_PRESSED,
-    ),
-    strategic_control(
-        CockpitButton::FleetFinder,
-        0x12e,
-        CockpitViewport::new(157.0, 407.0, 27.0, 15.0),
-        resources::strategy::ALLIANCE_FLEET_FINDER_NORMAL,
-        resources::strategy::ALLIANCE_FLEET_FINDER_PRESSED,
-    ),
-    strategic_control(
-        CockpitButton::PersonnelFinder,
-        0x12f,
-        CockpitViewport::new(258.0, 405.0, 27.0, 16.0),
-        resources::strategy::ALLIANCE_PERSONNEL_FINDER_NORMAL,
-        resources::strategy::ALLIANCE_PERSONNEL_FINDER_PRESSED,
-    ),
-    strategic_control(
-        CockpitButton::TroopFinder,
-        0x130,
-        CockpitViewport::new(209.0, 405.0, 27.0, 16.0),
-        resources::strategy::ALLIANCE_TROOP_FINDER_NORMAL,
-        resources::strategy::ALLIANCE_TROOP_FINDER_PRESSED,
-    ),
-    strategic_control(
-        CockpitButton::Encyclopedia,
-        0x131,
-        CockpitViewport::new(394.0, 405.0, 27.0, 16.0),
-        resources::strategy::ALLIANCE_ENCYCLOPEDIA_NORMAL,
-        resources::strategy::ALLIANCE_ENCYCLOPEDIA_PRESSED,
-    ),
-    strategic_control(
-        CockpitButton::GalacticInformationDisplay,
-        0x132,
-        CockpitViewport::new(446.0, 406.0, 27.0, 16.0),
-        resources::strategy::ALLIANCE_GID_NORMAL,
-        resources::strategy::ALLIANCE_GID_PRESSED,
-    ),
-];
+/// Declares each primary strategic command once, with faction presentation as
+/// data. The generated arrays retain the original recovered control order.
+macro_rules! primary_control_catalog {
+    ($(
+        $button:ident => {
+            command: $command:expr,
+            alliance: ($ax:expr, $ay:expr, $aw:expr, $ah:expr, $an:ident, $ap:ident),
+            empire: ($ex:expr, $ey:expr, $ew:expr, $eh:expr, $en:ident, $ep:ident);
+        }
+    )+) => {
+        const ALLIANCE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [$(
+            strategic_control(
+                CockpitButton::$button,
+                $command,
+                CockpitViewport::new($ax, $ay, $aw, $ah),
+                resources::strategy::$an,
+                resources::strategy::$ap,
+            ),
+        )+];
 
-const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [
-    strategic_control(
-        CockpitButton::SystemFinder,
-        0x12d,
-        CockpitViewport::new(143.0, 434.0, 37.0, 24.0),
-        resources::strategy::EMPIRE_SYSTEM_FINDER_NORMAL,
-        resources::strategy::EMPIRE_SYSTEM_FINDER_PRESSED,
-    ),
-    strategic_control(
-        CockpitButton::FleetFinder,
-        0x12e,
-        CockpitViewport::new(199.0, 434.0, 37.0, 24.0),
-        resources::strategy::EMPIRE_FLEET_FINDER_NORMAL,
-        resources::strategy::EMPIRE_FLEET_FINDER_PRESSED,
-    ),
-    strategic_control(
-        CockpitButton::PersonnelFinder,
-        0x12f,
-        CockpitViewport::new(412.0, 433.0, 34.0, 22.0),
-        resources::strategy::EMPIRE_PERSONNEL_FINDER_NORMAL,
-        resources::strategy::EMPIRE_PERSONNEL_FINDER_PRESSED,
-    ),
-    strategic_control(
-        CockpitButton::TroopFinder,
-        0x130,
-        CockpitViewport::new(253.0, 433.0, 34.0, 22.0),
-        resources::strategy::EMPIRE_TROOP_FINDER_NORMAL,
-        resources::strategy::EMPIRE_TROOP_FINDER_PRESSED,
-    ),
-    strategic_control(
-        CockpitButton::Encyclopedia,
-        0x131,
-        CockpitViewport::new(465.0, 434.0, 35.0, 24.0),
-        resources::strategy::EMPIRE_ENCYCLOPEDIA_NORMAL,
-        resources::strategy::EMPIRE_ENCYCLOPEDIA_PRESSED,
-    ),
-    strategic_control(
-        CockpitButton::GalacticInformationDisplay,
-        0x132,
-        CockpitViewport::new(519.0, 434.0, 37.0, 25.0),
-        resources::strategy::EMPIRE_GID_NORMAL,
-        resources::strategy::EMPIRE_GID_PRESSED,
-    ),
-];
+        const EMPIRE_PRIMARY_CONTROLS: [StrategicControlSpec; 6] = [$(
+            strategic_control(
+                CockpitButton::$button,
+                $command,
+                CockpitViewport::new($ex, $ey, $ew, $eh),
+                resources::strategy::$en,
+                resources::strategy::$ep,
+            ),
+        )+];
+    };
+}
+
+primary_control_catalog! {
+    SystemFinder => {
+        command: 0x12d,
+        alliance: (106.0, 408.0, 27.0, 16.0, ALLIANCE_SYSTEM_FINDER_NORMAL, ALLIANCE_SYSTEM_FINDER_PRESSED),
+        empire: (143.0, 434.0, 37.0, 24.0, EMPIRE_SYSTEM_FINDER_NORMAL, EMPIRE_SYSTEM_FINDER_PRESSED);
+    }
+    FleetFinder => {
+        command: 0x12e,
+        alliance: (157.0, 407.0, 27.0, 15.0, ALLIANCE_FLEET_FINDER_NORMAL, ALLIANCE_FLEET_FINDER_PRESSED),
+        empire: (199.0, 434.0, 37.0, 24.0, EMPIRE_FLEET_FINDER_NORMAL, EMPIRE_FLEET_FINDER_PRESSED);
+    }
+    PersonnelFinder => {
+        command: 0x12f,
+        alliance: (258.0, 405.0, 27.0, 16.0, ALLIANCE_PERSONNEL_FINDER_NORMAL, ALLIANCE_PERSONNEL_FINDER_PRESSED),
+        empire: (412.0, 433.0, 34.0, 22.0, EMPIRE_PERSONNEL_FINDER_NORMAL, EMPIRE_PERSONNEL_FINDER_PRESSED);
+    }
+    TroopFinder => {
+        command: 0x130,
+        alliance: (209.0, 405.0, 27.0, 16.0, ALLIANCE_TROOP_FINDER_NORMAL, ALLIANCE_TROOP_FINDER_PRESSED),
+        empire: (253.0, 433.0, 34.0, 22.0, EMPIRE_TROOP_FINDER_NORMAL, EMPIRE_TROOP_FINDER_PRESSED);
+    }
+    Encyclopedia => {
+        command: 0x131,
+        alliance: (394.0, 405.0, 27.0, 16.0, ALLIANCE_ENCYCLOPEDIA_NORMAL, ALLIANCE_ENCYCLOPEDIA_PRESSED),
+        empire: (465.0, 434.0, 35.0, 24.0, EMPIRE_ENCYCLOPEDIA_NORMAL, EMPIRE_ENCYCLOPEDIA_PRESSED);
+    }
+    GalacticInformationDisplay => {
+        command: 0x132,
+        alliance: (446.0, 406.0, 27.0, 16.0, ALLIANCE_GID_NORMAL, ALLIANCE_GID_PRESSED),
+        empire: (519.0, 434.0, 37.0, 25.0, EMPIRE_GID_NORMAL, EMPIRE_GID_PRESSED);
+    }
+}
 
 const ALLIANCE_GAME_OPTIONS_CONTROL: StrategicControlSpec = strategic_control(
     CockpitButton::GameOptions,
@@ -668,29 +569,11 @@ const EMPIRE_GAME_OPTIONS_CONTROL: StrategicControlSpec = strategic_control(
     resources::strategy::EMPIRE_GAME_OPTIONS_PRESSED,
 );
 
-const ALLIANCE_MESSAGE_INDEX_CONTROLS: [MessageIndexControlSpec; 9] = [
-    message_index_control(0x136, 3.0, 109.0, 10050, 10060),
-    message_index_control(0x137, 3.0, 134.0, 10051, 10061),
-    message_index_control(0x138, 3.0, 159.0, 10052, 10062),
-    message_index_control(0x139, 3.0, 184.0, 10053, 10063),
-    message_index_control(0x13a, 3.0, 209.0, 10054, 10064),
-    message_index_control(0x13b, 3.0, 234.0, 10055, 10065),
-    message_index_control(0x13c, 3.0, 259.0, 10056, 10066),
-    message_index_control(0x13d, 3.0, 284.0, 10057, 10067),
-    message_index_control(0x13e, 3.0, 309.0, 10058, 10068),
-];
+const ALLIANCE_MESSAGE_INDEX_CONTROLS: [MessageIndexControlSpec; 9] =
+    message_index_controls(3.0, 109.0, 10050, 10060);
 
-const EMPIRE_MESSAGE_INDEX_CONTROLS: [MessageIndexControlSpec; 9] = [
-    message_index_control(0x136, 611.0, 110.0, 10030, 10040),
-    message_index_control(0x137, 611.0, 135.0, 10031, 10041),
-    message_index_control(0x138, 611.0, 160.0, 10032, 10042),
-    message_index_control(0x139, 611.0, 185.0, 10033, 10043),
-    message_index_control(0x13a, 611.0, 210.0, 10034, 10044),
-    message_index_control(0x13b, 611.0, 235.0, 10035, 10045),
-    message_index_control(0x13c, 611.0, 260.0, 10036, 10046),
-    message_index_control(0x13d, 611.0, 285.0, 10037, 10047),
-    message_index_control(0x13e, 611.0, 310.0, 10038, 10048),
-];
+const EMPIRE_MESSAGE_INDEX_CONTROLS: [MessageIndexControlSpec; 9] =
+    message_index_controls(611.0, 110.0, 10030, 10040);
 
 const fn message_index_control(
     command_id: u16,
@@ -705,6 +588,34 @@ const fn message_index_control(
         resting_resource,
         illuminated_resource,
     }
+}
+
+const fn message_index_controls(
+    x: f32,
+    first_y: f32,
+    first_resting_resource: u32,
+    first_illuminated_resource: u32,
+) -> [MessageIndexControlSpec; 9] {
+    let first = message_index_control(
+        0x136,
+        x,
+        first_y,
+        first_resting_resource,
+        first_illuminated_resource,
+    );
+    let mut controls = [first; 9];
+    let mut index = 1;
+    while index < controls.len() {
+        controls[index] = message_index_control(
+            0x136 + index as u16,
+            x,
+            first_y + 25.0 * index as f32,
+            first_resting_resource + index as u32,
+            first_illuminated_resource + index as u32,
+        );
+        index += 1;
+    }
+    controls
 }
 
 /// Exact primary-control table created by `FUN_00427270` for a faction.
