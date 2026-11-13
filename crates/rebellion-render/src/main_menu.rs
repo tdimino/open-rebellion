@@ -334,6 +334,35 @@ fn animation_resource(start: u32, count: u32, elapsed: f64) -> u32 {
     start + ((elapsed * ANIMATION_FPS) as u32 % count)
 }
 
+fn hover_texture(hovered: bool, start: u32, count: u32, idle: u32, elapsed: f64) -> u32 {
+    if hovered {
+        animation_resource(start, count, elapsed)
+    } else {
+        idle
+    }
+}
+
+fn selected_texture(
+    selected: bool,
+    selected_resource: u32,
+    hovered: bool,
+    animation_start: u32,
+    animation_count: u32,
+    elapsed: f64,
+) -> u32 {
+    if selected {
+        selected_resource
+    } else {
+        hover_texture(
+            hovered,
+            animation_start,
+            animation_count,
+            animation_start,
+            elapsed,
+        )
+    }
+}
+
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -346,33 +375,30 @@ fn texture_for(
     elapsed: f64,
 ) -> u32 {
     match control {
-        MainMenuControl::Easy => {
-            if state.difficulty == Difficulty::Easy {
-                11273
-            } else if hovered {
-                animation_resource(11061, 30, elapsed)
-            } else {
-                11061
-            }
-        }
-        MainMenuControl::Intermediate => {
-            if state.difficulty == Difficulty::Medium {
-                11275
-            } else if hovered {
-                animation_resource(11091, 30, elapsed)
-            } else {
-                11091
-            }
-        }
-        MainMenuControl::Expert => {
-            if state.difficulty == Difficulty::Hard {
-                11274
-            } else if hovered {
-                animation_resource(11121, 30, elapsed)
-            } else {
-                11121
-            }
-        }
+        MainMenuControl::Easy => selected_texture(
+            state.difficulty == Difficulty::Easy,
+            11273,
+            hovered,
+            11061,
+            30,
+            elapsed,
+        ),
+        MainMenuControl::Intermediate => selected_texture(
+            state.difficulty == Difficulty::Medium,
+            11275,
+            hovered,
+            11091,
+            30,
+            elapsed,
+        ),
+        MainMenuControl::Expert => selected_texture(
+            state.difficulty == Difficulty::Hard,
+            11274,
+            hovered,
+            11121,
+            30,
+            elapsed,
+        ),
         MainMenuControl::GalaxyLever => match state.galaxy_size {
             GalaxySize::Standard => 10001,
             GalaxySize::Large => 10002,
@@ -388,34 +414,10 @@ fn texture_for(
                 10158
             }
         }
-        MainMenuControl::Empire => {
-            if hovered {
-                animation_resource(11001, 15, elapsed)
-            } else {
-                10009
-            }
-        }
-        MainMenuControl::Alliance => {
-            if hovered {
-                animation_resource(11031, 15, elapsed)
-            } else {
-                10007
-            }
-        }
-        MainMenuControl::Multiplayer => {
-            if hovered {
-                animation_resource(11151, 30, elapsed)
-            } else {
-                10005
-            }
-        }
-        MainMenuControl::LoadOptions => {
-            if hovered {
-                animation_resource(11241, 15, elapsed)
-            } else {
-                10013
-            }
-        }
+        MainMenuControl::Empire => hover_texture(hovered, 11001, 15, 10009, elapsed),
+        MainMenuControl::Alliance => hover_texture(hovered, 11031, 15, 10007, elapsed),
+        MainMenuControl::Multiplayer => hover_texture(hovered, 11151, 30, 10005, elapsed),
+        MainMenuControl::LoadOptions => hover_texture(hovered, 11241, 15, 10013, elapsed),
         MainMenuControl::Credits => {
             if hovered && ((elapsed * 5.0) as u32 % 2 == 1) {
                 11272
@@ -423,13 +425,7 @@ fn texture_for(
                 11271
             }
         }
-        MainMenuControl::Quit => {
-            if hovered {
-                animation_resource(11181, 30, elapsed)
-            } else {
-                10011
-            }
-        }
+        MainMenuControl::Quit => hover_texture(hovered, 11181, 30, 10011, elapsed),
         MainMenuControl::MusicToggle | MainMenuControl::FleetRegistry => {
             unreachable!("the Open Rebellion extension chips use vector cockpit chrome")
         }

@@ -688,34 +688,47 @@ pub fn draw_build_selection(
         // right-aligned value would otherwise cross it.
         let in_field =
             |field: egui::Rect| painter.with_clip_rect(field.intersect(painter.clip_rect()));
-        for ((x, y), text) in [
-            (REFINED_FIELD, cost_text(estimate.refined_material, valid)),
-            (MAINTENANCE_FIELD, cost_text(estimate.maintenance, valid)),
-        ] {
-            let field = at(x, y, 64.0, 23.0);
-            in_field(field).text(
-                field.center(),
-                egui::Align2::CENTER_CENTER,
-                text,
+        for ((x, y), width, height, text, font, right_aligned) in [
+            (
+                REFINED_FIELD,
+                64.0,
+                23.0,
+                cost_text(estimate.refined_material, valid),
                 value_font.clone(),
-                egui::Color32::WHITE,
-            );
-        }
-        for ((x, y), text) in [
+                false,
+            ),
+            (
+                MAINTENANCE_FIELD,
+                64.0,
+                23.0,
+                cost_text(estimate.maintenance, valid),
+                value_font.clone(),
+                false,
+            ),
             (
                 COMPLETION_FIELD,
+                60.0,
+                15.0,
                 days_text(estimate.completion.unwrap_or(0), valid),
-            ),
-            (DEPLOYMENT_FIELD, days_text(estimate.deployment, valid)),
-        ] {
-            let field = at(x, y, 60.0, 15.0);
-            in_field(field).text(
-                field.right_center(),
-                egui::Align2::RIGHT_CENTER,
-                text,
                 small.clone(),
-                egui::Color32::WHITE,
-            );
+                true,
+            ),
+            (
+                DEPLOYMENT_FIELD,
+                60.0,
+                15.0,
+                days_text(estimate.deployment, valid),
+                small.clone(),
+                true,
+            ),
+        ] {
+            let field = at(x, y, width, height);
+            let (position, alignment) = if right_aligned {
+                (field.right_center(), egui::Align2::RIGHT_CENTER)
+            } else {
+                (field.center(), egui::Align2::CENTER_CENTER)
+            };
+            in_field(field).text(position, alignment, text, font, egui::Color32::WHITE);
         }
         let (x, y, w, h) = QUANTITY_FIELD;
         in_field(at(x, y, w, h)).text(
