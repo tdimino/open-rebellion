@@ -521,6 +521,17 @@ pub fn strike_detail(kind: BombardKind, runs: &[StrikeEffects]) -> Result<String
     }
 }
 
+fn matching_keys<'a, K: Copy, V: 'a>(
+    keys: &[K],
+    mut lookup: impl FnMut(K) -> Option<&'a V>,
+    mut matches: impl FnMut(&V) -> bool,
+) -> Vec<K> {
+    keys.iter()
+        .copied()
+        .filter(|&key| lookup(key).is_some_and(&mut matches))
+        .collect()
+}
+
 /// Destroy every defender the holder of `system` keeps there: its
 /// regiments, its own squadrons, its defence facilities and its fleets,
 /// through the paths a battle or a strike takes. port: staging only, with
@@ -539,34 +550,21 @@ pub fn strip_defenders(
         return Err(format!("{name} has no holder"));
     }
     let ours = holder == Faction::Alliance;
-    let regiments: Vec<_> = sys
-        .ground_units
-        .iter()
-        .copied()
-        .filter(|&key| {
-            world
-                .troops
-                .get(key)
-                .is_some_and(|unit| unit.is_alliance == ours)
-        })
-        .collect();
-    let facilities: Vec<_> = sys
-        .defense_facilities
-        .iter()
-        .copied()
-        .filter(|&key| {
-            world
-                .defense_facilities
-                .get(key)
-                .is_some_and(|f| f.side == holder)
-        })
-        .collect();
-    let fleets: Vec<_> = sys
-        .fleets
-        .iter()
-        .copied()
-        .filter(|&key| world.fleets.get(key).is_some_and(|f| f.is_alliance == ours))
-        .collect();
+    let regiments = matching_keys(
+        &sys.ground_units,
+        |key| world.troops.get(key),
+        |unit| unit.is_alliance == ours,
+    );
+    let facilities = matching_keys(
+        &sys.defense_facilities,
+        |key| world.defense_facilities.get(key),
+        |facility| facility.side == holder,
+    );
+    let fleets = matching_keys(
+        &sys.fleets,
+        |key| world.fleets.get(key),
+        |fleet| fleet.is_alliance == ours,
+    );
     let squadrons: u32 = sys
         .fighters
         .iter()
@@ -847,6 +845,13 @@ pub struct MissionOrder {
     pub object: Option<MissionTarget>,
 }
 
+fn mission_targets<K: Copy>(
+    keys: &[K],
+    target: fn(K) -> MissionTarget,
+) -> impl Iterator<Item = MissionTarget> + '_ {
+    keys.iter().copied().map(target)
+}
+
 /// The objects at `system` a mission may name, in the order a dev order
 /// tries them: its fleets' Death Stars, then its defence, manufacturing and
 /// production facilities, regiments and special forces.
@@ -862,35 +867,23 @@ fn objects_at(world: &GameWorld, system: SystemKey) -> Vec<MissionTarget> {
         .map(|ship| MissionTarget::CapitalShip(ship.tag))
         .filter(|target| target.is_death_star(world));
     death_stars
-        .chain(
-            value
-                .defense_facilities
-                .iter()
-                .copied()
-                .map(MissionTarget::DefenseFacility),
-        )
-        .chain(
-            value
-                .manufacturing_facilities
-                .iter()
-                .copied()
-                .map(MissionTarget::ManufacturingFacility),
-        )
-        .chain(
-            value
-                .production_facilities
-                .iter()
-                .copied()
-                .map(MissionTarget::ProductionFacility),
-        )
-        .chain(value.ground_units.iter().copied().map(MissionTarget::Troop))
-        .chain(
-            value
-                .special_forces
-                .iter()
-                .copied()
-                .map(MissionTarget::SpecialForce),
-        )
+        .chain(mission_targets(
+            &value.defense_facilities,
+            MissionTarget::DefenseFacility,
+        ))
+        .chain(mission_targets(
+            &value.manufacturing_facilities,
+            MissionTarget::ManufacturingFacility,
+        ))
+        .chain(mission_targets(
+            &value.production_facilities,
+            MissionTarget::ProductionFacility,
+        ))
+        .chain(mission_targets(&value.ground_units, MissionTarget::Troop))
+        .chain(mission_targets(
+            &value.special_forces,
+            MissionTarget::SpecialForce,
+        ))
         .collect()
 }
 

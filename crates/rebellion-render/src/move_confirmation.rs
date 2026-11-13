@@ -363,6 +363,44 @@ impl MoveConfirmation {
     }
 }
 
+trait ConfirmationContent {
+    type Action;
+
+    fn faction(&self) -> MissionFaction;
+    fn picture(&self) -> u32;
+    fn text(&self) -> String;
+    fn confirm_action(&self) -> Self::Action;
+    fn cancel_action() -> Self::Action;
+}
+
+macro_rules! impl_confirmation_content {
+    ($content:ty, $action:ty, $cancel:path) => {
+        impl ConfirmationContent for $content {
+            type Action = $action;
+
+            fn faction(&self) -> MissionFaction {
+                self.faction
+            }
+
+            fn picture(&self) -> u32 {
+                Self::picture(self)
+            }
+
+            fn text(&self) -> String {
+                Self::text(self)
+            }
+
+            fn confirm_action(&self) -> Self::Action {
+                Self::confirm_action(self)
+            }
+
+            fn cancel_action() -> Self::Action {
+                $cancel
+            }
+        }
+    };
+}
+
 /// What the player answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MoveConfirmationAction {
@@ -379,6 +417,12 @@ pub enum MoveConfirmationAction {
     /// The X (control `0x15`) or Escape: the order is destroyed.
     Cancel,
 }
+
+impl_confirmation_content!(
+    MoveConfirmation,
+    MoveConfirmationAction,
+    MoveConfirmationAction::Cancel
+);
 
 /// Whether a confirmation window is open.
 #[derive(Debug, Clone, Default)]
@@ -421,19 +465,6 @@ impl MoveConfirmationState {
             WindowKind::MoveConfirmation,
         ))
     }
-
-    /// Either control closes the window (`+0x30`) after acting.
-    fn answer(&mut self, confirm: bool) -> Option<MoveConfirmationAction> {
-        if self.window_id.is_some() {
-            return None;
-        }
-        let window = self.window.take()?;
-        Some(if confirm {
-            window.confirm_action()
-        } else {
-            MoveConfirmationAction::Cancel
-        })
-    }
 }
 
 impl_managed_confirmation_state!(
@@ -458,6 +489,45 @@ fn window_rect(layout: CockpitLayout) -> egui::Rect {
     galaxy_centered_rect(layout, MOVE_CONFIRMATION_WIDTH, MOVE_CONFIRMATION_HEIGHT)
 }
 
+/// Draw either confirmation family and apply its shared ownership rule: a
+/// manager-owned answer is reported without consuming content, while legacy
+/// fixture content closes immediately after either answer.
+fn draw_confirmation<C: ConfirmationContent>(
+    ctx: &egui::Context,
+    window: &mut Option<C>,
+    managed: bool,
+    layer: &str,
+    layout: CockpitLayout,
+    cache: &mut BmpCache,
+) -> Option<C::Action> {
+    let confirm = {
+        let confirmation = window.as_ref()?;
+        draw_window(
+            ctx,
+            layer,
+            side(confirmation.faction()),
+            confirmation.picture(),
+            confirmation.text(),
+            layout,
+            cache,
+        )?
+    };
+    if managed {
+        let confirmation = window.as_ref()?;
+        return Some(if confirm {
+            confirmation.confirm_action()
+        } else {
+            C::cancel_action()
+        });
+    }
+    let confirmation = window.take()?;
+    Some(if confirm {
+        confirmation.confirm_action()
+    } else {
+        C::cancel_action()
+    })
+}
+
 /// Draw the open window, if any, and report the player's answer.
 pub fn draw_move_confirmation(
     ctx: &egui::Context,
@@ -466,22 +536,14 @@ pub fn draw_move_confirmation(
     cache: &mut BmpCache,
 ) -> Option<MoveConfirmationAction> {
     let managed = state.window_id().is_some();
-    let window = state.window.as_ref()?;
-    let answer = draw_window(
+    draw_confirmation(
         ctx,
+        &mut state.window,
+        managed,
         "original-move-confirmation",
-        side(window.faction),
-        window.picture(),
-        window.text(),
         layout,
         cache,
-    );
-    match answer {
-        Some(true) if managed => state.window.as_ref().map(MoveConfirmation::confirm_action),
-        Some(false) if managed => Some(MoveConfirmationAction::Cancel),
-        Some(confirm) => state.answer(confirm),
-        None => None,
-    }
+    )
 }
 
 /// The confirmation window every confirmed order shares (`FUN_0044f060`,
@@ -708,6 +770,12 @@ impl ScrapConfirmation {
     }
 }
 
+impl_confirmation_content!(
+    ScrapConfirmation,
+    ScrapConfirmationAction,
+    ScrapConfirmationAction::Cancel
+);
+
 impl ScrapConfirmationState {
     #[must_use]
     pub fn prepare_open(
@@ -743,29 +811,14 @@ pub fn draw_scrap_confirmation(
     cache: &mut BmpCache,
 ) -> Option<ScrapConfirmationAction> {
     let managed = state.window_id().is_some();
-    let window = state.window.as_ref()?;
-    let confirm = draw_window(
+    draw_confirmation(
         ctx,
+        &mut state.window,
+        managed,
         "original-scrap-confirmation",
-        side(window.faction),
-        window.picture(),
-        window.text(),
         layout,
         cache,
-    )?;
-    if managed {
-        return Some(if confirm {
-            state.window.as_ref()?.confirm_action()
-        } else {
-            ScrapConfirmationAction::Cancel
-        });
-    }
-    let window = state.window.take()?;
-    Some(if confirm {
-        window.confirm_action()
-    } else {
-        ScrapConfirmationAction::Cancel
-    })
+    )
 }
 
 // ---------------------------------------------------------------------------
