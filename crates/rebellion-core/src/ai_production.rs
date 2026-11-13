@@ -1398,6 +1398,19 @@ pub(crate) fn rank_pick<T: Copy + Eq>(
     best.map(|(id, _)| id)
 }
 
+/// Rank one candidate set through each requested record slot.
+fn rank_by_slots<T: Copy + Eq>(
+    keys: &[(u32, Dir)],
+    mut values: impl FnMut(u32) -> Vec<(T, i64)>,
+    rng: &mut impl crate::uprising::Draws,
+) -> Option<T> {
+    let lists = keys
+        .iter()
+        .map(|&(slot, dir)| (values(slot), dir))
+        .collect::<Vec<_>>();
+    rank_pick(&lists, rng)
+}
+
 /// Resume a stable record list at `next`, wrapping to its first entry when
 /// the remembered identity disappeared. Empty lists have no next record.
 pub(crate) fn resume_or_first_index<T>(
@@ -1824,16 +1837,11 @@ impl<'a> Round<'a> {
             .iter()
             .filter(|s| s.flags & flags == flags)
             .collect();
-        let lists: Vec<(Vec<(crate::ids::SectorKey, i64)>, Dir)> = keys
-            .iter()
-            .map(|&(slot, dir)| {
-                (
-                    candidates.iter().map(|s| (s.key, s.slot(slot))).collect(),
-                    dir,
-                )
-            })
-            .collect();
-        rank_pick(&lists, &mut self.rng)
+        rank_by_slots(
+            keys,
+            |slot| candidates.iter().map(|s| (s.key, s.slot(slot))).collect(),
+            &mut self.rng,
+        )
     }
 
     /// `FUN_00419b80`: the sector holding `flags` nearest `from`'s.
@@ -1894,16 +1902,11 @@ impl<'a> Round<'a> {
             .filter_map(|s| self.records.get(s))
             .filter(|r| filter.admits(r))
             .collect();
-        let lists: Vec<(Vec<(SystemKey, i64)>, Dir)> = keys
-            .iter()
-            .map(|&(slot, dir)| {
-                (
-                    admitted.iter().map(|r| (r.key, r.slot(slot))).collect(),
-                    dir,
-                )
-            })
-            .collect();
-        rank_pick(&lists, &mut self.rng)
+        rank_by_slots(
+            keys,
+            |slot| admitted.iter().map(|r| (r.key, r.slot(slot))).collect(),
+            &mut self.rng,
+        )
     }
 
     /// `FUN_0041a400` (no decompile): the system of `sector` the filter

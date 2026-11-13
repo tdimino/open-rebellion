@@ -38,31 +38,18 @@ pub mod counter {
     pub const LASER: usize = 9;
 }
 
-/// `R+0x64` bits for counters present before the requirement
-/// (`FUN_00477cb0`).
-const PRESENCE: [(usize, u32); 9] = [
-    (counter::ATTACK, 0x20_0000),
-    (counter::MANOEUVRE, 0x40_0000),
-    (counter::TROOP_ROOM, 0x80_0000),
-    (counter::HANGAR, 0x100_0000),
-    (counter::BOMBARD, 0x200_0000),
-    (counter::REGIMENTS, 0x400_0000),
-    (counter::SQUADRONS, 0x800_0000),
-    (counter::LASER, 0x1000_0000),
-    (counter::GRAVITY_WELL, 0x10_0000),
-];
-/// `R+0x64` bits for counters still short after the takers
-/// (`FUN_00477e80`).
-const SHORTFALL: [(usize, u32); 9] = [
-    (counter::ATTACK, 0x1),
-    (counter::MANOEUVRE, 0x2),
-    (counter::TROOP_ROOM, 0x4),
-    (counter::HANGAR, 0x8),
-    (counter::BOMBARD, 0x10),
-    (counter::REGIMENTS, 0x20),
-    (counter::SQUADRONS, 0x40),
-    (counter::LASER, 0x80),
-    (counter::GRAVITY_WELL, 0x800),
+/// Each counter's `R+0x64` bit when present before the requirement
+/// (`FUN_00477cb0`) and when still short after the takers (`FUN_00477e80`).
+const COUNTER_BITS: [(usize, u32, u32); 9] = [
+    (counter::ATTACK, 0x20_0000, 0x1),
+    (counter::MANOEUVRE, 0x40_0000, 0x2),
+    (counter::TROOP_ROOM, 0x80_0000, 0x4),
+    (counter::HANGAR, 0x100_0000, 0x8),
+    (counter::BOMBARD, 0x200_0000, 0x10),
+    (counter::REGIMENTS, 0x400_0000, 0x20),
+    (counter::SQUADRONS, 0x800_0000, 0x40),
+    (counter::LASER, 0x1000_0000, 0x80),
+    (counter::GRAVITY_WELL, 0x10_0000, 0x800),
 ];
 /// The counters whose shortfall sends step 3 for ships (`+0x88` and
 /// `+0x8c` aside).
@@ -861,9 +848,9 @@ impl RegionalRecord {
                 c[counter::GRAVITY_WELL] += 1;
             }
         }
-        for (index, bit) in PRESENCE {
+        for (index, presence, _) in COUNTER_BITS {
             if c[index] > 0 {
-                self.need |= bit;
+                self.need |= presence;
             }
         }
         self.troop_room = c[counter::TROOP_ROOM];
@@ -910,9 +897,9 @@ impl RegionalRecord {
             if order.is_none() && self.short() {
                 order = self.poach(round, marks);
             }
-            for (index, bit) in SHORTFALL {
+            for (index, _, shortfall) in COUNTER_BITS {
                 if self.counters[index] < 0 {
-                    self.need |= bit;
+                    self.need |= shortfall;
                 }
             }
         }
@@ -1603,11 +1590,22 @@ fn random_sector(
         .filter(|s| admits(s))
         .map(|s| s.key)
         .collect();
-    let items: Vec<(SectorKey, i64)> = keys
+    random_rank_pick(keys, 19, Dir::Smallest, &mut round.rng)
+}
+
+/// Rank candidates by one fresh bounded draw each, preserving the original
+/// query's tie-breaking through [`rank_pick`].
+fn random_rank_pick<T: Copy + Eq>(
+    candidates: impl IntoIterator<Item = T>,
+    upper_bound: i32,
+    dir: Dir,
+    rng: &mut impl Draws,
+) -> Option<T> {
+    let items = candidates
         .into_iter()
-        .map(|k| (k, i64::from(round.rng.draw(19))))
+        .map(|candidate| (candidate, i64::from(rng.draw(upper_bound))))
         .collect();
-    rank_pick(&[(items, Dir::Smallest)], &mut round.rng)
+    rank_pick(&[(items, dir)], rng)
 }
 
 /// `FUN_0041a340`: the best system of the sector the words admit.
@@ -1847,11 +1845,7 @@ pub(crate) fn random_system(round: &mut Round<'_>, key: SectorKey, w: Words) -> 
         .into_iter()
         .filter(|s| round.records.get(s).is_some_and(|r| w.admits(r)))
         .collect();
-    let items: Vec<(SystemKey, i64)> = admitted
-        .into_iter()
-        .map(|s| (s, i64::from(round.rng.draw(9))))
-        .collect();
-    rank_pick(&[(items, Dir::Largest)], &mut round.rng)
+    random_rank_pick(admitted, 9, Dir::Largest, &mut round.rng)
 }
 
 /// `FUN_0041a400`: the system of the sector the words admit nearest

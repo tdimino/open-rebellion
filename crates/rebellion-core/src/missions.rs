@@ -510,6 +510,26 @@ struct ObjectState {
     en_route: bool,
 }
 
+macro_rules! facility_object_state {
+    ($world:expr, $at:ident, $key:expr, $facilities:ident) => {{
+        let key = $key;
+        (
+            $world.$facilities.get(key)?.side,
+            $at(&|system| system.$facilities.contains(&key)),
+        )
+    }};
+}
+
+macro_rules! destroy_facility_target {
+    ($world:expr, $key:expr, $facilities:ident) => {{
+        let key = $key;
+        for (_, system) in &mut $world.systems {
+            system.$facilities.retain(|&candidate| candidate != key);
+        }
+        $world.$facilities.remove(key);
+    }};
+}
+
 impl MissionTarget {
     /// Whether the object is a living ship of a Death Star class (family
     /// `0x18`-`0x1b`).
@@ -545,18 +565,15 @@ impl MissionTarget {
         };
         let mut en_route = false;
         let (side, location) = match self {
-            MissionTarget::DefenseFacility(key) => (
-                world.defense_facilities.get(key)?.side,
-                at(&|sys| sys.defense_facilities.contains(&key)),
-            ),
-            MissionTarget::ManufacturingFacility(key) => (
-                world.manufacturing_facilities.get(key)?.side,
-                at(&|sys| sys.manufacturing_facilities.contains(&key)),
-            ),
-            MissionTarget::ProductionFacility(key) => (
-                world.production_facilities.get(key)?.side,
-                at(&|sys| sys.production_facilities.contains(&key)),
-            ),
+            MissionTarget::DefenseFacility(key) => {
+                facility_object_state!(world, at, key, defense_facilities)
+            }
+            MissionTarget::ManufacturingFacility(key) => {
+                facility_object_state!(world, at, key, manufacturing_facilities)
+            }
+            MissionTarget::ProductionFacility(key) => {
+                facility_object_state!(world, at, key, production_facilities)
+            }
             MissionTarget::Troop(key) => (
                 faction_of(world.troops.get(key)?.is_alliance),
                 at(&|sys| sys.ground_units.contains(&key)),
@@ -608,22 +625,13 @@ fn mission_capital_ship(world: &GameWorld, tag: u32) -> Option<&crate::world::Sh
 pub fn destroy_target(world: &mut GameWorld, target: MissionTarget) {
     match target {
         MissionTarget::DefenseFacility(key) => {
-            for (_, sys) in &mut world.systems {
-                sys.defense_facilities.retain(|&k| k != key);
-            }
-            world.defense_facilities.remove(key);
+            destroy_facility_target!(world, key, defense_facilities);
         }
         MissionTarget::ManufacturingFacility(key) => {
-            for (_, sys) in &mut world.systems {
-                sys.manufacturing_facilities.retain(|&k| k != key);
-            }
-            world.manufacturing_facilities.remove(key);
+            destroy_facility_target!(world, key, manufacturing_facilities);
         }
         MissionTarget::ProductionFacility(key) => {
-            for (_, sys) in &mut world.systems {
-                sys.production_facilities.retain(|&k| k != key);
-            }
-            world.production_facilities.remove(key);
+            destroy_facility_target!(world, key, production_facilities);
         }
         MissionTarget::Troop(key) => {
             let at = crate::troop_transport::regiment_system(world, key);
