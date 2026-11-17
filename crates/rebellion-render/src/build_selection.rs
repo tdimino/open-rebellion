@@ -21,9 +21,10 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
+use crate::controls::StrobeButton;
 use crate::list_control::wheel_step;
 use crate::manufacturing_window::product;
-use crate::mission_dialog::{button, galaxy_centered_rect, paint, paint_button, paint_centered};
+use crate::mission_dialog::{galaxy_centered_rect, paint, paint_centered};
 use crate::native_geometry::{exact_clicked, rect_contains};
 use crate::singleton_window_common::{
     self, impl_singleton_content_reports, impl_singleton_window_routing,
@@ -739,80 +740,112 @@ pub fn draw_build_selection(
             egui::Color32::WHITE,
         );
 
-        if button(
+        if StrobeButton::show_pair(
             ui,
             cache,
             at(193.0, 3.0, 14.0, 14.0),
             "close",
+            DllSource::Strategy,
             CLOSE,
             false,
+            false,
             scale,
-        ) {
+        )
+        .clicked()
+        {
             close = true;
         }
-        if button(
+        if StrobeButton::show_pair(
             ui,
             cache,
             at(79.0, 90.0, 65.0, 18.0),
             "list",
+            DllSource::Strategy,
             LIST,
             false,
+            false,
             scale,
-        ) {
+        )
+        .clicked()
+        {
             dialog.toggle_list();
         }
-        if button(
+        if StrobeButton::show_pair(
             ui,
             cache,
             at(189.0, 196.0, 13.0, 8.0),
             "more",
+            DllSource::Strategy,
             MORE,
             false,
+            false,
             scale,
-        ) {
+        )
+        .clicked()
+        {
             dialog.step_quantity(true);
         }
-        if button(
+        if StrobeButton::show_pair(
             ui,
             cache,
             at(189.0, 205.0, 13.0, 8.0),
             "fewer",
+            DllSource::Strategy,
             FEWER,
             false,
+            false,
             scale,
-        ) {
+        )
+        .clicked()
+        {
             dialog.step_quantity(false);
         }
-        if button(
+        if StrobeButton::show_pair(
             ui,
             cache,
             at(5.0, 224.0, 66.0, 33.0),
             "encyclopedia",
+            DllSource::Strategy,
             ENCYCLOPEDIA,
             false,
+            false,
             scale,
-        ) {
+        )
+        .clicked()
+        {
             action = Some(BuildSelectionAction::Encyclopedia);
         }
         // FUN_00439160 disables Confirm for an order that cannot be
         // built. port: a disabled button keeps its rest art.
         let confirm_rect = at(73.0, 224.0, 66.0, 33.0);
-        if valid {
-            if button(ui, cache, confirm_rect, "confirm", CONFIRM, false, scale) {
-                confirm = true;
-            }
-        } else {
-            paint_button(&painter, ctx, cache, CONFIRM.0, confirm_rect, scale);
+        if StrobeButton::show_pair(
+            ui,
+            cache,
+            confirm_rect,
+            "confirm",
+            DllSource::Strategy,
+            CONFIRM,
+            false,
+            !valid,
+            scale,
+        )
+        .clicked()
+        {
+            confirm = true;
         }
-        if button(
+        if StrobeButton::show_pair(
             ui,
             cache,
             at(141.0, 224.0, 66.0, 33.0),
             "cancel",
+            DllSource::Strategy,
             CANCEL,
             false,
+            false,
             scale,
-        ) {
+        )
+        .clicked()
+        {
             close = true;
         }
 

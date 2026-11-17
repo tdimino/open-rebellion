@@ -2211,6 +2211,24 @@ fn prepare_tactical_window_action(
     prepared.phases().is_some().then_some(prepared)
 }
 
+/// Whether an action from the non-modal combat root may run without closing a
+/// managed Battle Alert or Battle Results identity first.
+fn combat_root_tactical_action_authorized(
+    action: &TacticalAction,
+    battle_session: Option<u64>,
+    phase: TacticalWindowPhase,
+    window: Option<TacticalWindowIdentity>,
+) -> bool {
+    // Manual p. 152 and FUN_0040a050 state 8: Simulate Remainder leaves a
+    // played battle, runs its remaining tactical session without a window,
+    // then opens Battle Results. Combat deliberately has no managed modal;
+    // its live battle-session token is therefore the authorization boundary.
+    matches!(action, TacticalAction::AutoResolve)
+        && battle_session.is_some()
+        && phase == TacticalWindowPhase::Combat
+        && window.is_none()
+}
+
 /// Releases a deferred tactical effect only after the manager proves it closed
 /// the same live identity at the requested phase boundary.
 fn approve_tactical_window_action(
@@ -4278,18 +4296,19 @@ mod frame_input_tests {
     use super::{
         approve_tactical_window_action, child_key_disposition,
         collect_ordered_strategic_input_batch, collect_strategic_input_in_physical_order,
-        collect_strategic_pointer_batch, commit_pending_tactical_window_action,
-        commit_sector_window_publication, enqueue_managed_fixture_sector,
-        enqueue_sector_manager_action, enqueue_sector_window, pump_pending_sector_publication,
-        queue_routed_sector_release_receipt, refresh_pending_sector_publication,
-        reset_pending_tactical_handoff, restore_egui_input, route_tactical_window_input,
-        tactical_result_destination, take_approved_tactical_window_action,
-        take_tactical_destination_for_galaxy, with_strategic_input, with_visual_fixture_pointer,
-        CommittedTacticalWindowAction, PendingSectorPublication, PreparedTacticalWindowAction,
-        RoutedEguiInputFilter, SectorDependentIntent, SectorPublicationIntent,
-        StrategicIndexedKeyEvent, StrategicPointerBatch, StrategicPointerEvent,
-        StrategicRawInputBatch, StrategicRawInputCollector, StrategicRawKeyEvent,
-        StrategicRawPointerEvent, StrategicRootKeyBatch, TacticalResultDestination,
+        collect_strategic_pointer_batch, combat_root_tactical_action_authorized,
+        commit_pending_tactical_window_action, commit_sector_window_publication,
+        enqueue_managed_fixture_sector, enqueue_sector_manager_action, enqueue_sector_window,
+        pump_pending_sector_publication, queue_routed_sector_release_receipt,
+        refresh_pending_sector_publication, reset_pending_tactical_handoff, restore_egui_input,
+        route_tactical_window_input, tactical_result_destination,
+        take_approved_tactical_window_action, take_tactical_destination_for_galaxy,
+        with_strategic_input, with_visual_fixture_pointer, CommittedTacticalWindowAction,
+        PendingSectorPublication, PreparedTacticalWindowAction, RoutedEguiInputFilter,
+        SectorDependentIntent, SectorPublicationIntent, StrategicIndexedKeyEvent,
+        StrategicPointerBatch, StrategicPointerEvent, StrategicRawInputBatch,
+        StrategicRawInputCollector, StrategicRawKeyEvent, StrategicRawPointerEvent,
+        StrategicRootKeyBatch, TacticalResultDestination,
     };
     use crate::strategic_windowing::StrategicWindowing;
     use egui_macroquad::egui;
@@ -7536,6 +7555,54 @@ mod frame_input_tests {
         )));
         assert_eq!(approved_action, Some(TacticalAction::AutoResolve));
         assert!(pending.is_none());
+    }
+
+    #[test]
+    fn tactical_combat_auto_resolve_requires_a_live_session_and_no_modal_identity() {
+        use crate::strategic_windowing::WindowScene;
+        use rebellion_render::tactical_view::TacticalWindowPhase;
+        use rebellion_render::TacticalAction;
+
+        assert!(combat_root_tactical_action_authorized(
+            &TacticalAction::AutoResolve,
+            Some(22),
+            TacticalWindowPhase::Combat,
+            None,
+        ));
+        assert!(!combat_root_tactical_action_authorized(
+            &TacticalAction::BeginCombat,
+            Some(22),
+            TacticalWindowPhase::Combat,
+            None,
+        ));
+        assert!(!combat_root_tactical_action_authorized(
+            &TacticalAction::AutoResolve,
+            None,
+            TacticalWindowPhase::Combat,
+            None,
+        ));
+
+        let mut coordinator = StrategicWindowing::new();
+        let alert = coordinator
+            .commit_scene_phase_for_battle(
+                WindowScene::Tactical,
+                Some(22),
+                TacticalWindowPhase::Alert,
+            )
+            .unwrap()
+            .window;
+        assert!(!combat_root_tactical_action_authorized(
+            &TacticalAction::AutoResolve,
+            Some(22),
+            TacticalWindowPhase::Alert,
+            alert,
+        ));
+        assert!(!combat_root_tactical_action_authorized(
+            &TacticalAction::AutoResolve,
+            Some(22),
+            TacticalWindowPhase::Combat,
+            alert,
+        ));
     }
 
     #[test]
@@ -15854,12 +15921,16 @@ async fn main() {
                     if let Some(request) = interface_fixture_request.filter(|request| {
                         request.scenario == interface_test_fixture::Scenario::EncyclopediaIndexShell
                     }) {
-                        if let Some(command) = rebellion_render::draw_encyclopedia_index_fixture(
-                            ctx,
-                            &mut bmp_cache,
-                            request.faction,
-                            enc_state.original_category_command,
-                        ) {
+                        let original = &routed_egui_input;
+                        let command = with_visual_fixture_pointer(ctx, original, || {
+                            rebellion_render::draw_encyclopedia_index_fixture(
+                                ctx,
+                                &mut bmp_cache,
+                                request.faction,
+                                enc_state.original_category_command,
+                            )
+                        });
+                        if let Some(command) = command {
                             if (0x6f..=0x75).contains(&command) {
                                 enc_state.original_category_command = command;
                             }
@@ -15873,13 +15944,16 @@ async fn main() {
                         }),
                         original_encyclopedia_catalog.as_ref(),
                     ) {
-                        rebellion_render::draw_encyclopedia_index_catalog_fixture(
-                            ctx,
-                            &mut bmp_cache,
-                            request.faction,
-                            &mut enc_state,
-                            catalog,
-                        );
+                        let original = &routed_egui_input;
+                        with_visual_fixture_pointer(ctx, original, || {
+                            rebellion_render::draw_encyclopedia_index_catalog_fixture(
+                                ctx,
+                                &mut bmp_cache,
+                                request.faction,
+                                &mut enc_state,
+                                catalog,
+                            );
+                        });
                     }
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                     if let Some(fixture) = encyclopedia_surface_fixture.as_mut() {
@@ -19118,6 +19192,13 @@ async fn main() {
             ) {
                 pending_tactical_window_action = Some(prepared);
                 TacticalAction::None
+            } else if combat_root_tactical_action_authorized(
+                &rendered_tac_action,
+                tactical_battle_session,
+                tactical_window_phase,
+                tactical_window_identity,
+            ) {
+                rendered_tac_action
             } else if matches!(
                 &rendered_tac_action,
                 TacticalAction::BeginCombat

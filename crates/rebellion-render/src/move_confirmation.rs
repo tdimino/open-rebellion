@@ -21,7 +21,8 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
-use crate::mission_dialog::{button, galaxy_centered_rect, paint};
+use crate::controls::{ButtonArt, ButtonInput, StrobeButton};
+use crate::mission_dialog::{galaxy_centered_rect, paint};
 use crate::native_geometry::{logical_rect, rect_contains};
 use crate::singleton_window_common::{PreparedContextualWindow, PreparedWindowConfirm};
 
@@ -576,11 +577,10 @@ fn bitmap_button(
     bitmaps: (u32, u32),
     scale: f32,
 ) -> bool {
-    let (press, release) = ui
-        .ctx()
-        .input(|input| (input.pointer.press_origin(), input.pointer.interact_pos()));
-    let clicked = button(ui, cache, rect, id, bitmaps, false, scale);
-    let mut on_bitmap = |point: egui::Pos2| {
+    let on_bitmap = |point: egui::Pos2, cache: &mut BmpCache| {
+        if !rect_contains(rect, point) {
+            return false;
+        }
         if cache
             .original_resource_size(DllSource::Strategy, bitmaps.0)
             .is_none()
@@ -597,7 +597,29 @@ fn bitmap_button(
                 local.y.floor() as usize,
             )
     };
-    clicked && release.is_some_and(&mut on_bitmap) && press.is_none_or(&mut on_bitmap)
+    let input = ui.ctx().input(|input| ButtonInput {
+        pointer_inside: input
+            .pointer
+            .interact_pos()
+            .is_some_and(|point| on_bitmap(point, cache)),
+        primary_pressed: input.pointer.button_pressed(egui::PointerButton::Primary),
+        primary_down: input.pointer.button_down(egui::PointerButton::Primary),
+        primary_released: input.pointer.button_released(egui::PointerButton::Primary),
+        now_seconds: input.time,
+    });
+    StrobeButton::show_with_input(
+        ui,
+        cache,
+        rect,
+        id,
+        ButtonArt::two_state(DllSource::Strategy, bitmaps.0, bitmaps.1),
+        false,
+        false,
+        None,
+        scale,
+        input,
+    )
+    .clicked()
 }
 
 /// The field's text, broken between words to the field's width

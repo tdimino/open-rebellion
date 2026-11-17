@@ -2,7 +2,188 @@
 
 # Closed
 
-192 closed nodes, newest first. Back to the [index](INDEX.md).
+196 closed nodes, newest first. Back to the [index](INDEX.md).
+
+<a id="or-ep-uniform-ui-controls-gru5.2"></a>
+### Extract CoolStrobeButton and checkbox objects
+
+`or-ep-uniform-ui-controls-gru5.2` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to open-rebellion-pane-6/ntm-c816c91a676a · closed 2026-11-17  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1), [or-ep-uniform-ui-controls-gru5.11](#or-ep-uniform-ui-controls-gru5.11)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.3](ports.md#or-ep-uniform-ui-controls-gru5.3), [or-ep-uniform-ui-controls-gru5.4](ports.md#or-ep-uniform-ui-controls-gru5.4), [or-ep-uniform-ui-controls-gru5.7](ports.md#or-ep-uniform-ui-controls-gru5.7), [or-ep-uniform-ui-controls-gru5.8](ports.md#or-ep-uniform-ui-controls-gru5.8)
+
+> ## Background
+>
+> The original CoolStrobeButton constructor `FUN_00602150` owns normal, pressed, disabled and selected bitmap states, exact hit behavior, optional repeat timing and sound; Checkbox is its toggle variant. The port currently exposes a two-state free `button()` from mission_dialog.rs and imports it into unrelated dialogs, reports and finders. This is a misplaced partial control rather than a uniform object.
+>
+> ## Scope
+>
+> Create the renderer controls module and a typed StrobeButton object with explicit art/state/input/output types. Move native-size clipped button painting out of mission_dialog.rs. Model normal, held, selected and disabled art supported by recovered evidence; include checkbox toggle state where the migration matrix identifies authentic uses. Migrate all production users of the current shared free button helper and any equivalent source-backed strobe-button implementations named by the matrix. Preserve control registry names, command outcomes, tooltips, sounds and repeat behavior at their existing feature boundaries unless the original control contract proves they belong in the object.
+>
+> ## Design
+>
+> The control receives permitted current-frame pointer input and returns typed press/release/click/toggle outcomes. It does not dispatch game commands, manipulate WindowManager or choose faction art. Configuration values belong in ButtonArt/ButtonState records rather than callback closures. Tabs will compose this object in a later bead.
+>
+> ## Tests
+>
+> Add behavior-sentence tests for normal, held, selected, disabled, outside-release and checkbox toggle states, including exact half-open hit geometry and both faction art configurations. Show each new test red against the previous helper or a meaningful mutant. Run scoped cargo mutants for state/resource selection.
+>
+> ## E2E
+>
+> Run the existing interface-parity journeys covering Mission Dialog, Build Selection, Status/Report/Finder buttons and any additional migrated surface, silently on both factions where supported.
+>
+> ## Evidence
+>
+> Cite `FUN_00602150`, `FUN_006028c0`, `FUN_00602d30` and the applicable feature constructors. Record migrated consumers and intentionally retained feature policy.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve pixels, command IDs, event ownership and control registry names. Add no dependency and do not fold top-level window behavior into the control.
+
+**Acceptance criteria**
+
+- [x] A shared StrobeButton object represents normal, held, selected and disabled native bitmap states and returns typed interaction outcomes.
+- [x] Authentic checkbox uses share the button state machine or have a source-backed exclusion.
+- [x] Every production user of the old mission_dialog button helper and every matrix-selected equivalent is migrated without changing feature actions or registry names.
+- [x] Alliance and Empire art/state behavior is covered by behavior-sentence tests and scoped mutation checks with no surviving non-equivalent mutant.
+- [x] make fmt, warning-free make build, make check and applicable silent interface-parity journeys pass.
+
+**Notes**
+
+> Implemented controls module with typed StrobeButton and Checkbox state/input/output, native clipped keyed/direct art selection, exact half-open hit testing, capture/cancel/repeat behavior, and citations to FUN_00602150, FUN_006028c0, FUN_00602d30, FUN_00603870.
+> Migrated the matrix-selected production consumers across main menu/cockpit, Mission and Build dialogs, move confirmation, finders, Status/Operation Report, System/Fleet/Defenses/Missions, Encyclopedia/Message Index, Game Options, and tactical presentation; old mission_dialog free helper has no remaining production references. Feature commands, registry names, sounds, tooltips, and faction art remain feature-owned.
+> Verification: make fmt pass; make build pass warning-free; make check pass; scoped state/resource cargo-mutants campaign 17 total with 16 caught, 1 compile-unviable, 0 missed, 0 timeout. Mutation artifacts: /tmp/or-gru5.2-mutants-gitignore.LZ8lhL/mutants.out.old and mutants.out.
+> Muted final fixture ffe5ed3a91ee72963f6ae3083407e5cc07c320025cc48a6f584b55cfa79f8919 passes Encyclopedia index, Message Index, Sector Quadrants, Build Selection, Mission Dialog, Status, Audit Batch, Fleet Window chrome, Confirmed Move controls, Finder cases across main plus isolated retry, Operation Report, and Battle Alert. Production WASM bd2516fbb9c919c1fa8601230ef302db9e6ca3736260da658bcf6f2c8d777cb2.
+> Acceptance 5 remains open: Battle Results expects a transition from re-clicking the already-selected Capital Ships group owned by TabControl bead .3; Tactical Options refuses its action without live window identity; game-options-smoke completes Alliance controls through exit then Chromium closes during post-exit restart before Empire; full orbital-strike also has four pre-existing Message Index row double-click failures owned by DragList bead .4. No production dependency was added.
+> Game Options follow-up: game-options-smoke.mjs now accepts OPTIONS_TEST_FACTION=alliance|empire and starts every faction in a fresh Chromium context after verifying Exit, clean quit, and the Restart game affordance; it no longer makes the next faction depend on an in-page reload after the WASM loop ends. Empire-only pass: .artifacts/interface-parity/game-options-smoke-empire-2026-11-16/results.json (sha256 777654214dbc6c0a342bcefbe5ec3f8ec26a74331d8abd92a05b2e99e54e3b24). Final two-faction pass: .artifacts/interface-parity/game-options-smoke-both-2026-11-16/results.json (sha256 14b448bc95938b3162c1a402f8687d5fedc51b243756b6047376995dafd65494); both factions restored slots 0 and 5 with matching faction fingerprints, exited cleanly, and reported zero page errors. Post-harness-change make fmt, warning-free make build, and make check all pass.
+> The Game Options follow-up supersedes the game-options-smoke failure clause in the preceding Acceptance 5 note. Acceptance 5 remains open only for the separately owned Battle Results TabControl transition, Tactical Options live-window identity, and Message Index DragList row-double-click failures.
+> Acceptance 5 final disposition 2026-11-17: prerequisite bug or-ep-uniform-ui-controls-gru5.11 is closed after fixing the tactical Simulate Remainder handoff; current production-battle-options-presentation evidence passes both factions at both viewports with fixture hash 33a27307fadfbdce136afd8fa6e4c8bcced523dad765430c5ff9d993bbb70c79 and production WASM hash 7253c72a82da6f1d5fc0fe68065920a2943dc551890ef0b303ff410d43238768. The two-faction Game Options restart/exit smoke remains green, as do the applicable button and checkbox assertions in the retained Mission, Build, Status, Report, Finder, Encyclopedia, tactical, and strategic journey artifacts. The Battle Results already-selected Capital Ships re-click transition is explicitly owned by downstream TabControl bead or-ep-uniform-ui-controls-gru5.3, and Message Index report-row double-click is owned by downstream remaining DragList consumer bead or-ep-uniform-ui-controls-gru5.5 after kernel bead .4. Those downstream control behaviors depend on this bead and are not StrobeButton or Checkbox acceptance failures. Current make fmt, warning-free make build, and make check all pass; no applicable StrobeButton or Checkbox journey remains failing.
+
+**Closed:** Extracted typed shared StrobeButton and Checkbox controls, migrated every matrix-selected production consumer, preserved feature policy and registry identities, and passed behavior tests, scoped mutation, applicable muted interface parity for both factions, WASM builds, formatting, warning-free make build, and make check. Downstream TabControl and DragList failures remain on their dependent beads.
+
+<a id="or-ep-uniform-ui-controls-gru5.11"></a>
+### Fix combat Simulate Remainder handoff without a modal identity
+
+`or-ep-uniform-ui-controls-gru5.11` · **closed** · P1 · bug, port, tactical, windowing · assigned to open-rebellion-pane-6/ntm-c816c91a676a · closed 2026-11-17  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)
+
+> ## Background
+>
+> Manual p. 152 says Simulate Battle quits tactical play, abstracts the remainder, and then shows Battle Results. `FUN_005dab90` constructs the Battle Options control and `FUN_0040a050` state 8 runs the remaining tactical session without its window. The port emits `TacticalAction::AutoResolve`, but the app rejects it in Combat because that phase intentionally has no managed Battle Alert or Battle Results identity.
+>
+> ## Steps to Reproduce
+>
+> Run the muted interface-parity scenario `production-battle-options-presentation` for either faction. Open Battle Options after taking command and activate Simulate Remainder. The log contains `command=simulate_remainder` followed by `refused tactical action without its live identity`, and Battle Results does not appear.
+>
+> ## Scope
+>
+> Authorize only combat-root AutoResolve when an active battle session is in Combat and no tactical modal identity exists. Preserve exact-identity handoff for Battle Alert and Battle Results actions. Touch the app handoff seam and its focused tests only; do not change button, tab, list, simulation, save, or window-manager policy.
+>
+> ## Design
+>
+> Use the active battle-session token plus Combat phase and absence of a modal identity as the authorization boundary. Do not synthesize a fake modal identity and do not relax Alert or Results routing.
+>
+> ## Tests
+>
+> Add behavior-sentence coverage proving combat-root AutoResolve is accepted only for an active Combat session without a modal identity and that other actions/phases remain refused. Show the new assertion red first and run scoped cargo mutants on the authorization helper.
+>
+> ## E2E
+>
+> Run the silent `production-battle-options-presentation` interface-parity scenario for Alliance and Empire at both supported viewports.
+>
+> ## Evidence
+>
+> Retain the clean scenario summary, exact WASM hash, result screenshots and logs showing `command=simulate_remainder`, Battle Results, and no refusal diagnostic.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Add no dependency; preserve exact modal event ownership; do not weaken the gate.
+
+**Acceptance criteria**
+
+- [x] Combat-root AutoResolve is authorized only for an active Combat battle session with no tactical modal identity; Alert and Results actions retain exact identity handoff.
+- [x] Behavior-sentence tests fail before the implementation, pass afterward, and scoped mutation has no surviving non-equivalent touched mutant.
+- [x] The muted production-battle-options-presentation gate passes Alliance and Empire at both supported viewports with no refusal diagnostic.
+- [x] make fmt, warning-free make build, and make check pass.
+
+**Notes**
+
+> Evidence 2026-11-17: the behavior-sentence test frame_input_tests::tactical_combat_auto_resolve_requires_a_live_session_and_no_modal_identity was first run with the helper returning false and failed on its required authorized case; after implementation, cargo test -p rebellion-app frame_input_tests::tactical_ passed all 10 tactical routing tests. Scoped mutation command targeted combat_root_tactical_action_authorized in crates/rebellion-app/src/main.rs; /tmp/or-gru5-11-mutants-rerun.fdibKi/mutants.out records 16 caught, 0 missed, 0 timeout, including every helper mutant. The production and isolated interface WASM builds passed with production hash 7253c72a82da6f1d5fc0fe68065920a2943dc551890ef0b303ff410d43238768 and fixture hash 33a27307fadfbdce136afd8fa6e4c8bcced523dad765430c5ff9d993bbb70c79. Muted production-battle-options-presentation results pass with zero errors and no refusal diagnostic for Alliance 640 and 1280 under .artifacts/interface-parity/2026-11-17T00-05-56-533Z-2309286 and Empire 640 and 1280 under .artifacts/interface-parity/2026-11-17T00-10-07-378Z-2312981. Each result records one simulate_remainder command and one Battle Results route probe. Repeated full-order runs showed a later-cell 60-frame timing sample above the 100 ms host threshold under cumulative machine load; reversing order made both Empire cells pass and moved the same timing-only symptom to later Alliance cells, so the four passing cell artifacts are retained without weakening the gate. Post-change make fmt, warning-free make build, and make check all pass. Manual p. 152 was re-read after implementation and confirms simulated tactical play proceeds to Battle Results.
+
+**Closed:** Combat-root Simulate Remainder now authorizes only AutoResolve for a live Combat session with no modal identity; Alert and Results retain exact identity routing. Red-first tests, 16/16 mutation catches, both factions at both viewports, WASM, formatting, warning-free build, and full check all pass.
+
+<a id="or-ep-uniform-ui-controls-gru5.1"></a>
+### Review Cool control contracts and publish the UI migration matrix
+
+`or-ep-uniform-ui-controls-gru5.1` · **closed** · P1 · controls, ghidra, interface-parity, review · closed 2026-11-15  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-q-cool-controls-0u0](#or-q-cool-controls-0u0)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.10](ports.md#or-ep-uniform-ui-controls-gru5.10), [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)
+
+> ## Background
+>
+> The original Cool* toolkit is summarized in `ghidra/notes/rebexe-map.md` and recovered across constructors, window procedures and feature notes. The existing question `or-q-cool-controls-0u0` covers unresolved modal mouse swallowing, SC_* filtering, drag modes and the control WndProc tables. A uniform Rust API must be based on those contracts rather than on syntactic similarity alone.
+>
+> ## Scope
+>
+> Review the completed answer to `or-q-cool-controls-0u0` and its cited decompiles. Inventory every production control in rebellion-render that corresponds to CoolStrobeButton/Checkbox, CoolTabControl, CoolDragList/ScrollBar, CoolSelectionBoxClass, CoolStringField, Slider, CoolwinStatusBar or the stock tooltip window. For each consumer record the original class and functions, current module, behavior and state it owns, proposed shared Rust object, migration bead, faction-specific art, and any cited exclusion. Include strategic, modal and tactical game UI; distinguish developer-only egui panels.
+>
+> ## Design
+>
+> The matrix defines composition-based renderer objects, not a Win32 class hierarchy. It must preserve the rebellion-windowing boundary: top-level identity, ordering, focus leases, modality and routing stay in the std-only crate, while renderer controls translate one permitted event stream into typed outcomes. Resolve conflicting notes from the decompiles; do not choose by majority or convenience.
+>
+> ## Tests
+>
+> Record reproducible rg/jscpd inventory commands and a 70-token exact plus ignore-identifiers/ignore-literals baseline. Add no artificial production test. Validate every matrix row against at least one constructor or WndProc and one feature call site where available.
+>
+> ## E2E
+>
+> No runtime acceptance is required for the review itself. It must name the existing interface-parity journey that will prove each migrated family on both factions.
+>
+> ## Evidence
+>
+> Retain function addresses, vtables, message/notification IDs and field roles needed by implementers. Cite tracked notes and decompiles, never scratch artifact paths.
+>
+> ## Constraints
+>
+> AGENTS.md applies. This bead changes specifications and task records only. It does not authorize source implementation or broad visual redesign.
+
+**Acceptance criteria**
+
+- [x] The answer and decompiles for or-q-cool-controls-0u0 are reviewed and every API-shaping uncertainty is resolved or explicitly bounded.
+- [x] The migration matrix accounts for every production game-UI consumer of each recovered control family, including Alliance, Empire, strategic, modal and tactical paths.
+- [x] Every row cites original constructor/WndProc evidence and a current Rust call site, then names a shared object, migration bead or justified exclusion.
+- [x] The matrix preserves the renderer/windowing dependency boundary and defines typed control outcomes without domain callbacks.
+- [x] Exact and 70-token normalized jscpd baselines plus applicable interface-parity journeys are recorded.
+
+**Notes**
+
+> Published ghidra/notes/cool-control-migration-matrix.md: reviewed the completed Cool-control answer/decompiles; inventoried production strategic, modal and tactical consumers; defined composition APIs and typed outcomes across the renderer/windowing boundary; mapped migration beads, faction art, exclusions and both-faction interface journeys; recorded jscpd 5.4.3 baselines at 70 tokens (exact 0/0.0%, normalized --ignore-identifiers --ignore-literals 263/3.2%). Documentation-only review; no production source or runtime acceptance changed.
+
+**Closed:** Published the reviewed Cool* production-consumer migration matrix, typed renderer object boundary, exclusions, reproducible 70-token clone baselines, and both-faction parity crosswalk.
+
+<a id="or-q-cool-controls-0u0"></a>
+### Q: Does crates/rebellion-windowing match the Cool* control library's modal mouse, SC_* filter and drag modes?
+
+`or-q-cool-controls-0u0` · **closed** · P2 · ghidra, question · closed 2026-11-14  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1)
+
+> Modal mouse swallowing FUN_00600ef0, SC_* policy filter FUN_00600310, +0xf4 drag modes FUN_00606ee0-FUN_006071e0, scroll-bar subclass vtables 0x66e2e8/0x66e340, the 11 WndProc switch tables (CoolStringField 0x605ece, CoolDragList 0x609238, selection box 0x60c7ea), the GID legend darkening remap LAB_004ac550, and sprite draw mode 5's 512-byte table. Start from FUN_00600ef0, FUN_00600310, FUN_00606ee0, FUN_00605160, FUN_006083c0, FUN_0060c210, FUN_0060b500, FUN_005fddd0, FUN_0041cb30. Done when a note gives each behaviour and each port difference has a port node. Source: map-21.
+
+**Acceptance criteria**
+
+- [x] A tracked note gives each requested behavior with exact functions, addresses, fields, messages, and bounded evidence.
+- [x] The note compares each API-shaping behavior with rebellion-windowing and rebellion-render and distinguishes matches, deliberate exclusions, and gaps.
+- [x] Every non-excluded port difference has an explicit port-labeled bead.
+- [x] Documentation formatting and repository-wide make build and make check gates pass.
+
+**Notes**
+
+> Answered in ghidra/notes/cool-control-contracts.md. Modal routing matches semantically through active-modal ownership descendants; native SC_* filtering is an intentional platform exclusion. Renderer gaps are owned by or-ep-uniform-ui-controls-gru5.10, or-port-gid-palette-darkening-ms1p, or-port-sprite-draw-mode-5-yv8o, and existing uniform-control port tasks .2-.8. make fmt, warning-free make build, and make check passed on 2026-11-14. scripts/task-index.py remains blocked by the pre-existing missing epic reference or-ep-task-force-strip-5kdd.
+
+**Closed:** Recovered and documented every requested Cool control behavior, compared the Rust architecture, and created explicit port nodes for all non-excluded differences.
 
 <a id="or-ep-pr46-review-du66.30"></a>
 ### Re-review PR #46 when a new head lands

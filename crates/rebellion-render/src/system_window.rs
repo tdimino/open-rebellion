@@ -11,6 +11,7 @@
 //! minimized into the faction-specific 12-slot rail and restored without
 //! creating duplicates.
 
+use crate::controls::StrobeButton;
 use crate::fleet_window::control_side;
 use crate::manufacturing_window::{
     band, band_strip, contents_visible, item_frame, page_cells, yard_count, yard_page,
@@ -1589,7 +1590,6 @@ fn draw_system_window(
     let id = window_area_id(window);
     let area = strategic_window_common::show_canvas(ctx, id, screen_rect, scale, |ui, canvas| {
         let pointer = canvas.pointer;
-        let primary_down = canvas.primary_down;
         let (local, window_response, painter) = canvas.input_parts();
         let paint = |cache: &mut BmpCache, source: DllSource, id: u32, x: f32, y: f32| {
             canvas.paint(cache, source, id, x, y);
@@ -1622,21 +1622,22 @@ fn draw_system_window(
             let empty = cells
                 .as_deref()
                 .is_some_and(crate::manufacturing_window::page_is_empty);
-            let response = ui.interact(
-                rect,
-                ui.id().with((window.system, tab)),
-                egui::Sense::click(),
-            );
-            let pressed = tab == window.tab
-                || (primary_down && pointer.is_some_and(|point| rect_contains(rect, point)));
-            paint(
+            if StrobeButton::show_pair(
+                ui,
                 cache,
+                rect,
+                (window.system, tab),
                 DllSource::Strategy,
-                tab_resource(tab, side, pressed, empty),
-                tab.x(),
-                TAB_STRIP_Y,
-            );
-            if exact_clicked(&response, rect) {
+                (
+                    tab_resource(tab, side, false, empty),
+                    tab_resource(tab, side, true, empty),
+                ),
+                tab == window.tab,
+                false,
+                scale,
+            )
+            .clicked()
+            {
                 result.tab = Some(tab);
                 result.focus = true;
             }

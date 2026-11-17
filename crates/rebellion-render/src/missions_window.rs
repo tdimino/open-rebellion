@@ -24,6 +24,7 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::StrobeButton;
 use crate::fleet_window::{en_route_mark, faction_side, mini_layers, paint_native, MiniObject};
 use crate::mission_dialog::{kind_icon, kind_name, member_item};
 use crate::native_geometry::{exact_clicked, logical_rect};
@@ -1252,25 +1253,26 @@ fn draw_missions_window(
         if let Some(row) = selected {
             for tab in MissionsTab::ALL {
                 let rect = tab_rect(local, scale, tab);
-                if let Some(art) = tab_resource(tab, row.side, tab == window.tab) {
-                    paint_native(
-                        &painter,
-                        ctx,
+                let clicked = if let (Some(normal), Some(selected)) = (
+                    tab_resource(tab, row.side, false),
+                    tab_resource(tab, row.side, true),
+                ) {
+                    StrobeButton::show_pair(
+                        ui,
                         cache,
-                        DllSource::Strategy,
-                        art,
                         rect,
+                        (window.system, tab),
+                        DllSource::Strategy,
+                        (normal, selected),
+                        tab == window.tab,
+                        false,
                         scale,
-                        0.0,
-                        0.0,
-                    );
-                }
-                let response = ui.interact(
-                    rect,
-                    ui.id().with((window.system, tab)),
-                    egui::Sense::click(),
-                );
-                if exact_clicked(&response, rect) {
+                    )
+                    .clicked()
+                } else {
+                    false
+                };
+                if clicked {
                     result.tab = Some(tab);
                     result.interaction.focus = true;
                 }

@@ -10,18 +10,18 @@ session keeps with [br](https://github.com/Dicklesworthstone/beads_rust);
 [agent_docs/task-graph.md](../agent_docs/task-graph.md) explains the node
 kinds and how work is claimed and closed.
 
-356 nodes: 163 open, 1 deferred, 192 closed.
+373 nodes: 2 in progress, 171 open, 1 deferred, 196 closed, 3 tombstone.
 
 ## Pages
 
 | Page | Open | What |
 |---|---|---|
-| [Ports](ports.md) | 45 | Changing the port to match the original. |
+| [Ports](ports.md) | 54 | Changing the port to match the original. |
 | [Reviews](reviews.md) | 2 | Rereading a question's decompiles against our own Ghidra project. |
-| [Acceptance](acceptance.md) | 29 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
-| [Questions](questions.md) | 71 | Questions about the original, answered from the executable. |
+| [Acceptance](acceptance.md) | 30 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
+| [Questions](questions.md) | 73 | Questions about the original, answered from the executable. |
 | [Other](other.md) | 12 | Decisions, chores and unlabelled nodes. |
-| [Closed](closed.md) | 192 closed | Finished work and how it closed. |
+| [Closed](closed.md) | 196 closed | Finished work and how it closed. |
 
 ## Plans
 
@@ -30,13 +30,14 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 | Plan | Epic | Closed |
 |---|---|---|
 | [2026-10-20-feat-task-force-strip](../docs/plans/2026-10-20-feat-task-force-strip.md) | [or-ep-task-force-strip-5kdd](#or-ep-task-force-strip-5kdd) | 15 of 15 |
+| [2026-11-04-tooling-pr-46-strategic-windowing-review](../docs/plans/2026-11-04-tooling-pr-46-strategic-windowing-review.md) | [or-ep-pr46-review-du66](#or-ep-pr46-review-du66) | 30 of 31 |
 
 ## Epics
 
 <a id="or-ep-ghidra-7pz"></a>
 ### Ghidra coverage: every cited function has its decompile and a note
 
-`or-ep-ghidra-7pz` · **open** · 80 of 160 closed
+`or-ep-ghidra-7pz` · **open** · 81 of 160 closed
 
 > Per the local gap inventory: 284 cited functions lack a .c in ghidra/notes/, about 15 are bare addresses, nine subsystems have no note, about 40 hyp:/port: markers remain. Questions here are worker-ok; reviews stay with the lead.
 >
@@ -119,6 +120,31 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 > - `or-acc-taskforce-0oy` and `or-acc-fighter-strip-239` pass their listed regions in every listed cell: the full strips from `.11`, and `task-force-1` where a cell lists it. That includes the Alliance cells `TAC-05-C023`, `TAC-01-C001` and `TAC-02-C013`, and the `empire-sixteen-tie` cells `TAC-02-C001`, `TAC-02-C003`, `TAC-02-C004`, `TAC-02-C005` and `TAC-02-C007` (all task forces and all four fighter groups), which `or-f-sixteen-tie-c43` makes run.
 > - `or-p-task-force-strip-07t` closes with its native check on both sides.
 
+<a id="or-ep-uniform-ui-controls-gru5"></a>
+### Uniform original-game controls across the UI
+
+`or-ep-uniform-ui-controls-gru5` · **open** · 3 of 11 closed
+
+> ## Background
+>
+> The original executable has a shared Cool* control library at 0x005fd7c0-0x00610b70. The current Rust port has a renderer-independent top-level window manager and several shared helpers, but authentic game surfaces still implement list, tab, bitmap-button, text-field and selection-box behavior locally. This creates structural duplication and makes new windows likely to diverge from established input, focus, selection, scrolling and art-state semantics.
+>
+> The authoritative sources are `ghidra/notes/rebexe-map.md`, the cited `FUN_0060*.c` decompiles, per-feature Ghidra notes, and `docs/plans/2026-10-10-feat-strategic-window-modality-and-focus.md`. A current 70-token Rust scan with `--ignore-identifiers --ignore-literals` reports 263 normalized clone pairs and 3.2% duplicated lines across rebellion-render and rebellion-windowing; exact clones remain zero. Normalized candidates are leads, not defects.
+>
+> ## Scope
+>
+> Create a uniform renderer-side control-object layer for original-game UI surfaces. Cover CoolStrobeButton and its checkbox state, CoolTabControl, CoolDragList composed with the existing ScrollBar, CoolSelectionBoxClass, and CoolStringField. Inventory every production consumer and migrate it or record source-backed reasons it represents a different original control. Include strategic, modal and tactical game surfaces where the recovered class applies.
+>
+> Keep top-level identity, order, focus leases, modality and routing in the std-only rebellion-windowing crate. Keep domain rows, tab meanings, game actions and original art choices in feature modules. Developer-only egui panels and controls with genuinely different original semantics are explicit exclusions. Do not recreate HWNDs, Win32 dispatch or the C++ inheritance hierarchy.
+>
+> ## Success Criteria
+>
+> Every authentic production UI consumer in the migration matrix uses the matching shared Rust control object or has a cited exclusion. Shared objects own stable geometry, state transitions and interaction outcomes; feature modules retain domain policy. Alliance and Empire paths preserve their original art and behavior. Exact duplication stays at zero, selected normalized clone families disappear, and repository gates, scoped mutation tests and applicable silent interface-parity journeys pass.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve unrelated work. Add no production dependency and change no save, DAT or network format. New behavior claims require original-source citations; port choices remain labeled as such. Every implementation slice must run make fmt, warning-free make build, make check and scoped cargo mutants before it is reported ready.
+
 <a id="or-map-rebexe-r8t"></a>
 ### Map REBEXE: every function and undefined code span has a role and a cluster
 
@@ -133,7 +159,10 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 
 ## In progress
 
-None.
+| Priority | Node | Title |
+|---|---|---|
+| P1 | [or-ep-uniform-ui-controls-gru5.3](ports.md#or-ep-uniform-ui-controls-gru5.3) | Extract CoolTabControl and migrate authentic tab strips |
+| P1 | [or-ep-uniform-ui-controls-gru5.4](ports.md#or-ep-uniform-ui-controls-gru5.4) | Extract stateful CoolDragList and compose the shared ScrollBar |
 
 ## Ready
 
@@ -146,6 +175,7 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P1 | [or-d-aperture-wrn](acceptance.md#or-d-aperture-wrn) | Diagnose: the space view (aperture) differs in 23 cells |
 | P1 | [or-d-options-dqe](acceptance.md#or-d-options-dqe) | Diagnose: the Battle Options panel differs in 9 cells |
 | P1 | [or-d-status-x1x](acceptance.md#or-d-status-x1x) | Diagnose: the status panel differs in 16 cells |
+| P1 | [or-ep-uniform-ui-controls-gru5.7](ports.md#or-ep-uniform-ui-controls-gru5.7) | Extract CoolStringField and migrate authentic text controls |
 | P1 | [or-f-yaga-variants-4qf](acceptance.md#or-f-yaga-variants-4qf) | A1 fixtures for the edited Yaga day-30 saves |
 | P1 | [or-port-ai-orders-4zf](ports.md#or-port-ai-orders-4zf) | Q: Which original AI orders should the port's AI issue, and in what order? |
 | P1 | [or-port-force-fields-2u0m](ports.md#or-port-force-fields-2u0m) | Port: replace ForceTier and force_experience with the original Force fields |
@@ -163,6 +193,8 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P2 | [or-d-yaga-hull-numbers-0iad](acceptance.md#or-d-yaga-hull-numbers-0iad) | Diagnose: Yaga day 30 numbers its ISD 2 and Carrack 1 where A0 shows ISD 1 and Carrack 2 |
 | P2 | [or-d3drm-raster-match-vog4](ports.md#or-d3drm-raster-match-vog4) | Match Direct3D RM's 8-bit palette, line stepping and rasterizer for the tactical aperture |
 | P2 | [or-ep-pr46-review-du66.31](acceptance.md#or-ep-pr46-review-du66.31) | Re-review PR #46 head after 0e9c9f4c |
+| P2 | [or-ep-uniform-ui-controls-gru5.10](ports.md#or-ep-uniform-ui-controls-gru5.10) | Port recovered title-drag bounds and mode policy |
+| P2 | [or-ep-uniform-ui-controls-gru5.8](ports.md#or-ep-uniform-ui-controls-gru5.8) | Consolidate the remaining recovered UI control families |
 | P2 | [or-f-alliance-transit-xxn](acceptance.md#or-f-alliance-transit-xxn) | A1 fixture reproducing alliance-transit-day149 |
 | P2 | [or-f-sixteen-tie-c43](acceptance.md#or-f-sixteen-tie-c43) | A1 fixture reproducing empire-sixteen-tie |
 | P2 | [or-invented-log-text-82ba](ports.md#or-invented-log-text-82ba) | Replace the invented message-log text outside the strike plan |
@@ -171,6 +203,7 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P2 | [or-p-ai-record-views-xby0](ports.md#or-p-ai-record-views-xby0) | Port: per-side views for the AI system record (FUN_0050fc80, FUN_0050d5a0) |
 | P2 | [or-p-tactical-mode-picks-mi0z](ports.md#or-p-tactical-mode-picks-mi0z) | Ship picks in the 3D view follow each tactical mode's +0xc |
 | P2 | [or-p-withdraw-regroup-98kv](ports.md#or-p-withdraw-regroup-98kv) | Port: Withdraw gives each capital ship a group of its own (FUN_005ad530, FUN_005aded0) |
+| P2 | [or-port-gid-palette-darkening-ms1p](ports.md#or-port-gid-palette-darkening-ms1p) | Port the original GID legend palette darkening |
 | P2 | [or-port-lost-ship-crew-adrift-4mpf](ports.md#or-port-lost-ship-crew-adrift-4mpf) | Port: a lost ship's characters go adrift and take the wound roll, never captive |
 | P2 | [or-port-main-menu-game-type-text-h67b](ports.md#or-port-main-menu-game-type-text-h67b) | Port the main menu's game-type text from the original |
 | P2 | [or-port-named-character-start-7c69](ports.md#or-port-named-character-start-7c69) | Port: place the named characters as stage 0x15 does, Vader in a random Imperial system or fleet |
@@ -179,7 +212,6 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P2 | [or-port-story-research-c80](ports.md#or-port-story-research-c80) | Q: Port the story chains, the six story missions and research to the original's rules? |
 | P2 | [or-port-transit-rules-v4tk](other.md#or-port-transit-rules-v4tk) | Port: transit ticks follow FUN_00555b30's container rule and the constant 100 |
 | P2 | [or-q-ai-posture-planner-jta](questions.md#or-q-ai-posture-planner-jta) | Q: What do the AI posture kinds 1-6 and the 14-state sector planner do, and what runs them? |
-| P2 | [or-q-cool-controls-0u0](questions.md#or-q-cool-controls-0u0) | Q: Does crates/rebellion-windowing match the Cool* control library's modal mouse, SC_* filter and drag modes? |
 | P2 | [or-q-enemy-fighter-select-wuq](questions.md#or-q-enemy-fighter-select-wuq) | Q: Can an enemy fighter group be selected, and what does the fighter panel show then? |
 | P2 | [or-q-event-registry-m5r](questions.md#or-q-event-registry-m5r) | Q: What does each event id 0x300-0x31d, 0x121-0x124 and 0x370/0x371 mean, who sends it and which handler runs? |
 | P2 | [or-q-fighter-group-split-f95](questions.md#or-q-fighter-group-split-f95) | Q: How does FUN_005ab650 split squadrons into Red/Blue/Green/Gold groups? |
@@ -213,6 +245,7 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P3 | [or-port-message-subject-key-7o9n](ports.md#or-port-message-subject-key-7o9n) | Port: the message subject key (+0x5c) and the special force lead's portrait |
 | P3 | [or-port-object-menu-sector-icon-orders-zes0](ports.md#or-port-object-menu-sector-icon-orders-zes0) | Port: the object menu's disabled sector-icon orders |
 | P3 | [or-port-same-system-move-i6yx](ports.md#or-port-same-system-move-i6yx) | Port: a Move within one system is accepted as the original accepts it |
+| P3 | [or-port-sprite-draw-mode-5-yv8o](ports.md#or-port-sprite-draw-mode-5-yv8o) | Port indexed sprite draw mode 5 where consumed |
 | P3 | [or-port-squadron-craft-losses-karc](ports.md#or-port-squadron-craft-losses-karc) | Port: per-squadron craft losses and persistent squadron ids (root R1) |
 | P3 | [or-port-system-squadron-pass-oa3p](ports.md#or-port-system-squadron-pass-oa3p) | Port: the post-battle pass for system squadrons |
 | P3 | [or-port-tactical-clock-reseed-cw3m](ports.md#or-port-tactical-clock-reseed-cw3m) | Port: reseed the battle surround's CRT stream from the clock |

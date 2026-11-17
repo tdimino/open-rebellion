@@ -44,6 +44,7 @@ use macroquad::prelude::*;
 use rebellion_core::dat::Faction;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::controls::{ButtonArt, ButtonState, Checkbox, StrobeButton};
 use crate::message_log::MessageRail;
 use crate::windowing::GalaxyChild;
 
@@ -1024,11 +1025,16 @@ pub fn message_index_control_resource(
     rail: MessageRail,
     unread_mask: u16,
 ) -> u32 {
-    if unread_mask & rail.mask() == 0 {
-        control.resting_resource
-    } else {
-        control.illuminated_resource
-    }
+    Checkbox::new(
+        ButtonArt::two_state(
+            DllSource::Strategy,
+            control.resting_resource,
+            control.illuminated_resource,
+        ),
+        unread_mask & rail.mask() != 0,
+    )
+    .image()
+    .resource_id
 }
 
 fn draw_message_index_rail(
@@ -1847,11 +1853,14 @@ fn update_control_capture(
 }
 
 fn control_resource(control: &StrategicControlSpec, pressed: bool) -> u32 {
-    if pressed {
-        control.pressed_resource
-    } else {
-        control.normal_resource
-    }
+    StrobeButton::new(ButtonArt::two_state(
+        DllSource::Strategy,
+        control.normal_resource,
+        control.pressed_resource,
+    ))
+    .with_state(ButtonState::held(pressed))
+    .image()
+    .resource_id
 }
 
 pub(crate) fn logical_rect_to_screen(layout: CockpitLayout, rect: CockpitViewport) -> egui::Rect {

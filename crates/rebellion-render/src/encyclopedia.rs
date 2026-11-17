@@ -33,6 +33,8 @@ use egui_macroquad::egui::TextureOptions;
 use egui_macroquad::egui::{self, Color32, TextureHandle};
 use rebellion_windowing::ControlId;
 
+use crate::controls::{ButtonArt, ButtonImage, ButtonInput, StrobeButton};
+
 #[cfg(not(target_arch = "wasm32"))]
 use crate::bmp_cache::load_approved_hd_assets;
 #[cfg(all(feature = "interface-test-fixtures", not(target_arch = "wasm32")))]
@@ -506,7 +508,6 @@ impl EncyclopediaTextureBackend for EguiEncyclopediaTextureBackend {
 pub struct EncyclopediaSurfaceState {
     pub scroll_row: usize,
     body_scroll: f32,
-    captured_control: Option<u16>,
     focused_mode: Option<EncyclopediaSurfaceMode>,
     index_selection_key: Option<(u64, u16, Option<u32>)>,
     search_text: String,
@@ -524,7 +525,6 @@ impl Default for EncyclopediaSurfaceState {
         Self {
             scroll_row: 0,
             body_scroll: 0.0,
-            captured_control: None,
             focused_mode: None,
             index_selection_key: None,
             search_text: String::new(),
@@ -676,9 +676,6 @@ pub fn draw_encyclopedia_surface_focused(
         surface.active_topic.as_ref().map(|topic| topic.object_id),
     );
     let topic_texture = state.resolve_topic_texture(ctx, surface);
-    if ctx.input(|input| input.pointer.primary_pressed()) {
-        state.captured_control = None;
-    }
     let mut action = search_action;
     let mut surface_rect = None;
     let mut search_rect = None;
@@ -758,7 +755,6 @@ pub fn draw_encyclopedia_surface_focused(
                         scale,
                         control,
                         destination.is_some(),
-                        &mut state.captured_control,
                     ) {
                         action = destination.map(EncyclopediaSurfaceAction::OpenTopic);
                     }
@@ -809,16 +805,7 @@ pub fn draw_encyclopedia_surface_focused(
             }
 
             for control in encyclopedia_rail_controls_for_mode(faction, surface.mode) {
-                if draw_surface_control(
-                    ui,
-                    ctx,
-                    cache,
-                    window_rect,
-                    scale,
-                    control,
-                    true,
-                    &mut state.captured_control,
-                ) {
+                if draw_surface_control(ui, ctx, cache, window_rect, scale, control, true) {
                     action = match control.command_id {
                         0xfb => Some(EncyclopediaSurfaceAction::Close),
                         0x67 if surface.mode == EncyclopediaSurfaceMode::Index => {
@@ -859,10 +846,6 @@ pub fn draw_encyclopedia_surface_focused(
             EncyclopediaSurfaceMode::Index => ENCYCLOPEDIA_INDEX_CONTROL,
             EncyclopediaSurfaceMode::Topic => ENCYCLOPEDIA_TOPIC_CONTROL,
         });
-    }
-
-    if ctx.input(|input| input.pointer.button_released(egui::PointerButton::Primary)) {
-        state.captured_control = None;
     }
 
     let action = action.or_else(|| {
@@ -1335,54 +1318,52 @@ fn draw_surface_control(
     scale: f32,
     control: SurfaceControlSpec,
     enabled: bool,
-    captured_control: &mut Option<u16>,
 ) -> bool {
     let rect = encyclopedia_control_rect(
         window_rect,
         scale,
         [control.x, control.y, control.width, control.height],
     );
-    let control_id = ui
-        .id()
-        .with(("encyclopedia-surface-control", control.command_id));
-    ui.interact(
-        rect,
-        control_id,
-        if enabled {
-            egui::Sense::click()
-        } else {
-            egui::Sense::hover()
-        },
-    );
-    if enabled && ctx.input(|input| input.pointer.primary_pressed()) {
-        let captured = ctx.pointer_latest_pos().is_some_and(|point| {
-            original_control_contains(cache, control.normal_resource, rect, scale, point)
+    let (pointer, primary_pressed, primary_down, primary_released, now_seconds) =
+        ctx.input(|input| {
+            (
+                input.pointer.interact_pos(),
+                input.pointer.button_pressed(egui::PointerButton::Primary),
+                input.pointer.button_down(egui::PointerButton::Primary),
+                input.pointer.button_released(egui::PointerButton::Primary),
+                input.time,
+            )
         });
-        if captured {
-            *captured_control = Some(control.command_id);
-        }
-    }
-    let captured = enabled && *captured_control == Some(control.command_id);
-    let (pointer, primary_down, primary_released) = ctx.input(|input| {
-        (
-            input.pointer.interact_pos(),
-            input.pointer.button_down(egui::PointerButton::Primary),
-            input.pointer.button_released(egui::PointerButton::Primary),
-        )
-    });
     let pointer_hits = pointer.is_some_and(|point| {
         original_control_contains(cache, control.normal_resource, rect, scale, point)
     });
-    let pressed = control.selected || (enabled && primary_down && captured && pointer_hits);
-    let resource = if !enabled {
-        control.disabled_resource.unwrap_or(control.normal_resource)
-    } else if pressed {
-        control.pressed_resource
-    } else {
-        control.normal_resource
-    };
-    paint_original_resource_native(ui.painter(), ctx, cache, resource, rect.min, scale, rect);
-    enabled && captured && primary_released && pointer_hits
+    let mut art = ButtonArt::two_state(
+        DllSource::Strategy,
+        control.normal_resource,
+        control.pressed_resource,
+    );
+    if let Some(disabled) = control.disabled_resource {
+        art = art.with_disabled(ButtonImage::new(DllSource::Strategy, disabled));
+    }
+    StrobeButton::show_with_input(
+        ui,
+        cache,
+        rect,
+        ("encyclopedia-surface-control", control.command_id),
+        art,
+        control.selected,
+        !enabled,
+        None,
+        scale,
+        ButtonInput {
+            pointer_inside: pointer_hits,
+            primary_pressed,
+            primary_down,
+            primary_released,
+            now_seconds,
+        },
+    )
+    .clicked()
 }
 
 fn surface_keyboard_input(
@@ -1760,47 +1741,42 @@ fn draw_original_control(
         scale,
         [control.x, control.y, control.width, control.height],
     );
-    let control_id = ui
-        .id()
-        .with(("encyclopedia-original-control", control.command_id));
-    let response = ui.interact(rect, control_id, egui::Sense::click());
-    let capture_id = control_id.with("opaque-press-origin");
-    if ctx.input(|input| input.pointer.primary_pressed()) {
-        let captured = ctx.pointer_latest_pos().is_some_and(|point| {
-            original_control_contains(cache, control.normal_resource, rect, scale, point)
+    let (pointer, primary_pressed, primary_down, primary_released, now_seconds) =
+        ctx.input(|input| {
+            (
+                input.pointer.interact_pos(),
+                input.pointer.button_pressed(egui::PointerButton::Primary),
+                input.pointer.button_down(egui::PointerButton::Primary),
+                input.pointer.button_released(egui::PointerButton::Primary),
+                input.time,
+            )
         });
-        ui.data_mut(|data| data.insert_temp(capture_id, captured));
-    }
-    let captured = ui.data(|data| data.get_temp::<bool>(capture_id).unwrap_or(false));
-    let (pointer, primary_down) = ctx.input(|input| {
-        (
-            input.pointer.interact_pos(),
-            input.pointer.button_down(egui::PointerButton::Primary),
-        )
-    });
     let pointer_hits = pointer.is_some_and(|point| {
         original_control_contains(cache, control.normal_resource, rect, scale, point)
     });
-    let pressed = selected
-        || (primary_down && response.is_pointer_button_down_on() && captured && pointer_hits);
-    paint_original_resource_native(
-        ui.painter(),
-        ctx,
+    StrobeButton::show_with_input(
+        ui,
         cache,
-        if pressed {
-            control.pressed_resource
-        } else {
-            control.normal_resource
-        },
-        rect.min,
-        scale,
         rect,
-    );
-    captured
-        && response.clicked()
-        && response.interact_pointer_pos().is_some_and(|point| {
-            original_control_contains(cache, control.normal_resource, rect, scale, point)
-        })
+        ("encyclopedia-original-control", control.command_id),
+        ButtonArt::two_state(
+            DllSource::Strategy,
+            control.normal_resource,
+            control.pressed_resource,
+        ),
+        selected,
+        false,
+        None,
+        scale,
+        ButtonInput {
+            pointer_inside: pointer_hits,
+            primary_pressed,
+            primary_down,
+            primary_released,
+            now_seconds,
+        },
+    )
+    .clicked()
 }
 
 fn original_control_contains(

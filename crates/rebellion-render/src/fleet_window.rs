@@ -30,6 +30,7 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::{ButtonArt, ButtonImage, StrobeButton};
 use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::object_menu::MenuObject;
 use crate::panels::fleets::{capital_ship_mini_id, fighter_mini_id};
@@ -2824,30 +2825,28 @@ fn draw_fleet_window(
             for tab in FleetWindowTab::ALL {
                 let enabled = tab_enabled(world, transport, selected, tab);
                 let rect = tab_rect(local, scale, tab);
-                let id = tab_resource(base, tab, tab == window.tab, enabled);
-                // The control clips the 29-row art to 28 (`FUN_00602d30`).
-                let tab_painter = painter.with_clip_rect(rect);
-                paint_native(
-                    &tab_painter,
-                    ctx,
+                let normal =
+                    ButtonImage::new(DllSource::Strategy, tab_resource(base, tab, false, true));
+                let selected =
+                    ButtonImage::new(DllSource::Strategy, tab_resource(base, tab, true, true));
+                let disabled =
+                    ButtonImage::new(DllSource::Strategy, tab_resource(base, tab, false, false));
+                let art = ButtonArt::new(normal)
+                    .with_selected(selected)
+                    .with_disabled(disabled);
+                if StrobeButton::show(
+                    ui,
                     cache,
-                    DllSource::Strategy,
-                    id,
                     rect,
+                    (window.system, tab),
+                    art,
+                    tab == window.tab,
+                    !enabled,
+                    None,
                     scale,
-                    0.0,
-                    0.0,
-                );
-                let response = ui.interact(
-                    rect,
-                    ui.id().with((window.system, tab)),
-                    if enabled {
-                        egui::Sense::click()
-                    } else {
-                        egui::Sense::hover()
-                    },
-                );
-                if enabled && exact_clicked(&response, rect) {
+                )
+                .clicked()
+                {
                     result.tab = Some(tab);
                     result.focus = true;
                 }

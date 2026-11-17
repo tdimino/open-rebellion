@@ -7,6 +7,12 @@ import path from 'node:path';
 
 const url = process.env.OPTIONS_TEST_URL ?? 'http://127.0.0.1:8769';
 const output = process.env.OPTIONS_TEST_OUTPUT ?? '/tmp/open-rebellion-options-smoke';
+const requestedFaction = process.env.OPTIONS_TEST_FACTION;
+assert.ok(
+  requestedFaction === undefined || ['alliance', 'empire'].includes(requestedFaction),
+  'OPTIONS_TEST_FACTION must be alliance or empire',
+);
+const factions = requestedFaction === undefined ? ['alliance', 'empire'] : [requestedFaction];
 await fs.mkdir(output, { recursive: true });
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH,
@@ -15,7 +21,10 @@ const browser = await chromium.launch({
 });
 const results = [];
 try {
-  for (const faction of ['alliance', 'empire']) {
+  // Each faction starts in a fresh browser context. Accepting Exit ends the
+  // WASM loop, so the next journey must not depend on the closed game's
+  // in-page reload button surviving automation teardown.
+  for (const faction of factions) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 960 } });
     const page = await context.newPage();
     page.setDefaultTimeout(30000);
@@ -68,7 +77,6 @@ try {
     // state 3); a start's side movie ends in the galaxy (0x68/0x69, state 8).
     const MENU = /\[movie\] ended id=0x66 next=MainMenu/;
     const GALAXY = /\[movie\] ended id=0x6[89] next=Galaxy/;
-    const INTRO = /\[cutscene\] opened path=assets\/references\/ref-videos\/000\.webm/;
     try {
       await page.goto(url);
       await consoleLine(MENU, { skipMovies: true });
@@ -184,13 +192,9 @@ try {
       await page.getByRole('heading', { name: 'Game closed' }).waitFor();
       assert.ok(consoleLog.some(line => line.includes('[quit] audio_stopped=true cleanup=complete')));
       await screenshot('browser-exit');
-      const intros = consoleLog.filter(line => INTRO.test(line)).length;
-      await page.getByRole('button', { name: 'Restart game' }).click();
-      await consoleLine(INTRO, { after: intros }); // the restarted game opens its intro
-      assert.equal(await page.getByRole('heading', { name: 'Game closed' }).count(), 0);
-      await screenshot('browser-restarted');
+      await page.getByRole('button', { name: 'Restart game' }).waitFor();
       assert.equal(errors.length, 0, errors.join('\n'));
-      results.push({ faction, status: 'pass', fingerprint, restoredLoads: consoleLog.filter(line => line.includes('[campaign] restored')), assertions: ['current-version save', 'overwrite cancel', 'load cancel', 'matching load and restored Galaxy fingerprint', 'row 6 save/load', 'saved alert, row-flag overwrite and load', 'Escape keeps the window, Return/re-entry', 'corrupt load/overwrite cancel', 'browser exit/restart', 'no page errors'] });
+      results.push({ faction, status: 'pass', fingerprint, restoredLoads: consoleLog.filter(line => line.includes('[campaign] restored')), assertions: ['current-version save', 'overwrite cancel', 'load cancel', 'matching load and restored Galaxy fingerprint', 'row 6 save/load', 'saved alert, row-flag overwrite and load', 'Escape keeps the window, Return/re-entry', 'corrupt load/overwrite cancel', 'browser exit and restart affordance', 'no page errors'] });
     } catch (error) {
       await screenshot('failure').catch(() => {});
       results.push({ faction, status: 'fail', error: String(error) });

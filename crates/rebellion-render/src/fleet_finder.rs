@@ -433,7 +433,7 @@ pub fn draw_fleet_finder_focused(
                 (FinderMode::Ships, controls.ship_finder, "finder-ships"),
                 (FinderMode::Fleets, controls.fleet_finder, "finder-fleets"),
             ] {
-                if canvas.button(ui, cache, control, id, candidate == window.mode) {
+                if canvas.strobe_button(ui, cache, control, id, candidate == window.mode) {
                     mode = Some(candidate);
                 }
             }

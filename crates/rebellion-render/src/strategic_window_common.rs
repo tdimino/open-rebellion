@@ -16,8 +16,9 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::{ButtonArt, ButtonDraw, StrobeButton};
 use crate::fleet_window::paint_native;
-use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
+use crate::native_geometry::{logical_rect, rect_contains};
 use crate::system_window::{title_drag_step, TitleDrag};
 use crate::windowing_input::{
     FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
@@ -1237,7 +1238,6 @@ pub(crate) struct StrategicWindowCanvas<'a> {
     pub(crate) painter: egui::Painter,
     pub(crate) scale: f32,
     pub(crate) pointer: Option<egui::Pos2>,
-    pub(crate) primary_down: bool,
 }
 
 pub(crate) struct DetailWindowDraw<'a, T> {
@@ -1649,11 +1649,18 @@ impl StrategicWindowCanvas<'_> {
         for (index, (normal, pressed, x, name)) in buttons.into_iter().enumerate() {
             let rect = logical_rect(self.local, self.scale, x, 3.0, 14.0, 14.0);
             register(index, rect);
-            let response = ui.interact(rect, ui.id().with((id_seed, name)), egui::Sense::click());
-            let down =
-                self.primary_down && self.pointer.is_some_and(|point| rect_contains(rect, point));
-            self.paint(cache, source, if down { pressed } else { normal }, x, 3.0);
-            clicked[index] = exact_clicked(&response, rect);
+            clicked[index] = StrobeButton::show(
+                ui,
+                cache,
+                rect,
+                (id_seed, name),
+                ButtonArt::two_state(source, normal, pressed).with_draw(ButtonDraw::Direct),
+                false,
+                false,
+                None,
+                self.scale,
+            )
+            .clicked();
         }
         clicked
     }
@@ -1709,12 +1716,7 @@ pub(crate) fn show_canvas<R>(
         .fixed_pos(screen_rect.min)
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
-            let (pointer, primary_down) = ctx.input(|input| {
-                (
-                    input.pointer.interact_pos(),
-                    input.pointer.button_down(egui::PointerButton::Primary),
-                )
-            });
+            let pointer = ctx.input(|input| input.pointer.interact_pos());
             let (local, response) =
                 ui.allocate_exact_size(screen_rect.size(), egui::Sense::click());
             let canvas = StrategicWindowCanvas {
@@ -1724,7 +1726,6 @@ pub(crate) fn show_canvas<R>(
                 painter: ui.painter().clone(),
                 scale,
                 pointer,
-                primary_down,
             };
             draw(ui, &canvas)
         })

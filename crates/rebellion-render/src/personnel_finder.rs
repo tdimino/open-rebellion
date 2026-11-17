@@ -482,7 +482,7 @@ fn draw_personnel_finder_outcome(
                 );
                 let art = VIEW_TAB_ART[side_idx][candidate.index()];
                 let down = candidate == window.view;
-                if canvas.button(
+                if canvas.strobe_button(
                     ui,
                     cache,
                     finder_common::BitmapControl::new(view_rect, art),

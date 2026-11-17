@@ -40,6 +40,7 @@ use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::controls::{ButtonArt, ButtonImage, ButtonState, StrobeButton};
 use crate::native_geometry::NativeRect;
 use crate::operation_report::{cell_picture, report_grid_cells, ReportTab};
 use crate::scroll_bar::{ScrollBar, ScrollPointer, ScrollRange, LIST_BAR_29FC, TEXT_BAR_299D};
@@ -2285,11 +2286,14 @@ impl<Control> TacticalButtonSpec<Control> {
     }
 
     fn tactical_resource(self, pressed: bool) -> u32 {
-        if pressed {
-            self.pressed_resource
-        } else {
-            self.normal_resource
-        }
+        tactical_strobe_resource(
+            self.normal_resource,
+            self.pressed_resource,
+            None,
+            false,
+            false,
+            pressed,
+        )
     }
 }
 
@@ -3844,11 +3848,52 @@ fn tactical_control_resource<Control: Copy + PartialEq>(
     normal: u32,
     pressed_art: u32,
 ) -> u32 {
-    if pressed == Some(control) {
-        pressed_art
-    } else {
-        normal
+    tactical_strobe_resource(
+        normal,
+        pressed_art,
+        None,
+        false,
+        false,
+        pressed == Some(control),
+    )
+}
+
+const fn tactical_strobe_resource(
+    normal: u32,
+    held: u32,
+    disabled: Option<u32>,
+    selected: bool,
+    is_disabled: bool,
+    is_held: bool,
+) -> u32 {
+    strobe_resource(
+        DllSource::Tactical,
+        normal,
+        held,
+        disabled,
+        selected,
+        is_disabled,
+        is_held,
+    )
+}
+
+const fn strobe_resource(
+    source: DllSource,
+    normal: u32,
+    held: u32,
+    disabled: Option<u32>,
+    selected: bool,
+    is_disabled: bool,
+    is_held: bool,
+) -> u32 {
+    let mut art = ButtonArt::two_state(source, normal, held);
+    if let Some(disabled) = disabled {
+        art = art.with_disabled(ButtonImage::new(source, disabled));
     }
+    StrobeButton::new(art)
+        .with_state(ButtonState::visual(selected, is_disabled, is_held))
+        .image()
+        .resource_id
 }
 
 /// [`draw_tactical_button`] showing only `source_rect` of the bitmap: the
@@ -4283,33 +4328,37 @@ fn draw_tactical_assignment_panel(
                     pending_order == TacticalOrder::Recover,
                 ),
             ] {
-                let resource =
-                    if control == TacticalCommandControl::Recover && fighter_group.is_none() {
-                        for_player_faction(
-                            player_is_alliance,
-                            art::BTN_RECOVER_ALLIANCE_DISABLED,
-                            art::BTN_RECOVER_EMPIRE_DISABLED,
-                        )
-                    } else if selected || pressed == Some(control) {
-                        pressed_art
-                    } else {
-                        normal
-                    };
+                let disabled = (control == TacticalCommandControl::Recover
+                    && fighter_group.is_none())
+                .then(|| {
+                    for_player_faction(
+                        player_is_alliance,
+                        art::BTN_RECOVER_ALLIANCE_DISABLED,
+                        art::BTN_RECOVER_EMPIRE_DISABLED,
+                    )
+                });
+                let resource = tactical_strobe_resource(
+                    normal,
+                    pressed_art,
+                    disabled,
+                    selected,
+                    disabled.is_some(),
+                    pressed == Some(control),
+                );
                 draw_tactical_assignment_button(cache, canvas, control, resource);
             }
             draw_tactical_assignment_button(
                 cache,
                 canvas,
                 TacticalCommandControl::AttackDeathStar,
-                if !attack_death_star_enabled {
-                    art::BTN_ATTACK_DEATH_STAR_DISABLED
-                } else if pending_order == TacticalOrder::AttackDeathStar
-                    || pressed == Some(TacticalCommandControl::AttackDeathStar)
-                {
-                    art::BTN_ATTACK_DEATH_STAR_PRESSED
-                } else {
-                    art::BTN_ATTACK_DEATH_STAR_NORMAL
-                },
+                tactical_strobe_resource(
+                    art::BTN_ATTACK_DEATH_STAR_NORMAL,
+                    art::BTN_ATTACK_DEATH_STAR_PRESSED,
+                    Some(art::BTN_ATTACK_DEATH_STAR_DISABLED),
+                    pending_order == TacticalOrder::AttackDeathStar,
+                    !attack_death_star_enabled,
+                    pressed == Some(TacticalCommandControl::AttackDeathStar),
+                ),
             );
             draw_assignment_confirm_cancel(cache, canvas, pressed);
         }
@@ -4327,11 +4376,7 @@ fn draw_tactical_withdraw_confirmation(
     for spec in TACTICAL_WITHDRAW_CONFIRMATION_CONTROLS {
         draw_tactical_button(
             cache,
-            if pressed == Some(spec.control) {
-                spec.pressed_resource
-            } else {
-                spec.normal_resource
-            },
+            spec.tactical_resource(pressed == Some(spec.control)),
             canvas,
             spec.rect.x,
             spec.rect.y,
@@ -4459,13 +4504,14 @@ fn draw_original_tactical_hud(
         let active = task_force_slot_pressed(&groups, pressed_control, index);
         draw_tactical_button(
             cache,
-            if active {
-                art::BTN_TASK_FORCE_PRESSED
-            } else if assigned {
-                art::BTN_TASK_FORCE_NORMAL
-            } else {
-                art::BTN_TASK_FORCE_UNASSIGNED
-            },
+            tactical_strobe_resource(
+                art::BTN_TASK_FORCE_NORMAL,
+                art::BTN_TASK_FORCE_PRESSED,
+                Some(art::BTN_TASK_FORCE_UNASSIGNED),
+                false,
+                !assigned,
+                active,
+            ),
             canvas,
             TASK_FORCE_BUTTON_X + f32::from(index) * GROUP_BUTTON_PITCH,
             2.0,
@@ -4500,13 +4546,14 @@ fn draw_original_tactical_hud(
                 || pressed_control == Some(TacticalHudControl::FighterGroup(index)));
         draw_tactical_button_clipped(
             cache,
-            if active {
-                FIGHTER_GROUP_PRESSED_ART[usize::from(index)]
-            } else if assigned {
-                FIGHTER_GROUP_NORMAL_ART[usize::from(index)]
-            } else {
-                art::SQUADRON_UNASSIGNED
-            },
+            tactical_strobe_resource(
+                FIGHTER_GROUP_NORMAL_ART[usize::from(index)],
+                FIGHTER_GROUP_PRESSED_ART[usize::from(index)],
+                Some(art::SQUADRON_UNASSIGNED),
+                false,
+                !assigned,
+                active,
+            ),
             canvas,
             FIGHTER_GROUP_BUTTON_X + f32::from(index) * GROUP_BUTTON_PITCH,
             2.0,
@@ -4527,11 +4574,14 @@ fn draw_original_tactical_hud(
             let selected =
                 spec.control == TacticalBattleOptionsControl::ObserveToggle && player_observing;
             let pressed = pressed_options == Some(spec.control);
-            let resource = if selected || pressed {
-                spec.pressed_resource
-            } else {
-                spec.normal_resource
-            };
+            let resource = tactical_strobe_resource(
+                spec.normal_resource,
+                spec.pressed_resource,
+                None,
+                selected,
+                false,
+                pressed,
+            );
             draw_tactical_button(cache, resource, canvas, spec.rect.x, spec.rect.y);
         }
     } else if command_panel != TacticalCommandPanel::Display {
@@ -6350,11 +6400,18 @@ fn draw_battle_result_forces(
         );
         let hovered = rect.contains(local.0, local.1);
         let (normal, pressed) = tab.art(side);
-        let down = *filter == tab || (mouse_down && hovered);
         // A button is a child window and paints inside its own rect: the
         // Personnel art is 0x31 or 0x32 by 0x39, its lower rows and the
         // Empire art's right edge fall outside the button.
-        let art = if down { pressed } else { normal };
+        let art = strobe_resource(
+            DllSource::Strategy,
+            normal,
+            pressed,
+            None,
+            *filter == tab,
+            false,
+            mouse_down && hovered,
+        );
         let (art_w, art_h) = cache
             .original_resource_size(DllSource::Strategy, art)
             .map_or((tab_w, tab_h), |[w, h]| (w as f32, h as f32));
@@ -7313,7 +7370,15 @@ fn draw_original_battle_alert(
             || (mouse_down && rect.contains(local_mouse.0, local_mouse.1));
         draw_strategy_button(
             cache,
-            skin.tabs[index][usize::from(active)],
+            strobe_resource(
+                DllSource::Strategy,
+                skin.tabs[index][0],
+                skin.tabs[index][1],
+                None,
+                state.battle_alert_tab == tab,
+                false,
+                active && state.battle_alert_tab != tab,
+            ),
             canvas,
             BATTLE_ALERT_WINDOW_X + rect.x,
             BATTLE_ALERT_WINDOW_Y + rect.y,
@@ -7349,20 +7414,21 @@ fn draw_original_battle_alert(
             rect.height,
         );
         let enabled = control != BattleAlertControl::Retreat || retreat_enabled;
-        let resource_state = if enabled {
-            usize::from(
-                mouse_down
-                    && state.battle_alert_pressed == Some(control)
-                    && hovered == Some(control),
-            )
-        } else {
-            2
-        };
+        let held =
+            mouse_down && state.battle_alert_pressed == Some(control) && hovered == Some(control);
         // Retreat, Simulate and Take Command are CoolStrobeButtons, as
         // are the tabs (`FUN_0044f860.c:251-343`, `:371-433`).
         draw_strategy_button(
             cache,
-            skin.buttons[index][resource_state],
+            strobe_resource(
+                DllSource::Strategy,
+                skin.buttons[index][0],
+                skin.buttons[index][1],
+                Some(skin.buttons[index][2]),
+                false,
+                !enabled,
+                held,
+            ),
             canvas,
             BATTLE_ALERT_WINDOW_X + rect.x,
             BATTLE_ALERT_WINDOW_Y + rect.y,
@@ -7567,7 +7633,15 @@ fn draw_original_battle_results(
     // (`FUN_0046f360.c:443-563`, `:762`).
     draw_strategy_button(
         cache,
-        skin.close[usize::from(close_active)],
+        strobe_resource(
+            DllSource::Strategy,
+            skin.close[0],
+            skin.close[1],
+            None,
+            false,
+            false,
+            close_active,
+        ),
         canvas,
         BATTLE_RESULTS_WINDOW_X + skin.close_rect.x,
         BATTLE_RESULTS_WINDOW_Y + skin.close_rect.y,
@@ -7589,7 +7663,15 @@ fn draw_original_battle_results(
         let active = selected || (mouse_down && rect.contains(local_mouse.0, local_mouse.1));
         draw_strategy_button(
             cache,
-            skin.tabs[index][usize::from(active)],
+            strobe_resource(
+                DllSource::Strategy,
+                skin.tabs[index][0],
+                skin.tabs[index][1],
+                None,
+                selected,
+                false,
+                active && !selected,
+            ),
             canvas,
             BATTLE_RESULTS_WINDOW_X + rect.x,
             BATTLE_RESULTS_WINDOW_Y + rect.y,

@@ -15,6 +15,7 @@ use rebellion_core::world::FleetNaming;
 
 use crate::audio::SfxKind;
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::controls::{ButtonArt, ButtonImage, Checkbox, StrobeButton};
 use crate::fleet_registry::{draw_fleet_registry, FleetRegistryState, RegistryOutcome};
 use crate::panels::game_setup::Difficulty;
 
@@ -108,9 +109,33 @@ impl LogicalRect {
 
     fn contains(self, point: Pos2) -> bool {
         point.x >= self.x
-            && point.x <= self.x + self.width
+            && point.x < self.x + self.width
             && point.y >= self.y
-            && point.y <= self.y + self.height
+            && point.y < self.y + self.height
+    }
+}
+
+/// Controls `FUN_00405560` constructs through Checkbox (`FUN_00603870`).
+const fn uses_checkbox(control: MainMenuControl) -> bool {
+    matches!(
+        control,
+        MainMenuControl::Easy
+            | MainMenuControl::Intermediate
+            | MainMenuControl::Expert
+            | MainMenuControl::Empire
+            | MainMenuControl::Alliance
+            | MainMenuControl::LoadOptions
+            | MainMenuControl::Multiplayer
+            | MainMenuControl::Quit
+    )
+}
+
+const fn checkbox_selected(control: MainMenuControl, state: &MainMenuState) -> bool {
+    match control {
+        MainMenuControl::Easy => matches!(state.difficulty, Difficulty::Easy),
+        MainMenuControl::Intermediate => matches!(state.difficulty, Difficulty::Medium),
+        MainMenuControl::Expert => matches!(state.difficulty, Difficulty::Hard),
+        _ => false,
     }
 }
 
@@ -432,23 +457,6 @@ fn texture_for(
     }
 }
 
-fn draw_texture(
-    painter: &egui::Painter,
-    cache: &mut BmpCache,
-    ctx: &egui::Context,
-    resource_id: u32,
-    rect: Rect,
-) {
-    if let Some(texture) = cache.get(ctx, DllSource::Common, resource_id) {
-        painter.image(
-            texture.id(),
-            rect,
-            Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-            Color32::WHITE,
-        );
-    }
-}
-
 fn activate(control: MainMenuControl, state: &mut MainMenuState) -> Option<MainMenuAction> {
     match control {
         MainMenuControl::Easy => state.difficulty = Difficulty::Easy,
@@ -745,7 +753,50 @@ pub fn draw_main_menu(
                     MainMenuControl::FleetRegistry => fleet_registry_rect(canvas),
                     _ => control_rect(canvas, *logical),
                 };
-                let response = ui.interact(rect, ui.id().with(*control as u8), Sense::click());
+                let control_id = *control as u8;
+                let painted_by_control = draw_control
+                    && !matches!(
+                        control,
+                        MainMenuControl::MusicToggle | MainMenuControl::FleetRegistry
+                    );
+                let (response, exact_pointer_activation) = if painted_by_control {
+                    let resource_id = texture_for(
+                        *control,
+                        state,
+                        state.hovered == Some(*control),
+                        hover_elapsed,
+                    );
+                    let art = ButtonArt::new(ButtonImage::new(DllSource::Common, resource_id));
+                    let control_response = if uses_checkbox(*control) {
+                        Checkbox::show(
+                            ui,
+                            cache,
+                            rect,
+                            control_id,
+                            art,
+                            checkbox_selected(*control, state),
+                            false,
+                            canvas.width() / LOGICAL_WIDTH,
+                        )
+                    } else {
+                        StrobeButton::show(
+                            ui,
+                            cache,
+                            rect,
+                            control_id,
+                            art,
+                            false,
+                            false,
+                            None,
+                            canvas.width() / LOGICAL_WIDTH,
+                        )
+                    };
+                    (control_response.response, control_response.output.clicked())
+                } else {
+                    let response = ui.interact(rect, ui.id().with(control_id), Sense::click());
+                    let clicked = response.clicked() && state.hovered == Some(*control);
+                    (response, clicked)
+                };
                 response.widget_info(|| {
                     if *control == MainMenuControl::MusicToggle {
                         WidgetInfo::selected(
@@ -784,14 +835,6 @@ pub fn draw_main_menu(
                         state.hovered == Some(*control),
                         response.is_pointer_button_down_on(),
                     );
-                } else if draw_control {
-                    let resource_id = texture_for(
-                        *control,
-                        state,
-                        state.hovered == Some(*control),
-                        hover_elapsed,
-                    );
-                    draw_texture(ui.painter(), cache, ctx, resource_id, rect);
                 }
 
                 let focus_visible = state
@@ -807,8 +850,6 @@ pub fn draw_main_menu(
                 }
                 // egui expands clickable widgets by its interaction radius. The
                 // original menu only activated inside its Win32 control rect.
-                let exact_pointer_activation =
-                    response.clicked() && state.hovered == Some(*control);
                 if exact_pointer_activation || keyboard_activation {
                     action = state.activate_control(*control);
                 }
@@ -994,6 +1035,8 @@ mod tests {
     #[test]
     fn expert_hit_region_does_not_leak_into_adjacent_pixels() {
         // Source: COMMON.DLL Expert control geometry (agent_docs/main-menu-parity.md).
+        // A width of 45 at x=187 owns [187, 232), matching the shared
+        // native half-open control geometry.
         let canvas = Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0));
 
         assert_eq!(hit_test(canvas, Pos2::new(186.9, 59.0)), None);
@@ -1002,10 +1045,10 @@ mod tests {
             Some(MainMenuControl::Expert)
         );
         assert_eq!(
-            hit_test(canvas, Pos2::new(232.0, 59.0)),
+            hit_test(canvas, Pos2::new(231.999, 59.0)),
             Some(MainMenuControl::Expert)
         );
-        assert_eq!(hit_test(canvas, Pos2::new(232.1, 59.0)), None);
+        assert_eq!(hit_test(canvas, Pos2::new(232.0, 59.0)), None);
     }
 
     #[test]

@@ -13,8 +13,9 @@
 //! dragged out of the list moves to where it is dropped (`0x201`), as one
 //! out of the Fleet window does.
 
+use crate::controls::StrobeButton;
 use crate::fleet_window::{control_side, faction_side, fleet_side, mini_layers, MiniObject};
-use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
+use crate::native_geometry::{logical_rect, rect_contains};
 use crate::object_menu::MenuObject;
 use crate::panels::fleets::fighter_mini_id;
 use crate::quadrant_icons::{mission_keys, system_members};
@@ -1117,23 +1118,22 @@ fn draw_defenses_window(
             let rect = tab_rect(local, scale, page);
             let empty = page_rows(world, fog, missions, player, window.system, page).is_empty();
             crate::control_registry::register_screen("Defenses", page.name(), rect);
-            paint_native(
-                &painter,
-                ctx,
+            if StrobeButton::show_pair(
+                ui,
                 cache,
+                rect,
+                (window.system, page),
                 DllSource::Strategy,
-                tab_resource(page, side, page == window.page, empty),
-                rect,
+                (
+                    tab_resource(page, side, false, empty),
+                    tab_resource(page, side, true, empty),
+                ),
+                page == window.page,
+                false,
                 scale,
-                0.0,
-                0.0,
-            );
-            let response = ui.interact(
-                rect,
-                ui.id().with((window.system, page)),
-                egui::Sense::click(),
-            );
-            if exact_clicked(&response, rect) {
+            )
+            .clicked()
+            {
                 result.page = Some(page);
                 result.interaction.focus = true;
                 result

@@ -4,7 +4,7 @@
 
 Comparison regions, their diagnoses and fixtures, and A0 captures. Back to the [index](INDEX.md).
 
-28 open, 1 deferred.
+29 open, 1 deferred.
 
 <a id="or-acc-control-h6c"></a>
 ### Control cluster matches A0
@@ -188,6 +188,49 @@ Unblocks: [or-acc-status-2ls](#or-acc-status-2ls)
 
 - [ ] C6 is rerun on current main for the 16 cells
 - [ ] Each differing element has a named cause and a port or question node, or a mask under or-dec-c6-text-masks-rue
+
+<a id="or-ep-uniform-ui-controls-gru5.9"></a>
+### Verify uniform control adoption across the game UI
+
+`or-ep-uniform-ui-controls-gru5.9` · **open** · P1 · controls, duplication, interface-parity, verify · updated 2026-11-14  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.3](ports.md#or-ep-uniform-ui-controls-gru5.3), [or-ep-uniform-ui-controls-gru5.5](ports.md#or-ep-uniform-ui-controls-gru5.5), [or-ep-uniform-ui-controls-gru5.6](ports.md#or-ep-uniform-ui-controls-gru5.6), [or-ep-uniform-ui-controls-gru5.7](ports.md#or-ep-uniform-ui-controls-gru5.7), [or-ep-uniform-ui-controls-gru5.8](ports.md#or-ep-uniform-ui-controls-gru5.8)
+
+> ## Background
+>
+> The component beads are complete only when the whole production game UI consistently uses the recovered control objects. Per-component green tests can still leave an unregistered call site, a second free helper, a faction-only divergence or a normalized clone family behind. This bead performs the cross-family acceptance and closes the epic evidence loop.
+>
+> ## Scope
+>
+> Re-run the reviewed migration inventory against the final source and account for every production consumer. Remove obsolete helpers and imports, confirm renderer controls do not absorb domain or top-level window policy, and record selected/skipped jscpd candidates. Run exact and normalized scans with the baseline 70-token flags. Update the applicable architecture/control documentation and interface evidence with current facts and commands.
+>
+> ## Design
+>
+> Acceptance is evidence-based: a matrix row is complete only with a canonical object path, migrated call sites and observable tests, or a source-backed exclusion. Do not chase the total normalized percentage by abstracting intentional configuration, macros, tests or semantically different lifecycle loops.
+>
+> ## Tests
+>
+> Run all component/family tests, scoped cargo mutants for each changed control kernel, make fmt, warning-free make build and make check. Explain every surviving mutant as equivalent or close it before acceptance.
+>
+> ## E2E
+>
+> Run the applicable muted tools/interface-parity control/window journeys on both factions and supported viewports. Retain inspected screenshots, console/network logs and artifact hashes according to repository policy.
+>
+> ## Evidence
+>
+> Record before/after exact and normalized clone counts, removed clone families, skipped candidates with reasons, final migration matrix and exact gate commands/results. Never cite scratch artifact paths in tracked facts.
+>
+> ## Constraints
+>
+> AGENTS.md applies. This bead does not authorize new UI functionality or broad aesthetic redesign and cannot close around a failing gate.
+
+**Acceptance criteria**
+
+- [ ] The final inventory accounts for every production game-UI control consumer with a canonical shared object or source-backed exclusion.
+- [ ] Obsolete control helpers/state are removed and the renderer/windowing/domain boundaries remain intact.
+- [ ] Exact clones remain zero; selected 70-token normalized families are gone and intentional candidates are documented rather than over-abstracted.
+- [ ] All component/family tests and scoped mutation runs pass with no unexplained non-equivalent survivor.
+- [ ] make fmt, warning-free make build, make check and all applicable silent two-faction interface-parity journeys pass with retained evidence.
 
 <a id="or-f-yaga-variants-4qf"></a>
 ### A1 fixtures for the edited Yaga day-30 saves

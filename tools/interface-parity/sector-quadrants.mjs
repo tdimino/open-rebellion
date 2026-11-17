@@ -171,6 +171,37 @@ function resource(source, id) {
   return decodeIndexedBmp(fs.readFileSync(path.join(source, `${id}.bmp`)));
 }
 
+// CoolStrobeButton's ordinary draw path keys the first stored palette index
+// over the control's saved background (FUN_00602d30 -> FUN_005fd0f0).  That
+// key is not necessarily palette blue: the selected Personnel tab's first
+// stored pixel is magenta.  Compose the exact expected control instead of
+// dropping keyed pixels from the assertion, so the gate also proves that the
+// window background remains visible through the matte.
+function buttonResource(source, id, background, x0, y0) {
+  used.add(id);
+  const bytes = fs.readFileSync(path.join(source, `${id}.bmp`));
+  const icon = decodeIndexedBmp(bytes);
+  const dataOffset = bytes.readUInt32LE(10);
+  const signedHeight = bytes.readInt32LE(22);
+  const stride = (icon.width + 3) & ~3;
+  const transparentIndex = bytes[dataOffset];
+  const composed = new PNG({ width: icon.width, height: icon.height });
+  for (let y = 0; y < icon.height; y += 1) {
+    const storedY = signedHeight > 0 ? icon.height - 1 - y : y;
+    for (let x = 0; x < icon.width; x += 1) {
+      const to = (y * icon.width + x) * 4;
+      const sourceIndex = bytes[dataOffset + storedY * stride + x];
+      if (sourceIndex === transparentIndex || blueKey(icon.data, to)) {
+        const behind = ((y0 + y) * background.width + x0 + x) * 4;
+        composed.data.set(background.data.subarray(behind, behind + 4), to);
+      } else {
+        composed.data.set(icon.data.subarray(to, to + 4), to);
+      }
+    }
+  }
+  return composed;
+}
+
 function gokres(id) {
   usedGokres.add(id);
   return decodeIndexedBmp(fs.readFileSync(path.join(gokresDirectory(), `${id}.bmp`)));
@@ -581,10 +612,13 @@ function corner(window) {
 
 function compareTabs(screenshot, source, window, directory, prefix) {
   const checks = [];
+  const [windowX, windowY] = corner(window);
+  const background = resource(source, 10577);
   for (const [name, rect] of window.tabs) {
     const index = PAGES.indexOf(name);
     const id = tabArt(name, window.side, window.page === name, window.counts[index] === 0);
-    checks.push({ id, ...compareIcon(screenshot, rect, resource(source, id), `${prefix}-tab-${name}`, directory) });
+    const expected = buttonResource(source, id, background, rect[0] - windowX, rect[1] - windowY);
+    checks.push({ id, ...compareIcon(screenshot, rect, expected, `${prefix}-tab-${name}`, directory, false) });
   }
   return checks;
 }

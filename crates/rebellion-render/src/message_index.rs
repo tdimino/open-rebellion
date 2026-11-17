@@ -11,6 +11,7 @@ use egui_macroquad::egui::{self, Color32};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::{ButtonArt, ButtonDraw, ButtonImage, StrobeButton};
 use crate::list_control::{
     clamp_first_row, row_click, visible_row_capacity, wheel_delta, wheel_step, RowClick,
 };
@@ -438,12 +439,6 @@ fn draw_window_buttons(
     let mut clicked = None;
     message_index_area("original-message-index-buttons", origin).show(ctx, |ui| {
         let window_rect = message_index_window_rect(origin, scale);
-        let (pointer, primary_down) = ctx.input(|input| {
-            (
-                input.pointer.interact_pos(),
-                input.pointer.button_down(egui::PointerButton::Primary),
-            )
-        });
         for button in window_button_specs(faction, mode, look) {
             let rect = message_index_rect(
                 window_rect,
@@ -460,21 +455,28 @@ fn draw_window_buttons(
                     rect,
                 );
             }
-            let response = ui.interact(
+            let mut art = ButtonArt::two_state(
+                DllSource::Strategy,
+                button.normal_resource,
+                button.pressed_resource,
+            )
+            .with_draw(ButtonDraw::Direct);
+            if let Some(disabled) = button.disabled_resource {
+                art = art.with_disabled(ButtonImage::new(DllSource::Strategy, disabled));
+            }
+            if StrobeButton::show(
+                ui,
+                cache,
                 rect,
-                ui.id().with(("message-index-button", button.command_id)),
-                egui::Sense::click(),
-            );
-            let pressed = button.enabled
-                && primary_down
-                && pointer.is_some_and(|point| message_index_rect_contains(rect, point));
-            let resource = match (button.enabled, button.disabled_resource) {
-                (false, Some(disabled)) => disabled,
-                _ if pressed => button.pressed_resource,
-                _ => button.normal_resource,
-            };
-            paint_strategy_resource(ui.painter(), ctx, cache, resource, rect);
-            if button.enabled && response.clicked() {
+                ("message-index-button", button.command_id),
+                art,
+                false,
+                !button.enabled,
+                None,
+                scale,
+            )
+            .clicked()
+            {
                 clicked = Some(button.command_id);
             }
         }
@@ -522,12 +524,6 @@ pub fn draw_message_index_shell(
                 );
             }
 
-            let (pointer, primary_down) = ctx.input(|input| {
-                (
-                    input.pointer.interact_pos(),
-                    input.pointer.button_down(egui::PointerButton::Primary),
-                )
-            });
             // Mode 2's picture covers the category controls.
             let controls = if categories {
                 message_category_control_specs(faction).to_vec()
@@ -548,28 +544,23 @@ pub fn draw_message_index_shell(
                     category_name(control.command_id),
                     rect,
                 );
-                let response = ui.interact(
-                    rect,
-                    ui.id().with(("message-index-category", control.command_id)),
-                    egui::Sense::click(),
-                );
-                let pressed = primary_down
-                    && pointer.is_some_and(|point| message_index_rect_contains(rect, point));
-                paint_strategy_resource(
-                    ui.painter(),
-                    ctx,
+                if StrobeButton::show(
+                    ui,
                     cache,
-                    if pressed {
-                        control.pressed_resource
-                    } else {
-                        control.normal_resource
-                    },
                     rect,
-                );
-                if response.clicked()
-                    && response
-                        .interact_pointer_pos()
-                        .is_some_and(|point| message_index_rect_contains(rect, point))
+                    ("message-index-category", control.command_id),
+                    ButtonArt::two_state(
+                        DllSource::Strategy,
+                        control.normal_resource,
+                        control.pressed_resource,
+                    )
+                    .with_draw(ButtonDraw::Direct),
+                    false,
+                    false,
+                    None,
+                    scale,
+                )
+                .clicked()
                 {
                     selected = Some(control.command_id);
                 }
@@ -621,6 +612,7 @@ fn message_index_rect(
     )
 }
 
+#[cfg(test)]
 fn message_index_rect_contains(rect: egui::Rect, point: egui::Pos2) -> bool {
     point.x >= rect.min.x && point.x < rect.max.x && point.y >= rect.min.y && point.y < rect.max.y
 }
@@ -1822,12 +1814,6 @@ fn draw_single_message(
         );
 
         // The arrows FUN_00468fb0 shows in mode 2.
-        let (pointer, primary_down) = ctx.input(|input| {
-            (
-                input.pointer.interact_pos(),
-                input.pointer.button_down(egui::PointerButton::Primary),
-            )
-        });
         // FUN_0046a200: each arrow is enabled while the list holds a
         // message that way; FUN_004665f0 gives each a disabled frame,
         // 0x2ac6 (up) and 0x2aa9 (down).
@@ -1839,23 +1825,22 @@ fn draw_single_message(
             (0x96, ARROW_DOWN_X, 0x2aa7, 0x2aa9, has_next),
         ] {
             let rect = at(x, ARROW_Y, ARROW_WIDTH, ARROW_HEIGHT);
-            let response = ui.interact(
+            let art = ButtonArt::two_state(DllSource::Strategy, normal, normal + 1)
+                .with_disabled(ButtonImage::new(DllSource::Strategy, disabled))
+                .with_draw(ButtonDraw::Direct);
+            if StrobeButton::show(
+                ui,
+                cache,
                 rect,
-                ui.id().with(("message-index-arrow", command)),
-                egui::Sense::click(),
-            );
-            let pressed = enabled
-                && primary_down
-                && pointer.is_some_and(|point| message_index_rect_contains(rect, point));
-            let resource = if !enabled {
-                disabled
-            } else if pressed {
-                normal + 1
-            } else {
-                normal
-            };
-            paint_strategy_resource(ui.painter(), ctx, cache, resource, rect);
-            if enabled && response.clicked() {
+                ("message-index-arrow", command),
+                art,
+                false,
+                !enabled,
+                None,
+                scale,
+            )
+            .clicked()
+            {
                 clicked = Some(command);
             }
         }

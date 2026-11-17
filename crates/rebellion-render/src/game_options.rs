@@ -8,6 +8,7 @@ use macroquad::prelude::*;
 
 use crate::audio::AudioVolumeState;
 use crate::bmp_cache::{resources, BmpCache, DllSource};
+use crate::controls::{ButtonArt, ButtonImage, ButtonState, StrobeButton};
 use crate::native_geometry::NativeRect;
 
 const LOGICAL_WIDTH: f32 = 640.0;
@@ -594,13 +595,32 @@ fn draw_volume(cache: &mut BmpCache, canvas: OptionsCanvas, y: f32, value: f32, 
 /// A tactical switch's bitmap: disabled 0x273d, pressed or checked
 /// 0x273c, normal 0x273b (`FUN_00407180` states 2 and 4).
 const fn toggle_resource(enabled: bool, held: bool, on: bool) -> u32 {
-    if !enabled {
-        resources::common::OPTIONS_TOGGLE_DISABLED
-    } else if held || on {
-        resources::common::OPTIONS_TOGGLE_PRESSED
-    } else {
-        resources::common::OPTIONS_TOGGLE_NORMAL
+    strobe_resource(
+        resources::common::OPTIONS_TOGGLE_NORMAL,
+        resources::common::OPTIONS_TOGGLE_PRESSED,
+        Some(resources::common::OPTIONS_TOGGLE_DISABLED),
+        on,
+        !enabled,
+        held,
+    )
+}
+
+const fn strobe_resource(
+    normal: u32,
+    held: u32,
+    disabled: Option<u32>,
+    selected: bool,
+    is_disabled: bool,
+    is_held: bool,
+) -> u32 {
+    let mut art = ButtonArt::two_state(DllSource::Common, normal, held);
+    if let Some(disabled) = disabled {
+        art = art.with_disabled(ButtonImage::new(DllSource::Common, disabled));
     }
+    StrobeButton::new(art)
+        .with_state(ButtonState::visual(selected, is_disabled, is_held))
+        .image()
+        .resource_id
 }
 
 /// An occupied slot's emblem: 0x2748 for side 1, the Alliance, and 0x2747
@@ -696,15 +716,16 @@ pub fn draw_game_options(
     draw_bitmap(
         cache,
         canvas,
-        if !audio.backend_available {
-            resources::common::OPTIONS_MUSIC_DISABLED
-        } else if held == Some(GameOptionsControl::Music) || state.music_on {
-            // A checked button shows its pressed bitmap (`FUN_00407180`
-            // sets state 4 to 0x2739 while music is on).
-            resources::common::OPTIONS_MUSIC_PRESSED
-        } else {
-            resources::common::OPTIONS_MUSIC_NORMAL
-        },
+        // A checked button shows its selected bitmap (`FUN_00407180` sets
+        // state 4 to 0x2739 while music is on).
+        strobe_resource(
+            resources::common::OPTIONS_MUSIC_NORMAL,
+            resources::common::OPTIONS_MUSIC_PRESSED,
+            Some(resources::common::OPTIONS_MUSIC_DISABLED),
+            state.music_on,
+            !audio.backend_available,
+            held == Some(GameOptionsControl::Music),
+        ),
         MUSIC_RECT.x,
         MUSIC_RECT.y,
     );
@@ -728,21 +749,22 @@ pub fn draw_game_options(
 
     for slot in 0..SAVE_ROWS {
         let occupied = saves.iter().find(|save| save.slot == slot);
-        let save_resource = if state.origin != GameOptionsOrigin::CommandCenter {
-            resources::common::OPTIONS_SAVE_DISABLED
-        } else if held == Some(GameOptionsControl::Save(slot)) {
-            resources::common::OPTIONS_SAVE_PRESSED
-        } else {
-            resources::common::OPTIONS_SAVE_NORMAL
-        };
-        let load_resource =
-            if occupied.is_none() || state.origin == GameOptionsOrigin::TacticalBattle {
-                resources::common::OPTIONS_LOAD_DISABLED
-            } else if held == Some(GameOptionsControl::Load(slot)) {
-                resources::common::OPTIONS_LOAD_PRESSED
-            } else {
-                resources::common::OPTIONS_LOAD_NORMAL
-            };
+        let save_resource = strobe_resource(
+            resources::common::OPTIONS_SAVE_NORMAL,
+            resources::common::OPTIONS_SAVE_PRESSED,
+            Some(resources::common::OPTIONS_SAVE_DISABLED),
+            false,
+            state.origin != GameOptionsOrigin::CommandCenter,
+            held == Some(GameOptionsControl::Save(slot)),
+        );
+        let load_resource = strobe_resource(
+            resources::common::OPTIONS_LOAD_NORMAL,
+            resources::common::OPTIONS_LOAD_PRESSED,
+            Some(resources::common::OPTIONS_LOAD_DISABLED),
+            false,
+            occupied.is_none() || state.origin == GameOptionsOrigin::TacticalBattle,
+            held == Some(GameOptionsControl::Load(slot)),
+        );
         let save_bounds = save_rect(slot);
         let load_bounds = load_rect(slot);
         draw_bitmap(cache, canvas, save_resource, save_bounds.x, save_bounds.y);
@@ -761,35 +783,42 @@ pub fn draw_game_options(
     draw_bitmap(
         cache,
         canvas,
-        if held == Some(GameOptionsControl::Restart) {
-            resources::common::BTN_RESTART_GAME_PRESSED
-        } else {
-            resources::common::BTN_RESTART_GAME_NORMAL
-        },
+        strobe_resource(
+            resources::common::BTN_RESTART_GAME_NORMAL,
+            resources::common::BTN_RESTART_GAME_PRESSED,
+            None,
+            false,
+            false,
+            held == Some(GameOptionsControl::Restart),
+        ),
         RESTART_RECT.x,
         RESTART_RECT.y,
     );
     draw_bitmap(
         cache,
         canvas,
-        if !state.origin.has_live_campaign() {
-            state.origin.return_resources()[2]
-        } else if held == Some(GameOptionsControl::Return) {
-            state.origin.return_resources()[1]
-        } else {
-            state.origin.return_resources()[0]
-        },
+        strobe_resource(
+            state.origin.return_resources()[0],
+            state.origin.return_resources()[1],
+            Some(state.origin.return_resources()[2]),
+            false,
+            !state.origin.has_live_campaign(),
+            held == Some(GameOptionsControl::Return),
+        ),
         RETURN_RECT.x,
         RETURN_RECT.y,
     );
     draw_bitmap(
         cache,
         canvas,
-        if held == Some(GameOptionsControl::Exit) {
-            resources::common::BTN_EXIT_GAME_PRESSED
-        } else {
-            resources::common::BTN_EXIT_GAME_NORMAL
-        },
+        strobe_resource(
+            resources::common::BTN_EXIT_GAME_NORMAL,
+            resources::common::BTN_EXIT_GAME_PRESSED,
+            None,
+            false,
+            false,
+            held == Some(GameOptionsControl::Exit),
+        ),
         EXIT_RECT.x,
         EXIT_RECT.y,
     );

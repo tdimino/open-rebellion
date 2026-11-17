@@ -22,11 +22,12 @@ use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::{ButtonArt, ButtonImage, StrobeButton};
 use crate::fleet_window::{mini_layers, paint_native, portrait_layers, MiniObject};
 use crate::list_control::wheel_step;
 use crate::message_log::{GameMessage, MessageId};
-use crate::mission_dialog::{button, galaxy_centered_rect, paint_button};
-use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
+use crate::mission_dialog::galaxy_centered_rect;
+use crate::native_geometry::{logical_rect, rect_contains};
 use crate::scroll_bar::{ScrollBar, ScrollDrag, ScrollRange, LIST_BAR_29FC};
 
 pub const OPERATION_REPORT_WIDTH: f32 = 470.0;
@@ -985,15 +986,19 @@ fn draw_at(
             let close = CLOSE[side_idx];
             let close_rect = at(close.rect);
             name("Close", close_rect);
-            if button(
+            if StrobeButton::show_pair(
                 ui,
                 cache,
                 close_rect,
                 "report-close",
+                DllSource::Strategy,
                 close.art,
                 false,
+                false,
                 scale,
-            ) {
+            )
+            .clicked()
+            {
                 action = Some(OperationReportAction::Closed {
                     reopen_index: window.reopen_index,
                 });
@@ -1005,15 +1010,19 @@ fn draw_at(
             for view in ReportView::ALL {
                 let view_rect = at((rail_x, rail_y + view.y(side_idx), button_w, button_h));
                 name(view.control(), view_rect);
-                if button(
+                if StrobeButton::show_pair(
                     ui,
                     cache,
                     view_rect,
                     ("report-view", view.index()),
+                    DllSource::Strategy,
                     view.art(side_idx, report),
                     view == window.view,
+                    false,
                     scale,
-                ) {
+                )
+                .clicked()
+                {
                     new_view = Some(view);
                 }
             }
@@ -1023,15 +1032,19 @@ fn draw_at(
                 for tab in ReportTab::ALL {
                     let tab_rect = at((TABS_AT.0 + tab.x(), TABS_AT.1, TAB_SIZE.0, TAB_SIZE.1));
                     name(tab.control(), tab_rect);
-                    if button(
+                    if StrobeButton::show_pair(
                         ui,
                         cache,
                         tab_rect,
                         ("report-tab", tab.index()),
+                        DllSource::Strategy,
                         tab.art(side_idx),
                         tab == window.tab,
+                        false,
                         scale,
-                    ) {
+                    )
+                    .clicked()
+                    {
                         new_tab = Some(tab);
                     }
                 }
@@ -1133,12 +1146,27 @@ fn draw_at(
                 ] {
                     let button_rect = at(rect);
                     name(control, button_rect);
-                    let response =
-                        ui.interact(button_rect, ui.id().with(control), egui::Sense::click());
                     // A CoolStrobeButton (FUN_00602150, FUN_0044c630.c:804-931),
                     // keyed as FUN_00602d30 blits it.
-                    paint_button(&painter, ctx, cache, art, button_rect, scale);
-                    if response.is_pointer_button_down_on() {
+                    let output = StrobeButton::show(
+                        ui,
+                        cache,
+                        button_rect,
+                        control,
+                        ButtonArt::new(ButtonImage::new(DllSource::Strategy, art)),
+                        false,
+                        false,
+                        None,
+                        scale,
+                    );
+                    let held = ctx.input(|input| {
+                        input.pointer.button_down(egui::PointerButton::Primary)
+                            && input
+                                .pointer
+                                .interact_pos()
+                                .is_some_and(|point| rect_contains(button_rect, point))
+                    });
+                    if held {
                         paint(
                             cache,
                             DllSource::Strategy,
@@ -1165,7 +1193,7 @@ fn draw_at(
                         galley,
                         egui::Color32::WHITE,
                     );
-                    if exact_clicked(&response, button_rect) {
+                    if output.clicked() {
                         action = Some(if control == "GotoSystem" {
                             OperationReportAction::GotoSystem {
                                 system: report.system,

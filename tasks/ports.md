@@ -4,7 +4,227 @@
 
 Changing the port to match the original. Back to the [index](INDEX.md).
 
-45 open.
+2 in progress, 52 open.
+
+<a id="or-ep-uniform-ui-controls-gru5.3"></a>
+### Extract CoolTabControl and migrate authentic tab strips
+
+`or-ep-uniform-ui-controls-gru5.3` · **in progress** · P1 · controls, duplication, interface-parity, port, refactor · assigned to CoralSeal/ntm-7aa620658aa0 · updated 2026-11-17  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](closed.md#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> The original CoolTabControl constructor `FUN_0060d590` owns a strip of child controls and switches their page state. Fleet, System, Defenses, Missions, Mission Dialog, reports and tactical surfaces currently repeat tab geometry, bitmap-state choice, enabled/empty policy, keyboard movement and click handling around feature-local enums.
+>
+> ## Scope
+>
+> Implement a generic renderer-side TabControl<T> composed from StrobeButton. It owns tab-strip geometry, stable control IDs, selected/disabled/empty presentation, pointer selection and recovered keyboard traversal. Feature modules retain their tab enum, labels, content queries, resource configuration and action application. Migrate every authentic CoolTabControl consumer in the reviewed matrix across strategic, modal and tactical UI. Record exclusions where a visual row merely resembles tabs but was a different original control.
+>
+> ## Design
+>
+> Use typed TabSpec<T>, TabControlState<T> and TabControlOutput<T>; avoid dynamic callbacks and domain-aware branches. Configuration maps faction and content availability to art before showing the control. The object must cooperate with WindowId/ControlId focus routing without owning top-level focus policy.
+>
+> ## Tests
+>
+> Add component tests for selected, enabled, disabled/empty, exact hit, left/right traversal and stable IDs. Preserve and adapt existing family tests for initial tab, selection reset and faction art. Demonstrate new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent interface-parity journeys for migrated Fleet, System, Defenses, Missions, Mission Dialog, Report and tactical tab surfaces on both factions where supported.
+>
+> ## Evidence
+>
+> Cite `FUN_0060d590`, feature tab constructors and key handlers such as the Defenses left/right path. Record every migrated matrix row.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not make tab contents generic and do not merge semantically distinct window lifecycle loops.
+
+**Acceptance criteria**
+
+- [ ] TabControl<T> owns common strip geometry, state painting, exact input and recovered keyboard traversal using StrobeButton.
+- [ ] Every matrix-selected original tab control is migrated while feature enums, content and actions remain local.
+- [ ] Disabled, empty and selected art plus stable focus/control IDs are preserved for Alliance and Empire.
+- [ ] Behavior-sentence tests and scoped mutation checks kill every non-equivalent touched mutant.
+- [ ] make fmt, warning-free make build, make check and applicable silent interface-parity journeys pass.
+
+<a id="or-ep-uniform-ui-controls-gru5.4"></a>
+### Extract stateful CoolDragList and compose the shared ScrollBar
+
+`or-ep-uniform-ui-controls-gru5.4` · **in progress** · P1 · controls, duplication, interface-parity, port, refactor · assigned to open-rebellion_claude_1/ntm-de7f01ae6695 · updated 2026-11-17  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](closed.md#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.5](#or-ep-uniform-ui-controls-gru5.5), [or-ep-uniform-ui-controls-gru5.6](#or-ep-uniform-ui-controls-gru5.6)
+
+> ## Background
+>
+> `FUN_00607ea0` constructs a stateful CoolDragList and `FUN_006083c0` owns painting, selection, keyboard movement, click/double-click notifications, right-press selection, drag capture/drop and scrolling. The port list_control.rs currently contains useful stateless helpers and LabeledCell, while each window still owns combinations of first row, selection, click timing, grid/vertical layout, capture and scrollbar state. The existing ScrollBar object already recovers `FUN_0060aa70` geometry and input.
+>
+> ## Scope
+>
+> Create DragListState, DragListSpec and typed DragListOutput objects in the renderer controls layer. Compose the existing ScrollBar and consolidate common vertical/grid layout, clipped row hit regions, single/multi-selection modes, keyboard moves, wheel and scrollbar updates, reveal-selection behavior, click/double-click, right-press selection and bounded drag lifecycle according to the reviewed matrix. Keep row data, item art/text rendering and domain actions in feature modules. First migrate Defenses and Missions list controls as representative grid and vertical consumers, subsuming LabeledCell without losing its behavior.
+>
+> ## Design
+>
+> Use typed events equivalent to original notifications 0x29a, 0x29b and 0x309 rather than callbacks into feature code. Separate persistent state from per-frame geometry and output. Capabilities such as multi-select, grid and draggable are explicit policy enums, not boolean soup. Pointer input must respect the frozen FrameInputRouter permit and one physical event may produce one owner outcome.
+>
+> ## Tests
+>
+> Add component tests for visible range, selection/reveal, single and multi-select, grid wrapping, double click, right press, outside drag threshold/drop, scroll arrows/track/thumb/wheel and capture cancellation. Preserve both faction behavior tests in Defenses/Missions, show new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent Defenses and Missions interface-parity journeys at supported viewports and both factions, including selection, scroll, right-click and drag paths.
+>
+> ## Evidence
+>
+> Cite `FUN_00607ea0`, `FUN_006083c0`, `FUN_00609ed0`, `FUN_00609410`, `FUN_006094b0`, `FUN_00609500`, `FUN_0060aa70` and the relevant feature constructors. Record which uncertain selection rules remain bounded.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not make row rendering or game actions generic. Do not change save state or move renderer behavior into rebellion-windowing.
+
+**Acceptance criteria**
+
+- [ ] DragListState/Spec/Output own recovered list geometry and interaction while feature modules retain row content and domain policy.
+- [ ] The existing ScrollBar is composed rather than reimplemented, including arrows, track, thumb, wheel and selection reveal.
+- [ ] Defenses and Missions use the shared object for their authentic list controls with unchanged Alliance/Empire behavior.
+- [ ] Selection, double-click, right-press and drag/capture component tests plus scoped mutants cover every touched transition.
+- [ ] make fmt, warning-free make build, make check and silent Defenses/Missions interface-parity journeys pass.
+
+<a id="or-ep-uniform-ui-controls-gru5.5"></a>
+### Migrate all remaining authentic CoolDragList consumers
+
+`or-ep-uniform-ui-controls-gru5.5` · **open** · P1 · controls, duplication, interface-parity, port, refactor · updated 2026-11-14  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> After the DragList kernel is proven in Defenses and Missions, the same original class remains represented by feature-local code in Fleet/System lists, Fleet/Troop/Personnel Finders, Message Index and message display, Operation Report, Status surfaces, manufacturing/build flows, battle alerts/results and other matrix rows. Uniform controls require migrating the full authentic consumer set rather than stopping after two examples.
+>
+> ## Scope
+>
+> Migrate every remaining production consumer identified as CoolDragList in the reviewed matrix to the shared DragList object. Group edits in reviewable family slices while maintaining one canonical state/output contract. Reuse common test fixtures instead of copying setup. Selection-box popup lists are owned by the dedicated SelectionBox bead. Consumers proven to use a different original list/control stay local with a cited matrix exclusion.
+>
+> ## Design
+>
+> Each feature maps DragListOutput into its own actions; it retains rows, sorting/filtering, item art, selection meaning, game queries and faction policy. Remove superseded first-row, click timing, list geometry, wheel, capture and scrollbar implementations only after the shared object owns the same behavior. Do not add callbacks that let the generic list mutate domain state.
+>
+> ## Tests
+>
+> For every migrated family retain behavior-sentence tests for selection, keyboard navigation, scrolling, double click and drag as applicable, including both factions. Add component coverage only for newly discovered control behavior, show it red and run scoped cargo mutants in manageable family batches.
+>
+> ## E2E
+>
+> Run each applicable silent tools/interface-parity journey for the migrated family at its supported viewport and both factions. Retain diagnostic logs and screenshot/hash evidence under the repository evidence rules.
+>
+> ## Evidence
+>
+> Update the migration matrix with the exact Rust consumers removed and the original constructor/window-procedure citations supporting each mapping. Record intentional exclusions separately.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve domain ordering, original row art and existing public feature actions. Do not weaken tests or bulk-regenerate unrelated goldens.
+
+**Acceptance criteria**
+
+- [ ] Every remaining matrix-selected CoolDragList consumer uses the shared DragList object, excluding only dedicated SelectionBox internals and cited different controls.
+- [ ] Feature modules retain row data, filtering/sorting, art and domain action policy while duplicate control state/geometry/input is removed.
+- [ ] Alliance and Empire selection, keyboard, scroll, double-click and drag behavior remains covered wherever each feature supports it.
+- [ ] Family-scoped mutation runs have no surviving non-equivalent touched mutant and the 70-token normalized scan removes the selected list clone families.
+- [ ] make fmt, warning-free make build, make check and all applicable silent interface-parity journeys pass.
+
+<a id="or-ep-uniform-ui-controls-gru5.6"></a>
+### Extract CoolSelectionBox and migrate popup selectors
+
+`or-ep-uniform-ui-controls-gru5.6` · **open** · P1 · controls, duplication, interface-parity, port, refactor · updated 2026-11-14  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> The original CoolSelectionBoxClass (`FUN_0060bed0`, `FUN_0060c210`) opens a popup through `FUN_0060cac0`; `FUN_0060d020` hosts a CoolDragList, flips the popup above when needed, captures/dismisses outside presses and reports the selected item. Build Selection and Mission Dialog currently carry separate list-open flags, popup geometry, wheel movement, row hover/selection and dismissal logic.
+>
+> ## Scope
+>
+> Implement SelectionBoxState, SelectionBoxSpec and typed SelectionBoxOutput composed from DragList and StrobeButton where the recovered control uses one. Cover open/close/toggle, current-item reveal, popup frame/list inset, row capacity, above/below placement, outside press consumption, wheel/scrollbar behavior, hover/selected art and chosen-item closure. Migrate Build Selection and Mission Dialog plus any additional authentic matrix consumers.
+>
+> ## Design
+>
+> The object owns popup/control behavior and returns open/close/selection outcomes. Feature modules provide typed items and render their item content; they retain build/mission validation and actions. Popup dismissal must claim its physical event so the exposed control cannot activate in the same dispatch.
+>
+> ## Tests
+>
+> Add component tests for placement, capture, outside dismissal, reveal, wheel/scrollbar, selection, and same-event fallthrough. Preserve Build Selection and Mission Dialog tests for original geometry, current-row colors and bottom-button availability. Show new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent Build Selection and Mission Dialog journeys on both factions, including opening, scrolling, choosing, outside dismissal and a popup near the lower aperture edge.
+>
+> ## Evidence
+>
+> Cite `FUN_0060bed0`, `FUN_0060c210`, `FUN_0060cac0`, `FUN_0060cc50`, `FUN_0060d020`, `FUN_0060cbf0` and each feature constructor. Record the existing missing 0x299a scrollbar art behavior until settled.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not move buildable/mission item rendering or validation into the generic object. Preserve modal routing and control registry names.
+
+**Acceptance criteria**
+
+- [ ] SelectionBox composes DragList and owns recovered popup placement, reveal, capture, scrolling, selection and dismissal behavior.
+- [ ] Build Selection, Mission Dialog and every other matrix-selected consumer use the shared object without moving item/domain policy.
+- [ ] Outside dismissal consumes its event and placement above/below remains within the strategic aperture.
+- [ ] Both factions pass behavior-sentence tests and scoped mutations for popup interaction and art state.
+- [ ] make fmt, warning-free make build, make check and silent Build Selection/Mission Dialog journeys pass.
+
+<a id="or-ep-uniform-ui-controls-gru5.7"></a>
+### Extract CoolStringField and migrate authentic text controls
+
+`or-ep-uniform-ui-controls-gru5.7` · **open** · P1 · controls, duplication, interface-parity, port, refactor · updated 2026-11-14  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](closed.md#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> The original CoolStringField constructor `FUN_00604cf0` owns a text buffer, max length, owner, selection, geometry and focus; its WndProc `FUN_00605160` handles accepted characters and key forwarding. Parent windows retain commit/cancel meaning. The port repeats raw egui TextEdit setup and focus/selection logic for Fleet rename, manufacturing-band rename, Finder type-ahead, Encyclopedia search and other fields.
+>
+> ## Scope
+>
+> Implement StringFieldState, StringFieldSpec and typed StringFieldOutput for recovered text editing, selection, select-all, max length, focus acquisition/loss, accepted-character filtering, Enter/Escape and owner key forwarding. Migrate every authentic CoolStringField consumer in the matrix, starting with Fleet and manufacturing rename, then Finder/Encyclopedia fields where the source confirms the class. Record main-menu, developer-panel or other native edit controls as exclusions when they are not CoolStringField.
+>
+> ## Design
+>
+> The object cooperates with WindowId/ControlId and FrameInputRouter leases but does not own top-level focus policy. It returns typed text/focus/submit/cancel/unhandled-key outcomes; the parent decides whether empty submission is rejected, what command is issued and how type-ahead changes its list. Styling is explicit configuration so rename selection colors and finder/search fields can differ without duplicating input state.
+>
+> ## Tests
+>
+> Add component tests for select-all, typed characters, max length, focus lease, Enter/Escape, empty submission policy boundaries and unhandled-key forwarding. Preserve feature tests for rename and type-ahead on both factions, demonstrate new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent Fleet/manufacturing rename and Finder/Encyclopedia search journeys on both factions where supported, including focus restoration and same-frame key isolation.
+>
+> ## Evidence
+>
+> Cite `FUN_00604cf0`, `FUN_00604f70`, `FUN_00604f90`, `FUN_00605110`, `FUN_00605160`, `FUN_00609650`, `FUN_00609ed0` and the applicable parent handlers.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not make rename/search semantics generic and do not replace developer-only controls for visual uniformity.
+
+**Acceptance criteria**
+
+- [ ] StringField owns recovered text, selection, length, focus and key-handling state and returns typed parent-facing outcomes.
+- [ ] Fleet/manufacturing rename and every other matrix-confirmed CoolStringField consumer use the shared object.
+- [ ] Feature-specific empty-submit, commit/cancel and type-ahead semantics remain in their parent modules.
+- [ ] Both factions pass behavior-sentence focus/edit tests and scoped mutation checks with no non-equivalent survivor.
+- [ ] make fmt, warning-free make build, make check and applicable silent rename/search journeys pass.
 
 <a id="or-p-contents-troops-lse"></a>
 ### List troops in the tactical contents monitor
@@ -178,6 +398,92 @@ Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#
 > With the capital meshes at their traced 3.0 scale (FUN_005d5b10) and the 0.3-unit fighter decals ported, C019 (empire-death-star-pre-alert, day 676) measures SSIM 0.952 and edge IoU 0.7185: 7,549 edge pixels in A0 or A1, 5,424 coinciding; misses holocube 412, ships, fighters and strike 977, stars 736. Its position measures pass: displacement 0, MAE 0.0023, changed pixels 0.0046 (903 of 194,916: holocube 221, ships 395, stars 287).
 > The tactical projection scale, (w+h)/4 per field unit with the half-pixel centre, is fitted to the A0 frames with a hyp: tag; the viewport projection lives in d3drm.dll, so tracing it belongs here.
 
+<a id="or-ep-uniform-ui-controls-gru5.10"></a>
+### Port recovered title-drag bounds and mode policy
+
+`or-ep-uniform-ui-controls-gru5.10` · **open** · P2 · controls, interface-parity, port, windowing · updated 2026-11-14  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.1](closed.md#or-ep-uniform-ui-controls-gru5.1)
+
+> ## Background
+>
+> The CoolGameWindow drag path uses policy bit 4 and a mode at +0xf4. `FUN_00606ee0` starts capture. Mode 1 moves the native window live in `FUN_006071e0`; mode 2 draws an XOR outline. `FUN_00607010` releases capture and clamps the final top-left to the bounds rectangle at +0xbc..+0xc8 while accounting for the full window size. The current renderer has live title drag but does not apply this recovered release clamp.
+>
+> ## Scope
+>
+> Make the renderer/windowing adapter preserve temporary pointer capture while clamping a completed drag to the feature's recovered aperture bounds. Inventory constructors for +0xf4 mode 2: implement the outline preview only where a current source-backed surface actually used it, or retain a cited exclusion when no consumer exists. Do not copy HWND, HDC or ROP2 mechanics into rebellion-windowing.
+>
+> ## Design
+>
+> Window identity, routing snapshots and capture stay in rebellion-windowing. Pixel-space drag geometry and aperture bounds stay in rebellion-render. The state transition must expose a typed final position; feature code supplies bounds rather than duplicating edge math.
+>
+> ## Tests
+>
+> Add behavior-sentence tests for each edge, an oversized overshoot, live movement, release, and capture cleanup. Demonstrate new assertions fail against the unclamped implementation and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run the silent original-backed drag journey for representative Alliance and Empire strategic windows at each aperture edge.
+>
+> ## Evidence
+>
+> Cite `FUN_00606380`, `FUN_00606ee0`, `FUN_00607010`, `FUN_006071e0` and `ghidra/notes/cool-control-contracts.md`.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve event ownership and do not introduce Win32 concepts into the renderer-independent crate.
+
+**Acceptance criteria**
+
+- [ ] Release-time clamping uses the recovered bounds and full window size without changing temporary capture ownership.
+- [ ] The migration matrix identifies every live-drag and outline-drag consumer; mode 2 is implemented only for a source-backed consumer, otherwise it has a cited exclusion.
+- [ ] Behavior-sentence tests cover movement inside each edge, overshoot, release, and both factions.
+- [ ] Scoped mutation checks, make fmt, warning-free make build, make check, and applicable silent interface-parity journeys pass.
+
+<a id="or-ep-uniform-ui-controls-gru5.8"></a>
+### Consolidate the remaining recovered UI control families
+
+`or-ep-uniform-ui-controls-gru5.8` · **open** · P2 · controls, interface-parity, port, refactor, verify · updated 2026-11-14  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](closed.md#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> Uniform UI controls extend beyond the five largest clone families. The original toolkit also contains vertical/horizontal ScrollBar, Slider, CoolwinStatusBar and stock tooltip controls; Checkbox is a StrobeButton variant. The port already has strong ScrollBar and TooltipState objects, an egui audio slider, tactical status meters and feature-local tooltip rendering. These must be reconciled against the reviewed matrix rather than ignored or homogenized without source evidence.
+>
+> ## Scope
+>
+> For every remaining control-family row in the reviewed matrix, make one renderer object the canonical implementation and migrate authentic production consumers. Preserve the existing ScrollBar implementation and tooltip object where they satisfy the original contract, moving/re-exporting them through the uniform controls module without unnecessary rewrites. Compare slider and status-bar consumers against their original classes; extract shared objects when the same class has multiple consumers, otherwise retain a focused object with a cited singleton/different-control explanation. Confirm Checkbox composition through StrobeButton.
+>
+> ## Design
+>
+> Uniform means one behavior contract per original control family, not identical styling or forced use in developer panels. Keep resource/art configuration and domain action application outside the objects. Do not invent behavior for unresolved tactical meters or audio extensions.
+>
+> ## Tests
+>
+> Preserve existing scrollbar and tooltip behavior tests. Add source-backed tests for any newly shared slider/status/checkbox behavior, show them red and run scoped cargo mutants for touched logic.
+>
+> ## E2E
+>
+> Run applicable silent cockpit tooltip, scrollbar, game-options/audio-slider and tactical status journeys on both factions where the matrix marks authentic original controls.
+>
+> ## Evidence
+>
+> Cite the original constructor/WndProc for every migrated family and update the matrix with canonical Rust object paths and exclusions.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No developer-only egui restyling, speculative parity claims or production dependency changes.
+
+**Acceptance criteria**
+
+- [ ] ScrollBar, Tooltip, Checkbox, Slider and CoolwinStatusBar matrix rows each name one canonical Rust object or a source-backed different/singleton exclusion.
+- [ ] Every authentic repeated production consumer uses the canonical object without forced styling across different original controls.
+- [ ] Existing scrollbar/tooltip tests and new source-backed control tests pass for both factions where applicable.
+- [ ] Scoped mutation checks have no non-equivalent survivor in touched logic.
+- [ ] make fmt, warning-free make build, make check and applicable silent UI journeys pass.
+
 <a id="or-invented-log-text-82ba"></a>
 ### Replace the invented message-log text outside the strike plan
 
@@ -311,6 +617,64 @@ Waits on: [or-d-gnd-plan-glw](other.md#or-d-gnd-plan-glw)
 - [ ] begin_side_withdrawal puts each of the side's capital ships in a group of its own, citing FUN_005ad530.c:61-81 and FUN_005aded0.c:21-37, both sides.
 - [ ] Each withdrawing capital ship jumps without waiting on its old task force's front ship, shown by a red-first test.
 - [ ] A native run on each side shows two ships of one task force jumping independently after Withdraw.
+
+<a id="or-port-gid-palette-darkening-ms1p"></a>
+### Port the original GID legend palette darkening
+
+`or-port-gid-palette-darkening-ms1p` · **open** · P2 · gid, interface-parity, port, render · updated 2026-11-14
+
+> ## Background
+>
+> The original GID legend copies the galaxy backdrop, builds a 256-entry
+> indexed-color remap with FUN_005fddd0, and applies it before drawing content
+> and frame art. LAB_004ac550 transforms each RGB channel to
+> floor(channel / 6) + 50; each transformed color then maps to the nearest
+> original-palette entry by squared RGB distance. The source index is the
+> initial candidate, so it wins any distance tie. If it is not exact, candidates
+> are scanned in ascending order and replace the current winner only on strict
+> improvement. The Rust port currently applies a flat translucent black tint.
+>
+> ## Scope
+>
+> Replace the approximation with an indexed-palette-equivalent renderer path for
+> the GID backdrop. Reuse shared palette utilities if they preserve the exact
+> original rules; otherwise isolate the mapping as a small tested renderer
+> object. Preserve content, frame, keying, faction art and display-mode behavior.
+>
+> ## Design
+>
+> Keep the recovered color transform and nearest-entry lookup deterministic and
+> independent of platform GPU sampling. Cache the 256-entry remap where palette
+> identity permits. Do not generalize this into a global post-processing effect
+> without another source-backed consumer.
+>
+> ## Tests
+>
+> Add behavior-sentence unit tests for the transform endpoints, source-index tie
+> retention, exact match, strict improvements and ascending-scan stability. Show
+> the new tests fail against the flat-tint path and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent GID interface-parity journeys for Alliance and Empire across every
+> supported legend mode, retaining inspected captures and hashes.
+>
+> ## Evidence
+>
+> Cite FUN_00452240, FUN_005fddd0, LAB_004ac550, and
+> ghidra/notes/gid-legend.md.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not commit original palette or bitmap assets; use
+> runtime-loaded resources and synthetic test palettes.
+
+**Acceptance criteria**
+
+- [ ] The GID backdrop uses the recovered per-channel transform and deterministic nearest-palette remap rather than the flat tint approximation.
+- [ ] Tests cover the channel transform, source-index tie retention, exact-match retention, strict nearest-color improvement, and ascending-scan stability.
+- [ ] Alliance and Empire silent GID journeys retain inspected captures and artifact hashes at every display mode.
+- [ ] Scoped mutation checks, make fmt, warning-free make build, and make check pass.
 
 <a id="or-port-lost-ship-crew-adrift-4mpf"></a>
 ### Port: a lost ship's characters go adrift and take the wound roll, never captive
@@ -758,6 +1122,63 @@ Waits on: [or-port-squadron-craft-losses-karc](#or-port-squadron-craft-losses-ka
 
 - [ ] The leg builders are read for a same-system leg
 - [ ] The port accepts the order and does what they do; tests on both sides
+
+<a id="or-port-sprite-draw-mode-5-yv8o"></a>
+### Port indexed sprite draw mode 5 where consumed
+
+`or-port-sprite-draw-mode-5-yv8o` · **open** · P3 · interface-parity, port, render · updated 2026-11-14
+
+> ## Background
+>
+> FUN_0041cb30 routes sprite draw mode 5 to FUN_005fe640 after installing a
+> 512-byte table. For each non-key source pixel, bytes 0..255 map the source
+> palette index. For each transparent-key source pixel, bytes 256..511 map the
+> existing destination index. This is an indexed two-map composite, not ordinary
+> alpha blending. No generic Rust equivalent or current source-backed consumer
+> has yet been confirmed.
+>
+> ## Scope
+>
+> Inventory every constructor and call site that selects mode 5, identify the
+> corresponding current feature and art, and implement the indexed composite only
+> for supported consumers. If no supported current consumer exists, close with a
+> complete citation-backed exclusion rather than adding dead renderer API.
+>
+> ## Design
+>
+> Keep the operation deterministic over indexed source and destination buffers.
+> Expose a narrow renderer primitive only after a live consumer is identified.
+> Do not approximate the transparent-key branch with alpha.
+>
+> ## Tests
+>
+> Use synthetic indexed buffers and a synthetic 512-byte table to prove opaque
+> source mapping, transparent destination mapping, clipping and key selection.
+> Demonstrate any new assertions fail against the previous path and run scoped
+> cargo mutants.
+>
+> ## E2E
+>
+> Run the silent journey for each identified consumer on both factions where
+> applicable; no journey is required if the evidence proves the feature
+> unsupported or unreachable and the exclusion is recorded.
+>
+> ## Evidence
+>
+> Cite FUN_0041cb30, FUN_005fe640, the recovered caller inventory, and
+> ghidra/notes/cool-control-contracts.md.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not commit proprietary indexed assets or add an unused
+> generic graphics abstraction.
+
+**Acceptance criteria**
+
+- [ ] Every mode-5 constructor/call site is inventoried and mapped to a current Rust consumer or a cited unsupported/unreachable exclusion.
+- [ ] Any required port implements the two 256-byte maps exactly, including transparent-key background remapping.
+- [ ] Synthetic indexed-image tests cover opaque and transparent pixels without proprietary assets.
+- [ ] Scoped mutation checks, make fmt, warning-free make build, make check, and applicable silent journeys pass.
 
 <a id="or-port-squadron-craft-losses-karc"></a>
 ### Port: per-squadron craft losses and persistent squadron ids (root R1)

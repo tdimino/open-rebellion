@@ -51,6 +51,7 @@ pub mod briefing_tour;
 pub mod build_selection;
 pub mod cockpit;
 pub mod control_registry;
+pub mod controls;
 pub mod defenses_window;
 pub mod encyclopedia;
 pub mod encyclopedia_surface;

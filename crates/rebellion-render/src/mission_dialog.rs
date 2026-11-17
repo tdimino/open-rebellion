@@ -17,6 +17,7 @@ use rebellion_windowing::{ExistingEffect, WindowId, WindowKind, WindowTransition
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
+use crate::controls::StrobeButton;
 use crate::list_control::wheel_step;
 use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::sector_window::planet_resource_id;
@@ -526,16 +527,10 @@ fn paint_resource(
     resource_id: u32,
     rect: egui::Rect,
     scale: f32,
-    button: bool,
 ) {
     #[cfg(test)]
     crate::test_support::record_painted(resource_id, rect.min);
-    let texture = if button {
-        cache.get_button(ctx, DllSource::Strategy, resource_id)
-    } else {
-        cache.get(ctx, DllSource::Strategy, resource_id)
-    };
-    if let Some(texture) = texture {
+    if let Some(texture) = cache.get(ctx, DllSource::Strategy, resource_id) {
         painter
             .with_clip_rect(painter.clip_rect().intersect(rect))
             .image(
@@ -547,57 +542,15 @@ fn paint_resource(
     }
 }
 
-macro_rules! paint_resource_fn {
-    ($(#[$meta:meta])* $name:ident, $button:literal) => {
-        $(#[$meta])*
-        pub(crate) fn $name(
-            painter: &egui::Painter,
-            ctx: &egui::Context,
-            cache: &mut BmpCache,
-            resource_id: u32,
-            rect: egui::Rect,
-            scale: f32,
-        ) {
-            paint_resource(painter, ctx, cache, resource_id, rect, scale, $button);
-        }
-    };
-}
-
-paint_resource_fn!(paint, false);
-
-// A CoolStrobeButton's bitmap (`FUN_00602150`), keyed on its first stored
-// pixel as `FUN_00602d30` blits it over the window behind
-// ([`BmpCache::get_button`]), at native size clipped to the control.
-paint_resource_fn!(paint_button, true);
-
-/// A two-state bitmap button (`FUN_00602150`): the second bitmap shows while
-/// it is held or, for a tab, while it is the current page.
-pub(crate) fn button(
-    ui: &egui::Ui,
+pub(crate) fn paint(
+    painter: &egui::Painter,
+    ctx: &egui::Context,
     cache: &mut BmpCache,
+    resource_id: u32,
     rect: egui::Rect,
-    id: impl std::hash::Hash,
-    (normal, pressed): (u32, u32),
-    down: bool,
     scale: f32,
-) -> bool {
-    let response = ui.interact(rect, ui.id().with(id), egui::Sense::click());
-    let (pointer, primary_down) = ui.ctx().input(|input| {
-        (
-            input.pointer.interact_pos(),
-            input.pointer.button_down(egui::PointerButton::Primary),
-        )
-    });
-    let held = primary_down && pointer.is_some_and(|point| rect_contains(rect, point));
-    paint_button(
-        ui.painter(),
-        ui.ctx(),
-        cache,
-        if down || held { pressed } else { normal },
-        rect,
-        scale,
-    );
-    exact_clicked(&response, rect)
+) {
+    paint_resource(painter, ctx, cache, resource_id, rect, scale);
 }
 
 /// The dialog's screen rectangle.
@@ -694,15 +647,19 @@ pub fn draw_mission_dialog(
             );
 
             name("Close", at(242.0, 3.0, 14.0, 14.0));
-            if button(
+            if StrobeButton::show_pair(
                 ui,
                 cache,
                 at(242.0, 3.0, 14.0, 14.0),
                 "close",
+                DllSource::Strategy,
                 CLOSE,
                 false,
+                false,
                 scale,
-            ) {
+            )
+            .clicked()
+            {
                 close = true;
             }
             for (page, x, art) in [
@@ -717,15 +674,19 @@ pub fn draw_mission_dialog(
                     },
                     rect,
                 );
-                if button(
+                if StrobeButton::show_pair(
                     ui,
                     cache,
                     rect,
                     ("tab", x as i32),
+                    DllSource::Strategy,
                     art,
                     dialog.page == page,
+                    false,
                     scale,
-                ) {
+                )
+                .clicked()
+                {
                     dialog.show_page(page);
                 }
             }
@@ -778,15 +739,19 @@ pub fn draw_mission_dialog(
                         );
                     }
                     name("KindDropdown", at(101.0, 174.0, 65.0, 18.0));
-                    if button(
+                    if StrobeButton::show_pair(
                         ui,
                         cache,
                         at(101.0, 174.0, 65.0, 18.0),
                         "missions",
+                        DllSource::Strategy,
                         MISSIONS,
                         false,
+                        false,
                         scale,
-                    ) {
+                    )
+                    .clicked()
+                    {
                         dialog.list_open = !dialog.list_open;
                     }
                 }
@@ -841,26 +806,34 @@ pub fn draw_mission_dialog(
                     }
                     name("ToDecoys", at(120.0, 136.0, 16.0, 16.0));
                     name("ToAgents", at(120.0, 221.0, 16.0, 16.0));
-                    if button(
+                    if StrobeButton::show_pair(
                         ui,
                         cache,
                         at(120.0, 136.0, 16.0, 16.0),
                         "to-decoys",
+                        DllSource::Strategy,
                         TO_DECOYS,
                         false,
+                        false,
                         scale,
-                    ) {
+                    )
+                    .clicked()
+                    {
                         dialog.move_selected(true);
                     }
-                    if button(
+                    if StrobeButton::show_pair(
                         ui,
                         cache,
                         at(120.0, 221.0, 16.0, 16.0),
                         "to-agents",
+                        DllSource::Strategy,
                         TO_AGENTS,
                         false,
+                        false,
                         scale,
-                    ) {
+                    )
+                    .clicked()
+                    {
                         dialog.move_selected(false);
                     }
                 }
@@ -869,37 +842,49 @@ pub fn draw_mission_dialog(
             name("Cancel", at(170.0, 320.0, 64.0, 33.0));
             name("Confirm", at(102.0, 320.0, 64.0, 33.0));
             name("Encyclopedia", at(33.0, 320.0, 64.0, 33.0));
-            if button(
+            if StrobeButton::show_pair(
                 ui,
                 cache,
                 at(170.0, 320.0, 64.0, 33.0),
                 "cancel",
+                DllSource::Strategy,
                 CANCEL,
                 false,
+                false,
                 scale,
-            ) {
+            )
+            .clicked()
+            {
                 close = true;
             }
-            if button(
+            if StrobeButton::show_pair(
                 ui,
                 cache,
                 at(102.0, 320.0, 64.0, 33.0),
                 "begin",
+                DllSource::Strategy,
                 BEGIN,
                 false,
+                false,
                 scale,
-            ) {
+            )
+            .clicked()
+            {
                 begin = true;
             }
-            if button(
+            if StrobeButton::show_pair(
                 ui,
                 cache,
                 at(33.0, 320.0, 64.0, 33.0),
                 "encyclopedia",
+                DllSource::Strategy,
                 ENCYCLOPEDIA,
                 false,
+                false,
                 scale,
-            ) {
+            )
+            .clicked()
+            {
                 action = Some(MissionDialogAction::Encyclopedia);
             }
 

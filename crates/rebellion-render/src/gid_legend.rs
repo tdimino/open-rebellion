@@ -72,8 +72,9 @@ const CLAMP_SIZE: (f32, f32) = (180.0, 240.0);
 const CLOSE_NORMAL: u32 = 10_108;
 const CLOSE_PRESSED: u32 = 10_109;
 
-/// hyp: the darkening table built from `LAB_004ac550` is untraced; this
-/// tint matches captures of the original (2026-10-08 parity QA).
+/// port: `LAB_004ac550` maps each palette channel to `channel / 6 + 50`,
+/// then `FUN_005fddd0` chooses the nearest original-palette entry. This flat
+/// tint is the known approximation tracked by `or-port-gid-palette-darkening-ms1p`.
 const DARKEN: egui::Color32 = egui::Color32::from_rgba_premultiplied(20, 20, 20, 205);
 
 /// The legend `FUN_004522f0` builds for `mode`, by the player's side for

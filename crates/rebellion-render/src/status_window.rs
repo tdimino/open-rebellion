@@ -19,10 +19,11 @@ use rebellion_windowing::{
     WindowSpec, WindowTransition,
 };
 
-use crate::bmp_cache::BmpCache;
+use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::StrobeButton;
 use crate::fleet_window::paint_native;
-use crate::mission_dialog::{button, galaxy_centered_rect, paint};
+use crate::mission_dialog::{galaxy_centered_rect, paint};
 use crate::singleton_window_common::{self, impl_singleton_window_routing};
 use crate::status_rows::{status_view, StatusObject, StatusSources};
 use crate::system_window::fleet_label;
@@ -665,15 +666,18 @@ fn draw_status_window_surface(
             }
 
             if input_enabled
-                && button(
+                && StrobeButton::show_pair(
                     ui,
                     cache,
                     at(ENCYCLOPEDIA_RECT),
                     "status-encyclopedia",
+                    DllSource::Strategy,
                     ENCYCLOPEDIA,
+                    false,
                     false,
                     scale,
                 )
+                .clicked()
             {
                 action = Some(StatusWindowAction::Encyclopedia);
             }
@@ -692,15 +696,18 @@ fn draw_status_window_surface(
         }
 
         if input_enabled
-            && button(
+            && StrobeButton::show_pair(
                 ui,
                 cache,
                 at(CLOSE_RECT),
                 "status-close",
+                DllSource::Strategy,
                 CLOSE,
+                false,
                 false,
                 scale,
             )
+            .clicked()
         {
             action = Some(StatusWindowAction::Close);
         }
@@ -1800,6 +1807,27 @@ mod tests {
             assert_eq!(click(&world, &mut state, point), Some(expected));
             assert!(!state.is_open());
         }
+    }
+
+    #[test]
+    fn the_close_button_accepts_a_press_and_release_delivered_in_one_input_batch() {
+        // Browser fixture automation can deliver the native down/up pair in
+        // one admitted frame; FUN_006028c0 consumes both messages in order.
+        let (world, key, ..) = world_with_luke();
+        let point = (CLOSE_RECT.0 + 16.0, CLOSE_RECT.1 + 15.0);
+        let pos = window_rect(layout()).min + egui::vec2(point.0, point.1);
+        let mut state = StatusWindowState::default();
+        state.open_character(key);
+        assert_eq!(
+            drive(
+                &world,
+                &mut state,
+                point,
+                vec![vec![press(pos, true), press(pos, false)]],
+            ),
+            Some(StatusWindowAction::Close)
+        );
+        assert!(!state.is_open());
     }
 
     #[test]

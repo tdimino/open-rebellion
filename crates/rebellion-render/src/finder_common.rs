@@ -13,12 +13,13 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::StrobeButton;
 use crate::fleet_window::paint_native;
 use crate::list_control::{
     longest_prefix_match, max_first_row, move_selection, reveal_row, row_click, selected_row,
     visible_range, wheel_delta, wheel_step, ListMove, RowClick,
 };
-use crate::mission_dialog::{button, galaxy_centered_rect};
+use crate::mission_dialog::galaxy_centered_rect;
 use crate::native_geometry::{logical_rect, rect_contains};
 use crate::singleton_window_common;
 
@@ -185,7 +186,7 @@ impl FinderCanvas<'_> {
         fonts
     }
 
-    pub(crate) fn button(
+    pub(crate) fn strobe_button(
         &self,
         ui: &egui::Ui,
         cache: &mut BmpCache,
@@ -193,15 +194,18 @@ impl FinderCanvas<'_> {
         id: impl std::hash::Hash,
         down: bool,
     ) -> bool {
-        button(
+        StrobeButton::show_pair(
             ui,
             cache,
             at(self.frame, self.scale, control.rect),
             id,
+            DllSource::Strategy,
             control.art,
             down,
+            false,
             self.scale,
         )
+        .clicked()
     }
 }
 
@@ -585,7 +589,7 @@ where
                 .body;
 
             for (index, candidate) in config.tabs.iter().copied().enumerate() {
-                if canvas.button(
+                if canvas.strobe_button(
                     ui,
                     cache,
                     config.tab_controls[index],
@@ -596,7 +600,7 @@ where
                 }
             }
             extra_controls(ui, canvas, cache);
-            if canvas.button(
+            if canvas.strobe_button(
                 ui,
                 cache,
                 config.controls.0,
@@ -605,7 +609,7 @@ where
             ) {
                 close = true;
             }
-            if canvas.button(
+            if canvas.strobe_button(
                 ui,
                 cache,
                 config.controls.1,
