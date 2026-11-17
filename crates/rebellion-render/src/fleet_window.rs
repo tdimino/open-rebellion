@@ -30,7 +30,9 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::controls::{ButtonArt, ButtonImage, StrobeButton};
+use crate::controls::{
+    ButtonArt, ButtonImage, TabControl, TabControlState, TabPresentation, TabSpec,
+};
 use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::object_menu::MenuObject;
 use crate::panels::fleets::{capital_ship_mini_id, fighter_mini_id};
@@ -2822,7 +2824,7 @@ fn draw_fleet_window(
             // The strip: the player's base for its own side, the other
             // base otherwise.
             let base = side_art(TAB_BASE, if side == viewer { viewer } else { other });
-            for tab in FleetWindowTab::ALL {
+            let tab_specs = FleetWindowTab::ALL.map(|tab| {
                 let enabled = tab_enabled(world, transport, selected, tab);
                 let rect = tab_rect(local, scale, tab);
                 let normal =
@@ -2834,22 +2836,23 @@ fn draw_fleet_window(
                 let art = ButtonArt::new(normal)
                     .with_selected(selected)
                     .with_disabled(disabled);
-                if StrobeButton::show(
-                    ui,
-                    cache,
-                    rect,
-                    (window.system, tab),
-                    art,
-                    tab == window.tab,
-                    !enabled,
-                    None,
-                    scale,
-                )
-                .clicked()
-                {
-                    result.tab = Some(tab);
-                    result.focus = true;
-                }
+                TabSpec::new(tab, ControlId(u64::from(tab.control_id())), rect, art)
+                    .with_presentation(if enabled {
+                        TabPresentation::Enabled
+                    } else {
+                        TabPresentation::Disabled
+                    })
+            });
+            if let Some(tab) = TabControl::paint_and_select(
+                &tab_specs,
+                TabControlState::new(window.tab, ControlId(u64::from(window.tab.control_id()))),
+                ui,
+                cache,
+                (window.system, "fleet-tabs"),
+                scale,
+            ) {
+                result.tab = Some(tab);
+                result.focus = true;
             }
 
             let right = logical_rect(

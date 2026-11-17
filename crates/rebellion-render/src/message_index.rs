@@ -11,7 +11,9 @@ use egui_macroquad::egui::{self, Color32};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::controls::{ButtonArt, ButtonDraw, ButtonImage, StrobeButton};
+use crate::controls::{
+    ButtonArt, ButtonDraw, ButtonImage, StrobeButton, TabControl, TabControlState, TabSpec,
+};
 use crate::list_control::{
     clamp_first_row, row_click, visible_row_capacity, wheel_delta, wheel_step, RowClick,
 };
@@ -20,8 +22,8 @@ use crate::message_log::{
 };
 use crate::scroll_bar::{ScrollBar, ScrollDrag, ScrollRange, TEXT_BAR_299D};
 use rebellion_windowing::{
-    ContentReport, ExistingEffect, RoutingSnapshot, WindowId, WindowKind, WindowOwner, WindowSpec,
-    WindowTransition,
+    ContentReport, ControlId, ExistingEffect, RoutingSnapshot, WindowId, WindowKind, WindowOwner,
+    WindowSpec, WindowTransition,
 };
 
 // ---------------------------------------------------------------------------
@@ -501,6 +503,7 @@ pub fn draw_message_index_shell(
     origin: egui::Pos2,
     scale: f32,
     categories: bool,
+    selected_category: u16,
 ) -> Option<u16> {
     if scale <= 0.0 {
         return None;
@@ -530,39 +533,46 @@ pub fn draw_message_index_shell(
             } else {
                 Vec::new()
             };
-            for control in controls {
-                let rect = message_index_rect(
-                    window_rect,
-                    scale,
-                    INDEX_CONTROLS_X + f32::from(control.x),
-                    INDEX_CONTROLS_Y,
-                    f32::from(control.width),
-                    41.0,
-                );
-                crate::control_registry::register_screen(
-                    "MessageIndex",
-                    category_name(control.command_id),
-                    rect,
-                );
-                if StrobeButton::show(
+            let tab_specs = controls
+                .into_iter()
+                .map(|control| {
+                    let rect = message_index_rect(
+                        window_rect,
+                        scale,
+                        INDEX_CONTROLS_X + f32::from(control.x),
+                        INDEX_CONTROLS_Y,
+                        f32::from(control.width),
+                        41.0,
+                    );
+                    crate::control_registry::register_screen(
+                        "MessageIndex",
+                        category_name(control.command_id),
+                        rect,
+                    );
+                    TabSpec::new(
+                        control.command_id,
+                        ControlId(u64::from(control.command_id)),
+                        rect,
+                        ButtonArt::two_state(
+                            DllSource::Strategy,
+                            control.normal_resource,
+                            control.pressed_resource,
+                        )
+                        .with_draw(ButtonDraw::Direct),
+                    )
+                })
+                .collect::<Vec<_>>();
+            if categories {
+                let focused = ControlId(u64::from(selected_category));
+                if let Some(category) = TabControl::paint_and_select(
+                    &tab_specs,
+                    TabControlState::new(selected_category, focused),
                     ui,
                     cache,
-                    rect,
-                    ("message-index-category", control.command_id),
-                    ButtonArt::two_state(
-                        DllSource::Strategy,
-                        control.normal_resource,
-                        control.pressed_resource,
-                    )
-                    .with_draw(ButtonDraw::Direct),
-                    false,
-                    false,
-                    None,
+                    "message-index-category-tabs",
                     scale,
-                )
-                .clicked()
-                {
-                    selected = Some(control.command_id);
+                ) {
+                    selected = Some(category);
                 }
             }
         });
@@ -1313,6 +1323,7 @@ pub fn draw_message_index(
         origin,
         scale,
         state.mode == IndexMode::List,
+        state.category,
     ) {
         actions.extend(state.set_category(command));
     }
@@ -1859,7 +1870,7 @@ pub fn draw_message_index_fixture(
     cache: &mut BmpCache,
     faction: CockpitFaction,
 ) {
-    let _ = draw_message_index_shell(ctx, cache, faction, egui::pos2(85.0, 55.0), 1.0, true);
+    let _ = draw_message_index_shell(ctx, cache, faction, egui::pos2(85.0, 55.0), 1.0, true, 0x79);
 }
 
 // ---------------------------------------------------------------------------
@@ -2255,6 +2266,7 @@ mod tests {
                         egui::pos2(85.0, 55.0),
                         1.0,
                         true,
+                        0x79,
                     );
                 });
             }

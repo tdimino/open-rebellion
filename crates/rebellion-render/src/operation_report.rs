@@ -19,10 +19,14 @@ use rebellion_core::ids::SystemKey;
 use rebellion_core::movement::MovementState;
 use rebellion_core::operation_report::{OperationReport, ReportObject, ReportUnit};
 use rebellion_core::world::GameWorld;
+use rebellion_windowing::ControlId;
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::controls::{ButtonArt, ButtonImage, StrobeButton};
+use crate::controls::{
+    ButtonArt, ButtonImage, StrobeButton, TabControl, TabControlState, TabDirection, TabSpec,
+    TabTraversal,
+};
 use crate::fleet_window::{mini_layers, paint_native, portrait_layers, MiniObject};
 use crate::list_control::wheel_step;
 use crate::message_log::{GameMessage, MessageId};
@@ -144,6 +148,10 @@ impl ReportView {
         Self::Display,
     ];
 
+    const fn control_id(self) -> ControlId {
+        ControlId(self.command() as u64)
+    }
+
     /// The button's command id.
     #[must_use]
     pub const fn command(self) -> u16 {
@@ -236,6 +244,10 @@ impl ReportTab {
         Self::TrooperRegiments,
         Self::Personnel,
     ];
+
+    const fn control_id(self) -> ControlId {
+        ControlId(self.command() as u64)
+    }
 
     /// The tab's command id.
     #[must_use]
@@ -349,19 +361,6 @@ impl ReportTab {
             Self::Personnel => LAYER_THREE_COLUMN,
             _ => LAYER_TWO_COLUMN,
         }
-    }
-
-    /// Left (`0x25`) and Right (`0x27`) step to the neighbouring tab
-    /// (`FUN_0044e180`); Right past the last, or Left at the first, takes
-    /// the group's first (`FUN_005f5060`).
-    fn stepped(self, right: bool) -> Self {
-        let index = self.index();
-        let next = if right {
-            index + 1
-        } else {
-            index.wrapping_sub(1)
-        };
-        Self::ALL.get(next).copied().unwrap_or(Self::CapitalShips)
     }
 }
 
@@ -1007,46 +1006,52 @@ fn draw_at(
             // The rail's radio (group 100).
             let (rail_x, rail_y) = RAIL_ORIGIN[side_idx];
             let (button_w, button_h) = RAIL_BUTTON[side_idx];
-            for view in ReportView::ALL {
+            let rail_specs = ReportView::ALL.map(|view| {
                 let view_rect = at((rail_x, rail_y + view.y(side_idx), button_w, button_h));
                 name(view.control(), view_rect);
-                if StrobeButton::show_pair(
-                    ui,
-                    cache,
+                TabSpec::two_state(
+                    view,
+                    view.control_id(),
                     view_rect,
-                    ("report-view", view.index()),
                     DllSource::Strategy,
-                    view.art(side_idx, report),
-                    view == window.view,
-                    false,
-                    scale,
+                    view.art(side_idx, report).0,
+                    view.art(side_idx, report).1,
                 )
-                .clicked()
-                {
-                    new_view = Some(view);
-                }
+            });
+            if let Some(view) = TabControl::paint_and_select(
+                &rail_specs,
+                TabControlState::new(window.view, window.view.control_id()),
+                ui,
+                cache,
+                "operation-report-view-tabs",
+                scale,
+            ) {
+                new_view = Some(view);
             }
 
             if window.view.lists() {
                 // The tabs (group 0x96), shown only over a list.
-                for tab in ReportTab::ALL {
+                let tab_specs = ReportTab::ALL.map(|tab| {
                     let tab_rect = at((TABS_AT.0 + tab.x(), TABS_AT.1, TAB_SIZE.0, TAB_SIZE.1));
                     name(tab.control(), tab_rect);
-                    if StrobeButton::show_pair(
-                        ui,
-                        cache,
+                    TabSpec::two_state(
+                        tab,
+                        tab.control_id(),
                         tab_rect,
-                        ("report-tab", tab.index()),
                         DllSource::Strategy,
-                        tab.art(side_idx),
-                        tab == window.tab,
-                        false,
-                        scale,
+                        tab.art(side_idx).0,
+                        tab.art(side_idx).1,
                     )
-                    .clicked()
-                    {
-                        new_tab = Some(tab);
-                    }
+                });
+                if let Some(tab) = TabControl::paint_and_select(
+                    &tab_specs,
+                    TabControlState::new(window.tab, window.tab.control_id()),
+                    ui,
+                    cache,
+                    "operation-report-force-tabs",
+                    scale,
+                ) {
+                    new_tab = Some(tab);
                 }
 
                 // The list: rows of cells, each the object's picture
@@ -1223,7 +1228,24 @@ fn draw_at(
         });
     }
     if window.view.lists() && new_tab.is_none() && (left || right) {
-        new_tab = Some(window.tab.stepped(right));
+        let tab_specs = ReportTab::ALL.map(|tab| {
+            TabSpec::new(
+                tab,
+                tab.control_id(),
+                egui::Rect::NOTHING,
+                ButtonArt::new(ButtonImage::new(DllSource::Strategy, 0)),
+            )
+        });
+        new_tab = TabControl::step_selection(
+            &tab_specs,
+            TabControlState::new(window.tab, window.tab.control_id()),
+            if right {
+                TabDirection::Right
+            } else {
+                TabDirection::Left
+            },
+            TabTraversal::ResetToFirst,
+        );
     }
     if let Some(open) = state.window.as_mut() {
         open.first_row = first_row;
@@ -2135,15 +2157,6 @@ mod tests {
     fn left_and_right_step_the_tabs_over_a_list_and_wrap_to_the_first() {
         // FUN_0044e180 keys 0x25 / 0x27: the neighbouring visible tab;
         // Right past the last and Left at the first select the first.
-        assert_eq!(ReportTab::Personnel.stepped(true), ReportTab::CapitalShips);
-        assert_eq!(
-            ReportTab::CapitalShips.stepped(false),
-            ReportTab::CapitalShips
-        );
-        assert_eq!(
-            ReportTab::Manufacturing.stepped(false),
-            ReportTab::FighterSquadrons
-        );
         for (side, (faction, owner)) in SIDES.into_iter().enumerate() {
             let mut state = opened(faction, owner);
             run(&mut state, key(egui::Key::ArrowRight));
@@ -2157,6 +2170,20 @@ mod tests {
                 state.view(),
                 Some((ReportView::SystemForces, ReportTab::FighterSquadrons)),
                 "{faction:?}"
+            );
+            for _ in 0..5 {
+                run(&mut state, key(egui::Key::ArrowRight));
+            }
+            assert_eq!(
+                state.view(),
+                Some((ReportView::SystemForces, ReportTab::CapitalShips)),
+                "{faction:?} right boundary"
+            );
+            run(&mut state, key(egui::Key::ArrowLeft));
+            assert_eq!(
+                state.view(),
+                Some((ReportView::SystemForces, ReportTab::CapitalShips)),
+                "{faction:?} left boundary"
             );
         }
     }

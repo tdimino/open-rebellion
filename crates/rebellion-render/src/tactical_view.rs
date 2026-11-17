@@ -40,7 +40,10 @@ use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
-use crate::controls::{ButtonArt, ButtonImage, ButtonState, StrobeButton};
+use crate::controls::{
+    ButtonArt, ButtonImage, ButtonState, StrobeButton, TabControl, TabControlState, TabDirection,
+    TabSpec, TabTraversal,
+};
 use crate::native_geometry::NativeRect;
 use crate::operation_report::{cell_picture, report_grid_cells, ReportTab};
 use crate::scroll_bar::{ScrollBar, ScrollPointer, ScrollRange, LIST_BAR_29FC, TEXT_BAR_299D};
@@ -54,6 +57,7 @@ use crate::tactical_assets::{
 use rebellion_core::battle_summary::{BattleRecord, BattleSummarySide, SummaryEntry};
 use rebellion_core::tactical::resource_ids::TacticalCapitalShipResource;
 pub use rebellion_core::tactical::*;
+use rebellion_windowing::ControlId;
 
 /// `_DAT_0066d260` (double): the station decal is half the battle extent square.
 const ORIGINAL_STATION_DECAL_SIZE_SCALE: f32 = 0.5;
@@ -229,6 +233,15 @@ impl BattleAlertTab {
         Self::ImperialForces,
         Self::System,
     ];
+
+    const fn control_id(self) -> ControlId {
+        ControlId(match self {
+            Self::Summary => 0x65,
+            Self::AllianceForces => 0x66,
+            Self::ImperialForces => 0x67,
+            Self::System => 0x68,
+        })
+    }
 
     const fn label(self) -> &'static str {
         match self {
@@ -5818,6 +5831,13 @@ fn battle_result_skin(player_is_alliance: bool) -> BattleResultSkin {
 }
 
 impl BattleResultTab {
+    const ALL: [Self; 4] = [
+        Self::Summary,
+        Self::AllianceForces,
+        Self::ImperialForces,
+        Self::GoDirectlyTo,
+    ];
+
     const fn index(self) -> usize {
         match self {
             Self::Summary => 0,
@@ -5844,6 +5864,90 @@ impl BattleResultTab {
             Self::GoDirectlyTo => "go_directly_to",
         }
     }
+
+    const fn control_id(self) -> ControlId {
+        ControlId(0x65 + self.index() as u64)
+    }
+}
+
+fn native_tab_rect(rect: NativeRect) -> egui_macroquad::egui::Rect {
+    egui_macroquad::egui::Rect::from_min_size(
+        egui_macroquad::egui::pos2(rect.x, rect.y),
+        egui_macroquad::egui::vec2(rect.width, rect.height),
+    )
+}
+
+fn native_tab_specs<T: Copy, const N: usize>(
+    values: [T; N],
+    control_ids: [ControlId; N],
+    rects: [NativeRect; N],
+    art: [[u32; 2]; N],
+) -> [TabSpec<T>; N] {
+    std::array::from_fn(|index| {
+        TabSpec::two_state(
+            values[index],
+            control_ids[index],
+            native_tab_rect(rects[index]),
+            DllSource::Strategy,
+            art[index][0],
+            art[index][1],
+        )
+    })
+}
+
+fn battle_alert_tab_specs(skin: BattleAlertSkin) -> [TabSpec<BattleAlertTab>; 4] {
+    native_tab_specs(
+        BattleAlertTab::ALL,
+        BattleAlertTab::ALL.map(BattleAlertTab::control_id),
+        skin.tab_rects,
+        skin.tabs,
+    )
+}
+
+fn battle_result_tab_specs(skin: BattleResultSkin) -> [TabSpec<BattleResultTab>; 4] {
+    native_tab_specs(
+        BattleResultTab::ALL,
+        BattleResultTab::ALL.map(BattleResultTab::control_id),
+        skin.tab_rects,
+        skin.tabs,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The original tactical renderer supplies registration, geometry and pointer state separately."
+)]
+fn draw_original_tab_child<T: Copy + PartialEq>(
+    cache: &mut BmpCache,
+    canvas: TacticalCanvas,
+    tabs: &TabControl<'_, T>,
+    value: T,
+    group: &'static str,
+    label: &'static str,
+    rect: NativeRect,
+    origin: (f32, f32),
+    local_mouse: (f32, f32),
+    mouse_down: bool,
+) {
+    crate::control_registry::register_logical(
+        group,
+        label,
+        origin.0 + rect.x,
+        origin.1 + rect.y,
+        rect.width,
+        rect.height,
+    );
+    let hovered = rect.contains(local_mouse.0, local_mouse.1);
+    draw_strategy_button(
+        cache,
+        tabs.button(value, mouse_down && hovered)
+            .expect("every painted tactical tab has a tab spec")
+            .image()
+            .resource_id,
+        canvas,
+        origin.0 + rect.x,
+        origin.1 + rect.y,
+    );
 }
 
 fn player_is_alliance(session: &BattleSession) -> bool {
@@ -6254,29 +6358,33 @@ fn battle_summary_cells(summary: &BattleSummarySide, filter: ReportTab) -> Vec<S
     })
 }
 
-/// Left and Right step to the neighbouring filter; Right past the last, or
-/// Left at the first, takes the group's first (`FUN_004710f0`).
-fn stepped_battle_summary_filter(filter: ReportTab, right: bool) -> ReportTab {
-    let index = BATTLE_SUMMARY_FILTERS
-        .iter()
-        .position(|&tab| tab == filter)
-        .unwrap_or(0);
-    let next = if right {
-        index + 1
-    } else {
-        index.wrapping_sub(1)
-    };
-    BATTLE_SUMMARY_FILTERS
-        .get(next)
-        .copied()
-        .unwrap_or(BATTLE_SUMMARY_FILTERS[0])
-}
-
 /// The baseline of text in the game's font `entry` whose cell top GDI
 /// places at `top`, and the font's em (`FUN_0060eed0`).
 fn result_cell_text(top: f32, entry: u8) -> (f32, f32) {
     let em = crate::theme::game_font_size(entry);
     (top + em * ARIAL_ASCENT, em)
+}
+
+fn battle_summary_filter_specs(side: usize) -> [TabSpec<ReportTab>; 4] {
+    let (tab_w, tab_h) = BATTLE_SUMMARY_FILTER_SIZE[side];
+    std::array::from_fn(|index| {
+        let tab = BATTLE_SUMMARY_FILTERS[index];
+        let rect = NativeRect::new(
+            BATTLE_SUMMARY_FILTERS_AT.0 + BATTLE_SUMMARY_FILTER_X[index],
+            BATTLE_SUMMARY_FILTERS_AT.1,
+            tab_w,
+            tab_h,
+        );
+        let (normal, pressed) = tab.art(side);
+        TabSpec::two_state(
+            tab,
+            ControlId(u64::from(tab.command())),
+            native_tab_rect(rect),
+            DllSource::Strategy,
+            normal,
+            pressed,
+        )
+    })
 }
 
 /// A side's forces (rail `0x70` Alliance Forces, `0x71` Imperial Forces):
@@ -6382,7 +6490,9 @@ fn draw_battle_result_forces(
     let mouse_down = is_mouse_button_down(MouseButton::Left);
     let mouse_released = is_mouse_button_released(MouseButton::Left);
     let (tab_w, tab_h) = BATTLE_SUMMARY_FILTER_SIZE[side];
-    let mut chosen = None;
+    let tab_specs = battle_summary_filter_specs(side);
+    let mut tab_state = TabControlState::new(*filter, ControlId(u64::from(filter.command())));
+    let mut tabs = TabControl::new(&tab_specs, &mut tab_state);
     for (index, tab) in BATTLE_SUMMARY_FILTERS.into_iter().enumerate() {
         let rect = NativeRect::new(
             BATTLE_SUMMARY_FILTERS_AT.0 + BATTLE_SUMMARY_FILTER_X[index],
@@ -6399,19 +6509,14 @@ fn draw_battle_result_forces(
             rect.height,
         );
         let hovered = rect.contains(local.0, local.1);
-        let (normal, pressed) = tab.art(side);
         // A button is a child window and paints inside its own rect: the
         // Personnel art is 0x31 or 0x32 by 0x39, its lower rows and the
         // Empire art's right edge fall outside the button.
-        let art = strobe_resource(
-            DllSource::Strategy,
-            normal,
-            pressed,
-            None,
-            *filter == tab,
-            false,
-            mouse_down && hovered,
-        );
+        let art = tabs
+            .button(tab, mouse_down && hovered)
+            .expect("every Battle Summary filter has a tab spec")
+            .image()
+            .resource_id;
         let (art_w, art_h) = cache
             .original_resource_size(DllSource::Strategy, art)
             .map_or((tab_w, tab_h), |[w, h]| (w as f32, h as f32));
@@ -6425,10 +6530,13 @@ fn draw_battle_result_forces(
             window_y + rect.y,
             Some(Rect::new(0.0, 0.0, art_w.min(tab_w), art_h.min(tab_h))),
         );
-        if mouse_released && hovered {
-            chosen = Some(tab);
-        }
     }
+    let mut chosen = mouse_released
+        .then(|| {
+            tabs.select_at(egui_macroquad::egui::pos2(local.0, local.1))
+                .map(crate::controls::TabControlOutput::selected)
+        })
+        .flatten();
 
     // The list: rows of cells, each the object's picture centred with its
     // name under it in font 10, white (`FUN_004724a0`, `FUN_00609950`).
@@ -6549,13 +6657,18 @@ fn draw_battle_result_forces(
     // FUN_004710f0: Left and Right step the filters.
     if chosen.is_none() {
         if is_key_pressed(KeyCode::Right) {
-            chosen = Some(stepped_battle_summary_filter(*filter, true));
+            chosen = tabs
+                .traverse(TabDirection::Right, TabTraversal::ResetToFirst)
+                .map(crate::controls::TabControlOutput::selected);
         } else if is_key_pressed(KeyCode::Left) {
-            chosen = Some(stepped_battle_summary_filter(*filter, false));
+            chosen = tabs
+                .traverse(TabDirection::Left, TabTraversal::ResetToFirst)
+                .map(crate::controls::TabControlOutput::selected);
         }
     }
-    // FUN_004714e0(tab, 0): a new filter refills the list from its top.
-    if let Some(tab) = chosen.filter(|&tab| tab != *filter) {
+    // FUN_004714e0(tab, 0): every child command refills the list from its
+    // top, including a command from the already-selected child.
+    if let Some(tab) = chosen {
         *filter = tab;
         *scroll = 0;
         *drag = crate::scroll_bar::ScrollDrag::default();
@@ -7188,6 +7301,7 @@ fn apply_battle_alert_scroll_input(
 
 fn battle_alert_control_at(
     skin: BattleAlertSkin,
+    selected: BattleAlertTab,
     retreat_enabled: bool,
     point: (f32, f32),
 ) -> Option<BattleAlertControl> {
@@ -7195,10 +7309,13 @@ fn battle_alert_control_at(
         point.0 - BATTLE_ALERT_WINDOW_X,
         point.1 - BATTLE_ALERT_WINDOW_Y,
     );
-    for (index, tab) in BattleAlertTab::ALL.into_iter().enumerate() {
-        if skin.tab_rects[index].contains(local.0, local.1) {
-            return Some(BattleAlertControl::Tab(tab));
-        }
+    let specs = battle_alert_tab_specs(skin);
+    if let Some(tab) = TabControl::select_point(
+        &specs,
+        TabControlState::new(selected, selected.control_id()),
+        egui_macroquad::egui::pos2(local.0, local.1),
+    ) {
+        return Some(BattleAlertControl::Tab(tab));
     }
     let buttons = [
         (
@@ -7232,9 +7349,9 @@ fn apply_battle_alert_input(
         .as_ref()
         .is_some_and(battle_alert_retreat_enabled);
     for event in tactical_logical_pointer_events(canvas, input) {
-        let hovered = event
-            .point()
-            .and_then(|point| battle_alert_control_at(skin, retreat_enabled, point));
+        let hovered = event.point().and_then(|point| {
+            battle_alert_control_at(skin, state.battle_alert_tab, retreat_enabled, point)
+        });
         let Some(control) =
             captured_tactical_window_control(&mut state.battle_alert_pressed, event, hovered)
         else {
@@ -7356,32 +7473,23 @@ fn draw_original_battle_alert(
     );
     let mouse_down = input.primary_down;
 
+    let tab_specs = battle_alert_tab_specs(skin);
+    let mut tab_state =
+        TabControlState::new(state.battle_alert_tab, state.battle_alert_tab.control_id());
+    let tabs = TabControl::new(&tab_specs, &mut tab_state);
     for (index, tab) in BattleAlertTab::ALL.into_iter().enumerate() {
         let rect = skin.tab_rects[index];
-        crate::control_registry::register_logical(
+        draw_original_tab_child(
+            cache,
+            canvas,
+            &tabs,
+            tab,
             "BattleAlert",
             tab.label(),
-            BATTLE_ALERT_WINDOW_X + rect.x,
-            BATTLE_ALERT_WINDOW_Y + rect.y,
-            rect.width,
-            rect.height,
-        );
-        let active = state.battle_alert_tab == tab
-            || (mouse_down && rect.contains(local_mouse.0, local_mouse.1));
-        draw_strategy_button(
-            cache,
-            strobe_resource(
-                DllSource::Strategy,
-                skin.tabs[index][0],
-                skin.tabs[index][1],
-                None,
-                state.battle_alert_tab == tab,
-                false,
-                active && state.battle_alert_tab != tab,
-            ),
-            canvas,
-            BATTLE_ALERT_WINDOW_X + rect.x,
-            BATTLE_ALERT_WINDOW_Y + rect.y,
+            rect,
+            (BATTLE_ALERT_WINDOW_X, BATTLE_ALERT_WINDOW_Y),
+            local_mouse,
+            mouse_down,
         );
     }
 
@@ -7458,10 +7566,16 @@ fn battle_result_control_at(
     if skin.close_rect.contains(local.0, local.1) {
         return Some(BattleResultControl::Close);
     }
-    for (index, rect) in skin.tab_rects.into_iter().enumerate() {
-        if rect.contains(local.0, local.1) {
-            return Some(BattleResultControl::Tab(BattleResultTab::from_index(index)));
-        }
+    let specs = battle_result_tab_specs(skin);
+    if let Some(tab) = TabControl::select_point(
+        &specs,
+        TabControlState::new(
+            state.battle_result_tab,
+            state.battle_result_tab.control_id(),
+        ),
+        egui_macroquad::egui::pos2(local.0, local.1),
+    ) {
+        return Some(BattleResultControl::Tab(tab));
     }
     if state.battle_result_tab == BattleResultTab::GoDirectlyTo {
         let system = NativeRect::new(
@@ -7646,35 +7760,29 @@ fn draw_original_battle_results(
         BATTLE_RESULTS_WINDOW_X + skin.close_rect.x,
         BATTLE_RESULTS_WINDOW_Y + skin.close_rect.y,
     );
+    let tab_specs = battle_result_tab_specs(skin);
+    let mut tab_state = TabControlState::new(
+        state.battle_result_tab,
+        state.battle_result_tab.control_id(),
+    );
+    let tabs = TabControl::new(&tab_specs, &mut tab_state);
+    let local_mouse = (
+        mouse.0 - BATTLE_RESULTS_WINDOW_X,
+        mouse.1 - BATTLE_RESULTS_WINDOW_Y,
+    );
     for (index, rect) in skin.tab_rects.into_iter().enumerate() {
-        let local_mouse = (
-            mouse.0 - BATTLE_RESULTS_WINDOW_X,
-            mouse.1 - BATTLE_RESULTS_WINDOW_Y,
-        );
-        crate::control_registry::register_logical(
-            "Results",
-            BattleResultTab::from_index(index).label(),
-            BATTLE_RESULTS_WINDOW_X + rect.x,
-            BATTLE_RESULTS_WINDOW_Y + rect.y,
-            rect.width,
-            rect.height,
-        );
-        let selected = state.battle_result_tab.index() == index;
-        let active = selected || (mouse_down && rect.contains(local_mouse.0, local_mouse.1));
-        draw_strategy_button(
+        let tab = BattleResultTab::from_index(index);
+        draw_original_tab_child(
             cache,
-            strobe_resource(
-                DllSource::Strategy,
-                skin.tabs[index][0],
-                skin.tabs[index][1],
-                None,
-                selected,
-                false,
-                active && !selected,
-            ),
             canvas,
-            BATTLE_RESULTS_WINDOW_X + rect.x,
-            BATTLE_RESULTS_WINDOW_Y + rect.y,
+            &tabs,
+            tab,
+            "Results",
+            tab.label(),
+            rect,
+            (BATTLE_RESULTS_WINDOW_X, BATTLE_RESULTS_WINDOW_Y),
+            local_mouse,
+            mouse_down,
         );
     }
     apply_battle_result_input(state, skin, canvas, input)
@@ -9487,27 +9595,25 @@ mod tests {
         // FUN_004710f0: 0x25 takes the previous visible tab, 0x27 the next;
         // with none, the group's first (FUN_005f5060).
         use ReportTab::{CapitalShips, FighterSquadrons, Personnel, TrooperRegiments};
+        let step = |selected: ReportTab, direction: TabDirection| {
+            let specs = battle_summary_filter_specs(0);
+            TabControl::step_selection(
+                &specs,
+                TabControlState::new(selected, ControlId(u64::from(selected.command()))),
+                direction,
+                TabTraversal::ResetToFirst,
+            )
+            .unwrap()
+        };
+        assert_eq!(step(CapitalShips, TabDirection::Right), FighterSquadrons);
         assert_eq!(
-            stepped_battle_summary_filter(CapitalShips, true),
-            FighterSquadrons
-        );
-        assert_eq!(
-            stepped_battle_summary_filter(FighterSquadrons, true),
+            step(FighterSquadrons, TabDirection::Right),
             TrooperRegiments
         );
-        assert_eq!(
-            stepped_battle_summary_filter(TrooperRegiments, true),
-            Personnel
-        );
-        assert_eq!(stepped_battle_summary_filter(Personnel, true), CapitalShips);
-        assert_eq!(
-            stepped_battle_summary_filter(Personnel, false),
-            TrooperRegiments
-        );
-        assert_eq!(
-            stepped_battle_summary_filter(CapitalShips, false),
-            CapitalShips
-        );
+        assert_eq!(step(TrooperRegiments, TabDirection::Right), Personnel);
+        assert_eq!(step(Personnel, TabDirection::Right), CapitalShips);
+        assert_eq!(step(Personnel, TabDirection::Left), TrooperRegiments);
+        assert_eq!(step(CapitalShips, TabDirection::Left), CapitalShips);
     }
 
     #[test]

@@ -11,7 +11,7 @@
 //! minimized into the faction-specific 12-slot rail and restored without
 //! creating duplicates.
 
-use crate::controls::StrobeButton;
+use crate::controls::{TabControl, TabControlState, TabPresentation, TabSpec};
 use crate::fleet_window::control_side;
 use crate::manufacturing_window::{
     band, band_strip, contents_visible, item_frame, page_cells, yard_count, yard_page,
@@ -167,6 +167,17 @@ impl SystemWindowTab {
         Self::Refineries,
         Self::Mines,
     ];
+
+    const fn control_id(self) -> rebellion_windowing::ControlId {
+        rebellion_windowing::ControlId(match self {
+            Self::Overview => 0x67,
+            Self::Shipyards => 0x68,
+            Self::TrainingFacilities => 0x69,
+            Self::ConstructionYards => 0x6a,
+            Self::Refineries => 0x6b,
+            Self::Mines => 0x6c,
+        })
+    }
 
     /// The button's x in the strip.
     #[must_use]
@@ -1617,30 +1628,39 @@ fn draw_system_window(
 
         // The tabs. port: an empty page's tab still opens it, as the
         // Defenses window's do; its help message is not shown.
-        for (tab, cells) in SystemWindowTab::ALL.into_iter().zip(&pages) {
+        let tab_specs = SystemWindowTab::ALL.map(|tab| {
             let rect = tab_rect(local, scale, tab);
+            let cells = &pages[SystemWindowTab::ALL
+                .iter()
+                .position(|candidate| *candidate == tab)
+                .unwrap_or_default()];
             let empty = cells
                 .as_deref()
                 .is_some_and(crate::manufacturing_window::page_is_empty);
-            if StrobeButton::show_pair(
-                ui,
-                cache,
+            TabSpec::two_state(
+                tab,
+                tab.control_id(),
                 rect,
-                (window.system, tab),
                 DllSource::Strategy,
-                (
-                    tab_resource(tab, side, false, empty),
-                    tab_resource(tab, side, true, empty),
-                ),
-                tab == window.tab,
-                false,
-                scale,
+                tab_resource(tab, side, false, empty),
+                tab_resource(tab, side, true, empty),
             )
-            .clicked()
-            {
-                result.tab = Some(tab);
-                result.focus = true;
-            }
+            .with_presentation(if empty {
+                TabPresentation::Empty
+            } else {
+                TabPresentation::Enabled
+            })
+        });
+        if let Some(tab) = TabControl::paint_and_select(
+            &tab_specs,
+            TabControlState::new(window.tab, window.tab.control_id()),
+            ui,
+            cache,
+            (window.system, "system-tabs"),
+            scale,
+        ) {
+            result.tab = Some(tab);
+            result.focus = true;
         }
 
         let font = egui::FontId::proportional(OVERVIEW_FONT_EM * scale);

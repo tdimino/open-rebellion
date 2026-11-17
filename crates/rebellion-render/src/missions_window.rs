@@ -19,14 +19,14 @@ use rebellion_core::missions::{
 use rebellion_core::saved_interface::{SavedWindow, SavedWindowKind};
 use rebellion_core::world::GameWorld;
 use rebellion_windowing::{
-    RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowSpec, WindowTransition,
+    ControlId, RoutingSnapshot, SubjectId, WindowId, WindowKind, WindowSpec, WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::controls::{
-    paint_label, DragList, DragListLayout, DragListSpec, DragPolicy, SelectionPolicy, StrobeButton,
-    WheelPolicy,
+    paint_label, DragList, DragListLayout, DragListSpec, DragPolicy, SelectionPolicy, TabControl,
+    TabControlState, TabSpec, WheelPolicy,
 };
 use crate::fleet_window::{en_route_mark, faction_side, mini_layers, paint_native, MiniObject};
 use crate::mission_dialog::{kind_icon, kind_name, member_item};
@@ -95,6 +95,13 @@ pub enum MissionsTab {
 
 impl MissionsTab {
     pub const ALL: [Self; 2] = [Self::Agents, Self::Decoys];
+
+    const fn control_id(self) -> ControlId {
+        ControlId(match self {
+            Self::Agents => 0x17,
+            Self::Decoys => 0x18,
+        })
+    }
 
     /// The button's x in the strip (`FUN_0049f540`).
     const fn x(self) -> f32 {
@@ -1299,31 +1306,34 @@ fn draw_missions_window(
         // With a mission selected, its side's tabs and the current
         // tab's members (FUN_004a0ca0); with none, both hide.
         if let Some(row) = selected {
-            for tab in MissionsTab::ALL {
-                let rect = tab_rect(local, scale, tab);
-                let clicked = if let (Some(normal), Some(selected)) = (
-                    tab_resource(tab, row.side, false),
-                    tab_resource(tab, row.side, true),
-                ) {
-                    StrobeButton::show_pair(
-                        ui,
-                        cache,
+            let tab_specs = MissionsTab::ALL
+                .into_iter()
+                .filter_map(|tab| {
+                    let rect = tab_rect(local, scale, tab);
+                    let (normal, selected) = (
+                        tab_resource(tab, row.side, false),
+                        tab_resource(tab, row.side, true),
+                    );
+                    Some(TabSpec::two_state(
+                        tab,
+                        tab.control_id(),
                         rect,
-                        (window.system, tab),
                         DllSource::Strategy,
-                        (normal, selected),
-                        tab == window.tab,
-                        false,
-                        scale,
-                    )
-                    .clicked()
-                } else {
-                    false
-                };
-                if clicked {
-                    result.tab = Some(tab);
-                    result.interaction.focus = true;
-                }
+                        normal?,
+                        selected?,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            if let Some(tab) = TabControl::paint_and_select(
+                &tab_specs,
+                TabControlState::new(window.tab, window.tab.control_id()),
+                ui,
+                cache,
+                (window.system, "missions-tabs"),
+                scale,
+            ) {
+                result.tab = Some(tab);
+                result.interaction.focus = true;
             }
             let members = logical_rect(
                 local,

@@ -13,7 +13,9 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::controls::StrobeButton;
+use crate::controls::{
+    StrobeButton, TabControl, TabControlState, TabDirection, TabSpec, TabTraversal,
+};
 use crate::fleet_window::paint_native;
 use crate::list_control::{
     longest_prefix_match, max_first_row, move_selection, reveal_row, row_click, selected_row,
@@ -571,6 +573,23 @@ where
     let mut open = None;
     let mut next_tab = None;
     let mut interaction = FinderInteraction::new(snapshot);
+    let tab_specs = config
+        .tabs
+        .iter()
+        .copied()
+        .zip(config.tab_controls.iter().copied())
+        .enumerate()
+        .map(|(index, (candidate, control))| {
+            TabSpec::two_state(
+                candidate,
+                finder_tab_control_id(index),
+                at(window_rect(layout), scale, control.rect),
+                DllSource::Strategy,
+                control.art.0,
+                control.art.1,
+            )
+        })
+        .collect::<Vec<_>>();
     show_canvas(
         ctx,
         cache,
@@ -588,16 +607,19 @@ where
                 )
                 .body;
 
-            for (index, candidate) in config.tabs.iter().copied().enumerate() {
-                if canvas.strobe_button(
-                    ui,
-                    cache,
-                    config.tab_controls[index],
-                    (config.row_id, "side-tab", index),
-                    candidate == current_tab,
-                ) {
-                    next_tab = Some(candidate);
-                }
+            let focused_tab = tab_specs
+                .iter()
+                .find(|spec| spec.value == current_tab)
+                .map_or_else(|| finder_tab_control_id(0), |spec| spec.control_id);
+            if let Some(tab) = TabControl::paint_and_select(
+                &tab_specs,
+                TabControlState::new(current_tab, focused_tab),
+                ui,
+                cache,
+                (config.row_id, "side-tabs"),
+                scale,
+            ) {
+                next_tab = Some(tab);
             }
             extra_controls(ui, canvas, cache);
             if canvas.strobe_button(
@@ -687,18 +709,23 @@ where
         config.semantic_controls,
         keys,
         config.visible_rows,
-        config
-            .tabs
-            .iter()
-            .position(|candidate| *candidate == current_tab)
-            .unwrap_or(0),
-        config.tabs.len(),
     );
     if navigation.list_enter {
         open = open.or_else(|| selected_row(rows, chosen).map(&row_action));
     }
-    if let Some(index) = navigation.horizontal {
-        next_tab = config.tabs.get(index).copied();
+    if next_tab.is_none() {
+        if let Some(direction) = navigation.horizontal {
+            let focused_tab = tab_specs
+                .iter()
+                .find(|spec| spec.value == current_tab)
+                .map_or_else(|| finder_tab_control_id(0), |spec| spec.control_id);
+            next_tab = TabControl::step_selection(
+                &tab_specs,
+                TabControlState::new(current_tab, focused_tab),
+                direction,
+                TabTraversal::Clamp,
+            );
+        }
     }
     if navigation.edit_enter {
         open = open
@@ -1438,7 +1465,7 @@ pub(crate) struct FinderInteraction {
 pub(crate) struct FinderNavigation {
     pub(crate) list_enter: bool,
     pub(crate) edit_enter: bool,
-    pub(crate) horizontal: Option<usize>,
+    pub(crate) horizontal: Option<TabDirection>,
 }
 
 impl FinderInteraction {
@@ -1556,8 +1583,6 @@ impl FinderInteraction {
         controls: (ControlId, ControlId),
         keys: FinderKeys,
         visible_rows: usize,
-        tab_index: usize,
-        tab_count: usize,
     ) -> FinderNavigation {
         let (name_control, list_control) = controls;
         ui.focus_name = false;
@@ -1609,27 +1634,25 @@ impl FinderInteraction {
         let navigation = FinderNavigation {
             list_enter: list_focused && !rows.is_empty() && keys.enter,
             edit_enter: self.enter || (focused_control == Some(controls.0) && keys.enter),
-            horizontal: list_focused
-                .then(|| horizontal_choice(keys, tab_index, tab_count))
-                .flatten(),
+            horizontal: list_focused.then(|| horizontal_direction(keys)).flatten(),
         };
         ui.commit_focus_and_wheel(self.focus_request, self.wheel, rows.len(), visible_rows);
         navigation
     }
 }
 
-pub(crate) fn horizontal_choice(
-    keys: FinderKeys,
-    current: usize,
-    choice_count: usize,
-) -> Option<usize> {
+fn horizontal_direction(keys: FinderKeys) -> Option<TabDirection> {
     if keys.arrow_left {
-        Some(current.saturating_sub(1))
+        Some(TabDirection::Left)
     } else if keys.arrow_right {
-        Some((current + 1).min(choice_count - 1))
+        Some(TabDirection::Right)
     } else {
         None
     }
+}
+
+fn finder_tab_control_id(index: usize) -> ControlId {
+    ControlId(0x6400 + index as u64)
 }
 
 pub(crate) fn paint_row_name(

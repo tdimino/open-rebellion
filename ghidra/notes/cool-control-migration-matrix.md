@@ -3,7 +3,7 @@ title: "Cool Control Consumer and Migration Matrix"
 description: "Original Cool* control evidence, every current production consumer, renderer object boundaries, migration beads, art ownership, exclusions, and parity journeys"
 category: "ghidra"
 created: 2026-11-15
-updated: 2026-11-15
+updated: 2026-11-17
 ---
 
 # Cool Control Consumer and Migration Matrix
@@ -96,6 +96,43 @@ domain action remain in the named module.
 
 The main-menu selector row, tactical order buttons, and the Build Selection
 class popup are not TabControl merely because they form a visual row.
+
+### TabControl migration record (2026-11-17)
+
+`or-ep-uniform-ui-controls-gru5.3` introduced
+`controls/tab_control.rs::{TabSpec, TabControlState, TabControlOutput,
+TabControl}`. The object composes `StrobeButton`, applies exact half-open hit
+regions, selected/empty/disabled presentation, stable `ControlId` child
+identity and disabled-skipping `Clamp` or source-specific `ResetToFirst`
+keyboard traversal. The feature remains authoritative for its enum, resource
+table, content and action.
+
+| Matrix row | Migrated production path | Preserved feature policy |
+|---|---|---|
+| Operation Report | `operation_report.rs`: view rail, force filters and Left/Right stepping | `ReportView`/`ReportTab`, list refill and `FUN_004710f0` outer-boundary reset |
+| Battle Alert | `tactical_view.rs`: exact tab hit and original-pixel child painting | `BattleAlertTab`, faction skin, retreat/simulate/command actions |
+| Manufacturing/System | `system_window.rs`: six `SystemWindowTab` pages | facility content query and empty-page art |
+| Encyclopedia | `encyclopedia.rs`: production category surface and original index strip through bitmap-mask input | category command ids, faction art, topic/search state |
+| Fleet/Ship Finder | `finder_common.rs` side strip and `fleet_finder.rs` mode strip | finder row projection, fleet/ship meaning and open action |
+| Personnel Finder | `finder_common.rs` side strip and `personnel_finder.rs` Characters/SpecForces strip | row projection and selected object action |
+| Message Index | `message_index.rs`: category strip | selected category, direct draw mode and message filtering |
+| Mission Dialog | `mission_dialog.rs`: Mission/Personnel pages | dialog page content and mission action application |
+| Troop Finder | shared `finder_common.rs` side strip used by `troop_finder.rs` | troop counts, selected row and open action |
+| Battle Results | `tactical_view.rs`: outer pages, inner result filters, exact hit, pixel painting and Left/Right stepping | result destination/actions, list refill and scroll reset, faction skin |
+| Missions window | `missions_window.rs`: Agents/Decoys strip | mission-side art availability and member content |
+| Fleet window | `fleet_window.rs`: four content pages | own/other availability, disabled art and local fleet actions |
+| System Defenses | `defenses_window.rs`: five page strip | selected/populated/empty art and drag-list content |
+
+The manual was reread after the migration, including Figs. 2.13, 2.31,
+2.34, 2.37, 2.44, 2.45, 3.10/3.11, 3.24/3.27, 3.47/3.48, 3.55,
+3.66, 3.70, 3.73, 3.80, 4.1 and 4.17. Those figures agree with the
+feature-local grouping retained above; none justified turning the excluded
+main-menu selectors, tactical orders or Build Selection popup into tabs.
+
+Using the same 70-token commands and paths before and after `.3`, exact clones
+fell from 3 to 2 and renamed clones (`--ignore-identifiers
+--ignore-literals`) fell from 275 to 274 (3.2%). This comparison is against
+the branch immediately before `.3`, not the older repository baseline below.
 
 ## Drag lists and scrollbars
 

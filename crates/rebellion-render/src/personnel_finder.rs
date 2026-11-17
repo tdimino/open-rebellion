@@ -56,6 +56,13 @@ pub enum PersonnelView {
 impl PersonnelView {
     const ALL: [Self; 2] = [Self::SpecForces, Self::Characters];
 
+    const fn control_id(self) -> ControlId {
+        ControlId(match self {
+            Self::SpecForces => 0x6e02,
+            Self::Characters => 0x6e03,
+        })
+    }
+
     const fn index(self) -> usize {
         match self {
             Self::Characters => 0,
@@ -469,7 +476,7 @@ fn draw_personnel_finder_outcome(
         );
         extra_controls: |ui, canvas, cache| {
             // View tabs (FUN_004637a0 group 0x6e).
-            for candidate in PersonnelView::ALL {
+            let specs = PersonnelView::ALL.map(|candidate| {
                 let y_offset = match candidate {
                     PersonnelView::SpecForces => 0.0,
                     PersonnelView::Characters => 54.0,
@@ -481,17 +488,23 @@ fn draw_personnel_finder_outcome(
                     controls.view_button_size.1,
                 );
                 let art = VIEW_TAB_ART[side_idx][candidate.index()];
-                let down = candidate == window.view;
-                if canvas.strobe_button(
-                    ui,
-                    cache,
-                    finder_common::BitmapControl::new(view_rect, art),
-                    ("personnel-view-tab", candidate.index()),
-                    down,
-                ) {
-                    new_view_tab = Some(candidate);
-                }
-            }
+                crate::controls::TabSpec::two_state(
+                    candidate,
+                    candidate.control_id(),
+                    finder_common::at(canvas.frame, canvas.scale, view_rect),
+                    crate::bmp_cache::DllSource::Strategy,
+                    art.0,
+                    art.1,
+                )
+            });
+            new_view_tab = crate::controls::TabControl::paint_and_select(
+                &specs,
+                crate::controls::TabControlState::new(window.view, window.view.control_id()),
+                ui,
+                cache,
+                "personnel-view-tabs",
+                canvas.scale,
+            );
         }, paint_details: |canvas: &finder_common::FinderCanvas<'_>,
                            painter: &egui::Painter,
                            row: &PersonnelFinderRow,

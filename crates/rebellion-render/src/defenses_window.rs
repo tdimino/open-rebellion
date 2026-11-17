@@ -15,7 +15,7 @@
 
 use crate::controls::{
     paint_label, DragList, DragListLayout, DragListSpec, DragListState, DragPolicy,
-    SelectionPolicy, StrobeButton, WheelPolicy,
+    SelectionPolicy, TabControl, TabControlState, TabPresentation, TabSpec, WheelPolicy,
 };
 use crate::fleet_window::{control_side, faction_side, fleet_side, mini_layers, MiniObject};
 use crate::native_geometry::logical_rect;
@@ -95,6 +95,16 @@ impl DefensesPage {
         Self::Shields,
         Self::Batteries,
     ];
+
+    const fn control_id(self) -> rebellion_windowing::ControlId {
+        rebellion_windowing::ControlId(match self {
+            Self::Personnel => 1,
+            Self::Regiments => 2,
+            Self::Squadrons => 3,
+            Self::Shields => 4,
+            Self::Batteries => 5,
+        })
+    }
 
     /// The button's x in the strip (`FUN_004a8790`).
     const fn x(self) -> f32 {
@@ -1125,32 +1135,37 @@ fn draw_defenses_window(
         // The tabs. No tab is ever disabled; an empty one opens its
         // empty page. port: the help messages (`FUN_00600a40`) are not
         // shown.
-        for page in DefensesPage::ALL {
+        let tab_specs = DefensesPage::ALL.map(|page| {
             let rect = tab_rect(local, scale, page);
             let empty = page_rows(world, fog, missions, player, window.system, page).is_empty();
             crate::control_registry::register_screen("Defenses", page.name(), rect);
-            if StrobeButton::show_pair(
-                ui,
-                cache,
+            TabSpec::two_state(
+                page,
+                page.control_id(),
                 rect,
-                (window.system, page),
                 DllSource::Strategy,
-                (
-                    tab_resource(page, side, false, empty),
-                    tab_resource(page, side, true, empty),
-                ),
-                page == window.page,
-                false,
-                scale,
+                tab_resource(page, side, false, empty),
+                tab_resource(page, side, true, empty),
             )
-            .clicked()
-            {
-                result.page = Some(page);
-                result.interaction.focus = true;
-                result
-                    .interaction
-                    .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
-            }
+            .with_presentation(if empty {
+                TabPresentation::Empty
+            } else {
+                TabPresentation::Enabled
+            })
+        });
+        if let Some(page) = TabControl::paint_and_select(
+            &tab_specs,
+            TabControlState::new(window.page, window.page.control_id()),
+            ui,
+            cache,
+            (window.system, "defenses-tabs"),
+            scale,
+        ) {
+            result.page = Some(page);
+            result.interaction.focus = true;
+            result
+                .interaction
+                .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
         }
 
         // `+0x5b` and `+0x5c`: white, font 4, format `0x25`: one line,

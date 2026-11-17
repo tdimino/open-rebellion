@@ -110,6 +110,13 @@ impl FinderTab {
 }
 
 impl FinderMode {
+    const fn control_id(self) -> ControlId {
+        ControlId(match self {
+            Self::Fleets => 0xfa01,
+            Self::Ships => 0xfa02,
+        })
+    }
+
     /// TEXTSTRA `0x1880`/`0x1885` and `0x1881`/`0x1886`.
     const fn titles(self) -> (&'static str, &'static str) {
         match self {
@@ -429,14 +436,28 @@ pub fn draw_fleet_finder_focused(
             accepts_batched_double_click: true,
         },
         |ui, canvas, cache| {
-            for (candidate, control, id) in [
-                (FinderMode::Ships, controls.ship_finder, "finder-ships"),
-                (FinderMode::Fleets, controls.fleet_finder, "finder-fleets"),
-            ] {
-                if canvas.strobe_button(ui, cache, control, id, candidate == window.mode) {
-                    mode = Some(candidate);
-                }
-            }
+            let specs = [
+                (FinderMode::Ships, controls.ship_finder),
+                (FinderMode::Fleets, controls.fleet_finder),
+            ]
+            .map(|(candidate, control)| {
+                crate::controls::TabSpec::two_state(
+                    candidate,
+                    candidate.control_id(),
+                    finder_common::at(canvas.frame, canvas.scale, control.rect),
+                    crate::bmp_cache::DllSource::Strategy,
+                    control.art.0,
+                    control.art.1,
+                )
+            });
+            mode = crate::controls::TabControl::paint_and_select(
+                &specs,
+                crate::controls::TabControlState::new(window.mode, window.mode.control_id()),
+                ui,
+                cache,
+                "fleet-finder-mode-tabs",
+                canvas.scale,
+            );
         },
         |_, _, _, _, _| {},
         |row| row.object,

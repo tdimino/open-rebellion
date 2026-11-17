@@ -33,7 +33,9 @@ use egui_macroquad::egui::TextureOptions;
 use egui_macroquad::egui::{self, Color32, TextureHandle};
 use rebellion_windowing::ControlId;
 
-use crate::controls::{ButtonArt, ButtonImage, ButtonInput, StrobeButton};
+use crate::controls::{
+    ButtonArt, ButtonImage, ButtonInput, StrobeButton, TabControl, TabControlState, TabSpec,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::bmp_cache::load_approved_hd_assets;
@@ -769,7 +771,8 @@ pub fn draw_encyclopedia_surface_focused(
                     effective_selection,
                     &mut action,
                 ));
-                for control in encyclopedia_category_controls(faction) {
+                let category_controls = encyclopedia_category_controls(faction);
+                for control in category_controls {
                     let control_rect = encyclopedia_rect(
                         window_rect,
                         scale,
@@ -788,19 +791,18 @@ pub fn draw_encyclopedia_surface_focused(
                             .find(|category| category.command_id == control.command_id)
                             .map(|category| (category.label, pointer));
                     }
-                    if draw_original_control(
-                        ui,
-                        ctx,
-                        cache,
-                        window_rect,
-                        scale,
-                        control,
-                        control.command_id == surface.category.command_id,
-                    ) {
-                        action = Some(EncyclopediaSurfaceAction::SelectCategory(
-                            control.command_id,
-                        ));
-                    }
+                }
+                if let Some(command) = draw_original_tab_control(
+                    ui,
+                    ctx,
+                    cache,
+                    window_rect,
+                    scale,
+                    category_controls,
+                    surface.category.command_id,
+                    "encyclopedia-surface-category-tabs",
+                ) {
+                    action = Some(EncyclopediaSurfaceAction::SelectCategory(command));
                 }
             }
 
@@ -1324,19 +1326,12 @@ fn draw_surface_control(
         scale,
         [control.x, control.y, control.width, control.height],
     );
-    let (pointer, primary_pressed, primary_down, primary_released, now_seconds) =
-        ctx.input(|input| {
-            (
-                input.pointer.interact_pos(),
-                input.pointer.button_pressed(egui::PointerButton::Primary),
-                input.pointer.button_down(egui::PointerButton::Primary),
-                input.pointer.button_released(egui::PointerButton::Primary),
-                input.time,
-            )
-        });
-    let pointer_hits = pointer.is_some_and(|point| {
-        original_control_contains(cache, control.normal_resource, rect, scale, point)
-    });
+    let input = EncyclopediaPointerFrame::read(ctx).masked_input(
+        cache,
+        control.normal_resource,
+        rect,
+        scale,
+    );
     let mut art = ButtonArt::two_state(
         DllSource::Strategy,
         control.normal_resource,
@@ -1355,13 +1350,7 @@ fn draw_surface_control(
         !enabled,
         None,
         scale,
-        ButtonInput {
-            pointer_inside: pointer_hits,
-            primary_pressed,
-            primary_down,
-            primary_released,
-            now_seconds,
-        },
+        input,
     )
     .clicked()
 }
@@ -1612,18 +1601,17 @@ fn draw_encyclopedia_index_layers(
                 content_rect,
             );
 
-            for control in encyclopedia_category_controls(faction) {
-                if draw_original_control(
-                    ui,
-                    ctx,
-                    cache,
-                    window_rect,
-                    scale,
-                    control,
-                    control.command_id == selected_category,
-                ) {
-                    outcome.activated_command = Some(control.command_id);
-                }
+            if let Some(command) = draw_original_tab_control(
+                ui,
+                ctx,
+                cache,
+                window_rect,
+                scale,
+                encyclopedia_category_controls(faction),
+                selected_category,
+                "encyclopedia-index-category-tabs",
+            ) {
+                outcome.activated_command = Some(command);
             }
             for control in encyclopedia_rail_controls(faction) {
                 if draw_original_control(
@@ -1741,19 +1729,12 @@ fn draw_original_control(
         scale,
         [control.x, control.y, control.width, control.height],
     );
-    let (pointer, primary_pressed, primary_down, primary_released, now_seconds) =
-        ctx.input(|input| {
-            (
-                input.pointer.interact_pos(),
-                input.pointer.button_pressed(egui::PointerButton::Primary),
-                input.pointer.button_down(egui::PointerButton::Primary),
-                input.pointer.button_released(egui::PointerButton::Primary),
-                input.time,
-            )
-        });
-    let pointer_hits = pointer.is_some_and(|point| {
-        original_control_contains(cache, control.normal_resource, rect, scale, point)
-    });
+    let input = EncyclopediaPointerFrame::read(ctx).masked_input(
+        cache,
+        control.normal_resource,
+        rect,
+        scale,
+    );
     StrobeButton::show_with_input(
         ui,
         cache,
@@ -1768,15 +1749,96 @@ fn draw_original_control(
         false,
         None,
         scale,
-        ButtonInput {
-            pointer_inside: pointer_hits,
-            primary_pressed,
-            primary_down,
-            primary_released,
-            now_seconds,
-        },
+        input,
     )
     .clicked()
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The source control keeps its context, cache, geometry, art, selection and identity explicit."
+)]
+fn draw_original_tab_control<const N: usize>(
+    ui: &egui::Ui,
+    ctx: &egui::Context,
+    cache: &mut BmpCache,
+    window_rect: egui::Rect,
+    scale: f32,
+    controls: [OriginalControlSpec; N],
+    selected: u16,
+    strip_id: &'static str,
+) -> Option<u16> {
+    let pointer = EncyclopediaPointerFrame::read(ctx);
+    let specs = controls.map(|control| {
+        TabSpec::two_state(
+            control.command_id,
+            ControlId(u64::from(control.command_id)),
+            encyclopedia_control_rect(
+                window_rect,
+                scale,
+                [control.x, control.y, control.width, control.height],
+            ),
+            DllSource::Strategy,
+            control.normal_resource,
+            control.pressed_resource,
+        )
+    });
+    let inputs = controls.map(|control| {
+        let rect = encyclopedia_control_rect(
+            window_rect,
+            scale,
+            [control.x, control.y, control.width, control.height],
+        );
+        pointer.masked_input(cache, control.normal_resource, rect, scale)
+    });
+    TabControl::paint_and_select_with_inputs(
+        &specs,
+        TabControlState::new(selected, ControlId(u64::from(selected))),
+        ui,
+        cache,
+        strip_id,
+        scale,
+        &inputs,
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EncyclopediaPointerFrame {
+    pointer: Option<egui::Pos2>,
+    primary_pressed: bool,
+    primary_down: bool,
+    primary_released: bool,
+    now_seconds: f64,
+}
+
+impl EncyclopediaPointerFrame {
+    fn read(ctx: &egui::Context) -> Self {
+        ctx.input(|input| Self {
+            pointer: input.pointer.interact_pos(),
+            primary_pressed: input.pointer.button_pressed(egui::PointerButton::Primary),
+            primary_down: input.pointer.button_down(egui::PointerButton::Primary),
+            primary_released: input.pointer.button_released(egui::PointerButton::Primary),
+            now_seconds: input.time,
+        })
+    }
+
+    fn masked_input(
+        self,
+        cache: &mut BmpCache,
+        resource_id: u32,
+        rect: egui::Rect,
+        scale: f32,
+    ) -> ButtonInput {
+        ButtonInput {
+            pointer_inside: self.pointer.is_some_and(|point| {
+                original_control_contains(cache, resource_id, rect, scale, point)
+            }),
+            primary_pressed: self.primary_pressed,
+            primary_down: self.primary_down,
+            primary_released: self.primary_released,
+            now_seconds: self.now_seconds,
+        }
+    }
 }
 
 fn original_control_contains(

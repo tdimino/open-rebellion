@@ -13,11 +13,11 @@ use rebellion_core::ids::SystemKey;
 use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember, MissionTarget};
 use rebellion_core::research::TechType;
 use rebellion_core::world::GameWorld;
-use rebellion_windowing::{ExistingEffect, WindowId, WindowKind, WindowTransition};
+use rebellion_windowing::{ControlId, ExistingEffect, WindowId, WindowKind, WindowTransition};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
-use crate::controls::StrobeButton;
+use crate::controls::{StrobeButton, TabControl, TabControlState, TabSpec};
 use crate::list_control::wheel_step;
 use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
 use crate::sector_window::planet_resource_id;
@@ -79,6 +79,15 @@ pub enum MissionDialogPage {
     Mission,
     /// Tab `0x98`: agents and decoys.
     Agents,
+}
+
+impl MissionDialogPage {
+    const fn control_id(self) -> ControlId {
+        ControlId(match self {
+            Self::Mission => 0x97,
+            Self::Agents => 0x98,
+        })
+    }
 }
 
 /// One open dialog: the order it edits and its controls' state.
@@ -662,10 +671,11 @@ pub fn draw_mission_dialog(
             {
                 close = true;
             }
-            for (page, x, art) in [
+            let tab_specs = [
                 (MissionDialogPage::Mission, 0.0, MISSION_TAB[side]),
                 (MissionDialogPage::Agents, 130.0, AGENTS_TAB[side]),
-            ] {
+            ]
+            .map(|(page, x, art)| {
                 let rect = at(7.0 + x, 20.0, 116.0, 33.0);
                 name(
                     match page {
@@ -674,21 +684,24 @@ pub fn draw_mission_dialog(
                     },
                     rect,
                 );
-                if StrobeButton::show_pair(
-                    ui,
-                    cache,
+                TabSpec::two_state(
+                    page,
+                    page.control_id(),
                     rect,
-                    ("tab", x as i32),
                     DllSource::Strategy,
-                    art,
-                    dialog.page == page,
-                    false,
-                    scale,
+                    art.0,
+                    art.1,
                 )
-                .clicked()
-                {
-                    dialog.show_page(page);
-                }
+            });
+            if let Some(page) = TabControl::paint_and_select(
+                &tab_specs,
+                TabControlState::new(dialog.page, dialog.page.control_id()),
+                ui,
+                cache,
+                "mission-dialog-tabs",
+                scale,
+            ) {
+                dialog.show_page(page);
             }
 
             match dialog.page {
