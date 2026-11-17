@@ -5,62 +5,11 @@
 //! policy. The original Finder, Encyclopedia, Message Index, report, detail,
 //! manufacturing, and battle-alert windows all instantiate the same control.
 
-use std::hash::Hash;
 use std::ops::Range;
 
 use egui_macroquad::egui;
 
-use crate::native_geometry::{logical_rect, rect_contains};
-
-/// A clipped, labelled cell of the original `CoolDragList` control.
-///
-/// Window families keep ownership of row art and selection policy. This
-/// component owns the common label layout and the cell's clipped click target.
-pub(crate) struct LabeledCell<'a> {
-    pub(crate) rect: egui::Rect,
-    pub(crate) clip_rect: egui::Rect,
-    pub(crate) scale: f32,
-    pub(crate) text: &'a str,
-    pub(crate) font: &'a egui::FontId,
-    pub(crate) color: egui::Color32,
-    pub(crate) logical_width: f32,
-    pub(crate) text_offset: (f32, f32),
-}
-
-impl LabeledCell<'_> {
-    /// Paint the cell label and register its clipped click target.
-    pub(crate) fn show(
-        self,
-        ui: &mut egui::Ui,
-        painter: &egui::Painter,
-        id: impl Hash,
-    ) -> egui::Response {
-        let galley = painter.layout(
-            self.text.to_owned(),
-            self.font.clone(),
-            self.color,
-            self.logical_width * self.scale,
-        );
-        painter.galley(
-            logical_rect(
-                self.rect,
-                self.scale,
-                self.text_offset.0,
-                self.text_offset.1,
-                0.0,
-                0.0,
-            )
-            .min,
-            galley,
-            self.color,
-        );
-        ui.interact(
-            self.rect.intersect(self.clip_rect),
-            ui.id().with(id),
-            egui::Sense::click(),
-        )
-    }
-}
+use crate::native_geometry::rect_contains;
 
 /// The result of the original list's ordered, case-insensitive prefix scan.
 ///

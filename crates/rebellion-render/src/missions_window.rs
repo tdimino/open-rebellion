@@ -24,10 +24,13 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::controls::StrobeButton;
+use crate::controls::{
+    paint_label, DragList, DragListLayout, DragListSpec, DragPolicy, SelectionPolicy, StrobeButton,
+    WheelPolicy,
+};
 use crate::fleet_window::{en_route_mark, faction_side, mini_layers, paint_native, MiniObject};
 use crate::mission_dialog::{kind_icon, kind_name, member_item};
-use crate::native_geometry::{exact_clicked, logical_rect};
+use crate::native_geometry::logical_rect;
 use crate::panels::fleets::capital_ship_mini_id;
 use crate::quadrant_icons::{mission_keys, missions_side, visible_members};
 use crate::sector_window::planet_resource_id;
@@ -922,6 +925,37 @@ strategic_window_common::define_record_screen_rect!(
     MISSIONS_WINDOW_HEIGHT
 );
 
+/// The mission list `FUN_0049f540` creates: flags `0x20000` (no drag, no
+/// grid), 90 by 50 rows stacked downwards. `FUN_006083c0` has no wheel case.
+/// port: the source attaches RCDATA `0x29fc`'s bar (`FUN_0060a490`), which
+/// shows once the missions overflow; this list does not draw it yet, so rows
+/// past the list's foot are cut off.
+const MISSION_LIST_SPEC: DragListSpec = DragListSpec {
+    rect: MISSION_LIST,
+    item: MISSION_ROW,
+    layout: DragListLayout::Stacked,
+    // port: without `0x10000` the source list selects several missions, but
+    // the window's `+0x1c4` keeps one row.
+    selection: SelectionPolicy::Single,
+    drag: DragPolicy::Disabled,
+    wheel: WheelPolicy::Ignored,
+    bar: None,
+};
+
+/// The member list: flags `0xa0000` (grid, no drag), 115 by 43 cells, one to
+/// a row at its width. port: as with the mission list, its `0x29fc` bar is
+/// not drawn, and no member selection art is traced, so a press only
+/// focuses the window.
+const MEMBER_LIST_SPEC: DragListSpec = DragListSpec {
+    rect: MEMBER_LIST,
+    item: MEMBER_ROW,
+    layout: DragListLayout::Grid,
+    selection: SelectionPolicy::Single,
+    drag: DragPolicy::Disabled,
+    wheel: WheelPolicy::Ignored,
+    bar: None,
+};
+
 fn tab_rect(window: egui::Rect, scale: f32, tab: MissionsTab) -> egui::Rect {
     strategic_window_common::tab_strip_rect(window, scale, TAB_STRIP, TAB_SIZE, tab.x())
 }
@@ -1183,11 +1217,11 @@ fn draw_missions_window(
         result.interaction.minimize = clicked[1];
         result.close = clicked[2];
 
-        // The mission list: each picture keyed at its row's corner, the
-        // frame keyed over it while selected, and the name word-wrapped
-        // from (1, 0), white either way (`FUN_00607ea0`'s `+0xdc`).
-        // port: the scroll bar is not drawn, so the rows past the
-        // list's foot are cut off.
+        // The mission list (`FUN_006083c0`): each picture keyed at its row's
+        // corner, the frame keyed over it while selected, and the name
+        // word-wrapped from (1, 0), white either way (`FUN_00607ea0`'s
+        // `+0xdc`). A press selects its mission (`0x29b`, `FUN_004a0c60`).
+        // port: a press on empty list space keeps the window's row.
         let list = logical_rect(
             local,
             scale,
@@ -1202,11 +1236,30 @@ fn draw_missions_window(
         } else {
             MISSION_FRAME[1]
         };
-        for (index, row) in rows.iter().enumerate() {
-            let cell = mission_row_rect(local, scale, index);
-            if !cell.intersects(list) {
-                break;
+        let ids: Vec<u64> = rows.iter().map(|row| row.mission).collect();
+        let mission_list = DragList::show_mirrored(
+            ui,
+            (window.system, "missions"),
+            MISSION_LIST_SPEC,
+            &ids,
+            window.selected,
+            local,
+            scale,
+        );
+        if mission_list.output.pointer_mutation() {
+            result.interaction.focus = true;
+            for &phase in &mission_list.output.phases {
+                result.interaction.note_pointer_phase(phase);
             }
+        }
+        if mission_list
+            .output
+            .contains(crate::controls::DragListEvent::SelectionChanged)
+        {
+            result.select = mission_list.next.first_selected(&ids);
+        }
+        for (index, cell) in mission_list.screen_cells(local, scale) {
+            let row = &rows[index];
             paint_native(
                 &list_painter,
                 ctx,
@@ -1231,21 +1284,16 @@ fn draw_missions_window(
                     0.0,
                 );
             }
-            let response = crate::list_control::LabeledCell {
-                rect: cell,
-                clip_rect: list,
+            paint_label(
+                &list_painter,
+                cell,
                 scale,
-                text: row.label,
-                font: &list_font,
-                color: white,
-                logical_width: MISSION_ROW.0 - TEXT_RIGHT_TRIM,
-                text_offset: TEXT_OFFSET,
-            }
-            .show(ui, &list_painter, (window.system, "mission", index));
-            if exact_clicked(&response, cell) {
-                result.select = Some(row.mission);
-                result.interaction.focus = true;
-            }
+                row.label,
+                &list_font,
+                white,
+                MISSION_ROW.0 - TEXT_RIGHT_TRIM,
+                TEXT_OFFSET,
+            );
         }
 
         // With a mission selected, its side's tabs and the current
@@ -1295,11 +1343,24 @@ fn draw_missions_window(
                 row.mission,
                 window.tab,
             );
-            for (index, member) in rows.iter().enumerate() {
-                let cell = member_row_rect(local, scale, index);
-                if !cell.intersects(members) {
-                    break;
+            let indices: Vec<usize> = (0..rows.len()).collect();
+            let member_list = DragList::show_mirrored(
+                ui,
+                (window.system, "members"),
+                MEMBER_LIST_SPEC,
+                &indices,
+                None,
+                local,
+                scale,
+            );
+            if member_list.output.pressed().is_some() {
+                result.interaction.focus = true;
+                for &phase in &member_list.output.phases {
+                    result.interaction.note_pointer_phase(phase);
                 }
+            }
+            for (index, cell) in member_list.screen_cells(local, scale) {
+                let member = &rows[index];
                 let size = member
                     .mini
                     .and_then(|mini| cache.original_resource_size(DllSource::Gokres, mini));
@@ -1340,14 +1401,6 @@ fn draw_missions_window(
                     list_font.clone(),
                     white,
                 );
-                let response = ui.interact(
-                    cell.intersect(members),
-                    ui.id().with((window.system, "member", index)),
-                    egui::Sense::click(),
-                );
-                if exact_clicked(&response, cell) {
-                    result.interaction.focus = true;
-                }
             }
         }
 
@@ -1364,7 +1417,11 @@ fn draw_missions_window(
             strategic_window_common::interaction_requests_focus(&window_response, &clicked);
     });
     result.interaction.focus |= area.response.clicked();
-    if draw_missions_windows_with_snapshot_pointer_mutation(&result).0 {
+    // A list press carries its own phase; other strategic controls act on
+    // the primary release.
+    if draw_missions_windows_with_snapshot_pointer_mutation(&result).0
+        && result.interaction.causal_pointer_phases.is_empty()
+    {
         result
             .interaction
             .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
