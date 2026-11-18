@@ -2,7 +2,7 @@
 
 # Closed
 
-203 closed nodes, newest first. Back to the [index](INDEX.md).
+206 closed nodes, newest first. Back to the [index](INDEX.md).
 
 <a id="or-ep-uniform-ui-controls-gru5.10"></a>
 ### Port recovered title-drag bounds and mode policy
@@ -51,6 +51,57 @@ Waits on: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1)
 > 2026-11-18: Ported FUN_00607010 release-time galaxy-aperture clamping through the shared renderer title-drag transition. Live movement remains unclamped while held; release clears the renderer drag before clamping with each feature supplied full window size, and returns TitleDragUpdate::Released with the final position. The migration matrix inventories System, Fleet, Defenses and Missions as live mode-1 consumers, Sector as immovable, and mode 2 as a cited no-current-consumer exclusion. Both new behavior tests were demonstrated red against the previous unclamped release (-400 vs 55 and 32767/-32768 vs 314/40) and green after restoration, for Alliance and Empire. Renderer lib: 1222 passed, 3 asset-dependent ignored. Scoped cargo mutants: 37 generated; 34 caught, 2 unviable, and the only miss was an unrelated pre-existing draw_band_rename StringField font-field mutant included despite the function filter; no title-drag/clamp survivor. Green local gates: make fmt; warning-free make build; make check. Isolated WASM fixture: 38 scenarios/152 executions, zero production fixture tokens, SHA-256 c4953305661f9e6afb726d7dbdc70e8335d4feef95b2d0e88596d4fc532e5c9a. Silent journeys: fleet-move 2026-11-18T18-31-31-572Z-2436957 (12/12), fleet-window 2026-11-18T18-34-37-094Z-2440066 (40/40), sector-quadrants 2026-11-18T18-51-49-857Z-2454350 (12/12).
 
 **Closed:** Recovered release-time title-drag clamping is implemented for all current live strategic windows, mode policy is inventoried, both-faction behavior and interface journeys pass, and repository gates are green.
+
+<a id="or-window-shell-duplicates-91bg"></a>
+### Extract shared strategic-window interaction shell
+
+`or-window-shell-duplicates-91bg` · **closed** · P2 · duplication, refactor, rust · assigned to IvoryGrove · closed 2026-11-18
+
+> Continue the exact-clone cleanup on refactor/rust-same-file-duplication. The ec98344b baseline retains concentrated production clones across Defenses, Missions, Fleet, and System window shells. Extract precise shared pointer-claim, frame setup, chrome, and routing mechanics where behavior is identical; keep content-specific rendering, art, reports, drag/drop semantics, public APIs, and source citations in their owning modules. Retain same-flags evidence under agent-work/rust-cross-file-pass-3.
+
+**Acceptance criteria**
+
+- [x] Fresh ec98344b exact-clone baseline and strategic-window production subset are recorded with hashes and counts.
+- [x] Shared strategic-window interaction/render-shell helpers remove meaningful exact production clones while preserving content-specific behavior and public APIs.
+- [x] Same-flags jscpd rescan shows fewer strategic-window production clones, no new same-file clones, and net-negative Rust LOC for the slice.
+- [x] make check passes and make build passes without warnings; exact commands and limitations are recorded.
+- [x] Commit and push only after explicit user authorization.
+
+**Closed:** Completed, verified, committed and pushed in da4d1d38 (refactor(rust): centralize duplicated code and fixtures); the commit is in current history and the relevant remote branches.
+
+<a id="or-window-finder-test-fixtures-prtf"></a>
+### Unify duplicated Finder and window test fixtures
+
+`or-window-finder-test-fixtures-prtf` · **closed** · P2 · duplication, refactor, rust, test · assigned to IvoryGrove · closed 2026-11-18
+
+> Consolidate exact cross-file test duplication around strategic Finders and windows, including small repeated layout/world builders, managed-window setup, routing assertions, and shared fixture construction. Preserve behavior-specific assertions and keep helpers in a clearly test-only common module. Measure test clones separately from production and avoid abstraction across fixtures with different semantics.
+
+**Acceptance criteria**
+
+- [x] Baseline test-only Finder/window clone pairs are classified by fixture versus intentional behavior assertions.
+- [x] Precise test-only helpers replace repeated cross-file layout, world, managed-window, or routing setup, including worthwhile small clones.
+- [x] Same-flags jscpd rescan shows fewer test-only Finder/window clones and no new same-file clones.
+- [x] make check passes and make build passes without warnings.
+- [x] Commit and push only after explicit user authorization.
+
+**Closed:** Completed, verified, committed and pushed in da4d1d38 (refactor(rust): centralize duplicated code and fixtures); the commit is in current history and the relevant remote branches.
+
+<a id="or-finder-shell-duplicates-0oa1"></a>
+### Extract shared Finder rendering and input shell
+
+`or-finder-shell-duplicates-0oa1` · **closed** · P2 · duplication, refactor, rust · assigned to IvoryGrove · closed 2026-11-18
+
+> Continue the exact-clone cleanup on refactor/rust-same-file-duplication. The ec98344b baseline has 556 pair-counted production clone lines across Fleet, Personnel, and Troop Finder pairs. Extract only precise shared rendering/input mechanics (window canvas, navigation snapshot, visible-row geometry, click/wheel handling) while preserving family-specific rows, tabs, art, actions, public APIs, and original-game citations. Retain same-flags jscpd evidence under agent-work/rust-cross-file-pass-3 and preserve unrelated cargo-check.json and crates/report/.
+
+**Acceptance criteria**
+
+- [x] Fresh ec98344b exact-clone baseline and Finder production subset are recorded with hashes and counts.
+- [x] Shared Finder rendering/input helpers remove a meaningful set of exact production clones without a vague callback framework or public API change.
+- [x] Same-flags jscpd rescan shows fewer Finder production clones, no new same-file clones, and net-negative Rust LOC for the slice.
+- [x] make check passes and make build passes without warnings; exact commands and limitations are recorded.
+- [x] Commit and push only after explicit user authorization.
+
+**Closed:** Completed, verified, committed and pushed in da4d1d38 (refactor(rust): centralize duplicated code and fixtures); the commit is in current history and the relevant remote branches.
 
 <a id="or-ep-uniform-ui-controls-gru5.6"></a>
 ### Extract CoolSelectionBox and migrate popup selectors

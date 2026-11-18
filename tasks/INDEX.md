@@ -10,7 +10,7 @@ session keeps with [br](https://github.com/Dicklesworthstone/beads_rust);
 [agent_docs/task-graph.md](../agent_docs/task-graph.md) explains the node
 kinds and how work is claimed and closed.
 
-370 nodes: 166 open, 1 deferred, 203 closed.
+373 nodes: 166 open, 1 deferred, 206 closed.
 
 ## Pages
 
@@ -21,7 +21,7 @@ kinds and how work is claimed and closed.
 | [Acceptance](acceptance.md) | 30 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
 | [Questions](questions.md) | 70 | Questions about the original, answered from the executable. |
 | [Other](other.md) | 12 | Decisions, chores and unlabelled nodes. |
-| [Closed](closed.md) | 203 closed | Finished work and how it closed. |
+| [Closed](closed.md) | 206 closed | Finished work and how it closed. |
 
 ## Plans
 
