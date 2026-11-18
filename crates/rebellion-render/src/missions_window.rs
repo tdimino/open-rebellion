@@ -231,7 +231,8 @@ pub struct MissionsWindowState {
 strategic_window_common::impl_strategic_window_state_core!(
     MissionsWindowState,
     OpenMissionsWindow,
-    area_id
+    area_id,
+    size: (MISSIONS_WINDOW_WIDTH, MISSIONS_WINDOW_HEIGHT)
 );
 strategic_window_common::impl_strategic_window_collection_accessors!(
     MissionsWindowState,
@@ -1067,7 +1068,7 @@ fn draw_missions_windows_with_snapshot(
         .map(MissionsWindowAction::Close)
         .collect::<Vec<_>>();
     if snapshot.is_none() {
-        state.update_title_drag(ctx, layout);
+        let _ = state.update_title_drag(ctx, layout);
     }
     for window in &windows {
         let focused =

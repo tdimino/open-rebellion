@@ -10,18 +10,18 @@ session keeps with [br](https://github.com/Dicklesworthstone/beads_rust);
 [agent_docs/task-graph.md](../agent_docs/task-graph.md) explains the node
 kinds and how work is claimed and closed.
 
-370 nodes: 167 open, 1 deferred, 202 closed.
+370 nodes: 166 open, 1 deferred, 203 closed.
 
 ## Pages
 
 | Page | Open | What |
 |---|---|---|
-| [Ports](ports.md) | 48 | Changing the port to match the original. |
+| [Ports](ports.md) | 47 | Changing the port to match the original. |
 | [Reviews](reviews.md) | 2 | Rereading a question's decompiles against our own Ghidra project. |
 | [Acceptance](acceptance.md) | 30 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
 | [Questions](questions.md) | 70 | Questions about the original, answered from the executable. |
 | [Other](other.md) | 12 | Decisions, chores and unlabelled nodes. |
-| [Closed](closed.md) | 202 closed | Finished work and how it closed. |
+| [Closed](closed.md) | 203 closed | Finished work and how it closed. |
 
 ## Plans
 
@@ -123,7 +123,7 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 <a id="or-ep-uniform-ui-controls-gru5"></a>
 ### Uniform original-game controls across the UI
 
-`or-ep-uniform-ui-controls-gru5` · **open** · 9 of 11 closed
+`or-ep-uniform-ui-controls-gru5` · **open** · 10 of 11 closed
 
 > ## Background
 >
@@ -190,7 +190,6 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P2 | [or-d-yaga-hull-numbers-0iad](acceptance.md#or-d-yaga-hull-numbers-0iad) | Diagnose: Yaga day 30 numbers its ISD 2 and Carrack 1 where A0 shows ISD 1 and Carrack 2 |
 | P2 | [or-d3drm-raster-match-vog4](ports.md#or-d3drm-raster-match-vog4) | Match Direct3D RM's 8-bit palette, line stepping and rasterizer for the tactical aperture |
 | P2 | [or-ep-pr46-review-du66.31](acceptance.md#or-ep-pr46-review-du66.31) | Re-review PR #46 head after 0e9c9f4c |
-| P2 | [or-ep-uniform-ui-controls-gru5.10](ports.md#or-ep-uniform-ui-controls-gru5.10) | Port recovered title-drag bounds and mode policy |
 | P2 | [or-f-alliance-transit-xxn](acceptance.md#or-f-alliance-transit-xxn) | A1 fixture reproducing alliance-transit-day149 |
 | P2 | [or-f-sixteen-tie-c43](acceptance.md#or-f-sixteen-tie-c43) | A1 fixture reproducing empire-sixteen-tie |
 | P2 | [or-invented-log-text-82ba](ports.md#or-invented-log-text-82ba) | Replace the invented message-log text outside the strike plan |

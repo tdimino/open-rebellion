@@ -269,6 +269,7 @@ strategic_window_common::impl_strategic_window_state_core!(
     DefensesWindowState,
     OpenDefensesWindow,
     area_id,
+    size: (DEFENSES_WINDOW_WIDTH, DEFENSES_WINDOW_HEIGHT),
     drag = None,
     drag_owner = None,
 );
@@ -953,7 +954,7 @@ fn draw_defenses_windows_with_snapshot(
     strategic_window_common::unpack_detail_windows_draw!(
         draw => ctx world fog missions faction layout cache snapshot pointer_events router shown
     );
-    state.update_title_drag(ctx, layout);
+    let _ = state.update_title_drag(ctx, layout);
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
     }

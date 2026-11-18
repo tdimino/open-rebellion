@@ -2,7 +2,55 @@
 
 # Closed
 
-202 closed nodes, newest first. Back to the [index](INDEX.md).
+203 closed nodes, newest first. Back to the [index](INDEX.md).
+
+<a id="or-ep-uniform-ui-controls-gru5.10"></a>
+### Port recovered title-drag bounds and mode policy
+
+`or-ep-uniform-ui-controls-gru5.10` · **closed** · P2 · controls, interface-parity, port, windowing · assigned to CoralSeal · closed 2026-11-18  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1)
+
+> ## Background
+>
+> The CoolGameWindow drag path uses policy bit 4 and a mode at +0xf4. `FUN_00606ee0` starts capture. Mode 1 moves the native window live in `FUN_006071e0`; mode 2 draws an XOR outline. `FUN_00607010` releases capture and clamps the final top-left to the bounds rectangle at +0xbc..+0xc8 while accounting for the full window size. The current renderer has live title drag but does not apply this recovered release clamp.
+>
+> ## Scope
+>
+> Make the renderer/windowing adapter preserve temporary pointer capture while clamping a completed drag to the feature's recovered aperture bounds. Inventory constructors for +0xf4 mode 2: implement the outline preview only where a current source-backed surface actually used it, or retain a cited exclusion when no consumer exists. Do not copy HWND, HDC or ROP2 mechanics into rebellion-windowing.
+>
+> ## Design
+>
+> Window identity, routing snapshots and capture stay in rebellion-windowing. Pixel-space drag geometry and aperture bounds stay in rebellion-render. The state transition must expose a typed final position; feature code supplies bounds rather than duplicating edge math.
+>
+> ## Tests
+>
+> Add behavior-sentence tests for each edge, an oversized overshoot, live movement, release, and capture cleanup. Demonstrate new assertions fail against the unclamped implementation and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run the silent original-backed drag journey for representative Alliance and Empire strategic windows at each aperture edge.
+>
+> ## Evidence
+>
+> Cite `FUN_00606380`, `FUN_00606ee0`, `FUN_00607010`, `FUN_006071e0` and `ghidra/notes/cool-control-contracts.md`.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve event ownership and do not introduce Win32 concepts into the renderer-independent crate.
+
+**Acceptance criteria**
+
+- [x] Release-time clamping uses the recovered bounds and full window size without changing temporary capture ownership.
+- [x] The migration matrix identifies every live-drag and outline-drag consumer; mode 2 is implemented only for a source-backed consumer, otherwise it has a cited exclusion.
+- [x] Behavior-sentence tests cover movement inside each edge, overshoot, release, and both factions.
+- [x] Scoped mutation checks, make fmt, warning-free make build, make check, and applicable silent interface-parity journeys pass.
+
+**Notes**
+
+> 2026-11-18: Ported FUN_00607010 release-time galaxy-aperture clamping through the shared renderer title-drag transition. Live movement remains unclamped while held; release clears the renderer drag before clamping with each feature supplied full window size, and returns TitleDragUpdate::Released with the final position. The migration matrix inventories System, Fleet, Defenses and Missions as live mode-1 consumers, Sector as immovable, and mode 2 as a cited no-current-consumer exclusion. Both new behavior tests were demonstrated red against the previous unclamped release (-400 vs 55 and 32767/-32768 vs 314/40) and green after restoration, for Alliance and Empire. Renderer lib: 1222 passed, 3 asset-dependent ignored. Scoped cargo mutants: 37 generated; 34 caught, 2 unviable, and the only miss was an unrelated pre-existing draw_band_rename StringField font-field mutant included despite the function filter; no title-drag/clamp survivor. Green local gates: make fmt; warning-free make build; make check. Isolated WASM fixture: 38 scenarios/152 executions, zero production fixture tokens, SHA-256 c4953305661f9e6afb726d7dbdc70e8335d4feef95b2d0e88596d4fc532e5c9a. Silent journeys: fleet-move 2026-11-18T18-31-31-572Z-2436957 (12/12), fleet-window 2026-11-18T18-34-37-094Z-2440066 (40/40), sector-quadrants 2026-11-18T18-51-49-857Z-2454350 (12/12).
+
+**Closed:** Recovered release-time title-drag clamping is implemented for all current live strategic windows, mode policy is inventoried, both-faction behavior and interface journeys pass, and repository gates are green.
 
 <a id="or-ep-uniform-ui-controls-gru5.6"></a>
 ### Extract CoolSelectionBox and migrate popup selectors
@@ -399,7 +447,7 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)
 `or-ep-uniform-ui-controls-gru5.1` · **closed** · P1 · controls, ghidra, interface-parity, review · closed 2026-11-15  
 Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-q-cool-controls-0u0](#or-q-cool-controls-0u0)  
-Unblocks: [or-ep-uniform-ui-controls-gru5.10](ports.md#or-ep-uniform-ui-controls-gru5.10), [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)
+Unblocks: [or-ep-uniform-ui-controls-gru5.10](#or-ep-uniform-ui-controls-gru5.10), [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)
 
 > ## Background
 >

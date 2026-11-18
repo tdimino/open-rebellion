@@ -21,7 +21,7 @@ use crate::controls::{
 };
 use crate::fleet_window::paint_native;
 use crate::native_geometry::{logical_rect, rect_contains};
-use crate::system_window::{title_drag_step, TitleDrag};
+use crate::system_window::{clamp_window_to_galaxy, title_drag_step, TitleDrag, TitleDragStep};
 use crate::windowing_input::{
     FrameInputRouter, InputEventId, InputRecipient, PointerButtonId, PointerPhase,
 };
@@ -445,7 +445,8 @@ macro_rules! impl_strategic_window_state_core {
     (
         $state:ty,
         $record:ty,
-        $area_id:path
+        $area_id:path,
+        size: ($width:expr, $height:expr)
         $(, $extra_field:ident = $extra_default:expr)*
         $(,)?
     ) => {
@@ -508,14 +509,15 @@ macro_rules! impl_strategic_window_state_core {
                 &mut self,
                 ctx: &egui_macroquad::egui::Context,
                 layout: $crate::cockpit::CockpitLayout,
-            ) {
+            ) -> Option<$crate::strategic_window_common::TitleDragUpdate> {
                 $crate::strategic_window_common::update_title_drag(
                     &mut self.windows,
                     &mut self.title_drag,
                     ctx,
                     layout,
                     $area_id,
-                );
+                    ($width, $height),
+                )
             }
 
             fn window_mut(
@@ -2026,18 +2028,49 @@ pub(crate) fn update_title_drag<T: StrategicWindowRecord>(
     ctx: &egui::Context,
     layout: CockpitLayout,
     area_id: impl Fn(&T) -> egui::Id,
-) {
-    let Some(drag) = *active else {
-        return;
-    };
+    window_size: (f32, f32),
+) -> Option<TitleDragUpdate> {
+    let drag = (*active)?;
     let window = windows
         .iter_mut()
         .find(|window| area_id(window) == drag.area);
     match (window, title_drag_step(ctx, layout, drag)) {
-        (Some(window), Ok(Some(position))) => window.set_logical_position(position),
-        (Some(_), Ok(None)) => {}
-        _ => *active = None,
+        (Some(window), TitleDragStep::Moving(Some(position))) => {
+            window.set_logical_position(position);
+            Some(TitleDragUpdate::Moving { position })
+        }
+        (Some(_), TitleDragStep::Moving(None)) => None,
+        (Some(window), TitleDragStep::Released) => {
+            // FUN_00607010 releases the temporary capture before correcting
+            // the live HWND's final top-left. Ending our renderer-side drag
+            // first preserves the same ownership boundary.
+            *active = None;
+            let position = clamp_window_to_galaxy(
+                window.logical_position(),
+                layout,
+                window_size.0,
+                window_size.1,
+            );
+            window.set_logical_position(position);
+            Some(TitleDragUpdate::Released {
+                final_position: position,
+            })
+        }
+        (None, _) => {
+            *active = None;
+            None
+        }
     }
+}
+
+/// Observable state transition from one frame of a live title drag.
+///
+/// `FUN_006071e0` publishes each live position while the pointer is held;
+/// `FUN_00607010` publishes the bounds-corrected final position on release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TitleDragUpdate {
+    Moving { position: (i16, i16) },
+    Released { final_position: (i16, i16) },
 }
 
 pub(crate) fn commit_open<T: StrategicWindowRecord>(

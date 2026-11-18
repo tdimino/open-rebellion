@@ -4,7 +4,7 @@
 
 Changing the port to match the original. Back to the [index](INDEX.md).
 
-48 open.
+47 open.
 
 <a id="or-p-contents-troops-lse"></a>
 ### List troops in the tactical contents monitor
@@ -177,48 +177,6 @@ Epic: [Tactical parity: every TAC-01..07 A0 cell passes or is settled](INDEX.md#
 
 > With the capital meshes at their traced 3.0 scale (FUN_005d5b10) and the 0.3-unit fighter decals ported, C019 (empire-death-star-pre-alert, day 676) measures SSIM 0.952 and edge IoU 0.7185: 7,549 edge pixels in A0 or A1, 5,424 coinciding; misses holocube 412, ships, fighters and strike 977, stars 736. Its position measures pass: displacement 0, MAE 0.0023, changed pixels 0.0046 (903 of 194,916: holocube 221, ships 395, stars 287).
 > The tactical projection scale, (w+h)/4 per field unit with the half-pixel centre, is fitted to the A0 frames with a hyp: tag; the viewport projection lives in d3drm.dll, so tracing it belongs here.
-
-<a id="or-ep-uniform-ui-controls-gru5.10"></a>
-### Port recovered title-drag bounds and mode policy
-
-`or-ep-uniform-ui-controls-gru5.10` · **open** · P2 · controls, interface-parity, port, windowing · updated 2026-11-14  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
-Waits on: [or-ep-uniform-ui-controls-gru5.1](closed.md#or-ep-uniform-ui-controls-gru5.1)
-
-> ## Background
->
-> The CoolGameWindow drag path uses policy bit 4 and a mode at +0xf4. `FUN_00606ee0` starts capture. Mode 1 moves the native window live in `FUN_006071e0`; mode 2 draws an XOR outline. `FUN_00607010` releases capture and clamps the final top-left to the bounds rectangle at +0xbc..+0xc8 while accounting for the full window size. The current renderer has live title drag but does not apply this recovered release clamp.
->
-> ## Scope
->
-> Make the renderer/windowing adapter preserve temporary pointer capture while clamping a completed drag to the feature's recovered aperture bounds. Inventory constructors for +0xf4 mode 2: implement the outline preview only where a current source-backed surface actually used it, or retain a cited exclusion when no consumer exists. Do not copy HWND, HDC or ROP2 mechanics into rebellion-windowing.
->
-> ## Design
->
-> Window identity, routing snapshots and capture stay in rebellion-windowing. Pixel-space drag geometry and aperture bounds stay in rebellion-render. The state transition must expose a typed final position; feature code supplies bounds rather than duplicating edge math.
->
-> ## Tests
->
-> Add behavior-sentence tests for each edge, an oversized overshoot, live movement, release, and capture cleanup. Demonstrate new assertions fail against the unclamped implementation and run scoped cargo mutants.
->
-> ## E2E
->
-> Run the silent original-backed drag journey for representative Alliance and Empire strategic windows at each aperture edge.
->
-> ## Evidence
->
-> Cite `FUN_00606380`, `FUN_00606ee0`, `FUN_00607010`, `FUN_006071e0` and `ghidra/notes/cool-control-contracts.md`.
->
-> ## Constraints
->
-> AGENTS.md applies. Preserve event ownership and do not introduce Win32 concepts into the renderer-independent crate.
-
-**Acceptance criteria**
-
-- [ ] Release-time clamping uses the recovered bounds and full window size without changing temporary capture ownership.
-- [ ] The migration matrix identifies every live-drag and outline-drag consumer; mode 2 is implemented only for a source-backed consumer, otherwise it has a cited exclusion.
-- [ ] Behavior-sentence tests cover movement inside each edge, overshoot, release, and both factions.
-- [ ] Scoped mutation checks, make fmt, warning-free make build, make check, and applicable silent interface-parity journeys pass.
 
 <a id="or-invented-log-text-82ba"></a>
 ### Replace the invented message-log text outside the strike plan

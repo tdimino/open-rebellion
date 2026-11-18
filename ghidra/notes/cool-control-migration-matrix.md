@@ -360,20 +360,33 @@ Manufacturing evidence.
 ## CoolGameWindow title dragging
 
 `FUN_00606380`, `FUN_00606ee0`, `FUN_006071e0` and `FUN_00607010` establish
-live mode 1, capture and release-time full-window clamping. The production
-renderer has four live consumers: `system_window.rs`, `fleet_window.rs`,
-`defenses_window.rs` and `missions_window.rs`, sharing
-`strategic_window_common::{start_title_drag, record_title_drag,
-update_title_drag}` and `system_window::{TitleDrag, title_drag_step}`. `.10`
-adds a renderer-side, feature-bounded release clamp and returns a typed final
-position while `rebellion-windowing` retains capture/routing authority.
-`fleet-move.mjs`, `fleet-window.mjs` and `sector-quadrants.mjs` are the existing
-both-faction drag journeys.
+live mode 1, temporary capture and release-time full-window clamping. The
+strategic open path `FUN_0045aac0` supplies the view rectangle at
+`+0xcc..+0xd8` to `FUN_006071a0`; `FUN_00607010` clamps against its copy at
+`+0xbc..+0xc8` and includes the full width/height at `+0x38/+0x3c`.
 
-No constructor in the reviewed current feature set was proved to change
-`+0xf4` from its `FUN_00606380` default of 1. Outline mode 2 is therefore a
-bounded exclusion: `.10` must rescan constructors, but must not add an unused
-XOR-preview API without a source-backed current consumer.
+| Current surface | Original constructor/policy | Drag mode inventory | Port consumer |
+|---|---|---|---|
+| System detail | `FUN_00452fc0`, `+0xb8 \|= 4` | live mode 1; no `+0xf4` override | `system_window.rs` |
+| Fleet detail | `FUN_004a2630`, `+0xb8 \|= 4` | live mode 1; no `+0xf4` override | `fleet_window.rs` |
+| Defenses detail | `FUN_004a7790`, `+0xb8 \|= 4` | live mode 1; no `+0xf4` override | `defenses_window.rs` |
+| Missions detail | `FUN_0049f130`, `+0xb8 \|= 4` | live mode 1; no `+0xf4` override | `missions_window.rs` |
+| Sector detail | `FUN_004591d0` -> `FUN_004ac120`, policy 0 | immovable; neither mode is admitted | no drag consumer |
+| XOR outline | `FUN_00606ee0`/`FUN_006071e0`, `+0xf4 & 2` | no source-backed current constructor or renderer consumer | intentionally excluded |
+
+The four live consumers share
+`strategic_window_common::{start_title_drag, record_title_drag,
+update_title_drag, TitleDragUpdate}`. Each feature supplies its full window
+size; the renderer applies the recovered galaxy-aperture clamp only on the
+release transition and reports the typed final position. `rebellion-windowing`
+continues to own semantic capture/routing, and the renderer adds no HWND, HDC
+or ROP2 vocabulary. `fleet-move.mjs`, `fleet-window.mjs` and
+`sector-quadrants.mjs` are the existing both-faction drag journeys.
+
+The constructor rescan found no write that changes these four surfaces from
+the `FUN_00606380` default `+0xf4 = 1`. Outline mode 2 therefore remains a
+cited, bounded exclusion: adding an unused XOR-preview API would invent a
+current consumer rather than port one.
 
 ## Explicit exclusions
 

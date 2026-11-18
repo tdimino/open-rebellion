@@ -363,6 +363,7 @@ strategic_window_common::impl_strategic_window_state_core!(
     SystemWindowState,
     OpenSystemWindow,
     open_window_area_id,
+    size: (SYSTEM_WINDOW_WIDTH, SYSTEM_WINDOW_HEIGHT),
     rail = Vec::new(),
     painted = Vec::new(),
     band_rename = None,
@@ -1278,7 +1279,7 @@ fn draw_system_windows_with_snapshot(
         deliveries,
         fog,
     };
-    state.update_title_drag(ctx, layout);
+    let _ = state.update_title_drag(ctx, layout);
     let windows = strategic_window_common::presentation_windows(
         &state.windows,
         snapshot,
@@ -2332,13 +2333,23 @@ pub(crate) fn surface_drag_grab(
     (!on_control).then_some(at)
 }
 
-/// A held drag's frame: the window's new place, or `Err(())` once the
-/// button is up and the drag is over; `Ok(None)` with no pointer.
+/// One input frame of an active title drag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TitleDragStep {
+    /// The primary button remains held; a missing pointer leaves the live
+    /// position unchanged for this frame.
+    Moving(Option<(i16, i16)>),
+    /// The primary button is up and the temporary capture has ended.
+    Released,
+}
+
+/// A held drag's frame: the window's new live place, or `Released` once the
+/// button is up and the drag is over.
 pub(crate) fn title_drag_step(
     ctx: &egui::Context,
     layout: CockpitLayout,
     drag: TitleDrag,
-) -> Result<Option<(i16, i16)>, ()> {
+) -> TitleDragStep {
     let (down, pointer) = ctx.input(|input| {
         (
             input.pointer.button_down(egui::PointerButton::Primary),
@@ -2346,9 +2357,9 @@ pub(crate) fn title_drag_step(
         )
     });
     if !down {
-        return Err(());
+        return TitleDragStep::Released;
     }
-    Ok(pointer.map(|pointer| {
+    TitleDragStep::Moving(pointer.map(|pointer| {
         let at = canvas_pointer(layout, pointer) - drag.grab;
         (at.x.round() as i16, at.y.round() as i16)
     }))
@@ -5056,6 +5067,105 @@ mod tests {
                 (x + 40, y - 20),
                 "{faction:?}"
             );
+        }
+    }
+
+    #[test]
+    fn releasing_a_live_title_drag_clamps_every_aperture_edge_and_cleans_up_for_either_side() {
+        // FUN_006071e0 moves live without a clamp. FUN_00607010 then clears
+        // capture and clamps the top-left against +0xbc..+0xc8, including
+        // the full window width and height at +0x38/+0x3c.
+        let (world, systems) = fixture_world(1);
+        let manufacturing = ManufacturingState::new();
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let drag_layout = layout(faction, 2.0);
+            let minimum = clamp_window_to_galaxy(
+                (i16::MIN, i16::MIN),
+                drag_layout,
+                SYSTEM_WINDOW_WIDTH,
+                SYSTEM_WINDOW_HEIGHT,
+            );
+            let maximum = clamp_window_to_galaxy(
+                (i16::MAX, i16::MAX),
+                drag_layout,
+                SYSTEM_WINDOW_WIDTH,
+                SYSTEM_WINDOW_HEIGHT,
+            );
+            for (delta, expected_edge) in [
+                ((-500, 0), (Some(minimum.0), None)),
+                ((500, 0), (Some(maximum.0), None)),
+                ((0, -500), (None, Some(minimum.1))),
+                ((0, 500), (None, Some(maximum.1))),
+            ] {
+                let mut state = opened_as(&world, systems[0], faction);
+                let start = state.windows[0].logical_position;
+                let live = (start.0 + delta.0, start.1 + delta.1);
+                let expected = (
+                    expected_edge.0.unwrap_or(start.0),
+                    expected_edge.1.unwrap_or(start.1),
+                );
+                let from = crate::test_support::window_point(drag_layout, start, (100.0, 9.0));
+                let to = from
+                    + egui::vec2(
+                        f32::from(delta.0) * drag_layout.scale,
+                        f32::from(delta.1) * drag_layout.scale,
+                    );
+                let mut saw_unclamped_live_position = false;
+                let _ = run_cached(
+                    &world,
+                    &manufacturing,
+                    &mut state,
+                    drag(from, to),
+                    faction,
+                    BmpCache::new(),
+                    &mut |frame, state| {
+                        if frame == 5 {
+                            assert_eq!(state.windows[0].logical_position, live, "{faction:?}");
+                            assert!(state.title_drag.is_some(), "{faction:?}");
+                            saw_unclamped_live_position = true;
+                        }
+                    },
+                );
+                assert!(saw_unclamped_live_position, "{faction:?}");
+                assert_eq!(state.windows[0].logical_position, expected, "{faction:?}");
+                assert_eq!(state.title_drag, None, "{faction:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_completed_title_drag_reports_its_clamped_final_position_for_either_side() {
+        // port: FUN_00607010 returns the bounds-corrected final placement to
+        // the feature adapter after ending its temporary capture.
+        let (world, systems) = fixture_world(1);
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let drag_layout = layout(faction, 2.0);
+            let mut state = opened_as(&world, systems[0], faction);
+            state.windows[0].logical_position = (i16::MAX, i16::MIN);
+            state.title_drag = Some(TitleDrag {
+                area: open_window_area_id(&state.windows[0]),
+                grab: egui::Vec2::ZERO,
+            });
+            let expected = clamp_window_to_galaxy(
+                (i16::MAX, i16::MIN),
+                drag_layout,
+                SYSTEM_WINDOW_WIDTH,
+                SYSTEM_WINDOW_HEIGHT,
+            );
+            let ctx = egui::Context::default();
+            let mut transition = None;
+            let _ = ctx.run(frame_input(Vec::new()), |ctx| {
+                transition = state.update_title_drag(ctx, drag_layout);
+            });
+            assert_eq!(
+                transition,
+                Some(strategic_window_common::TitleDragUpdate::Released {
+                    final_position: expected,
+                }),
+                "{faction:?}"
+            );
+            assert_eq!(state.windows[0].logical_position, expected, "{faction:?}");
+            assert_eq!(state.title_drag, None, "{faction:?}");
         }
     }
 

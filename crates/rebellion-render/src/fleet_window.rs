@@ -636,6 +636,7 @@ strategic_window_common::impl_strategic_window_state_core!(
     FleetWindowState,
     OpenFleetWindow,
     area_id,
+    size: (FLEET_WINDOW_WIDTH, FLEET_WINDOW_HEIGHT),
     pending_control_invalidations = Vec::new(),
     pending_control_focus = Vec::new(),
     drag = None,
@@ -2262,7 +2263,7 @@ fn draw_fleet_windows_with_snapshot(
     if state.windows.iter().all(|window| window.id.is_none()) {
         state.prepare_faction(faction);
     }
-    state.update_title_drag(ctx, layout);
+    let _ = state.update_title_drag(ctx, layout);
     // A window the GID menu hides is neither painted nor live.
     let windows = strategic_window_common::presentation_windows(
         &state.windows,
@@ -7336,11 +7337,11 @@ pub(crate) mod tests {
                 &TroopTransportState::default(),
                 &mut state,
                 faction,
-                title_drag(at(100.0, 9.0), at(70.0, 39.0)),
+                title_drag(at(100.0, 9.0), at(130.0, 39.0)),
             );
             assert_eq!(
                 state.window_logical_position(system),
-                Some((ORIGIN.0 - 30, ORIGIN.1 + 30)),
+                Some((ORIGIN.0 + 30, ORIGIN.1 + 30)),
                 "{faction:?}"
             );
         }
