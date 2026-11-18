@@ -2,15 +2,295 @@
 
 # Closed
 
-196 closed nodes, newest first. Back to the [index](INDEX.md).
+202 closed nodes, newest first. Back to the [index](INDEX.md).
+
+<a id="or-ep-uniform-ui-controls-gru5.6"></a>
+### Extract CoolSelectionBox and migrate popup selectors
+
+`or-ep-uniform-ui-controls-gru5.6` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to ChartreuseMink · closed 2026-11-18  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> The original CoolSelectionBoxClass (`FUN_0060bed0`, `FUN_0060c210`) opens a popup through `FUN_0060cac0`; `FUN_0060d020` hosts a CoolDragList, flips the popup above when needed, captures/dismisses outside presses and reports the selected item. Build Selection and Mission Dialog currently carry separate list-open flags, popup geometry, wheel movement, row hover/selection and dismissal logic.
+>
+> ## Scope
+>
+> Implement SelectionBoxState, SelectionBoxSpec and typed SelectionBoxOutput composed from DragList and StrobeButton where the recovered control uses one. Cover open/close/toggle, current-item reveal, popup frame/list inset, row capacity, above/below placement, outside press consumption, wheel/scrollbar behavior, hover/selected art and chosen-item closure. Migrate Build Selection and Mission Dialog plus any additional authentic matrix consumers.
+>
+> ## Design
+>
+> The object owns popup/control behavior and returns open/close/selection outcomes. Feature modules provide typed items and render their item content; they retain build/mission validation and actions. Popup dismissal must claim its physical event so the exposed control cannot activate in the same dispatch.
+>
+> ## Tests
+>
+> Add component tests for placement, capture, outside dismissal, reveal, wheel/scrollbar, selection, and same-event fallthrough. Preserve Build Selection and Mission Dialog tests for original geometry, current-row colors and bottom-button availability. Show new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent Build Selection and Mission Dialog journeys on both factions, including opening, scrolling, choosing, outside dismissal and a popup near the lower aperture edge.
+>
+> ## Evidence
+>
+> Cite `FUN_0060bed0`, `FUN_0060c210`, `FUN_0060cac0`, `FUN_0060cc50`, `FUN_0060d020`, `FUN_0060cbf0` and each feature constructor. Record the existing missing 0x299a scrollbar art behavior until settled.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not move buildable/mission item rendering or validation into the generic object. Preserve modal routing and control registry names.
+
+**Acceptance criteria**
+
+- [x] SelectionBox composes DragList and owns recovered popup placement, reveal, capture, scrolling, selection and dismissal behavior.
+- [x] Build Selection, Mission Dialog and every other matrix-selected consumer use the shared object without moving item/domain policy.
+- [x] Outside dismissal consumes its event and placement above/below remains within the strategic aperture.
+- [x] Both factions pass behavior-sentence tests and scoped mutations for popup interaction and art state.
+- [x] make fmt, warning-free make build, make check and silent Build Selection/Mission Dialog journeys pass.
+
+**Closed:** Done; uncommitted, ships in the single uniform-controls epic PR at Will's direction.
+
+<a id="or-ep-uniform-ui-controls-gru5.8"></a>
+### Consolidate the remaining recovered UI control families
+
+`or-ep-uniform-ui-controls-gru5.8` · **closed** · P2 · controls, interface-parity, port, refactor, verify · assigned to AzureRaven · closed 2026-11-18  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> Uniform UI controls extend beyond the five largest clone families. The original toolkit also contains vertical/horizontal ScrollBar, Slider, CoolwinStatusBar and stock tooltip controls; Checkbox is a StrobeButton variant. The port already has strong ScrollBar and TooltipState objects, an egui audio slider, tactical status meters and feature-local tooltip rendering. These must be reconciled against the reviewed matrix rather than ignored or homogenized without source evidence.
+>
+> ## Scope
+>
+> For every remaining control-family row in the reviewed matrix, make one renderer object the canonical implementation and migrate authentic production consumers. Preserve the existing ScrollBar implementation and tooltip object where they satisfy the original contract, moving/re-exporting them through the uniform controls module without unnecessary rewrites. Compare slider and status-bar consumers against their original classes; extract shared objects when the same class has multiple consumers, otherwise retain a focused object with a cited singleton/different-control explanation. Confirm Checkbox composition through StrobeButton.
+>
+> ## Design
+>
+> Uniform means one behavior contract per original control family, not identical styling or forced use in developer panels. Keep resource/art configuration and domain action application outside the objects. Do not invent behavior for unresolved tactical meters or audio extensions.
+>
+> ## Tests
+>
+> Preserve existing scrollbar and tooltip behavior tests. Add source-backed tests for any newly shared slider/status/checkbox behavior, show them red and run scoped cargo mutants for touched logic.
+>
+> ## E2E
+>
+> Run applicable silent cockpit tooltip, scrollbar, game-options/audio-slider and tactical status journeys on both factions where the matrix marks authentic original controls.
+>
+> ## Evidence
+>
+> Cite the original constructor/WndProc for every migrated family and update the matrix with canonical Rust object paths and exclusions.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No developer-only egui restyling, speculative parity claims or production dependency changes.
+
+**Acceptance criteria**
+
+- [x] ScrollBar, Tooltip, Checkbox, Slider and CoolwinStatusBar matrix rows each name one canonical Rust object or a source-backed different/singleton exclusion.
+- [x] Every authentic repeated production consumer uses the canonical object without forced styling across different original controls.
+- [x] Existing scrollbar/tooltip tests and new source-backed control tests pass for both factions where applicable.
+- [x] Scoped mutation checks have no non-equivalent survivor in touched logic.
+- [ ] make fmt, warning-free make build, make check and applicable silent UI journeys pass.
+
+**Closed:** Implementation and local verification complete; Tom will validate the aggregate uniform-controls epic PR, including the Mini-only tactical four-cell performance gate.
+
+<a id="or-ep-uniform-ui-controls-gru5.7"></a>
+### Extract CoolStringField and migrate authentic text controls
+
+`or-ep-uniform-ui-controls-gru5.7` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to CoralSeal · closed 2026-11-18  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> The original CoolStringField constructor `FUN_00604cf0` owns a text buffer, max length, owner, selection, geometry and focus; its WndProc `FUN_00605160` handles accepted characters and key forwarding. Parent windows retain commit/cancel meaning. The port repeats raw egui TextEdit setup and focus/selection logic for Fleet rename, manufacturing-band rename, Finder type-ahead, Encyclopedia search and other fields.
+>
+> ## Scope
+>
+> Implement StringFieldState, StringFieldSpec and typed StringFieldOutput for recovered text editing, selection, select-all, max length, focus acquisition/loss, accepted-character filtering, Enter/Escape and owner key forwarding. Migrate every authentic CoolStringField consumer in the matrix, starting with Fleet and manufacturing rename, then Finder/Encyclopedia fields where the source confirms the class. Record main-menu, developer-panel or other native edit controls as exclusions when they are not CoolStringField.
+>
+> ## Design
+>
+> The object cooperates with WindowId/ControlId and FrameInputRouter leases but does not own top-level focus policy. It returns typed text/focus/submit/cancel/unhandled-key outcomes; the parent decides whether empty submission is rejected, what command is issued and how type-ahead changes its list. Styling is explicit configuration so rename selection colors and finder/search fields can differ without duplicating input state.
+>
+> ## Tests
+>
+> Add component tests for select-all, typed characters, max length, focus lease, Enter/Escape, empty submission policy boundaries and unhandled-key forwarding. Preserve feature tests for rename and type-ahead on both factions, demonstrate new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent Fleet/manufacturing rename and Finder/Encyclopedia search journeys on both factions where supported, including focus restoration and same-frame key isolation.
+>
+> ## Evidence
+>
+> Cite `FUN_00604cf0`, `FUN_00604f70`, `FUN_00604f90`, `FUN_00605110`, `FUN_00605160`, `FUN_00609650`, `FUN_00609ed0` and the applicable parent handlers.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not make rename/search semantics generic and do not replace developer-only controls for visual uniformity.
+
+**Acceptance criteria**
+
+- [x] StringField owns recovered text, selection, length, focus and key-handling state and returns typed parent-facing outcomes.
+- [x] Fleet/manufacturing rename and every other matrix-confirmed CoolStringField consumer use the shared object.
+- [x] Feature-specific empty-submit, commit/cancel and type-ahead semantics remain in their parent modules.
+- [x] Both factions pass behavior-sentence focus/edit tests and scoped mutation checks with no non-equivalent survivor.
+- [ ] make fmt, warning-free make build, make check and applicable silent rename/search journeys pass.
+
+**Closed:** Closed at Will's direction for the aggregate uniform-controls PR.
+
+<a id="or-ep-uniform-ui-controls-gru5.5"></a>
+### Migrate all remaining authentic CoolDragList consumers
+
+`or-ep-uniform-ui-controls-gru5.5` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to AzureRaven · closed 2026-11-18  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> After the DragList kernel is proven in Defenses and Missions, the same original class remains represented by feature-local code in Fleet/System lists, Fleet/Troop/Personnel Finders, Message Index and message display, Operation Report, Status surfaces, manufacturing/build flows, battle alerts/results and other matrix rows. Uniform controls require migrating the full authentic consumer set rather than stopping after two examples.
+>
+> ## Scope
+>
+> Migrate every remaining production consumer identified as CoolDragList in the reviewed matrix to the shared DragList object. Group edits in reviewable family slices while maintaining one canonical state/output contract. Reuse common test fixtures instead of copying setup. Selection-box popup lists are owned by the dedicated SelectionBox bead. Consumers proven to use a different original list/control stay local with a cited matrix exclusion.
+>
+> ## Design
+>
+> Each feature maps DragListOutput into its own actions; it retains rows, sorting/filtering, item art, selection meaning, game queries and faction policy. Remove superseded first-row, click timing, list geometry, wheel, capture and scrollbar implementations only after the shared object owns the same behavior. Do not add callbacks that let the generic list mutate domain state.
+>
+> ## Tests
+>
+> For every migrated family retain behavior-sentence tests for selection, keyboard navigation, scrolling, double click and drag as applicable, including both factions. Add component coverage only for newly discovered control behavior, show it red and run scoped cargo mutants in manageable family batches.
+>
+> ## E2E
+>
+> Run each applicable silent tools/interface-parity journey for the migrated family at its supported viewport and both factions. Retain diagnostic logs and screenshot/hash evidence under the repository evidence rules.
+>
+> ## Evidence
+>
+> Update the migration matrix with the exact Rust consumers removed and the original constructor/window-procedure citations supporting each mapping. Record intentional exclusions separately.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve domain ordering, original row art and existing public feature actions. Do not weaken tests or bulk-regenerate unrelated goldens.
+
+**Acceptance criteria**
+
+- [x] Every remaining matrix-selected CoolDragList consumer uses the shared DragList object, excluding only dedicated SelectionBox internals and cited different controls.
+- [x] Feature modules retain row data, filtering/sorting, art and domain action policy while duplicate control state/geometry/input is removed.
+- [x] Alliance and Empire selection, keyboard, scroll, double-click and drag behavior remains covered wherever each feature supports it.
+- [x] Family-scoped mutation runs have no surviving non-equivalent touched mutant and the 70-token normalized scan removes the selected list clone families.
+- [ ] make fmt, warning-free make build, make check and all applicable silent interface-parity journeys pass.
+
+**Closed:** Closed at Will’s direction for the aggregate uniform-controls PR.
+
+<a id="or-ep-uniform-ui-controls-gru5.3"></a>
+### Extract CoolTabControl and migrate authentic tab strips
+
+`or-ep-uniform-ui-controls-gru5.3` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · closed 2026-11-17  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> The original CoolTabControl constructor `FUN_0060d590` owns a strip of child controls and switches their page state. Fleet, System, Defenses, Missions, Mission Dialog, reports and tactical surfaces currently repeat tab geometry, bitmap-state choice, enabled/empty policy, keyboard movement and click handling around feature-local enums.
+>
+> ## Scope
+>
+> Implement a generic renderer-side TabControl<T> composed from StrobeButton. It owns tab-strip geometry, stable control IDs, selected/disabled/empty presentation, pointer selection and recovered keyboard traversal. Feature modules retain their tab enum, labels, content queries, resource configuration and action application. Migrate every authentic CoolTabControl consumer in the reviewed matrix across strategic, modal and tactical UI. Record exclusions where a visual row merely resembles tabs but was a different original control.
+>
+> ## Design
+>
+> Use typed TabSpec<T>, TabControlState<T> and TabControlOutput<T>; avoid dynamic callbacks and domain-aware branches. Configuration maps faction and content availability to art before showing the control. The object must cooperate with WindowId/ControlId focus routing without owning top-level focus policy.
+>
+> ## Tests
+>
+> Add component tests for selected, enabled, disabled/empty, exact hit, left/right traversal and stable IDs. Preserve and adapt existing family tests for initial tab, selection reset and faction art. Demonstrate new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent interface-parity journeys for migrated Fleet, System, Defenses, Missions, Mission Dialog, Report and tactical tab surfaces on both factions where supported.
+>
+> ## Evidence
+>
+> Cite `FUN_0060d590`, feature tab constructors and key handlers such as the Defenses left/right path. Record every migrated matrix row.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not make tab contents generic and do not merge semantically distinct window lifecycle loops.
+
+**Acceptance criteria**
+
+- [x] TabControl<T> owns common strip geometry, state painting, exact input and recovered keyboard traversal using StrobeButton.
+- [x] Every matrix-selected original tab control is migrated while feature enums, content and actions remain local.
+- [x] Disabled, empty and selected art plus stable focus/control IDs are preserved for Alliance and Empire.
+- [ ] Behavior-sentence tests and scoped mutation checks kill every non-equivalent touched mutant.
+- [ ] make fmt, warning-free make build, make check and applicable silent interface-parity journeys pass.
+
+**Notes**
+
+> 2026-11-17: Added the renderer-side TabControl kernel and migrated all 13 reviewed matrix rows while keeping feature enums/content/actions local. make fmt, warning-free make build, and make check pass locally. Same-flags 70-token jscpd changed from 3 exact / 275 renamed to 2 exact / 274 renamed. Acceptance 4 remains open because scoped cargo mutants could not start: mac-mini-ts DNS resolution failed. Acceptance 5 remains open because the fresh interface fixture could not be built for the same reason, so no stale WASM journeys were accepted.
+
+**Closed:** Implemented TabControl<T> and migrated all 13 reviewed authentic tab-strip consumers; local make fmt, warning-free make build, make check, and same-flags jscpd pass. Closed at the user's direction with the documented Mini-only mutation and fresh interface-journey gates unavailable because mac-mini-ts could not resolve.
+
+<a id="or-ep-uniform-ui-controls-gru5.4"></a>
+### Extract stateful CoolDragList and compose the shared ScrollBar
+
+`or-ep-uniform-ui-controls-gru5.4` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · closed 2026-11-17  
+Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.5](#or-ep-uniform-ui-controls-gru5.5), [or-ep-uniform-ui-controls-gru5.6](#or-ep-uniform-ui-controls-gru5.6)
+
+> ## Background
+>
+> `FUN_00607ea0` constructs a stateful CoolDragList and `FUN_006083c0` owns painting, selection, keyboard movement, click/double-click notifications, right-press selection, drag capture/drop and scrolling. The port list_control.rs currently contains useful stateless helpers and LabeledCell, while each window still owns combinations of first row, selection, click timing, grid/vertical layout, capture and scrollbar state. The existing ScrollBar object already recovers `FUN_0060aa70` geometry and input.
+>
+> ## Scope
+>
+> Create DragListState, DragListSpec and typed DragListOutput objects in the renderer controls layer. Compose the existing ScrollBar and consolidate common vertical/grid layout, clipped row hit regions, single/multi-selection modes, keyboard moves, wheel and scrollbar updates, reveal-selection behavior, click/double-click, right-press selection and bounded drag lifecycle according to the reviewed matrix. Keep row data, item art/text rendering and domain actions in feature modules. First migrate Defenses and Missions list controls as representative grid and vertical consumers, subsuming LabeledCell without losing its behavior.
+>
+> ## Design
+>
+> Use typed events equivalent to original notifications 0x29a, 0x29b and 0x309 rather than callbacks into feature code. Separate persistent state from per-frame geometry and output. Capabilities such as multi-select, grid and draggable are explicit policy enums, not boolean soup. Pointer input must respect the frozen FrameInputRouter permit and one physical event may produce one owner outcome.
+>
+> ## Tests
+>
+> Add component tests for visible range, selection/reveal, single and multi-select, grid wrapping, double click, right press, outside drag threshold/drop, scroll arrows/track/thumb/wheel and capture cancellation. Preserve both faction behavior tests in Defenses/Missions, show new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent Defenses and Missions interface-parity journeys at supported viewports and both factions, including selection, scroll, right-click and drag paths.
+>
+> ## Evidence
+>
+> Cite `FUN_00607ea0`, `FUN_006083c0`, `FUN_00609ed0`, `FUN_00609410`, `FUN_006094b0`, `FUN_00609500`, `FUN_0060aa70` and the relevant feature constructors. Record which uncertain selection rules remain bounded.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not make row rendering or game actions generic. Do not change save state or move renderer behavior into rebellion-windowing.
+
+**Acceptance criteria**
+
+- [x] DragListState/Spec/Output own recovered list geometry and interaction while feature modules retain row content and domain policy.
+- [x] The existing ScrollBar is composed rather than reimplemented, including arrows, track, thumb, wheel and selection reveal.
+- [x] Defenses and Missions use the shared object for their authentic list controls with unchanged Alliance/Empire behavior.
+- [x] Selection, double-click, right-press and drag/capture component tests plus scoped mutants cover every touched transition.
+- [x] make fmt, warning-free make build, make check and silent Defenses/Missions interface-parity journeys pass.
+
+**Closed:** Extracted stateful DragList (FUN_00607ea0/FUN_006083c0) composing the shared ScrollBar; Defenses and Missions migrated, Alliance/Empire unchanged except source-faithful select-on-press. make build warning-free, make check exit 0, sector-quadrants 12/12 both factions muted, mutants 379 caught/37 unviable/3 explained. Commit 76bbd23e pushed to will-forster. Not run: 1280x800 viewport. Missions 0x29fc bar question carried to gru5.5.
 
 <a id="or-ep-uniform-ui-controls-gru5.2"></a>
 ### Extract CoolStrobeButton and checkbox objects
 
-`or-ep-uniform-ui-controls-gru5.2` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to open-rebellion-pane-6/ntm-c816c91a676a · closed 2026-11-17  
+`or-ep-uniform-ui-controls-gru5.2` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · closed 2026-11-17  
 Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1), [or-ep-uniform-ui-controls-gru5.11](#or-ep-uniform-ui-controls-gru5.11)  
-Unblocks: [or-ep-uniform-ui-controls-gru5.3](ports.md#or-ep-uniform-ui-controls-gru5.3), [or-ep-uniform-ui-controls-gru5.4](ports.md#or-ep-uniform-ui-controls-gru5.4), [or-ep-uniform-ui-controls-gru5.7](ports.md#or-ep-uniform-ui-controls-gru5.7), [or-ep-uniform-ui-controls-gru5.8](ports.md#or-ep-uniform-ui-controls-gru5.8)
+Unblocks: [or-ep-uniform-ui-controls-gru5.3](#or-ep-uniform-ui-controls-gru5.3), [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4), [or-ep-uniform-ui-controls-gru5.7](#or-ep-uniform-ui-controls-gru5.7), [or-ep-uniform-ui-controls-gru5.8](#or-ep-uniform-ui-controls-gru5.8)
 
 > ## Background
 >

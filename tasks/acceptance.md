@@ -194,7 +194,7 @@ Unblocks: [or-acc-status-2ls](#or-acc-status-2ls)
 
 `or-ep-uniform-ui-controls-gru5.9` · **open** · P1 · controls, duplication, interface-parity, verify · updated 2026-11-14  
 Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
-Waits on: [or-ep-uniform-ui-controls-gru5.3](ports.md#or-ep-uniform-ui-controls-gru5.3), [or-ep-uniform-ui-controls-gru5.5](ports.md#or-ep-uniform-ui-controls-gru5.5), [or-ep-uniform-ui-controls-gru5.6](ports.md#or-ep-uniform-ui-controls-gru5.6), [or-ep-uniform-ui-controls-gru5.7](ports.md#or-ep-uniform-ui-controls-gru5.7), [or-ep-uniform-ui-controls-gru5.8](ports.md#or-ep-uniform-ui-controls-gru5.8)
+Waits on: [or-ep-uniform-ui-controls-gru5.3](closed.md#or-ep-uniform-ui-controls-gru5.3), [or-ep-uniform-ui-controls-gru5.5](closed.md#or-ep-uniform-ui-controls-gru5.5), [or-ep-uniform-ui-controls-gru5.6](closed.md#or-ep-uniform-ui-controls-gru5.6), [or-ep-uniform-ui-controls-gru5.7](closed.md#or-ep-uniform-ui-controls-gru5.7), [or-ep-uniform-ui-controls-gru5.8](closed.md#or-ep-uniform-ui-controls-gru5.8)
 
 > ## Background
 >

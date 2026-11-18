@@ -10,18 +10,18 @@ session keeps with [br](https://github.com/Dicklesworthstone/beads_rust);
 [agent_docs/task-graph.md](../agent_docs/task-graph.md) explains the node
 kinds and how work is claimed and closed.
 
-373 nodes: 2 in progress, 171 open, 1 deferred, 196 closed, 3 tombstone.
+370 nodes: 167 open, 1 deferred, 202 closed.
 
 ## Pages
 
 | Page | Open | What |
 |---|---|---|
-| [Ports](ports.md) | 54 | Changing the port to match the original. |
+| [Ports](ports.md) | 48 | Changing the port to match the original. |
 | [Reviews](reviews.md) | 2 | Rereading a question's decompiles against our own Ghidra project. |
 | [Acceptance](acceptance.md) | 30 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
-| [Questions](questions.md) | 73 | Questions about the original, answered from the executable. |
+| [Questions](questions.md) | 70 | Questions about the original, answered from the executable. |
 | [Other](other.md) | 12 | Decisions, chores and unlabelled nodes. |
-| [Closed](closed.md) | 196 closed | Finished work and how it closed. |
+| [Closed](closed.md) | 202 closed | Finished work and how it closed. |
 
 ## Plans
 
@@ -123,7 +123,7 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 <a id="or-ep-uniform-ui-controls-gru5"></a>
 ### Uniform original-game controls across the UI
 
-`or-ep-uniform-ui-controls-gru5` · **open** · 3 of 11 closed
+`or-ep-uniform-ui-controls-gru5` · **open** · 9 of 11 closed
 
 > ## Background
 >
@@ -159,10 +159,7 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 
 ## In progress
 
-| Priority | Node | Title |
-|---|---|---|
-| P1 | [or-ep-uniform-ui-controls-gru5.3](ports.md#or-ep-uniform-ui-controls-gru5.3) | Extract CoolTabControl and migrate authentic tab strips |
-| P1 | [or-ep-uniform-ui-controls-gru5.4](ports.md#or-ep-uniform-ui-controls-gru5.4) | Extract stateful CoolDragList and compose the shared ScrollBar |
+None.
 
 ## Ready
 
@@ -175,7 +172,7 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P1 | [or-d-aperture-wrn](acceptance.md#or-d-aperture-wrn) | Diagnose: the space view (aperture) differs in 23 cells |
 | P1 | [or-d-options-dqe](acceptance.md#or-d-options-dqe) | Diagnose: the Battle Options panel differs in 9 cells |
 | P1 | [or-d-status-x1x](acceptance.md#or-d-status-x1x) | Diagnose: the status panel differs in 16 cells |
-| P1 | [or-ep-uniform-ui-controls-gru5.7](ports.md#or-ep-uniform-ui-controls-gru5.7) | Extract CoolStringField and migrate authentic text controls |
+| P1 | [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9) | Verify uniform control adoption across the game UI |
 | P1 | [or-f-yaga-variants-4qf](acceptance.md#or-f-yaga-variants-4qf) | A1 fixtures for the edited Yaga day-30 saves |
 | P1 | [or-port-ai-orders-4zf](ports.md#or-port-ai-orders-4zf) | Q: Which original AI orders should the port's AI issue, and in what order? |
 | P1 | [or-port-force-fields-2u0m](ports.md#or-port-force-fields-2u0m) | Port: replace ForceTier and force_experience with the original Force fields |
@@ -194,7 +191,6 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P2 | [or-d3drm-raster-match-vog4](ports.md#or-d3drm-raster-match-vog4) | Match Direct3D RM's 8-bit palette, line stepping and rasterizer for the tactical aperture |
 | P2 | [or-ep-pr46-review-du66.31](acceptance.md#or-ep-pr46-review-du66.31) | Re-review PR #46 head after 0e9c9f4c |
 | P2 | [or-ep-uniform-ui-controls-gru5.10](ports.md#or-ep-uniform-ui-controls-gru5.10) | Port recovered title-drag bounds and mode policy |
-| P2 | [or-ep-uniform-ui-controls-gru5.8](ports.md#or-ep-uniform-ui-controls-gru5.8) | Consolidate the remaining recovered UI control families |
 | P2 | [or-f-alliance-transit-xxn](acceptance.md#or-f-alliance-transit-xxn) | A1 fixture reproducing alliance-transit-day149 |
 | P2 | [or-f-sixteen-tie-c43](acceptance.md#or-f-sixteen-tie-c43) | A1 fixture reproducing empire-sixteen-tie |
 | P2 | [or-invented-log-text-82ba](ports.md#or-invented-log-text-82ba) | Replace the invented message-log text outside the strike plan |
