@@ -1,9 +1,14 @@
-//! Audio UI controls for the galaxy map status bar.
+//! Audio UI controls for the port's galaxy-map status bar.
 //!
 //! This module owns only the **egui rendering** side of audio: volume sliders
 //! and a mute toggle.  The actual audio engine (kira `AudioManager`) lives in
 //! `rebellion-app/src/audio.rs` to avoid a `links = "alsa"` conflict between
 //! `miniquad` (pulled in by `egui-macroquad`) and `cpal` (pulled in by kira).
+//!
+//! This compact bottom-bar UI is a port extension, not either original
+//! `FUN_00604570` Slider. The two authentic bitmap controls live on the Game
+//! Options screen and compose [`crate::controls::Slider`]; do not impose their
+//! COMMON art or integer interaction contract on this extension.
 //!
 //! # Integration
 //!

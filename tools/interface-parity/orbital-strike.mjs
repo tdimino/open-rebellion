@@ -426,18 +426,15 @@ async function click(page, point, button = "left") {
   await frames(page);
 }
 
-// Two presses a frame apart, each seen by egui, inside its double-click
-// time.
+// Deliver both complete clicks in one browser input batch. Waiting for an
+// application frame between each edge makes the release interval depend on
+// host WebGL speed and can exceed egui's configured 300 ms double-click
+// window even though Playwright issued a double click.
 async function doubleClick(page, point) {
   await page.waitForTimeout(500);
   await page.mouse.move(point.x, point.y);
   await frames(page);
-  for (let press = 1; press <= 2; press += 1) {
-    await page.mouse.down({ clickCount: press });
-    await frames(page);
-    await page.mouse.up({ clickCount: press });
-    await frames(page);
-  }
+  await page.mouse.dblclick(point.x, point.y, { delay: 0 });
   await frames(page, 2);
 }
 

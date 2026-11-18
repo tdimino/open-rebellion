@@ -13,6 +13,7 @@
 //! dragged out of the list moves to where it is dropped (`0x201`), as one
 //! out of the Fleet window does.
 
+use crate::controls::LIST_BAR_29CC;
 use crate::controls::{
     paint_label, DragList, DragListLayout, DragListSpec, DragListState, DragPolicy,
     SelectionPolicy, TabControl, TabControlState, TabPresentation, TabSpec, WheelPolicy,
@@ -22,7 +23,6 @@ use crate::native_geometry::logical_rect;
 use crate::object_menu::MenuObject;
 use crate::panels::fleets::fighter_mini_id;
 use crate::quadrant_icons::{mission_keys, system_members};
-use crate::scroll_bar::LIST_BAR_29CC;
 use crate::strategic_window_common;
 #[allow(unused_imports)]
 use crate::strategic_window_common::window_prelude::*;
@@ -1132,9 +1132,8 @@ fn draw_defenses_window(
                 .note_pointer_phase(PointerPhase::Release(PointerButtonId::Primary));
         }
 
-        // The tabs. No tab is ever disabled; an empty one opens its
-        // empty page. port: the help messages (`FUN_00600a40`) are not
-        // shown.
+        // The tabs. No tab is ever disabled; an empty one opens its empty
+        // page. `FUN_00600a40` supplies each tab's help message.
         let tab_specs = DefensesPage::ALL.map(|page| {
             let rect = tab_rect(local, scale, page);
             let empty = page_rows(world, fog, missions, player, window.system, page).is_empty();
@@ -1152,6 +1151,7 @@ fn draw_defenses_window(
             } else {
                 TabPresentation::Enabled
             })
+            .with_tooltip(page.name())
         });
         if let Some(page) = TabControl::paint_and_select(
             &tab_specs,
@@ -1234,7 +1234,9 @@ fn draw_defenses_window(
         }
         // A captured left press on a squadron, character or special force
         // may drag out of the list (`0x29a`).
-        if let Some((item, origin)) = control.output.drag_armed() {
+        if let (true, Some((item, origin))) =
+            (control.next.is_capturing(), control.output.drag_armed())
+        {
             result.drag = Some(RowDrag {
                 system: window.system,
                 item,

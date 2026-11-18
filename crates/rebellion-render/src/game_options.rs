@@ -8,7 +8,10 @@ use macroquad::prelude::*;
 
 use crate::audio::AudioVolumeState;
 use crate::bmp_cache::{resources, BmpCache, DllSource};
-use crate::controls::{ButtonArt, ButtonImage, ButtonState, StrobeButton};
+use crate::controls::{
+    ButtonArt, ButtonImage, ButtonState, Slider, SliderInput, SliderSpec, SliderState, StringField,
+    StringFieldLease, StringFieldSpec, StringFieldState, StringFieldStyle, StrobeButton,
+};
 use crate::native_geometry::NativeRect;
 
 const LOGICAL_WIDTH: f32 = 640.0;
@@ -119,6 +122,10 @@ const MUSIC_RECT: NativeRect = NativeRect::new(352.0, 76.0, 19.0, 35.0);
 /// width argument is untraced.
 const MUSIC_SLIDER_RECT: NativeRect = NativeRect::new(392.0, 130.0, 212.0, 54.0);
 const SOUND_SLIDER_RECT: NativeRect = NativeRect::new(392.0, 190.0, 212.0, 54.0);
+/// The two `FUN_00604570` instances share range and geometry. Their bitmap
+/// resources remain feature configuration in [`draw_volume`].
+const VOLUME_SLIDER: Slider =
+    Slider::new(SliderSpec::horizontal(0, 100, 199.0).with_offsets(5.0, 1.0));
 /// The tactical display switches, 35 by 22 at x 357; their rows are not
 /// evenly spaced.
 const TACTICAL_TOGGLE_RECTS: [NativeRect; 5] = [
@@ -281,7 +288,7 @@ impl OptionsCanvas {
 pub struct GameOptionsState {
     pub pending: Option<GameOptionsAction>,
     pub occupied: [bool; SAVE_ROWS],
-    pub names: [String; SAVE_ROWS],
+    name_fields: [StringFieldState; SAVE_ROWS],
     /// Rows this opening of the window saved (`FUN_00408240`).
     saved_rows: [bool; SAVE_ROWS],
     /// The save alert on screen, if any.
@@ -289,6 +296,8 @@ pub struct GameOptionsState {
     pub error: Option<String>,
     origin: GameOptionsOrigin,
     pressed: Option<GameOptionsControl>,
+    music_slider: SliderState,
+    sound_slider: SliderState,
     /// Whether music plays, refreshed each frame for the overlay's label.
     music_on: bool,
     pub show_starfield: bool,
@@ -303,12 +312,14 @@ impl Default for GameOptionsState {
         Self {
             pending: None,
             occupied: [false; SAVE_ROWS],
-            names: std::array::from_fn(|_| String::new()),
+            name_fields: std::array::from_fn(|_| StringFieldState::new("")),
             saved_rows: [false; SAVE_ROWS],
             alert: None,
             error: None,
             origin: GameOptionsOrigin::ShuttleCockpit,
             pressed: None,
+            music_slider: SliderState::default(),
+            sound_slider: SliderState::default(),
             music_on: true,
             show_starfield: true,
             show_planet: true,
@@ -324,15 +335,21 @@ impl GameOptionsState {
         // An empty slot's field is blank (`FUN_00407180` writes the empty
         // string at DAT_006b120c when a slot holds no save).
         self.occupied.fill(false);
-        self.names = std::array::from_fn(|_| String::new());
+        self.name_fields = std::array::from_fn(|_| StringFieldState::new(""));
         for save in saves {
             if let Some(occupied) = self.occupied.get_mut(save.slot) {
                 *occupied = true;
             }
-            if let Some(name) = self.names.get_mut(save.slot) {
-                name.clone_from(&save.name);
+            if let Some(field) = self.name_fields.get_mut(save.slot) {
+                field.set_text(save.name.clone());
             }
         }
+    }
+
+    /// The current source-owned save-name field value for one row.
+    #[must_use]
+    pub fn name(&self, slot: usize) -> Option<&str> {
+        self.name_fields.get(slot).map(StringFieldState::text)
     }
 
     fn enabled(&self, action: &GameOptionsAction) -> bool {
@@ -570,7 +587,11 @@ fn draw_bitmap(cache: &mut BmpCache, canvas: OptionsCanvas, resource_id: u32, x:
     );
 }
 
-fn draw_volume(cache: &mut BmpCache, canvas: OptionsCanvas, y: f32, value: f32, alternate: bool) {
+fn volume_percent(value: f32) -> u32 {
+    (value.clamp(0.0, 1.0) * 100.0) as u32
+}
+
+fn draw_volume(cache: &mut BmpCache, canvas: OptionsCanvas, y: f32, value: u32, alternate: bool) {
     draw_bitmap(
         cache,
         canvas,
@@ -582,7 +603,7 @@ fn draw_volume(cache: &mut BmpCache, canvas: OptionsCanvas, y: f32, value: f32, 
         MUSIC_SLIDER_RECT.x,
         y,
     );
-    let handle_x = MUSIC_SLIDER_RECT.x + 1.0 + value.clamp(0.0, 1.0) * 199.0;
+    let handle_x = MUSIC_SLIDER_RECT.x + VOLUME_SLIDER.handle_offset(value);
     draw_bitmap(
         cache,
         canvas,
@@ -636,14 +657,12 @@ fn slot_emblem(save: &SaveSlotInfo) -> Option<u32> {
     })
 }
 
-fn set_slider(audio: &mut AudioVolumeState, control: GameOptionsControl, logical_x: f32) {
-    let value = ((logical_x - (MUSIC_SLIDER_RECT.x + 5.0)) / 199.0).clamp(0.0, 1.0);
-    match control {
-        GameOptionsControl::MusicVolume => audio.music_volume = value,
-        GameOptionsControl::SoundVolume => audio.sfx_volume = value,
-        _ => {}
+fn apply_slider(value: u32, target: &mut f32, audio_dirty: &mut bool) {
+    let value = value as f32 / 100.0;
+    if (*target - value).abs() > f32::EPSILON {
+        *target = value;
+        *audio_dirty = true;
     }
-    audio.dirty = true;
 }
 
 fn toggle_tactical(state: &mut GameOptionsState, index: usize) {
@@ -680,7 +699,7 @@ fn activate(
             );
         }
         GameOptionsControl::Save(slot) => {
-            let name = state.names[slot].clone();
+            let name = state.name_fields[slot].text().to_owned();
             return state.request(GameOptionsAction::Save { slot, name });
         }
         GameOptionsControl::Load(slot) => {
@@ -733,10 +752,16 @@ pub fn draw_game_options(
         cache,
         canvas,
         MUSIC_SLIDER_RECT.y,
-        audio.music_volume,
+        volume_percent(audio.music_volume),
         false,
     );
-    draw_volume(cache, canvas, SOUND_SLIDER_RECT.y, audio.sfx_volume, true);
+    draw_volume(
+        cache,
+        canvas,
+        SOUND_SLIDER_RECT.y,
+        volume_percent(audio.sfx_volume),
+        true,
+    );
 
     for (index, rect) in TACTICAL_TOGGLE_RECTS.into_iter().enumerate() {
         let resource = toggle_resource(
@@ -827,24 +852,42 @@ pub fn draw_game_options(
         state.pressed = None;
         return GameOptionsAction::None;
     }
-    if let Some(control @ (GameOptionsControl::MusicVolume | GameOptionsControl::SoundVolume)) =
-        state.pressed
-    {
-        if is_mouse_button_down(MouseButton::Left) {
-            set_slider(audio, control, pointer.0);
-        }
+    let pointer_control = masked_control_at(cache, state.origin, pointer.0, pointer.1);
+    let pointer_pressed = is_mouse_button_pressed(MouseButton::Left);
+    let pointer_down = is_mouse_button_down(MouseButton::Left);
+    let pointer_released = is_mouse_button_released(MouseButton::Left);
+    let slider_input = |control, rect: NativeRect| SliderInput {
+        pointer: Some(pointer.0 - rect.x),
+        over: pointer_control == Some(control),
+        pressed: pointer_pressed,
+        down: pointer_down,
+        released: pointer_released,
+        enabled: true,
+    };
+    let music = VOLUME_SLIDER.update(
+        &mut state.music_slider,
+        volume_percent(audio.music_volume),
+        slider_input(GameOptionsControl::MusicVolume, MUSIC_SLIDER_RECT),
+    );
+    let sound = VOLUME_SLIDER.update(
+        &mut state.sound_slider,
+        volume_percent(audio.sfx_volume),
+        slider_input(GameOptionsControl::SoundVolume, SOUND_SLIDER_RECT),
+    );
+    apply_slider(music.value, &mut audio.music_volume, &mut audio.dirty);
+    apply_slider(sound.value, &mut audio.sfx_volume, &mut audio.dirty);
+
+    if pointer_pressed {
+        state.pressed = pointer_control.filter(|control| {
+            !matches!(
+                control,
+                GameOptionsControl::MusicVolume | GameOptionsControl::SoundVolume
+            )
+        });
     }
-    if is_mouse_button_pressed(MouseButton::Left) {
-        state.pressed = masked_control_at(cache, state.origin, pointer.0, pointer.1);
-        if let Some(control @ (GameOptionsControl::MusicVolume | GameOptionsControl::SoundVolume)) =
-            state.pressed
-        {
-            set_slider(audio, control, pointer.0);
-        }
-    }
-    if is_mouse_button_released(MouseButton::Left) {
+    if pointer_released {
         let pressed = state.pressed.take();
-        if pressed == masked_control_at(cache, state.origin, pointer.0, pointer.1) {
+        if pressed == pointer_control {
             if let Some(control) = pressed {
                 return activate(state, control, saves, audio);
             }
@@ -908,15 +951,27 @@ pub fn draw_game_options_overlay(
         for slot in 0..SAVE_ROWS {
             let bounds = rect(NAME_FIELD_X, row_y(slot), NAME_FIELD_WIDTH, 20.0);
             if state.origin == GameOptionsOrigin::CommandCenter {
-                ui.add_enabled_ui(state.pending.is_none(), |ui| {
-                    ui.put(bounds,
-                        egui::TextEdit::singleline(&mut state.names[slot])
-                            .id_source(("options_save_name", slot)).frame(false)
-                            .font(name_font.clone()).text_color(Color32::WHITE));
-                });
+                let style = StringFieldStyle {
+                    font: name_font.clone(),
+                    text_color: Color32::WHITE,
+                    ..StringFieldStyle::default()
+                };
+                let spec = StringFieldSpec::new(
+                    egui::Id::new(("options_save_name", slot)),
+                    rebellion_windowing::ControlId(0x82 + slot as u64),
+                    bounds,
+                    None,
+                    style,
+                );
+                let lease = if state.pending.is_none() {
+                    StringFieldLease::focused()
+                } else {
+                    StringFieldLease::blocked()
+                };
+                let _output = StringField::new(&mut state.name_fields[slot], spec, lease).show(ui);
             } else if state.occupied[slot] {
                 ui.painter().text(bounds.left_center(), Align2::LEFT_CENTER,
-                    &state.names[slot], name_font.clone(), Color32::WHITE);
+                    state.name_fields[slot].text(), name_font.clone(), Color32::WHITE);
             }
         }
         if let Some(action) = &state.pending {
@@ -1000,6 +1055,26 @@ pub fn draw_game_options_overlay(
 mod tests {
     use super::*;
 
+    fn draw_overlay_frame(
+        ctx: &egui_macroquad::egui::Context,
+        cache: &mut BmpCache,
+        state: &mut GameOptionsState,
+        events: Vec<egui_macroquad::egui::Event>,
+    ) {
+        use egui_macroquad::egui::{Pos2, RawInput, Rect, Vec2};
+
+        let _ = ctx.run(
+            RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0))),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                let _ = draw_game_options_overlay(ctx, cache, state);
+            },
+        );
+    }
+
     #[test]
     fn the_last_row_loads_after_confirmation_and_saves_past_row_six_are_not_shown() {
         // FUN_00407180 builds rows 1-6 only (Load 0x79-0x7e); a save the
@@ -1011,8 +1086,8 @@ mod tests {
             player_is_alliance: None,
         };
         state.refresh_saves(&[save(5), save(9)]);
-        assert_eq!(state.names[5], "Slot 5");
-        assert!(state.names.iter().all(|name| name != "Slot 9"));
+        assert_eq!(state.name(5), Some("Slot 5"));
+        assert!((0..SAVE_ROWS).all(|slot| state.name(slot) != Some("Slot 9")));
         let action = GameOptionsAction::Load { slot: 5 };
         assert_eq!(state.request(action.clone()), GameOptionsAction::None);
         assert_eq!(state.pending, Some(action.clone()));
@@ -1332,12 +1407,43 @@ mod tests {
             player_is_alliance,
         };
         state.refresh_saves(&[save(1, Some(true)), save(3, Some(false))]);
-        assert_eq!(state.names[0], "");
-        assert_eq!(state.names[1], "Campaign 1");
-        assert_eq!(state.names[3], "Campaign 3");
+        assert_eq!(state.name(0), Some(""));
+        assert_eq!(state.name(1), Some("Campaign 1"));
+        assert_eq!(state.name(3), Some("Campaign 3"));
         assert_eq!(slot_emblem(&save(1, Some(true))), Some(10056));
         assert_eq!(slot_emblem(&save(3, Some(false))), Some(10055));
         assert_eq!(slot_emblem(&save(4, None)), None);
+    }
+
+    #[test]
+    fn both_factions_can_type_a_save_name_into_the_shared_string_field() {
+        use egui_macroquad::egui::Event;
+
+        // Manual p. 75: click the slot's name field, observe its text cursor,
+        // and type a meaningful name before saving. The field contract is the
+        // same for Alliance and Empire saves.
+        for player_is_alliance in [true, false] {
+            let ctx = egui_macroquad::egui::Context::default();
+            let mut cache = BmpCache::new();
+            let mut state = GameOptionsState::new(GameOptionsOrigin::CommandCenter);
+            state.refresh_saves(&[SaveSlotInfo {
+                slot: 0,
+                name: String::new(),
+                player_is_alliance: Some(player_is_alliance),
+            }]);
+            ctx.memory_mut(|memory| {
+                memory.request_focus(egui_macroquad::egui::Id::new(("options_save_name", 0)));
+            });
+            draw_overlay_frame(&ctx, &mut cache, &mut state, Vec::new());
+            draw_overlay_frame(
+                &ctx,
+                &mut cache,
+                &mut state,
+                vec![Event::Text("Endor Watch".into())],
+            );
+
+            assert_eq!(state.name(0), Some("Endor Watch"));
+        }
     }
 
     #[test]

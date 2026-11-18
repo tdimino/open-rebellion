@@ -11135,7 +11135,7 @@ async fn main() {
     // ── Cockpit chrome ───────────────────────────────────────────────────────
     let mut cockpit_state = CockpitState::new(CockpitFaction::Alliance);
     let mut game_speed_ui = GameSpeedUiState::default();
-    let mut cockpit_tooltips = rebellion_render::tooltip::TooltipState::default();
+    let mut cockpit_tooltips = rebellion_render::controls::TooltipState::default();
     let mut sector_window_state = SectorWindowState::default();
     let mut pending_sector_publications = Vec::<PendingSectorPublication>::new();
     let mut pending_committed_sector_actions = Vec::<SectorWindowAction>::new();
@@ -15742,7 +15742,7 @@ async fn main() {
                             )),
                         ],
                     );
-                    rebellion_render::tooltip::draw_cockpit_tooltips(
+                    rebellion_render::controls::draw_cockpit_tooltips(
                         ctx,
                         &mut cockpit_tooltips,
                         cockpit_layout,
@@ -16395,21 +16395,28 @@ async fn main() {
                         }
                     }
 
-                    for action in draw_managed_fleet_windows(ManagedFleetDraw {
-                        ctx,
-                        world: &world,
-                        movement: &movement_state,
-                        fog: fog_state,
-                        transport: &troop_transport_state,
-                        state: &mut fleet_window_state,
-                        faction: cockpit_state.faction,
-                        layout: cockpit_layout,
-                        cache: &mut bmp_cache,
-                        snapshot: strategic_frame_boundary.snapshot(),
-                        pointer_events: &strategic_pointer_routes,
-                        router: &mut strategic_input_router,
-                        front: true,
-                        shown: &shown_child,
+                    // A managed object menu may route its own click through
+                    // the owning Fleet window. Keep that click out of the
+                    // shared egui list beneath the menu; the menu alone owns
+                    // the batch until its close receipt is applied.
+                    let fleet_input_enabled = retained_window_input && !managed_menu_input_enabled;
+                    for action in with_strategic_input(ctx, fleet_input_enabled, || {
+                        draw_managed_fleet_windows(ManagedFleetDraw {
+                            ctx,
+                            world: &world,
+                            movement: &movement_state,
+                            fog: fog_state,
+                            transport: &troop_transport_state,
+                            state: &mut fleet_window_state,
+                            faction: cockpit_state.faction,
+                            layout: cockpit_layout,
+                            cache: &mut bmp_cache,
+                            snapshot: strategic_frame_boundary.snapshot(),
+                            pointer_events: &strategic_pointer_routes,
+                            router: &mut strategic_input_router,
+                            front: true,
+                            shown: &shown_child,
+                        })
                     }) {
                         #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]
                         queue_windowing_pointer_receipt(
@@ -17520,6 +17527,7 @@ async fn main() {
                             &system_window_state,
                             &build_selection_state,
                         );
+                        interface_test_fixture::emit_mission_dialog(request, &mission_dialog_state);
                     }
 
                     #[cfg(all(target_arch = "wasm32", feature = "interface-test-fixtures"))]

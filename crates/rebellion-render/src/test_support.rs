@@ -997,7 +997,7 @@ pub(crate) fn assert_focused_duplicate_finder_ui<State: ManagedFinderFixture>(
         .fixture_ui_mut()
         .expect("Finder content remains attached");
     ui.name = name.into();
-    ui.first_row = first_row;
+    ui.list.set_first_row(first_row);
     ui.focus_name = focus_name;
     focus_and_recommit_duplicate_finder(manager, state, existing, focused);
     assert_preserved_finder_ui(
@@ -1026,7 +1026,7 @@ pub(crate) fn assert_preserved_finder_ui(
     assert_eq!(ui.window_id(), Some(expected_id));
     assert_eq!(ui.faction, crate::cockpit::CockpitFaction::Alliance);
     assert_eq!(ui.name, name);
-    assert_eq!(ui.first_row, first_row);
+    assert_eq!(ui.list.first_row(), first_row);
     assert_eq!(ui.focus_name, focus_name);
     assert_eq!(manager.begin_frame().focused(), Some(focused));
 }
@@ -1089,7 +1089,8 @@ pub(crate) fn assert_finder_list_focus_ignores_text<State, Action>(
         .fixture_ui()
         .expect("Finder content remains attached")
         .name
-        .clone();
+        .text()
+        .to_owned();
     assert!(
         drive(state, vec![vec![egui::Event::Text("ignored".into())]]).is_none(),
         "list-focused text must not emit a Finder action"
@@ -1098,7 +1099,8 @@ pub(crate) fn assert_finder_list_focus_ignores_text<State, Action>(
         state
             .fixture_ui()
             .expect("Finder content remains attached")
-            .name,
+            .name
+            .text(),
         name_before
     );
     assert_eq!(

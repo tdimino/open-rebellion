@@ -1314,14 +1314,17 @@ fn draw_missions_window(
                         tab_resource(tab, row.side, false),
                         tab_resource(tab, row.side, true),
                     );
-                    Some(TabSpec::two_state(
-                        tab,
-                        tab.control_id(),
-                        rect,
-                        DllSource::Strategy,
-                        normal?,
-                        selected?,
-                    ))
+                    Some(
+                        TabSpec::two_state(
+                            tab,
+                            tab.control_id(),
+                            rect,
+                            DllSource::Strategy,
+                            normal?,
+                            selected?,
+                        )
+                        .with_tooltip(tab.name()),
+                    )
                 })
                 .collect::<Vec<_>>();
             if let Some(tab) = TabControl::paint_and_select(

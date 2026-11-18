@@ -5,7 +5,7 @@ description: "The GID's compact and detailed legends (STRATEGY RT_RCDATA draw sc
 
 # Galaxy Display Legend and Menu Highlight
 
-Traced 2026-10-08 against `FUN_00426d00`, `FUN_00452090`, `FUN_004522f0`,
+Traced 2026-10-08 and completed 2026-11-14 against `FUN_00426d00`, `FUN_00452090`, `FUN_004522f0`,
 `FUN_00452630`, `FUN_00452240`, `FUN_005fe050`, `FUN_00421c70`, `FUN_004511e0`,
 `FUN_004aab50`, `FUN_004aba60` and `FUN_004abe10` (decompiled beside this
 note), then checked in the original under Wine (Alliance, Popular Support).
@@ -100,8 +100,15 @@ menu does not offer.
 3. It keys the content (`+0x148`) and the frame over the darkened copy.
 4. It blits the result.
 
-The remap table is untraced. The port uses a dark tint, tuned by eye
-against Wine captures.
+`LAB_004ac550` maps each RGB channel to `floor(channel / 6) + 50`, a range
+of 50 through 92. `FUN_005fddd0` transforms all 256 entries, then maps each
+result to the nearest entry in the original palette by squared RGB distance.
+The source index is the initial candidate and therefore wins a distance tie.
+If it is not exact, the ascending scan replaces it only on strict improvement,
+so a later equal-distance candidate cannot replace the current winner. The
+current port's flat dark tint is not equivalent. Port bead
+`or-port-gid-palette-darkening-ms1p` owns the exact indexed remap; see
+[`cool-control-contracts.md`](cool-control-contracts.md).
 
 ### Port
 
@@ -109,9 +116,11 @@ against Wine captures.
   compact legend. It applies `FUN_00426d00`'s clamp when the legend opens.
 - **Switching:** it shows the shown mode's script, so changing the display
   rebuilds the legend. Display Off closes it.
-- **Dragging (hyp):** both legends drag from anywhere except the close
-  button, and a drag keeps the whole window in the galaxy view. The
-  original drags them; its clamp is untraced.
+- **Dragging:** runtime shows both legends drag from anywhere except the
+  close button. The common `FUN_00607010` release path clamps the full window
+  to its configured bounds; the GID-specific setup enters through the still
+  undecompiled `FUN_006071a0`. The current live drag lacks that common final
+  clamp; port bead `or-ep-uniform-ui-controls-gru5.10` owns it.
 - **Not ported:** the zoom-rect animation (`FUN_00428940`), and closing the
   legend when other panels open.
 

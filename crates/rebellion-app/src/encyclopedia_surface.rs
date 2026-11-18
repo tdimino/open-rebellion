@@ -831,7 +831,7 @@ pub(crate) mod fixture {
                 return_route: observe_return_route(presentation.return_route),
                 logical_fingerprint: self.session.logical_fingerprint().to_owned(),
                 texture_generation: self.session.texture_generation(),
-                index_scroll_row: self.surface_state.scroll_row,
+                index_scroll_row: self.surface_state.index_first_row(),
             })
         }
 

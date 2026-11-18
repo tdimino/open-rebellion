@@ -4,6 +4,24 @@
 //! application adapts its validated presentation into this model, preserving
 //! the renderer's one-way dependency boundary.
 
+use crate::controls::TEXT_BAR_299D;
+use crate::controls::{
+    DragListInput, DragListLayout, DragListSpec, DragListState, DragPolicy, ListKey,
+    SelectionPolicy, WheelPolicy,
+};
+
+/// `FUN_0045ddc0`: command `0x65`, 350 by 160, 350 by 20 items, flags
+/// `0x30000`, and RCDATA `0x299d`'s canonical scroll bar.
+pub(crate) const ENCYCLOPEDIA_INDEX_LIST: DragListSpec = DragListSpec {
+    rect: (36.0, 137.0, 350.0, 160.0),
+    item: (350.0, 20.0),
+    layout: DragListLayout::Stacked,
+    selection: SelectionPolicy::Multiple,
+    drag: DragPolicy::Disabled,
+    wheel: WheelPolicy::Rows,
+    bar: Some(TEXT_BAR_299D),
+};
+
 /// Original audience-specific Encyclopedia chrome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncyclopediaSurfaceAudience {
@@ -172,27 +190,36 @@ pub fn encyclopedia_keyboard_action(
     }
 }
 
-/// Resolve native bounded index-list movement. Page keys move by the nine
-/// rows visible in the recovered list aperture.
+/// Resolve native bounded index-list movement through the shared
+/// `CoolDragList` state. The recovered 160-by-20 aperture pages by eight
+/// complete rows.
 #[must_use]
 pub fn encyclopedia_index_list_action(
     key: EncyclopediaSurfaceKey,
     topic_ids: &[u32],
     selected_object_id: Option<u32>,
 ) -> Option<EncyclopediaSurfaceAction> {
-    let current =
-        selected_object_id.and_then(|selected| topic_ids.iter().position(|id| *id == selected));
-    let movement = match key {
-        EncyclopediaSurfaceKey::Up => crate::list_control::ListMove::Previous,
-        EncyclopediaSurfaceKey::Down => crate::list_control::ListMove::Next,
-        EncyclopediaSurfaceKey::PageUp => crate::list_control::ListMove::PagePrevious,
-        EncyclopediaSurfaceKey::PageDown => crate::list_control::ListMove::PageNext,
-        EncyclopediaSurfaceKey::Home => crate::list_control::ListMove::First,
-        EncyclopediaSurfaceKey::End => crate::list_control::ListMove::Last,
+    let key = match key {
+        EncyclopediaSurfaceKey::Up => ListKey::Up,
+        EncyclopediaSurfaceKey::Down => ListKey::Down,
+        EncyclopediaSurfaceKey::PageUp => ListKey::PageUp,
+        EncyclopediaSurfaceKey::PageDown => ListKey::PageDown,
+        EncyclopediaSurfaceKey::Home => ListKey::Home,
+        EncyclopediaSurfaceKey::End => ListKey::End,
         _ => return None,
     };
-    let next = crate::list_control::move_selection(current, topic_ids.len(), 9, movement)?;
-    Some(EncyclopediaSurfaceAction::SelectTopic(topic_ids[next]))
+    let mut list = DragListState::default();
+    list.select_only(selected_object_id);
+    let _ = list.update(
+        ENCYCLOPEDIA_INDEX_LIST,
+        topic_ids,
+        DragListInput {
+            key: Some(key),
+            ..DragListInput::default()
+        },
+    );
+    list.first_selected(topic_ids)
+        .map(EncyclopediaSurfaceAction::SelectTopic)
 }
 
 /// Reproduce the original index edit control's ordered title lookup.
@@ -264,6 +291,20 @@ mod tests {
         assert_eq!(
             encyclopedia_index_list_action(EncyclopediaSurfaceKey::Down, &topics, None),
             Some(EncyclopediaSurfaceAction::SelectTopic(11))
+        );
+    }
+
+    #[test]
+    fn index_page_keys_use_the_recovered_eight_row_aperture() {
+        let topics = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+
+        assert_eq!(
+            encyclopedia_index_list_action(EncyclopediaSurfaceKey::PageDown, &topics, Some(11),),
+            Some(EncyclopediaSurfaceAction::SelectTopic(19))
+        );
+        assert_eq!(
+            encyclopedia_index_list_action(EncyclopediaSurfaceKey::PageUp, &topics, Some(21)),
+            Some(EncyclopediaSurfaceAction::SelectTopic(13))
         );
     }
 }

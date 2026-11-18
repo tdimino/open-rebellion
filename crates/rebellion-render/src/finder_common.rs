@@ -13,14 +13,15 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::TEXT_BAR_299D;
 use crate::controls::{
-    StrobeButton, TabControl, TabControlState, TabDirection, TabSpec, TabTraversal,
+    DragList, DragListEvent, DragListLayout, DragListSpec, DragListState, DragPolicy, ListKey,
+    SelectionPolicy, StringField, StringFieldEvent, StringFieldLease, StringFieldSpec,
+    StringFieldState, StringFieldStyle, StrobeButton, TabControl, TabControlState, TabDirection,
+    TabSpec, TabTraversal, WheelPolicy,
 };
 use crate::fleet_window::paint_native;
-use crate::list_control::{
-    longest_prefix_match, max_first_row, move_selection, reveal_row, row_click, selected_row,
-    visible_range, wheel_delta, wheel_step, ListMove, RowClick,
-};
+use crate::list_control::{longest_prefix_match, selected_row};
 use crate::mission_dialog::galaxy_centered_rect;
 use crate::native_geometry::{logical_rect, rect_contains};
 use crate::singleton_window_common;
@@ -139,27 +140,6 @@ impl FinderCanvas<'_> {
         );
     }
 
-    pub(crate) fn visible_rows<'a, R>(
-        &self,
-        rows: &'a [R],
-        first_row: usize,
-        visible_rows: usize,
-        list: LogicalRect,
-        row_height: f32,
-    ) -> impl Iterator<Item = (usize, &'a R, egui::Rect)> {
-        let frame = self.frame;
-        let scale = self.scale;
-        visible_range(first_row, rows.len(), visible_rows).map(move |index| {
-            let line = (index - first_row) as f32;
-            let rect = at(
-                frame,
-                scale,
-                (list.0, list.1 + row_height * line, list.2, row_height),
-            );
-            (index, &rows[index], rect)
-        })
-    }
-
     /// Paint the three white text labels shared by every Finder and return
     /// the two original-font substitutes used by the rest of the surface.
     pub(crate) fn paint_header(
@@ -266,7 +246,6 @@ pub(crate) struct IndexedFinderConfig<'a, Tab> {
     pub(crate) row_height: f32,
     pub(crate) visible_rows: usize,
     pub(crate) semantic_controls: (ControlId, ControlId),
-    pub(crate) accepts_batched_double_click: bool,
 }
 
 /// Static contract for the two-side indexed Finders. Dynamic art and labels
@@ -540,39 +519,46 @@ where
     Tab: Copy + PartialEq,
     Action: Copy,
 {
+    let current_chosen =
+        current_chosen.and_then(|row| rows.len().checked_sub(1).map(|last| row.min(last)));
     let focused_control = focused_control(snapshot, focus);
     let side_index = side(snapshot.faction);
     let scale = layout.scale;
     let name_id = egui::Id::new(config.name_id);
     let list_id = egui::Id::new(config.list_id);
-    let name_should_focus =
-        snapshot.focus_name || focused_control == Some(config.semantic_controls.0);
-    let name_had_focus = ctx.memory(|memory| memory.has_focus(name_id));
-    let deferred_name_input = if name_should_focus && !name_had_focus {
-        ctx.input(|input| {
-            input
-                .events
-                .iter()
-                .filter_map(|event| match event {
-                    egui::Event::Text(text) if text != "\n" && text != "\r" => Some(text.as_str()),
-                    egui::Event::Paste(text) => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect::<String>()
-        })
-    } else {
-        String::new()
-    };
     if focused_control == Some(config.semantic_controls.1) {
         ctx.memory_mut(|memory| memory.request_focus(list_id));
-    } else if name_should_focus {
-        ctx.memory_mut(|memory| memory.request_focus(name_id));
     }
 
     let mut close = false;
     let mut open = None;
     let mut next_tab = None;
     let mut interaction = FinderInteraction::new(snapshot);
+    let keys = FinderKeys::read(ctx);
+    let list_spec = DragListSpec {
+        rect: config.list,
+        item: (config.list.2, config.row_height),
+        layout: DragListLayout::Stacked,
+        selection: SelectionPolicy::Single,
+        drag: DragPolicy::Disabled,
+        wheel: WheelPolicy::Rows,
+        bar: Some(TEXT_BAR_299D),
+    };
+    debug_assert_eq!(
+        config.visible_rows,
+        snapshot.list.geometry(list_spec, rows.len()).whole_rows()
+    );
+    let row_keys: Vec<usize> = (0..rows.len()).collect();
+    let mut list_state = snapshot.list.clone();
+    if list_state.first_selected(&row_keys) == current_chosen {
+        list_state.select_only(current_chosen);
+    } else {
+        list_state.select_and_reveal(list_spec, &row_keys, current_chosen);
+    }
+    let list_key = (focused_control == Some(config.semantic_controls.1))
+        .then(|| keys.list_key())
+        .flatten();
+    let mut list_response = None;
     let tab_specs = config
         .tabs
         .iter()
@@ -650,71 +636,109 @@ where
                 focused_control,
                 config.semantic_controls,
             );
-            if !interaction.name_changed && !deferred_name_input.is_empty() {
-                interaction.name.push_str(&deferred_name_input);
-                interaction.name_changed = true;
-            }
 
             let list_rect = at(canvas.frame, scale, config.list);
             let list_painter = canvas.painter.with_clip_rect(list_rect);
             let cell_font = egui::FontId::proportional((10.0 * scale).max(7.0));
-            for (offset, row, row_rect) in canvas.visible_rows(
-                rows,
-                snapshot.first_row,
-                config.visible_rows,
-                config.list,
-                config.row_height,
-            ) {
-                let line = (offset - snapshot.first_row) as f32;
+            let control = DragList::show(
+                ui,
+                (config.row_id, "rows"),
+                list_spec,
+                &row_keys,
+                &list_state,
+                canvas.frame,
+                scale,
+                list_key,
+            );
+            for (offset, row_rect) in control
+                .screen_cells(canvas.frame, scale)
+                .take(config.visible_rows)
+            {
+                let row = &rows[offset];
+                let line = (offset - control.next.first_row()) as f32;
                 paint_row_name(
                     &list_painter,
                     row_rect,
                     scale,
                     row.finder_name(),
                     &font,
-                    current_chosen == Some(offset),
+                    control.next.is_selected(offset),
                 );
                 paint_details(canvas, &list_painter, row, line, &cell_font);
-                if interaction.interact_row(
-                    ui,
-                    ctx,
-                    row_rect,
-                    (config.row_id, "row", offset),
-                    snapshot,
-                    offset,
-                    config.accepts_batched_double_click,
-                    config.semantic_controls.1,
-                ) {
-                    open = Some(row_action(row));
-                }
             }
-            interaction.wheel = wheel_delta(ui, list_rect);
+            control.paint_bar(&list_painter, ctx, cache, canvas.frame, scale);
+            if control.output.pressed().is_some() && snapshot.id.is_some() {
+                interaction.focus_request = Some(config.semantic_controls.1);
+            }
+            list_response = Some(control);
         },
     );
 
-    let keys = FinderKeys::read(ctx);
-    let selection_touched = interaction.name_changed
-        || interaction.clicked_row.is_some()
-        || (!rows.is_empty()
-            && ((focused_control == Some(config.semantic_controls.0) && keys.arrow_down)
-                || (focused_control == Some(config.semantic_controls.1)
-                    && (keys.arrow_down || (keys.arrow_up && current_chosen.unwrap_or(0) > 0)))));
+    let list_response = list_response.expect("the Finder canvas always runs its list control");
     let mut ui_state = snapshot.clone();
+    ui_state.focus_name = false;
+    ui_state.name = interaction.name.clone();
+    ui_state.list = list_response.next;
     let mut chosen = current_chosen;
-    let navigation = interaction.finish_indexed_navigation(
-        &mut ui_state,
-        &mut chosen,
-        rows,
-        focused_control,
-        config.semantic_controls,
-        keys,
-        config.visible_rows,
-    );
-    if navigation.list_enter {
+    let mut selection_touched = false;
+
+    // `FUN_00609650` remains Finder policy; selection and reveal stay in the
+    // shared list once the prefix scan chooses an owner row.
+    if interaction.name_changed {
+        chosen = prefix_choice(rows, interaction.name.text());
+        ui_state
+            .list
+            .select_and_reveal(list_spec, &row_keys, chosen);
+        selection_touched = true;
+    }
+    if list_response
+        .output
+        .contains(DragListEvent::SelectionChanged)
+    {
+        chosen = ui_state.list.first_selected(&row_keys);
+        if let Some(row) = selected_row(rows, chosen) {
+            set_name(&mut ui_state, row.finder_name());
+        }
+        selection_touched = true;
+    } else if !interaction.name_changed {
+        let reconciled = ui_state.list.first_selected(&row_keys);
+        if reconciled != current_chosen {
+            chosen = reconciled;
+            selection_touched = true;
+        }
+    }
+
+    let (name_control, list_control) = config.semantic_controls;
+    if (focused_control == Some(name_control) && keys.arrow_down
+        || interaction.forwarded(egui::Key::ArrowDown))
+        && !rows.is_empty()
+    {
+        let row = chosen.unwrap_or(0).min(rows.len() - 1);
+        chosen = Some(row);
+        set_name(&mut ui_state, rows[row].finder_name());
+        ui_state
+            .list
+            .select_and_reveal(list_spec, &row_keys, chosen);
+        interaction.focus_request = Some(list_control);
+        selection_touched = true;
+    }
+    if focused_control == Some(list_control)
+        && keys.arrow_up
+        && (rows.is_empty() || chosen == Some(0))
+    {
+        interaction.focus_request = Some(name_control);
+    }
+    if let Some(control) = interaction.focus_request {
+        ui_state.pending_focus = Some(control);
+    }
+    if list_response.output.contains(DragListEvent::Activated) {
         open = open.or_else(|| selected_row(rows, chosen).map(&row_action));
     }
     if next_tab.is_none() {
-        if let Some(direction) = navigation.horizontal {
+        if let Some(direction) = (focused_control == Some(list_control))
+            .then(|| horizontal_direction(keys))
+            .flatten()
+        {
             let focused_tab = tab_specs
                 .iter()
                 .find(|spec| spec.value == current_tab)
@@ -727,7 +751,7 @@ where
             );
         }
     }
-    if navigation.edit_enter {
+    if interaction.enter || (focused_control == Some(name_control) && keys.enter) {
         open = open
             .or_else(|| selected_row(rows, chosen).map(row_action))
             .or(current_open);
@@ -792,7 +816,6 @@ where
             row_height: config.row_height,
             visible_rows: config.visible_rows,
             semantic_controls: config.semantic_controls,
-            accepts_batched_double_click: false,
         },
         extra_controls,
         paint_details,
@@ -920,11 +943,10 @@ pub(crate) struct FinderUiState {
     /// Strategic-window identity accepted at the app commit boundary.
     pub(crate) id: Option<WindowId>,
     pub(crate) faction: CockpitFaction,
-    pub(crate) name: String,
-    pub(crate) first_row: usize,
+    pub(crate) name: StringFieldState,
+    pub(crate) list: DragListState<usize>,
     pub(crate) focus_name: bool,
     pub(crate) pending_focus: Option<ControlId>,
-    pub(crate) last_clicked: Option<(usize, f64)>,
 }
 
 impl FinderUiState {
@@ -932,11 +954,10 @@ impl FinderUiState {
         Self {
             id,
             faction,
-            name: String::new(),
-            first_row: 0,
+            name: StringFieldState::default(),
+            list: DragListState::default(),
             focus_name: true,
             pending_focus: None,
-            last_clicked: None,
         }
     }
 
@@ -978,24 +999,7 @@ impl FinderUiState {
     }
 
     pub(crate) fn reset_list_navigation(&mut self) {
-        self.first_row = 0;
-        self.last_clicked = None;
-    }
-
-    pub(crate) fn commit_focus_and_wheel(
-        &mut self,
-        focus_request: Option<ControlId>,
-        wheel: f32,
-        row_count: usize,
-        visible_rows: usize,
-    ) {
-        if let Some(control) = focus_request {
-            self.pending_focus = Some(control);
-        }
-        if wheel != 0.0 {
-            let positions = max_first_row(row_count, visible_rows).saturating_add(1);
-            self.first_row = wheel_step(self.first_row, positions, wheel);
-        }
+        self.list = DragListState::default();
     }
 }
 
@@ -1408,29 +1412,62 @@ pub(crate) struct FinderKeys {
     pub(crate) arrow_down: bool,
     pub(crate) arrow_left: bool,
     pub(crate) arrow_right: bool,
+    pub(crate) page_up: bool,
+    pub(crate) page_down: bool,
+    pub(crate) home: bool,
+    pub(crate) end: bool,
     pub(crate) enter: bool,
 }
 
 impl FinderKeys {
     pub(crate) fn read(ctx: &egui::Context) -> Self {
-        let [escape, arrow_up, arrow_down, arrow_left, arrow_right, enter] = ctx.input(|input| {
-            [
-                egui::Key::Escape,
-                egui::Key::ArrowUp,
-                egui::Key::ArrowDown,
-                egui::Key::ArrowLeft,
-                egui::Key::ArrowRight,
-                egui::Key::Enter,
-            ]
-            .map(|key| input.key_pressed(key))
-        });
+        let [escape, arrow_up, arrow_down, arrow_left, arrow_right, page_up, page_down, home, end, enter] =
+            ctx.input(|input| {
+                [
+                    egui::Key::Escape,
+                    egui::Key::ArrowUp,
+                    egui::Key::ArrowDown,
+                    egui::Key::ArrowLeft,
+                    egui::Key::ArrowRight,
+                    egui::Key::PageUp,
+                    egui::Key::PageDown,
+                    egui::Key::Home,
+                    egui::Key::End,
+                    egui::Key::Enter,
+                ]
+                .map(|key| input.key_pressed(key))
+            });
         Self {
             escape,
             arrow_up,
             arrow_down,
             arrow_left,
             arrow_right,
+            page_up,
+            page_down,
+            home,
+            end,
             enter,
+        }
+    }
+
+    fn list_key(self) -> Option<ListKey> {
+        if self.arrow_up {
+            Some(ListKey::Up)
+        } else if self.arrow_down {
+            Some(ListKey::Down)
+        } else if self.page_up {
+            Some(ListKey::PageUp)
+        } else if self.page_down {
+            Some(ListKey::PageDown)
+        } else if self.home {
+            Some(ListKey::Home)
+        } else if self.end {
+            Some(ListKey::End)
+        } else if self.enter {
+            Some(ListKey::Enter)
+        } else {
+            None
         }
     }
 }
@@ -1445,27 +1482,12 @@ pub(crate) fn focused_control(
         .and_then(|target| target.control)
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct NameEditOutcome {
-    pub(crate) changed: bool,
-    pub(crate) enter: bool,
-    pub(crate) focus_request: Option<ControlId>,
-}
-
 pub(crate) struct FinderInteraction {
-    pub(crate) name: String,
+    pub(crate) name: StringFieldState,
     pub(crate) name_changed: bool,
     pub(crate) enter: bool,
-    pub(crate) wheel: f32,
-    pub(crate) clicked_row: Option<(usize, f64)>,
     pub(crate) focus_request: Option<ControlId>,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct FinderNavigation {
-    pub(crate) list_enter: bool,
-    pub(crate) edit_enter: bool,
-    pub(crate) horizontal: Option<TabDirection>,
+    forwarded_keys: Vec<egui::Key>,
 }
 
 impl FinderInteraction {
@@ -1474,16 +1496,13 @@ impl FinderInteraction {
             name: state.name.clone(),
             name_changed: false,
             enter: false,
-            wheel: 0.0,
-            clicked_row: None,
             focus_request: None,
+            forwarded_keys: Vec::new(),
         }
     }
 
-    pub(crate) fn record_name_edit(&mut self, edit: NameEditOutcome) {
-        self.name_changed = edit.changed;
-        self.enter = edit.enter;
-        self.focus_request = edit.focus_request.or(self.focus_request);
+    pub(crate) fn forwarded(&self, key: egui::Key) -> bool {
+        self.forwarded_keys.contains(&key)
     }
 
     pub(crate) fn edit_name(
@@ -1501,143 +1520,39 @@ impl FinderInteraction {
         if focused == Some(list_control) {
             ui.memory_mut(|memory| memory.request_focus(list_id));
         }
-        let response = ui.put(
-            rect,
-            egui::TextEdit::singleline(&mut self.name)
-                .id(name_id)
-                .frame(false)
-                .font(font.clone())
-                .text_color(egui::Color32::WHITE)
-                .desired_width(rect.width()),
-        );
-        if state.focus_name || focused == Some(name_control) {
-            response.request_focus();
-        }
-        let edit = NameEditOutcome {
-            changed: response.changed(),
-            enter: response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)),
-            focus_request: (state.id.is_some() && response.gained_focus()).then_some(name_control),
+        let lease = if state.focus_name || focused == Some(name_control) {
+            StringFieldLease::acquire(false)
+        } else if focused == Some(list_control) {
+            StringFieldLease::clickable()
+        } else {
+            StringFieldLease::focused()
         };
-        self.record_name_edit(edit);
-    }
-
-    /// Record the common selection/focus half of a row click. True asks the
-    /// family to perform its row-specific open action.
-    pub(crate) fn record_row_click(
-        &mut self,
-        click: RowClick,
-        row: usize,
-        managed: bool,
-        list_control: ControlId,
-    ) -> bool {
-        match click {
-            RowClick::Open => true,
-            RowClick::Select(at) => {
-                self.clicked_row = Some((row, at));
-                if managed {
-                    self.focus_request = Some(list_control);
-                }
-                false
-            }
-            RowClick::None => false,
-        }
-    }
-
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Row geometry, identity and semantic focus are distinct Finder contracts."
-    )]
-    pub(crate) fn interact_row(
-        &mut self,
-        ui: &mut egui::Ui,
-        ctx: &egui::Context,
-        row_rect: egui::Rect,
-        row_id: impl std::hash::Hash,
-        state: &FinderUiState,
-        row: usize,
-        accepts_batched_double_click: bool,
-        list_control: ControlId,
-    ) -> bool {
-        let click = row_click(
-            ui,
-            ctx,
-            row_rect,
-            ui.id().with(row_id),
-            state.last_clicked,
-            row,
-            accepts_batched_double_click,
-        );
-        self.record_row_click(click, row, state.id.is_some(), list_control)
-    }
-
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "Selection, focus controls, key state and tab count are separate Finder contracts."
-    )]
-    pub(crate) fn finish_indexed_navigation<R: FinderRowName>(
-        &mut self,
-        ui: &mut FinderUiState,
-        chosen: &mut Option<usize>,
-        rows: &[R],
-        focused_control: Option<ControlId>,
-        controls: (ControlId, ControlId),
-        keys: FinderKeys,
-        visible_rows: usize,
-    ) -> FinderNavigation {
-        let (name_control, list_control) = controls;
-        ui.focus_name = false;
-        if self.name_changed {
-            ui.name.clone_from(&self.name);
-            *chosen = prefix_choice(rows, &self.name);
-            if let Some(index) = *chosen {
-                ui.first_row = reveal_row(ui.first_row, index, visible_rows);
-            }
-        }
-        if let Some((row, at)) = self.clicked_row {
-            ui.last_clicked = Some((row, at));
-            *chosen = Some(row);
-            set_name(ui, rows[row].finder_name());
-        }
-        if focused_control == Some(name_control) && keys.arrow_down && !rows.is_empty() {
-            let row = (*chosen).unwrap_or(0).min(rows.len() - 1);
-            *chosen = Some(row);
-            set_name(ui, rows[row].finder_name());
-            ui.first_row = reveal_row(ui.first_row, row, visible_rows);
-            self.focus_request = Some(list_control);
-        }
-        if focused_control == Some(list_control) {
-            if rows.is_empty() {
-                if keys.arrow_up {
+        let output = StringField::new(
+            &mut self.name,
+            StringFieldSpec::new(
+                name_id,
+                name_control,
+                rect,
+                None,
+                StringFieldStyle {
+                    font: font.clone(),
+                    ..StringFieldStyle::default()
+                },
+            ),
+            lease,
+        )
+        .show(ui);
+        for event in output.iter() {
+            match event {
+                StringFieldEvent::Changed => self.name_changed = true,
+                StringFieldEvent::Submitted => self.enter = true,
+                StringFieldEvent::FocusChanged(true) if state.id.is_some() => {
                     self.focus_request = Some(name_control);
                 }
-            } else {
-                let current = (*chosen).unwrap_or(0).min(rows.len() - 1);
-                let movement = if keys.arrow_down {
-                    Some(ListMove::Next)
-                } else if keys.arrow_up {
-                    Some(ListMove::Previous)
-                } else {
-                    None
-                };
-                if keys.arrow_up && current == 0 {
-                    self.focus_request = Some(name_control);
-                } else if let Some(movement) = movement {
-                    let next = move_selection(Some(current), rows.len(), visible_rows, movement)
-                        .expect("a non-empty list always has a bounded selection");
-                    *chosen = Some(next);
-                    set_name(ui, rows[next].finder_name());
-                    ui.first_row = reveal_row(ui.first_row, next, visible_rows);
-                }
+                StringFieldEvent::UnhandledKey(key) => self.forwarded_keys.push(key),
+                StringFieldEvent::Cancelled | StringFieldEvent::FocusChanged(_) => {}
             }
         }
-        let list_focused = focused_control == Some(controls.1);
-        let navigation = FinderNavigation {
-            list_enter: list_focused && !rows.is_empty() && keys.enter,
-            edit_enter: self.enter || (focused_control == Some(controls.0) && keys.enter),
-            horizontal: list_focused.then(|| horizontal_direction(keys)).flatten(),
-        };
-        ui.commit_focus_and_wheel(self.focus_request, self.wheel, rows.len(), visible_rows);
-        navigation
     }
 }
 
@@ -1750,8 +1665,7 @@ pub(crate) fn count_cell_colours(side_index: usize) -> (egui::Color32, egui::Col
 }
 
 fn set_name(ui: &mut FinderUiState, name: &str) {
-    ui.name.clear();
-    ui.name.push_str(name);
+    ui.name.set_text(name);
 }
 
 pub(crate) const fn side(faction: CockpitFaction) -> usize {

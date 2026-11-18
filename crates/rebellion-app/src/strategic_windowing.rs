@@ -418,7 +418,7 @@ fn open_or_replace(replacing: Option<WindowId>, new: WindowSpec) -> WindowComman
 }
 
 enum ContextualPreparedWindow {
-    Mission(PreparedMissionDialog),
+    Mission(Box<PreparedMissionDialog>),
     Move(PreparedMoveConfirmation),
     Scrap(PreparedScrapConfirmation),
 }
@@ -442,7 +442,7 @@ impl ContextualPreparedWindow {
 
     fn into_payload(self) -> QueuedWindowPayload {
         match self {
-            Self::Mission(prepared) => QueuedWindowPayload::MissionDialog(prepared),
+            Self::Mission(prepared) => QueuedWindowPayload::MissionDialog(*prepared),
             Self::Move(prepared) => QueuedWindowPayload::MoveConfirmation(prepared),
             Self::Scrap(prepared) => QueuedWindowPayload::ScrapConfirmation(prepared),
         }
@@ -841,7 +841,7 @@ impl StrategicWindowing {
         &mut self,
         prepared: PreparedMissionDialog,
     ) -> Result<(), WindowError> {
-        self.enqueue_contextual_prepared(ContextualPreparedWindow::Mission(prepared))
+        self.enqueue_contextual_prepared(ContextualPreparedWindow::Mission(Box::new(prepared)))
     }
 
     /// Queues the exact close paired with an inert Mission order. The order

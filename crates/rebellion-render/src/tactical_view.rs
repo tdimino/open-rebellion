@@ -41,12 +41,13 @@ use rebellion_core::world::GameWorld;
 
 use crate::bmp_cache::{resources, BmpCache, DllSource};
 use crate::controls::{
-    ButtonArt, ButtonImage, ButtonState, StrobeButton, TabControl, TabControlState, TabDirection,
-    TabSpec, TabTraversal,
+    ButtonArt, ButtonImage, ButtonState, DragListInput, DragListLayout, DragListSpec,
+    DragListState, DragPolicy, ScrollPointer, SelectionPolicy, StatusBar, StrobeButton, TabControl,
+    TabControlState, TabDirection, TabSpec, TabTraversal, WheelPolicy, LIST_BAR_29FC,
+    TEXT_BAR_299D,
 };
 use crate::native_geometry::NativeRect;
 use crate::operation_report::{cell_picture, report_grid_cells, ReportTab};
-use crate::scroll_bar::{ScrollBar, ScrollPointer, ScrollRange, LIST_BAR_29FC, TEXT_BAR_299D};
 #[cfg(feature = "interface-test-fixtures")]
 use crate::tactical_assets::TacticalLodView;
 use crate::tactical_assets::{
@@ -470,9 +471,8 @@ pub struct TacticalState {
     /// The Battle Summary's filter tab (`+0x180`, `0x65` at open,
     /// `FUN_0046f140`).
     battle_result_filter: ReportTab,
-    /// The first row of the forces list, and its bar's press.
-    battle_result_scroll: usize,
-    battle_result_scroll_drag: crate::scroll_bar::ScrollDrag,
+    /// The Battle Results forces `CoolDragList`.
+    battle_result_list: DragListState<usize>,
     /// The Battle Alert's record of what each side's fleets carried, taken
     /// on the battle's first frame (`FUN_0049c0d0`).
     battle_record: Option<BattleRecord>,
@@ -480,11 +480,9 @@ pub struct TacticalState {
     /// command, simulates, or attempts to retreat.
     battle_alert_open: bool,
     battle_alert_tab: BattleAlertTab,
-    /// The first row the Battle Alert's list shows; a tab change refills
-    /// the list from the top (`FUN_00450660` → `FUN_0060a280`).
-    battle_alert_scroll: usize,
-    /// The scroll arrow held down, drawn pressed.
-    battle_alert_scroll_drag: crate::scroll_bar::ScrollDrag,
+    /// The Battle Alert `CoolDragList`; a tab change refills it from the top
+    /// (`FUN_00450660` → `FUN_0060a280`).
+    battle_alert_list: DragListState<usize>,
     /// The Battle Alert's title and summary, formatted from TEXTSTRA by the
     /// caller (`FUN_0049c0d0`); `None` keeps the port's own wording.
     battle_alert_text: Option<(String, String)>,
@@ -558,13 +556,11 @@ impl Default for TacticalState {
             battle_result_tab: BattleResultTab::Summary,
             battle_result_pressed: None,
             battle_result_filter: ReportTab::CapitalShips,
-            battle_result_scroll: 0,
-            battle_result_scroll_drag: crate::scroll_bar::ScrollDrag::default(),
+            battle_result_list: DragListState::default(),
             battle_record: None,
             battle_alert_open: false,
             battle_alert_tab: BattleAlertTab::Summary,
-            battle_alert_scroll: 0,
-            battle_alert_scroll_drag: crate::scroll_bar::ScrollDrag::default(),
+            battle_alert_list: DragListState::default(),
             battle_alert_text: None,
             battle_alert_pressed: None,
             strategic_results_applied: false,
@@ -652,7 +648,7 @@ impl TacticalState {
     pub fn cancel_window_gestures(&mut self) {
         self.dragging_ship = None;
         self.battle_alert_pressed = None;
-        self.battle_alert_scroll_drag = crate::scroll_bar::ScrollDrag::default();
+        let _ = self.battle_alert_list.cancel_capture();
         self.battle_result_pressed = None;
         self.battle_options_pressed = None;
         self.withdraw_confirmation_pressed = None;
@@ -743,8 +739,7 @@ impl TacticalState {
         self.battle_alert_open = true;
         macroquad::logging::info!("[battle_alert] opened");
         self.battle_alert_tab = BattleAlertTab::Summary;
-        self.battle_alert_scroll = 0;
-        self.battle_alert_scroll_drag = crate::scroll_bar::ScrollDrag::default();
+        self.battle_alert_list = DragListState::default();
         self.battle_alert_text = None;
         self.battle_alert_pressed = None;
         self.strategic_results_applied = false;
@@ -1935,8 +1930,7 @@ impl TacticalState {
     /// `0x65`, `FUN_0046f140`) with its list at the top.
     fn reset_battle_result_filter(&mut self) {
         self.battle_result_filter = ReportTab::CapitalShips;
-        self.battle_result_scroll = 0;
-        self.battle_result_scroll_drag = crate::scroll_bar::ScrollDrag::default();
+        self.battle_result_list = DragListState::default();
     }
 
     /// Returns true if a battle is currently active.
@@ -3275,12 +3269,12 @@ fn draw_tactical_selected_meter(canvas: TacticalCanvas, rect: NativeRect, percen
         height,
         Color::new(1.0, 0.0, 0.0, 1.0),
     );
-    let fill = (rect.width as u32 * percent.min(100) / 100) as f32;
-    if fill > 0.0 {
+    let status = StatusBar::new(percent, 100).layout(rect.width as u32);
+    if status.fill_width > 0 {
         draw_rectangle(
             x,
             y,
-            fill * canvas.scale,
+            status.fill_width as f32 * canvas.scale,
             height,
             Color::new(0.0, 0.0, 1.0, 1.0),
         );
@@ -4458,8 +4452,13 @@ fn draw_original_tactical_hud(
             DEATH_STAR_LASER_GAUGE_RECT.x,
             DEATH_STAR_LASER_GAUGE_RECT.y,
         );
-        let fraction =
-            (death_star.laser_charge / ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE).clamp(0.0, 1.0);
+        let status = StatusBar::new(
+            death_star
+                .laser_charge
+                .clamp(0.0, ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE) as u32,
+            ORIGINAL_DEATH_STAR_LASER_FULL_CHARGE as u32,
+        )
+        .layout(DEATH_STAR_LASER_FILL_RECT.width as u32);
         let (x, y) = canvas.point(DEATH_STAR_LASER_FILL_RECT.x, DEATH_STAR_LASER_FILL_RECT.y);
         if let Some(empty) = DEATH_STAR_LASER_EMPTY_COLOR {
             draw_rectangle(
@@ -4470,11 +4469,11 @@ fn draw_original_tactical_hud(
                 empty,
             );
         }
-        if fraction > 0.0 {
+        if status.fill_width > 0 {
             draw_rectangle(
                 x,
                 y,
-                DEATH_STAR_LASER_FILL_RECT.width * canvas.scale * fraction,
+                status.fill_width as f32 * canvas.scale,
                 DEATH_STAR_LASER_FILL_RECT.height * canvas.scale,
                 DEATH_STAR_LASER_FILL_COLOR,
             );
@@ -6404,8 +6403,7 @@ fn draw_battle_result_forces(
     alliance: bool,
     player_alliance: bool,
     filter: &mut ReportTab,
-    scroll: &mut usize,
-    drag: &mut crate::scroll_bar::ScrollDrag,
+    list: &mut DragListState<usize>,
     mouse: (f32, f32),
     text_color: Color,
 ) {
@@ -6542,14 +6540,35 @@ fn draw_battle_result_forces(
     // name under it in font 10, white (`FUN_004724a0`, `FUN_00609950`).
     let cells = battle_summary_cells(summary, *filter);
     let (cell_w, cell_h) = filter.cell();
-    let columns = filter.columns();
     let (list_x, list_y, list_w, list_h) = BATTLE_SUMMARY_LIST;
-    let range = ScrollRange {
-        first: *scroll,
-        visible: list_h / cell_h,
-        total: cells.len().div_ceil(columns),
+    let spec = DragListSpec {
+        rect: BATTLE_SUMMARY_LIST,
+        item: (cell_w, cell_h),
+        layout: DragListLayout::Grid,
+        selection: SelectionPolicy::Single,
+        drag: DragPolicy::Disabled,
+        wheel: WheelPolicy::Rows,
+        bar: Some(TEXT_BAR_299D),
     };
-    *scroll = (*scroll).min(range.max_first());
+    let rows: Vec<usize> = (0..cells.len()).collect();
+    let pointer = ScrollPointer {
+        at: Some(local),
+        pressed: is_mouse_button_pressed(MouseButton::Left),
+        down: mouse_down,
+        released: mouse_released,
+    };
+    let _ = list.update(
+        spec,
+        &rows,
+        DragListInput {
+            pointer: pointer.at,
+            primary_pressed: pointer.pressed,
+            primary_down: pointer.down,
+            primary_released: pointer.released,
+            wheel: mouse_wheel().1,
+            ..DragListInput::default()
+        },
+    );
     let (clip_x, clip_y) = canvas.point(window_x + list_x, window_y + list_y);
     set_tactical_aperture_clip(Some(NativeRect::new(
         clip_x,
@@ -6559,13 +6578,10 @@ fn draw_battle_result_forces(
     )));
     let (_, name_em) = result_cell_text(0.0, 10);
     let (_, empty_em) = result_cell_text(0.0, 6);
-    for (index, cell) in cells.iter().enumerate().skip(*scroll * columns) {
-        let row = index / columns - *scroll;
-        if row as f32 * cell_h >= list_h {
-            break;
-        }
-        let x = window_x + list_x + cell_w * (index % columns) as f32;
-        let y = window_y + list_y + cell_h * row as f32;
+    for (index, (x, y, _, _)) in list.logical_cells(spec, cells.len()) {
+        let cell = &cells[index];
+        let x = window_x + x;
+        let y = window_y + y;
         match cell {
             SummaryCell::Entry(entry) => {
                 let mut layers = cell_picture(&entry.unit, *filter);
@@ -6610,27 +6626,8 @@ fn draw_battle_result_forces(
     }
     set_tactical_aperture_clip(None);
 
-    // The list's bar, RCDATA 0x299d (`FUN_0046f360.c:603`), one row a step.
-    let bar = ScrollBar::new(TEXT_BAR_299D, list_x, list_y, list_w, list_h);
-    let pointer = ScrollPointer {
-        at: Some(local),
-        pressed: is_mouse_button_pressed(MouseButton::Left),
-        down: mouse_down,
-        released: mouse_released,
-    };
-    let range = ScrollRange {
-        first: *scroll,
-        ..range
-    };
-    *scroll = bar.update(drag, range, range.visible.floor() as usize, pointer);
-    for blit in bar.blits(
-        ScrollRange {
-            first: *scroll,
-            ..range
-        },
-        *drag,
-        pointer,
-    ) {
+    // The shared list composes RCDATA 0x299d's canonical bar.
+    for blit in list.bar_blits(spec, cells.len(), pointer) {
         draw_original_bitmap(
             cache,
             DllSource::Strategy,
@@ -6641,19 +6638,6 @@ fn draw_battle_result_forces(
             Some(Rect::new(0.0, 0.0, 13.0, blit.height)),
         );
     }
-    let in_list = local.0 >= list_x
-        && local.0 < list_x + list_w
-        && local.1 >= list_y
-        && local.1 < list_y + list_h;
-    let wheel = mouse_wheel().1;
-    if in_list && wheel != 0.0 && range.overflows() {
-        *scroll = if wheel > 0.0 {
-            scroll.saturating_sub(1)
-        } else {
-            (*scroll + 1).min(range.max_first())
-        };
-    }
-
     // FUN_004710f0: Left and Right step the filters.
     if chosen.is_none() {
         if is_key_pressed(KeyCode::Right) {
@@ -6670,8 +6654,7 @@ fn draw_battle_result_forces(
     // top, including a command from the already-selected child.
     if let Some(tab) = chosen {
         *filter = tab;
-        *scroll = 0;
-        *drag = crate::scroll_bar::ScrollDrag::default();
+        *list = DragListState::default();
         macroquad::logging::info!(
             "[tactical-results] tab={} category={}",
             if alliance {
@@ -6896,6 +6879,20 @@ const BATTLE_ALERT_LIST_Y: f32 = 40.0;
 const BATTLE_ALERT_LIST_WIDTH: f32 = 256.0;
 const BATTLE_ALERT_LIST_HEIGHT: f32 = 234.0;
 const BATTLE_ALERT_ROW_HEIGHT: f32 = 40.0;
+const BATTLE_ALERT_LIST: DragListSpec = DragListSpec {
+    rect: (
+        BATTLE_ALERT_LIST_X,
+        BATTLE_ALERT_LIST_Y,
+        BATTLE_ALERT_LIST_WIDTH,
+        BATTLE_ALERT_LIST_HEIGHT,
+    ),
+    item: (BATTLE_ALERT_LIST_WIDTH, BATTLE_ALERT_ROW_HEIGHT),
+    layout: DragListLayout::Stacked,
+    selection: SelectionPolicy::Single,
+    drag: DragPolicy::Disabled,
+    wheel: WheelPolicy::Rows,
+    bar: Some(LIST_BAR_29FC),
+};
 /// `FUN_00450e10`: the text starts 0x46 in, 0x5a when indented, the
 /// indented picture 0x14 in.
 const BATTLE_ALERT_TEXT_X: f32 = 70.0;
@@ -7114,11 +7111,6 @@ fn battle_alert_rows(
     rows
 }
 
-/// The rows the list shows at once, a partial last row included.
-fn battle_alert_visible_rows() -> usize {
-    (BATTLE_ALERT_LIST_HEIGHT / BATTLE_ALERT_ROW_HEIGHT).ceil() as usize
-}
-
 /// Draw the list page and its scroll bar, and scroll on the arrows, the
 /// track and the wheel.
 fn draw_battle_alert_list(
@@ -7128,12 +7120,9 @@ fn draw_battle_alert_list(
     rows: &[BattleAlertRow],
     input: &TacticalWindowInput,
 ) {
-    state.battle_alert_scroll = state
-        .battle_alert_scroll
-        .min(battle_alert_scroll_range(0, rows.len()).max_first());
     let origin_x = BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X;
     let origin_y = BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y;
-    let pointer = apply_battle_alert_scroll_input(state, canvas, rows.len(), input);
+    let pointer = apply_battle_alert_list_input(state, canvas, rows.len(), input);
     let (clip_x, clip_y) = canvas.point(origin_x, origin_y);
     set_tactical_aperture_clip(Some(NativeRect::new(
         clip_x,
@@ -7143,14 +7132,13 @@ fn draw_battle_alert_list(
     )));
     let regular = result_font();
     let bold = RESULT_BOLD_FONT.with(Clone::clone);
-    let first = state.battle_alert_scroll;
-    for (line, row) in rows
-        .iter()
-        .skip(first)
-        .take(battle_alert_visible_rows())
-        .enumerate()
+    for (index, (x, y, _, _)) in state
+        .battle_alert_list
+        .logical_cells(BATTLE_ALERT_LIST, rows.len())
     {
-        let top = origin_y + line as f32 * BATTLE_ALERT_ROW_HEIGHT;
+        let row = &rows[index];
+        let top = BATTLE_ALERT_WINDOW_Y + y;
+        let row_x = BATTLE_ALERT_WINDOW_X + x;
         let indent = if row.indented {
             BATTLE_ALERT_INDENT
         } else {
@@ -7162,7 +7150,7 @@ fn draw_battle_alert_list(
                 DllSource::Gokres,
                 mini,
                 canvas,
-                origin_x + indent,
+                row_x + indent,
                 top,
                 None,
             );
@@ -7184,12 +7172,9 @@ fn draw_battle_alert_list(
         );
         let (x, y) = if centred {
             let width = result_text_width(&row.label, font, font_size) / canvas.scale;
-            canvas.point(
-                origin_x + (BATTLE_ALERT_CENTRE_WIDTH - width) / 2.0,
-                baseline,
-            )
+            canvas.point(row_x + (BATTLE_ALERT_CENTRE_WIDTH - width) / 2.0, baseline)
         } else {
-            canvas.point(origin_x + indent + BATTLE_ALERT_TEXT_X, baseline)
+            canvas.point(row_x + indent + BATTLE_ALERT_TEXT_X, baseline)
         };
         draw_text_ex(
             &row.label,
@@ -7207,9 +7192,10 @@ fn draw_battle_alert_list(
 
     // The scroll bar shows while the rows overflow the list (captures 056
     // and 057).
-    let bar = battle_alert_scroll_bar();
-    let range = battle_alert_scroll_range(state.battle_alert_scroll, rows.len());
-    for blit in bar.blits(range, state.battle_alert_scroll_drag, pointer) {
+    for blit in state
+        .battle_alert_list
+        .bar_blits(BATTLE_ALERT_LIST, rows.len(), pointer)
+    {
         draw_original_bitmap(
             cache,
             DllSource::Strategy,
@@ -7224,57 +7210,52 @@ fn draw_battle_alert_list(
 
 /// Replays every admitted list event in backend order at its event-local
 /// coordinate, then applies the final held-button position for thumb dragging.
-fn apply_battle_alert_scroll_input(
+fn apply_battle_alert_list_input(
     state: &mut TacticalState,
     canvas: TacticalCanvas,
     rows: usize,
     input: &TacticalWindowInput,
 ) -> ScrollPointer {
-    let bar = battle_alert_scroll_bar();
+    let keys: Vec<usize> = (0..rows).collect();
     for event in &input.events {
         match *event {
             TacticalWindowEvent::CancelGesture => {
-                state.battle_alert_scroll_drag = crate::scroll_bar::ScrollDrag::default();
+                let _ = state.battle_alert_list.cancel_capture();
             }
             TacticalWindowEvent::PrimaryPress(screen)
             | TacticalWindowEvent::PrimaryRelease(screen) => {
                 let point = canvas.logical_pointer(screen.0, screen.1);
                 let pressed = matches!(event, TacticalWindowEvent::PrimaryPress(_));
-                let pointer = ScrollPointer {
-                    at: Some((
-                        point.0 - BATTLE_ALERT_WINDOW_X,
-                        point.1 - BATTLE_ALERT_WINDOW_Y,
-                    )),
-                    pressed,
-                    down: pressed,
-                    released: !pressed,
-                };
-                let range = battle_alert_scroll_range(state.battle_alert_scroll, rows);
-                state.battle_alert_scroll = bar.update(
-                    &mut state.battle_alert_scroll_drag,
-                    range,
-                    range.visible.floor() as usize,
-                    pointer,
+                let pointer = (
+                    point.0 - BATTLE_ALERT_WINDOW_X,
+                    point.1 - BATTLE_ALERT_WINDOW_Y,
+                );
+                let _ = state.battle_alert_list.update(
+                    BATTLE_ALERT_LIST,
+                    &keys,
+                    DragListInput {
+                        pointer: Some(pointer),
+                        primary_pressed: pressed,
+                        primary_down: pressed,
+                        primary_released: !pressed,
+                        ..DragListInput::default()
+                    },
                 );
             }
             TacticalWindowEvent::Wheel { screen, delta } => {
                 let point = canvas.logical_pointer(screen.0, screen.1);
-                let in_list = point.0 >= BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X
-                    && point.0
-                        < BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X + BATTLE_ALERT_LIST_WIDTH
-                    && point.1 >= BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y
-                    && point.1
-                        < BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y + BATTLE_ALERT_LIST_HEIGHT;
-                let range = battle_alert_scroll_range(state.battle_alert_scroll, rows);
-                let delta_y = delta.1;
-                if in_list && delta_y != 0.0 && range.overflows() {
-                    let rows = (delta_y.abs().ceil() as usize).clamp(1, 3);
-                    state.battle_alert_scroll = if delta_y > 0.0 {
-                        state.battle_alert_scroll.saturating_sub(rows)
-                    } else {
-                        (state.battle_alert_scroll + rows).min(range.max_first())
-                    };
-                }
+                let _ = state.battle_alert_list.update(
+                    BATTLE_ALERT_LIST,
+                    &keys,
+                    DragListInput {
+                        pointer: Some((
+                            point.0 - BATTLE_ALERT_WINDOW_X,
+                            point.1 - BATTLE_ALERT_WINDOW_Y,
+                        )),
+                        wheel: delta.1,
+                        ..DragListInput::default()
+                    },
+                );
             }
         }
     }
@@ -7289,12 +7270,14 @@ fn apply_battle_alert_scroll_input(
         down: input.primary_down,
         released: false,
     };
-    let range = battle_alert_scroll_range(state.battle_alert_scroll, rows);
-    state.battle_alert_scroll = bar.update(
-        &mut state.battle_alert_scroll_drag,
-        range,
-        range.visible.floor() as usize,
-        pointer,
+    let _ = state.battle_alert_list.update(
+        BATTLE_ALERT_LIST,
+        &keys,
+        DragListInput {
+            pointer: pointer.at,
+            primary_down: pointer.down,
+            ..DragListInput::default()
+        },
     );
     pointer
 }
@@ -7360,7 +7343,7 @@ fn apply_battle_alert_input(
         let action = match control {
             BattleAlertControl::Tab(tab) => {
                 if state.battle_alert_tab != tab {
-                    state.battle_alert_scroll = 0;
+                    state.battle_alert_list = DragListState::default();
                 }
                 state.battle_alert_tab = tab;
                 macroquad::logging::info!("[battle_alert] tab={}", tab.label());
@@ -7396,25 +7379,6 @@ fn apply_battle_alert_input(
         state.battle_alert_pressed = None;
     }
     TacticalAction::None
-}
-
-/// The list's bar, RCDATA `0x29fc` (`FUN_0044f860`), in window coordinates.
-fn battle_alert_scroll_bar() -> ScrollBar {
-    ScrollBar::new(
-        LIST_BAR_29FC,
-        BATTLE_ALERT_LIST_X,
-        BATTLE_ALERT_LIST_Y,
-        BATTLE_ALERT_LIST_WIDTH,
-        BATTLE_ALERT_LIST_HEIGHT,
-    )
-}
-
-fn battle_alert_scroll_range(first: usize, rows: usize) -> ScrollRange {
-    ScrollRange {
-        first,
-        visible: BATTLE_ALERT_LIST_HEIGHT / BATTLE_ALERT_ROW_HEIGHT,
-        total: rows,
-    }
 }
 
 fn draw_original_battle_alert(
@@ -7624,8 +7588,7 @@ fn apply_battle_result_input(
                     state.battle_result_tab = tab;
                     // FUN_00471340: a page change refills the source list
                     // from its first row and releases any held scroll part.
-                    state.battle_result_scroll = 0;
-                    state.battle_result_scroll_drag = crate::scroll_bar::ScrollDrag::default();
+                    state.battle_result_list = DragListState::default();
                 }
                 macroquad::logging::info!(
                     "[tactical-results] tab={}",
@@ -7704,8 +7667,7 @@ fn draw_original_battle_results(
                 alliance,
                 player_alliance,
                 &mut state.battle_result_filter,
-                &mut state.battle_result_scroll,
-                &mut state.battle_result_scroll_drag,
+                &mut state.battle_result_list,
                 mouse,
                 text_color,
             );
@@ -9353,6 +9315,12 @@ mod tests {
         }
     }
 
+    fn list_at(first_row: usize) -> DragListState<usize> {
+        let mut list = DragListState::default();
+        list.set_first_row(first_row);
+        list
+    }
+
     fn battle_result_test_context() -> (TacticalState, BattleResultSkin, (f32, f32)) {
         let mut session = test_session(Vec::new(), Vec::new(), true);
         session.phase = BattlePhase::Results;
@@ -9581,12 +9549,12 @@ mod tests {
             let mut state = TacticalState {
                 session: Some(test_session(Vec::new(), Vec::new(), player_is_attacker)),
                 battle_result_filter: ReportTab::Personnel,
-                battle_result_scroll: 3,
+                battle_result_list: list_at(3),
                 ..TacticalState::default()
             };
             assert!(state.simulate_battle(&GameWorld::default()));
             assert_eq!(state.battle_result_filter, ReportTab::CapitalShips);
-            assert_eq!(state.battle_result_scroll, 0);
+            assert_eq!(state.battle_result_list.first_row(), 0);
         }
     }
 
@@ -10091,7 +10059,7 @@ mod tests {
             );
             let mut state = TacticalState {
                 battle_result_tab: BattleResultTab::Summary,
-                battle_result_scroll: 3,
+                battle_result_list: list_at(3),
                 ..TacticalState::default()
             };
             let canvas = TacticalCanvas::new(640.0, 480.0);
@@ -10099,13 +10067,17 @@ mod tests {
                 apply_battle_result_input(&mut state, skin, canvas, &primary_input(point, true),),
                 TacticalAction::None
             );
-            assert_eq!(state.battle_result_scroll, 3);
+            assert_eq!(state.battle_result_list.first_row(), 3);
             assert_eq!(
                 apply_battle_result_input(&mut state, skin, canvas, &primary_input(point, false),),
                 TacticalAction::None
             );
             assert_eq!(state.battle_result_tab, BattleResultTab::AllianceForces);
-            assert_eq!(state.battle_result_scroll, 0, "{player_is_alliance}");
+            assert_eq!(
+                state.battle_result_list.first_row(),
+                0,
+                "{player_is_alliance}"
+            );
         }
     }
 
@@ -10154,7 +10126,7 @@ mod tests {
     #[test]
     fn tactical_windowing_alert_scroll_uses_event_coordinate_not_final_pointer() {
         let mut state = TacticalState {
-            battle_alert_scroll: 1,
+            battle_alert_list: list_at(1),
             ..TacticalState::default()
         };
         let inside_list = (
@@ -10170,16 +10142,16 @@ mod tests {
             ..TacticalWindowInput::default()
         };
 
-        apply_battle_alert_scroll_input(&mut state, TacticalCanvas::new(640.0, 480.0), 20, &input);
-        assert_eq!(state.battle_alert_scroll, 2);
+        apply_battle_alert_list_input(&mut state, TacticalCanvas::new(640.0, 480.0), 20, &input);
+        assert_eq!(state.battle_alert_list.first_row(), 2);
     }
 
     #[test]
-    fn tactical_windowing_alert_scroll_honors_the_wheel_delta() {
-        // FUN_0060f6d0 emits one scroll notification per physical step; the
-        // port maps an admitted backend y magnitude to 1..=3 row steps.
+    fn tactical_windowing_alert_scroll_treats_each_wheel_event_as_one_list_step() {
+        // FUN_0060f6d0 emits one list-row notification per delivered wheel
+        // event; the shared CoolDragList owns the direction and bound.
         let mut state = TacticalState {
-            battle_alert_scroll: 4,
+            battle_alert_list: list_at(4),
             ..TacticalState::default()
         };
         let inside_list = (
@@ -10196,10 +10168,10 @@ mod tests {
             ..TacticalWindowInput::default()
         };
 
-        apply_battle_alert_scroll_input(&mut state, canvas, 20, &input(-2.5));
-        assert_eq!(state.battle_alert_scroll, 7);
-        apply_battle_alert_scroll_input(&mut state, canvas, 20, &input(2.0));
-        assert_eq!(state.battle_alert_scroll, 5);
+        apply_battle_alert_list_input(&mut state, canvas, 20, &input(-2.5));
+        assert_eq!(state.battle_alert_list.first_row(), 5);
+        apply_battle_alert_list_input(&mut state, canvas, 20, &input(2.0));
+        assert_eq!(state.battle_alert_list.first_row(), 4);
     }
 
     #[test]
@@ -10232,14 +10204,14 @@ mod tests {
             ..TacticalWindowInput::default()
         };
 
-        apply_battle_alert_scroll_input(&mut state, TacticalCanvas::new(640.0, 480.0), 20, &input);
-        assert_eq!(state.battle_alert_scroll, 3);
+        apply_battle_alert_list_input(&mut state, TacticalCanvas::new(640.0, 480.0), 20, &input);
+        assert_eq!(state.battle_alert_list.first_row(), 2);
     }
 
     #[test]
     fn tactical_windowing_alert_scroll_preserves_release_before_press_order() {
         let mut state = TacticalState {
-            battle_alert_scroll: 1,
+            battle_alert_list: list_at(1),
             ..TacticalState::default()
         };
         let bar_x = BATTLE_ALERT_WINDOW_X + BATTLE_ALERT_LIST_X + BATTLE_ALERT_LIST_WIDTH - 6.0;
@@ -10250,7 +10222,7 @@ mod tests {
         let up = (bar_x, BATTLE_ALERT_WINDOW_Y + BATTLE_ALERT_LIST_Y + 6.0);
         let canvas = TacticalCanvas::new(640.0, 480.0);
 
-        apply_battle_alert_scroll_input(
+        apply_battle_alert_list_input(
             &mut state,
             canvas,
             20,
@@ -10260,9 +10232,9 @@ mod tests {
                 events: vec![TacticalWindowEvent::PrimaryPress(down)],
             },
         );
-        assert_eq!(state.battle_alert_scroll, 1);
+        assert_eq!(state.battle_alert_list.first_row(), 1);
 
-        apply_battle_alert_scroll_input(
+        apply_battle_alert_list_input(
             &mut state,
             canvas,
             20,
@@ -10276,11 +10248,12 @@ mod tests {
             },
         );
         assert_eq!(
-            state.battle_alert_scroll, 2,
+            state.battle_alert_list.first_row(),
+            2,
             "the prior Down capture releases before the new Up press"
         );
 
-        apply_battle_alert_scroll_input(
+        apply_battle_alert_list_input(
             &mut state,
             canvas,
             20,
@@ -10290,7 +10263,7 @@ mod tests {
                 ..TacticalWindowInput::default()
             },
         );
-        assert_eq!(state.battle_alert_scroll, 1);
+        assert_eq!(state.battle_alert_list.first_row(), 1);
     }
 
     // Source: FUN_005a8f70 waypoint; FUN_005cf980 recovery executor.

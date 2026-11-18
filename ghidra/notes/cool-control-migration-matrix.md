@@ -143,11 +143,11 @@ owned by `.6`. The canonical `scroll_bar.rs::{ScrollBar, ScrollRange,
 ScrollDrag}` already models the common base (`FUN_0060aa70`, WndProc
 `FUN_0060aca0`, cleanup `FUN_0060b500`) and is composed rather than rewritten.
 
-| Production list / current Rust owner | Original feature evidence | State/behavior to move into `DragList`; feature data retained | Art / scrollbar disposition | Journey |
+| Production list / pre-`.5` Rust owner | Original feature evidence | State/behavior to move into `DragList`; feature data retained | Art / scrollbar disposition | Journey |
 |---|---|---|---|---|
 | Defenses grid: `defenses_window.rs`, currently `LabeledCell` plus `ScrollBar` | `FUN_004a8790` | selected cells, grid wrapping, first row, right-select, threshold drag/drop | GOKRES minis, faction selection frame; current canonical bar | `sector-quadrants.mjs` |
 | Missions and member lists: `missions_window.rs`, currently `LabeledCell` and local tab/list state | `FUN_0049f540` | two vertical lists, selection, member activation and drag; keep mission/member rendering | mission-side frames; source intentionally draws no separate bar in the current bounded list | `sector-quadrants.mjs` |
-| Fleet left and contents lists: `fleet_window.rs` | `FUN_004a4b10` | first row, single/multi-select, double click, right select, ship/regiment drag/drop | mostly GOKRES minis plus side frame; source bars `0x29fc` | `fleet-window.mjs` |
+| Fleet left and contents lists: `fleet_window.rs` | `FUN_004a4b10` | first row, single/multi-select, double click, right select, ship/regiment drag/drop | mostly GOKRES minis plus side frame; source bars `0x29cb` | `fleet-window.mjs` |
 | Manufacturing facility pages: `system_window.rs` / `manufacturing_window.rs` | `FUN_00455060` | page refill, grid selection, scrolling, build-class activation | side-independent facility minis; source list/bar configuration | `sector-quadrants.mjs`, `build-selection.mjs` |
 | Fleet/Ship Finder: `finder_common.rs`, `fleet_finder.rs` | `FUN_00460270`, `FUN_00461960` | first row, bounded keys, wheel, prefix reveal, click/double click | side shell; text rows; source `0x299d` bar | `fleet-finder.mjs` |
 | Personnel Finder: `finder_common.rs`, `personnel_finder.rs` | `FUN_004637a0` | same shared list mechanics; feature retains row projection and open target | side shell; text rows | `audit-batch.mjs` |
@@ -159,6 +159,66 @@ ScrollDrag}` already models the common base (`FUN_0060aa70`, WndProc
 | Mission Dialog Agents/Decoys: `mission_dialog.rs::member_list` | `FUN_0046a9c0` | click/double-click, selection, wheel and team/decoy drag meaning | faction dialog shell; member minis | `mission-dialog.mjs` |
 | Battle Alert list: `tactical_view.rs`, currently local first-row state plus canonical `ScrollBar` | `FUN_0044f860` | tab refill, selection and scrolling | faction Alert shell; `0x29fc` list bar | `run.mjs --all --scenario=production-battle-alert-entry` |
 | Battle Results lists: `tactical_view.rs`, currently result row/filter state plus canonical text bar | `FUN_0046f360`, filler `FUN_004714e0` | tab/category refill, first row, scroll and direct-route activation | faction Results shell; `0x299d` text bar | `run.mjs --all --scenario=production-battle-results-presentation` |
+
+### `.5` shared-ownership record
+
+The source migration is under verification on 2026-11-17. The family now has
+one `DragListState`/`DragListSpec` implementation for selection, anchor,
+first-row bounds, visible cells, wheel/key movement, double-click activation,
+pointer capture and composed `ScrollBar` input/art. Feature modules retain only
+their row projection, filtering, faction art and domain actions:
+
+- `fleet_window.rs` retains fleet expansion, tab contents, Rename and move
+  destinations; its persistent left/right list states also supply the exact
+  scrolled row for external mission/move releases. Both lists compose source
+  bar `0x29cb` from `FUN_004a4b10`.
+- `system_window.rs` retains facility-page data and build actions while the
+  source grid at (8, 77), 222 by 225 with 69-by-40 items uses the shared list.
+- the three Finder families retain their row/detail projections and open
+  destinations; the shared list owns first row, wheel, keys, prefix reveal,
+  selection and activation with source bar `0x299d`.
+- `message_index.rs` retains category filtering, Select All/Delete and message
+  display policy; its multiple-selection rows use the shared list and source
+  bar `0x299d`. The separately constructed displayed-message body remains a
+  text control and keeps its canonical text `ScrollBar`.
+- `encyclopedia.rs` and `encyclopedia_surface.rs` retain category, prefix
+  search, topic and artwork policy. The recovered index is 350 by 160 with
+  350-by-20 rows (eight complete rows), multiple selection and bar `0x299d`;
+  click, wheel, key, reveal and activation all use the shared list. The topic
+  article remains a different text control and keeps its text scrollbar.
+- `operation_report.rs` retains report view/tab filtering and cell painting;
+  the grid composes source bar `0x29fc` through the shared list.
+- `status_window.rs` retains the family-specific label/value rows. Source
+  constructor `FUN_00443130` proves one 208-by-204 list of 208-by-35 items,
+  with the two 103-pixel text columns inside each item. RCDATA `0x299a` is not
+  in the approved pack, so list state/input/geometry is shared while that
+  already-documented bar-pixel omission remains.
+- Mission Dialog retains team/decoy membership, move-arrow and double-click
+  policy. Its two 107-by-59 member lists now use persistent shared list state,
+  bounded wheel input and source bar `0x29fc`; `.6` separately owns only the
+  mission-kind `SelectionBox` popup.
+- Battle Alert and Battle Results retain battle-row construction, result
+  filters and native painting; their lists use the shared native adapter and
+  source bars `0x29fc` and `0x299d` respectively.
+
+Dedicated `SelectionBox` popup internals belong to `.6` and are not `.5`
+consumers. The Message Index body and Encyclopedia topic article are cited
+text controls, not exclusions inferred merely from similar scrolling.
+
+The final 70-token scan on the shared 2026-11-18 worktree reports 8 exact
+clones (0.1%) and 294 normalized clones (3.4%). No match pairs two migrated
+feature-local list implementations: the exact results are the pre-existing
+strobe-button/test pair plus test and routing blocks, while normalized Build
+Selection/Mission Dialog matches are the dedicated `.6` SelectionBox family.
+Concurrent `.6` and `.7` additions mean these totals are not a direct numeric
+comparison with the 263-clone pre-epic baseline.
+
+The final scoped `cargo mutants` run exercised 90 mutations across the shared
+hit testing, selection/reveal, capture cancellation, reconciliation and input
+state machine: 86 were caught and three generated replacements did not
+compile. The one initial survivor changed the recovered drop boundary from
+strictly greater than 24 squared pixels to greater-than-or-equal; an exact
+boundary test was added and the focused rerun caught it.
 
 `ScrollBar` is also embedded in the two SelectionBox popups below. The source's
 horizontal WndProc tests both cursor axes in `FUN_00610900`; this is a recovered
@@ -182,19 +242,28 @@ The source popup scrollbar's still-unsettled `0x299a` art remains an explicit
 ## String fields
 
 All included rows use `CoolStringField` constructor `FUN_00604cf0` and
-WndProc `FUN_00605160`; `.7` supplies one `StringField` object. Parents retain
-submit/cancel meaning and type-ahead/list behavior.
+WndProc `FUN_00605160`; `.7` supplies one `controls::StringField` object and
+`StringFieldState`. The object owns text, selection/caret, overwrite mode,
+printable-character admission, optional maximum length and semantic child
+focus. Parents retain empty-submit/cancel meaning, feature commands and
+type-ahead/list behavior.
 
-| Consumer / current call site | Original feature evidence | Feature policy and art | Journey |
+`FUN_00604cf0` initializes field `+0xa4` to zero, meaning unlimited. The `10`
+passed by Fleet and Manufacturing rename callers is the font installed through
+`FUN_00604f70`, not a ten-character limit. Among these consumers only Build
+Selection calls `FUN_006050c0(field, 0x19)`, so its quantity edit has the
+25-character maximum and every other migrated field remains unlimited.
+
+| Consumer / migrated call site | Original feature evidence | Feature policy and art | Journey |
 |---|---|---|---|
-| Six Game Options save names: `game_options.rs` raw `egui::TextEdit` | `FUN_00407180` | save-slot validation/overwrite remains parent policy; COMMON styling | `game-options-smoke.mjs` both factions |
-| Build Selection quantity: manual numeric text/edit state in `build_selection.rs` | `FUN_00437f80` | parent clamps quantity and build validity | `build-selection.mjs` |
-| Manufacturing-band rename: `system_window.rs::draw_band_rename` raw `TextEdit`/focus state | `FUN_00458640` | empty-name and Rename order policy stays in System window | `build-selection.mjs` manufacturing journey |
-| Encyclopedia search: `encyclopedia.rs` raw `TextEdit` and prefix/filter state | `FUN_0045ddc0`, list search `FUN_00609650` | category/filter meaning remains Encyclopedia-owned | `encyclopedia-index-shell.mjs --catalog`, `encyclopedia-canonical-surface.mjs` |
-| Fleet/Ship Finder name: `finder_common.rs` raw `TextEdit` and type-ahead state | `FUN_00460270`, `FUN_00461960` | finder owns prefix selection and Enter/open | `fleet-finder.mjs` |
-| Personnel Finder name: `finder_common.rs` through `personnel_finder.rs` | `FUN_004637a0` | shared text behavior, feature row/open policy | `audit-batch.mjs` |
-| Troop Finder name: `finder_common.rs` through `troop_finder.rs` | `FUN_0046ce40` | shared text behavior, feature row/open policy | `audit-batch.mjs` |
-| Fleet in-place rename: `fleet_window.rs::draw_rename_field` raw `TextEdit` and `ControlId(0x203)` focus | `FUN_004ac7a0`, setters `FUN_00604f90`/`FUN_00605110` | empty Enter keeps edit open; parent emits Rename | `fleet-window.mjs` |
+| Six Game Options save names: `game_options.rs::name_fields` | `FUN_00407180` | `StringField` owns each slot edit; save-slot validation/overwrite remains parent policy; COMMON styling | `game-options-smoke.mjs` both factions |
+| Build Selection quantity: `build_selection.rs::quantity_field` | `FUN_00437f80`; limit setter `FUN_006050c0(..., 0x19)`; parent parse/clamp in `FUN_00438d30` | the field accepts printable input; the parent parses and clamps 1..255, validates the build and owns +/- commands | `build-selection.mjs` |
+| Manufacturing-band rename: `system_window.rs::BandRename::field` through `draw_band_rename` | `FUN_00458640` | unlimited field; empty-name and Rename order policy stays in System window | `build-selection.mjs` manufacturing journey |
+| Encyclopedia search: `encyclopedia.rs::EncyclopediaSurfaceState::search_field` | `FUN_0045ddc0`, list search `FUN_00609650` | unlimited field; category/filter and list movement remain Encyclopedia-owned | `encyclopedia-index-shell.mjs --catalog`, `encyclopedia-canonical-surface.mjs` |
+| Fleet/Ship Finder name: `finder_common.rs::FinderUiState::name` | `FUN_00460270`, `FUN_00461960` | shared field emits changes/keys; Finder owns prefix selection, reveal and Enter/open | `fleet-finder.mjs` |
+| Personnel Finder name: the same `FinderUiState::name` through `personnel_finder.rs` | `FUN_004637a0` | shared text behavior, feature row/open policy | `audit-batch.mjs` |
+| Troop Finder name: the same `FinderUiState::name` through `troop_finder.rs` | `FUN_0046ce40` | shared text behavior, feature row/open policy | `audit-batch.mjs` |
+| Fleet in-place rename: `fleet_window.rs::RenameEdit::field` through `draw_rename_edit` | `FUN_004ac7a0`, setters `FUN_00604f90`/`FUN_00605110` | unlimited field with `ControlId(0x203)`; empty Enter keeps edit open and the parent emits Rename | `fleet-window.mjs` |
 
 The multiplayer/player name in `main_menu_destinations.rs` is replacement UI
 with no confirmed `FUN_00604cf0` constructor and is excluded. Raw TextEdits in
@@ -204,18 +273,21 @@ are also excluded.
 ## Slider, status bar and tooltip
 
 These families are consolidated in `.8`; current canonical objects are kept
-where they already satisfy the contract.
+where they already satisfy the contract. Checkbox is the canonical
+`controls::Checkbox` composition over `StrobeButton`, while the scrollbar and
+tooltip implementations remain in their focused source modules and are
+re-exported through `controls`.
 
 | Family and production consumer | Original evidence | Current Rust call site / proposed target | Art, exclusion and journey |
 |---|---|---|---|
-| Slider: Game Options music and effects volumes | `FUN_00407180` is the only feature caller of `FUN_00604570`; WndProc `0x00604b80` | `audio.rs` has two raw `egui::Slider`s; replace with one source-shaped `Slider` object while `AudioSettings` keeps volume application | COMMON slider art; `game-options-smoke.mjs` both factions |
-| StatusBar: three Manufacturing band progress bars | subclass `FUN_004acec0` called three times by `FUN_00455060`; base `FUN_0060e150`, WndProc `FUN_0060e460` | `system_window.rs` paints each black/gray fraction locally; use `StatusBar` | shared colors, no side art; `build-selection.mjs` / `sector-quadrants.mjs` |
-| StatusBar: sector planet energy, raw-material and support meters | `FUN_00459e30` calls `FUN_004acec0`; `FUN_0045c240`/`FUN_0045c450` configure values/ticks | `sector_window.rs::paint_meter` is a second complete implementation; use `StatusBar` with optional ticks | support foreground/background swaps by player side; `run.mjs --all --scenario=sector` and `sector-quadrants.mjs` |
-| StatusBar: selected capital and alternate ship-style panels, hull and shield | `FUN_005e4110` and `FUN_005e7030` each create two `FUN_0060e150` bars | `tactical_view.rs::draw_tactical_selected_meter`; use `StatusBar` | fixed blue over red, not faction color; tactical selected/damage presentation scenarios in `run.mjs --all` |
-| StatusBar: Death Star charge | `FUN_005c4ed0` creates one `FUN_0060e150` bar | `tactical_view.rs` charge-gauge painter/tests; use `StatusBar` | fixed green over blue; `run.mjs --all --scenario=production-death-star-laser-journey` |
-| Stock tooltip: cockpit counters, command controls, Message Index rail and game-speed controls | global `FUN_006008e0`; registrations `FUN_00600a40` from `FUN_00427270` and updates `FUN_00600cc0` | keep `tooltip.rs::{TooltipTarget, TooltipState, draw_cockpit_tooltips}` canonical and extend registrations through configuration | faction-specific target geometry/text; `run.mjs --all`, `fleet-finder.mjs`, `audit-batch.mjs` |
-| Stock tooltip: strategic window buttons/tabs (Move, Report, Alert, Manufacturing, Sector meters, Encyclopedia, Finders, Message Index, Mission Dialog, Troop, Results, Missions, Fleet and Defenses) | `FUN_00600a40` call sites in `FUN_0044f180`, `FUN_0044c630`, `FUN_0044f860`, `FUN_00455060`, `FUN_00459e30`, `FUN_0045ddc0`, `FUN_00460270`, `FUN_00461960`, `FUN_004637a0`, `FUN_004665f0`, `FUN_0046a9c0`, `FUN_0046ce40`, `FUN_0046f360`, `FUN_0049f540`, `FUN_004a4b10`, `FUN_004a8790` | `operation_report.rs` and `encyclopedia.rs` have feature-local hover painters; most other targets are absent. Register them through canonical `TooltipState`; keep text/resource mapping in each feature | use each feature's side-specific text/geometry; corresponding journeys in the tables above |
-| Stock tooltip: tactical task-force/fighter strips and selected panels | `FUN_0059b130`, `FUN_0059b450`, `FUN_0059b550`, `FUN_0059b690`, `FUN_005dd080`, `FUN_005dd3a0`, `FUN_005e4110`, `FUN_005e7030`, `FUN_005ef240`; dynamic text via `FUN_00600cc0` | configure canonical `TooltipState` from `tactical_view.rs`; strip assignment text stays tactical-owned | faction/task-force text and panel geometry; command/selection scenarios in `run.mjs --all` |
+| Slider: Game Options music and effects volumes | `FUN_00407180` is the only feature caller of `FUN_00604570`; WndProc `0x00604b80` | canonical `controls/slider.rs::{Slider, SliderState}` owns capture, held updates, integer range and commit; `game_options.rs` supplies the two COMMON rails and applies values to `AudioVolumeState` | COMMON slider art; `game-options-smoke.mjs` both factions. `audio.rs::draw_audio_controls` is a port-only bottom-bar extension and therefore remains an egui control, not a false original Slider consumer |
+| StatusBar: three Manufacturing band progress bars | subclass `FUN_004acec0` called three times by `FUN_00455060`; base `FUN_0060e150`, WndProc `FUN_0060e460` | canonical `controls/status_bar.rs::StatusBar`; `system_window.rs` retains black/light-gray colors and band values | shared colors, no side art; `build-selection.mjs` / `sector-quadrants.mjs` |
+| StatusBar: sector planet energy, raw-material and support meters | `FUN_00459e30` calls `FUN_004acec0`; `FUN_0045c240`/`FUN_0045c450` configure values/ticks | canonical `controls/status_bar.rs::StatusBar`; `sector_window.rs::paint_meter` is now only the egui/color adapter | support foreground/background swaps by player side; `run.mjs --all --scenario=sector` and `sector-quadrants.mjs` |
+| StatusBar: selected capital and alternate ship-style panels, hull and shield | `FUN_005e4110` and `FUN_005e7030` each create two `FUN_0060e150` bars | canonical `controls/status_bar.rs::StatusBar`; `tactical_view.rs::draw_tactical_selected_meter` is the macroquad/color adapter | fixed blue over red, not faction color; tactical selected/damage presentation scenarios in `run.mjs --all` |
+| StatusBar: Death Star charge | `FUN_005c4ed0` creates one `FUN_0060e150` bar | canonical `controls/status_bar.rs::StatusBar`; `tactical_view.rs` supplies the charge value and gauge colors | fixed green over blue; `run.mjs --all --scenario=production-death-star-laser-journey` |
+| Stock tooltip: cockpit counters, command controls, Message Index rail and game-speed controls | global `FUN_006008e0`; registrations `FUN_00600a40` from `FUN_00427270` and updates `FUN_00600cc0` | canonical `tooltip.rs::{TooltipTarget, TooltipState, draw_cockpit_tooltips}`, re-exported by `controls`; the app consumes that facade | faction-specific target geometry/text; `run.mjs --all`, `fleet-finder.mjs`, `audit-batch.mjs` |
+| Stock tooltip: strategic window buttons/tabs (Move, Report, Alert, Manufacturing, Sector meters, Encyclopedia, Finders, Message Index, Mission Dialog, Troop, Results, Missions, Fleet and Defenses) | `FUN_00600a40` call sites in `FUN_0044f180`, `FUN_0044c630`, `FUN_0044f860`, `FUN_00455060`, `FUN_00459e30`, `FUN_0045ddc0`, `FUN_00460270`, `FUN_00461960`, `FUN_004637a0`, `FUN_004665f0`, `FUN_0046a9c0`, `FUN_0046ce40`, `FUN_0046f360`, `FUN_0049f540`, `FUN_004a4b10`, `FUN_004a8790` | canonical `tooltip.rs::{TooltipState, draw_registered_tooltips}` owns delay, click dismissal and stock painting. Encyclopedia categories, Operation Report controls, common Sector/Minimize/Close title controls and the configured System, Defenses, Fleet, Missions, Mission Dialog and Message Index tab strips register their feature-owned labels and rectangles through it. Other source-proven registrations not yet rendered by their feature have no alternate implementation to migrate and remain explicitly inventoried rather than receiving guessed text | use each feature's side-specific text/geometry; corresponding journeys in the tables above |
+| Stock tooltip: tactical task-force/fighter strips and selected panels | `FUN_0059b130`, `FUN_0059b450`, `FUN_0059b550`, `FUN_0059b690`, `FUN_005dd080`, `FUN_005dd3a0`, `FUN_005e4110`, `FUN_005e7030`, `FUN_005ef240`; dynamic text via `FUN_00600cc0` | canonical state contract is `tooltip.rs::TooltipState`, but the current tactical renderer has no stock-tooltip consumer to migrate. The original updates dynamic text through `FUN_00600cc0`; until that per-target text and native geometry are recovered, adding a tactical painter would invent behavior forbidden by `.8`. This is a source-backed absent-feature exclusion, not a second implementation | faction/task-force text and panel geometry; command/selection scenarios in `run.mjs --all` once a dedicated parity bead implements the recovered registrations |
 
 An egui layer created with `egui::Order::Tooltip` is not automatically an
 original tooltip. The pop-up menus in `object_menu.rs`/`game_menu.rs`, targeting
@@ -224,6 +296,66 @@ topmost overlays use that order for stacking and are excluded unless they also
 have an original `FUN_00600a40`/`FUN_00600cc0` registration. Encyclopedia's
 category hover and Operation Report's rail hover are included because their
 feature evidence identifies tooltip text, not because of their egui layer.
+
+### `.8` shared-ownership record
+
+The family consolidation completed on 2026-11-18 without treating visual
+similarity as original identity:
+
+- every production scrollbar import now goes through `controls`, whose facade
+  re-exports the existing `scroll_bar.rs` object, source art configurations and
+  egui adapter. `DragList` and `SelectionBox` compose the same implementation;
+  the recovered horizontal two-axis bug remains deliberately rejected.
+- the two confirmed Checkbox constructor families continue to compose
+  `controls::Checkbox` over `StrobeButton`. Game Options tactical switches are
+  still StrobeButtons because `FUN_00407180` constructs them that way.
+- `controls::Slider` owns the source capture/value/commit state for both Game
+  Options volume controls. The unrelated port bottom-bar sliders remain normal
+  egui controls because `FUN_00407180` is the only proved feature caller.
+- one `controls::StatusBar` now computes the exact whole-pixel fill and optional
+  tick positions for Manufacturing, Sector, selected-ship hull/shield and the
+  Death Star charge gauge. Feature modules still own values, colors, art and
+  egui/macroquad painting. The source's tick pass is independent of a zero
+  fill; the new shared test caught and removed the Sector adapter's early-return
+  omission.
+- `TooltipState` remains the one hover-delay/click-dismiss state machine and
+  the stock colors/font/border now have one painter. Cockpit, Encyclopedia,
+  Operation Report, common strategic title controls and source-labelled
+  strategic tab strips route implemented original tooltip behavior through
+  the `controls` facade. Proved registrations whose feature is still absent
+  remain explicit source-backed exclusions; neither `.8` nor the verification-
+  only `.9` invents their dynamic text or native geometry.
+
+The manual was read again after the migration: pp. 22 and 62 promise delayed
+descriptions for controls; pp. 75-76 name and describe dragging both Game
+Options volume sliders; p. 83 identifies each Manufacturing progress bar;
+pp. 84-85 identify Sector energy/raw-material indicators; and p. 146 says
+selected-ship hull and shield begin solid blue and turn red with damage. These
+claims agree with the cited executable paths and the retained feature colors.
+
+The scoped mutation run covered all 52 generated replacements in the new
+`Slider` and `StatusBar` kernels. Its first pass caught 44 and rejected five
+that did not compile. The three survivors exposed missing fixed-range,
+zero-travel, shifted-minimum and zero-tick tests; after adding those boundaries,
+the exact three-mutant rerun caught all three. No non-equivalent survivor
+remains.
+
+Local acceptance on 2026-11-18 passed `make fmt`, warning-free `make build`,
+`make check`, and `bash scripts/build-interface-test-wasm.sh`; the latter
+validated all 38 fixture scenarios / 152 cells and proved zero fixture tokens
+in production. The muted `sector` and `popular-support` catalog runs passed
+all four faction/viewport cells, `sector-quadrants.mjs --no-build` passed all
+12 Alliance/Empire cases, and the strengthened `game-options-smoke.mjs`
+passed both factions after directly dragging both original volume sliders and
+observing their moved bitmap handles. The selected-damage functional meter
+assertions passed every cell across two runs, including exact 40% and 25%
+whole-pixel fills, but the aggregate commands remained red only on the generic
+paused-render p95 threshold; the Death Star gauge likewise passed both native-
+size cells while both letterboxed cells hit that threshold. That tactical
+four-cell performance gate remains for Tom's Mini. Build Selection's separate
+modal-stabilization failure is owned by the concurrently migrated StringField,
+not any StatusBar surface; the passing Sector/System journey is the `.8`
+Manufacturing evidence.
 
 ## CoolGameWindow title dragging
 

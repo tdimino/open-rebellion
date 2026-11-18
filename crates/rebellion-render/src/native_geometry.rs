@@ -22,17 +22,6 @@ pub(crate) fn show_area<R>(
         })
 }
 
-/// Origin of this frame's primary-button press, if one began.
-pub(crate) fn primary_press_origin(ctx: &egui::Context) -> Option<egui::Pos2> {
-    ctx.input(|input| {
-        input
-            .pointer
-            .button_pressed(egui::PointerButton::Primary)
-            .then(|| input.pointer.press_origin())
-            .flatten()
-    })
-}
-
 /// A half-open rectangle in unscaled native-canvas coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct NativeRect {

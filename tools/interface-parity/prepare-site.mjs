@@ -52,6 +52,8 @@ const fixturePlugin = `    <script>
                             (window.__openRebellionInterfaceQuadrants ||= []).push(message);
                         } else if (message.status === "production") {
                             window.__openRebellionInterfaceProduction = message;
+                        } else if (message.status === "mission-dialog") {
+                            window.__openRebellionInterfaceMissionDialog = message;
                         } else if (message.status === "fleet-finder") {
                             (window.__openRebellionInterfaceFleetFinders ||= []).push(message);
                         } else if (message.status === "encyclopedia-surface") {

@@ -23,16 +23,16 @@ use rebellion_windowing::ControlId;
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::{draw_registered_tooltips, TooltipPresentation, LIST_BAR_29FC};
 use crate::controls::{
-    ButtonArt, ButtonImage, StrobeButton, TabControl, TabControlState, TabDirection, TabSpec,
-    TabTraversal,
+    ButtonArt, ButtonImage, DragList, DragListLayout, DragListSpec, DragListState, DragPolicy,
+    SelectionPolicy, StrobeButton, TabControl, TabControlState, TabDirection, TabSpec,
+    TabTraversal, WheelPolicy,
 };
 use crate::fleet_window::{mini_layers, paint_native, portrait_layers, MiniObject};
-use crate::list_control::wheel_step;
 use crate::message_log::{GameMessage, MessageId};
 use crate::mission_dialog::galaxy_centered_rect;
 use crate::native_geometry::{logical_rect, rect_contains};
-use crate::scroll_bar::{ScrollBar, ScrollDrag, ScrollRange, LIST_BAR_29FC};
 
 pub const OPERATION_REPORT_WIDTH: f32 = 470.0;
 pub const OPERATION_REPORT_HEIGHT: f32 = 331.0;
@@ -339,6 +339,7 @@ impl ReportTab {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn columns(self) -> usize {
         match self {
             Self::Personnel => 3,
@@ -624,8 +625,7 @@ struct OpenReport {
     faction: CockpitFaction,
     view: ReportView,
     tab: ReportTab,
-    first_row: usize,
-    drag: ScrollDrag,
+    list: DragListState<usize>,
     /// `DAT_006b2910 == 0x1c`: the Message Index category to reopen on
     /// close (`DAT_006b290c`).
     reopen_index: Option<u16>,
@@ -679,8 +679,7 @@ impl OperationReportState {
             faction,
             view: ReportView::Summary,
             tab,
-            first_row: 0,
-            drag: ScrollDrag::default(),
+            list: DragListState::default(),
             reopen_index,
         };
         if self.window.is_some() {
@@ -731,8 +730,7 @@ impl OperationReportState {
         if let Some(window) = &mut self.window {
             if window.view != view {
                 window.view = view;
-                window.first_row = 0;
-                window.drag = ScrollDrag::default();
+                window.list = DragListState::default();
             }
         }
     }
@@ -742,8 +740,7 @@ impl OperationReportState {
         if let Some(window) = &mut self.window {
             if window.tab != tab {
                 window.tab = tab;
-                window.first_row = 0;
-                window.drag = ScrollDrag::default();
+                window.list = DragListState::default();
             }
         }
     }
@@ -856,20 +853,11 @@ fn draw_at(
     let color = side_color(report.fleet_owner);
     let cells = list_cells(report, window.view, window.tab);
     let (cell_w, cell_h) = window.tab.cell();
-    let columns = window.tab.columns();
-    let rows = cells.len().div_ceil(columns);
-    let range = ScrollRange {
-        first: window.first_row,
-        visible: LIST.3 / cell_h,
-        total: rows,
-    };
-    let bar = ScrollBar::new(LIST_BAR_29FC, LIST.0, LIST.1, LIST.2, LIST.3);
 
     let mut action = None;
     let mut new_view = None;
     let mut new_tab = None;
-    let mut first_row = window.first_row;
-    let mut drag = window.drag;
+    let mut list_state = window.list.clone();
 
     let id = egui::Id::new("original-operation-report");
     ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, id));
@@ -887,6 +875,7 @@ fn draw_at(
             let name = |control: &str, rect: egui::Rect| {
                 crate::control_registry::register_screen("OperationReport", control, rect);
             };
+            let mut tooltip_targets = Vec::new();
 
             // The layer's bitmap (FUN_006075b0 / FUN_00607610): its picture
             // at (12, 13), the shell over it, the rail art at its edge.
@@ -985,6 +974,7 @@ fn draw_at(
             let close = CLOSE[side_idx];
             let close_rect = at(close.rect);
             name("Close", close_rect);
+            tooltip_targets.push((close_rect, "Close"));
             if StrobeButton::show_pair(
                 ui,
                 cache,
@@ -1009,6 +999,9 @@ fn draw_at(
             let rail_specs = ReportView::ALL.map(|view| {
                 let view_rect = at((rail_x, rail_y + view.y(side_idx), button_w, button_h));
                 name(view.control(), view_rect);
+                if let Some(text) = view.tooltip(report) {
+                    tooltip_targets.push((view_rect, text));
+                }
                 TabSpec::two_state(
                     view,
                     view.control_id(),
@@ -1034,6 +1027,7 @@ fn draw_at(
                 let tab_specs = ReportTab::ALL.map(|tab| {
                     let tab_rect = at((TABS_AT.0 + tab.x(), TABS_AT.1, TAB_SIZE.0, TAB_SIZE.1));
                     name(tab.control(), tab_rect);
+                    tooltip_targets.push((tab_rect, tab.label()));
                     TabSpec::two_state(
                         tab,
                         tab.control_id(),
@@ -1059,13 +1053,29 @@ fn draw_at(
                 let list_rect = at(LIST);
                 let list_painter = painter.with_clip_rect(list_rect);
                 let name_font = theme_font(ctx, 10, scale);
-                for (index, cell) in cells.iter().enumerate().skip(first_row * columns) {
-                    let row = index / columns - first_row;
-                    if row as f32 * cell_h >= LIST.3 {
-                        break;
-                    }
-                    let x = LIST.0 + cell_w * (index % columns) as f32;
-                    let y = LIST.1 + cell_h * row as f32;
+                let keys: Vec<usize> = (0..cells.len()).collect();
+                let control = DragList::show(
+                    ui,
+                    (window.view.command(), window.tab.command(), "report-rows"),
+                    DragListSpec {
+                        rect: LIST,
+                        item: (cell_w, cell_h),
+                        layout: DragListLayout::Grid,
+                        selection: SelectionPolicy::Single,
+                        drag: DragPolicy::Disabled,
+                        wheel: WheelPolicy::Rows,
+                        bar: Some(LIST_BAR_29FC),
+                    },
+                    &keys,
+                    &list_state,
+                    frame,
+                    scale,
+                    None,
+                );
+                for (index, cell_rect) in control.screen_cells(frame, scale) {
+                    let cell = &cells[index];
+                    let x = (cell_rect.min.x - frame.min.x) / scale;
+                    let y = (cell_rect.min.y - frame.min.y) / scale;
                     match cell {
                         ReportCell::Object(unit) => {
                             let layers =
@@ -1105,31 +1115,8 @@ fn draw_at(
                         ReportCell::Blank => {}
                     }
                 }
-                // The list's bar (RCDATA 0x29fc), one row a step.
-                let pointer = crate::scroll_bar::egui_pointer(ctx, frame, scale);
-                first_row = bar.update(&mut drag, range, range.visible.floor() as usize, pointer);
-                crate::scroll_bar::paint_egui(
-                    &painter,
-                    ctx,
-                    cache,
-                    frame,
-                    scale,
-                    &bar.blits(
-                        ScrollRange {
-                            first: first_row,
-                            ..range
-                        },
-                        drag,
-                        pointer,
-                    ),
-                );
-                let hovered = ui
-                    .input(|input| input.pointer.hover_pos())
-                    .is_some_and(|point| rect_contains(list_rect, point));
-                let wheel = ui.input(|input| input.raw_scroll_delta.y);
-                if hovered && wheel != 0.0 {
-                    first_row = wheel_step(first_row, range.max_first().saturating_add(1), wheel);
-                }
+                control.paint_bar(&list_painter, ctx, cache, frame, scale);
+                list_state = control.next;
             }
 
             if window.view == ReportView::Display {
@@ -1151,6 +1138,7 @@ fn draw_at(
                 ] {
                     let button_rect = at(rect);
                     name(control, button_rect);
+                    tooltip_targets.push((button_rect, caption));
                     // A CoolStrobeButton (FUN_00602150, FUN_0044c630.c:804-931),
                     // keyed as FUN_00602d30 blits it.
                     let output = StrobeButton::show(
@@ -1211,6 +1199,14 @@ fn draw_at(
                     }
                 }
             }
+
+            draw_registered_tooltips(
+                ctx,
+                id.with("stock-tooltips"),
+                &tooltip_targets,
+                scale,
+                TooltipPresentation::stock(),
+            );
         },
     );
 
@@ -1248,8 +1244,7 @@ fn draw_at(
         );
     }
     if let Some(open) = state.window.as_mut() {
-        open.first_row = first_row;
-        open.drag = drag;
+        open.list = list_state;
     }
     if let Some(view) = new_view {
         state.set_view(view);

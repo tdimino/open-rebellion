@@ -42,13 +42,15 @@ use rebellion_render::fleet_window::{
     FleetWindowEntry, FleetWindowState, FleetWindowTab, FLEET_WINDOW_WIDTH,
 };
 use rebellion_render::game_speed::day_readout_rect;
-use rebellion_render::mission_dialog::{MissionDialogPage, MissionDialogState};
+use rebellion_render::mission_dialog::{
+    kind_name, MissionDialog, MissionDialogPage, MissionDialogState,
+};
 use rebellion_render::object_menu::{ObjectMenuCommand, ObjectMenuState};
 use rebellion_render::quadrant_icons::Quadrant;
 use rebellion_render::system_window::reference_rail_slots;
 use rebellion_render::{
     strategic_primary_controls, CockpitButton, CockpitFaction, CockpitLayout, CockpitState,
-    GalaxyMapState, GameMessage, GidMode, MessageCategory, SectorWindowState, StrategicControlSpec,
+    GalaxyMapState, GameMessage, GidMode, SectorWindowState, StrategicControlSpec,
     SystemWindowState,
 };
 use rebellion_render::{DefensesPage, DefensesWindowState, MissionsTab, MissionsWindowState};
@@ -1623,6 +1625,12 @@ struct FixtureProduction {
     build_selection_open: bool,
     build_selection_left: f32,
     build_selection_top: f32,
+    /// The class box's popup is open (`CoolSelectionBoxClass +0xe8`).
+    build_selection_list_open: bool,
+    /// The class the box shows (`+0xe0`), empty while closed.
+    build_selection_class: String,
+    /// The classes the box lists, none while closed.
+    build_selection_classes: usize,
 }
 
 fn production_report(
@@ -1666,6 +1674,16 @@ fn production_report(
         build_selection_open: build_selection.is_open(),
         build_selection_left: window.min.x,
         build_selection_top: window.min.y,
+        build_selection_list_open: build_selection
+            .dialog()
+            .is_some_and(rebellion_render::build_selection::BuildSelection::list_open),
+        build_selection_class: build_selection.dialog().map_or_else(String::new, |dialog| {
+            rebellion_render::manufacturing_window::product(world, dialog.kind()).0
+        }),
+        build_selection_classes: build_selection.dialog().map_or(
+            0,
+            rebellion_render::build_selection::BuildSelection::class_count,
+        ),
     })
 }
 
@@ -1687,6 +1705,38 @@ pub fn emit_production(
         return;
     };
     interface_fixture_bridge::emit(&report);
+}
+
+/// The mission dialog and its mission-kind box, each frame.
+#[derive(Debug, Serialize, PartialEq)]
+struct FixtureMissionDialog {
+    status: &'static str,
+    code: u32,
+    open: bool,
+    /// The kind box's popup is open (`CoolSelectionBoxClass +0xe8`).
+    kind_list_open: bool,
+    /// The kind the box shows (`+0xe0`), empty while closed.
+    kind: &'static str,
+    /// The kinds the box lists, none while closed.
+    kinds: usize,
+}
+
+pub fn emit_mission_dialog(request: FixtureRequest, state: &MissionDialogState) {
+    if !matches!(
+        request.scenario,
+        Scenario::MissionDialogMission | Scenario::MissionDialogAgents | Scenario::MissionTargeting
+    ) {
+        return;
+    }
+    let dialog = state.dialog();
+    interface_fixture_bridge::emit(&FixtureMissionDialog {
+        status: "mission-dialog",
+        code: request.code,
+        open: dialog.is_some(),
+        kind_list_open: dialog.is_some_and(MissionDialog::list_open),
+        kind: dialog.map_or("", |dialog| kind_name(dialog.kind())),
+        kinds: dialog.map_or(0, MissionDialog::kind_count),
+    });
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -4256,7 +4306,13 @@ mod tests {
         assert!(travelling.regiment_travelling);
         assert_eq!(travelling.troop_system_dat_id, None);
 
-        let line = |text: &str| GameMessage::new(0, text.to_string(), MessageCategory::Event);
+        let line = |text: &str| {
+            GameMessage::new(
+                0,
+                text.to_string(),
+                rebellion_render::MessageCategory::Event,
+            )
+        };
         let messages = [
             line("Regiment move rejected: the destination is blockaded"),
             line("Regiment arrived at Cathar"),

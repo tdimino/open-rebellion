@@ -12,7 +12,10 @@ use rebellion_windowing::ControlId;
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::native_geometry::rect_contains;
 
-use super::{ButtonArt, ButtonInput, ButtonState, StrobeButton};
+use super::{
+    draw_registered_tooltips, ButtonArt, ButtonInput, ButtonState, StrobeButton,
+    TooltipPresentation,
+};
 
 /// Whether a tab is populated, empty-but-selectable, or disabled.
 ///
@@ -42,6 +45,7 @@ pub struct TabSpec<T> {
     pub rect: egui::Rect,
     pub art: ButtonArt,
     pub presentation: TabPresentation,
+    pub tooltip: Option<&'static str>,
 }
 
 impl<T> TabSpec<T> {
@@ -53,6 +57,7 @@ impl<T> TabSpec<T> {
             rect,
             art,
             presentation: TabPresentation::Enabled,
+            tooltip: None,
         }
     }
 
@@ -77,6 +82,14 @@ impl<T> TabSpec<T> {
     #[must_use]
     pub const fn with_presentation(mut self, presentation: TabPresentation) -> Self {
         self.presentation = presentation;
+        self
+    }
+
+    /// Register the source feature's TEXTSTRA help text with the shared stock
+    /// tooltip control when this tab strip is painted.
+    #[must_use]
+    pub const fn with_tooltip(mut self, tooltip: &'static str) -> Self {
+        self.tooltip = Some(tooltip);
         self
     }
 }
@@ -312,6 +325,20 @@ where
                 selected = Some(spec.value);
             }
         }
+        let tooltips = self
+            .specs
+            .iter()
+            .filter_map(|spec| spec.tooltip.map(|text| (spec.rect, text)))
+            .collect::<Vec<_>>();
+        if !tooltips.is_empty() {
+            draw_registered_tooltips(
+                ui.ctx(),
+                egui::Id::new((strip_id, "stock-tooltips")),
+                &tooltips,
+                scale,
+                TooltipPresentation::stock(),
+            );
+        }
         selected.map(|value| {
             self.select(value);
             TabControlOutput::Selected(value)
@@ -347,6 +374,20 @@ where
             {
                 selected = Some(spec.value);
             }
+        }
+        let tooltips = self
+            .specs
+            .iter()
+            .filter_map(|spec| spec.tooltip.map(|text| (spec.rect, text)))
+            .collect::<Vec<_>>();
+        if !tooltips.is_empty() {
+            draw_registered_tooltips(
+                ui.ctx(),
+                egui::Id::new((strip_id, "stock-tooltips")),
+                &tooltips,
+                scale,
+                TooltipPresentation::stock(),
+            );
         }
         selected.map(|value| {
             self.select(value);
@@ -420,6 +461,13 @@ mod tests {
                 .resource_id,
             302
         );
+    }
+
+    #[test]
+    fn source_help_text_is_configuration_not_tab_domain_policy() {
+        let spec = spec(Page::First, 0, TabPresentation::Enabled).with_tooltip("First page");
+        assert_eq!(spec.tooltip, Some("First page"));
+        assert_eq!(spec.value, Page::First);
     }
 
     #[test]

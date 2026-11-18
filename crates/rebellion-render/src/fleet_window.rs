@@ -30,10 +30,14 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::FLEET_BAR_29CB;
 use crate::controls::{
-    ButtonArt, ButtonImage, TabControl, TabControlState, TabPresentation, TabSpec,
+    ButtonArt, ButtonImage, DragList, DragListEvent, DragListLayout, DragListSpec, DragListState,
+    DragPolicy, SelectionPolicy, StringField, StringFieldEvent, StringFieldLease, StringFieldSpec,
+    StringFieldState, StringFieldStyle, TabControl, TabControlState, TabPresentation, TabSpec,
+    WheelPolicy,
 };
-use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
+use crate::native_geometry::logical_rect;
 use crate::object_menu::MenuObject;
 use crate::panels::fleets::{capital_ship_mini_id, fighter_mini_id};
 use crate::quadrant_icons::{quadrant_art, Quadrant};
@@ -268,6 +272,24 @@ const TAB_X: [f32; 4] = [1.0, 33.0, 65.0, 97.0];
 const TAB_SIZE: (f32, f32) = (31.0, 28.0);
 const LEFT_ITEM_HEIGHT: f32 = 50.0;
 const RIGHT_ITEM_HEIGHT: f32 = 50.0;
+const LEFT_LIST_SPEC: DragListSpec = DragListSpec {
+    rect: LEFT_LIST,
+    item: (LEFT_LIST.2, LEFT_ITEM_HEIGHT),
+    layout: DragListLayout::Stacked,
+    selection: SelectionPolicy::Single,
+    drag: DragPolicy::DropOutside,
+    wheel: WheelPolicy::Ignored,
+    bar: Some(FLEET_BAR_29CB),
+};
+const RIGHT_LIST_SPEC: DragListSpec = DragListSpec {
+    rect: RIGHT_LIST,
+    item: (125.0, RIGHT_ITEM_HEIGHT),
+    layout: DragListLayout::Stacked,
+    selection: SelectionPolicy::Single,
+    drag: DragPolicy::DropOutside,
+    wheel: WheelPolicy::Ignored,
+    bar: Some(FLEET_BAR_29CB),
+};
 
 /// The four tabs (`0x66..0x69`), in strip order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -302,6 +324,17 @@ impl FleetWindowTab {
         0x66 + self.index()
     }
 
+    /// The tab's recovered help message.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::CapitalShips => "Capital Ships",
+            Self::Fighters => "Fighter Squadrons",
+            Self::Troops => "Trooper Regiments",
+            Self::Personnel => "Personnel",
+        }
+    }
+
     /// The tab whose control id is `id`.
     #[must_use]
     pub fn from_control_id(id: u32) -> Option<Self> {
@@ -326,7 +359,7 @@ impl FleetWindowEntry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct OpenFleetWindow {
     /// Opaque session identity allocated by the shared window manager.
     /// Fixture-only direct opens deliberately have no production identity.
@@ -338,6 +371,8 @@ struct OpenFleetWindow {
     /// (`FUN_00609410`) are untraced.
     selected: Option<FleetWindowEntry>,
     selected_item: Option<usize>,
+    left_list: DragListState<FleetWindowEntry>,
+    right_list: DragListState<usize>,
     expanded: Vec<FleetKey>,
     tab: FleetWindowTab,
     /// The in-place name edit Rename (0x203) opens (`FUN_004ac7a0`).
@@ -389,7 +424,7 @@ impl PreparedFleetWindow {
         self.selected = Some(entry);
         self.rename = Some(RenameEdit {
             entry,
-            text,
+            field: StringFieldState::new(text),
             fresh: true,
         });
         Some(self)
@@ -410,7 +445,7 @@ impl PreparedFleetWindow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RenameEdit {
     entry: FleetWindowEntry,
-    text: String,
+    field: StringFieldState,
     /// The first frame selects the whole name and takes the focus
     /// (`FUN_00605110(field, 0, -1)`, `SetFocus`).
     fresh: bool,
@@ -419,7 +454,7 @@ struct RenameEdit {
 /// What a frame did to an open rename edit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RenameOutcome {
-    Typed(String),
+    Typed(StringFieldState),
     Commit(String),
     Cancel(RenameCancelCause),
 }
@@ -760,6 +795,12 @@ impl FleetWindowState {
                     logical_position: prepared.logical_position,
                     selected: prepared.selected,
                     selected_item: None,
+                    left_list: {
+                        let mut list = DragListState::default();
+                        list.select_only(prepared.selected);
+                        list
+                    },
+                    right_list: DragListState::default(),
                     expanded,
                     tab: prepared.tab,
                     rename: None,
@@ -812,6 +853,8 @@ impl FleetWindowState {
                     ),
                     selected: None,
                     selected_item: None,
+                    left_list: DragListState::default(),
+                    right_list: DragListState::default(),
                     expanded: Vec::new(),
                     tab: FleetWindowTab::CapitalShips,
                     rename: None,
@@ -903,7 +946,7 @@ impl FleetWindowState {
         if let Some(window) = self.window_mut(system) {
             window.rename = Some(RenameEdit {
                 entry,
-                text,
+                field: StringFieldState::new(text),
                 fresh: true,
             });
         }
@@ -1169,13 +1212,21 @@ impl FleetWindowState {
         if in_rect(LEFT_LIST, local) {
             let player = self.faction.player();
             let entries = left_entries(world, movement, fog, player, window);
-            let row = ((local.1 - LEFT_LIST.1) / LEFT_ITEM_HEIGHT) as usize;
-            return entries.get(row).copied().and_then(entry_object);
+            return window
+                .left_list
+                .geometry(LEFT_LIST_SPEC, entries.len())
+                .item_at(local)
+                .and_then(|row| entries.get(row))
+                .copied()
+                .and_then(entry_object);
         }
         if in_rect(RIGHT_LIST, local) {
-            let row = ((local.1 - RIGHT_LIST.1) / RIGHT_ITEM_HEIGHT) as usize;
             let items = right_items(world, transport, window.selected, window.tab);
-            return match items.get(row) {
+            let row = window
+                .right_list
+                .geometry(RIGHT_LIST_SPEC, items.len())
+                .item_at(local);
+            return match row.and_then(|row| items.get(row)) {
                 Some(item) => match item.object? {
                     ItemObject::Ship { fleet, index, .. } => ship_object(fleet, index),
                     ItemObject::Regiment { troop, .. } => Some(MissionTarget::Troop(troop)),
@@ -1634,10 +1685,12 @@ fn drop_target(
     };
     let fleet_target = |fleet: FleetKey| ReleaseTarget::Fleet { fleet, system };
     if in_rect(LEFT_LIST, local) {
-        let row = ((local.1 - LEFT_LIST.1) / LEFT_ITEM_HEIGHT) as usize;
+        let row = window
+            .left_list
+            .geometry(LEFT_LIST_SPEC, entries.len())
+            .item_at(local);
         return Some(
-            entries
-                .get(row)
+            row.and_then(|row| entries.get(row))
                 .map_or(ReleaseTarget::System(system), |entry| {
                     fleet_target(entry.fleet())
                 }),
@@ -1645,11 +1698,14 @@ fn drop_target(
     }
     if window.tab == FleetWindowTab::CapitalShips && in_rect(RIGHT_LIST, local) {
         if let Some(FleetWindowEntry::Fleet(fleet)) = window.selected {
-            let row = ((local.1 - RIGHT_LIST.1) / RIGHT_ITEM_HEIGHT) as usize;
             let ships = world.fleets.get(fleet).map_or(0, |value| {
                 value.capital_ships.iter().filter(|ship| ship.alive).count()
             });
-            if row < ships {
+            let row = window
+                .right_list
+                .geometry(RIGHT_LIST_SPEC, ships)
+                .item_at(local);
+            if row.is_some_and(|row| row < ships) {
                 return Some(fleet_target(fleet));
             }
         }
@@ -2030,6 +2086,8 @@ fn select_entry(window: &mut OpenFleetWindow, entry: FleetWindowEntry) {
     }
     window.selected = Some(entry);
     window.selected_item = None;
+    window.left_list.select_only(Some(entry));
+    window.right_list = DragListState::default();
 }
 
 strategic_window_common::define_record_screen_rect!(
@@ -2060,9 +2118,13 @@ struct WindowDrawResult {
     select: Option<Option<FleetWindowEntry>>,
     toggle: Option<FleetKey>,
     tab: Option<FleetWindowTab>,
-    item: Option<usize>,
+    item: Option<Option<usize>>,
+    left_list: Option<DragListState<FleetWindowEntry>>,
+    right_list: Option<DragListState<usize>>,
     drag: Option<ItemDrag>,
     object_menu: Option<(MenuObject, egui::Pos2)>,
+    /// The exact list phases that caused selection, scrolling or activation.
+    list_phases: Vec<PointerPhase>,
     rename: Option<RenameOutcome>,
 }
 
@@ -2293,31 +2355,27 @@ fn draw_fleet_windows_with_snapshot(
                 result.rename.as_ref(),
                 Some(RenameOutcome::Cancel(RenameCancelCause::FocusLost))
             );
-        let phase = strategic_window_common::pointer_mutation_phase([
-            (
-                result.drag.is_some(),
-                PointerPhase::Press(PointerButtonId::Primary),
-            ),
-            (
-                result.object_menu.is_some(),
-                PointerPhase::Release(PointerButtonId::Secondary),
-            ),
-        ]);
-        let pointer_permitted = strategic_window_common::single_phase_pointer_mutation_permitted(
+        let mut causal_phases = result.list_phases.clone();
+        let drag_phase = PointerPhase::Press(PointerButtonId::Primary);
+        if result.drag.is_some() && !causal_phases.contains(&drag_phase) {
+            causal_phases.push(drag_phase);
+        }
+        let menu_phase = PointerPhase::Release(PointerButtonId::Secondary);
+        if result.object_menu.is_some() && !causal_phases.contains(&menu_phase) {
+            causal_phases.push(menu_phase);
+        }
+        if pointer_mutation && causal_phases.is_empty() {
+            causal_phases.push(PointerPhase::Release(PointerButtonId::Primary));
+        }
+        let pointer_permitted = strategic_window_common::pointer_mutation_permitted(
             window.id,
             pointer_mutation,
+            &causal_phases,
             router.as_deref_mut(),
-            phase,
-            phase == PointerPhase::Release(PointerButtonId::Primary)
-                && ended_drag.claimed_primary_release_by == window.id,
-            |router, id, phase| {
-                strategic_window_common::claim_pointer_event(
-                    router,
-                    pointer_events.iter().rev().copied(),
-                    id,
-                    phase,
-                )
-                .is_some()
+            pointer_events,
+            |phase| {
+                phase == PointerPhase::Release(PointerButtonId::Primary)
+                    && ended_drag.claimed_primary_release_by == window.id
             },
         );
         if rename_lease.requests_manager_focus {
@@ -2368,10 +2426,19 @@ fn draw_fleet_windows_with_snapshot(
             actions.push(FleetWindowAction::OpenSector(system));
         }
         if let Some(open) = state.window_mut(system) {
+            if result.list_phases.is_empty() || pointer_permitted {
+                if let Some(list) = result.left_list {
+                    open.left_list = list;
+                }
+                if let Some(list) = result.right_list {
+                    open.right_list = list;
+                }
+            }
             if pointer_permitted {
                 if let Some(selected) = result.select {
                     open.selected = selected;
                     open.selected_item = None;
+                    open.right_list = DragListState::default();
                 }
                 if let Some(fleet) = result.toggle {
                     if let Some(index) = open.expanded.iter().position(|&key| key == fleet) {
@@ -2383,9 +2450,10 @@ fn draw_fleet_windows_with_snapshot(
                 if let Some(tab) = result.tab {
                     open.tab = tab;
                     open.selected_item = None;
+                    open.right_list = DragListState::default();
                 }
                 if let Some(item) = result.item {
-                    open.selected_item = Some(item);
+                    open.selected_item = item;
                 }
             }
             if rename_outcome_permitted(
@@ -2396,7 +2464,7 @@ fn draw_fleet_windows_with_snapshot(
                 match result.rename {
                     Some(RenameOutcome::Typed(text)) => {
                         if let Some(edit) = &mut open.rename {
-                            edit.text = text;
+                            edit.field = text;
                             edit.fresh = false;
                         }
                     }
@@ -2521,19 +2589,67 @@ fn draw_fleet_window(
         );
         let list_painter = painter.with_clip_rect(list);
         let font = egui::FontId::proportional((9.0 * scale).max(6.0));
-        for (row, entry) in entries.iter().enumerate() {
-            let top = LEFT_LIST.1 + LEFT_ITEM_HEIGHT * row as f32;
-            if top >= LEFT_LIST.1 + LEFT_LIST.3 {
-                break;
+        let mut left_state = window.left_list.clone();
+        if left_state.first_selected(&entries) != selected {
+            left_state.select_and_reveal(LEFT_LIST_SPEC, &entries, selected);
+        }
+        let left_control = DragList::show(
+            ui,
+            (window.system, "fleet-entries"),
+            LEFT_LIST_SPEC,
+            &entries,
+            &left_state,
+            local,
+            scale,
+            None,
+        );
+        if left_control.output.pointer_mutation() {
+            result.focus = true;
+            result.list_phases.clone_from(&left_control.output.phases);
+        }
+        if left_control
+            .output
+            .contains(DragListEvent::SelectionChanged)
+        {
+            result.select = Some(left_control.next.first_selected(&entries));
+        }
+        if left_control.output.contains(DragListEvent::Activated) {
+            if let Some(FleetWindowEntry::Fleet(fleet)) = left_control.next.first_selected(&entries)
+            {
+                result.toggle = Some(fleet);
             }
-            let item = logical_rect(
-                local,
-                scale,
-                LEFT_LIST.0,
-                top,
-                LEFT_LIST.2,
-                LEFT_ITEM_HEIGHT,
-            );
+        }
+        let entry_object = |entry: FleetWindowEntry| match entry {
+            FleetWindowEntry::Fleet(fleet) => ItemObject::Fleet {
+                fleet,
+                system: window.system,
+            },
+            FleetWindowEntry::Ship { fleet, index } => ItemObject::Ship {
+                fleet,
+                index,
+                roster: fleet_join::roster(world, fleet).unwrap_or_default(),
+                system: window.system,
+            },
+        };
+        if let Some((Some(entry), point)) = left_control.output.context_released() {
+            let screen = egui::pos2(local.min.x + point.0 * scale, local.min.y + point.1 * scale);
+            result.object_menu = Some((entry_object(entry).menu_object(), screen));
+        }
+        if let (true, Some((entry, origin))) = (
+            left_control.next.is_capturing(),
+            left_control.output.drag_armed(),
+        ) {
+            result.drag = Some(ItemDrag {
+                object: entry_object(entry),
+                press: egui::pos2(
+                    local.min.x + origin.0 * scale,
+                    local.min.y + origin.1 * scale,
+                ),
+                list,
+            });
+        }
+        for (row, item) in left_control.screen_cells(local, scale) {
+            let entry = &entries[row];
             let side = world
                 .fleets
                 .get(entry.fleet())
@@ -2541,7 +2657,7 @@ fn draw_fleet_window(
             let expanded = window.expanded.contains(&entry.fleet());
             match *entry {
                 FleetWindowEntry::Fleet(fleet) => {
-                    if selected == Some(*entry) {
+                    if left_control.next.is_selected(*entry) {
                         paint_native(
                             &list_painter,
                             ctx,
@@ -2658,55 +2774,9 @@ fn draw_fleet_window(
                     }
                 }
             }
-            let response = ui.interact(
-                item.intersect(list),
-                ui.id().with((window.system, "entry", row)),
-                egui::Sense::click(),
-            );
-            if exact_clicked(&response, item) {
-                result.select = Some(Some(*entry));
-                result.focus = true;
-            }
-            if response.double_clicked() {
-                if let FleetWindowEntry::Fleet(fleet) = entry {
-                    result.toggle = Some(*fleet);
-                }
-            }
-            let object = match *entry {
-                FleetWindowEntry::Fleet(fleet) => ItemObject::Fleet {
-                    fleet,
-                    system: window.system,
-                },
-                FleetWindowEntry::Ship { fleet, index } => ItemObject::Ship {
-                    fleet,
-                    index,
-                    roster: fleet_join::roster(world, fleet).unwrap_or_default(),
-                    system: window.system,
-                },
-            };
-            if let (true, Some(point)) = (
-                response.secondary_clicked(),
-                response.interact_pointer_pos(),
-            ) {
-                result.object_menu = Some((object.menu_object(), point));
-            }
-            // A drag out of either list posts 0x29a (FUN_006083c0).
-            if let Some(press) = ui.ctx().input(|input| {
-                input
-                    .pointer
-                    .button_pressed(egui::PointerButton::Primary)
-                    .then(|| input.pointer.press_origin())
-                    .flatten()
-            }) {
-                if response.is_pointer_button_down_on() {
-                    result.drag = Some(ItemDrag {
-                        object,
-                        press,
-                        list,
-                    });
-                }
-            }
         }
+        left_control.paint_bar(&list_painter, ctx, cache, local, scale);
+        result.left_list = Some(left_control.next.clone());
         if let Some(edit) = &window.rename {
             result.rename = draw_rename_edit(
                 ui,
@@ -2714,6 +2784,7 @@ fn draw_fleet_window(
                 edit,
                 rename_lease,
                 &entries,
+                left_control.next.first_row(),
                 local,
                 list,
                 scale,
@@ -2842,6 +2913,7 @@ fn draw_fleet_window(
                     } else {
                         TabPresentation::Disabled
                     })
+                    .with_tooltip(tab.name())
             });
             if let Some(tab) = TabControl::paint_and_select(
                 &tab_specs,
@@ -2871,16 +2943,62 @@ fn draw_fleet_window(
                 selected,
                 Some(FleetWindowEntry::Fleet(fleet)) if movement.is_in_transit(fleet)
             );
-            for (row, item) in right_items(world, transport, selected, window.tab)
-                .iter()
-                .enumerate()
-            {
-                let top = RIGHT_LIST.1 + RIGHT_ITEM_HEIGHT * row as f32;
-                if top >= RIGHT_LIST.1 + RIGHT_LIST.3 {
-                    break;
+            let right_items = right_items(world, transport, selected, window.tab);
+            let right_keys: Vec<usize> = (0..right_items.len()).collect();
+            let mut right_state = window.right_list.clone();
+            if right_state.first_selected(&right_keys) != window.selected_item {
+                right_state.select_and_reveal(RIGHT_LIST_SPEC, &right_keys, window.selected_item);
+            }
+            let right_control = DragList::show(
+                ui,
+                (window.system, window.tab, "fleet-contents"),
+                RIGHT_LIST_SPEC,
+                &right_keys,
+                &right_state,
+                local,
+                scale,
+                None,
+            );
+            if right_control.output.pointer_mutation() {
+                result.focus = true;
+                for &phase in &right_control.output.phases {
+                    if !result.list_phases.contains(&phase) {
+                        result.list_phases.push(phase);
+                    }
                 }
-                let cell = logical_rect(local, scale, RIGHT_LIST.0, top, 125.0, RIGHT_ITEM_HEIGHT);
-                if window.selected_item == Some(row) {
+            }
+            if right_control
+                .output
+                .contains(DragListEvent::SelectionChanged)
+            {
+                result.item = Some(right_control.next.first_selected(&right_keys));
+            }
+            if let Some((Some(row), point)) = right_control.output.context_released() {
+                if let Some(object) = right_items[row].object {
+                    result.object_menu = Some((
+                        object.menu_object(),
+                        egui::pos2(local.min.x + point.0 * scale, local.min.y + point.1 * scale),
+                    ));
+                }
+            }
+            if let (true, Some((row, origin))) = (
+                right_control.next.is_capturing(),
+                right_control.output.drag_armed(),
+            ) {
+                if let Some(object) = right_items[row].object {
+                    result.drag = Some(ItemDrag {
+                        object,
+                        press: egui::pos2(
+                            local.min.x + origin.0 * scale,
+                            local.min.y + origin.1 * scale,
+                        ),
+                        list: right,
+                    });
+                }
+            }
+            for (row, cell) in right_control.screen_cells(local, scale) {
+                let item = &right_items[row];
+                if right_control.next.is_selected(row) {
                     paint_native(
                         &right_painter,
                         ctx,
@@ -2940,37 +3058,9 @@ fn draw_fleet_window(
                     font.clone(),
                     egui::Color32::WHITE,
                 );
-                let response = ui.interact(
-                    cell.intersect(right),
-                    ui.id().with((window.system, "item", row)),
-                    egui::Sense::click(),
-                );
-                if exact_clicked(&response, cell) {
-                    result.item = Some(row);
-                    result.focus = true;
-                }
-                if response.secondary_clicked() {
-                    if let (Some(object), Some(point)) =
-                        (item.object, response.interact_pointer_pos())
-                    {
-                        result.object_menu = Some((object.menu_object(), point));
-                    }
-                }
-                // A left press on a regiment, ship, squadron or character captures
-                // the mouse for a drag (FUN_006083c0).
-                if let (Some(object), Some(press)) = (
-                    item.object,
-                    crate::native_geometry::primary_press_origin(ui.ctx()),
-                ) {
-                    if response.is_pointer_button_down_on() && rect_contains(cell, press) {
-                        result.drag = Some(ItemDrag {
-                            object,
-                            press,
-                            list: right,
-                        });
-                    }
-                }
             }
+            right_control.paint_bar(&right_painter, ctx, cache, local, scale);
+            result.right_list = Some(right_control.next);
         }
 
         // The two lists (with their bars) and the tab strip are controls
@@ -3017,16 +3107,21 @@ fn draw_rename_edit(
     edit: &RenameEdit,
     lease: RenameInputLease,
     entries: &[FleetWindowEntry],
+    first_row: usize,
     local: egui::Rect,
     list: egui::Rect,
     scale: f32,
     font: &egui::FontId,
 ) -> Option<RenameOutcome> {
-    let Some(row) = entries.iter().position(|entry| *entry == edit.entry) else {
+    let Some(index) = entries.iter().position(|entry| *entry == edit.entry) else {
         // The entry left the list: the edit goes with it.
         return Some(RenameOutcome::Cancel(RenameCancelCause::EntryRemoved));
     };
+    let row = index.checked_sub(first_row)?;
     let top = LEFT_LIST.1 + LEFT_ITEM_HEIGHT * row as f32;
+    if top >= LEFT_LIST.1 + LEFT_LIST.3 {
+        return None;
+    }
     let rect = logical_rect(local, scale, LEFT_LIST.0 + 4.0, top + 3.0, 85.0, 15.0).intersect(list);
     let id = window.id.map_or_else(
         || ui.id().with((window.system, "rename")),
@@ -3038,52 +3133,55 @@ fn draw_rename_edit(
             ))
         },
     );
-    let mut text = edit.text.clone();
+    let mut field_state = edit.field.clone();
     ui.painter().rect_filled(rect, 0.0, egui::Color32::BLACK);
-    if window.id.is_some() && edit.fresh && (lease.handles_input || lease.requests_manager_focus) {
-        ui.ctx().memory_mut(|memory| memory.request_focus(id));
-        strategic_window_common::select_all_text(ui.ctx(), id, text.chars().count());
-    }
-    let response = ui.put(
-        rect,
-        egui::TextEdit::singleline(&mut text)
-            .id(id)
-            .interactive(lease.handles_input)
-            .frame(false)
-            .font(font.clone())
-            .text_color(egui::Color32::WHITE)
-            .desired_width(rect.width()),
+    let field_lease = if edit.fresh && lease.handles_input {
+        StringFieldLease::acquire(true)
+    } else if edit.fresh && lease.requests_manager_focus {
+        StringFieldLease::request_focus(true)
+    } else if lease.handles_input {
+        StringFieldLease::focused()
+    } else {
+        StringFieldLease::blocked()
+    };
+    let output = StringField::new(
+        &mut field_state,
+        StringFieldSpec::new(
+            id,
+            FLEET_RENAME_CONTROL,
+            rect,
+            None,
+            StringFieldStyle {
+                font: font.clone(),
+                ..StringFieldStyle::default()
+            },
+        ),
+        field_lease,
     );
-    if window.id.is_none() && edit.fresh && lease.handles_input {
-        response.request_focus();
-        strategic_window_common::select_all_text(ui.ctx(), id, text.chars().count());
-        return Some(RenameOutcome::Typed(text));
-    }
+    let output = output.show(ui);
     if edit.fresh && lease.requests_manager_focus {
         return None;
     }
     if !lease.handles_input {
         return None;
     }
-    let enter = ui.input(|input| input.key_pressed(egui::Key::Enter));
-    let escape = ui.input(|input| input.key_pressed(egui::Key::Escape));
-    if enter {
+    if output.contains(StringFieldEvent::Submitted) {
         // FUN_004ac950: an empty name keeps the field open.
-        if text.is_empty() {
-            response.request_focus();
-            return Some(RenameOutcome::Typed(text));
+        if field_state.text().is_empty() {
+            return Some(RenameOutcome::Typed(field_state));
         }
-        return Some(RenameOutcome::Commit(text));
+        return Some(RenameOutcome::Commit(field_state.text().to_owned()));
     }
     // hyp: Escape and a click elsewhere end the edit unissued
     // (`FUN_004aca40`); what sends them is untraced.
-    if escape {
+    if output.contains(StringFieldEvent::Cancelled) {
         return Some(RenameOutcome::Cancel(RenameCancelCause::Escape));
     }
-    if response.lost_focus() {
+    if output.contains(StringFieldEvent::FocusChanged(false)) {
         return Some(RenameOutcome::Cancel(RenameCancelCause::FocusLost));
     }
-    (edit.fresh || response.changed()).then_some(RenameOutcome::Typed(text))
+    (edit.fresh || output.contains(StringFieldEvent::Changed))
+        .then_some(RenameOutcome::Typed(field_state))
 }
 
 /// Blit a bitmap at its native size at a logical offset in `parent`
@@ -3719,6 +3817,12 @@ pub(crate) mod tests {
             logical_position: (0, 0),
             selected,
             selected_item: None,
+            left_list: {
+                let mut list = DragListState::default();
+                list.select_only(selected);
+                list
+            },
+            right_list: DragListState::default(),
             expanded: Vec::new(),
             tab: FleetWindowTab::CapitalShips,
             rename: None,
@@ -4024,6 +4128,169 @@ pub(crate) mod tests {
         assert!(actions.contains(&FleetWindowAction::CapturePointer(window)));
         assert!(actions.contains(&FleetWindowAction::ReleasePointer(window)));
         assert!(actions.contains(&FleetWindowAction::Activate(window)));
+    }
+
+    #[test]
+    fn same_frame_fleet_click_selects_without_leaving_manager_capture_armed() {
+        use crate::windowing_input::{FrameInputRouter, InputEventId, PointerPhase};
+
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        let fleet = add_fleet(&mut world, system, true, 0);
+        let (manager, mut state, window) = managed_test_window(&world, system, None);
+        let snapshot = manager.begin_frame();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let mut router = FrameInputRouter::default();
+        let point = at(40.0, 50.0);
+        for frame in 1..=2 {
+            router.begin_frame(frame, &snapshot);
+            let hover = InputEventId { frame, ordinal: 0 };
+            assert_eq!(
+                router.collect_pointer(hover, &BTreeSet::from([window]), PointerPhase::Hover),
+                InputRecipient::Window(window)
+            );
+            let _ = ctx.run(
+                timed_frame_input(vec![egui::Event::PointerMoved(point)], frame as f64 * 0.05),
+                |ctx| {
+                    let _ = draw_managed_fleet_windows(ManagedFleetDraw {
+                        ctx,
+                        world: &world,
+                        movement: &MovementState::default(),
+                        fog: &fog(system),
+                        transport: &TroopTransportState::default(),
+                        state: &mut state,
+                        faction: CockpitFaction::Alliance,
+                        layout: scaled(),
+                        cache: &mut cache,
+                        snapshot: &snapshot,
+                        pointer_events: &[(hover, PointerPhase::Hover)],
+                        router: &mut router,
+                        front: true,
+                        shown: &|_| true,
+                    });
+                },
+            );
+        }
+        router.begin_frame(3, &snapshot);
+        let phases = [
+            PointerPhase::Press(PointerButtonId::Primary),
+            PointerPhase::Release(PointerButtonId::Primary),
+        ];
+        let pointer_events: Vec<_> = phases
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, phase)| {
+                let id = InputEventId {
+                    frame: 3,
+                    ordinal: ordinal as u32,
+                };
+                assert_eq!(
+                    router.collect_pointer(id, &BTreeSet::from([window]), phase),
+                    InputRecipient::Window(window)
+                );
+                (id, phase)
+            })
+            .collect();
+        let input = timed_frame_input(
+            vec![
+                egui::Event::PointerMoved(point),
+                press(point, true),
+                press(point, false),
+            ],
+            0.15,
+        );
+        let mut actions = Vec::new();
+        let _ = ctx.run(input, |ctx| {
+            actions.extend(draw_managed_fleet_windows(ManagedFleetDraw {
+                ctx,
+                world: &world,
+                movement: &MovementState::default(),
+                fog: &fog(system),
+                transport: &TroopTransportState::default(),
+                state: &mut state,
+                faction: CockpitFaction::Alliance,
+                layout: scaled(),
+                cache: &mut cache,
+                snapshot: &snapshot,
+                pointer_events: &pointer_events,
+                router: &mut router,
+                front: true,
+                shown: &|_| true,
+            }));
+        });
+
+        assert_eq!(
+            state.selection(system).unwrap().0,
+            Some(FleetWindowEntry::Fleet(fleet))
+        );
+        assert!(actions.contains(&FleetWindowAction::Activate(window)));
+        assert!(!actions.contains(&FleetWindowAction::CapturePointer(window)));
+        assert!(!state.is_dragging());
+    }
+
+    #[test]
+    fn same_frame_click_routed_elsewhere_cannot_select_the_fleet_underneath() {
+        use crate::windowing_input::{FrameInputRouter, InputEventId, PointerPhase};
+
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        add_fleet(&mut world, system, true, 0);
+        let (manager, mut state, window) = managed_test_window(&world, system, None);
+        let snapshot = manager.begin_frame();
+        let ctx = egui::Context::default();
+        let mut cache = BmpCache::new();
+        let mut router = FrameInputRouter::default();
+        let point = at(40.0, 50.0);
+        router.begin_frame(1, &snapshot);
+        let phases = [
+            PointerPhase::Press(PointerButtonId::Primary),
+            PointerPhase::Release(PointerButtonId::Primary),
+        ];
+        let pointer_events: Vec<_> = phases
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, phase)| {
+                let id = InputEventId {
+                    frame: 1,
+                    ordinal: ordinal as u32,
+                };
+                assert_eq!(
+                    router.collect_pointer(id, &BTreeSet::new(), phase),
+                    InputRecipient::Root
+                );
+                (id, phase)
+            })
+            .collect();
+        let input = timed_frame_input(
+            vec![
+                egui::Event::PointerMoved(point),
+                press(point, true),
+                press(point, false),
+            ],
+            0.05,
+        );
+        let mut actions = Vec::new();
+        let _ = ctx.run(input, |ctx| {
+            actions.extend(draw_managed_fleet_windows(ManagedFleetDraw {
+                ctx,
+                world: &world,
+                movement: &MovementState::default(),
+                fog: &fog(system),
+                transport: &TroopTransportState::default(),
+                state: &mut state,
+                faction: CockpitFaction::Alliance,
+                layout: scaled(),
+                cache: &mut cache,
+                snapshot: &snapshot,
+                pointer_events: &pointer_events,
+                router: &mut router,
+                front: true,
+                shown: &|_| true,
+            }));
+        });
+
+        assert_eq!(state.selection(system).unwrap().0, None);
+        assert!(!actions.contains(&FleetWindowAction::Activate(window)));
+        assert!(!actions.contains(&FleetWindowAction::CapturePointer(window)));
     }
 
     #[test]
@@ -4493,6 +4760,31 @@ pub(crate) mod tests {
             })
         );
         assert_eq!(target((10.0, 130.0)), Some(ReleaseTarget::System(system)));
+    }
+
+    #[test]
+    fn a_drop_on_a_scrolled_fleet_list_uses_the_shared_lists_first_row() {
+        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
+        for _ in 0..7 {
+            add_fleet(&mut world, system, true, 1);
+        }
+        let mut open = window(system, None);
+        let entries = alliance_entries(&world, system, &open);
+        open.left_list.set_first_row(1);
+
+        assert_eq!(
+            drop_target(
+                &world,
+                Faction::Alliance,
+                &open,
+                &entries,
+                (LEFT_LIST.0 + 1.0, LEFT_LIST.1 + 1.0),
+            ),
+            Some(ReleaseTarget::Fleet {
+                fleet: entries[1].fleet(),
+                system,
+            })
+        );
     }
 
     #[test]
@@ -6263,7 +6555,13 @@ pub(crate) mod tests {
         assert_eq!(state.window_count(), 1);
         assert_eq!(state.keyboard_owner(&focused), Some((window, true)));
 
-        let before_text = state.windows[0].rename.as_ref().unwrap().text.clone();
+        let before_text = state.windows[0]
+            .rename
+            .as_ref()
+            .unwrap()
+            .field
+            .text()
+            .to_owned();
         let (steady, _, _) = managed_rename_frame(
             (&ctx, &mut cache, &world, &manager, &mut state),
             2,
@@ -6283,7 +6581,10 @@ pub(crate) mod tests {
             vec![egui::Event::Text("Owner must not edit".into())],
             false,
         );
-        assert_eq!(state.windows[0].rename.as_ref().unwrap().text, before_text);
+        assert_eq!(
+            state.windows[0].rename.as_ref().unwrap().field.text(),
+            before_text
+        );
         assert_empty!(renames(&owner_routed));
     }
 
@@ -6327,7 +6628,7 @@ pub(crate) mod tests {
             vec![egui::Event::Text("o".into())],
             false,
         );
-        assert_eq!(state.windows[0].rename.as_ref().unwrap().text, "Ro");
+        assert_eq!(state.windows[0].rename.as_ref().unwrap().field.text(), "Ro");
 
         let (actions, mut router, keys) = managed_rename_frame(
             (&ctx, &mut cache, &world, &manager, &mut state),
@@ -6362,7 +6663,13 @@ pub(crate) mod tests {
     fn detail_text_edit_blocked_by_modal_does_not_mutate_text() {
         let (world, _, _, mut manager, mut state, _, ctx, mut cache) =
             focused_rename_fixture("Rogue");
-        let before = state.windows[0].rename.as_ref().unwrap().text.clone();
+        let before = state.windows[0]
+            .rename
+            .as_ref()
+            .unwrap()
+            .field
+            .text()
+            .to_owned();
         state.windows[0].rename.as_mut().unwrap().fresh = true;
         manager
             .apply(WindowCommand::Open(
@@ -6380,7 +6687,10 @@ pub(crate) mod tests {
             vec![egui::Event::Text("Blocked".into())],
             true,
         );
-        assert_eq!(state.windows[0].rename.as_ref().unwrap().text, before);
+        assert_eq!(
+            state.windows[0].rename.as_ref().unwrap().field.text(),
+            before
+        );
         assert_empty!(renames(&actions));
         assert!(!actions
             .iter()

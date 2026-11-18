@@ -268,10 +268,10 @@ impl FleetFinderState {
         Some(FleetFinderReport {
             mode: window.mode,
             tab: window.tab,
-            name: window.ui.name.clone(),
+            name: window.ui.name.to_string(),
             rows,
             chosen,
-            first_row: window.ui.first_row,
+            first_row: window.ui.list.first_row(),
         })
     }
 
@@ -295,7 +295,7 @@ impl FleetFinderState {
             FinderControl::NameBox => NAME_BOX,
             FinderControl::Row(row) => {
                 let line = row
-                    .checked_sub(window.ui.first_row)
+                    .checked_sub(window.ui.list.first_row())
                     .filter(|&line| line < VISIBLE_ROWS)?;
                 (
                     LIST.0,
@@ -433,7 +433,6 @@ pub fn draw_fleet_finder_focused(
             row_height: ROW_HEIGHT,
             visible_rows: VISIBLE_ROWS,
             semantic_controls: (FLEET_FINDER_NAME_CONTROL, FLEET_FINDER_LIST_CONTROL),
-            accepts_batched_double_click: true,
         },
         |ui, canvas, cache| {
             let specs = [
@@ -1233,10 +1232,9 @@ mod tests {
     }
 
     #[test]
-    fn a_second_click_long_after_the_first_only_chooses_the_row() {
+    fn a_single_click_only_chooses_the_row() {
         let galaxy = galaxy();
         let mut state = opened(CockpitFaction::Alliance);
-        state.window.as_mut().unwrap().ui.last_clicked = Some((0, -10.0));
 
         assert_eq!(drive(&galaxy, &mut state, list_row(0), click()), None);
 
@@ -1669,7 +1667,7 @@ mod tests {
         assert_eq!(list.len(), 11);
         let mut state = opened(CockpitFaction::Alliance);
         let window = state.window.as_mut().unwrap();
-        window.ui.first_row = 2;
+        window.ui.list.set_first_row(2);
         window.chosen = Some(list[3].object);
         let origin = finder_common::window_rect(scaled()).min;
 
@@ -1710,10 +1708,11 @@ mod tests {
 
     #[test]
     fn the_wheel_over_the_list_scrolls_it_a_row_at_a_time_within_its_rows() {
-        // port: the list has no scroll bar (art 10653 is not drawn).
+        // FUN_00460270/FUN_00461960 attach RCDATA 0x299d's list bar.
         let galaxy = crowded(9);
         let mut state = opened(CockpitFaction::Alliance);
-        let first_row = |state: &FleetFinderState| state.window.as_ref().unwrap().ui.first_row;
+        let first_row =
+            |state: &FleetFinderState| state.window.as_ref().unwrap().ui.list.first_row();
         let over = list_row(3);
 
         run(&galaxy, &mut state, vec![(over, vec![wheel(-1.0)])]);
@@ -1780,7 +1779,7 @@ mod tests {
             None
         );
         state.open(CockpitFaction::Empire);
-        state.window.as_mut().unwrap().ui.first_row = 1;
+        state.window.as_mut().unwrap().ui.list.set_first_row(1);
         let origin = finder_common::window_rect(layout).min;
         let rect = |(x, y, w, h): (f32, f32, f32, f32)| {
             Some(egui::Rect::from_min_size(

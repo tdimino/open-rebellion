@@ -16,16 +16,18 @@ use rebellion_core::movement::MovementState;
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::GameWorld;
 use rebellion_windowing::{
-    ExistingEffect, WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
+    ControlId, ExistingEffect, WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
-use crate::controls::StrobeButton;
-use crate::list_control::wheel_step;
+use crate::controls::{
+    ScreenBounds, SelectionBox, SelectionBoxEvent, SelectionBoxSpec, SelectionBoxState,
+    StringField, StringFieldEvent, StringFieldLease, StringFieldSpec, StringFieldState,
+    StringFieldStyle, StrobeButton,
+};
 use crate::manufacturing_window::product;
 use crate::mission_dialog::{galaxy_centered_rect, paint, paint_centered};
-use crate::native_geometry::{exact_clicked, rect_contains};
 use crate::singleton_window_common::{
     self, impl_singleton_content_reports, impl_singleton_window_routing,
 };
@@ -70,11 +72,22 @@ const COMPLETION_FIELD: (f32, f32) = (140.0, 145.0);
 const DEPLOYMENT_FIELD: (f32, f32) = (140.0, 165.0);
 /// The number to build, an edit of 45 by 17 (`+0x128`).
 const QUANTITY_FIELD: (f32, f32, f32, f32) = (141.0, 196.0, 45.0, 17.0);
+const QUANTITY_CONTROL: ControlId = ControlId(0x6b);
 
 /// The drop-down's rows (box `+0xa8`, `FUN_00437f80`'s 2) and their height
 /// (`+0xa4`, 0x46); `FUN_0060cac0` makes it the rows' height plus 4.
 const LIST_ROWS: usize = 2;
 const LIST_ROW_HEIGHT: f32 = 70.0;
+
+/// The class box (`FUN_00437f80` -> `FUN_0060bed0`). port: its popup's
+/// scroll bar, art (7, `0x299a`) at `+0xbc`/`+0xbe`, is not drawn until that
+/// art is settled; the list's wheel scrolls its rows.
+const CLASS_BOX: SelectionBoxSpec = SelectionBoxSpec {
+    rect: ITEM_BOX,
+    rows: LIST_ROWS,
+    row_height: LIST_ROW_HEIGHT,
+    bar: None,
+};
 
 /// The labels' color, `0x2f0fbff` (`FUN_00438500`).
 const LABEL: egui::Color32 = egui::Color32::from_rgb(0xff, 0xfb, 0xf0);
@@ -96,19 +109,10 @@ pub struct BuildSelection {
     kinds: Vec<BuildableKind>,
     selected: usize,
     quantity: u32,
-    /// The class list is open (`CoolSelectionBoxClass +0xe8`).
-    list_open: bool,
-    /// The list's first shown row (its scroll, list `+0xc4`).
-    top: usize,
-    /// The row last clicked in the list: its item's `+0x3c` bit 0, which
-    /// `FUN_006094b0` clears on every other item.
-    picked: Option<usize>,
-    /// Each row's item `+0x3c` bit 1, set while the pointer is on it. The
-    /// items outlive the list (`FUN_00608280` shares the box's), so a bit
-    /// stays until a list moves the pointer off its row.
-    hot: Vec<bool>,
-    /// The row this list marked hot (list `+0x100`); a new list has none.
-    last_hot: Option<usize>,
+    quantity_field: StringFieldState,
+    focus_quantity: bool,
+    /// The class box and its popup, over the classes' row indices.
+    list: SelectionBoxState<usize>,
 }
 
 impl BuildSelection {
@@ -134,7 +138,13 @@ impl BuildSelection {
 
     #[must_use]
     pub fn list_open(&self) -> bool {
-        self.list_open
+        self.list.is_open()
+    }
+
+    /// The classes the box lists.
+    #[must_use]
+    pub fn class_count(&self) -> usize {
+        self.kinds.len()
     }
 
     /// Choose a listed class; an index past the list is ignored.
@@ -152,57 +162,60 @@ impl BuildSelection {
         } else {
             self.quantity.saturating_sub(1).max(1)
         };
+        self.quantity_field.set_text(self.quantity.to_string());
     }
 
     /// A digit typed into the number edit; the value stays in 1..=255.
     pub fn type_digit(&mut self, digit: u32) {
-        self.quantity = (self.quantity * 10 + digit).clamp(1, MAX_QUANTITY);
+        let mut text = self.quantity_field.text().to_owned();
+        text.push(char::from_digit(digit.min(9), 10).expect("a decimal digit"));
+        self.quantity_field.set_text(text);
+        self.sync_quantity_from_field();
     }
 
     /// Backspace in the number edit.
     pub fn erase_digit(&mut self) {
-        self.quantity = (self.quantity / 10).max(1);
+        let mut text = self.quantity_field.text().to_owned();
+        text.pop();
+        self.quantity_field.set_text(text);
+        self.sync_quantity_from_field();
     }
 
-    /// The drop-down (`0x6c`): open a new list scrolled to the class
-    /// (`FUN_00609ed0` from 0 brings it up to the last row), or close it.
-    fn toggle_list(&mut self) {
-        self.list_open = !self.list_open;
-        if self.list_open {
-            self.top = self.selected.saturating_sub(LIST_ROWS - 1);
-            self.last_hot = None;
-        }
+    /// Interpret the source field's printable text as the parent's numeric
+    /// quantity, clamped by `FUN_00438d30` while retaining the editable text.
+    fn sync_quantity_from_field(&mut self) {
+        let text = self.quantity_field.text().trim_start();
+        let (negative, digits) = match text.strip_prefix('-') {
+            Some(digits) => (true, digits),
+            None => (false, text.strip_prefix('+').unwrap_or(text)),
+        };
+        let parsed = digits
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .fold(0_u32, |value, digit| {
+                value
+                    .saturating_mul(10)
+                    .saturating_add(digit.to_digit(10).unwrap_or(0))
+            });
+        self.quantity = if negative { 0 } else { parsed }.clamp(1, MAX_QUANTITY);
     }
 
-    /// The pointer moved over the list (`FUN_006083c0`, `WM_MOUSEMOVE`):
-    /// the row it left loses bit 1 and the row under it, if any, gains it.
-    fn hover(&mut self, row: Option<usize>) {
-        if row == self.last_hot {
-            return;
-        }
-        if let Some(old) = self.last_hot {
-            self.hot[old] = false;
-        }
-        self.last_hot = row;
-        if let Some(row) = row {
-            self.hot[row] = true;
-        }
+    /// The classes' row indices, the box's items.
+    fn rows(&self) -> Vec<usize> {
+        (0..self.kinds.len()).collect()
     }
 
-    /// A click in the list (`FUN_006083c0`, buttons up): the row's class is
-    /// picked and the list closes (notification `0x29b` -> `FUN_0060c970`);
-    /// off the rows only the old pick clears.
-    fn click_list(&mut self, row: Option<usize>) {
-        self.picked = row;
-        if let Some(row) = row {
-            self.select(row);
-            self.list_open = false;
-        }
+    /// The drop-down (`0x6c`) posts the box's command `0x3ea`: a new popup
+    /// revealing the class (`FUN_00609ed0`), or a close of the open one.
+    fn toggle_list(&mut self, bounds: ScreenBounds) {
+        let rows = self.rows();
+        self.list
+            .toggle(CLASS_BOX, bounds, &rows, Some(self.selected));
     }
 
     /// A row's name color (`FUN_006083c0`, `WM_PAINT`).
     fn row_color(&self, row: usize) -> egui::Color32 {
-        if self.picked == Some(row) || self.hot[row] {
+        if self.list.is_picked(row) || self.list.is_hot(row) {
             egui::Color32::WHITE
         } else {
             ROW_GREY
@@ -301,7 +314,6 @@ impl BuildSelectionState {
         if kinds.is_empty() {
             return None;
         }
-        let kind_count = kinds.len();
         let selected = self.remembered[area_index(area)]
             .and_then(|kind| kinds.iter().position(|&listed| listed == kind))
             .unwrap_or(0);
@@ -314,11 +326,9 @@ impl BuildSelectionState {
                 kinds,
                 selected,
                 quantity: 1,
-                list_open: false,
-                top: 0,
-                picked: None,
-                hot: vec![false; kind_count],
-                last_hot: None,
+                quantity_field: StringFieldState::new("1"),
+                focus_quantity: true,
+                list: SelectionBoxState::default(),
             },
         })
     }
@@ -445,7 +455,6 @@ impl BuildSelectionState {
         let selected = self.remembered[area_index(area)]
             .and_then(|kind| kinds.iter().position(|&listed| listed == kind))
             .unwrap_or(0);
-        let hot = vec![false; kinds.len()];
         self.dialog = Some(BuildSelection {
             window_id: None,
             system,
@@ -454,11 +463,9 @@ impl BuildSelectionState {
             kinds,
             selected,
             quantity: 1,
-            list_open: false,
-            top: 0,
-            picked: None,
-            hot,
-            last_hot: None,
+            quantity_field: StringFieldState::new("1"),
+            focus_quantity: true,
+            list: SelectionBoxState::default(),
         });
         true
     }
@@ -593,9 +600,10 @@ pub fn draw_build_selection(
     let mut close = false;
     let mut confirm = false;
 
-    // FUN_00438b60: Enter confirms, even an invalid order, which its
-    // validator then refuses; Escape closes, keypad + and - step the
-    // number; the number edit has the focus for digits.
+    // FUN_00438b60: the window keeps Enter/Escape available outside the
+    // edit. While the CoolStringField owns focus it forwards +/- below.
+    let quantity_has_focus =
+        dialog.focus_quantity || dialog.quantity_field.focused_control() == Some(QUANTITY_CONTROL);
     ctx.input(|input| {
         for event in &input.events {
             if let egui::Event::Key {
@@ -605,20 +613,17 @@ pub fn draw_build_selection(
                 match key {
                     egui::Key::Enter => confirm = true,
                     egui::Key::Escape => close = true,
-                    egui::Key::Plus | egui::Key::Equals => dialog.step_quantity(true),
-                    egui::Key::Minus => dialog.step_quantity(false),
-                    egui::Key::Backspace => dialog.erase_digit(),
+                    egui::Key::Plus | egui::Key::Equals if !quantity_has_focus => {
+                        dialog.step_quantity(true);
+                    }
+                    egui::Key::Minus if !quantity_has_focus => dialog.step_quantity(false),
                     _ => {}
-                }
-            }
-            if let egui::Event::Text(text) = event {
-                for digit in text.chars().filter_map(|c| c.to_digit(10)) {
-                    dialog.type_digit(digit);
                 }
             }
         }
     });
 
+    let bounds = ScreenBounds::canvas(layout, window);
     let area_id = egui::Id::new("original-build-selection");
     singleton_window_common::show_popup_canvas(ctx, area_id, window, scale, |ui, canvas| {
         let frame = canvas.frame;
@@ -732,13 +737,42 @@ pub fn draw_build_selection(
             in_field(field).text(position, alignment, text, font, egui::Color32::WHITE);
         }
         let (x, y, w, h) = QUANTITY_FIELD;
-        in_field(at(x, y, w, h)).text(
-            at(x, y, w, h).left_center(),
-            egui::Align2::LEFT_CENTER,
-            dialog.quantity.to_string(),
-            value_font.clone(),
-            egui::Color32::WHITE,
-        );
+        let quantity_lease = if dialog.focus_quantity {
+            StringFieldLease::acquire(false)
+        } else {
+            StringFieldLease::focused()
+        };
+        let quantity = StringField::new(
+            &mut dialog.quantity_field,
+            StringFieldSpec::new(
+                ui.id().with("quantity"),
+                QUANTITY_CONTROL,
+                at(x, y, w, h),
+                Some(0x19),
+                StringFieldStyle {
+                    font: value_font.clone(),
+                    cursor_color: egui::Color32::from_rgb(0, 255, 0),
+                    ..StringFieldStyle::default()
+                },
+            ),
+            quantity_lease,
+        )
+        .show(ui);
+        dialog.focus_quantity = false;
+        for event in quantity.iter() {
+            match event {
+                StringFieldEvent::Changed => dialog.sync_quantity_from_field(),
+                StringFieldEvent::Submitted => confirm = true,
+                StringFieldEvent::Cancelled => close = true,
+                StringFieldEvent::UnhandledKey(egui::Key::Plus | egui::Key::Equals) => {
+                    dialog.step_quantity(true);
+                }
+                StringFieldEvent::UnhandledKey(egui::Key::Minus) => {
+                    dialog.step_quantity(false);
+                }
+                StringFieldEvent::FocusChanged(_) | StringFieldEvent::UnhandledKey(_) => {}
+            }
+        }
 
         if StrobeButton::show_pair(
             ui,
@@ -768,7 +802,7 @@ pub fn draw_build_selection(
         )
         .clicked()
         {
-            dialog.toggle_list();
+            dialog.toggle_list(bounds);
         }
         if StrobeButton::show_pair(
             ui,
@@ -849,71 +883,40 @@ pub fn draw_build_selection(
             close = true;
         }
 
-        // The drop-down (FUN_0060cac0): a window under the box, the box's
-        // width and two rows high, its list (FUN_00607ea0) 2 pixels in.
-        // port: its scroll bar (base 0x299a) is not drawn; the wheel
-        // scrolls the rows, as the mission dialog's.
-        if dialog.list_open {
-            // FUN_0060d020 takes the capture: a press off the popup
-            // closes it and reaches no other control. port: on the
-            // release, within the window.
-            let capture = ui.interact(
-                frame,
-                ui.id().with("class-list-capture"),
-                egui::Sense::click(),
-            );
-            let (x, y, w, h) = ITEM_BOX;
-            let rows_height = LIST_ROWS as f32 * LIST_ROW_HEIGHT;
-            let popup = at(x, y + h, w, rows_height + 4.0);
-            let list = at(x + 2.0, y + h + 2.0, w - 4.0, rows_height);
-            painter.rect_filled(popup, 0.0, egui::Color32::BLACK);
-            let response = ui.interact(popup, ui.id().with("class-list"), egui::Sense::click());
-            let len = dialog.kinds.len();
-            let top = dialog.top;
-            let row_at = |point: egui::Pos2| {
-                let row = top + ((point.y - list.min.y) / (LIST_ROW_HEIGHT * scale)) as usize;
-                (row < len).then_some(row)
-            };
-            // The list sees the pointer only over itself.
-            if let Some(point) = ctx
-                .input(|input| input.pointer.hover_pos())
-                .filter(|&point| rect_contains(list, point))
-            {
-                dialog.hover(row_at(point));
-            }
-            if response.hovered() {
-                let wheel = ctx.input(|input| input.raw_scroll_delta.y);
-                dialog.top = wheel_step(
-                    dialog.top,
-                    len.saturating_sub(LIST_ROWS).saturating_add(1),
-                    wheel,
-                );
-            }
-            for (slot, row) in (dialog.top..len).take(LIST_ROWS).enumerate() {
-                paint_item(
-                    &painter,
-                    ctx,
-                    cache,
-                    world,
-                    dialog.kinds[row],
-                    at(
-                        x + 2.0,
-                        y + h + 2.0 + slot as f32 * LIST_ROW_HEIGHT,
-                        w - 4.0,
-                        h,
-                    ),
-                    scale,
-                    &small,
-                    dialog.row_color(row),
-                );
-            }
-            if exact_clicked(&response, list) {
-                let row = response.interact_pointer_pos().and_then(row_at);
-                dialog.click_list(row);
-            } else if capture.clicked() {
-                dialog.toggle_list();
-            }
+        // The class popup (FUN_0060cac0, FUN_0060d020), over every control
+        // the window drew: it takes the capture, so a press off it closes it
+        // and reaches nothing else.
+        let rows = dialog.rows();
+        let shown = SelectionBox::show(
+            ui,
+            &painter,
+            "class-list",
+            CLASS_BOX,
+            bounds,
+            &rows,
+            &mut dialog.list,
+            Some(dialog.selected),
+            frame,
+            scale,
+        );
+        if let Some(SelectionBoxEvent::Selected(row)) = shown.event {
+            dialog.select(row);
         }
+        let (_, _, _, h) = ITEM_BOX;
+        for (row, cell) in shown.rows(&rows, frame, scale) {
+            paint_item(
+                &painter,
+                ctx,
+                cache,
+                world,
+                dialog.kinds[row],
+                egui::Rect::from_min_size(cell.min, egui::vec2(cell.width(), h * scale)),
+                scale,
+                &small,
+                dialog.row_color(row),
+            );
+        }
+        shown.paint_bar(&painter, ctx, cache, frame, scale);
     });
 
     if confirm {
@@ -1162,7 +1165,8 @@ mod tests {
         let dialog = state.dialog_mut().unwrap();
         dialog.select(1);
         dialog.step_quantity(true);
-        dialog.list_open = true;
+        dialog.toggle_list(ScreenBounds::canvas(layout(), window_rect(layout())));
+        assert!(dialog.list_open());
         let before = dialog.clone();
 
         let duplicate = state
@@ -1630,6 +1634,28 @@ mod tests {
         assert!(!state.is_open());
     }
 
+    #[test]
+    fn both_factions_focus_and_type_into_the_shared_quantity_field() {
+        let (world, system) = galaxy(true);
+        for is_alliance in [true, false] {
+            let mut state = opened(system, is_alliance);
+            drive(
+                &world,
+                &mut state,
+                (0.0, 0.0),
+                vec![vec![egui::Event::Text("4".into())]],
+            );
+
+            let dialog = state.dialog().unwrap();
+            assert_eq!(dialog.quantity(), 14, "is_alliance={is_alliance}");
+            assert_eq!(dialog.quantity_field.text(), "14");
+            assert_eq!(
+                dialog.quantity_field.focused_control(),
+                Some(QUANTITY_CONTROL)
+            );
+        }
+    }
+
     fn kinds() -> Vec<BuildableKind> {
         vec![
             BuildableKind::Troop(DatId::new(0x1000_0001)),
@@ -1962,6 +1988,101 @@ mod tests {
                 (names[1].clone(), egui::Color32::WHITE)
             ]
         );
+    }
+
+    // FUN_0060d020 holds the capture: the press itself (cases 0x201 and
+    // 0x204), anywhere off the popup, even off the window, sends 0x3e9 and
+    // the box closes the popup (FUN_0060c210 -> FUN_0060cbf0). The press is
+    // forwarded to nothing, so Confirm under it does not order the build.
+    #[test]
+    fn a_press_anywhere_off_the_class_list_closes_it_and_reaches_nothing() {
+        let (world, mut state, regiments, _) = training_fixture(kinds());
+        let at = egui::Pos2::ZERO;
+        for outside in [(100.0, 240.0), (-40.0, 120.0), (230.0, 20.0)] {
+            click(&world, &mut state, (111.0, 99.0));
+            assert!(state.dialog().unwrap().list_open());
+            drive(&world, &mut state, outside, vec![vec![press(at, true)]]);
+            assert!(!state.dialog().unwrap().list_open(), "{outside:?}");
+            click(&world, &mut state, (111.0, 99.0));
+            let action = drive(
+                &world,
+                &mut state,
+                outside,
+                vec![vec![press(at, true)], vec![press(at, false)]],
+            );
+            assert_eq!(action, None, "{outside:?}");
+            assert!(state.is_open());
+            assert!(!state.dialog().unwrap().list_open(), "{outside:?}");
+            assert_eq!(state.dialog().unwrap().kind(), regiments[0]);
+        }
+    }
+
+    // FUN_006083c0 case 0x201 selects the pressed row and posts 0x29b at
+    // once; FUN_0060d020 commits it through FUN_0060c970 and closes, before
+    // any release.
+    #[test]
+    fn a_press_on_a_class_row_picks_it_before_the_release() {
+        let (world, mut state, regiments, _) = training_fixture(kinds());
+        click(&world, &mut state, (111.0, 99.0));
+        let at = egui::Pos2::ZERO;
+        drive(
+            &world,
+            &mut state,
+            (100.0, 190.0),
+            vec![vec![press(at, true)]],
+        );
+        assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
+        assert!(!state.dialog().unwrap().list_open());
+    }
+
+    // A press and its release can arrive in one frame; the capture still
+    // takes it (FUN_0060d020 cases 0x201 and 0x204), left or right.
+    #[test]
+    fn a_press_and_release_in_one_frame_off_the_class_list_closes_it() {
+        let (world, mut state, _, _) = training_fixture(kinds());
+        let at = egui::Pos2::ZERO;
+        for button in [egui::PointerButton::Primary, egui::PointerButton::Secondary] {
+            click(&world, &mut state, (111.0, 99.0));
+            assert!(state.dialog().unwrap().list_open());
+            let action = drive(
+                &world,
+                &mut state,
+                (100.0, 240.0),
+                vec![vec![
+                    crate::test_support::pointer_button_with(at, button, true),
+                    crate::test_support::pointer_button_with(at, button, false),
+                ]],
+            );
+            assert_eq!(action, None, "{button:?}");
+            assert!(!state.dialog().unwrap().list_open(), "{button:?}");
+        }
+    }
+
+    // FUN_006083c0 case 0x201 defers a press on the picked row (flag 0x10);
+    // its release selects and posts 0x29b, and FUN_0060d020 commits it.
+    #[test]
+    fn a_press_on_the_picked_class_row_commits_on_its_release() {
+        let (world, mut state, regiments, _) = training_fixture(kinds());
+        click(&world, &mut state, (111.0, 99.0));
+        click(&world, &mut state, (100.0, 190.0));
+        assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
+        click(&world, &mut state, (111.0, 99.0));
+        let at = egui::Pos2::ZERO;
+        drive(
+            &world,
+            &mut state,
+            (100.0, 190.0),
+            vec![vec![press(at, true)]],
+        );
+        assert!(state.dialog().unwrap().list_open());
+        drive(
+            &world,
+            &mut state,
+            (100.0, 190.0),
+            vec![vec![press(at, true)], vec![press(at, false)]],
+        );
+        assert!(!state.dialog().unwrap().list_open());
+        assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
     }
 
     #[test]

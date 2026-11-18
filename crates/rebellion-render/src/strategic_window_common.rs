@@ -16,7 +16,9 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::controls::{ButtonArt, ButtonDraw, StrobeButton};
+use crate::controls::{
+    draw_registered_tooltips, ButtonArt, ButtonDraw, StrobeButton, TooltipPresentation,
+};
 use crate::fleet_window::paint_native;
 use crate::native_geometry::{logical_rect, rect_contains};
 use crate::system_window::{title_drag_step, TitleDrag};
@@ -313,19 +315,6 @@ pub(crate) use draw_frame;
 /// control, matching the original window families' shared activation rule.
 pub(crate) fn interaction_requests_focus(surface: &egui::Response, title_buttons: &[bool]) -> bool {
     surface.clicked() || title_buttons.iter().any(|&clicked| clicked)
-}
-
-/// Select an entire single-line egui text edit after a strategic Rename
-/// command creates or replaces its editor.
-pub(crate) fn select_all_text(ctx: &egui::Context, id: egui::Id, char_count: usize) {
-    let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
-    state
-        .cursor
-        .set_char_range(Some(egui::text::CCursorRange::two(
-            egui::text::CCursor::new(0),
-            egui::text::CCursor::new(char_count),
-        )));
-    state.store(ctx, id);
 }
 
 pub(crate) trait StrategicWindowRecord {
@@ -1646,9 +1635,11 @@ impl StrategicWindowCanvas<'_> {
         mut register: impl FnMut(usize, egui::Rect),
     ) -> [bool; 3] {
         let mut clicked = [false; 3];
+        let mut tooltips = Vec::with_capacity(3);
         for (index, (normal, pressed, x, name)) in buttons.into_iter().enumerate() {
             let rect = logical_rect(self.local, self.scale, x, 3.0, 14.0, 14.0);
             register(index, rect);
+            tooltips.push((rect, ["Display Sector", "Minimize", "Close"][index]));
             clicked[index] = StrobeButton::show(
                 ui,
                 cache,
@@ -1662,6 +1653,13 @@ impl StrategicWindowCanvas<'_> {
             )
             .clicked();
         }
+        draw_registered_tooltips(
+            ui.ctx(),
+            egui::Id::new((id_seed, "title-tooltips")),
+            &tooltips,
+            self.scale,
+            TooltipPresentation::stock(),
+        );
         clicked
     }
 }

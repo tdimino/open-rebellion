@@ -65,6 +65,14 @@ const masks = {
     { x: 136, y: 93, width: 108, height: 213 },
   ],
 };
+// The mission-kind box's popup (FUN_0046a9c0 -> FUN_0060bed0, FUN_0060cac0):
+// one 113-pixel row plus 4, under the 200 by 113 box at (35, 62); its list 2
+// in (FUN_0060d020). Control 0x68 at (101, 174) posts the box's 0x3ea. The
+// dialog sits at the galaxy's centre, so the popup always opens below.
+const kindPopup = { x: 35, y: 175, width: 200, height: 117 };
+const missionsButton = { x: 101 + 32, y: 174 + 9 };
+const kindRow = { x: 135, y: 177 + 56 };
+const beginMission = { x: 102 + 32, y: 320 + 16 };
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 const runDir = path.join(root, ".artifacts/interface-parity", `mission-dialog-${runId}`);
 
@@ -382,6 +390,87 @@ function compare(actual, expected, page, label, directory) {
   return { label, page, pixels_checked: checked, different_pixels: differentPixels };
 }
 
+function regionHash(screenshotBytes, origin, region) {
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const rows = [];
+  for (let y = 0; y < region.height; y += 1) {
+    const start = ((origin.y + region.y + y) * screenshot.width + origin.x + region.x) * 4;
+    rows.push(screenshot.data.subarray(start, start + region.width * 4));
+  }
+  return createHash("sha256").update(Buffer.concat(rows)).digest("hex");
+}
+
+async function dialogReport(page) {
+  return page.evaluate(() => window.__openRebellionInterfaceMissionDialog);
+}
+
+async function waitDialog(page, predicate, label) {
+  const started = Date.now();
+  while (Date.now() - started < 10_000) {
+    const report = await dialogReport(page);
+    if (report && predicate(report)) return report;
+    await frames(page);
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+// The mission-kind popup: 0x3ea opens it; the list's wheel scrolls its row
+// and leaves the kind alone; a press on the row commits the kind it shows
+// (FUN_006083c0 -> FUN_0060d020 -> FUN_0060c970) and closes the popup; a
+// press off the popup sends 0x3e9 and reaches no other control, so Begin
+// Mission under it does not begin.
+async function kindPopupJourney(page, origin, directory) {
+  const at = (point) => ({ x: origin.x + point.x, y: origin.y + point.y });
+  const steps = {};
+  const first = await waitDialog(page, (r) => r.open, "the mission dialog report");
+  assert.equal(first.kind_list_open, false);
+  await click(page, at(missionsButton));
+  let report = await waitDialog(page, (r) => r.kind_list_open, "the kind popup to open");
+  assert.equal(report.kind, first.kind);
+  fs.writeFileSync(path.join(directory, "kind-popup-open.png"),
+    await page.screenshot({ animations: "disabled" }));
+  steps.opened = { kind: report.kind, kinds: report.kinds };
+
+  await page.mouse.move(origin.x + kindRow.x, origin.y + kindRow.y);
+  await frames(page);
+  const before = await page.screenshot({ animations: "disabled" });
+  await page.mouse.wheel(0, 120);
+  await frames(page);
+  await frames(page);
+  const wheeled = await page.screenshot({ animations: "disabled" });
+  fs.writeFileSync(path.join(directory, "kind-popup-wheel.png"), wheeled);
+  report = await dialogReport(page);
+  assert.equal(report.kind_list_open, true, "the wheel closed the kind popup");
+  assert.equal(report.kind, first.kind, "the wheel changed the kind");
+  const scrolled = regionHash(before, origin, kindPopup) !== regionHash(wheeled, origin, kindPopup);
+  // One row shows: any second kind is a row to scroll to.
+  assert.equal(scrolled, report.kinds > 1,
+    `the wheel ${scrolled ? "scrolled" : "did not scroll"} ${report.kinds} kinds`);
+  steps.wheel = { scrolled };
+
+  await click(page, at(kindRow));
+  report = await waitDialog(page, (r) => !r.kind_list_open, "the chosen row to close the popup");
+  assert.ok(report.open, "choosing a kind closed the dialog");
+  if (report.kinds > 1) {
+    assert.notEqual(report.kind, first.kind, "the press on the scrolled row chose nothing");
+  }
+  fs.writeFileSync(path.join(directory, "kind-chosen.png"), await page.screenshot({ animations: "disabled" }));
+  steps.chosen = { kind: report.kind };
+
+  await click(page, at(missionsButton));
+  await waitDialog(page, (r) => r.kind_list_open, "the kind popup to reopen");
+  await click(page, at(beginMission));
+  await page.mouse.move(2, 2);
+  await frames(page);
+  report = await waitDialog(page, (r) => !r.kind_list_open, "the dismissing press");
+  assert.ok(report.open, "the dismissing press also began the mission");
+  assert.equal(report.kind, steps.chosen.kind);
+  fs.writeFileSync(path.join(directory, "kind-popup-dismissed.png"),
+    await page.screenshot({ animations: "disabled" }));
+  steps.dismissed = { open: report.open };
+  return steps;
+}
+
 async function frames(page) {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
@@ -461,7 +550,11 @@ async function inspect(server, source, faction, scenario, executable) {
     if (scenario.name === "targeting") targeting = await target(page, faction, directory);
     const opened = await stableDialog(page, origin, directory, "opened");
     comparisons.push(compare(opened, composeExpected(source, faction, scenario.page), scenario.page, "opened", directory));
+    let kindSteps = null;
     if (scenario.name === "mission") {
+      kindSteps = await kindPopupJourney(page, origin, directory);
+      await page.mouse.move(2, 2);
+      await frames(page);
       // A click on the Agents tab (0x98) switches pages (FUN_0046c8a0).
       // egui resolves a click across frames: hover, press, then release.
       await page.mouse.move(origin.x + 137 + 58, origin.y + 20 + 16);
@@ -488,6 +581,7 @@ async function inspect(server, source, faction, scenario, executable) {
       fixture_code: fixtureCode,
       ready,
       ...(targeting ? { object_menu: targeting.menu, target_pointer: targeting.pointer } : {}),
+      ...(kindSteps ? { kind_popup: kindSteps } : {}),
       comparisons,
       requests,
       errors,

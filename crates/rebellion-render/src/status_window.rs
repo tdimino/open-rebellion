@@ -21,7 +21,10 @@ use rebellion_windowing::{
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
-use crate::controls::StrobeButton;
+use crate::controls::{
+    DragList, DragListLayout, DragListSpec, DragListState, DragPolicy, SelectionPolicy,
+    StrobeButton, WheelPolicy,
+};
 use crate::fleet_window::paint_native;
 use crate::mission_dialog::{galaxy_centered_rect, paint};
 use crate::singleton_window_common::{self, impl_singleton_window_routing};
@@ -49,6 +52,19 @@ const NAME: (f32, f32, f32, f32) = (242.0, 137.0, 130.0, 44.0);
 const LIST: (f32, f32, f32, f32) = (18.0, 47.0, 208.0, 204.0);
 /// `FUN_00449e00`: labels at x 0 and values at x 103, each 103 wide.
 const COLUMN: f32 = 103.0;
+/// `FUN_00443130`: the Status surface is one `CoolDragList` of 208 by 35 row
+/// bitmaps, each filled as two 103-pixel text columns. RCDATA `0x299a` is not
+/// present in the approved asset pack, so the shared list owns its range/input
+/// while retaining the existing documented omission of that bar's pixels.
+const STATUS_LIST: DragListSpec = DragListSpec {
+    rect: LIST,
+    item: (LIST.2, 35.0),
+    layout: DragListLayout::Stacked,
+    selection: SelectionPolicy::Single,
+    drag: DragPolicy::Disabled,
+    wheel: WheelPolicy::Rows,
+    bar: None,
+};
 /// The picture is centred on (307, 64) (`FUN_00443130`).
 const PICTURE_CENTRE: (i32, i32) = (307, 64);
 
@@ -205,8 +221,8 @@ struct OpenStatusWindow {
     /// Stable facts captured when an index-backed object was prepared. Direct
     /// fixture opens have no witness and retain their direct behavior.
     witness: Option<StatusWitness>,
-    /// The list's scroll offset, in window pixels.
-    scroll: f32,
+    /// The original two-column `CoolDragList`'s control-local state.
+    list: DragListState<usize>,
 }
 
 /// Whether a Status window is open. There is one at a time: the galaxy view
@@ -334,7 +350,7 @@ impl StatusWindowState {
                     subject: Some(prepared.subject),
                     object: prepared.object,
                     witness: Some(prepared.witness),
-                    scroll: 0.0,
+                    list: DragListState::default(),
                 });
                 Some(id)
             }
@@ -344,7 +360,7 @@ impl StatusWindowState {
                     subject: Some(prepared.subject),
                     object: prepared.object,
                     witness: Some(prepared.witness),
-                    scroll: 0.0,
+                    list: DragListState::default(),
                 });
                 Some(new)
             }
@@ -405,7 +421,7 @@ impl StatusWindowState {
             subject: None,
             object,
             witness: None,
-            scroll: 0.0,
+            list: DragListState::default(),
         });
     }
 
@@ -439,19 +455,6 @@ pub fn window_rect(layout: CockpitLayout) -> egui::Rect {
     galaxy_centered_rect(layout, STATUS_WINDOW_WIDTH, STATUS_WINDOW_HEIGHT)
 }
 
-/// `FUN_00449e00`'s row placement from each row's (label, value) height: a
-/// row is as tall as its taller cell, and a shorter value moves down to the
-/// label's bottom. Returns each row's (label, value) top and the total.
-fn row_tops(heights: &[(f32, f32)]) -> (Vec<(f32, f32)>, f32) {
-    let mut tops = Vec::with_capacity(heights.len());
-    let mut y = 0.0;
-    for &(label, value) in heights {
-        tops.push((y, y + (label - value).max(0.0)));
-        y += label.max(value);
-    }
-    (tops, y)
-}
-
 /// The picture's top-left in the window: centred on (307, 64) with integer
 /// halves (`FUN_00443130`).
 #[allow(
@@ -466,49 +469,6 @@ fn picture_origin(width: usize, height: usize) -> (f32, f32) {
         (cx - width as i32 / 2) as f32,
         (cy - height as i32 / 2) as f32,
     )
-}
-
-/// The list's scroll after a wheel `delta` (screen pixels), kept within the
-/// rows' `height` (screen pixels) less the list's own.
-fn scrolled(scroll: f32, delta: f32, scale: f32, height: f32) -> f32 {
-    (scroll - delta / scale).clamp(0.0, (height / scale - LIST.3).max(0.0))
-}
-
-/// One laid-out row: its label and value galleys and their tops.
-type LaidRow = (
-    std::sync::Arc<egui::Galley>,
-    std::sync::Arc<egui::Galley>,
-    f32,
-    f32,
-);
-
-/// Lay out the rows' galleys and place them with [`row_tops`].
-fn layout_rows(
-    painter: &egui::Painter,
-    rows: &[StatusRow],
-    font: &egui::FontId,
-    column: f32,
-) -> (Vec<LaidRow>, f32) {
-    let galleys: Vec<_> = rows
-        .iter()
-        .map(|row| {
-            let layout = |text: &str| {
-                painter.layout(text.to_owned(), font.clone(), egui::Color32::WHITE, column)
-            };
-            (layout(&row.label), layout(&row.value))
-        })
-        .collect();
-    let heights: Vec<_> = galleys
-        .iter()
-        .map(|(label, value)| (label.size().y, value.size().y))
-        .collect();
-    let (tops, height) = row_tops(&heights);
-    let laid = galleys
-        .into_iter()
-        .zip(tops)
-        .map(|((label, value), (label_y, value_y))| (label, value, label_y, value_y))
-        .collect();
-    (laid, height)
 }
 
 /// Draw the open window, if any, and report what the player chose.
@@ -639,31 +599,43 @@ fn draw_status_window_surface(
                 .with_clip_rect(name)
                 .galley(name_at, galley, egui::Color32::WHITE);
 
-            // The list. port: the wheel scrolls it; no scroll bar is drawn.
-            let list = at(LIST);
-            let (laid, height) = layout_rows(&painter, &view.rows, &list_font, COLUMN * scale);
-            let list_response =
-                ui.interact(list, ui.id().with("status-list"), egui::Sense::hover());
-            let wheel = if input_enabled && list_response.hovered() {
-                ui.ctx().input(|input| input.smooth_scroll_delta.y)
-            } else {
-                0.0
-            };
-            open.scroll = scrolled(open.scroll, wheel, scale, height);
-            let list_painter = painter.with_clip_rect(list);
-            let top = list.min.y - open.scroll * scale;
-            for (label, value, label_y, value_y) in laid {
-                list_painter.galley(
-                    egui::pos2(list.min.x, top + label_y),
-                    label,
-                    egui::Color32::WHITE,
-                );
-                list_painter.galley(
-                    egui::pos2(list.min.x + COLUMN * scale, top + value_y),
-                    value,
-                    egui::Color32::WHITE,
-                );
+            // FUN_00443130: one CoolDragList of 208 by 35 row bitmaps,
+            // each filled as two 103-pixel text columns.
+            // The feature retains the label/value rows; the shared control
+            // owns selection, geometry, bounded scrolling and wheel input.
+            let cells: Vec<usize> = (0..view.rows.len()).collect();
+            let shown = ui
+                .add_enabled_ui(input_enabled, |ui| {
+                    DragList::show(
+                        ui,
+                        "status-list",
+                        STATUS_LIST,
+                        &cells,
+                        &open.list,
+                        frame,
+                        scale,
+                        None,
+                    )
+                })
+                .inner;
+            let list_painter = painter.with_clip_rect(at(LIST));
+            for (row_index, cell) in shown.screen_cells(frame, scale) {
+                let row = &view.rows[row_index];
+                for (x, text) in [(0.0, &row.label), (COLUMN, &row.value)] {
+                    let galley = list_painter.layout(
+                        text.clone(),
+                        list_font.clone(),
+                        egui::Color32::WHITE,
+                        COLUMN * scale,
+                    );
+                    list_painter.galley(
+                        cell.min + egui::vec2(x * scale, 0.0),
+                        galley,
+                        egui::Color32::WHITE,
+                    );
+                }
             }
+            open.list = shown.next;
 
             if input_enabled
                 && StrobeButton::show_pair(
@@ -1007,7 +979,7 @@ mod tests {
         } = opened_luke(41);
         let han = add_character(&mut world, "Han Solo");
         let subject = context(41);
-        state.window.as_mut().unwrap().scroll = 17.0;
+        state.window.as_mut().unwrap().list.set_first_row(17);
 
         let duplicate = StatusWindowState::prepare_open(
             empty.sources(&world),
@@ -1021,7 +993,7 @@ mod tests {
         let content = state.window.as_ref().unwrap();
         assert_eq!(content.object, StatusObject::Character(luke));
         assert_eq!(content.subject, Some(subject));
-        assert_eq!(content.scroll, 17.0);
+        assert_eq!(content.list.first_row(), 17);
     }
 
     #[test]
@@ -1122,7 +1094,7 @@ mod tests {
             id: old,
         } = opened_luke(44);
         let han = add_character(&mut world, "Han Solo");
-        state.window.as_mut().unwrap().scroll = 9.0;
+        state.window.as_mut().unwrap().list.set_first_row(9);
         let replacement = StatusWindowState::prepare_open(
             empty.sources(&world),
             StatusObject::Character(han),
@@ -1161,7 +1133,7 @@ mod tests {
         assert_eq!(content.id, Some(new));
         assert_eq!(content.subject, Some(context(45)));
         assert_eq!(content.object, StatusObject::Character(han));
-        assert_eq!(content.scroll, 0.0);
+        assert_eq!(content.list.first_row(), 0);
     }
 
     #[test]
@@ -1176,7 +1148,7 @@ mod tests {
         } = opened_luke(56);
         let han = add_character(&mut world, "Han Solo");
         let original_subject = context(56);
-        state.window.as_mut().unwrap().scroll = 13.0;
+        state.window.as_mut().unwrap().list.set_first_row(13);
 
         let unrelated_open = StatusWindowState::prepare_open(
             empty.sources(&world),
@@ -1251,7 +1223,7 @@ mod tests {
         assert_eq!(content.id, Some(original));
         assert_eq!(content.subject, Some(original_subject));
         assert_eq!(content.object, StatusObject::Character(luke));
-        assert_eq!(content.scroll, 13.0);
+        assert_eq!(content.list.first_row(), 13);
     }
 
     #[test]
@@ -1887,16 +1859,6 @@ mod tests {
     }
 
     #[test]
-    fn a_shorter_cell_sits_at_the_bottom_of_its_row_and_rows_stack() {
-        // FUN_00449e00: the row advances by its taller cell; a value shorter
-        // than its label moves down by the difference, a taller one does not
-        // move the label.
-        let (tops, height) = row_tops(&[(20.0, 10.0), (10.0, 30.0), (5.0, 5.0)]);
-        assert_eq!(tops, [(0.0, 10.0), (20.0, 20.0), (50.0, 50.0)]);
-        assert_eq!(height, 55.0);
-    }
-
-    #[test]
     fn the_picture_centres_on_307_64_with_integer_halves() {
         // FUN_00443130: (0x133 - w / 2, 0x40 - h / 2).
         assert_eq!(picture_origin(80, 80), (267.0, 24.0));
@@ -1904,14 +1866,11 @@ mod tests {
     }
 
     #[test]
-    fn the_wheel_scrolls_the_list_only_as_far_as_its_rows_reach() {
-        // port: the list's 204 rows of height scroll; at scale 2, 500 screen
-        // pixels of rows overflow it by 46 window pixels.
-        assert_eq!(scrolled(0.0, -20.0, 2.0, 500.0), 10.0);
-        assert_eq!(scrolled(10.0, 8.0, 2.0, 500.0), 6.0);
-        assert_eq!(scrolled(40.0, -200.0, 2.0, 500.0), 46.0);
-        assert_eq!(scrolled(5.0, 100.0, 2.0, 500.0), 0.0);
-        assert_eq!(scrolled(5.0, -100.0, 2.0, 300.0), 0.0);
+    fn the_status_list_uses_the_recovered_fixed_row_geometry() {
+        let geometry = DragListState::<usize>::default().geometry(STATUS_LIST, 20);
+
+        assert_eq!(geometry.columns(), 1);
+        assert_eq!(geometry.whole_rows(), 5);
     }
 
     #[test]
@@ -2059,36 +2018,33 @@ mod tests {
         );
         assert_eq!(*font, crate::theme::game_font_size(5) * 2.0);
 
-        let (_, commanding, row, font) = find(&texts, "Commanding:");
+        let (_, commanding, _, font) = find(&texts, "Commanding:");
         assert!(near(*commanding, at(18.0, 47.0)), "{commanding:?}");
         assert_eq!(*font, crate::theme::game_font_size(10) * 2.0);
         let (_, none, ..) = find(&texts, "None");
         assert!(near(*none, at(18.0 + 103.0, 47.0)), "{none:?}");
+        let row_step = egui::vec2(0.0, STATUS_LIST.item.1 * 2.0);
         let (_, yavin, ..) = find(&texts, "Yavin");
-        assert!(near(*yavin, *none + egui::vec2(0.0, row.y)), "{yavin:?}");
+        assert!(near(*yavin, *none + row_step), "{yavin:?}");
         let (_, attached, ..) = find(&texts, "Attached: ");
-        assert!(
-            near(*attached, *commanding + egui::vec2(0.0, row.y)),
-            "{attached:?}"
-        );
+        assert!(near(*attached, *commanding + row_step), "{attached:?}");
     }
 
     #[test]
-    fn a_scrolled_list_draws_its_rows_higher() {
-        // A name that wraps over many lines pushes the rows past the list.
+    fn a_scrolled_list_starts_with_the_next_fixed_height_status_row() {
         let (mut world, key, yavin, _) = world_with_luke();
         world.systems[yavin].name = "Yavin ".repeat(40);
         let mut state = StatusWindowState::default();
         state.open_character(key);
         if let Some(open) = state.window.as_mut() {
-            open.scroll = 10.0;
+            open.list.set_first_row(1);
         }
         let (texts, _) = render(&world, &mut state);
         let frame = window_rect(scaled()).min;
-        let (_, commanding, ..) = find(&texts, "Commanding:");
+        let (_, attached, ..) = find(&texts, "Attached: ");
         assert!(
-            near(*commanding, frame + egui::vec2(18.0, 47.0 - 10.0) * 2.0),
-            "{commanding:?}"
+            near(*attached, frame + egui::vec2(18.0, 47.0) * 2.0),
+            "{attached:?}"
         );
     }
 

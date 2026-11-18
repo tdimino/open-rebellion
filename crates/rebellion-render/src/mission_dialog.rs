@@ -17,9 +17,12 @@ use rebellion_windowing::{ControlId, ExistingEffect, WindowId, WindowKind, Windo
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
-use crate::controls::{StrobeButton, TabControl, TabControlState, TabSpec};
-use crate::list_control::wheel_step;
-use crate::native_geometry::{exact_clicked, logical_rect, rect_contains};
+use crate::controls::LIST_BAR_29FC;
+use crate::controls::{
+    DragList, DragListEvent, DragListLayout, DragListSpec, DragListState, DragPolicy, ScreenBounds,
+    SelectionBox, SelectionBoxEvent, SelectionBoxSpec, SelectionBoxState, SelectionPolicy,
+    StrobeButton, TabControl, TabControlState, TabSpec, WheelPolicy,
+};
 use crate::sector_window::planet_resource_id;
 use crate::singleton_window_common::{
     self, impl_singleton_content_reports, impl_singleton_window_routing, PreparedContextualWindow,
@@ -55,10 +58,33 @@ const TARGET: &str = "Target";
 
 // Geometry (FUN_0046a9c0), in dialog pixels.
 const KIND_BOX: (f32, f32, f32, f32) = (35.0, 62.0, 200.0, 113.0);
+/// The mission-kind box (`FUN_0046a9c0` -> `FUN_0060bed0(.., 0x23, 0x3e,
+/// 200, 0x71, 1, ..)`): one row the box's height (`+0xa4`). port: its
+/// popup's scroll bar, art (7, `0x299a`) at `+0xbc`/`+0xbe`, is not drawn
+/// until that art is settled; the list's wheel scrolls its row.
+const KIND_SELECTION: SelectionBoxSpec = SelectionBoxSpec {
+    rect: KIND_BOX,
+    rows: 1,
+    row_height: KIND_BOX.3,
+    bar: None,
+};
 const AGENTS_LIST: (f32, f32) = (8.0, 93.0);
 const DECOYS_LIST: (f32, f32) = (136.0, 93.0);
 const LIST_SIZE: (f32, f32) = (108.0, 213.0);
 const ITEM_SIZE: (f32, f32) = (107.0, 59.0);
+const fn member_list_spec(origin: (f32, f32)) -> DragListSpec {
+    DragListSpec {
+        rect: (origin.0, origin.1, LIST_SIZE.0, LIST_SIZE.1),
+        item: ITEM_SIZE,
+        layout: DragListLayout::Stacked,
+        selection: SelectionPolicy::Multiple,
+        drag: DragPolicy::Disabled,
+        wheel: WheelPolicy::Rows,
+        bar: Some(LIST_BAR_29FC),
+    }
+}
+const AGENTS_DRAG_LIST: DragListSpec = member_list_spec(AGENTS_LIST);
+const DECOYS_DRAG_LIST: DragListSpec = member_list_spec(DECOYS_LIST);
 /// The target art is centered in a 165 by 79 box at (51, 211).
 const TARGET_BOX: (f32, f32, f32, f32) = (51.0, 211.0, 165.0, 79.0);
 /// The target's name, centered in a 185-wide box at (37, 294).
@@ -103,13 +129,12 @@ pub struct MissionDialog {
     kinds: Vec<MissionKind>,
     kind: usize,
     page: MissionDialogPage,
-    /// The mission-kind drop-down is open (`CoolSelectionBoxClass +0xe8`).
-    list_open: bool,
+    /// The mission-kind box and its popup, over the kinds' row indices.
+    kind_list: SelectionBoxState<usize>,
     agents: Vec<MissionMember>,
     decoys: Vec<MissionMember>,
-    selected: Vec<MissionMember>,
-    agents_row: usize,
-    decoys_row: usize,
+    agents_list: DragListState<MissionMember>,
+    decoys_list: DragListState<MissionMember>,
 }
 
 impl MissionDialog {
@@ -136,14 +161,25 @@ impl MissionDialog {
     /// Whether the mission-kind drop-down is open.
     #[must_use]
     pub fn list_open(&self) -> bool {
-        self.list_open
+        self.kind_list.is_open()
+    }
+
+    /// The mission kinds the box lists.
+    #[must_use]
+    pub fn kind_count(&self) -> usize {
+        self.kinds.len()
     }
 
     /// Show a page (`FUN_0046c8a0`); the drop-down belongs to the first page
     /// and closes.
     pub fn show_page(&mut self, page: MissionDialogPage) {
         self.page = page;
-        self.list_open = false;
+        self.kind_list.close();
+    }
+
+    /// The kinds' row indices, the box's items.
+    fn kind_rows(&self) -> Vec<usize> {
+        (0..self.kinds.len()).collect()
     }
 
     /// Choose a listed kind (`FUN_0060c970`); an index past the list is
@@ -156,17 +192,32 @@ impl MissionDialog {
 
     /// Flip a member's selection in whichever list holds it.
     pub fn toggle(&mut self, member: MissionMember) {
-        if let Some(index) = self.selected.iter().position(|&m| m == member) {
-            self.selected.remove(index);
-        } else if self.agents.contains(&member) || self.decoys.contains(&member) {
-            self.selected.push(member);
+        let list = if self.agents.contains(&member) {
+            Some(&mut self.agents_list)
+        } else if self.decoys.contains(&member) {
+            Some(&mut self.decoys_list)
+        } else {
+            None
+        };
+        let Some(list) = list else { return };
+        let mut selected = list.selected().to_vec();
+        if let Some(index) = selected.iter().position(|selected| *selected == member) {
+            selected.remove(index);
+        } else {
+            selected.push(member);
         }
+        list.set_selection(selected);
     }
 
     /// Cases `0xca` (to the decoys) and `0xcb` (to the agents) of
     /// `FUN_0046c3c0`: the selected members of the source list join the end
     /// of the other list in their order, and every selection clears.
     pub fn move_selected(&mut self, to_decoys: bool) {
+        let selected = if to_decoys {
+            self.agents_list.selection(&self.agents)
+        } else {
+            self.decoys_list.selection(&self.decoys)
+        };
         let (from, to) = if to_decoys {
             (&mut self.agents, &mut self.decoys)
         } else {
@@ -175,13 +226,12 @@ impl MissionDialog {
         let moved: Vec<MissionMember> = from
             .iter()
             .copied()
-            .filter(|member| self.selected.contains(member))
+            .filter(|member| selected.contains(member))
             .collect();
         from.retain(|member| !moved.contains(member));
         to.extend(moved);
-        self.selected.clear();
-        self.agents_row = self.agents_row.min(self.agents.len().saturating_sub(1));
-        self.decoys_row = self.decoys_row.min(self.decoys.len().saturating_sub(1));
+        self.agents_list = DragListState::default();
+        self.decoys_list = DragListState::default();
     }
 }
 
@@ -239,12 +289,11 @@ impl MissionDialogState {
                 kinds,
                 kind: 0,
                 page: MissionDialogPage::Mission,
-                list_open: false,
+                kind_list: SelectionBoxState::default(),
                 agents: team,
                 decoys: Vec::new(),
-                selected: Vec::new(),
-                agents_row: 0,
-                decoys_row: 0,
+                agents_list: DragListState::default(),
+                decoys_list: DragListState::default(),
                 object,
             },
             self.window_id(),
@@ -357,12 +406,11 @@ impl MissionDialogState {
             kinds,
             kind: 0,
             page: MissionDialogPage::Mission,
-            list_open: false,
+            kind_list: SelectionBoxState::default(),
             agents: team,
             decoys: Vec::new(),
-            selected: Vec::new(),
-            agents_row: 0,
-            decoys_row: 0,
+            agents_list: DragListState::default(),
+            decoys_list: DragListState::default(),
         });
         true
     }
@@ -596,6 +644,7 @@ pub fn draw_mission_dialog(
     let scale = layout.scale;
     let side = usize::from(dialog.faction == MissionFaction::Empire);
     let window = dialog_rect(layout);
+    let bounds = ScreenBounds::canvas(layout, window);
     let mut action = None;
     let mut close = false;
     let mut begin = false;
@@ -692,6 +741,10 @@ pub fn draw_mission_dialog(
                     art.0,
                     art.1,
                 )
+                .with_tooltip(match page {
+                    MissionDialogPage::Mission => "Mission",
+                    MissionDialogPage::Agents => "Agents and Decoys",
+                })
             });
             if let Some(page) = TabControl::paint_and_select(
                 &tab_specs,
@@ -765,7 +818,11 @@ pub fn draw_mission_dialog(
                     )
                     .clicked()
                     {
-                        dialog.list_open = !dialog.list_open;
+                        // Control 0x68 posts the box's command 0x3ea.
+                        let rows = dialog.kind_rows();
+                        dialog
+                            .kind_list
+                            .toggle(KIND_SELECTION, bounds, &rows, Some(dialog.kind));
                     }
                 }
                 MissionDialogPage::Agents => {
@@ -789,31 +846,23 @@ pub fn draw_mission_dialog(
                         let (x, y) = if to_decoys { DECOYS_LIST } else { AGENTS_LIST };
                         let list = at(x, y, LIST_SIZE.0, LIST_SIZE.1);
                         name(if to_decoys { "DecoyList" } else { "AgentList" }, list);
-                        let (members, row) = if to_decoys {
-                            (dialog.decoys.clone(), &mut dialog.decoys_row)
+                        let (members, list_state, spec) = if to_decoys {
+                            (dialog.decoys.clone(), &dialog.decoys_list, DECOYS_DRAG_LIST)
                         } else {
-                            (dialog.agents.clone(), &mut dialog.agents_row)
+                            (dialog.agents.clone(), &dialog.agents_list, AGENTS_DRAG_LIST)
                         };
-                        let result = draw_list(
-                            ui,
-                            &painter,
-                            cache,
-                            world,
-                            &members,
-                            &dialog.selected,
-                            row,
-                            list,
-                            scale,
-                            to_decoys,
-                            &small,
+                        let (next, activated) = draw_list(
+                            ui, &painter, cache, world, &members, list_state, spec, frame, list,
+                            scale, to_decoys, &small,
                         );
-                        if let Some(member) = result.clicked {
-                            dialog.toggle(member);
+                        if to_decoys {
+                            dialog.decoys_list = next;
+                        } else {
+                            dialog.agents_list = next;
                         }
                         // A double click (notification 0x309) acts as the
                         // move out of its list (FUN_0046c3c0.c:80-86).
-                        if let Some(member) = result.double_clicked {
-                            dialog.selected.push(member);
+                        if activated {
                             dialog.move_selected(!to_decoys);
                         }
                     }
@@ -901,36 +950,41 @@ pub fn draw_mission_dialog(
                 action = Some(MissionDialogAction::Encyclopedia);
             }
 
-            // The drop-down (FUN_0060cac0): a 200 by 117 window under the box
-            // holding a one-item list at (2, 2). port: its scroll bar
-            // (FUN_0060f640, base 0x299a) is not drawn; the wheel scrolls it.
-            if dialog.list_open && dialog.page == MissionDialogPage::Mission {
-                let (x, y, w, h) = KIND_BOX;
-                let popup = at(x, y + h, w, h + 4.0);
-                let item = at(x + 2.0, y + h + 2.0, w - 4.0, h);
+            // The mission-kind popup (FUN_0060cac0, FUN_0060d020), over every
+            // control the dialog drew: it takes the capture, so a press off it
+            // closes it and reaches nothing else.
+            let rows = dialog.kind_rows();
+            let shown = SelectionBox::show(
+                ui,
+                &painter,
+                "kind-list",
+                KIND_SELECTION,
+                bounds,
+                &rows,
+                &mut dialog.kind_list,
+                Some(dialog.kind),
+                frame,
+                scale,
+            );
+            if let Some(SelectionBoxEvent::Selected(row)) = shown.event {
+                dialog.select_kind(row);
+            }
+            if let Some(popup) = shown.popup {
                 name("KindList", popup);
-                painter.rect_filled(popup, 0.0, egui::Color32::BLACK);
-                let response = ui.interact(popup, ui.id().with("kind-list"), egui::Sense::click());
-                if response.hovered() {
-                    let wheel = ctx.input(|input| input.raw_scroll_delta.y);
-                    dialog.select_kind(wheel_step(dialog.kind, dialog.kinds.len(), wheel));
-                }
+            }
+            for (row, cell) in shown.rows(&rows, frame, scale) {
                 paint_kind(
                     &painter,
                     ctx,
                     cache,
-                    dialog.kind(),
+                    dialog.kinds[row],
                     dialog.faction,
-                    item,
+                    cell,
                     scale,
                     &small,
                 );
-                // hyp: choosing an item closes the list, as a click outside
-                // does (command 0x3e9 -> FUN_0060cbf0).
-                if exact_clicked(&response, popup) {
-                    dialog.list_open = false;
-                }
             }
+            shown.paint_bar(&painter, ctx, cache, frame, scale);
         },
     );
 
@@ -985,50 +1039,40 @@ fn paint_kind(
     );
 }
 
-#[derive(Default)]
-struct ListResult {
-    clicked: Option<MissionMember>,
-    double_clicked: Option<MissionMember>,
-}
-
 /// An agents or decoys list (`CoolDragList`, `FUN_00607ea0`): 107 by 59
-/// items, each a centered mini with its name under it. port: its scroll bar
-/// (base 0x29fc) is not drawn; the wheel scrolls it by one item.
+/// items, each a centered mini with its name under it. The shared control owns
+/// selection, activation, wheel bounds and the source 0x29fc scroll bar.
 #[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit painter, cache and geometry inputs at this drawing boundary."
 )]
 fn draw_list(
-    ui: &egui::Ui,
+    ui: &mut egui::Ui,
     painter: &egui::Painter,
     cache: &mut BmpCache,
     world: &GameWorld,
     members: &[MissionMember],
-    selected: &[MissionMember],
-    row: &mut usize,
+    state: &DragListState<MissionMember>,
+    spec: DragListSpec,
+    window: egui::Rect,
     list: egui::Rect,
     scale: f32,
     decoys: bool,
     font: &egui::FontId,
-) -> ListResult {
-    let mut result = ListResult::default();
+) -> (DragListState<MissionMember>, bool) {
     let list_painter = painter.with_clip_rect(list);
-    // The items sit over the list, so the pointer's position, not the list's
-    // hover, decides where a wheel notch goes.
-    let over = ui
-        .ctx()
-        .pointer_hover_pos()
-        .is_some_and(|point| rect_contains(list, point));
-    if over {
-        let wheel = ui.ctx().input(|input| input.raw_scroll_delta.y);
-        *row = wheel_step(*row, members.len(), wheel);
-    }
-    for (index, &member) in members.iter().enumerate().skip(*row) {
-        let offset = (index - *row) as f32 * ITEM_SIZE.1;
-        if offset >= LIST_SIZE.1 {
-            break;
-        }
-        let item = logical_rect(list, scale, 0.0, offset, ITEM_SIZE.0, ITEM_SIZE.1);
+    let control = DragList::show(
+        ui,
+        ("mission-members", decoys),
+        spec,
+        members,
+        state,
+        window,
+        scale,
+        None,
+    );
+    for (index, item) in control.screen_cells(window, scale) {
+        let member = members[index];
         let Some((mini, name)) = member_item(world, member) else {
             continue;
         };
@@ -1043,7 +1087,7 @@ fn draw_list(
                 scale,
             )
         });
-        let color = if selected.contains(&member) {
+        let color = if control.next.is_selected(member) {
             ITEM_TEXT_SELECTED
         } else {
             ITEM_TEXT
@@ -1066,23 +1110,16 @@ fn draw_list(
                 clip,
             );
         }
-        let response = ui.interact(
-            clip,
-            ui.id().with(("item", decoys, index)),
-            egui::Sense::click(),
-        );
-        if response.double_clicked() {
-            result.double_clicked = Some(member);
-        } else if exact_clicked(&response, clip) {
-            result.clicked = Some(member);
-        }
     }
-    result
+    control.paint_bar(&list_painter, ui.ctx(), cache, window, scale);
+    let activated = control.output.contains(DragListEvent::Activated);
+    (control.next, activated)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controls::DragListInput;
     use crate::test_support::{
         offset_strategic_layout, pointer_button as press, pointer_raw_input, raw_input,
     };
@@ -1834,33 +1871,84 @@ mod tests {
     }
 
     #[test]
-    fn the_missions_button_opens_the_kind_list_and_a_click_on_it_closes_it() {
-        // Control 0x68 at (101, 174) posts command 1000 to the box, which
-        // opens its drop-down under the box (FUN_0060c210, FUN_0060cac0).
+    fn the_missions_button_opens_the_kind_list_and_a_press_on_its_row_closes_it() {
+        // Control 0x68 at (101, 174) posts command 0x3ea to the box, which
+        // opens its drop-down under the box (FUN_0060c210, FUN_0060cac0):
+        // 117 pixels tall (113 * 1 + 4) from y = 175, its list 2 in
+        // (FUN_0060d020), 196 by 113 at (37, 177).
         let (world, _, mut state) = dialog_in_world(1);
 
         click(&world, &mut state, (133.0, 183.0));
         assert!(state.dialog().unwrap().list_open());
-        // The drop-down is 117 pixels tall (113 * 1 + 4) from y = 175.
-        click(&world, &mut state, (135.0, 290.0));
+        // The popup's bottom border, y 290 and 291, is its own client area
+        // and holds no row: the press reaches nothing.
+        click(&world, &mut state, (135.0, 291.0));
+        assert!(state.dialog().unwrap().list_open());
+        // A press on the row selects it and posts 0x29b (FUN_006083c0);
+        // FUN_0060c970 keeps the current kind and closes the popup.
+        click(&world, &mut state, (135.0, 289.0));
 
         assert!(!state.dialog().unwrap().list_open());
+        assert_eq!(state.dialog().unwrap().kind(), MissionKind::Diplomacy);
     }
 
     #[test]
-    fn the_open_kind_list_leaves_the_bottom_buttons_free() {
+    fn a_press_on_a_bottom_button_while_the_kind_list_is_open_only_closes_the_list() {
+        // FUN_0060d020 holds the capture: a press off the popup sends 0x3e9
+        // to the box, which closes it (FUN_0060c210 -> FUN_0060cbf0), and is
+        // forwarded to nothing, so Begin Mission under it does not begin.
         let (world, _, mut state) = dialog_in_world(1);
         click(&world, &mut state, (133.0, 183.0));
 
         let action = click(&world, &mut state, (134.0, 336.0));
+        assert!(action.is_none());
+        assert!(!state.dialog().unwrap().list_open());
 
+        let action = click(&world, &mut state, (134.0, 336.0));
         assert!(matches!(action, Some(MissionDialogAction::Begin { .. })));
     }
 
     #[test]
+    fn the_wheel_scrolls_the_kind_list_and_a_press_chooses_the_kind_shown() {
+        // The popup's list (FUN_00607ea0) scrolls its one row; the kind
+        // changes only when a press on the row commits it (FUN_0060c970).
+        let (world, _, mut state) = dialog_in_world(1);
+        click(&world, &mut state, (133.0, 183.0));
+        let notch = egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, -1.0),
+            modifiers: egui::Modifiers::default(),
+        };
+        let at = egui::Pos2::ZERO;
+        drive(
+            &world,
+            &mut state,
+            (135.0, 230.0),
+            vec![vec![notch], vec![press(at, true)], vec![press(at, false)]],
+        );
+
+        let dialog = state.dialog().unwrap();
+        assert!(!dialog.list_open());
+        assert_eq!(dialog.kind(), MissionKind::Espionage);
+    }
+
+    #[test]
+    fn a_wheel_notch_over_the_open_kind_list_leaves_the_kind_alone() {
+        let (world, _, mut state) = dialog_in_world(1);
+        click(&world, &mut state, (133.0, 183.0));
+
+        wheel_down(&world, &mut state, (135.0, 230.0));
+
+        let dialog = state.dialog().unwrap();
+        assert!(dialog.list_open());
+        assert_eq!(dialog.kind(), MissionKind::Diplomacy);
+    }
+
+    #[test]
     fn a_wheel_notch_scrolls_the_agents_list_by_one_item() {
-        // port: the lists' scroll bar (base 0x29fc) is not drawn.
-        let (world, team, mut state) = dialog_in_world(3);
+        // Four 59-pixel items overflow the 213-pixel aperture; the shared
+        // list and its 0x29fc bar therefore admit one bounded wheel step.
+        let (world, team, mut state) = dialog_in_world(4);
         click(&world, &mut state, (195.0, 36.0));
         wheel_down(&world, &mut state, (61.0, 150.0));
 
@@ -1884,17 +1972,26 @@ mod tests {
     }
 
     #[test]
-    fn a_wheel_step_moves_one_item_and_stays_in_the_list() {
-        assert_eq!(
-            [
-                wheel_step(0, 3, -1.0),
-                wheel_step(2, 3, -1.0),
-                wheel_step(2, 3, 1.0),
-                wheel_step(0, 3, 1.0),
-                wheel_step(1, 3, 0.0),
-            ],
-            [1, 2, 1, 0, 1]
-        );
+    fn a_member_list_wheel_notch_uses_the_shared_lists_visible_row_bound() {
+        let rows = [0, 1, 2, 3];
+        let mut list = DragListState::default();
+        let wheel = |delta| DragListInput {
+            pointer: Some((61.0, 150.0)),
+            wheel: delta,
+            ..DragListInput::default()
+        };
+
+        let down = list.update(AGENTS_DRAG_LIST, &rows, wheel(-1.0));
+        assert!(down.contains(DragListEvent::Scrolled));
+        assert_eq!(list.first_row(), 1);
+
+        let bounded = list.update(AGENTS_DRAG_LIST, &rows, wheel(-1.0));
+        assert!(!bounded.contains(DragListEvent::Scrolled));
+        assert_eq!(list.first_row(), 1);
+
+        let up = list.update(AGENTS_DRAG_LIST, &rows, wheel(1.0));
+        assert!(up.contains(DragListEvent::Scrolled));
+        assert_eq!(list.first_row(), 0);
     }
 
     #[test]

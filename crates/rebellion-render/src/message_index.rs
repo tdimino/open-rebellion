@@ -12,15 +12,18 @@ use egui_macroquad::egui::{self, Color32};
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
 use crate::controls::{
-    ButtonArt, ButtonDraw, ButtonImage, StrobeButton, TabControl, TabControlState, TabSpec,
+    paint_scroll_bar, scroll_bar_pointer, ScrollBar, ScrollDrag, ScrollRange, TEXT_BAR_299D,
 };
-use crate::list_control::{
-    clamp_first_row, row_click, visible_row_capacity, wheel_delta, wheel_step, RowClick,
+use crate::controls::{
+    ButtonArt, ButtonDraw, ButtonImage, DragList, DragListEvent, DragListLayout, DragListSpec,
+    DragListState, DragPolicy, SelectionPolicy, StrobeButton, TabControl, TabControlState, TabSpec,
+    WheelPolicy,
 };
+#[cfg(test)]
+use crate::list_control::visible_row_capacity;
 use crate::message_log::{
     GameMessage, MessageId, MessageLog, MessageRail, MessageTarget, POST_SILENTLY,
 };
-use crate::scroll_bar::{ScrollBar, ScrollDrag, ScrollRange, TEXT_BAR_299D};
 use rebellion_windowing::{
     ContentReport, ControlId, ExistingEffect, RoutingSnapshot, WindowId, WindowKind, WindowOwner,
     WindowSpec, WindowTransition,
@@ -162,7 +165,17 @@ const TEXT_AREA_HEIGHT: f32 = 80.0;
 const BODY_LINE_HEIGHT: f32 = 16.0;
 
 /// Visible rows the list shows at once: `194 / 21 = 9`.
+#[cfg(test)]
 const VISIBLE_ROWS: usize = visible_row_capacity(LIST_HEIGHT, ROW_HEIGHT);
+const MESSAGE_LIST_SPEC: DragListSpec = DragListSpec {
+    rect: (LIST_X, LIST_Y, LIST_WIDTH, LIST_HEIGHT),
+    item: (ROW_WIDTH, ROW_HEIGHT),
+    layout: DragListLayout::Stacked,
+    selection: SelectionPolicy::Multiple,
+    drag: DragPolicy::Disabled,
+    wheel: WheelPolicy::Rows,
+    bar: Some(TEXT_BAR_299D),
+};
 
 // ---------------------------------------------------------------------------
 // Category control specs (unchanged)
@@ -560,6 +573,7 @@ pub fn draw_message_index_shell(
                         )
                         .with_draw(ButtonDraw::Direct),
                     )
+                    .with_tooltip(category_name(control.command_id))
                 })
                 .collect::<Vec<_>>();
             if categories {
@@ -775,25 +789,15 @@ pub struct MessageIndexState {
     mode: IndexMode,
     /// The active category command (`0x79..0x82`), default All (`0x79`).
     category: u16,
-    /// Selected message ids.
-    selected: BTreeSet<MessageId>,
-    /// Anchor row index for shift-click range selection (manual pp. 78-80).
-    anchor: Option<usize>,
-    /// First visible row (scroll position).
-    scroll_offset: usize,
+    /// The message rows' selection, range anchor, first row and bar capture.
+    list: DragListState<MessageId>,
     /// Message being viewed in mode 2.
     viewing: Option<MessageId>,
-    /// Last clicked row and when, for double-click detection.
-    /// port: egui counts double clicks across widgets; the list keeps its own
-    /// (same approach as `fleet_finder.rs`).
-    last_clicked: Option<(usize, f64)>,
     /// Whether Display (`0x67`) is lit. It starts disabled; showing a
     /// kind-3 message (`FUN_00469de0`) or selecting one alone
     /// (`FUN_00467f10` cases `0x6e`, `0x90`) lights it, and nothing turns
     /// it off while the window lives.
     display_lit: bool,
-    /// The list's scroll bar press (RCDATA `0x299d`, `FUN_004665f0`).
-    list_drag: ScrollDrag,
     /// The shown message's text field: its first line and the message it
     /// belongs to. Showing a message resets it (`FUN_0041fc30`).
     body_scroll: (Option<MessageId>, usize),
@@ -824,13 +828,9 @@ impl Default for MessageIndexState {
             paintable: true,
             mode: IndexMode::List,
             category: 0x79,
-            selected: BTreeSet::new(),
-            anchor: None,
-            scroll_offset: 0,
+            list: DragListState::default(),
             viewing: None,
-            last_clicked: None,
             display_lit: false,
-            list_drag: ScrollDrag::default(),
             body_scroll: (None, 0),
             body_drag: ScrollDrag::default(),
             filled: None,
@@ -1029,8 +1029,8 @@ impl MessageIndexState {
 
     /// The selected message ids.
     #[must_use]
-    pub fn selected(&self) -> &BTreeSet<MessageId> {
-        &self.selected
+    pub fn selected(&self) -> BTreeSet<MessageId> {
+        self.list.selected().iter().copied().collect()
     }
 
     /// Switch the category, returning actions the app must handle.
@@ -1053,10 +1053,7 @@ impl MessageIndexState {
         }
 
         self.category = command;
-        self.selected.clear();
-        self.anchor = None;
-        self.scroll_offset = 0;
-        self.last_clicked = None;
+        self.list = DragListState::default();
         self.filled = None;
 
         if self.mode != IndexMode::List {
@@ -1082,21 +1079,17 @@ impl MessageIndexState {
     /// Select All (`0x90`, `FUN_00467f10`): select every row the category
     /// shows.
     pub fn select_all(&mut self, rows: &[&GameMessage]) {
-        self.selected = rows.iter().map(|msg| msg.id).collect();
-        self.anchor = None;
-        self.last_clicked = None;
+        self.list.set_selection(rows.iter().map(|msg| msg.id));
     }
 
     /// Delete the currently selected messages. Returns a
     /// [`MessageIndexAction::DeleteSelected`] the app must apply.
     pub fn delete_selected(&mut self) -> Option<MessageIndexAction> {
-        if self.selected.is_empty() {
+        if self.list.selected().is_empty() {
             return None;
         }
-        let ids: Vec<MessageId> = self.selected.iter().copied().collect();
-        self.selected.clear();
-        self.anchor = None;
-        self.last_clicked = None;
+        let ids: Vec<MessageId> = self.selected().into_iter().collect();
+        self.list.set_selection(std::iter::empty());
         Some(MessageIndexAction::DeleteSelected(ids))
     }
 
@@ -1106,10 +1099,10 @@ impl MessageIndexState {
     pub fn toggle_display(&mut self) -> Option<MessageIndexAction> {
         match self.mode {
             IndexMode::List => {
-                let id = *self.selected.first()?;
+                let selected = self.selected();
+                let id = *selected.first()?;
                 self.mode = IndexMode::SingleMessage;
                 self.viewing = Some(id);
-                self.last_clicked = None;
                 Some(MessageIndexAction::MessageDisplayed(id))
             }
             IndexMode::SingleMessage => {
@@ -1131,8 +1124,7 @@ impl MessageIndexState {
         let next = if down { at + 1 } else { at.checked_sub(1)? };
         let id = rows.get(next)?.id;
         self.viewing = Some(id);
-        self.selected = BTreeSet::from([id]);
-        self.anchor = Some(next);
+        self.list.set_selection([id]);
         Some(MessageIndexAction::MessageDisplayed(id))
     }
 
@@ -1142,11 +1134,9 @@ impl MessageIndexState {
     pub fn view_row(&mut self, rows: &[&GameMessage], row: usize) -> Option<MessageIndexAction> {
         let at = row.checked_sub(1)?;
         let id = rows.get(at)?.id;
-        self.selected = BTreeSet::from([id]);
-        self.anchor = Some(at);
+        self.list.set_selection([id]);
         self.mode = IndexMode::SingleMessage;
         self.viewing = Some(id);
-        self.last_clicked = None;
         Some(MessageIndexAction::MessageDisplayed(id))
     }
 
@@ -1173,7 +1163,6 @@ impl MessageIndexState {
     pub fn return_to_list(&mut self) {
         self.mode = IndexMode::List;
         self.viewing = None;
-        self.last_clicked = None;
     }
 
     /// Build a report for the interface fixture, mirroring
@@ -1196,8 +1185,8 @@ impl MessageIndexState {
                     tick: msg.tick,
                 })
                 .collect(),
-            selected: self.selected.clone(),
-            scroll_offset: self.scroll_offset,
+            selected: self.selected(),
+            scroll_offset: self.list.first_row(),
             viewing: self.viewing,
         }
     }
@@ -1340,17 +1329,12 @@ pub fn draw_message_index(
     // only selected row leaves it in the original (2026-10-09 VM capture).
     let ids: Vec<MessageId> = rows.iter().map(|msg| msg.id).collect();
     if state.mode == IndexMode::List && state.filled.as_ref() != Some(&ids) {
-        let any_visible_selected = ids.iter().any(|id| state.selected.contains(id));
+        let any_visible_selected = ids.iter().any(|id| state.list.is_selected(*id));
         if !any_visible_selected && !ids.is_empty() {
-            state.selected.clear();
-            state.selected.insert(ids[0]);
-            state.anchor = Some(0);
+            state.list.set_selection([ids[0]]);
         }
-        state.filled = Some(ids);
+        state.filled = Some(ids.clone());
     }
-
-    // Clamp scroll.
-    state.scroll_offset = clamp_first_row(state.scroll_offset, rows.len(), VISIBLE_ROWS);
 
     match state.mode {
         IndexMode::List => {
@@ -1381,14 +1365,14 @@ pub fn draw_message_index(
         IndexMode::SingleMessage => state.viewing,
         IndexMode::List => rows
             .iter()
-            .find(|msg| state.selected.contains(&msg.id))
+            .find(|msg| state.list.is_selected(msg.id))
             .map(|msg| msg.id),
     }
     .and_then(|id| rows.iter().find(|msg| msg.id == id));
     // FUN_00469de0 lights Display for a shown kind-3 message; in mode 1 a
     // selection of exactly one does (cases 0x6e and 0x90). hyp: the
     // first-row selection on opening counts as one, untraced.
-    let one_selected = state.mode == IndexMode::SingleMessage || state.selected.len() == 1;
+    let one_selected = state.mode == IndexMode::SingleMessage || state.list.selected().len() == 1;
     if one_selected && current.is_some_and(|msg| msg.target.is_some()) {
         state.display_lit = true;
     }
@@ -1432,9 +1416,8 @@ fn draw_list_rows(
     state: &mut MessageIndexState,
 ) -> Vec<MessageIndexAction> {
     let mut actions = Vec::new();
-    let mut clicked_row: Option<(usize, f64)> = None;
-    let mut display_message: Option<MessageId> = None;
-    let mut wheel = 0.0_f32;
+    let ids: Vec<MessageId> = rows.iter().map(|message| message.id).collect();
+    let mut list_response = None;
 
     let list_id = egui::Id::new("message-index-list");
     egui::Area::new(list_id)
@@ -1447,27 +1430,29 @@ fn draw_list_rows(
             let list_size = egui::vec2(LIST_WIDTH * scale, LIST_HEIGHT * scale);
             let (list_rect, _) = ui.allocate_exact_size(list_size, egui::Sense::hover());
             let painter = ui.painter().with_clip_rect(list_rect);
+            let window_rect = egui::Rect::from_min_size(
+                origin,
+                egui::vec2(MESSAGE_INDEX_WIDTH * scale, MESSAGE_INDEX_HEIGHT * scale),
+            );
+            let control = DragList::show(
+                ui,
+                "message-rows",
+                MESSAGE_LIST_SPEC,
+                &ids,
+                &state.list,
+                window_rect,
+                scale,
+                None,
+            );
 
             // hyp: font 13 (unread) is font 10 (read) in bold; neither is
             // mapped to a typeface, so the port draws one size and thickens
             // unread rows by drawing them twice, a pixel apart.
             let font = egui::FontId::proportional((11.0 * scale).max(7.0));
 
-            for line in 0..VISIBLE_ROWS {
-                let row_index = state.scroll_offset + line;
-                let Some(msg) = rows.get(row_index) else {
-                    break;
-                };
-
-                let row_rect = egui::Rect::from_min_size(
-                    egui::pos2(
-                        list_rect.min.x,
-                        list_rect.min.y + ROW_HEIGHT * scale * line as f32,
-                    ),
-                    egui::vec2(ROW_WIDTH * scale, ROW_HEIGHT * scale),
-                );
-
-                let is_selected = state.selected.contains(&msg.id);
+            for (row_index, row_rect) in control.screen_cells(window_rect, scale) {
+                let msg = rows[row_index];
+                let is_selected = control.next.is_selected(msg.id);
 
                 // FUN_00468ab0: a row's pictures are its category icon
                 // copied in at (1, 1), alone (normal) or over the side's
@@ -1513,120 +1498,25 @@ fn draw_list_rows(
                         Color32::WHITE,
                     );
                 }
-
-                // Click interaction.
-                match row_click(
-                    ui,
-                    ctx,
-                    row_rect,
-                    ui.id().with(("msg-index-row", row_index)),
-                    state.last_clicked,
-                    row_index,
-                    true,
-                ) {
-                    RowClick::Open => display_message = Some(msg.id),
-                    RowClick::Select(now) => clicked_row = Some((row_index, now)),
-                    RowClick::None => {}
-                }
             }
 
-            // FUN_004665f0 gives the list the bar of RCDATA 0x299d.
-            let window_rect = egui::Rect::from_min_size(
-                origin,
-                egui::vec2(MESSAGE_INDEX_WIDTH * scale, MESSAGE_INDEX_HEIGHT * scale),
-            );
-            let bar = ScrollBar::new(TEXT_BAR_299D, LIST_X, LIST_Y, LIST_WIDTH, LIST_HEIGHT);
-            let range = ScrollRange {
-                first: state.scroll_offset,
-                visible: LIST_HEIGHT / ROW_HEIGHT,
-                total: rows.len(),
-            };
-            let pointer = crate::scroll_bar::egui_pointer(ctx, window_rect, scale);
-            state.scroll_offset = bar.update(&mut state.list_drag, range, VISIBLE_ROWS, pointer);
-            let range = ScrollRange {
-                first: state.scroll_offset,
-                ..range
-            };
-            crate::scroll_bar::paint_egui(
-                ui.painter(),
-                ctx,
-                cache,
-                window_rect,
-                scale,
-                &bar.blits(range, state.list_drag, pointer),
-            );
-
-            // Scroll wheel over the list.
-            wheel = wheel_delta(ui, list_rect);
+            control.paint_bar(&painter, ctx, cache, window_rect, scale);
+            list_response = Some(control);
         });
 
-    // Apply click.
-    if let Some((row_index, now)) = clicked_row {
-        state.last_clicked = Some((row_index, now));
-        let modifiers = ctx.input(|i| i.modifiers);
-        apply_click(state, row_index, rows, modifiers);
-    }
-
-    // Apply double-click: transition to mode 2.
-    if let Some(id) = display_message {
+    let response = list_response.expect("the Message Index list area always runs its control");
+    let activated = response.output.contains(DragListEvent::Activated);
+    state.list = response.next;
+    if activated {
+        let Some(id) = state.list.first_selected(&ids) else {
+            return actions;
+        };
         state.mode = IndexMode::SingleMessage;
         state.viewing = Some(id);
-        state.last_clicked = None;
         actions.push(MessageIndexAction::MessageDisplayed(id));
     }
 
-    // Apply scroll.
-    if wheel != 0.0 {
-        let max_scroll = rows.len().saturating_sub(VISIBLE_ROWS);
-        state.scroll_offset = wheel_step(state.scroll_offset, max_scroll.saturating_add(1), wheel);
-    }
-
     actions
-}
-
-/// Apply a click with modifiers to the selection.
-///
-/// Manual pp. 78-80: click selects one, Ctrl toggles, Shift extends range.
-fn apply_click(
-    state: &mut MessageIndexState,
-    row_index: usize,
-    rows: &[&GameMessage],
-    modifiers: egui::Modifiers,
-) {
-    let Some(msg) = rows.get(row_index) else {
-        return;
-    };
-
-    if modifiers.ctrl || modifiers.command {
-        // Ctrl-click: toggle one message (manual p. 43).
-        if !state.selected.remove(&msg.id) {
-            state.selected.insert(msg.id);
-        }
-        state.anchor = Some(row_index);
-    } else if modifiers.shift {
-        // Shift-click: contiguous range from anchor (manual p. 43).
-        if let Some(anchor) = state.anchor {
-            let start = anchor.min(row_index);
-            let end = anchor.max(row_index);
-            state.selected.clear();
-            for i in start..=end {
-                if let Some(m) = rows.get(i) {
-                    state.selected.insert(m.id);
-                }
-            }
-            // anchor stays
-        } else {
-            // No anchor: treat as normal click.
-            state.selected.clear();
-            state.selected.insert(msg.id);
-            state.anchor = Some(row_index);
-        }
-    } else {
-        // Normal click: select one, clear the rest.
-        state.selected.clear();
-        state.selected.insert(msg.id);
-        state.anchor = Some(row_index);
-    }
 }
 
 /// Draw mode 2 (`FUN_00469de0`): the title bar, the message's picture, its
@@ -1798,7 +1688,7 @@ fn draw_single_message(
             visible: TEXT_AREA_HEIGHT / line_height,
             total: if overflows { lines } else { 0 },
         };
-        let pointer = crate::scroll_bar::egui_pointer(ctx, window_rect, scale);
+        let pointer = scroll_bar_pointer(ctx, window_rect, scale);
         let first = bar.update(
             &mut state.body_drag,
             range,
@@ -1815,7 +1705,7 @@ fn draw_single_message(
             galley,
             Color32::WHITE,
         );
-        crate::scroll_bar::paint_egui(
+        paint_scroll_bar(
             painter,
             ctx,
             cache,
@@ -1998,8 +1888,8 @@ mod tests {
         let mut manager = WindowManager::new();
         let mut state = MessageIndexState::new();
         let id = open_managed_message_index(&mut manager, &mut state, 0x82);
-        state.selected = BTreeSet::from([17]);
-        state.scroll_offset = 4;
+        state.list.set_selection([17]);
+        state.list.set_first_row(4);
 
         let duplicate = MessageIndexState::prepare_open(0x79).unwrap();
         let committed = manager
@@ -2017,8 +1907,8 @@ mod tests {
             Some((id, Vec::new()))
         );
         assert_eq!(state.category(), 0x82);
-        assert_eq!(state.selected(), &BTreeSet::from([17]));
-        assert_eq!(state.scroll_offset, 4);
+        assert_eq!(state.selected(), BTreeSet::from([17]));
+        assert_eq!(state.list.first_row(), 4);
     }
 
     #[test]
@@ -2165,8 +2055,8 @@ mod tests {
         let mut manager = WindowManager::new();
         let mut state = MessageIndexState::new();
         let id = open_managed_message_index(&mut manager, &mut state, 0x79);
-        state.selected = BTreeSet::from([23]);
-        state.scroll_offset = 6;
+        state.list.set_selection([23]);
+        state.list.set_first_row(6);
         let focus = FocusTarget {
             window: id,
             control: None,
@@ -2182,8 +2072,8 @@ mod tests {
             Some((id, Vec::new()))
         );
 
-        assert_eq!(state.selected(), &BTreeSet::from([23]));
-        assert_eq!(state.scroll_offset, 6);
+        assert_eq!(state.selected(), BTreeSet::from([23]));
+        assert_eq!(state.list.first_row(), 6);
         assert_eq!(manager.begin_frame().focused(), Some(focus));
     }
 
@@ -2585,6 +2475,31 @@ mod tests {
         (make_rows(log), MessageIndexState::new())
     }
 
+    fn apply_click(
+        state: &mut MessageIndexState,
+        row_index: usize,
+        rows: &[&GameMessage],
+        modifiers: egui::Modifiers,
+    ) {
+        let ids: Vec<MessageId> = rows.iter().map(|message| message.id).collect();
+        let point = (LIST_X + 1.0, LIST_Y + ROW_HEIGHT * row_index as f32 + 1.0);
+        let input = |pressed, released| crate::controls::DragListInput {
+            pointer: Some(point),
+            primary_pressed: pressed,
+            primary_down: pressed,
+            primary_released: released,
+            ctrl: modifiers.command || modifiers.ctrl,
+            shift: modifiers.shift,
+            ..crate::controls::DragListInput::default()
+        };
+        let _ = state
+            .list
+            .update(MESSAGE_LIST_SPEC, &ids, input(true, false));
+        let _ = state
+            .list
+            .update(MESSAGE_LIST_SPEC, &ids, input(false, true));
+    }
+
     fn state_with_selected<'a>(
         log: &'a MessageLog,
         indices: &[usize],
@@ -2616,10 +2531,10 @@ mod tests {
         let (rows, mut state) = selection_state(&log);
 
         apply_click(&mut state, 0, &rows, egui::Modifiers::NONE);
-        assert_eq!(state.selected, BTreeSet::from([rows[0].id]));
+        assert_eq!(state.selected(), BTreeSet::from([rows[0].id]));
 
         apply_click(&mut state, 2, &rows, egui::Modifiers::NONE);
-        assert_eq!(state.selected, BTreeSet::from([rows[2].id]));
+        assert_eq!(state.selected(), BTreeSet::from([rows[2].id]));
     }
 
     #[test]
@@ -2629,11 +2544,11 @@ mod tests {
         let (rows, mut state) = state_with_selected(&log, &[0, 1]);
         let ctrl = modifiers(true, false);
 
-        assert_eq!(state.selected, BTreeSet::from([rows[0].id, rows[1].id]));
+        assert_eq!(state.selected(), BTreeSet::from([rows[0].id, rows[1].id]));
 
         // Toggle off.
         apply_click(&mut state, 0, &rows, ctrl);
-        assert_eq!(state.selected, BTreeSet::from([rows[1].id]));
+        assert_eq!(state.selected(), BTreeSet::from([rows[1].id]));
     }
 
     #[test]
@@ -2650,10 +2565,10 @@ mod tests {
         apply_click(&mut state, 2, &rows, shift);
 
         assert_eq!(
-            state.selected,
+            state.selected(),
             BTreeSet::from([rows[0].id, rows[1].id, rows[2].id])
         );
-        assert_eq!(state.anchor, Some(0)); // anchor stays
+        assert_eq!(state.list.anchor(), Some(rows[0].id));
     }
 
     #[test]
@@ -2667,7 +2582,7 @@ mod tests {
         apply_click(&mut state, 0, &rows, shift);
 
         assert_eq!(
-            state.selected,
+            state.selected(),
             BTreeSet::from([rows[0].id, rows[1].id, rows[2].id])
         );
     }
@@ -2680,8 +2595,8 @@ mod tests {
 
         apply_click(&mut state, 1, &rows, shift);
 
-        assert_eq!(state.selected, BTreeSet::from([rows[1].id]));
-        assert_eq!(state.anchor, Some(1));
+        assert_eq!(state.selected(), BTreeSet::from([rows[1].id]));
+        assert_eq!(state.list.anchor(), Some(rows[1].id));
     }
 
     // ── Delete ──────────────────────────────────────────────────────────
@@ -2696,7 +2611,7 @@ mod tests {
         let action = state.delete_selected();
 
         assert!(matches!(action, Some(MessageIndexAction::DeleteSelected(ids)) if ids.len() == 2));
-        assert_empty!(state.selected);
+        assert_empty!(state.list.selected());
     }
 
     #[test]
@@ -2737,7 +2652,7 @@ mod tests {
         assert_eq!(state.set_category(0x79), [MessageIndexAction::AdviceHidden]);
 
         apply_click(&mut state, 0, &rows, egui::Modifiers::NONE);
-        assert_eq!(state.selected(), &BTreeSet::from([rows[0].id]));
+        assert_eq!(state.selected(), BTreeSet::from([rows[0].id]));
         state.toggle_display();
         assert_eq!(state.mode(), IndexMode::SingleMessage);
         state.set_category(0x7a);
@@ -2846,13 +2761,13 @@ mod tests {
         let mut state = MessageIndexState::new();
 
         apply_click(&mut state, 1, &rows, egui::Modifiers::NONE);
-        state.scroll_offset = 5;
+        state.list.set_first_row(5);
 
         state.set_category(0x7b);
 
-        assert_empty!(state.selected);
-        assert_eq!(state.scroll_offset, 0);
-        assert_eq!(state.anchor, None);
+        assert_empty!(state.list.selected());
+        assert_eq!(state.list.first_row(), 0);
+        assert_eq!(state.list.anchor(), None);
     }
 
     // ── Report ──────────────────────────────────────────────────────────
@@ -3035,7 +2950,7 @@ mod tests {
 
         drive(&log, &mut state, click_at(row_center(1)));
 
-        assert_eq!(state.selected, BTreeSet::from([rows[1].id]));
+        assert_eq!(state.selected(), BTreeSet::from([rows[1].id]));
     }
 
     #[test]
@@ -3048,7 +2963,7 @@ mod tests {
         frames.extend(ctrl_click_at(row_center(2)));
         drive(&log, &mut state, frames);
 
-        assert_eq!(state.selected, BTreeSet::from([rows[0].id, rows[2].id]));
+        assert_eq!(state.selected(), BTreeSet::from([rows[0].id, rows[2].id]));
     }
 
     #[test]
@@ -3062,7 +2977,7 @@ mod tests {
         drive(&log, &mut state, frames);
 
         assert_eq!(
-            state.selected,
+            state.selected(),
             BTreeSet::from([rows[0].id, rows[1].id, rows[2].id])
         );
     }
@@ -3120,7 +3035,7 @@ mod tests {
         let actions = state.set_category(0x82);
 
         assert!(actions.contains(&MessageIndexAction::AdviceShown));
-        assert_empty!(state.selected);
+        assert_empty!(state.list.selected());
         assert_eq!(state.category, 0x82);
     }
 }

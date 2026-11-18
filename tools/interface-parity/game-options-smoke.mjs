@@ -83,6 +83,32 @@ try {
       await page.waitForTimeout(350); // the menu's first frame after the movie
       await click(850, 500); // main-menu CD-ROM: original command 0x68
       await screenshot('main-options');
+
+      // FUN_00407180 creates two FUN_00604570 sliders at logical
+      // (392,130) and (392,190), each with a 199-pixel integer travel. The
+      // 1280x960 journey is an exact 2x canvas, so drag both authentic
+      // controls before muting the music for the rest of the silent run.
+      const sliderClip = y => ({ x: 784, y, width: 424, height: 108 });
+      const musicBefore = await page.screenshot({ clip: sliderClip(260) });
+      await page.mouse.move(1112, 314);
+      await page.mouse.down();
+      await page.mouse.move(894, 314, { steps: 8 });
+      await page.mouse.up();
+      await consoleLine(/\[audio\] music_volume=0\.25 muted=false music_muted=false/);
+      const musicAfter = await page.screenshot({ clip: sliderClip(260) });
+      assert.notEqual(Buffer.compare(musicBefore, musicAfter), 0,
+        'music slider drag did not move its original bitmap handle');
+
+      const soundBefore = await page.screenshot({ clip: sliderClip(380) });
+      await page.mouse.move(1184, 434);
+      await page.mouse.down();
+      await page.mouse.move(1033, 434, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForTimeout(350);
+      const soundAfter = await page.screenshot({ clip: sliderClip(380) });
+      assert.notEqual(Buffer.compare(soundBefore, soundAfter), 0,
+        'sound slider drag did not move its original bitmap handle');
+
       await click(720, 185); // keep in-game music muted as well as Chromium
       await click(195, 805); // Restart (0x91): with no game, straight back to the shuttle cockpit
       await click(faction === 'alliance' ? 945 : 360, 665);
@@ -194,7 +220,7 @@ try {
       await screenshot('browser-exit');
       await page.getByRole('button', { name: 'Restart game' }).waitFor();
       assert.equal(errors.length, 0, errors.join('\n'));
-      results.push({ faction, status: 'pass', fingerprint, restoredLoads: consoleLog.filter(line => line.includes('[campaign] restored')), assertions: ['current-version save', 'overwrite cancel', 'load cancel', 'matching load and restored Galaxy fingerprint', 'row 6 save/load', 'saved alert, row-flag overwrite and load', 'Escape keeps the window, Return/re-entry', 'corrupt load/overwrite cancel', 'browser exit and restart affordance', 'no page errors'] });
+      results.push({ faction, status: 'pass', fingerprint, restoredLoads: consoleLog.filter(line => line.includes('[campaign] restored')), assertions: ['music slider drag', 'sound slider drag', 'current-version save', 'overwrite cancel', 'load cancel', 'matching load and restored Galaxy fingerprint', 'row 6 save/load', 'saved alert, row-flag overwrite and load', 'Escape keeps the window, Return/re-entry', 'corrupt load/overwrite cancel', 'browser exit and restart affordance', 'no page errors'] });
     } catch (error) {
       await screenshot('failure').catch(() => {});
       results.push({ faction, status: 'fail', error: String(error) });

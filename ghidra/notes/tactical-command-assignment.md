@@ -47,6 +47,56 @@ Stand Off to code 2, applied through `FUN_00595c20` to the tactic at `+0x38`. St
 Check uses `1113 / 1114` at `(548,230) 27x25`; cancel uses `1115 / 1116` at
 `(588,230) 27x25`.
 
+### A tactic toggle clears the pending maneuver
+
+The sequence Hammer, Anvil, Left Hook, Right Hook, Surround, check leaves the
+unit's order as **No Orders** and its tactic as **Surround**. The four earlier
+maneuver clicks do not accumulate: `FUN_005dd140` (`0x005dd140`) clears state
+bit 4 from every other maneuver button whenever one is selected, through
+`FUN_006030f0` (`0x006030f0`). Right Hook is therefore the sole selected
+maneuver before the toggle.
+
+The decisive path is the intentional switch fallthrough in `FUN_005dd080`
+(`0x005dd080`). Message `0xdd20` flips the tactic bitmap, then falls through
+to the five maneuver-message cases and calls `FUN_005dd140(this, 0xdd20)`.
+Since the five maneuver buttons have ids `0xdd10` through `0xdd14`, none
+matches `0xdd20`; `FUN_005dd140` clears state bit 4 from all five. The check
+message `0xdd01` later calls `FUN_005dd3a0` (`0x005dd3a0`).
+
+`FUN_005dd3a0` initializes the pending order to zero, scans the same five
+buttons for state bit 4, and maps only a selected button to order 7 through 11.
+With every button cleared, the pending order stays zero. If the unit already
+has another order, the final comparison dispatches zero through
+`FUN_00595c00` (`0x00595c00`); if it already has no order, no order write is
+needed. The same function independently reads the tactic toggle and maps its
+selected state to Surround code 1, so `FUN_00595c20` (`0x00595c20`) still
+applies Surround.
+
+In the observed sequence the stored order starts at zero, so the zero-order
+comparison suppresses `FUN_00595c00` entirely; only the tactic setter runs.
+Consequently `FUN_005ca6d0` and the four waypoint constructors
+`FUN_005cef00`, `FUN_005cf1a0`, `FUN_005cf410`, and `FUN_005cf680` are not
+reached, including their faction-relative waypoint branches. If the unit had a
+nonzero order beforehand, this same path would dispatch zero and clear it
+rather than dispatching Right Hook.
+
+This result is common to both factions. The only object branch in
+`FUN_005dd3a0` is selected-object kind: kind 1 reads the shared order and
+tactic through `FUN_00596af0` / `FUN_00596b30`, while kinds 3 and 4 use
+`FUN_00596b20` / `FUN_00596b60`. Both branches join before the button scan and
+the zero-order / Surround commit; there is no Alliance-versus-Empire branch.
+`FUN_005dd080.c`, `FUN_005dd140.c`, and `FUN_005dd3a0.c` were read in full for
+this result.
+
+Manual pp. 149-150, Figs. 4.13-4.14, presents the check mark as assigning a
+maneuver/tactic after a maneuver is selected. Manual p. 151 says that
+deselecting selected orders and confirming cancels the order. The executable
+trace is therefore the authority for this edge case: toggling the tactic
+performs that deselection as a side effect. The current port is **Partial**:
+`activate_tactical_command` in `tactical_view.rs` changes only
+`pending_tactic` for `ToggleTactic`, preserving `pending_order`, so the same
+sequence commits Right Hook instead of No Orders.
+
 ## Missions
 
 `FUN_005def00` creates panel `1308`. `FUN_005df110` constructs its controls,
@@ -112,7 +162,8 @@ Attack Death Star for one when the local side is the Alliance
 `FUN_00596b30` and `FUN_00596b60` read the tactic at `+0x38`.
 `FUN_00595c00` applies an order and `FUN_00595c20` applies a tactic.
 
-P58F9 restores exact panel selection, disabled states, cancel behavior, and
-committed order values for selected capital ships and fighter groups. It does
-not claim order execution, Death Star enablement, turning, collision response,
-formation behavior, or lossless A0 visual parity.
+P58F9 restores the panel selection, disabled states, ordinary cancel behavior,
+and direct maneuver commits for selected capital ships and fighter groups. It
+misses the tactic-toggle fallthrough above: that edge case is tracked by port
+bead `or-p-hook-surround-orders-ulz`. It does not claim Death Star enablement,
+collision response, or lossless A0 visual parity.

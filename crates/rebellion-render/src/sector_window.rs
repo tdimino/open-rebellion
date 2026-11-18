@@ -7,6 +7,7 @@
 //! A system with fleets shows the fleet icon at its planet's top right; a
 //! double click on it opens the Fleet window (`ghidra/notes/fleet-window.md`).
 
+use crate::controls::StatusBar;
 use crate::native_geometry::{logical_point, logical_rect, paint_texture_rect};
 use crate::object_menu::MenuObject;
 #[cfg(any(debug_assertions, not(target_arch = "wasm32")))]
@@ -2595,21 +2596,28 @@ fn paint_meter(
     (foreground, background): (egui::Color32, egui::Color32),
     ticks: Option<egui::Color32>,
 ) {
-    painter.rect_filled(rect, 0.0, background);
-    if value == 0 || max == 0 {
-        return;
-    }
     // Integer pixels, as the original's Rectangle call takes them.
     let width = (rect.width() / scale).round() as u32;
-    let filled = (width * value.min(max) / max) as f32;
-    painter.rect_filled(
-        egui::Rect::from_min_size(rect.min, egui::vec2(filled * scale, rect.height())),
-        0.0,
-        foreground,
-    );
+    let status = if ticks.is_some() {
+        StatusBar::new(value, max).with_ticks(1)
+    } else {
+        StatusBar::new(value, max)
+    }
+    .layout(width);
+    painter.rect_filled(rect, 0.0, background);
+    if status.fill_width > 0 {
+        painter.rect_filled(
+            egui::Rect::from_min_size(
+                rect.min,
+                egui::vec2(status.fill_width as f32 * scale, rect.height()),
+            ),
+            0.0,
+            foreground,
+        );
+    }
     if let Some(color) = ticks {
-        for unit in 0..max {
-            let x = rect.min.x + (unit * width / max) as f32 * scale;
+        for tick in status.ticks {
+            let x = rect.min.x + tick as f32 * scale;
             painter.line_segment(
                 [egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)],
                 egui::Stroke::new(scale.max(1.0), color),

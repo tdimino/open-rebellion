@@ -24,9 +24,11 @@ use std::hash::Hash;
 
 use egui_macroquad::egui;
 
+use super::{
+    paint_scroll_bar, ScrollBar, ScrollBarArt, ScrollBlit, ScrollDrag, ScrollPointer, ScrollRange,
+};
 use crate::bmp_cache::BmpCache;
 use crate::native_geometry::logical_rect;
-use crate::scroll_bar::{ScrollBar, ScrollBarArt, ScrollDrag, ScrollPointer, ScrollRange};
 use crate::windowing_input::{PointerButtonId, PointerPhase};
 
 /// The squared release distance a drag must exceed before it drops
@@ -50,13 +52,6 @@ pub(crate) enum SelectionPolicy {
     /// Modifiers are ignored and every selection replaces the last.
     Single,
     /// Ctrl toggles an item and Shift selects a range from the anchor.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Recovered list policy the remaining CoolDragList consumers select (or-ep-uniform-ui-controls-gru5.5)."
-        )
-    )]
     Multiple,
 }
 
@@ -90,13 +85,6 @@ pub(crate) enum WheelPolicy {
 
 /// One keyboard command `FUN_006083c0` handles in case `0x100`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "Recovered list policy the remaining CoolDragList consumers select (or-ep-uniform-ui-controls-gru5.5)."
-    )
-)]
 pub(crate) enum ListKey {
     Up,
     Down,
@@ -230,7 +218,7 @@ impl DragListGeometry {
         clippy::cast_sign_loss,
         reason = "The point is inside the list, so its cell offsets are non-negative."
     )]
-    fn item_at(&self, point: (f32, f32)) -> Option<usize> {
+    pub(crate) fn item_at(&self, point: (f32, f32)) -> Option<usize> {
         if !self.spec.contains(point) || self.on_bar(point) {
             return None;
         }
@@ -285,6 +273,10 @@ struct Capture {
 pub(crate) struct DragListState<K> {
     selected: Vec<K>,
     anchor: Option<K>,
+    /// The item released by this list's preceding click. Egui's click count
+    /// is pointer-global, so the control still verifies that both clicks
+    /// belonged to the same list item before posting `0x309`.
+    last_click: Option<K>,
     first_row: usize,
     scroll: ScrollDrag,
     capture: Option<Capture>,
@@ -295,6 +287,7 @@ impl<K> Default for DragListState<K> {
         Self {
             selected: Vec::new(),
             anchor: None,
+            last_click: None,
             first_row: 0,
             scroll: ScrollDrag::default(),
             capture: None,
@@ -318,13 +311,6 @@ impl<K: Copy + PartialEq> DragListState<K> {
     }
 
     /// The selected items in row order (`FUN_00609410`).
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Recovered list policy the remaining CoolDragList consumers select (or-ep-uniform-ui-controls-gru5.5)."
-        )
-    )]
     pub(crate) fn selection(&self, rows: &[K]) -> Vec<K> {
         rows.iter()
             .copied()
@@ -342,23 +328,20 @@ impl<K: Copy + PartialEq> DragListState<K> {
     }
 
     /// The selected items in selection order.
-    #[cfg(test)]
     pub(crate) fn selected(&self) -> &[K] {
         &self.selected
     }
 
     #[cfg(test)]
+    pub(crate) const fn anchor(&self) -> Option<K> {
+        self.anchor
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_first_row(&mut self, first_row: usize) {
         self.first_row = first_row;
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Recovered list policy the remaining CoolDragList consumers select (or-ep-uniform-ui-controls-gru5.5)."
-        )
-    )]
     pub(crate) const fn is_capturing(&self) -> bool {
         self.capture.is_some()
     }
@@ -369,9 +352,35 @@ impl<K: Copy + PartialEq> DragListState<K> {
         self.selected = item.into_iter().collect();
     }
 
+    /// Replace the selection without notifying, for an owner's Select All,
+    /// refill or restored interface state.
+    pub(crate) fn set_selection(&mut self, items: impl IntoIterator<Item = K>) {
+        self.selected = items.into_iter().collect();
+        self.anchor = None;
+    }
+
+    /// Select one owner-chosen item and reveal it with the control's own
+    /// layout, as a parent calling `FUN_00609500` followed by
+    /// `FUN_00609ed0` does after prefix search or a category refill.
+    pub(crate) fn select_and_reveal(&mut self, spec: DragListSpec, rows: &[K], item: Option<K>) {
+        self.select_only(item);
+        self.anchor = item;
+        let Some(index) = item.and_then(|item| rows.iter().position(|row| *row == item)) else {
+            return;
+        };
+        let geometry = self.geometry(spec, rows.len());
+        self.first_row = crate::list_control::reveal_row(
+            geometry.first_row,
+            index / geometry.columns,
+            geometry.whole_rows(),
+        );
+    }
+
     /// Capture loss (`0x215`, `0x40d`): end the press and any drag.
     pub(crate) fn cancel_capture(&mut self) -> bool {
-        self.capture.take().is_some()
+        let cancelled = self.capture.take().is_some() || self.scroll != ScrollDrag::default();
+        self.scroll = ScrollDrag::default();
+        cancelled
     }
 
     /// The frame's layout for `item_count` items.
@@ -379,10 +388,39 @@ impl<K: Copy + PartialEq> DragListState<K> {
         DragListGeometry::new(spec, item_count, self.first_row)
     }
 
+    /// Logical cells for a native-painter owner such as the tactical modal.
+    pub(crate) fn logical_cells(
+        &self,
+        spec: DragListSpec,
+        item_count: usize,
+    ) -> Vec<(usize, (f32, f32, f32, f32))> {
+        self.geometry(spec, item_count).cells().collect()
+    }
+
+    /// Canonical bar pieces for a native-painter owner after this frame's
+    /// input has updated the control state.
+    pub(crate) fn bar_blits(
+        &self,
+        spec: DragListSpec,
+        item_count: usize,
+        pointer: ScrollPointer,
+    ) -> Vec<ScrollBlit> {
+        let geometry = self.geometry(spec, item_count);
+        geometry.bar.map_or_else(Vec::new, |bar| {
+            bar.blits(geometry.range(), self.scroll, pointer)
+        })
+    }
+
     fn reconcile(&mut self, rows: &[K]) {
         self.selected.retain(|item| rows.contains(item));
         if self.anchor.is_some_and(|anchor| !rows.contains(&anchor)) {
             self.anchor = None;
+        }
+        if self
+            .last_click
+            .is_some_and(|last_click| !rows.contains(&last_click))
+        {
+            self.last_click = None;
         }
     }
 
@@ -437,11 +475,15 @@ impl<K: Copy + PartialEq> DragListState<K> {
 pub(crate) struct DragListInput {
     pub(crate) pointer: Option<(f32, f32)>,
     pub(crate) primary_pressed: bool,
+    /// A primary press this adapter observed but egui routed elsewhere.
+    pub(crate) primary_pressed_elsewhere: bool,
     pub(crate) primary_down: bool,
     pub(crate) primary_released: bool,
     pub(crate) secondary_pressed: bool,
     pub(crate) secondary_released: bool,
     pub(crate) double_clicked: bool,
+    /// Two complete primary clicks arrived in one egui input batch.
+    pub(crate) batched_double_clicked: bool,
     pub(crate) ctrl: bool,
     pub(crate) shift: bool,
     pub(crate) wheel: f32,
@@ -558,6 +600,9 @@ impl<K: Copy + PartialEq> DragListState<K> {
     ) -> DragListOutput<K> {
         let mut output = DragListOutput::default();
         self.reconcile(rows);
+        if input.primary_pressed_elsewhere {
+            self.last_click = None;
+        }
         let mut geometry = self.geometry(spec, rows.len());
         self.first_row = geometry.first_row;
 
@@ -630,13 +675,17 @@ impl<K: Copy + PartialEq> DragListState<K> {
             let phase = Some(PointerPhase::Press(button));
             output.push(DragListEvent::Pressed { button, item }, phase);
             let deferred = item.is_some_and(|item| self.is_selected(item));
+            let preserve_anchor =
+                spec.selection == SelectionPolicy::Multiple && input.shift && self.anchor.is_some();
             if !deferred {
                 let anchor = self.anchor;
                 if self.select_by_pointer(rows, item, modifiers, anchor) {
                     output.push(DragListEvent::SelectionChanged, phase);
                 }
             }
-            self.anchor = item;
+            if !preserve_anchor {
+                self.anchor = item;
+            }
             if button == PointerButtonId::Primary {
                 self.capture = Some(Capture {
                     origin: at,
@@ -683,15 +732,21 @@ impl<K: Copy + PartialEq> DragListState<K> {
                 });
                 if let Some(point) = dropped {
                     output.push(DragListEvent::Dropped { point }, phase);
-                } else if capture.deferred {
+                } else {
                     let item = input.pointer.and_then(item_at);
-                    let anchor = self.anchor;
-                    if self.select_by_pointer(rows, item, modifiers, anchor) {
-                        output.push(DragListEvent::SelectionChanged, phase);
+                    if capture.deferred {
+                        let anchor = self.anchor;
+                        if self.select_by_pointer(rows, item, modifiers, anchor) {
+                            output.push(DragListEvent::SelectionChanged, phase);
+                        }
                     }
-                }
-                if input.double_clicked && inside.is_some() {
-                    output.push(DragListEvent::Activated, phase);
+                    if input.double_clicked
+                        && item.is_some()
+                        && (input.batched_double_clicked || self.last_click == item)
+                    {
+                        output.push(DragListEvent::Activated, phase);
+                    }
+                    self.last_click = item;
                 }
             }
         }
@@ -725,11 +780,9 @@ impl<K: Copy + PartialEq> DragListState<K> {
         let Some(last) = rows.len().checked_sub(1) else {
             return;
         };
-        let current = rows
-            .iter()
-            .position(|row| self.is_selected(*row))
-            .unwrap_or(0);
+        let current = rows.iter().position(|row| self.is_selected(*row));
         if key == ListKey::Enter {
+            let current = current.unwrap_or(0);
             if !self.is_selected(rows[current]) {
                 self.selected.push(rows[current]);
             }
@@ -738,10 +791,14 @@ impl<K: Copy + PartialEq> DragListState<K> {
         }
         let page = geometry.whole_rows();
         let target = match key {
-            ListKey::Up => current.checked_sub(1),
-            ListKey::Down => (current < last).then_some(current + 1),
-            ListKey::PageUp => Some(current.saturating_sub(page)),
-            ListKey::PageDown => Some((current + page).min(last)),
+            ListKey::Up => current.map_or(Some(0), |current| current.checked_sub(1)),
+            ListKey::Down => {
+                current.map_or(Some(0), |current| (current < last).then_some(current + 1))
+            }
+            ListKey::PageUp => Some(current.map_or(0, |current| current.saturating_sub(page))),
+            ListKey::PageDown => {
+                Some(current.map_or(page.min(last), |current| (current + page).min(last)))
+            }
             ListKey::Home => Some(0),
             ListKey::End => Some(last),
             ListKey::Enter => None,
@@ -751,7 +808,9 @@ impl<K: Copy + PartialEq> DragListState<K> {
         };
         // FUN_006083c0 clears the current item; FUN_00609500 clears every
         // other one only for a single-selection list, then selects and posts.
-        self.selected.retain(|item| *item != rows[current]);
+        if let Some(current) = current {
+            self.selected.retain(|item| *item != rows[current]);
+        }
         if spec.selection == SelectionPolicy::Single {
             self.selected.clear();
         }
@@ -805,7 +864,7 @@ impl<K: Copy + PartialEq> DragListResponse<K> {
         scale: f32,
     ) {
         if let Some(bar) = self.geometry.bar {
-            crate::scroll_bar::paint_egui(
+            paint_scroll_bar(
                 painter,
                 ctx,
                 cache,
@@ -849,7 +908,11 @@ impl DragList {
         let owned_press = response.is_pointer_button_down_on()
             || response.clicked_by(egui::PointerButton::Primary)
             || secondary_released;
-        let double_clicked = response.double_clicked();
+        // Egui's click count is pointer-global. A first list click after a
+        // different control can be "double", and the second list click then
+        // "triple"; the state machine below gates either signal by this
+        // list's own prior item.
+        let double_clicked = response.double_clicked() || response.triple_clicked();
         let hovered = response.hovered();
         let input = ui.ctx().input(|input| {
             let logical = |point: egui::Pos2| {
@@ -859,9 +922,27 @@ impl DragList {
                 )
             };
             let pointer = input.pointer.interact_pos().map(logical);
+            let batched_double_clicked = double_clicked
+                && input
+                    .events
+                    .iter()
+                    .filter(|event| {
+                        matches!(
+                            event,
+                            egui::Event::PointerButton {
+                                button: egui::PointerButton::Primary,
+                                pressed: false,
+                                ..
+                            }
+                        )
+                    })
+                    .count()
+                    >= 2;
             DragListInput {
                 pointer,
                 primary_pressed: owned_press
+                    && input.pointer.button_pressed(egui::PointerButton::Primary),
+                primary_pressed_elsewhere: !owned_press
                     && input.pointer.button_pressed(egui::PointerButton::Primary),
                 primary_down: input.pointer.button_down(egui::PointerButton::Primary),
                 primary_released: input.pointer.button_released(egui::PointerButton::Primary),
@@ -869,6 +950,7 @@ impl DragList {
                     && input.pointer.button_pressed(egui::PointerButton::Secondary),
                 secondary_released,
                 double_clicked,
+                batched_double_clicked,
                 ctrl: input.modifiers.command,
                 shift: input.modifiers.shift,
                 wheel: if hovered {
@@ -919,7 +1001,11 @@ impl DragList {
         let mut state = ui
             .data(|data| data.get_temp::<DragListState<K>>(state_id))
             .unwrap_or_default();
-        state.select_only(selected);
+        if state.first_selected(rows) == selected {
+            state.select_only(selected);
+        } else {
+            state.select_and_reveal(spec, rows, selected);
+        }
         let response = Self::show(ui, id, spec, rows, &state, window, scale, None);
         ui.data_mut(|data| data.insert_temp(state_id, response.next.clone()));
         response
@@ -957,7 +1043,7 @@ pub(crate) fn paint_label(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scroll_bar::LIST_BAR_29CC;
+    use crate::controls::LIST_BAR_29CC;
 
     // FUN_004a8790: the System Defenses list at (7, 81), 222 by 210, with
     // 70 by 70 grid cells (flag 0x80000) and RCDATA 0x29cc's bar.
@@ -1148,6 +1234,7 @@ mod tests {
         };
         let _ = state.update(GRID, &rows, shift);
         assert_eq!(state.selection(&rows), vec![1, 2, 3, 4, 5]);
+        assert_eq!(state.anchor(), Some(1));
     }
 
     #[test]
@@ -1234,6 +1321,9 @@ mod tests {
         let rows = rows(5);
         let mut state = DragListState::default();
         let _ = state.update(STACKED, &rows, press((10.0, 30.0)));
+        let first = state.update(STACKED, &rows, release((10.0, 30.0)));
+        assert!(!first.contains(DragListEvent::Activated));
+        let _ = state.update(STACKED, &rows, press((10.0, 30.0)));
         let double = DragListInput {
             double_clicked: true,
             ..release((10.0, 30.0))
@@ -1242,6 +1332,79 @@ mod tests {
         let output = state.update(STACKED, &rows, double);
 
         assert!(output.contains(DragListEvent::Activated));
+    }
+
+    #[test]
+    fn a_same_frame_double_click_batch_activates_the_list() {
+        let rows = rows(5);
+        let mut state = DragListState::default();
+
+        let output = state.update(
+            STACKED,
+            &rows,
+            DragListInput {
+                pointer: Some((10.0, 30.0)),
+                primary_pressed: true,
+                primary_released: true,
+                double_clicked: true,
+                batched_double_clicked: true,
+                ..DragListInput::default()
+            },
+        );
+
+        assert!(output.contains(DragListEvent::Activated));
+        assert_eq!(state.selection(&rows), vec![0]);
+    }
+
+    #[test]
+    fn a_multi_click_signal_after_a_different_control_does_not_activate_the_list() {
+        let rows = rows(5);
+        let mut state = DragListState::default();
+        let _ = state.update(STACKED, &rows, press((10.0, 30.0)));
+        let _ = state.update(STACKED, &rows, release((10.0, 30.0)));
+        let _ = state.update(
+            STACKED,
+            &rows,
+            DragListInput {
+                primary_pressed_elsewhere: true,
+                ..DragListInput::default()
+            },
+        );
+        let _ = state.update(STACKED, &rows, press((10.0, 30.0)));
+
+        let output = state.update(
+            STACKED,
+            &rows,
+            DragListInput {
+                double_clicked: true,
+                ..release((10.0, 30.0))
+            },
+        );
+
+        assert!(!output.contains(DragListEvent::Activated));
+        assert_eq!(state.selection(&rows), vec![0]);
+    }
+
+    #[test]
+    fn a_double_click_on_blank_list_space_does_not_activate_a_selection() {
+        let rows = rows(1);
+        let blank = (10.0, 100.0);
+        let mut state = DragListState::default();
+        let _ = state.update(STACKED, &rows, press(blank));
+        let _ = state.update(STACKED, &rows, release(blank));
+        let _ = state.update(STACKED, &rows, press(blank));
+
+        let output = state.update(
+            STACKED,
+            &rows,
+            DragListInput {
+                double_clicked: true,
+                ..release(blank)
+            },
+        );
+
+        assert!(!output.contains(DragListEvent::Activated));
+        assert_eq!(state.first_selected(&rows), None);
     }
 
     #[test]
@@ -1510,10 +1673,12 @@ mod tests {
     fn a_drop_needs_a_squared_distance_above_twenty_four() {
         let rows = rows(9);
         let spec = DragListSpec {
+            rect: (0.0, 0.0, 222.0, 210.0),
             drag: DragPolicy::DropAnywhere,
+            bar: None,
             ..GRID
         };
-        let origin = grid_cell(0, 0);
+        let origin = (0.0, 0.0);
         let drag = |to: (f32, f32)| {
             let mut state = DragListState::default();
             let _ = state.update(spec, &rows, press(origin));
@@ -1523,6 +1688,11 @@ mod tests {
 
         let five = (origin.0 + 5.0, origin.1);
         assert_eq!(drag(five), Some(five), "25 drops");
+        assert_eq!(
+            drag((origin.0 + 2.0, origin.1 + 20.0_f32.sqrt())),
+            None,
+            "exactly 24 does not drop"
+        );
         assert_eq!(drag((origin.0 + 4.0, origin.1 + 2.0)), None, "20 does not");
     }
 
@@ -1541,6 +1711,17 @@ mod tests {
         let again = state.update(STACKED, &rows, key(ListKey::Enter));
         assert_eq!(again.events, vec![DragListEvent::Activated]);
         assert_eq!(state.selected(), [2]);
+    }
+
+    #[test]
+    fn movement_from_an_unselected_list_starts_at_its_first_row() {
+        let rows = rows(3);
+        let mut state = DragListState::default();
+
+        let moved = state.update(STACKED, &rows, key(ListKey::Down));
+
+        assert!(moved.contains(DragListEvent::SelectionChanged));
+        assert_eq!(state.selection(&rows), vec![0]);
     }
 
     #[test]
@@ -1629,6 +1810,17 @@ mod tests {
         let _ = state.update(GRID, &rows(3), DragListInput::default());
 
         assert_eq!(state.first_selected(&rows(9)), None);
+    }
+
+    #[test]
+    fn an_owner_selected_item_is_revealed_without_reimplementing_list_geometry() {
+        let rows = rows(15);
+        let mut state = DragListState::selecting(Some(0));
+
+        state.select_and_reveal(GRID, &rows, Some(14));
+
+        assert_eq!(state.selection(&rows), vec![14]);
+        assert_eq!(state.first_row(), 2);
     }
 
     #[test]

@@ -35,6 +35,18 @@ pub(crate) const LIST_BAR_29FC: ScrollBarArt = ScrollBarArt {
     thumb: [0x2a02, 0x2a03, 0x2a04],
 };
 
+/// RCDATA `0x29cb`: both Fleet-window lists (`FUN_004a4b10`).
+pub(crate) const FLEET_BAR_29CB: ScrollBarArt = ScrollBarArt {
+    width: 0x08,
+    // RCDATA 0x29cb and 0x29cc are adjacent configurations sharing the
+    // 13-pixel bitmap family at 0x29cd..0x29d4; 0x29cc is not itself a
+    // bitmap in the approved STRATEGY inventory.
+    track: 0x29cd,
+    up: [0x29ce, 0x29cf],
+    down: [0x29d0, 0x29d1],
+    thumb: [0x29d2, 0x29d3, 0x29d4],
+};
+
 /// RCDATA `0x29cc`: the System Defenses window's list (`FUN_004a8790`).
 pub(crate) const LIST_BAR_29CC: ScrollBarArt = ScrollBarArt {
     width: 0x0a,

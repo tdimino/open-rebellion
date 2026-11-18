@@ -11,7 +11,12 @@
 //! minimized into the faction-specific 12-slot rail and restored without
 //! creating duplicates.
 
-use crate::controls::{TabControl, TabControlState, TabPresentation, TabSpec};
+use crate::controls::{
+    DragList, DragListEvent, DragListLayout, DragListSpec, DragListState, DragPolicy,
+    SelectionPolicy, StatusBar, StringField, StringFieldEvent, StringFieldLease, StringFieldSpec,
+    StringFieldState, StringFieldStyle, TabControl, TabControlState, TabPresentation, TabSpec,
+    WheelPolicy,
+};
 use crate::fleet_window::control_side;
 use crate::manufacturing_window::{
     band, band_strip, contents_visible, item_frame, page_cells, yard_count, yard_page,
@@ -68,6 +73,15 @@ const PAGE_LABEL_Y: f32 = 58.0;
 const COUNT_WIDTH: f32 = 46.0;
 /// A facility picture sits 1 by 2 into its 69 by 40 cell.
 const PICTURE_OFFSET: (f32, f32) = (1.0, 2.0);
+const FACILITY_LIST: DragListSpec = DragListSpec {
+    rect: LIST,
+    item: CELL,
+    layout: DragListLayout::Grid,
+    selection: SelectionPolicy::Single,
+    drag: DragPolicy::Disabled,
+    wheel: WheelPolicy::Ignored,
+    bar: None,
+};
 
 /// One immutable reference-rail slot projected from the manager's shared
 /// presentation history. Content stores supply presentation data but never
@@ -381,7 +395,7 @@ struct BandRename {
     /// The name line's text when the edit opened (`FUN_00601b20`), which
     /// the commit compares with (`FUN_00458780.c:27-34`).
     original: String,
-    text: String,
+    field: StringFieldState,
     /// The first frame selects the whole name and takes the focus
     /// (`FUN_00605110(field, 0, -1)`, `SetFocus`).
     fresh: bool,
@@ -390,7 +404,7 @@ struct BandRename {
 /// What a frame did to an open band name edit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BandRenameOutcome {
-    Typed(String),
+    Typed(StringFieldState),
     /// Enter (the field's 0x407) or a press elsewhere in the window: the
     /// edit closes, and its name applies when it changed (`FUN_00458780`).
     Commit(String),
@@ -562,11 +576,13 @@ impl SystemWindowState {
             |window, layout| window_screen_rect(*window, layout),
         )?;
         window.tab.page()?;
-        let index = grid_cell(local, LIST, CELL, COLUMNS)?;
         let (_, cells) = this
             .painted
             .iter()
             .find(|(system, _)| *system == window.system)?;
+        let index = DragListState::<FacilityItem>::default()
+            .geometry(FACILITY_LIST, cells.len())
+            .item_at(local)?;
         match cells.get(index)? {
             FacilityItem::Manufacturing(key) => Some(MissionTarget::ManufacturingFacility(*key)),
             FacilityItem::Production(key) => Some(MissionTarget::ProductionFacility(*key)),
@@ -777,7 +793,7 @@ impl SystemWindowState {
             system,
             area,
             original: name.to_owned(),
-            text: name.to_owned(),
+            field: StringFieldState::new(name),
             fresh: true,
         });
         true
@@ -1045,6 +1061,8 @@ struct WindowDrawResult {
     tab: Option<SystemWindowTab>,
     /// A press on a facility page's list: the item under it, or none.
     item: Option<Option<FacilityItem>>,
+    /// The exact list phase that caused selection or scrolling.
+    list_phase: Option<PointerPhase>,
     /// The facility page's cells as painted.
     painted: Vec<FacilityItem>,
     band: Option<ProductionArea>,
@@ -1289,8 +1307,8 @@ fn draw_system_windows_with_snapshot(
             cache,
         );
         let rename_press_text = match (&result.rename, &rename) {
-            (None, Some(edit)) => Some(edit.text.clone()),
-            (Some(BandRenameOutcome::Typed(text)), Some(_)) => Some(text.clone()),
+            (None, Some(edit)) => Some(edit.field.text().to_owned()),
+            (Some(BandRenameOutcome::Typed(field)), Some(_)) => Some(field.text().to_owned()),
             _ => None,
         };
         // FUN_004534f0 0x201/0x204 finishes the edit (FUN_00458780) and then
@@ -1323,9 +1341,9 @@ fn draw_system_windows_with_snapshot(
             result.rename = None;
         }
         match (result.rename.clone(), rename) {
-            (Some(BandRenameOutcome::Typed(text)), Some(_)) => {
+            (Some(BandRenameOutcome::Typed(field)), Some(_)) => {
                 if let Some(edit) = state.band_rename.as_mut() {
-                    edit.text = text;
+                    edit.field = field;
                     edit.fresh = false;
                 }
             }
@@ -1364,10 +1382,18 @@ fn draw_system_windows_with_snapshot(
             || result.item.is_some()
             || result.band.is_some()
             || result.object_menu.is_some();
-        let phase = strategic_window_common::pointer_mutation_phase([(
-            result.object_menu.is_some(),
-            PointerPhase::Release(PointerButtonId::Secondary),
-        )]);
+        let phase = strategic_window_common::pointer_mutation_phase([
+            (
+                result.object_menu.is_some(),
+                PointerPhase::Release(PointerButtonId::Secondary),
+            ),
+            (
+                result.list_phase.is_some(),
+                result
+                    .list_phase
+                    .unwrap_or(PointerPhase::Release(PointerButtonId::Primary)),
+            ),
+        ]);
         let pointer_permitted = strategic_window_common::single_phase_pointer_mutation_permitted(
             window.id,
             pointer_mutation,
@@ -1626,8 +1652,8 @@ fn draw_system_window(
         result.minimize = clicked[1];
         result.close = clicked[2];
 
-        // The tabs. port: an empty page's tab still opens it, as the
-        // Defenses window's do; its help message is not shown.
+        // The tabs. An empty page's tab still opens it, as the Defenses
+        // window's do, and every tab keeps its recovered help message.
         let tab_specs = SystemWindowTab::ALL.map(|tab| {
             let rect = tab_rect(local, scale, tab);
             let cells = &pages[SystemWindowTab::ALL
@@ -1650,6 +1676,7 @@ fn draw_system_window(
             } else {
                 TabPresentation::Enabled
             })
+            .with_tooltip(tab.name())
         });
         if let Some(tab) = TabControl::paint_and_select(
             &tab_specs,
@@ -1665,12 +1692,9 @@ fn draw_system_window(
 
         let font = egui::FontId::proportional(OVERVIEW_FONT_EM * scale);
         let mut rename_field = None;
-        let (any_pressed, right_pressed) = ctx.input(|input| {
-            (
-                input.pointer.button_pressed(egui::PointerButton::Primary)
-                    || input.pointer.button_pressed(egui::PointerButton::Secondary),
-                input.pointer.button_pressed(egui::PointerButton::Secondary),
-            )
+        let any_pressed = ctx.input(|input| {
+            input.pointer.button_pressed(egui::PointerButton::Primary)
+                || input.pointer.button_pressed(egui::PointerButton::Secondary)
         });
         if window.tab.page().is_none() {
             // FUN_00457690: the yard column and its counts.
@@ -1757,10 +1781,14 @@ fn draw_system_window(
                 // black.
                 let (px, py, width, height) = PROGRESS_RECTS[index];
                 let bar = logical_rect(local, scale, px, py, width, height);
+                let progress = shown
+                    .progress
+                    .map_or(0, |progress| (progress.clamp(0.0, 1.0) * 100.0) as u32);
+                let status = StatusBar::new(progress, 100).layout(width as u32);
                 painter.rect_filled(bar, 0.0, egui::Color32::BLACK);
-                if let Some(progress) = shown.progress {
+                if status.fill_width > 0 {
                     let mut done = bar;
-                    done.set_width(bar.width() * progress.clamp(0.0, 1.0));
+                    done.set_width(status.fill_width as f32 * scale);
                     painter.rect_filled(done, 0.0, egui::Color32::from_gray(240));
                 }
 
@@ -1806,8 +1834,8 @@ fn draw_system_window(
                 // its owning window's exact admitted press above.
                 if window.id.is_none() && any_pressed && elsewhere {
                     result.rename = Some(BandRenameOutcome::Commit(match result.rename {
-                        Some(BandRenameOutcome::Typed(ref text)) => text.clone(),
-                        _ => edit.text.clone(),
+                        Some(BandRenameOutcome::Typed(ref field)) => field.text().to_owned(),
+                        _ => edit.field.text().to_owned(),
                     }));
                 }
             }
@@ -1828,23 +1856,29 @@ fn draw_system_window(
             .unwrap_or_default();
             let list = logical_rect(local, scale, LIST.0, LIST.1, LIST.2, LIST.3).intersect(local);
             let list_painter = painter.with_clip_rect(list);
-            // A press on the list's empty space clears the
-            // selection (FUN_006094b0).
-            let list_response = ui.interact(
-                list,
-                ui.id().with((window.system, "list")),
-                egui::Sense::click(),
-            );
-            if any_pressed && list_response.is_pointer_button_down_on() {
-                result.item = Some(None);
-                result.focus = true;
-            }
             result.painted = cells.iter().map(|cell| cell.item).collect();
-            for (index, cell) in cells.iter().enumerate() {
-                let rect = cell_rect(local, scale, index);
-                if !rect.intersects(list) {
-                    break;
-                }
+            let items: Vec<FacilityItem> = cells.iter().map(|cell| cell.item).collect();
+            // FUN_00455060 creates id 2 at (8, 77), 222 by 225, with
+            // 69-by-40 cells and flags 0xa0000 (grid, no drag). It attaches
+            // no separate bar; a page refill mirrors its one selected item.
+            let control = DragList::show_mirrored(
+                ui,
+                (window.system, "facilities"),
+                FACILITY_LIST,
+                &items,
+                window.selected_item,
+                local,
+                scale,
+            );
+            if control.output.pointer_mutation() {
+                result.focus = true;
+                result.list_phase = control.output.phases.first().copied();
+            }
+            if control.output.contains(DragListEvent::SelectionChanged) {
+                result.item = Some(control.next.first_selected(&items));
+            }
+            for (index, rect) in control.screen_cells(local, scale) {
+                let cell = &cells[index];
                 paint_native(
                     &list_painter,
                     ctx,
@@ -1856,7 +1890,7 @@ fn draw_system_window(
                     PICTURE_OFFSET.0,
                     PICTURE_OFFSET.1,
                 );
-                if window.selected_item == Some(cell.item) {
+                if control.next.is_selected(cell.item) {
                     paint_native(
                         &list_painter,
                         ctx,
@@ -1868,22 +1902,6 @@ fn draw_system_window(
                         PICTURE_OFFSET.0,
                         PICTURE_OFFSET.1,
                     );
-                }
-                // A left or right press selects the item
-                // (FUN_006083c0). port: a facility's class menu
-                // (Encyclopedia, Status, Scrap) is not ported, so a
-                // right release opens none.
-                let response = ui.interact(
-                    rect.intersect(list),
-                    ui.id().with((window.system, "cell", index)),
-                    egui::Sense::click(),
-                );
-                if (exact_clicked(&response, rect)
-                    || (right_pressed && response.is_pointer_button_down_on()))
-                    && result.item.is_none()
-                {
-                    result.item = Some(Some(cell.item));
-                    result.focus = true;
                 }
             }
         }
@@ -2138,6 +2156,7 @@ const OVERVIEW_FONT_EM: f32 = 10.6;
 
 /// The band name edit's height (hyp, measured; see [`band_rename_rect`]).
 const BAND_RENAME_HEIGHT: f32 = 13.0;
+const BAND_RENAME_CONTROL: rebellion_windowing::ControlId = rebellion_windowing::ControlId(0x215);
 
 /// Draw a band's name edit and read what the frame did to it. The field
 /// draws its text white on the band; the selected text shows black on
@@ -2152,75 +2171,34 @@ fn draw_band_rename(
     font: &egui::FontId,
 ) -> Option<BandRenameOutcome> {
     let id = ui.id().with(("band-rename", edit.system, edit.area));
-    let count = edit.text.chars().count();
-    let selected = if edit.fresh {
-        Some(0..count)
-    } else {
-        egui::TextEdit::load_state(ui.ctx(), id)
-            .and_then(|state| state.cursor.char_range())
-            .map(|range| {
-                let [start, end] = range.sorted();
-                start.index..end.index
-            })
-            .filter(|range| !range.is_empty())
-    };
-    if count > 0 && selected == Some(0..count) {
-        ui.painter().rect_filled(field, 0.0, egui::Color32::WHITE);
-    }
-    let mut layouter = |ui: &egui::Ui, value: &str, _wrap: f32| {
-        let mut job = egui::text::LayoutJob::default();
-        for (index, character) in value.chars().enumerate() {
-            let color = if selected
-                .as_ref()
-                .is_some_and(|range| range.contains(&index))
-            {
-                egui::Color32::BLACK
-            } else {
-                egui::Color32::WHITE
-            };
-            job.append(
-                character.encode_utf8(&mut [0; 4]),
-                0.0,
-                egui::TextFormat::simple(font.clone(), color),
-            );
-        }
-        ui.fonts(|fonts| fonts.layout_job(job))
-    };
-    let mut text = edit.text.clone();
-    let response = ui
-        .scope(|ui| {
-            let visuals = ui.visuals_mut();
-            visuals.selection.bg_fill = egui::Color32::WHITE;
-            visuals.text_cursor.stroke.color = egui::Color32::WHITE;
-            ui.put(
-                field,
-                egui::TextEdit::singleline(&mut text)
-                    .id(id)
-                    .frame(false)
-                    .margin(egui::Margin::ZERO)
-                    .desired_width(field.width())
-                    .layouter(&mut layouter),
-            )
-        })
-        .inner;
-    if edit.fresh {
-        response.request_focus();
-        strategic_window_common::select_all_text(ui.ctx(), id, count);
-        return Some(BandRenameOutcome::Typed(edit.text.clone()));
-    }
-    let (enter, escape) = ui.input(|input| {
-        (
-            input.key_pressed(egui::Key::Enter),
-            input.key_pressed(egui::Key::Escape),
-        )
-    });
-    if escape {
+    let mut field_state = edit.field.clone();
+    let output = StringField::new(
+        &mut field_state,
+        StringFieldSpec::new(
+            id,
+            BAND_RENAME_CONTROL,
+            field,
+            None,
+            StringFieldStyle {
+                font: font.clone(),
+                ..StringFieldStyle::default()
+            },
+        ),
+        if edit.fresh {
+            StringFieldLease::acquire(true)
+        } else {
+            StringFieldLease::focused()
+        },
+    )
+    .show(ui);
+    if output.contains(StringFieldEvent::Cancelled) {
         return Some(BandRenameOutcome::Escape);
     }
-    if enter {
-        return Some(BandRenameOutcome::Commit(text));
+    if output.contains(StringFieldEvent::Submitted) {
+        return Some(BandRenameOutcome::Commit(field_state.text().to_owned()));
     }
-    response.changed().then_some(BandRenameOutcome::Typed(text))
+    (edit.fresh || output.contains(StringFieldEvent::Changed))
+        .then_some(BandRenameOutcome::Typed(field_state))
 }
 
 /// The system whose DAT id is `id`: how a save names a window's subject.
@@ -3903,7 +3881,7 @@ mod tests {
                 after_opening(frames),
             );
             assert_eq!(
-                state.band_rename.as_ref().map(|edit| edit.text.as_str()),
+                state.band_rename.as_ref().map(|edit| edit.field.text()),
                 Some(typed)
             );
             let run = run_with(
