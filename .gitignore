@@ -78,7 +78,6 @@ docs/qa/*.png
 assets/references/ref-illustrated-books/
 
 # Misc generated/local files
-clippy.toml
 rustfmt.toml
 data/character-portrait-art-sources.md
 data/reference-selections.json

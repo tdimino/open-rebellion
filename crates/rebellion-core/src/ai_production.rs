@@ -603,7 +603,7 @@ impl SystemRecord {
             } else {
                 system.popularity_empire
             };
-            #[expect(clippy::cast_possible_truncation, reason = "a share in 0..=1")]
+            #[allow(clippy::cast_possible_truncation, reason = "a share in 0..=1")]
             {
                 r.popularity = (f64::from(popularity) * 100.0).round() as i64;
             }
@@ -760,9 +760,9 @@ impl SystemRecord {
                 + r.ds_shields
                 + r.shields
                 + i64::from(r.a & bit::HQ != 0);
-            let site = (!r.populated && r.a & bit::FREE_ENERGY != 0)
+            let has_build_site = (!r.populated && r.a & bit::FREE_ENERGY != 0)
                 || (r.populated && r.a & role::ANY == 0 && !blocked && used < r.energy);
-            if site {
+            if has_build_site {
                 r.a |= bit::REFINERY_SITE;
                 if r.free_raw > 0 {
                     r.a |= bit::MINE_SITE;
@@ -1038,7 +1038,7 @@ impl SectorRecord {
     }
 
     /// `FUN_00432350`: one system's record into the sector's.
-    #[expect(clippy::too_many_lines, reason = "one decompiled fold")]
+    #[allow(clippy::too_many_lines, reason = "one decompiled fold")]
     fn fold(&mut self, r: &SystemRecord) {
         use crate::ai_records::sys;
         let add = |rec: &mut Self, k: u32, v: i64| *rec.slots.entry(k).or_insert(0) += v;
@@ -1345,6 +1345,25 @@ pub enum Dir {
     Smallest,
 }
 
+/// Sort a ranked list, consuming one tie-break draw per entry.
+///
+/// port: equal-key draws replace the original insertion-sort coin flips.
+pub(crate) fn ranked_ids<T>(
+    items: impl IntoIterator<Item = (T, i64)>,
+    dir: Dir,
+    rng: &mut impl crate::uprising::Draws,
+) -> Vec<T> {
+    let mut keyed: Vec<(i64, i32, T)> = items
+        .into_iter()
+        .map(|(id, key)| (key, rng.draw(9), id))
+        .collect();
+    keyed.sort_by(|a, b| match dir {
+        Dir::Largest => a.0.cmp(&b.0).then(a.1.cmp(&b.1)),
+        Dir::Smallest => b.0.cmp(&a.0).then(a.1.cmp(&b.1)),
+    });
+    keyed.into_iter().map(|(_, _, id)| id).collect()
+}
+
 /// Rank-sum selection (`FUN_00435790` + `FUN_004357b0`): each list is
 /// sorted by its key with equal keys in random order; the pick is the id
 /// present in every list with the largest sum of 1-based positions, the
@@ -1359,17 +1378,7 @@ pub(crate) fn rank_pick<T: Copy + Eq>(
 ) -> Option<T> {
     let sorted: Vec<Vec<T>> = lists
         .iter()
-        .map(|(items, dir)| {
-            let mut keyed: Vec<(i64, i32, T)> = items
-                .iter()
-                .map(|&(id, key)| (key, rng.draw(9), id))
-                .collect();
-            keyed.sort_by(|a, b| match dir {
-                Dir::Largest => a.0.cmp(&b.0).then(a.1.cmp(&b.1)),
-                Dir::Smallest => b.0.cmp(&a.0).then(a.1.cmp(&b.1)),
-            });
-            keyed.into_iter().map(|(_, _, id)| id).collect()
-        })
+        .map(|(items, dir)| ranked_ids(items.iter().copied(), *dir, rng))
         .collect();
     let first = sorted.first()?;
     let mut best: Option<(T, usize)> = None;
@@ -1387,6 +1396,49 @@ pub(crate) fn rank_pick<T: Copy + Eq>(
         }
     }
     best.map(|(id, _)| id)
+}
+
+/// Rank one candidate set through each requested record slot.
+fn rank_by_slots<T: Copy + Eq>(
+    keys: &[(u32, Dir)],
+    mut values: impl FnMut(u32) -> Vec<(T, i64)>,
+    rng: &mut impl crate::uprising::Draws,
+) -> Option<T> {
+    let lists = keys
+        .iter()
+        .map(|&(slot, dir)| (values(slot), dir))
+        .collect::<Vec<_>>();
+    rank_pick(&lists, rng)
+}
+
+/// Resume a stable record list at `next`, wrapping to its first entry when
+/// the remembered identity disappeared. Empty lists have no next record.
+pub(crate) fn resume_or_first_index<T>(
+    records: &[T],
+    next: u32,
+    id: impl Fn(&T) -> u32,
+) -> Option<usize> {
+    records
+        .iter()
+        .position(|record| id(record) == next)
+        .or_else(|| (!records.is_empty()).then_some(0))
+}
+
+/// Run at most `calls` driver steps and return the first one that asks the
+/// caller to stop.
+pub(crate) fn first_bounded_step<T>(
+    calls: &mut usize,
+    mut step: impl FnMut() -> T,
+    mut should_continue: impl FnMut(&T) -> bool,
+) -> Option<T> {
+    while *calls > 0 {
+        *calls -= 1;
+        let result = step();
+        if !should_continue(&result) {
+            return Some(result);
+        }
+    }
+    None
 }
 
 /// The filters of a system query (`FUN_0041a340`, `FUN_00431830`): A must
@@ -1563,6 +1615,27 @@ pub(crate) enum Turn {
     Finished,
 }
 
+impl Turn {
+    /// Issue the first proposed action, or finish when a planner proposed none.
+    pub(crate) fn first(actions: impl IntoIterator<Item = crate::ai::AIAction>) -> Self {
+        actions
+            .into_iter()
+            .next()
+            .map_or(Self::Finished, |action| Self::Order {
+                action,
+                resume: false,
+            })
+    }
+
+    /// Trace-ready order text and its resume bit.
+    pub(crate) fn debug_order(&self) -> (Option<String>, bool) {
+        match self {
+            Self::Order { action, resume } => (Some(format!("{action:?}")), *resume),
+            Self::Spent | Self::Finished => (None, false),
+        }
+    }
+}
+
 impl ProductionState {
     /// A production module's turn: one phase (`step`), issued an order a
     /// turn. An order before a phase's last step sets done and raises
@@ -1591,10 +1664,7 @@ impl ProductionState {
         };
         let queued = self.module(module).queued.len();
         crate::trace::record(crate::trace::TraceMask::AI, "production_turn", || {
-            let (order, resume) = match &turn {
-                Turn::Order { action, resume } => (Some(format!("{action:?}")), *resume),
-                Turn::Spent | Turn::Finished => (None, false),
-            };
+            let (order, resume) = turn.debug_order();
             serde_json::json!({
                 "module": format!("{module:?}"),
                 "phase": phase,
@@ -1686,6 +1756,7 @@ impl ProductionState {
 impl<'a> Round<'a> {
     /// The round's census and records (`FUN_00418500`, `FUN_00433e40`,
     /// `FUN_00432350`) and its stream.
+    #[must_use]
     pub fn new(state: &ProductionState, inputs: &'a RoundInputs<'a>) -> Self {
         let census = Census::take(
             inputs.world,
@@ -1766,28 +1837,37 @@ impl<'a> Round<'a> {
             .iter()
             .filter(|s| s.flags & flags == flags)
             .collect();
-        let lists: Vec<(Vec<(crate::ids::SectorKey, i64)>, Dir)> = keys
-            .iter()
-            .map(|&(slot, dir)| {
-                (
-                    candidates.iter().map(|s| (s.key, s.slot(slot))).collect(),
-                    dir,
-                )
-            })
-            .collect();
-        rank_pick(&lists, &mut self.rng)
+        rank_by_slots(
+            keys,
+            |slot| candidates.iter().map(|s| (s.key, s.slot(slot))).collect(),
+            &mut self.rng,
+        )
     }
 
     /// `FUN_00419b80`: the sector holding `flags` nearest `from`'s.
     /// hyp: distance between sector positions (`FUN_0041b7b0`).
     fn nearest_sector(&mut self, from: SystemKey, flags: u32) -> Option<crate::ids::SectorKey> {
+        self.nearest_sector_filtered(from, flags, None)
+    }
+
+    /// hyp: shared form of `FUN_00419b80`; distance remains the inferred
+    /// sector-position distance recovered around `FUN_0041b7b0`.
+    fn nearest_sector_filtered(
+        &mut self,
+        from: SystemKey,
+        flags: u32,
+        required_b: Option<u32>,
+    ) -> Option<crate::ids::SectorKey> {
         let origin = self.inputs.world.systems.get(from)?.sector;
         let o = self.sectors.iter().find(|s| s.key == origin)?;
         let (ox, oy) = (o.x, o.y);
         let items: Vec<(crate::ids::SectorKey, i64)> = self
             .sectors
             .iter()
-            .filter(|s| s.flags & flags == flags)
+            .filter(|s| {
+                s.flags & flags == flags
+                    && required_b.is_none_or(|required| s.b & required == required)
+            })
             .map(|s| (s.key, (s.x - ox).pow(2) + (s.y - oy).pow(2)))
             .collect();
         rank_pick(&[(items, Dir::Smallest)], &mut self.rng)
@@ -1801,16 +1881,7 @@ impl<'a> Round<'a> {
         flags: u32,
         b: u32,
     ) -> Option<crate::ids::SectorKey> {
-        let origin = self.inputs.world.systems.get(from)?.sector;
-        let o = self.sectors.iter().find(|s| s.key == origin)?;
-        let (ox, oy) = (o.x, o.y);
-        let items: Vec<(crate::ids::SectorKey, i64)> = self
-            .sectors
-            .iter()
-            .filter(|s| s.flags & flags == flags && s.b & b == b)
-            .map(|s| (s.key, (s.x - ox).pow(2) + (s.y - oy).pow(2)))
-            .collect();
-        rank_pick(&[(items, Dir::Smallest)], &mut self.rng)
+        self.nearest_sector_filtered(from, flags, Some(b))
     }
 
     /// `FUN_0041a340`: the best system of `sector` the filter admits.
@@ -1831,16 +1902,11 @@ impl<'a> Round<'a> {
             .filter_map(|s| self.records.get(s))
             .filter(|r| filter.admits(r))
             .collect();
-        let lists: Vec<(Vec<(SystemKey, i64)>, Dir)> = keys
-            .iter()
-            .map(|&(slot, dir)| {
-                (
-                    admitted.iter().map(|r| (r.key, r.slot(slot))).collect(),
-                    dir,
-                )
-            })
-            .collect();
-        rank_pick(&lists, &mut self.rng)
+        rank_by_slots(
+            keys,
+            |slot| admitted.iter().map(|r| (r.key, r.slot(slot))).collect(),
+            &mut self.rng,
+        )
     }
 
     /// `FUN_0041a400` (no decompile): the system of `sector` the filter
@@ -2091,20 +2157,19 @@ impl ClassNode {
         match (self.node, key) {
             (_, 1) => self.maintenance,
             (_, 4) => self.cost,
-            (NodeKind::CapitalShip, 0x200) => self.n30,
+            (NodeKind::CapitalShip, 0x200)
+            | (NodeKind::Regiment, 0x1000)
+            | (NodeKind::Defence, 0x4_0000)
+            | (NodeKind::Facility, 0x4000) => self.n30,
             (NodeKind::CapitalShip, 0x8_0000) => self.n58,
-            (NodeKind::CapitalShip | NodeKind::Fighter, 0x400) => self.n34,
+            (NodeKind::CapitalShip | NodeKind::Fighter, 0x400)
+            | (NodeKind::Regiment, 0x2000)
+            | (NodeKind::Defence, 0x1_0000) => self.n34,
             (NodeKind::CapitalShip, 0x800) => self.n38,
             (NodeKind::CapitalShip, 0x80) => self.n44,
-            (NodeKind::CapitalShip, 0x100) => self.n48,
-            (NodeKind::CapitalShip, 2) | (NodeKind::Regiment, 2) => self.n4c,
+            (NodeKind::CapitalShip, 0x100) | (NodeKind::Fighter, 0x8000) => self.n48,
+            (NodeKind::CapitalShip | NodeKind::Regiment, 2) => self.n4c,
             (NodeKind::CapitalShip, 0x1_0000) => self.n3c,
-            (NodeKind::Fighter, 0x8000) => self.n48,
-            (NodeKind::Regiment, 0x1000) => self.n30,
-            (NodeKind::Regiment, 0x2000) => self.n34,
-            (NodeKind::Defence, 0x1_0000) => self.n34,
-            (NodeKind::Defence, 0x4_0000) => self.n30,
-            (NodeKind::Facility, 0x4000) => self.n30,
             _ => 0,
         }
     }
@@ -2236,6 +2301,28 @@ const MINE: u32 = 0x2c00_0001;
 /// The Refinery class (`FUN_004db2f0` step 6, `0x2d000002`).
 const REFINERY: u32 = 0x2d00_0002;
 
+/// Append same-side facilities of one recovered family from a heterogeneous
+/// world arena as typed Scrap targets.
+macro_rules! extend_scrap_facilities {
+    (
+        $out:expr, $keys:expr, $arena:expr, $side:expr, $family:expr,
+        $family_of:expr, $target:path $(,)?
+    ) => {{
+        let family_of = $family_of;
+        $out.extend(
+            ($keys)
+                .iter()
+                .copied()
+                .filter(|&key| {
+                    ($arena).get(key).is_some_and(|facility| {
+                        facility.side == $side && family_of(facility) == $family
+                    })
+                })
+                .map($target),
+        );
+    }};
+}
+
 impl Round<'_> {
     /// Every candidate of a system query, best first (`FUN_004357b0`
     /// popped until empty).
@@ -2291,36 +2378,42 @@ impl Round<'_> {
         let mut out = Vec::new();
         for &family in families {
             match family {
-                0x22..=0x25 => out.extend(
-                    sys.defense_facilities
-                        .iter()
-                        .filter(|k| {
-                            world.defense_facilities.get(**k).is_some_and(|d| {
-                                d.side == side && d.class_dat_id.family() == family
-                            })
-                        })
-                        .map(|k| ScrapTarget::Defense(*k)),
+                0x22..=0x25 => extend_scrap_facilities!(
+                    out,
+                    &sys.defense_facilities,
+                    &world.defense_facilities,
+                    side,
+                    family,
+                    |facility: &crate::world::DefenseFacilityInstance| {
+                        facility.class_dat_id.family()
+                    },
+                    ScrapTarget::Defense,
                 ),
-                0x28..=0x2a => out.extend(
-                    sys.manufacturing_facilities
-                        .iter()
-                        .filter(|k| {
-                            world.manufacturing_facilities.get(**k).is_some_and(|y| {
-                                y.side == side && y.class_dat_id.family() == family
-                            })
-                        })
-                        .map(|k| ScrapTarget::Manufacturing(*k)),
+                0x28..=0x2a => extend_scrap_facilities!(
+                    out,
+                    &sys.manufacturing_facilities,
+                    &world.manufacturing_facilities,
+                    side,
+                    family,
+                    |facility: &crate::world::ManufacturingFacilityInstance| {
+                        facility.class_dat_id.family()
+                    },
+                    ScrapTarget::Manufacturing,
                 ),
-                0x2c | 0x2d => out.extend(
-                    sys.production_facilities
-                        .iter()
-                        .filter(|k| {
-                            world
-                                .production_facilities
-                                .get(**k)
-                                .is_some_and(|p| p.side == side && p.is_mine == (family == 0x2c))
-                        })
-                        .map(|k| ScrapTarget::Production(*k)),
+                0x2c | 0x2d => extend_scrap_facilities!(
+                    out,
+                    &sys.production_facilities,
+                    &world.production_facilities,
+                    side,
+                    family,
+                    |facility: &crate::world::ProductionFacilityInstance| {
+                        if facility.is_mine {
+                            0x2c
+                        } else {
+                            0x2d
+                        }
+                    },
+                    ScrapTarget::Production,
                 ),
                 _ => {}
             }
@@ -2542,6 +2635,19 @@ enum MakeRoom {
 }
 
 impl ProductionState {
+    fn listed_record(
+        &mut self,
+        module: Module,
+        system: SystemKey,
+        round: &Round<'_>,
+    ) -> Option<SystemRecord> {
+        let record = round.record(system).cloned();
+        if record.is_none() {
+            self.module(module).list.retain(|&listed| listed != system);
+        }
+        record
+    }
+
     /// A construction-yard module's new site (`FUN_004d8ad0`,
     /// `FUN_004db510`, `FUN_004e3530`): the listed system with free slots
     /// and the fewest construction yards, else the best unclaimed one,
@@ -2725,11 +2831,10 @@ impl ProductionState {
     /// (`sys+0xd8`), as read.
     fn facility_budget(&mut self, module: Module, round: &Round<'_>) -> i64 {
         let (pct, family) = match module {
-            Module::CapitalShips => (10, YardFamily::ConstructionYard),
+            Module::CapitalShips | Module::Defences => (10, YardFamily::ConstructionYard),
             Module::FleetFighters | Module::SystemFighters => (20, YardFamily::Shipyard),
             Module::SpecialForces => (30, YardFamily::TrainingFacility),
             Module::Regiments => (20, YardFamily::TrainingFacility),
-            Module::Defences => (10, YardFamily::ConstructionYard),
             Module::Yards | Module::DeficitRelief => (100, YardFamily::ConstructionYard),
         };
         let list = self.module(module).list.clone();
@@ -2772,8 +2877,7 @@ impl ProductionState {
         round: &mut Round<'_>,
     ) -> Option<(SystemKey, i64)> {
         for s in self.module(module).list.clone() {
-            let Some(r) = round.record(s).cloned() else {
-                self.module(module).list.retain(|&x| x != s);
+            let Some(r) = self.listed_record(module, s, round) else {
                 continue;
             };
             if r.own && r.a & bit_role == 0 {
@@ -2868,7 +2972,7 @@ impl ProductionState {
             orders.extend(round.make_room(target, MakeRoom::ConstructionYards));
             let budget = round.census.budget(M, 90, round.census.system_defences);
             if budget < 0 {
-                orders.extend(self.defence_overdraft(round));
+                orders.extend(Self::defence_overdraft(round));
                 return Some(orders);
             }
             if budget > 0 {
@@ -2958,28 +3062,27 @@ impl ProductionState {
                 );
             }
         }
-        match target.and_then(|t| round.record(t)) {
-            Some(r) => (Some(r.key), r.defence_balance < 0),
-            None => {
-                if round
-                    .census
-                    .budget(Module::Defences, 90, round.census.system_defences)
-                    > 0
-                    && self.targets[4] < 2
-                {
-                    self.targets[4] += 1;
-                    // FUN_00418240 -> FUN_004311d0 marks every system record
-                    // (FUN_004d4370.c:121-123).
-                    round.dirty = true;
-                }
-                (None, false)
+        if let Some(r) = target.and_then(|t| round.record(t)) {
+            (Some(r.key), r.defence_balance < 0)
+        } else {
+            if round
+                .census
+                .budget(Module::Defences, 90, round.census.system_defences)
+                > 0
+                && self.targets[4] < 2
+            {
+                self.targets[4] += 1;
+                // FUN_00418240 -> FUN_004311d0 marks every system record
+                // (FUN_004d4370.c:121-123).
+                round.dirty = true;
             }
+            (None, false)
         }
     }
 
     /// `FUN_004d8520` ("F3.5"): scrap one defence where the side has a
     /// surplus, else where it has shields and batteries both.
-    fn defence_overdraft(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn defence_overdraft(round: &mut Round<'_>) -> Option<Order> {
         let own = SystemFilter {
             own: true,
             ..SystemFilter::default()
@@ -3191,6 +3294,40 @@ fn cut_to_budget(count: i64, maintenance: i64, budget: i64) -> i64 {
 }
 
 impl ProductionState {
+    /// Shared `0x3ec` facility-pass toggle from `FUN_004cca20`,
+    /// `FUN_004d3170`, `FUN_004cfed0`, and `FUN_004dd7a0`.
+    fn facility_phase(
+        &mut self,
+        module: Module,
+        work_phase: u16,
+        kind: YardKind,
+        round: &mut Round<'_>,
+    ) -> Option<Vec<Order>> {
+        if self.module(module).phase == 0x3ec {
+            self.module(module).phase = work_phase;
+            return Some(self.facility_pass(module, kind, round));
+        }
+        self.module(module).phase = 0x3ec;
+        None
+    }
+
+    fn build_orders(
+        round: &mut Round<'_>,
+        producer: SystemKey,
+        kind: crate::manufacturing::BuildableKind,
+        count: u32,
+        target: Option<SystemKey>,
+    ) -> Vec<Order> {
+        round
+            .build(producer, kind, count, target)
+            .into_iter()
+            .collect()
+    }
+
+    fn optional_order(order: Option<Order>) -> Vec<Order> {
+        order.into_iter().collect()
+    }
+
     /// A unit module's producer (`FUN_004ca300`, `FUN_004cccc0`,
     /// `FUN_004d3ff0`, `FUN_004d01a0`, `FUN_004df160`): the first listed
     /// system the side holds, with the module's role and a ready yard of the
@@ -3220,8 +3357,7 @@ impl ProductionState {
         self.caches[own_cache as usize] = None;
         let mut found = None;
         for s in self.module(module).list.clone() {
-            let Some(r) = round.record(s).cloned() else {
-                self.module(module).list.retain(|&x| x != s);
+            let Some(r) = self.listed_record(module, s, round) else {
                 continue;
             };
             if !r.own || r.a & kind.role == 0 {
@@ -3263,7 +3399,7 @@ impl ProductionState {
             // FUN_004c8ba0: step 2's order sets done and raises m+0x34
             // (:10-15), so the phase resumes at step 3 next turn.
             if self.module(M).step == 0 {
-                if let Some(order) = self.repair_move(round) {
+                if let Some(order) = Self::repair_move(round) {
                     self.module(M).step = 3;
                     return vec![order];
                 }
@@ -3283,14 +3419,14 @@ impl ProductionState {
             round,
         ) else {
             if budget < 0 {
-                return self.scrap_ship(round).into_iter().collect();
+                return Self::scrap_ship(round).into_iter().collect();
             }
             return self.capital_ships(round);
         };
         let (mask, key, blocker) = self.ship_request(round);
         self.module(M).blockers &= 0x80ff_ffff;
         if budget < 0 {
-            return self.scrap_ship(round).into_iter().collect();
+            return Self::scrap_ship(round).into_iter().collect();
         }
         if budget > 0 {
             let ranked = round.classes(
@@ -3316,7 +3452,7 @@ impl ProductionState {
     /// system, the fleet's own included (`FUN_004c8e90.c:189-201`), where
     /// `FUN_00556390` changes the ships' container in place
     /// (`fleet_join::move_ships_to_system`).
-    fn repair_move(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn repair_move(round: &mut Round<'_>) -> Option<Order> {
         use crate::ai_records::{fleet, ship};
         // FUN_0041a4c0(c, 0x1005, 0x802, 0, largest): own, unadopted,
         // holding a damaged ship, neither en route nor holding a ship en route;
@@ -3501,7 +3637,7 @@ impl ProductionState {
     /// A fleet a regional record or task holds is never scrapped. hyp: ship
     /// `+0x70` is its class maintenance, which the census sums as
     /// `c+0x24c`.
-    fn scrap_ship(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn scrap_ship(round: &mut Round<'_>) -> Option<Order> {
         use crate::ai_records::{fleet, ship};
         let world = round.inputs.world;
         let maintenance = |tag: &u32| {
@@ -3559,11 +3695,9 @@ impl ProductionState {
     /// Phases `0x3f2` and `0x3ec` (`FUN_004cca20`; "U6").
     fn fleet_fighters(&mut self, round: &mut Round<'_>) -> Vec<Order> {
         const M: Module = Module::FleetFighters;
-        if self.module(M).phase == 0x3ec {
-            self.module(M).phase = 0x3f2;
-            return self.facility_pass(M, YardKind::SHIPYARD, round);
+        if let Some(orders) = self.facility_phase(M, 0x3f2, YardKind::SHIPYARD, round) {
+            return orders;
         }
-        self.module(M).phase = 0x3ec;
         let budget = round.census.budget(M, 80, round.census.fleet_fighters);
         let producer = self.unit_producer(
             M,
@@ -3575,12 +3709,12 @@ impl ProductionState {
         let target = producer.and_then(|_| Self::hangar_target(round));
         let (Some(producer), Some(target)) = (producer, target) else {
             if budget < 0 {
-                return self.scrap_fighter_aboard(round).into_iter().collect();
+                return Self::optional_order(Self::scrap_fighter_aboard(round));
             }
             return self.fleet_fighters(round);
         };
         if budget < 0 {
-            return self.scrap_fighter_aboard(round).into_iter().collect();
+            return Self::scrap_fighter_aboard(round).into_iter().collect();
         }
         if budget == 0 {
             return Vec::new();
@@ -3650,7 +3784,7 @@ impl ProductionState {
     /// `FUN_004cd310`: scrap a fighter squadron aboard the own fleet with
     /// the most fighter maintenance. hyp: the squadron with the least
     /// maintenance stands for the smallest vtable `+500` value.
-    fn scrap_fighter_aboard(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn scrap_fighter_aboard(round: &mut Round<'_>) -> Option<Order> {
         let world = round.inputs.world;
         let is_alliance = round.inputs.side == Faction::Alliance;
         let cost = |class| {
@@ -3698,11 +3832,9 @@ impl ProductionState {
     /// moves, `FUN_004d3170`) is not read and emits nothing.
     fn system_fighters(&mut self, round: &mut Round<'_>) -> Vec<Order> {
         const M: Module = Module::SystemFighters;
-        if self.module(M).phase == 0x3ec {
-            self.module(M).phase = 0x3f2;
-            return self.facility_pass(M, YardKind::SHIPYARD, round);
+        if let Some(orders) = self.facility_phase(M, 0x3f2, YardKind::SHIPYARD, round) {
+            return orders;
         }
-        self.module(M).phase = 0x3ec;
         let producer = self.unit_producer(
             M,
             YardKind::SHIPYARD,
@@ -3716,13 +3848,13 @@ impl ProductionState {
         };
         let (Some(producer), Some(target)) = (producer, target) else {
             if round.census.budget(M, 90, round.census.system_fighters) < 0 {
-                return self.scrap_system_fighter(round).into_iter().collect();
+                return Self::optional_order(Self::scrap_system_fighter(round));
             }
             return self.system_fighters(round);
         };
         let budget = round.census.budget(M, 80, round.census.system_fighters);
         if budget < 0 {
-            return self.scrap_system_fighter(round).into_iter().collect();
+            return Self::optional_order(Self::scrap_system_fighter(round));
         }
         if budget == 0 {
             return Vec::new();
@@ -3745,10 +3877,7 @@ impl ProductionState {
         };
         let count = cut_to_budget(-r.fighter_balance, maintenance, budget).min(producer.1);
         let count = u32::try_from(count).unwrap_or(0);
-        round
-            .build(producer.0, kind, count, Some(target))
-            .into_iter()
-            .collect()
+        Self::build_orders(round, producer.0, kind, count, Some(target))
     }
 
     /// `FUN_004d4370`: an own system short of fighters, a role system
@@ -3777,8 +3906,8 @@ impl ProductionState {
             .budget(Module::SystemFighters, 80, round.census.system_fighters)
             > 0
         {
-            for index in 9..=11 {
-                self.targets[index] += 1;
+            for target in self.targets.iter_mut().take(12).skip(9) {
+                *target += 1;
             }
             // FUN_00418240 -> FUN_004311d0 (FUN_004d76f0.c:138).
             round.dirty = true;
@@ -3789,7 +3918,7 @@ impl ProductionState {
     /// `FUN_004d4800`: over budget, a squadron leaves a system with a
     /// surplus. hyp: `FUN_0041a600` and the Move it may issue are not
     /// read; the squadron is scrapped where the surplus is largest.
-    fn scrap_system_fighter(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn scrap_system_fighter(round: &mut Round<'_>) -> Option<Order> {
         let is_alliance = round.inputs.side == Faction::Alliance;
         // The records are walked in the world's system order: rank_pick
         // draws per entry, so a hash map's order would reach the stream.
@@ -3824,11 +3953,9 @@ impl ProductionState {
     /// Phases `0x3f4` and `0x3ec` (`FUN_004cfed0`; "U8").
     fn special_forces(&mut self, round: &mut Round<'_>) -> Vec<Order> {
         const M: Module = Module::SpecialForces;
-        if self.module(M).phase == 0x3ec {
-            self.module(M).phase = 0x3f4;
-            return self.facility_pass(M, YardKind::TRAINING, round);
+        if let Some(orders) = self.facility_phase(M, 0x3f4, YardKind::TRAINING, round) {
+            return orders;
         }
-        self.module(M).phase = 0x3ec;
         let budget = round.census.budget(M, 70, round.census.special_forces);
         let producer = self.unit_producer(
             M,
@@ -3840,12 +3967,12 @@ impl ProductionState {
         let mask = producer.and_then(|_| self.special_force_need(round));
         let (Some(producer), Some(mask)) = (producer, mask) else {
             if budget < 0 {
-                return self.retire_special_force(round).into_iter().collect();
+                return Self::optional_order(Self::retire_special_force(round));
             }
             return self.special_forces(round);
         };
         if budget < 0 {
-            return self.retire_special_force(round).into_iter().collect();
+            return Self::optional_order(Self::retire_special_force(round));
         }
         if budget == 0 {
             return Vec::new();
@@ -3859,10 +3986,7 @@ impl ProductionState {
             return Vec::new();
         };
         let count = u32::try_from(cut_to_budget(1, maintenance, budget)).unwrap_or(0);
-        round
-            .build(producer.0, kind, count, None)
-            .into_iter()
-            .collect()
+        Self::build_orders(round, producer.0, kind, count, None)
     }
 
     /// `FUN_004d0480`: the next class bit, from where the cycle stopped,
@@ -3901,7 +4025,7 @@ impl ProductionState {
 
     /// `FUN_004d0610`: retire the special force with the most maintenance.
     /// hyp: a Retire removes the unit as a Scrap does.
-    fn retire_special_force(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn retire_special_force(round: &mut Round<'_>) -> Option<Order> {
         let world = round.inputs.world;
         let is_alliance = round.inputs.side == Faction::Alliance;
         let units: Vec<(crate::ids::SpecialForceKey, i64)> = world
@@ -3930,11 +4054,9 @@ impl ProductionState {
     /// moves) is not read and emits nothing.
     fn regiments(&mut self, round: &mut Round<'_>) -> Vec<Order> {
         const M: Module = Module::Regiments;
-        if self.module(M).phase == 0x3ec {
-            self.module(M).phase = 0x3f0;
-            return self.facility_pass(M, YardKind::TRAINING, round);
+        if let Some(orders) = self.facility_phase(M, 0x3f0, YardKind::TRAINING, round) {
+            return orders;
         }
-        self.module(M).phase = 0x3ec;
         let producer = self.unit_producer(
             M,
             YardKind::TRAINING,
@@ -3959,7 +4081,7 @@ impl ProductionState {
             }
         }
         if budget < 0 {
-            return self.scrap_regiment(round).into_iter().collect();
+            return Self::optional_order(Self::scrap_regiment(round));
         }
         if budget == 0 {
             return Vec::new();
@@ -3974,10 +4096,7 @@ impl ProductionState {
         };
         let count = cut_to_budget(count, maintenance, budget).min(producer.1);
         let count = u32::try_from(count).unwrap_or(0);
-        round
-            .build(producer.0, kind, count, Some(target))
-            .into_iter()
-            .collect()
+        Self::build_orders(round, producer.0, kind, count, Some(target))
     }
 
     /// `FUN_004df440`: the selectors in the rotation's order until one
@@ -3987,17 +4106,18 @@ impl ProductionState {
         producer: SystemKey,
         round: &mut Round<'_>,
     ) -> Option<(SystemKey, i64, u32, u32, Dir)> {
+        const A: u8 = 0;
+        const B: u8 = 1;
+        const C: u8 = 2;
+        const D: u8 = 3;
+        const E: u8 = 4;
+
         let state = self.module(Module::Regiments);
         let rotation = state.cursor;
         state.cursor = if rotation >= 4 { 1 } else { rotation + 1 };
         if rotation == 0 {
             return None;
         }
-        const A: u8 = 0;
-        const B: u8 = 1;
-        const C: u8 = 2;
-        const D: u8 = 3;
-        const E: u8 = 4;
         let order: &[u8] = match rotation {
             1 => &[A, B, D, E, C],
             2 => &[B, D, D, E, C, A],
@@ -4086,7 +4206,7 @@ impl ProductionState {
     }
 
     /// `FUN_004dfa80`: scrap a regiment where the side has a surplus.
-    fn scrap_regiment(&mut self, round: &mut Round<'_>) -> Option<Order> {
+    fn scrap_regiment(round: &mut Round<'_>) -> Option<Order> {
         let world = round.inputs.world;
         let is_alliance = round.inputs.side == Faction::Alliance;
         let sector = round.sector(0x8_0000, &[(0x1f, Dir::Smallest)])?;
@@ -4108,8 +4228,56 @@ impl ProductionState {
 
 #[cfg(test)]
 mod tests {
-    use crate::carriage::ProductRoom;
     use super::*;
+    use crate::carriage::ProductRoom;
+
+    #[test]
+    fn a_bounded_driver_stops_at_its_first_result_or_when_its_calls_run_out() {
+        let mut calls = 3;
+        let mut steps = 0;
+        let result = first_bounded_step(
+            &mut calls,
+            || {
+                steps += 1;
+                steps
+            },
+            |&step| step < 2,
+        );
+        assert_eq!(result, Some(2));
+        assert_eq!(calls, 1);
+
+        let result = first_bounded_step(&mut calls, || 3, |_| true);
+        assert_eq!(result, None);
+        assert_eq!(calls, 0);
+    }
+
+    macro_rules! test_round {
+        ($round:ident, $state:expr, $world:expr, $manufacturing:expr, $marks:expr, $side:expr) => {
+            test_round!(@bind [] $round, $state, $world, $manufacturing, $marks, $side);
+        };
+        (mut $round:ident, $state:expr, $world:expr, $manufacturing:expr, $marks:expr, $side:expr) => {
+            test_round!(@bind [mut] $round, $state, $world, $manufacturing, $marks, $side);
+        };
+        (@bind [$($mutable:tt)*] $round:ident, $state:expr, $world:expr, $manufacturing:expr, $marks:expr, $side:expr) => {
+            let transport = TroopTransportState::new();
+            let uprisings = crate::uprising::UprisingState::new();
+            let research = crate::research::ResearchState::new();
+            let movement = crate::movement::MovementState::new();
+            let inputs = RoundInputs {
+                world: $world,
+                manufacturing: $manufacturing,
+                transport: &transport,
+                uprisings: &uprisings,
+                research: &research,
+                movement: &movement,
+                marks: $marks,
+                side: $side,
+                tick: 7,
+                round_in_day: 0,
+            };
+            let $($mutable)* $round = Round::new($state, &inputs);
+        };
+    }
     use crate::world::{CapitalShipClass, Fleet, ShipInstance};
 
     #[test]
@@ -4346,24 +4514,8 @@ mod tests {
             crate::carriage::tag_all(&mut world);
             let state = ProductionState::default();
             let manufacturing = ManufacturingState::new();
-            let transport = TroopTransportState::new();
-            let uprisings = crate::uprising::UprisingState::new();
-            let research = crate::research::ResearchState::new();
-            let movement = crate::movement::MovementState::new();
             let marks = crate::ai_records::Marks::default();
-            let inputs = RoundInputs {
-                world: &world,
-                manufacturing: &manufacturing,
-                transport: &transport,
-                uprisings: &uprisings,
-                research: &research,
-                movement: &movement,
-                marks: &marks,
-                side,
-                tick: 7,
-                round_in_day: 0,
-            };
-            let round = Round::new(&state, &inputs);
+            test_round!(round, &state, &world, &manufacturing, &marks, side);
 
             let figures = ShipFigures::of(&round);
 
@@ -4401,11 +4553,13 @@ mod tests {
         let death_star = class(&mut world, 0x18, 600);
         let frigate = class(&mut world, 0x14, queued);
         for is_mine in std::iter::repeat_n([true, false], 45).flatten() {
-            world.production_facilities.insert(ProductionFacilityInstance {
-                class_dat_id: crate::ids::DatId::new(0x2c00_0001),
-                side,
-                is_mine,
-            });
+            world
+                .production_facilities
+                .insert(ProductionFacilityInstance {
+                    class_dat_id: crate::ids::DatId::new(0x2c00_0001),
+                    side,
+                    is_mine,
+                });
         }
         let mut systems = Vec::new();
         for _ in 0..2 {
@@ -4433,26 +4587,14 @@ mod tests {
             state.roles.insert(s, role::SHIPYARD);
         }
         state.module(Module::CapitalShips).list = systems.clone();
-        let transport = TroopTransportState::new();
-        let uprisings = crate::uprising::UprisingState::new();
-        let research = crate::research::ResearchState::new();
-        let movement = crate::movement::MovementState::new();
         let marks = crate::ai_records::Marks::default();
-        let inputs = RoundInputs {
-            world: &world,
-            manufacturing: &manufacturing,
-            transport: &transport,
-            uprisings: &uprisings,
-            research: &research,
-            movement: &movement,
-            marks: &marks,
-            side,
-            tick: 7,
-            round_in_day: 0,
-        };
-        let mut round = Round::new(&state, &inputs);
+        test_round!(mut round, &state, &world, &manufacturing, &marks, side);
         let orders = state.capital_ships(&mut round);
-        (orders, state.module(Module::CapitalShips).blockers, death_star)
+        (
+            orders,
+            state.module(Module::CapitalShips).blockers,
+            death_star,
+        )
     }
 
     // FUN_004ca5e0 (module 11's request, U5): with no regional shortfall,
@@ -4539,27 +4681,36 @@ mod tests {
 
     /// Module 11's repair move (`repair_move`) for `side` over `world`.
     fn repair_order(world: &GameWorld, side: Faction) -> Option<Order> {
-        let mut state = ProductionState::default();
+        let state = ProductionState::default();
         let manufacturing = ManufacturingState::new();
-        let transport = TroopTransportState::new();
-        let uprisings = crate::uprising::UprisingState::new();
-        let research = crate::research::ResearchState::new();
-        let movement = crate::movement::MovementState::new();
         let marks = crate::ai_records::Marks::default();
-        let inputs = RoundInputs {
-            world,
-            manufacturing: &manufacturing,
-            transport: &transport,
-            uprisings: &uprisings,
-            research: &research,
-            movement: &movement,
-            marks: &marks,
-            side,
-            tick: 7,
-            round_in_day: 0,
-        };
-        let mut round = Round::new(&state, &inputs);
-        state.repair_move(&mut round)
+        test_round!(mut round, &state, world, &manufacturing, &marks, side);
+        ProductionState::repair_move(&mut round)
+    }
+
+    fn assert_repair_move(
+        world: &mut GameWorld,
+        side: Faction,
+        fleet: crate::ids::FleetKey,
+        system: SystemKey,
+    ) {
+        crate::carriage::tag_all(world);
+        let tag = world.fleets[fleet].capital_ships[0].tag;
+        assert_eq!(
+            repair_order(world, side),
+            Some(Order::MoveShips {
+                fleet,
+                ships: vec![tag],
+                to: system,
+            }),
+            "{side:?}"
+        );
+    }
+
+    fn world_with_system() -> (GameWorld, SystemKey) {
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(crate::world::System::default());
+        (world, system)
     }
 
     // FUN_004c8e90 (module 11, phase 0x3f8 step 2): a free own fleet
@@ -4581,18 +4732,7 @@ mod tests {
                 side,
                 vec![ShipInstance::new(class, 50, is_alliance)],
             );
-            crate::carriage::tag_all(&mut world);
-            let tag = world.fleets[fleet].capital_ships[0].tag;
-
-            assert_eq!(
-                repair_order(&world, side),
-                Some(Order::MoveShips {
-                    fleet,
-                    ships: vec![tag],
-                    to: system,
-                }),
-                "{side:?}"
-            );
+            assert_repair_move(&mut world, side, fleet, system);
         }
     }
 
@@ -4613,8 +4753,18 @@ mod tests {
             let damaged = || ShipInstance::new(class, 50, is_alliance);
             let mut drives_out = damaged();
             drives_out.set_damage_counter(4, 1);
-            let fleet = repair_fleet(&mut world, system, side, vec![damaged(), sound(), drives_out]);
-            repair_fleet(&mut world, system, side, vec![sound(), sound(), sound(), sound()]);
+            let fleet = repair_fleet(
+                &mut world,
+                system,
+                side,
+                vec![damaged(), sound(), drives_out],
+            );
+            repair_fleet(
+                &mut world,
+                system,
+                side,
+                vec![sound(), sound(), sound(), sound()],
+            );
             let mut travelling = sound();
             travelling.transit = Some(crate::world::ShipTransit {
                 from: system,
@@ -4627,18 +4777,7 @@ mod tests {
                 side,
                 vec![damaged(), travelling, sound(), sound(), sound()],
             );
-            crate::carriage::tag_all(&mut world);
-            let tag = world.fleets[fleet].capital_ships[0].tag;
-
-            assert_eq!(
-                repair_order(&world, side),
-                Some(Order::MoveShips {
-                    fleet,
-                    ships: vec![tag],
-                    to: system,
-                }),
-                "{side:?}"
-            );
+            assert_repair_move(&mut world, side, fleet, system);
         }
     }
 
@@ -4693,11 +4832,13 @@ mod tests {
                 ..Default::default()
             });
             for (owner, is_mine) in [(side, true), (side, true), (side, false), (other, true)] {
-                world.production_facilities.insert(ProductionFacilityInstance {
-                    class_dat_id: DatId::new(0x2c00_0001),
-                    side: owner,
-                    is_mine,
-                });
+                world
+                    .production_facilities
+                    .insert(ProductionFacilityInstance {
+                        class_dat_id: DatId::new(0x2c00_0001),
+                        side: owner,
+                        is_mine,
+                    });
             }
             let defence = |world: &mut GameWorld, id, side| {
                 world.defense_facilities.insert(DefenseFacilityInstance {
@@ -4710,11 +4851,13 @@ mod tests {
                 defence(&mut world, 0x2200_0002, other),
             ];
             let yard = |world: &mut GameWorld, id, side| {
-                world.manufacturing_facilities.insert(ManufacturingFacilityInstance {
-                    class_dat_id: DatId::new(id),
-                    side,
-                    is_shipyard: false,
-                })
+                world
+                    .manufacturing_facilities
+                    .insert(ManufacturingFacilityInstance {
+                        class_dat_id: DatId::new(id),
+                        side,
+                        is_shipyard: false,
+                    })
             };
             let yards = vec![
                 yard(&mut world, 0x2800_0001, side),
@@ -4726,7 +4869,6 @@ mod tests {
                 world.troops.insert(TroopUnit {
                     class_dat_id: DatId::new(id),
                     is_alliance,
-                    ..Default::default()
                 })
             };
             let aboard = troop(&mut world, 0x1000_0001, mine);
@@ -4792,7 +4934,11 @@ mod tests {
             assert_eq!(census.system_regiments, 3, "{side:?}");
             assert_eq!(census.system_fighters, 15, "{side:?}");
             assert_eq!(census.system_defences, 13, "{side:?}");
-            assert_eq!(census.yards, HashMap::from([(own, [17, 19, 23])]), "{side:?}");
+            assert_eq!(
+                census.yards,
+                HashMap::from([(own, [17, 19, 23])]),
+                "{side:?}"
+            );
             assert_eq!(census.special_forces, 11, "{side:?}");
         }
     }
@@ -4807,25 +4953,10 @@ mod tests {
         edit: impl FnOnce(&mut Round<'_>),
     ) -> Option<Order> {
         let manufacturing = ManufacturingState::new();
-        let transport = TroopTransportState::new();
-        let uprisings = crate::uprising::UprisingState::new();
-        let research = crate::research::ResearchState::new();
-        let movement = crate::movement::MovementState::new();
-        let inputs = RoundInputs {
-            world,
-            manufacturing: &manufacturing,
-            transport: &transport,
-            uprisings: &uprisings,
-            research: &research,
-            movement: &movement,
-            marks,
-            side,
-            tick: 7,
-            round_in_day: 0,
-        };
-        let mut round = Round::new(&ProductionState::default(), &inputs);
+        let state = ProductionState::default();
+        test_round!(mut round, &state, world, &manufacturing, marks, side);
         edit(&mut round);
-        ProductionState::default().scrap_ship(&mut round)
+        ProductionState::scrap_ship(&mut round)
     }
 
     // FUN_004cd040 with no regional record asks
@@ -4834,12 +4965,12 @@ mod tests {
     // unfinished 0x400, a ship en route 0x800, the fleet en route 2), the
     // fewest free hangar slots first (key slot 0x17).
     #[test]
-    fn the_hangar_target_skips_fleets_holding_an_unfinished_or_travelling_ship_or_adopted_for_either_side() {
+    fn the_hangar_target_skips_fleets_holding_an_unfinished_or_travelling_ship_or_adopted_for_either_side(
+    ) {
         use crate::ai_records::{FleetMark, Marks};
         for side in [Faction::Empire, Faction::Alliance] {
             let is_alliance = side == Faction::Alliance;
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(crate::world::System::default());
+            let (mut world, system) = world_with_system();
             let carrier = world.capital_ship_classes.insert(CapitalShipClass {
                 family: 0x14,
                 fighter_capacity: 4,
@@ -4906,24 +5037,9 @@ mod tests {
                     ..FleetMark::default()
                 },
             );
+            let state = ProductionState::default();
             let manufacturing = ManufacturingState::new();
-            let transport = TroopTransportState::new();
-            let uprisings = crate::uprising::UprisingState::new();
-            let research = crate::research::ResearchState::new();
-            let movement = crate::movement::MovementState::new();
-            let inputs = RoundInputs {
-                world: &world,
-                manufacturing: &manufacturing,
-                transport: &transport,
-                uprisings: &uprisings,
-                research: &research,
-                movement: &movement,
-                marks: &marks,
-                side,
-                tick: 7,
-                round_in_day: 0,
-            };
-            let mut round = Round::new(&ProductionState::default(), &inputs);
+            test_round!(mut round, &state, &world, &manufacturing, &marks, side);
             // A fleet in hyperspace carries the en-route bit in its record.
             round
                 .fleets
@@ -4949,8 +5065,7 @@ mod tests {
         use crate::scrap::ScrapTarget;
         for side in [Faction::Empire, Faction::Alliance] {
             let is_alliance = side == Faction::Alliance;
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(crate::world::System::default());
+            let (mut world, system) = world_with_system();
             let class = |world: &mut GameWorld, family, maintenance_cost| {
                 world.capital_ship_classes.insert(CapitalShipClass {
                     family,
@@ -5051,23 +5166,7 @@ mod tests {
     ) -> (HashMap<SystemKey, SystemRecord>, Vec<SectorRecord>) {
         let state = ProductionState::default();
         let manufacturing = ManufacturingState::new();
-        let transport = TroopTransportState::new();
-        let uprisings = crate::uprising::UprisingState::new();
-        let research = crate::research::ResearchState::new();
-        let movement = crate::movement::MovementState::new();
-        let inputs = RoundInputs {
-            world,
-            manufacturing: &manufacturing,
-            transport: &transport,
-            uprisings: &uprisings,
-            research: &research,
-            movement: &movement,
-            marks,
-            side,
-            tick: 7,
-            round_in_day: 0,
-        };
-        let round = Round::new(&state, &inputs);
+        test_round!(round, &state, world, &manufacturing, marks, side);
         (round.records.clone(), round.sectors.clone())
     }
 
@@ -5075,7 +5174,8 @@ mod tests {
     // Coruscant (DatId 0x109), which takes the HQ bit with no headquarters
     // there; FUN_004321e0 records a sector's position and its plan mark.
     #[test]
-    fn the_round_records_a_system_s_sector_energy_and_coruscant_and_a_sector_s_place_and_mark_for_either_side() {
+    fn the_round_records_a_system_s_sector_energy_and_coruscant_and_a_sector_s_place_and_mark_for_either_side(
+    ) {
         use crate::ids::DatId;
         use crate::world::{ControlKind, Sector, System};
         for side in [Faction::Empire, Faction::Alliance] {
@@ -5106,10 +5206,17 @@ mod tests {
             let (records, sectors) = round_records(&world, side, &marks);
 
             let r = &records[&coruscant];
-            assert_eq!((r.sector, r.energy, r.coruscant), (sector, 11, true), "{side:?}");
+            assert_eq!(
+                (r.sector, r.energy, r.coruscant),
+                (sector, 11, true),
+                "{side:?}"
+            );
             assert_ne!(r.a & bit::HQ, 0, "{side:?}");
             assert_eq!(records[&other].a & bit::HQ, 0, "{side:?}");
-            let rec = sectors.iter().find(|s| s.key == sector).expect("the sector's record");
+            let rec = sectors
+                .iter()
+                .find(|s| s.key == sector)
+                .expect("the sector's record");
             assert_eq!((rec.x, rec.y, rec.mark), (30, 40, mark), "{side:?}");
         }
     }
@@ -5125,8 +5232,11 @@ mod tests {
             ..Default::default()
         });
 
-        let node = ClassNode::of(&world, crate::manufacturing::BuildableKind::CapitalShip(class))
-            .expect("a node for the class");
+        let node = ClassNode::of(
+            &world,
+            crate::manufacturing::BuildableKind::CapitalShip(class),
+        )
+        .expect("a node for the class");
 
         assert_eq!((node.key(1), node.key(4)), (3, 7));
     }
@@ -5166,25 +5276,13 @@ mod tests {
         let marks = crate::ai_records::Marks::default();
         let state = ProductionState::default();
         let manufacturing = ManufacturingState::new();
-        let transport = TroopTransportState::new();
-        let uprisings = crate::uprising::UprisingState::new();
-        let research = crate::research::ResearchState::new();
-        let movement = crate::movement::MovementState::new();
-        let inputs = RoundInputs {
-            world: &world,
-            manufacturing: &manufacturing,
-            transport: &transport,
-            uprisings: &uprisings,
-            research: &research,
-            movement: &movement,
-            marks: &marks,
-            side,
-            tick: 7,
-            round_in_day: 0,
-        };
-        let mut round = Round::new(&state, &inputs);
+        test_round!(mut round, &state, &world, &manufacturing, &marks, side);
         edit(&mut round, ours, theirs);
-        (run(&mut round), crate::scrap::ScrapTarget::Defense(shield), ours)
+        (
+            run(&mut round),
+            crate::scrap::ScrapTarget::Defense(shield),
+            ours,
+        )
     }
 
     /// The sector holds a surplus (`0x1_0000`); `theirs` has the larger
@@ -5195,7 +5293,11 @@ mod tests {
         }
         let r = round.records.get_mut(&ours).expect("our record");
         (r.defence_balance, r.shields, r.shield_target) = (1, 1, 0);
-        round.records.get_mut(&theirs).expect("their record").defence_balance = 50;
+        round
+            .records
+            .get_mut(&theirs)
+            .expect("their record")
+            .defence_balance = 50;
     }
 
     // FUN_004d71e0 picks the side's own system (`sys+0x30 & 1`) with the
@@ -5204,8 +5306,9 @@ mod tests {
     #[test]
     fn the_defence_surplus_pass_scraps_only_at_the_side_s_own_system_for_either_side() {
         for side in [Faction::Empire, Faction::Alliance] {
-            let (orders, shield, _) =
-                two_system_round(side, surplus, |round| ProductionState::default().defences(round));
+            let (orders, shield, _) = two_system_round(side, surplus, |round| {
+                ProductionState::default().defences(round)
+            });
 
             assert_eq!(orders, vec![Order::Scrap(vec![shield])], "{side:?}");
         }
@@ -5218,7 +5321,7 @@ mod tests {
     fn the_defence_overdraft_scraps_only_at_the_side_s_own_system_for_either_side() {
         for side in [Faction::Empire, Faction::Alliance] {
             let (order, shield, _) = two_system_round(side, surplus, |round| {
-                ProductionState::default().defence_overdraft(round)
+                ProductionState::defence_overdraft(round)
             });
 
             assert_eq!(order, Some(Order::Scrap(vec![shield])), "{side:?}");
@@ -5282,7 +5385,12 @@ mod tests {
             }
             records.insert(key, r);
         }
-        SectorRecord::build(&world, sector, &records, &crate::ai_records::Marks::default())
+        SectorRecord::build(
+            &world,
+            sector,
+            &records,
+            &crate::ai_records::Marks::default(),
+        )
     }
 
     // FUN_004321e0 after the folds: the weakest shield stays only with an

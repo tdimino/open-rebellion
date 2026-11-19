@@ -21,7 +21,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::{CapitalShipKey, FleetKey, SystemKey};
 use crate::manufacturing::{BuildableKind, CompletionEvent, Departure, Destination};
-use crate::movement::{capital_ship_speed, default_speed, fighter_speed, transit_ticks_between};
+use crate::movement::{
+    capital_ship_speed, default_speed, fighter_speed, transit_ticks_between_systems,
+};
 use crate::tick::TickEvent;
 use crate::world::GameWorld;
 
@@ -128,13 +130,7 @@ pub fn transit_days(
     if origin == destination {
         return 0;
     }
-    let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
-    transit_ticks_between(
-        world,
-        position(origin),
-        position(destination),
-        product_speed(world, kind),
-    )
+    transit_ticks_between_systems(world, origin, destination, product_speed(world, kind))
 }
 
 impl DeliveryState {
@@ -173,17 +169,16 @@ impl DeliveryState {
                     )
                 }
             };
-            let position = |key: SystemKey| world.systems.get(key).map_or((0, 0), |s| (s.x, s.y));
             // A special force starts no leg: FUN_005150c0.c:76 hands
             // families 0x30..0x3f to FUN_00545180, which never calls
             // FUN_00556430, so it is at its destination at once.
             let ticks = if matches!(departure.kind, BuildableKind::SpecialForce(_)) {
                 0
             } else {
-                transit_ticks_between(
+                transit_ticks_between_systems(
                     world,
-                    position(departure.origin),
-                    position(destination),
+                    departure.origin,
+                    destination,
                     product_speed(world, departure.kind),
                 )
             };
@@ -388,52 +383,9 @@ pub fn advance_ship_legs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dat::{ExplorationStatus, SectorGroup};
-    use crate::ids::DatId;
     use crate::ids::TroopKey;
-    use crate::world::{CapitalShipClass, ControlKind, FighterClass, Sector, System};
-
-    fn world_with_systems(positions: &[(u16, u16)]) -> (GameWorld, Vec<SystemKey>) {
-        let mut world = GameWorld::default();
-        let sector = world.sectors.insert(Sector {
-            dat_id: DatId::new(0x9200_0000),
-            name: "Test".into(),
-            group: SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-        let keys = positions
-            .iter()
-            .map(|&(x, y)| {
-                world.systems.insert(System {
-                    dat_id: DatId::new(0x9000_0000),
-                    name: format!("Sys@{x},{y}"),
-                    sector,
-                    x,
-                    y,
-                    exploration_status: ExplorationStatus::Explored,
-                    popularity_alliance: 0.5,
-                    popularity_empire: 0.5,
-                    is_populated: true,
-                    total_energy: 0,
-                    raw_materials: 0,
-                    espionage_rating: 0.0,
-                    fleets: vec![],
-                    ground_units: vec![],
-                    special_forces: vec![],
-                    fighters: Vec::new(),
-                    defense_facilities: vec![],
-                    manufacturing_facilities: vec![],
-                    production_facilities: vec![],
-                    is_headquarters: false,
-                    is_destroyed: false,
-                    control: ControlKind::Uncontrolled,
-                })
-            })
-            .collect();
-        (world, keys)
-    }
+    use crate::test_support::world_with_systems;
+    use crate::world::{CapitalShipClass, FighterClass};
 
     fn departure(
         origin: SystemKey,
@@ -539,7 +491,7 @@ mod tests {
                 kind,
             }]
         );
-        assert!(state.en_route().is_empty());
+        assert_empty!(state.en_route());
     }
 
     // FUN_004f63f0: a regiment travels at the GNPRTB 1 default, 100;
@@ -553,7 +505,8 @@ mod tests {
         assert_eq!(state.en_route()[0].arrival_tick, 17);
 
         let early = state.advance(&world, &[TickEvent { tick: 16 }]);
-        assert!(early.arrivals.is_empty() && early.lost.is_empty());
+        assert_empty!(early.arrivals);
+        assert_empty!(early.lost);
         let arrived = state.advance(&world, &[TickEvent { tick: 17 }]);
         assert_eq!(
             arrived.arrivals,
@@ -563,7 +516,7 @@ mod tests {
                 kind
             }]
         );
-        assert!(state.en_route().is_empty());
+        assert_empty!(state.en_route());
     }
 
     // FUN_00500820: a capital ship travels at its class hyperdrive.
@@ -601,10 +554,10 @@ mod tests {
         state.depart(&world, &[departure(systems[0], systems[1], 0, kind)]);
         world.systems[systems[1]].is_destroyed = true;
         let result = state.advance(&world, &[TickEvent { tick: 10 }]);
-        assert!(result.lost.is_empty());
+        assert_empty!(result.lost);
         assert_eq!(result.arrivals.len(), 1);
         assert_eq!(result.arrivals[0].system, systems[1]);
-        assert!(state.en_route().is_empty());
+        assert_empty!(state.en_route());
     }
 
     #[test]
@@ -650,7 +603,7 @@ mod tests {
             result.arrivals.iter().map(|arrival| arrival.kind).collect();
         assert_eq!(kinds, [moved, plain]);
         assert!(result.arrivals.iter().all(|arrival| arrival.tick == 10));
-        assert!(state.en_route().is_empty());
+        assert_empty!(state.en_route());
     }
 
     #[test]

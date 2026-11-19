@@ -125,7 +125,7 @@ mod native {
         ///
         /// # Errors
         /// Returns an error if the video cannot be opened or its first frame cannot be decoded.
-        #[expect(
+        #[allow(
             clippy::cast_possible_truncation,
             reason = "Rendering uses floating pixel coordinates and fixed-width resource IDs; retain existing rounding and narrowing."
         )]
@@ -419,7 +419,10 @@ mod native {
         #[test]
         fn a_movie_path_names_its_mdata_file_number() {
             let number = |path: &str| movie_number(Path::new(path));
-            assert_eq!(number("assets/references/ref-videos/105.webm").unwrap(), 105);
+            assert_eq!(
+                number("assets/references/ref-videos/105.webm").unwrap(),
+                105
+            );
             assert_eq!(number("assets/references/ref-videos/000.webm").unwrap(), 0);
             assert!(matches!(
                 number("assets/references/ref-videos/intro.webm"),

@@ -372,18 +372,9 @@ impl CharacterTasks {
             }
             Some(_) => {}
         }
-        let turn = actions
-            .into_iter()
-            .next()
-            .map_or(Turn::Finished, |action| Turn::Order {
-                action,
-                resume: false,
-            });
+        let turn = Turn::first(actions);
         crate::trace::record(crate::trace::TraceMask::AI, "character_task_turn", || {
-            let order = match &turn {
-                Turn::Order { action, .. } => Some(format!("{action:?}")),
-                Turn::Spent | Turn::Finished => None,
-            };
+            let (order, _) = turn.debug_order();
             serde_json::json!({
                 "task": id,
                 "next": self.task_cursor,

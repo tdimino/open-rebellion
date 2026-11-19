@@ -64,7 +64,7 @@ impl ControlKind {
     pub fn faction(&self) -> Option<crate::dat::Faction> {
         match self {
             ControlKind::Controlled(f) | ControlKind::Uprising(f) => Some(*f), // still nominally controlled
-            _ => None,
+            ControlKind::Uncontrolled => None,
         }
     }
 
@@ -332,7 +332,7 @@ pub struct Sector {
 ///
 /// Individual hulls are `ShipInstance` records in `Fleet::capital_ships`, each
 /// carrying a `CapitalShipKey` back to this class definition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CapitalShipClass {
     pub dat_id: DatId,
     /// The record's family byte (CAPSHPSD `family_id`): `0x18` for the Death
@@ -441,61 +441,8 @@ impl CapitalShipClass {
     }
 }
 
-impl Default for CapitalShipClass {
-    fn default() -> Self {
-        Self {
-            dat_id: DatId::new(0),
-            family: 0,
-            name: String::new(),
-            is_alliance: false,
-            is_empire: false,
-            refined_material_cost: 0,
-            maintenance_cost: 0,
-            research_order: 0,
-            research_difficulty: 0,
-            hull: 0,
-            shield_strength: 0,
-            sub_light_engine: 0,
-            maneuverability: 0,
-            hyperdrive: 0,
-            fighter_capacity: 0,
-            troop_capacity: 0,
-            detection: 0,
-            turbolaser_fore: 0,
-            turbolaser_aft: 0,
-            turbolaser_port: 0,
-            turbolaser_starboard: 0,
-            ion_cannon_fore: 0,
-            ion_cannon_aft: 0,
-            ion_cannon_port: 0,
-            ion_cannon_starboard: 0,
-            laser_cannon_fore: 0,
-            laser_cannon_aft: 0,
-            laser_cannon_port: 0,
-            laser_cannon_starboard: 0,
-            shield_recharge_rate: 0,
-            damage_control: 0,
-            bombardment_modifier: 0,
-            overall_attack_strength: 0,
-            weapon_recharge_rate: 0,
-            turbolaser_attack_strength: 0,
-            ion_cannon_attack_strength: 0,
-            laser_cannon_attack_strength: 0,
-            turbolaser_range: 0,
-            ion_cannon_range: 0,
-            laser_cannon_range: 0,
-            tractor_beam_power: 0,
-            tractor_beam_range: 0,
-            gravity_well_projector: 0,
-            interdiction_strength: 0,
-            uprising_defense: 0,
-            hyperdrive_if_damaged: 0,
-        }
-    }
-}
-
 /// Class definition for a fighter squadron — template, not an instance.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FighterClass {
     pub dat_id: DatId,
     pub name: String,
@@ -566,42 +513,6 @@ pub struct FighterClass {
     pub hyperdrive_if_damaged: u32,
 }
 
-impl Default for FighterClass {
-    fn default() -> Self {
-        Self {
-            dat_id: DatId::new(0),
-            name: String::new(),
-            is_alliance: false,
-            is_empire: false,
-            refined_material_cost: 0,
-            maintenance_cost: 0,
-            research_order: 0,
-            research_difficulty: 0,
-            squadron_size: 0,
-            torpedoes: 0,
-            torpedoes_range: 0,
-            overall_attack_strength: 0,
-            bombardment_defense: 0,
-            shield_strength: 0,
-            sub_light_engine: 0,
-            maneuverability: 0,
-            detection: 0,
-            uprising_defense: 0,
-            turbolaser_fore: 0,
-            ion_cannon_fore: 0,
-            laser_cannon_fore: 0,
-            turbolaser_range: 0,
-            ion_cannon_range: 0,
-            laser_cannon_range: 0,
-            turbolaser_attack_strength: 0,
-            ion_cannon_attack_strength: 0,
-            laser_cannon_attack_strength: 0,
-            hyperdrive: 0,
-            hyperdrive_if_damaged: 0,
-        }
-    }
-}
-
 /// A jail abode (ABODESD, family `0x98`), the character group a stranded
 /// character is held in (`FUN_00549580`; `ghidra/notes/death-star-strategic.md`,
 /// "Jail abodes"). It has no system: an occupant sits in no system or fleet
@@ -645,8 +556,8 @@ impl Abode {
 /// Characters can be assigned as admirals, generals, or diplomats.
 /// Their skills are stored as `SkillPair` (base + variance) to support
 /// both fixed major characters and procedurally-generated minors.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[expect(
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[allow(
     clippy::struct_excessive_bools,
     reason = "These independent flags preserve the existing state and serialization model."
 )]
@@ -851,89 +762,11 @@ impl Character {
     }
 }
 
-impl Default for Character {
-    fn default() -> Self {
-        Self {
-            dat_id: DatId::new(0),
-            name: String::new(),
-            is_alliance: false,
-            is_empire: false,
-            is_major: false,
-            diplomacy: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            espionage: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            ship_design: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            troop_training: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            facility_design: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            combat: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            leadership: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            loyalty: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            jedi_probability: 0,
-            jedi_level: SkillPair {
-                base: 0,
-                variance: 0,
-            },
-            can_be_admiral: false,
-            can_be_commander: false,
-            can_be_general: false,
-            force_tier: ForceTier::None,
-            force_experience: 0,
-            is_discovered_jedi: false,
-            is_unable_to_betray: false,
-            is_jedi_trainer: false,
-            is_known_jedi: false,
-            hyperdrive_modifier: 0,
-            enhanced_loyalty: 0,
-            on_mission: false,
-            on_hidden_mission: false,
-            on_mandatory_mission: false,
-            captured_by: None,
-            capture_tick: None,
-            is_captive: false,
-            current_system: None,
-            current_fleet: None,
-            en_route: false,
-            adrift: false,
-            abode: None,
-            escape_due: None,
-            heritage_known: false,
-            is_killed: false,
-            recruited: false,
-            command_kind: crate::officer_rank::CommandKind::None,
-            command_post: None,
-            ranked_names: Default::default(),
-        }
-    }
-}
-
 /// A base value paired with a random variance for character skill generation.
 ///
 /// Final skill = `base + rng(0..=variance)` at scenario start.
 /// Major characters typically use `variance = 0` to lock their stats.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct SkillPair {
     pub base: u32,
     pub variance: u32,
@@ -971,7 +804,7 @@ pub struct Fleet {
 impl Fleet {
     /// Total number of alive capital ships in this fleet.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
     )]
@@ -1073,6 +906,27 @@ pub struct SystemSquadrons {
 }
 
 impl System {
+    /// All fixed facilities in the original child-list order: defense,
+    /// manufacturing, then production.
+    pub fn facilities(&self) -> impl Iterator<Item = FacilityRef> + '_ {
+        self.defense_facilities
+            .iter()
+            .copied()
+            .map(FacilityRef::Defense)
+            .chain(
+                self.manufacturing_facilities
+                    .iter()
+                    .copied()
+                    .map(FacilityRef::Manufacturing),
+            )
+            .chain(
+                self.production_facilities
+                    .iter()
+                    .copied()
+                    .map(FacilityRef::Production),
+            )
+    }
+
     /// Add `count` squadrons of `class` for a side to the system's own.
     pub fn add_squadrons(&mut self, class: FighterKey, count: u32, is_alliance: bool) {
         if count == 0 {
@@ -1396,18 +1250,12 @@ impl GnprtbParams {
     #[cfg(test)]
     #[must_use]
     pub(crate) fn uniform(values: &[(u16, i32)]) -> Self {
-        let entry = |&(id, value): &(u16, i32)| GnprtbEntry {
-            parameter_id: u32::from(id),
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
-        Self::new(values.iter().map(entry).collect())
+        Self::new(
+            values
+                .iter()
+                .map(|&(id, value)| crate::test_support::gnprtb_entry(id, value))
+                .collect(),
+        )
     }
 
     /// Return the parameter value for `param_id` at `difficulty`.
@@ -1630,7 +1478,7 @@ impl MstbTable {
     /// - If `skill_score` is above the highest threshold, returns the highest value.
     /// - Otherwise interpolates between the two bracketing entries.
     #[must_use]
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "Retain the existing simulation rounding, saturation and fixed-width arithmetic semantics."
@@ -1840,63 +1688,50 @@ pub struct SpecialForceClassDef {
     pub mission_mask: u32,
 }
 
-/// The eight person skills, in the order of the character and special-force
-/// slots `+0x1dc..+0x1f8` (`ghidra/notes/decoy-roll.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Skill {
-    Diplomacy,
-    Espionage,
-    ShipDesign,
-    TroopTraining,
-    FacilityDesign,
-    Combat,
-    Leadership,
-    Loyalty,
+/// Declares skill identity, slot order, and the matching [`Character`] field
+/// together so immutable and mutable access cannot drift apart.
+macro_rules! skill_catalog {
+    ($( $skill:ident => $field:ident; )+) => {
+        /// The eight person skills, in the order of the character and special-force
+        /// slots `+0x1dc..+0x1f8` (`ghidra/notes/decoy-roll.md`).
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+        pub enum Skill {
+            $($skill,)+
+        }
+
+        impl Skill {
+            /// Every skill in slot order.
+            pub const ALL: [Skill; 8] = [$(Skill::$skill,)+];
+        }
+
+        impl Character {
+            /// The skill template for `skill`.
+            #[must_use]
+            pub fn skill(&self, skill: Skill) -> SkillPair {
+                match skill {
+                    $(Skill::$skill => self.$field,)+
+                }
+            }
+
+            /// The skill pair for `skill`, to change it.
+            pub fn skill_mut(&mut self, skill: Skill) -> &mut SkillPair {
+                match skill {
+                    $(Skill::$skill => &mut self.$field,)+
+                }
+            }
+        }
+    };
 }
 
-impl Skill {
-    /// Every skill in slot order.
-    pub const ALL: [Skill; 8] = [
-        Skill::Diplomacy,
-        Skill::Espionage,
-        Skill::ShipDesign,
-        Skill::TroopTraining,
-        Skill::FacilityDesign,
-        Skill::Combat,
-        Skill::Leadership,
-        Skill::Loyalty,
-    ];
-}
-
-impl Character {
-    /// The skill template for `skill`.
-    #[must_use]
-    pub fn skill(&self, skill: Skill) -> SkillPair {
-        match skill {
-            Skill::Diplomacy => self.diplomacy,
-            Skill::Espionage => self.espionage,
-            Skill::ShipDesign => self.ship_design,
-            Skill::TroopTraining => self.troop_training,
-            Skill::FacilityDesign => self.facility_design,
-            Skill::Combat => self.combat,
-            Skill::Leadership => self.leadership,
-            Skill::Loyalty => self.loyalty,
-        }
-    }
-
-    /// The skill pair for `skill`, to change it.
-    pub fn skill_mut(&mut self, skill: Skill) -> &mut SkillPair {
-        match skill {
-            Skill::Diplomacy => &mut self.diplomacy,
-            Skill::Espionage => &mut self.espionage,
-            Skill::ShipDesign => &mut self.ship_design,
-            Skill::TroopTraining => &mut self.troop_training,
-            Skill::FacilityDesign => &mut self.facility_design,
-            Skill::Combat => &mut self.combat,
-            Skill::Leadership => &mut self.leadership,
-            Skill::Loyalty => &mut self.loyalty,
-        }
-    }
+skill_catalog! {
+    Diplomacy => diplomacy;
+    Espionage => espionage;
+    ShipDesign => ship_design;
+    TroopTraining => troop_training;
+    FacilityDesign => facility_design;
+    Combat => combat;
+    Leadership => leadership;
+    Loyalty => loyalty;
 }
 
 /// Class definition for a defense facility — a template loaded from DEFFACSD.DAT.
@@ -2296,6 +2131,15 @@ impl GameWorld {
         recruit_side_index(side).is_some_and(|index| self.recruit_pool_empty[index])
     }
 
+    /// Fleets still present in `system`'s orbit list, in container order.
+    pub fn fleets_at(&self, system: SystemKey) -> impl Iterator<Item = (FleetKey, &Fleet)> + '_ {
+        self.systems
+            .get(system)
+            .into_iter()
+            .flat_map(|system| system.fleets.iter().copied())
+            .filter_map(|key| self.fleets.get(key).map(|fleet| (key, fleet)))
+    }
+
     /// Whether `fleet` exists and holds a usable Death Star
     /// ([`Fleet::has_usable_death_star`]).
     #[must_use]
@@ -2314,6 +2158,21 @@ impl GameWorld {
             .is_some_and(|value| value.has_death_star(&self.capital_ship_classes))
     }
 
+    /// The loaded Death Star capital-ship class (family `0x18`), if any.
+    #[must_use]
+    pub fn death_star_class(&self) -> Option<(CapitalShipKey, &CapitalShipClass)> {
+        self.capital_ship_classes
+            .iter()
+            .find(|(_, class)| class.is_death_star())
+    }
+
+    /// The loaded Death Star class and its signed completed hull value.
+    #[must_use]
+    pub fn death_star_class_and_hull(&self) -> Option<(CapitalShipKey, i32)> {
+        self.death_star_class()
+            .map(|(key, class)| (key, class.hull.cast_signed()))
+    }
+
     /// The side's spare fleet at `system` (`FUN_005097d0`): its first fleet
     /// there, in container order, with `+0x58` bit 1. The bit stays while
     /// the fleet holds ships: `FUN_0050bc60` drops it only from a destroyed
@@ -2323,13 +2182,17 @@ impl GameWorld {
     /// Move had made there).
     #[must_use]
     pub fn spare_fleet(&self, system: SystemKey, is_alliance: bool) -> Option<FleetKey> {
-        self.systems.get(system)?.fleets.iter().copied().find(|&fleet| {
-            self.spare_fleets.contains_key(fleet)
-                && self
-                    .fleets
-                    .get(fleet)
-                    .is_some_and(|value| value.is_alliance == is_alliance && value.location == system)
-        })
+        self.systems
+            .get(system)?
+            .fleets
+            .iter()
+            .copied()
+            .find(|&fleet| {
+                self.spare_fleets.contains_key(fleet)
+                    && self.fleets.get(fleet).is_some_and(|value| {
+                        value.is_alliance == is_alliance && value.location == system
+                    })
+            })
     }
 
     /// [`Self::spare_fleet`], else a new empty fleet of the side at
@@ -2630,27 +2493,9 @@ mod facility_ownership_tests {
     fn system(world: &mut GameWorld, control: ControlKind) -> SystemKey {
         world.systems.insert(System {
             dat_id: DatId::new(0x9000_0001),
-            name: "Here".into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
             total_energy: 4,
             raw_materials: 2,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
+            ..crate::test_support::system("Here", control)
         })
     }
 
@@ -2693,7 +2538,7 @@ mod facility_ownership_tests {
         let here = system(&mut world, ControlKind::Controlled(Faction::Empire));
         let shipyard = class(&mut world, 0x2800_0001, true, true);
         let facility = yard(&mut world, here, shipyard, Faction::Alliance);
-        assert!(world.hand_over_facilities(here).is_empty());
+        assert_empty!(world.hand_over_facilities(here));
         assert_eq!(side_of(&world, facility), Some(Faction::Empire));
     }
 
@@ -2708,7 +2553,7 @@ mod facility_ownership_tests {
         let facility = yard(&mut world, here, hq, Faction::Alliance);
         assert_eq!(world.hand_over_facilities(here), vec![facility]);
         assert_eq!(side_of(&world, facility), None);
-        assert!(world.systems[here].manufacturing_facilities.is_empty());
+        assert_empty!(world.systems[here].manufacturing_facilities);
     }
 
     #[test]
@@ -2732,7 +2577,7 @@ mod facility_ownership_tests {
         let here = system(&mut world, ControlKind::Controlled(Faction::Alliance));
         let imperial = class(&mut world, 0x2800_0004, false, true);
         let facility = yard(&mut world, here, imperial, Faction::Alliance);
-        assert!(world.hand_over_facilities(here).is_empty());
+        assert_empty!(world.hand_over_facilities(here));
         assert_eq!(side_of(&world, facility), Some(Faction::Alliance));
     }
 
@@ -3243,6 +3088,19 @@ mod tests {
         assert!(c2.is_unable_to_betray);
     }
 
+    fn assert_default_character_extension_fields(c: &Character) {
+        assert!(!c.is_unable_to_betray);
+        assert!(!c.is_jedi_trainer);
+        assert!(!c.is_known_jedi);
+        assert_eq!(c.hyperdrive_modifier, 0);
+        assert_eq!(c.enhanced_loyalty, 0);
+        assert!(!c.on_mission);
+        assert!(!c.on_hidden_mission);
+        assert!(!c.on_mandatory_mission);
+        assert!(c.current_system.is_none());
+        assert!(c.current_fleet.is_none());
+    }
+
     #[test]
     fn captive_character_serde_roundtrip() {
         let mut c = default_character();
@@ -3259,16 +3117,7 @@ mod tests {
     #[test]
     fn default_character_new_fields_are_zero_false_none() {
         let c = default_character();
-        assert!(!c.is_unable_to_betray);
-        assert!(!c.is_jedi_trainer);
-        assert!(!c.is_known_jedi);
-        assert_eq!(c.hyperdrive_modifier, 0);
-        assert_eq!(c.enhanced_loyalty, 0);
-        assert!(!c.on_mission);
-        assert!(!c.on_hidden_mission);
-        assert!(!c.on_mandatory_mission);
-        assert!(c.current_system.is_none());
-        assert!(c.current_fleet.is_none());
+        assert_default_character_extension_fields(&c);
     }
 
     #[test]
@@ -3304,16 +3153,7 @@ mod tests {
         }"#;
         let c: Character = serde_json::from_str(json).unwrap();
         // All pre-v8 fields with `#[serde(default)]` should default gracefully
-        assert!(!c.is_unable_to_betray);
-        assert!(!c.is_jedi_trainer);
-        assert!(!c.is_known_jedi);
-        assert_eq!(c.hyperdrive_modifier, 0);
-        assert_eq!(c.enhanced_loyalty, 0);
-        assert!(!c.on_mission);
-        assert!(!c.on_hidden_mission);
-        assert!(!c.on_mandatory_mission);
-        assert!(c.current_system.is_none());
-        assert!(c.current_fleet.is_none());
+        assert_default_character_extension_fields(&c);
         assert_eq!(c.force_tier, ForceTier::None);
         assert!(!c.heritage_known);
         assert!(!c.is_killed);
@@ -3338,27 +3178,7 @@ mod tests {
         });
         let dummy_sys = world.systems.insert(System {
             dat_id: DatId::new(0),
-            name: "Sys".into(),
-            sector: sector_key,
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
+            ..crate::test_support::system_at("Sys", sector_key, 0, 0, ControlKind::Uncontrolled)
         });
         let dummy_fleet = world.fleets.insert(Fleet {
             location: dummy_sys,
@@ -3474,9 +3294,9 @@ mod tests {
             capital_ships: vec![ShipInstance::new(death_star, 500, false)],
             ..Default::default()
         };
-        assert!(!fleet.is_empty());
+        assert_not_empty!(fleet);
         fleet.capital_ships[0].alive = false;
-        assert!(fleet.is_empty());
+        assert_empty!(fleet);
         assert!(!fleet.has_death_star(&classes));
     }
 

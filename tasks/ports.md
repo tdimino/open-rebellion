@@ -4,7 +4,7 @@
 
 Changing the port to match the original. Back to the [index](INDEX.md).
 
-45 open.
+47 open.
 
 <a id="or-p-contents-troops-lse"></a>
 ### List troops in the tactical contents monitor
@@ -311,6 +311,64 @@ Waits on: [or-d-gnd-plan-glw](other.md#or-d-gnd-plan-glw)
 - [ ] begin_side_withdrawal puts each of the side's capital ships in a group of its own, citing FUN_005ad530.c:61-81 and FUN_005aded0.c:21-37, both sides.
 - [ ] Each withdrawing capital ship jumps without waiting on its old task force's front ship, shown by a red-first test.
 - [ ] A native run on each side shows two ships of one task force jumping independently after Withdraw.
+
+<a id="or-port-gid-palette-darkening-ms1p"></a>
+### Port the original GID legend palette darkening
+
+`or-port-gid-palette-darkening-ms1p` · **open** · P2 · gid, interface-parity, port, render · updated 2026-11-14
+
+> ## Background
+>
+> The original GID legend copies the galaxy backdrop, builds a 256-entry
+> indexed-color remap with FUN_005fddd0, and applies it before drawing content
+> and frame art. LAB_004ac550 transforms each RGB channel to
+> floor(channel / 6) + 50; each transformed color then maps to the nearest
+> original-palette entry by squared RGB distance. The source index is the
+> initial candidate, so it wins any distance tie. If it is not exact, candidates
+> are scanned in ascending order and replace the current winner only on strict
+> improvement. The Rust port currently applies a flat translucent black tint.
+>
+> ## Scope
+>
+> Replace the approximation with an indexed-palette-equivalent renderer path for
+> the GID backdrop. Reuse shared palette utilities if they preserve the exact
+> original rules; otherwise isolate the mapping as a small tested renderer
+> object. Preserve content, frame, keying, faction art and display-mode behavior.
+>
+> ## Design
+>
+> Keep the recovered color transform and nearest-entry lookup deterministic and
+> independent of platform GPU sampling. Cache the 256-entry remap where palette
+> identity permits. Do not generalize this into a global post-processing effect
+> without another source-backed consumer.
+>
+> ## Tests
+>
+> Add behavior-sentence unit tests for the transform endpoints, source-index tie
+> retention, exact match, strict improvements and ascending-scan stability. Show
+> the new tests fail against the flat-tint path and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent GID interface-parity journeys for Alliance and Empire across every
+> supported legend mode, retaining inspected captures and hashes.
+>
+> ## Evidence
+>
+> Cite FUN_00452240, FUN_005fddd0, LAB_004ac550, and
+> ghidra/notes/gid-legend.md.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not commit original palette or bitmap assets; use
+> runtime-loaded resources and synthetic test palettes.
+
+**Acceptance criteria**
+
+- [ ] The GID backdrop uses the recovered per-channel transform and deterministic nearest-palette remap rather than the flat tint approximation.
+- [ ] Tests cover the channel transform, source-index tie retention, exact-match retention, strict nearest-color improvement, and ascending-scan stability.
+- [ ] Alliance and Empire silent GID journeys retain inspected captures and artifact hashes at every display mode.
+- [ ] Scoped mutation checks, make fmt, warning-free make build, and make check pass.
 
 <a id="or-port-lost-ship-crew-adrift-4mpf"></a>
 ### Port: a lost ship's characters go adrift and take the wound roll, never captive
@@ -758,6 +816,63 @@ Waits on: [or-port-squadron-craft-losses-karc](#or-port-squadron-craft-losses-ka
 
 - [ ] The leg builders are read for a same-system leg
 - [ ] The port accepts the order and does what they do; tests on both sides
+
+<a id="or-port-sprite-draw-mode-5-yv8o"></a>
+### Port indexed sprite draw mode 5 where consumed
+
+`or-port-sprite-draw-mode-5-yv8o` · **open** · P3 · interface-parity, port, render · updated 2026-11-14
+
+> ## Background
+>
+> FUN_0041cb30 routes sprite draw mode 5 to FUN_005fe640 after installing a
+> 512-byte table. For each non-key source pixel, bytes 0..255 map the source
+> palette index. For each transparent-key source pixel, bytes 256..511 map the
+> existing destination index. This is an indexed two-map composite, not ordinary
+> alpha blending. No generic Rust equivalent or current source-backed consumer
+> has yet been confirmed.
+>
+> ## Scope
+>
+> Inventory every constructor and call site that selects mode 5, identify the
+> corresponding current feature and art, and implement the indexed composite only
+> for supported consumers. If no supported current consumer exists, close with a
+> complete citation-backed exclusion rather than adding dead renderer API.
+>
+> ## Design
+>
+> Keep the operation deterministic over indexed source and destination buffers.
+> Expose a narrow renderer primitive only after a live consumer is identified.
+> Do not approximate the transparent-key branch with alpha.
+>
+> ## Tests
+>
+> Use synthetic indexed buffers and a synthetic 512-byte table to prove opaque
+> source mapping, transparent destination mapping, clipping and key selection.
+> Demonstrate any new assertions fail against the previous path and run scoped
+> cargo mutants.
+>
+> ## E2E
+>
+> Run the silent journey for each identified consumer on both factions where
+> applicable; no journey is required if the evidence proves the feature
+> unsupported or unreachable and the exclusion is recorded.
+>
+> ## Evidence
+>
+> Cite FUN_0041cb30, FUN_005fe640, the recovered caller inventory, and
+> ghidra/notes/cool-control-contracts.md.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not commit proprietary indexed assets or add an unused
+> generic graphics abstraction.
+
+**Acceptance criteria**
+
+- [ ] Every mode-5 constructor/call site is inventoried and mapped to a current Rust consumer or a cited unsupported/unreachable exclusion.
+- [ ] Any required port implements the two 256-byte maps exactly, including transparent-key background remapping.
+- [ ] Synthetic indexed-image tests cover opaque and transparent pixels without proprietary assets.
+- [ ] Scoped mutation checks, make fmt, warning-free make build, make check, and applicable silent journeys pass.
 
 <a id="or-port-squadron-craft-losses-karc"></a>
 ### Port: per-squadron craft losses and persistent squadron ids (root R1)

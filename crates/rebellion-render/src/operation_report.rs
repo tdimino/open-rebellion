@@ -19,14 +19,20 @@ use rebellion_core::ids::SystemKey;
 use rebellion_core::movement::MovementState;
 use rebellion_core::operation_report::{OperationReport, ReportObject, ReportUnit};
 use rebellion_core::world::GameWorld;
+use rebellion_windowing::ControlId;
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::{CockpitFaction, CockpitLayout};
+use crate::controls::{draw_registered_tooltips, TooltipPresentation, LIST_BAR_29FC};
+use crate::controls::{
+    ButtonArt, ButtonImage, DragList, DragListLayout, DragListSpec, DragListState, DragPolicy,
+    SelectionPolicy, StrobeButton, TabControl, TabControlState, TabDirection, TabSpec,
+    TabTraversal, WheelPolicy,
+};
 use crate::fleet_window::{mini_layers, paint_native, portrait_layers, MiniObject};
 use crate::message_log::{GameMessage, MessageId};
-use crate::mission_dialog::{button, galaxy_centered_rect, paint_button};
-use crate::scroll_bar::{ScrollBar, ScrollDrag, ScrollRange, LIST_BAR_29FC};
-use crate::system_window::{logical_rect, rect_contains};
+use crate::mission_dialog::galaxy_centered_rect;
+use crate::native_geometry::{logical_rect, rect_contains};
 
 pub const OPERATION_REPORT_WIDTH: f32 = 470.0;
 pub const OPERATION_REPORT_HEIGHT: f32 = 331.0;
@@ -35,13 +41,13 @@ pub const OPERATION_REPORT_HEIGHT: f32 = 331.0;
 // (FUN_0044c630.c:73-110).
 const SHELL: [u32; 2] = [0x285f, 0x2860];
 const RAIL_ART: [u32; 2] = [0x2a44, 0x2a45];
-/// The rail art's x (`0x19c` / `0x19f`, FUN_0044c630.c:150-155).
+/// The rail art's x (`0x19c` / `0x19f`, `FUN_0044c630.c:150-155`).
 const RAIL_X: [f32; 2] = [412.0, 415.0];
 /// Every layer's picture is blitted at (12, 13) under the shell
-/// (FUN_0044c630.c:149).
+/// (`FUN_0044c630.c:149`).
 const PICTURE_AT: (f32, f32) = (12.0, 13.0);
 /// Layer 3 (tabs `0x97`-`0x9b`), layer 4 (Personnel) and layer 5 (Display)
-/// (FUN_0044c630.c:116-140).
+/// (`FUN_0044c630.c:116-140`).
 const LAYER_TWO_COLUMN: u32 = 0x2a09;
 const LAYER_THREE_COLUMN: u32 = 0x2a0a;
 const LAYER_DISPLAY: u32 = 0x2a0b;
@@ -52,7 +58,7 @@ struct Control {
     art: (u32, u32),
 }
 
-/// Close (`0x0a`), normal then pressed (FUN_0044c630.c:366-391).
+/// Close (`0x0a`), normal then pressed (`FUN_0044c630.c:366-391`).
 const CLOSE: [Control; 2] = [
     Control {
         rect: (423.0, 25.0, 32.0, 31.0),
@@ -65,35 +71,35 @@ const CLOSE: [Control; 2] = [
 ];
 
 /// The rail group (`100`, radio) at A (0x1a2, 0x58), E (0x1aa, 0x59); its
-/// buttons are 41 or 44 wide and 41 high (FUN_0044c630.c:400-420).
+/// buttons are 41 or 44 wide and 41 high (`FUN_0044c630.c:400-420`).
 const RAIL_ORIGIN: [(f32, f32); 2] = [(418.0, 88.0), (426.0, 89.0)];
 const RAIL_BUTTON: [(f32, f32); 2] = [(41.0, 41.0), (44.0, 41.0)];
 
 /// The tab group (`0x96`) at (0x24, 0x3b); each tab 0x31 by 0x29
-/// (FUN_0044c630.c:604-760).
+/// (`FUN_0044c630.c:604-760`).
 const TABS_AT: (f32, f32) = (36.0, 59.0);
 const TAB_SIZE: (f32, f32) = (49.0, 41.0);
 
 /// The list (`FUN_00607ea0` at (0x25, 0x88), 0x15b by 0xa6;
-/// FUN_0044c630.c:786-797).
+/// `FUN_0044c630.c:786-797`).
 const LIST: (f32, f32, f32, f32) = (37.0, 136.0, 347.0, 166.0);
 
-/// The title: font 0xb, centred in 400 at (12, 13) (FUN_0044c630.c:178-184).
+/// The title: font 0xb, centred in 400 at (12, 13) (`FUN_0044c630.c:178-184`).
 const TITLE_AT: (f32, f32) = (12.0, 13.0);
 const TITLE_WIDTH: f32 = 400.0;
 /// The Summary's text: font 6, 0x15e wide, at (0x19, 0xe1) over a black
-/// copy at (0x1a, 0xe2) (FUN_0044c630.c:186-199).
+/// copy at (0x1a, 0xe2) (`FUN_0044c630.c:186-199`).
 const BODY_AT: (f32, f32) = (25.0, 225.0);
 const TEXT_WIDTH: f32 = 350.0;
 /// The Display layer's text `0x7013`: font 6, 0x15e wide, at x 0x1d with
-/// its last line ending at y 0xb1 (FUN_0044c630.c:237-245).
+/// its last line ending at y 0xb1 (`FUN_0044c630.c:237-245`).
 const DISPLAY_TEXT_X: f32 = 29.0;
 const DISPLAY_TEXT_BOTTOM: f32 = 177.0;
-/// The TEXTSTRA entry the Display layer shows (FUN_0044c630.c:237).
+/// The TEXTSTRA entry the Display layer shows (`FUN_0044c630.c:237`).
 pub const DISPLAY_TEXT_ID: u16 = 0x7013;
-/// The column headers' y, font 4 (FUN_0044c630.c:264-328).
+/// The column headers' y, font 4 (`FUN_0044c630.c:264-328`).
 const HEADER_Y: f32 = 117.0;
-/// The overlay (FUN_0044e290): the view's name centred in 0x15b at
+/// The overlay (`FUN_0044e290`): the view's name centred in 0x15b at
 /// (12, 0x24), font 6, and the tab's name at (0x26, 100), font 4.
 const SUBTITLE_AT: (f32, f32) = (12.0, 36.0);
 const SUBTITLE_WIDTH: f32 = 347.0;
@@ -102,7 +108,7 @@ const TAB_NAME_AT: (f32, f32) = (38.0, 100.0);
 /// Display's buttons, 0xa9 by 0x60 at y 0xb6: the system at x 0x1d
 /// (`0x0b`, `0x2a0c`) and the fleet at x 0xe2 (`0x0c`, `0x2a0d` Alliance,
 /// `0x2a0e` Empire); pressed, the side's frame (`0x2a0f`, `0x2a10`) is
-/// keyed over the picture (FUN_0044c630.c:804-931).
+/// keyed over the picture (`FUN_0044c630.c:804-931`).
 const GOTO_SYSTEM_RECT: (f32, f32, f32, f32) = (29.0, 182.0, 169.0, 96.0);
 const GOTO_FLEET_RECT: (f32, f32, f32, f32) = (226.0, 182.0, 169.0, 96.0);
 const GOTO_SYSTEM_ART: u32 = 0x2a0c;
@@ -141,6 +147,10 @@ impl ReportView {
         Self::SystemForces,
         Self::Display,
     ];
+
+    const fn control_id(self) -> ControlId {
+        ControlId(self.command() as u64)
+    }
 
     /// The button's command id.
     #[must_use]
@@ -235,6 +245,10 @@ impl ReportTab {
         Self::Personnel,
     ];
 
+    const fn control_id(self) -> ControlId {
+        ControlId(self.command() as u64)
+    }
+
     /// The tab's command id.
     #[must_use]
     pub const fn command(self) -> u16 {
@@ -272,7 +286,7 @@ impl ReportTab {
         }
     }
 
-    /// The tab's x in its group (FUN_0044c630.c:604-760).
+    /// The tab's x in its group (`FUN_0044c630.c:604-760`).
     const fn x(self) -> f32 {
         const X: [f32; 6] = [0.0, 62.0, 124.0, 186.0, 248.0, 312.0];
         X[self.index()]
@@ -325,6 +339,7 @@ impl ReportTab {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn columns(self) -> usize {
         match self {
             Self::Personnel => 3,
@@ -333,7 +348,7 @@ impl ReportTab {
     }
 
     /// The column headers and their x, each 0xa5 or 0x6e wide
-    /// (FUN_0044c630.c:264-328): `0x1932`/`0x1933`, or
+    /// (`FUN_0044c630.c:264-328`): `0x1932`/`0x1933`, or
     /// `0x1934`/`0x1935`/`0x1936`.
     const fn headers(self) -> &'static [(&'static str, f32)] {
         match self {
@@ -348,19 +363,6 @@ impl ReportTab {
             _ => LAYER_TWO_COLUMN,
         }
     }
-
-    /// Left (`0x25`) and Right (`0x27`) step to the neighbouring tab
-    /// (`FUN_0044e180`); Right past the last, or Left at the first, takes
-    /// the group's first (`FUN_005f5060`).
-    fn stepped(self, right: bool) -> Self {
-        let index = self.index();
-        let next = if right {
-            index + 1
-        } else {
-            index.wrapping_sub(1)
-        };
-        Self::ALL.get(next).copied().unwrap_or(Self::CapitalShips)
-    }
 }
 
 /// One cell of the list (`FUN_0044edb0`).
@@ -371,6 +373,32 @@ pub enum ReportCell<'a> {
     /// The first empty cell of a column: "None" or "No Casualties".
     Text(&'static str),
     Blank,
+}
+
+/// Flatten report columns into the row-major cell order used by both the
+/// strategic operation report and the tactical battle summary.
+pub(crate) fn report_grid_cells<'a, T, C>(
+    columns: &[(Vec<&'a T>, &'static str)],
+    object_cell: impl Fn(&'a T) -> C,
+    text_cell: impl Fn(&'static str) -> C,
+    blank_cell: impl Fn() -> C,
+) -> Vec<C> {
+    let rows = columns
+        .iter()
+        .map(|(objects, _)| objects.len().max(1))
+        .max()
+        .unwrap_or(1);
+    let mut cells = Vec::with_capacity(rows * columns.len());
+    for row in 0..rows {
+        for (objects, empty_text) in columns {
+            cells.push(match objects.get(row) {
+                Some(object) => object_cell(*object),
+                None if row == 0 => text_cell(empty_text),
+                None => blank_cell(),
+            });
+        }
+    }
+    cells
 }
 
 /// The list `FUN_0044e500` fills, row by row: the view's operational,
@@ -407,22 +435,9 @@ pub fn list_cells<'a>(
         columns.push((filtered(captured), NONE_TEXT));
     }
     columns.push((filtered(destroyed), NO_CASUALTIES_TEXT));
-    let rows = columns
-        .iter()
-        .map(|(units, _)| units.len().max(1))
-        .max()
-        .unwrap_or(1);
-    let mut cells = Vec::with_capacity(rows * columns.len());
-    for row in 0..rows {
-        for (units, empty) in &columns {
-            cells.push(match units.get(row) {
-                Some(unit) => ReportCell::Object(unit),
-                None if row == 0 => ReportCell::Text(empty),
-                None => ReportCell::Blank,
-            });
-        }
-    }
-    cells
+    report_grid_cells(&columns, ReportCell::Object, ReportCell::Text, || {
+        ReportCell::Blank
+    })
 }
 
 /// A cell's object picture, bottom layer first: `FUN_0042c3b0(.., arg, 1)`
@@ -449,8 +464,7 @@ pub fn cell_picture(unit: &ReportUnit, tab: ReportTab) -> Vec<(DllSource, u32)> 
         _ => crate::manufacturing_window::class_mini(id).map(|(mini, _)| mini),
     };
     mini.and_then(|mini| mini.checked_sub(0x4000))
-        .map(|portrait| vec![(DllSource::Gokres, portrait)])
-        .unwrap_or_default()
+        .map_or_default(|portrait| vec![(DllSource::Gokres, portrait)])
 }
 
 /// The object state `FUN_0042c3b0`'s status marks read.
@@ -575,7 +589,7 @@ pub fn cell_layers(unit: &ReportUnit, tab: ReportTab, status: CellStatus) -> Vec
 
 /// The text colour by the fleet owner (`+0x6c`): `0x20000ff` red for side
 /// 1, `0x200ff00` green for side 2, else `0x2ffff00` cyan
-/// (FUN_0044c630.c:171-177, FUN_0044e290.c:19-28).
+/// (`FUN_0044c630.c:171-177`, `FUN_0044e290.c:19-28`).
 #[must_use]
 pub fn side_color(fleet_owner: Faction) -> egui::Color32 {
     match fleet_owner {
@@ -611,8 +625,7 @@ struct OpenReport {
     faction: CockpitFaction,
     view: ReportView,
     tab: ReportTab,
-    first_row: usize,
-    drag: ScrollDrag,
+    list: DragListState<usize>,
     /// `DAT_006b2910 == 0x1c`: the Message Index category to reopen on
     /// close (`DAT_006b290c`).
     reopen_index: Option<u16>,
@@ -629,7 +642,7 @@ pub struct OperationReportState {
 impl OperationReportState {
     /// Open `message`'s report on the Summary view and its first tab
     /// (`0x97` for a bombardment, `0x9b` for an assault;
-    /// FUN_0044c630.c:921-923), with the player's art. `reopen_index` is
+    /// `FUN_0044c630.c:921-923`), with the player's art. `reopen_index` is
     /// the Index category when the Index opened it. A message without a
     /// report opens nothing.
     pub fn open(
@@ -666,8 +679,7 @@ impl OperationReportState {
             faction,
             view: ReportView::Summary,
             tab,
-            first_row: 0,
-            drag: ScrollDrag::default(),
+            list: DragListState::default(),
             reopen_index,
         };
         if self.window.is_some() {
@@ -712,19 +724,13 @@ impl OperationReportState {
         })
     }
 
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.window.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
-    }
-
     /// `FUN_0044e3d0`: the rail's radio; the list keeps its tab and starts
     /// at its top (`FUN_0044e500(tab, 1)` refills it).
     pub fn set_view(&mut self, view: ReportView) {
         if let Some(window) = &mut self.window {
             if window.view != view {
                 window.view = view;
-                window.first_row = 0;
-                window.drag = ScrollDrag::default();
+                window.list = DragListState::default();
             }
         }
     }
@@ -734,12 +740,16 @@ impl OperationReportState {
         if let Some(window) = &mut self.window {
             if window.tab != tab {
                 window.tab = tab;
-                window.first_row = 0;
-                window.drag = ScrollDrag::default();
+                window.list = DragListState::default();
             }
         }
     }
 }
+
+crate::singleton_window_common::impl_singleton_contains_screen_point!(
+    OperationReportState,
+    window_rect
+);
 
 fn window_rect(layout: CockpitLayout) -> egui::Rect {
     galaxy_centered_rect(layout, OPERATION_REPORT_WIDTH, OPERATION_REPORT_HEIGHT)
@@ -812,11 +822,11 @@ fn wrapped(
     painter.layout(text.to_owned(), font, color, width)
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The window paints in the original's layer and control order; splitting it hides that order."
 )]
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The window reads the world, the moves and the Display text it is given."
 )]
@@ -843,29 +853,21 @@ fn draw_at(
     let color = side_color(report.fleet_owner);
     let cells = list_cells(report, window.view, window.tab);
     let (cell_w, cell_h) = window.tab.cell();
-    let columns = window.tab.columns();
-    let rows = cells.len().div_ceil(columns);
-    let range = ScrollRange {
-        first: window.first_row,
-        visible: LIST.3 / cell_h,
-        total: rows,
-    };
-    let bar = ScrollBar::new(LIST_BAR_29FC, LIST.0, LIST.1, LIST.2, LIST.3);
 
     let mut action = None;
     let mut new_view = None;
     let mut new_tab = None;
-    let mut first_row = window.first_row;
-    let mut drag = window.drag;
+    let mut list_state = window.list.clone();
 
     let id = egui::Id::new("original-operation-report");
     ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, id));
-    egui::Area::new(id)
-        .fixed_pos(rect.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(rect.size(), egui::Sense::click());
-            let painter = ui.painter().with_clip_rect(frame);
+    crate::native_geometry::show_area(
+        ctx,
+        id,
+        rect,
+        egui::Order::Tooltip,
+        egui::Sense::click(),
+        |ui, frame, painter| {
             let at = |(x, y, w, h): (f32, f32, f32, f32)| logical_rect(frame, scale, x, y, w, h);
             let paint = |cache: &mut BmpCache, source: DllSource, id: u32, (x, y): (f32, f32)| {
                 paint_native(&painter, ctx, cache, source, id, frame, scale, x, y);
@@ -873,6 +875,7 @@ fn draw_at(
             let name = |control: &str, rect: egui::Rect| {
                 crate::control_registry::register_screen("OperationReport", control, rect);
             };
+            let mut tooltip_targets = Vec::new();
 
             // The layer's bitmap (FUN_006075b0 / FUN_00607610): its picture
             // at (12, 13), the shell over it, the rail art at its edge.
@@ -971,15 +974,20 @@ fn draw_at(
             let close = CLOSE[side_idx];
             let close_rect = at(close.rect);
             name("Close", close_rect);
-            if button(
+            tooltip_targets.push((close_rect, "Close"));
+            if StrobeButton::show_pair(
                 ui,
                 cache,
                 close_rect,
                 "report-close",
+                DllSource::Strategy,
                 close.art,
                 false,
+                false,
                 scale,
-            ) {
+            )
+            .clicked()
+            {
                 action = Some(OperationReportAction::Closed {
                     reopen_index: window.reopen_index,
                 });
@@ -988,38 +996,56 @@ fn draw_at(
             // The rail's radio (group 100).
             let (rail_x, rail_y) = RAIL_ORIGIN[side_idx];
             let (button_w, button_h) = RAIL_BUTTON[side_idx];
-            for view in ReportView::ALL {
+            let rail_specs = ReportView::ALL.map(|view| {
                 let view_rect = at((rail_x, rail_y + view.y(side_idx), button_w, button_h));
                 name(view.control(), view_rect);
-                if button(
-                    ui,
-                    cache,
-                    view_rect,
-                    ("report-view", view.index()),
-                    view.art(side_idx, report),
-                    view == window.view,
-                    scale,
-                ) {
-                    new_view = Some(view);
+                if let Some(text) = view.tooltip(report) {
+                    tooltip_targets.push((view_rect, text));
                 }
+                TabSpec::two_state(
+                    view,
+                    view.control_id(),
+                    view_rect,
+                    DllSource::Strategy,
+                    view.art(side_idx, report).0,
+                    view.art(side_idx, report).1,
+                )
+            });
+            if let Some(view) = TabControl::paint_and_select(
+                &rail_specs,
+                TabControlState::new(window.view, window.view.control_id()),
+                ui,
+                cache,
+                "operation-report-view-tabs",
+                scale,
+            ) {
+                new_view = Some(view);
             }
 
             if window.view.lists() {
                 // The tabs (group 0x96), shown only over a list.
-                for tab in ReportTab::ALL {
+                let tab_specs = ReportTab::ALL.map(|tab| {
                     let tab_rect = at((TABS_AT.0 + tab.x(), TABS_AT.1, TAB_SIZE.0, TAB_SIZE.1));
                     name(tab.control(), tab_rect);
-                    if button(
-                        ui,
-                        cache,
+                    tooltip_targets.push((tab_rect, tab.label()));
+                    TabSpec::two_state(
+                        tab,
+                        tab.control_id(),
                         tab_rect,
-                        ("report-tab", tab.index()),
-                        tab.art(side_idx),
-                        tab == window.tab,
-                        scale,
-                    ) {
-                        new_tab = Some(tab);
-                    }
+                        DllSource::Strategy,
+                        tab.art(side_idx).0,
+                        tab.art(side_idx).1,
+                    )
+                });
+                if let Some(tab) = TabControl::paint_and_select(
+                    &tab_specs,
+                    TabControlState::new(window.tab, window.tab.control_id()),
+                    ui,
+                    cache,
+                    "operation-report-force-tabs",
+                    scale,
+                ) {
+                    new_tab = Some(tab);
                 }
 
                 // The list: rows of cells, each the object's picture
@@ -1027,23 +1053,35 @@ fn draw_at(
                 let list_rect = at(LIST);
                 let list_painter = painter.with_clip_rect(list_rect);
                 let name_font = theme_font(ctx, 10, scale);
-                for (index, cell) in cells.iter().enumerate().skip(first_row * columns) {
-                    let row = index / columns - first_row;
-                    if row as f32 * cell_h >= LIST.3 {
-                        break;
-                    }
-                    let x = LIST.0 + cell_w * (index % columns) as f32;
-                    let y = LIST.1 + cell_h * row as f32;
+                let keys: Vec<usize> = (0..cells.len()).collect();
+                let control = DragList::show(
+                    ui,
+                    (window.view.command(), window.tab.command(), "report-rows"),
+                    DragListSpec {
+                        rect: LIST,
+                        item: (cell_w, cell_h),
+                        layout: DragListLayout::Grid,
+                        selection: SelectionPolicy::Single,
+                        drag: DragPolicy::Disabled,
+                        wheel: WheelPolicy::Rows,
+                        bar: Some(LIST_BAR_29FC),
+                    },
+                    &keys,
+                    &list_state,
+                    frame,
+                    scale,
+                    None,
+                );
+                for (index, cell_rect) in control.screen_cells(frame, scale) {
+                    let cell = &cells[index];
+                    let x = (cell_rect.min.x - frame.min.x) / scale;
+                    let y = (cell_rect.min.y - frame.min.y) / scale;
                     match cell {
                         ReportCell::Object(unit) => {
                             let layers =
                                 cell_layers(unit, window.tab, cell_status(world, movement, unit));
-                            let size = layers
-                                .first()
-                                .and_then(|&(source, id)| cache.original_resource_size(source, id))
-                                .map_or((0.0, 0.0), |[w, h]| (w as f32, h as f32));
-                            let left = ((cell_w - size.0) / 2.0).floor();
-                            let top = ((cell_h - size.1) / 2.0).floor();
+                            let (size, (left, top)) =
+                                cache.centered_original_resource(&layers, (cell_w, cell_h));
                             for (source, id) in layers {
                                 paint_native(
                                     &list_painter,
@@ -1077,32 +1115,8 @@ fn draw_at(
                         ReportCell::Blank => {}
                     }
                 }
-                // The list's bar (RCDATA 0x29fc), one row a step.
-                let pointer = crate::scroll_bar::egui_pointer(ctx, frame, scale);
-                first_row = bar.update(&mut drag, range, range.visible.floor() as usize, pointer);
-                crate::scroll_bar::paint_egui(
-                    &painter,
-                    ctx,
-                    cache,
-                    frame,
-                    scale,
-                    &bar.blits(
-                        ScrollRange {
-                            first: first_row,
-                            ..range
-                        },
-                        &drag,
-                        pointer,
-                    ),
-                );
-                let hovered = ui
-                    .input(|input| input.pointer.hover_pos())
-                    .is_some_and(|point| rect_contains(list_rect, point));
-                let wheel = ui.input(|input| input.raw_scroll_delta.y);
-                if hovered && wheel != 0.0 {
-                    first_row =
-                        crate::mission_dialog::scrolled(first_row, range.max_first() + 1, wheel);
-                }
+                control.paint_bar(&list_painter, ctx, cache, frame, scale);
+                list_state = control.next;
             }
 
             if window.view == ReportView::Display {
@@ -1124,12 +1138,28 @@ fn draw_at(
                 ] {
                     let button_rect = at(rect);
                     name(control, button_rect);
-                    let response =
-                        ui.interact(button_rect, ui.id().with(control), egui::Sense::click());
+                    tooltip_targets.push((button_rect, caption));
                     // A CoolStrobeButton (FUN_00602150, FUN_0044c630.c:804-931),
                     // keyed as FUN_00602d30 blits it.
-                    paint_button(&painter, ctx, cache, art, button_rect, scale);
-                    if response.is_pointer_button_down_on() {
+                    let output = StrobeButton::show(
+                        ui,
+                        cache,
+                        button_rect,
+                        control,
+                        ButtonArt::new(ButtonImage::new(DllSource::Strategy, art)),
+                        false,
+                        false,
+                        None,
+                        scale,
+                    );
+                    let held = ctx.input(|input| {
+                        input.pointer.button_down(egui::PointerButton::Primary)
+                            && input
+                                .pointer
+                                .interact_pos()
+                                .is_some_and(|point| rect_contains(button_rect, point))
+                    });
+                    if held {
                         paint(
                             cache,
                             DllSource::Strategy,
@@ -1156,7 +1186,7 @@ fn draw_at(
                         galley,
                         egui::Color32::WHITE,
                     );
-                    if crate::system_window::exact_clicked(&response, button_rect) {
+                    if output.clicked() {
                         action = Some(if control == "GotoSystem" {
                             OperationReportAction::GotoSystem {
                                 system: report.system,
@@ -1169,7 +1199,16 @@ fn draw_at(
                     }
                 }
             }
-        });
+
+            draw_registered_tooltips(
+                ctx,
+                id.with("stock-tooltips"),
+                &tooltip_targets,
+                scale,
+                TooltipPresentation::stock(),
+            );
+        },
+    );
 
     // FUN_0044e180: Escape closes; Left and Right step the tabs over a list.
     let (escape, left, right) = ctx.input(|input| {
@@ -1185,11 +1224,27 @@ fn draw_at(
         });
     }
     if window.view.lists() && new_tab.is_none() && (left || right) {
-        new_tab = Some(window.tab.stepped(right));
+        let tab_specs = ReportTab::ALL.map(|tab| {
+            TabSpec::new(
+                tab,
+                tab.control_id(),
+                egui::Rect::NOTHING,
+                ButtonArt::new(ButtonImage::new(DllSource::Strategy, 0)),
+            )
+        });
+        new_tab = TabControl::step_selection(
+            &tab_specs,
+            TabControlState::new(window.tab, window.tab.control_id()),
+            if right {
+                TabDirection::Right
+            } else {
+                TabDirection::Left
+            },
+            TabTraversal::ResetToFirst,
+        );
     }
     if let Some(open) = state.window.as_mut() {
-        open.first_row = first_row;
-        open.drag = drag;
+        open.list = list_state;
     }
     if let Some(view) = new_view {
         state.set_view(view);
@@ -1207,8 +1262,8 @@ fn theme_font(ctx: &egui::Context, entry: u8, scale: f32) -> egui::FontId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fleet_window::tests::PAINTED;
     use crate::message_log::{MessageCategory, MessageDisplay, MessageRail, RailAudience};
+    use crate::test_support::key_frame as key;
     use rebellion_core::ids::DatId;
     use rebellion_core::world::System;
 
@@ -1306,16 +1361,13 @@ mod tests {
         let mut cache = BmpCache::new();
         let mut result = Run::default();
         for (index, events) in frames.into_iter().enumerate() {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(800.0, 600.0),
-                )),
-                time: Some(index as f64 * 0.05),
+            let input = crate::test_support::timed_raw_input(
+                index,
                 events,
-                ..Default::default()
-            };
-            PAINTED.with(|painted| painted.borrow_mut().clear());
+                egui::Modifiers::default(),
+                egui::vec2(800.0, 600.0),
+            );
+            crate::test_support::clear_painted_trace();
             let output = ctx.run(input, |ctx| {
                 result.actions.extend(draw_at(
                     ctx,
@@ -1328,7 +1380,7 @@ mod tests {
                     DISPLAY_TEXT,
                 ));
             });
-            result.painted = PAINTED.with(|painted| painted.take());
+            result.painted = crate::test_support::take_painted_trace();
             result.texts.clear();
             result.rows.clear();
             for clipped in output.shapes {
@@ -1349,36 +1401,11 @@ mod tests {
     }
 
     fn hover(point: (f32, f32)) -> Vec<Vec<egui::Event>> {
-        let point = egui::pos2(point.0, point.1);
-        vec![
-            vec![egui::Event::PointerMoved(point)],
-            vec![egui::Event::PointerMoved(point)],
-        ]
-    }
-
-    fn press(point: (f32, f32), pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos: egui::pos2(point.0, point.1),
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
+        crate::test_support::hover_frames(egui::pos2(point.0, point.1))
     }
 
     fn click(point: (f32, f32)) -> Vec<Vec<egui::Event>> {
-        let mut frames = hover(point);
-        frames.extend([vec![press(point, true)], vec![press(point, false)], vec![]]);
-        frames
-    }
-
-    fn key(key: egui::Key) -> Vec<Vec<egui::Event>> {
-        vec![vec![egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }]]
+        crate::test_support::click_frames(egui::pos2(point.0, point.1))
     }
 
     /// The centre of the rail's button for `view` on `side`.
@@ -1397,6 +1424,24 @@ mod tests {
 
     fn painted(run: &Run, id: u32, (x, y): (f32, f32)) -> bool {
         run.painted.contains(&(id, egui::pos2(x, y)))
+    }
+
+    fn painted_position(run: &Run, id: u32) -> Option<egui::Pos2> {
+        run.painted
+            .iter()
+            .find(|(painted, _)| *painted == id)
+            .map(|&(_, pos)| pos)
+    }
+
+    fn world_with_ship_class() -> (GameWorld, SystemKey, rebellion_core::ids::CapitalShipKey) {
+        use rebellion_core::world::CapitalShipClass;
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System::default());
+        let class = world.capital_ship_classes.insert(CapitalShipClass {
+            hull: 10,
+            ..CapitalShipClass::default()
+        });
+        (world, system, class)
     }
 
     fn text<'a>(run: &'a Run, text: &str) -> &'a Text {
@@ -1450,8 +1495,8 @@ mod tests {
                 names(system, ReportTab::Manufacturing),
                 ["Yard", "<No Casualties>"]
             );
-            assert!(names(ReportView::Summary, ReportTab::CapitalShips).is_empty());
-            assert!(names(ReportView::Display, ReportTab::CapitalShips).is_empty());
+            assert_empty!(names(ReportView::Summary, ReportTab::CapitalShips));
+            assert_empty!(names(ReportView::Display, ReportTab::CapitalShips));
         }
     }
 
@@ -1640,13 +1685,8 @@ mod tests {
         // marks follow its +0x50 and +0xac at each refill: en route while it
         // or its fleet travels (FUN_004f8240) and not destroyed (bit 3), a
         // ship's damage (FUN_00501c00), a character's captivity.
-        use rebellion_core::world::{CapitalShipClass, Character, Fleet, ShipInstance};
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System::default());
-        let class = world.capital_ship_classes.insert(CapitalShipClass {
-            hull: 10,
-            ..CapitalShipClass::default()
-        });
+        use rebellion_core::world::{Character, Fleet, ShipInstance};
+        let (mut world, system, class) = world_with_ship_class();
         let ship = |tag: u32, hull: i32| {
             let mut ship = ShipInstance::new(class, 10, true);
             ship.tag = tag;
@@ -1760,14 +1800,9 @@ mod tests {
         // FUN_004f8240.c:17-31: a ship's en route bit 4 is its own leg (bit
         // 5, FUN_00556430) or its container's bit 4, and FUN_0044edb0 hands
         // FUN_0042c3b0 the ship itself.
-        use rebellion_core::world::{CapitalShipClass, Fleet, ShipInstance, ShipTransit};
+        use rebellion_core::world::{Fleet, ShipInstance, ShipTransit};
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(System::default());
-            let class = world.capital_ship_classes.insert(CapitalShipClass {
-                hull: 10,
-                ..CapitalShipClass::default()
-            });
+            let (mut world, system, class) = world_with_ship_class();
             let mut travelling = ShipInstance::new(class, 10, is_alliance);
             travelling.tag = 3;
             travelling.transit = Some(ShipTransit {
@@ -1829,14 +1864,12 @@ mod tests {
                 &mut state,
                 click(rail(side, ReportView::FleetForces)),
             );
-            let at = |id: u32| {
-                list.painted
-                    .iter()
-                    .find(|(painted, _)| *painted == id)
-                    .map(|&(_, pos)| pos)
-            };
-            assert!(at(portrait).is_some(), "{faction:?}");
-            assert_eq!(at(portrait + 0x1000), at(portrait), "{faction:?}");
+            assert!(painted_position(&list, portrait).is_some(), "{faction:?}");
+            assert_eq!(
+                painted_position(&list, portrait + 0x1000),
+                painted_position(&list, portrait),
+                "{faction:?}"
+            );
         }
     }
 
@@ -1859,16 +1892,10 @@ mod tests {
                     window.report = Arc::new(value);
                 }
                 let list = run(&mut state, click(rail(side, ReportView::FleetForces)));
-                let at = |id: u32| {
-                    list.painted
-                        .iter()
-                        .find(|(painted, _)| *painted == id)
-                        .map(|&(_, pos)| pos)
-                };
-                assert!(at(portrait).is_some(), "{faction:?}");
+                assert!(painted_position(&list, portrait).is_some(), "{faction:?}");
                 assert_eq!(
-                    at(portrait + 0x2000),
-                    at(portrait).filter(|_| damaged),
+                    painted_position(&list, portrait + 0x2000),
+                    painted_position(&list, portrait).filter(|_| damaged),
                     "{faction:?} damaged {damaged}"
                 );
             }
@@ -2125,15 +2152,6 @@ mod tests {
     fn left_and_right_step_the_tabs_over_a_list_and_wrap_to_the_first() {
         // FUN_0044e180 keys 0x25 / 0x27: the neighbouring visible tab;
         // Right past the last and Left at the first select the first.
-        assert_eq!(ReportTab::Personnel.stepped(true), ReportTab::CapitalShips);
-        assert_eq!(
-            ReportTab::CapitalShips.stepped(false),
-            ReportTab::CapitalShips
-        );
-        assert_eq!(
-            ReportTab::Manufacturing.stepped(false),
-            ReportTab::FighterSquadrons
-        );
         for (side, (faction, owner)) in SIDES.into_iter().enumerate() {
             let mut state = opened(faction, owner);
             run(&mut state, key(egui::Key::ArrowRight));
@@ -2147,6 +2165,20 @@ mod tests {
                 state.view(),
                 Some((ReportView::SystemForces, ReportTab::FighterSquadrons)),
                 "{faction:?}"
+            );
+            for _ in 0..5 {
+                run(&mut state, key(egui::Key::ArrowRight));
+            }
+            assert_eq!(
+                state.view(),
+                Some((ReportView::SystemForces, ReportTab::CapitalShips)),
+                "{faction:?} right boundary"
+            );
+            run(&mut state, key(egui::Key::ArrowLeft));
+            assert_eq!(
+                state.view(),
+                Some((ReportView::SystemForces, ReportTab::CapitalShips)),
+                "{faction:?} left boundary"
             );
         }
     }

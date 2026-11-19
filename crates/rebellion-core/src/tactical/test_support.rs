@@ -1,9 +1,42 @@
 //! Battle fixtures shared by the engine tests and rebellion-render's view tests.
 
 use super::resource_ids::{capital_ship_tactical_resource, fighter_tactical_resource};
+#[allow(
+    clippy::wildcard_imports,
+    reason = "the shared fixture builders intentionally mirror the tactical module's data model"
+)]
 use super::*;
 
+/// A raw battle system plus one possible retreat system for `refuge_side`.
+///
 /// port: test fixture values, not rules.
+#[must_use]
+pub fn battle_system_with_refuge(
+    refuge_side: crate::dat::Faction,
+    refuge_x: u16,
+) -> (GameWorld, SystemKey, SystemKey) {
+    let (mut world, [battle]) = crate::test_support::bare_systems();
+    let refuge = world.systems.insert(crate::world::System {
+        x: refuge_x,
+        control: crate::world::ControlKind::Controlled(refuge_side),
+        ..crate::world::System::default()
+    });
+    (world, battle, refuge)
+}
+
+/// Attach the two opposing battle fleets in stable key order.
+pub fn attach_opposed_fleets(
+    world: &mut GameWorld,
+    system: SystemKey,
+    alliance: FleetKey,
+    empire: FleetKey,
+) {
+    world.systems[system].fleets = vec![alliance, empire];
+    world.systems[system].fleets.sort_unstable();
+}
+
+/// port: test fixture values, not rules.
+#[must_use]
 pub fn test_ship(dat_id: u32, roster: usize, is_alliance: bool, alive: bool) -> TacticalShip {
     TacticalShip {
         class_key: CapitalShipKey::default(),
@@ -78,21 +111,12 @@ pub fn test_ship(dat_id: u32, roster: usize, is_alliance: bool, alive: bool) -> 
         weapon_ranges: TacticalWeaponRanges::default(),
         weapon_recharge_rate: 0.0,
         shield_recharge_rate: 0.0,
-        shield_recharge_carry: 0.0,
-        weapon_recharge_queue: Vec::new(),
-        attack_target: None,
-        manual_targets: Vec::new(),
-        escort_target: None,
-        contents: Vec::new(),
-        retreating: false,
-        retreat_progress: 0.0,
-        retreated: false,
-        outstanding_hits: 0,
-        repair_timer_steps: 0,
+        ..TacticalShip::default()
     }
 }
 
 /// port: test fixture values, not rules.
+#[must_use]
 pub fn test_fighter(dat_id: u32, is_alliance: bool) -> TacticalFighter {
     TacticalFighter {
         held_by_system: false,
@@ -142,71 +166,33 @@ pub fn test_fighter(dat_id: u32, is_alliance: bool) -> TacticalFighter {
 }
 
 /// port: test fixture values, not rules.
+#[must_use]
 pub fn test_session(
     ships: Vec<TacticalShip>,
     fighters: Vec<TacticalFighter>,
     player_is_attacker: bool,
 ) -> BattleSession {
     BattleSession {
-        system: SystemKey::default(),
         system_name: "Test System".to_string(),
         system_picture_id: 1,
         attacker_fleet: Some(FleetKey::default()),
         defender_fleet: Some(FleetKey::default()),
-        attacker_is_alliance: true,
-        player_is_attacker,
-        phase: BattlePhase::Combat,
-        ships,
-        fighters,
-        death_star: None,
-        death_star_beam: None,
-        trench_run_outcome: None,
-        trench_run_remaining_ms: None,
-        trench_run_group: None,
-        trench_run_commander: None,
-        trench_run_pending_outcome: None,
-        trench_run_participants: Vec::new(),
-        trench_run_snapshot: Vec::new(),
-        trench_run_chatter: [ORIGINAL_TRENCH_RUN_SILENT_EVENT; 9],
-        trench_run_chatter_cursor: 0,
-        trench_run_cinematic_pending: false,
-        navigation_sets: original_navigation_point_sets(OriginalTacticalLayout::default()),
-        source_layout: OriginalTacticalLayout::default(),
-        selected_ship: None,
-        selected_fighter_group: None,
-        selected_task_force: None,
-        player_command: true,
-        placement_confirmed: true,
-        start_tick: 0,
-        combat_tick: 0,
-        tactical_rng: OriginalTacticalRng::new(0x5eed_ba77),
-        battle_rng: OriginalBattleRng::default(),
-        settled_crew: None,
-        weapon_effects: Vec::new(),
-        impact_effects: Vec::new(),
-        pending_audio_cues: Vec::new(),
-        pending_voice_cues: Vec::new(),
-        pending_log_lines: Vec::new(),
-        field_effects: Vec::new(),
-        subsystem_repairs: Vec::new(),
-        paused: true,
-        combat_speed: 1,
-        step_accumulator: 0.0,
-        winner: None,
-        stalemate: TacticalStalemateWatch::default(),
-        death_star_ai: TacticalDeathStarAi::default(),
-        hangars: TacticalHangars::default(),
-        morale: TacticalMorale::default(),
-        engagement: TacticalEngagementState::default(),
-        holder_is_alliance: None,
-        arrival_holder_is_alliance: None,
-        blockaded_at_start: false,
-        withdrawal_destination: None,
+        ..BattleSession::baseline(
+            SystemKey::default(),
+            ships,
+            fighters,
+            player_is_attacker,
+            OriginalTacticalLayout::default(),
+            0,
+            0x5eed_ba77,
+            OriginalBattleRng::default(),
+        )
     }
 }
 
 /// port: an Imperial station of the side `is_attacker`, completed, with a
 /// 100-point hull, no charge, no shield and no hangar.
+#[must_use]
 pub fn test_death_star(is_attacker: bool) -> TacticalDeathStar {
     TacticalDeathStar {
         resource: DEATH_STAR_TACTICAL_RESOURCE,

@@ -386,15 +386,7 @@ mod tests {
         let dir = root.join("rebexe-exe/BMP");
         std::fs::create_dir_all(&dir).unwrap();
         let (side, stride, offset) = (32usize, 96usize, 54usize);
-        let mut bmp = vec![0xff_u8; offset + stride * side];
-        bmp[..2].copy_from_slice(b"BM");
-        bmp[10..14].copy_from_slice(&(offset as u32).to_le_bytes());
-        bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
-        bmp[18..22].copy_from_slice(&(side as i32).to_le_bytes());
-        bmp[22..26].copy_from_slice(&(side as i32).to_le_bytes());
-        bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
-        bmp[28..30].copy_from_slice(&24u16.to_le_bytes());
-        bmp[30..54].fill(0);
+        let bmp = crate::test_support::bitmap_fixture(side, side, stride, offset, 24, 0xff);
         std::fs::write(dir.join("1002.bmp"), bmp).unwrap();
         let mut cache = BmpCache::new();
         cache.set_base_path(&root);
@@ -458,14 +450,7 @@ mod tests {
                         modifiers: egui::Modifiers::NONE,
                     });
                 }
-                let input = egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(640.0, 480.0),
-                    )),
-                    events,
-                    ..Default::default()
-                };
+                let input = crate::test_support::raw_input(events, egui::vec2(640.0, 480.0));
                 let _ = ctx.run(input, |ctx| {
                     egui::Area::new(egui::Id::new("window_below"))
                         .fixed_pos(egui::Pos2::ZERO)
@@ -496,7 +481,7 @@ mod tests {
         });
 
         assert!(!drawn);
-        assert!(output.shapes.is_empty());
+        assert_empty!(output.shapes);
     }
 
     mod release {
@@ -505,56 +490,26 @@ mod tests {
         use crate::defenses_window::draw_defenses_windows;
         use crate::fleet_window::draw_fleet_windows;
         use crate::missions_window::draw_missions_windows;
-        use crate::sector_window::draw_sector_windows;
+        use crate::sector_window::{draw_sector_windows, SectorWindowDraw};
         use crate::system_window::draw_system_windows;
-        use rebellion_core::dat::{ExplorationStatus, Faction, SectorGroup};
-        use rebellion_core::ids::DatId;
+        use rebellion_core::dat::Faction;
         use rebellion_core::missions::MissionState;
         use rebellion_core::troop_transport::TroopTransportState;
-        use rebellion_core::world::{ControlKind, Fleet, Sector, System};
+        use rebellion_core::world::{ControlKind, Fleet};
 
         /// A sector at (317, 248) holding two systems whose planets sit at
         /// (14, 44) and (159, 89) in its window.
         fn world() -> (GameWorld, SystemKey, SystemKey) {
-            let mut world = GameWorld::default();
-            let sector = world.sectors.insert(Sector {
-                dat_id: DatId::new(36),
-                name: "Sesswenna".into(),
-                group: SectorGroup::Core,
-                x: 317,
-                y: 248,
-                systems: Vec::new(),
-            });
-            let mut system = |x, y| {
-                let key = world.systems.insert(System {
-                    dat_id: DatId::new(100),
-                    name: "System".into(),
-                    sector,
-                    x,
-                    y,
-                    exploration_status: ExplorationStatus::Explored,
-                    popularity_alliance: 0.5,
-                    popularity_empire: 0.5,
-                    is_populated: true,
-                    total_energy: 0,
-                    raw_materials: 0,
-                    espionage_rating: 0.0,
-                    fleets: vec![],
-                    ground_units: vec![],
-                    special_forces: vec![],
-                    fighters: Vec::new(),
-                    defense_facilities: vec![],
-                    manufacturing_facilities: vec![],
-                    production_facilities: vec![],
-                    is_headquarters: false,
-                    is_destroyed: false,
-                    control: ControlKind::Uncontrolled,
-                });
-                world.sectors[sector].systems.push(key);
-                key
-            };
-            let first = system(322, 260);
-            let second = system(373, 272);
+            let (mut world, first) = crate::test_support::world(ControlKind::Uncontrolled);
+            let sector = world.systems[first].sector;
+            world.systems[first].name = "System".into();
+            world.systems[first].x = 322;
+            world.systems[first].y = 260;
+            let mut second_system = world.systems[first].clone();
+            second_system.x = 373;
+            second_system.y = 272;
+            let second = world.systems.insert(second_system);
+            world.sectors[sector].systems.push(second);
             (world, first, second)
         }
 
@@ -613,26 +568,22 @@ mod tests {
             let mut cache = BmpCache::new();
             let fog = FogState::new(Faction::Alliance);
             for _ in 0..2 {
-                let input = egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(700.0, 520.0),
-                    )),
-                    ..Default::default()
-                };
+                let input = crate::test_support::raw_input(Vec::new(), egui::vec2(700.0, 520.0));
                 let _ = ctx.run(input, |ctx| {
                     let faction = CockpitFaction::Alliance;
                     let _ = draw_sector_windows(
-                        ctx,
-                        world,
-                        &rebellion_core::movement::MovementState::default(),
-                        &fog,
-                        sectors,
-                        faction,
-                        layout,
-                        &mut cache,
-                        missions,
-                        &rebellion_core::uprising::UprisingState::default(),
+                        SectorWindowDraw {
+                            ctx,
+                            world,
+                            movement: &rebellion_core::movement::MovementState::default(),
+                            fog: &fog,
+                            state: sectors,
+                            faction,
+                            layout,
+                            cache: &mut cache,
+                            missions,
+                            uprisings: &rebellion_core::uprising::UprisingState::default(),
+                        },
                         &|_| true,
                     );
                     let _ = draw_system_windows(
@@ -666,7 +617,6 @@ mod tests {
                         world,
                         &fog,
                         &rebellion_core::missions::MissionState::new(),
-                        &rebellion_core::economy::EconomyState::default(),
                         defenses,
                         faction,
                         layout,
@@ -809,6 +759,21 @@ mod tests {
             fleet
         }
 
+        fn release_on_fleet_window(
+            world: &GameWorld,
+            fleets: &mut FleetWindowState,
+            at: (f32, f32),
+        ) -> Option<ReleaseTarget> {
+            release_on(
+                world,
+                &mut SectorWindowState::default(),
+                &mut SystemWindowState::default(),
+                fleets,
+                &mut DefensesWindowState::default(),
+                at,
+            )
+        }
+
         #[test]
         fn a_release_on_a_fleet_windows_fleet_targets_that_fleet() {
             // FUN_004a3130: in the left list, the entry under the point.
@@ -827,14 +792,7 @@ mod tests {
             // The first entry spans (4, 29) to (95, 79) in the window.
             let at = (70.0 + 40.0, 90.0 + 50.0);
             assert_eq!(
-                release_on(
-                    &world,
-                    &mut SectorWindowState::default(),
-                    &mut SystemWindowState::default(),
-                    &mut fleets,
-                    &mut DefensesWindowState::default(),
-                    at,
-                ),
+                release_on_fleet_window(&world, &mut fleets, at),
                 Some(ReleaseTarget::Fleet {
                     fleet,
                     system: first
@@ -843,14 +801,7 @@ mod tests {
             // Below the last entry, the list gives the subject.
             let at = (70.0 + 40.0, 90.0 + 150.0);
             assert_eq!(
-                release_on(
-                    &world,
-                    &mut SectorWindowState::default(),
-                    &mut SystemWindowState::default(),
-                    &mut fleets,
-                    &mut DefensesWindowState::default(),
-                    at,
-                ),
+                release_on_fleet_window(&world, &mut fleets, at),
                 Some(ReleaseTarget::System(first))
             );
         }

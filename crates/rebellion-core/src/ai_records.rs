@@ -694,10 +694,10 @@ fn fold(f: &mut FleetRecord, s: &ShipRecord) {
 /// informants, espionage, mission ends), is not followed, since the port
 /// keeps no per-side intelligence. port: counts at a non-own system are
 /// its owner's objects, which `FUN_00433e40` counts as everything there.
-pub fn fill_system(
+pub fn fill_system<S: std::hash::BuildHasher>(
     r: &mut crate::ai_production::SystemRecord,
     inputs: &RecordWorld<'_>,
-    fleets: &HashMap<FleetKey, FleetRecord>,
+    fleets: &HashMap<FleetKey, FleetRecord, S>,
     day: i64,
 ) {
     use crate::ai_production::bit;
@@ -867,7 +867,14 @@ pub fn fill_system(
             r.squadron_attack += node.n30 * n;
             r.squadron_manoeuvre += node.n34 * n;
         }
-        if !r.own {
+        if r.own {
+            if r.a & bit::UPRISING != 0 && s & sys::FOREIGN_FLEET == 0 {
+                r.q |= 0x20;
+            }
+            if r.q & 0x1000_0000 != 0 && s & sys::FOREIGN_FLEET == 0 && r.a & bit::UPRISING == 0 {
+                r.q |= 0x40;
+            }
+        } else {
             let regiments = r.regiments_present;
             if r.enemy {
                 // `FUN_00433e40.c:639-641`: at a system the other side
@@ -923,13 +930,6 @@ pub fn fill_system(
                 if r.a & bit::HQ != 0 {
                     r.hq_count += 1;
                 }
-            }
-        } else {
-            if r.a & bit::UPRISING != 0 && s & sys::FOREIGN_FLEET == 0 {
-                r.q |= 0x20;
-            }
-            if r.q & 0x1000_0000 != 0 && s & sys::FOREIGN_FLEET == 0 && r.a & bit::UPRISING == 0 {
-                r.q |= 0x40;
             }
         }
     } else if !r.own {
@@ -1018,6 +1018,41 @@ mod tests {
     use crate::ids::DatId;
     use crate::world::System;
 
+    fn with_record_world<T>(
+        world: &GameWorld,
+        side: Faction,
+        f: impl FnOnce(&RecordWorld<'_>) -> T,
+    ) -> T {
+        let movement = crate::movement::MovementState::new();
+        let transport = crate::troop_transport::TroopTransportState::default();
+        let marks = Marks::default();
+        f(&RecordWorld {
+            world,
+            movement: &movement,
+            transport: &transport,
+            marks: &marks,
+            side,
+        })
+    }
+
+    fn filled_system_record(
+        side: Faction,
+        family: u8,
+        system: System,
+    ) -> crate::ai_production::SystemRecord {
+        let mut world = GameWorld::default();
+        let key = world.systems.insert(system);
+        world.system_families.insert(key, family);
+        let mut record = crate::ai_production::SystemRecord {
+            key,
+            ..Default::default()
+        };
+        with_record_world(&world, side, |inputs| {
+            fill_system(&mut record, inputs, &HashMap::new(), 1);
+        });
+        record
+    }
+
     #[test]
     fn an_unfinished_ship_sets_the_ai_incomplete_flags_for_either_side() {
         // FUN_00484630 sets ship 0x2000 for +0x50 bit 2 clear, and
@@ -1046,15 +1081,7 @@ mod tests {
                 ..crate::world::Fleet::default()
             });
             world.systems[system].fleets.push(fleet);
-            let inputs = RecordWorld {
-                world: &world,
-                movement: &crate::movement::MovementState::new(),
-                transport: &crate::troop_transport::TroopTransportState::default(),
-                marks: &Marks::default(),
-                side,
-            };
-
-            let (fleets, ships) = fleet_records(&inputs);
+            let (fleets, ships) = with_record_world(&world, side, fleet_records);
 
             assert_ne!(ships[&1].flags & ship::INCOMPLETE, 0, "{side:?}");
             let flags = fleets[&fleet].flags;
@@ -1070,24 +1097,14 @@ mod tests {
         // system_families (load_game_data).
         for side in [Faction::Alliance, Faction::Empire] {
             for (family, rim) in [(0x90, 0), (0x92, sys::RIM)] {
-                let mut world = GameWorld::default();
-                let key = world.systems.insert(System {
-                    dat_id: DatId::new(0x64),
-                    ..System::default()
-                });
-                world.system_families.insert(key, family);
-                let mut r = crate::ai_production::SystemRecord {
-                    key,
-                    ..Default::default()
-                };
-                let inputs = RecordWorld {
-                    world: &world,
-                    movement: &crate::movement::MovementState::new(),
-                    transport: &crate::troop_transport::TroopTransportState::default(),
-                    marks: &Marks::default(),
+                let r = filled_system_record(
                     side,
-                };
-                fill_system(&mut r, &inputs, &HashMap::new(), 1);
+                    family,
+                    System {
+                        dat_id: DatId::new(0x64),
+                        ..System::default()
+                    },
+                );
                 // Unmarked, unheld and unexplored: S is the rim bit and
                 // NEUTRAL alone.
                 assert_eq!(r.s, rim | sys::NEUTRAL, "{side:?} {family:#x}");
@@ -1130,14 +1147,9 @@ mod tests {
             own,
             ..Default::default()
         };
-        let inputs = RecordWorld {
-            world: &world,
-            movement: &crate::movement::MovementState::new(),
-            transport: &crate::troop_transport::TroopTransportState::default(),
-            marks: &Marks::default(),
-            side,
-        };
-        fill_system(&mut r, &inputs, &HashMap::new(), 1);
+        with_record_world(&world, side, |inputs| {
+            fill_system(&mut r, inputs, &HashMap::new(), 1);
+        });
         r
     }
 
@@ -1192,26 +1204,16 @@ mod tests {
         // says.
         for side in [Faction::Alliance, Faction::Empire] {
             for (family, full) in [(0x90, true), (0x91, true), (0x92, false)] {
-                let mut world = GameWorld::default();
-                let key = world.systems.insert(System {
-                    dat_id: DatId::new(0x64),
-                    is_populated: true,
-                    exploration_status: crate::dat::ExplorationStatus::Explored,
-                    ..System::default()
-                });
-                world.system_families.insert(key, family);
-                let mut r = crate::ai_production::SystemRecord {
-                    key,
-                    ..Default::default()
-                };
-                let inputs = RecordWorld {
-                    world: &world,
-                    movement: &crate::movement::MovementState::new(),
-                    transport: &crate::troop_transport::TroopTransportState::default(),
-                    marks: &Marks::default(),
+                let r = filled_system_record(
                     side,
-                };
-                fill_system(&mut r, &inputs, &HashMap::new(), 1);
+                    family,
+                    System {
+                        dat_id: DatId::new(0x64),
+                        is_populated: true,
+                        exploration_status: crate::dat::ExplorationStatus::Explored,
+                        ..System::default()
+                    },
+                );
                 assert_eq!(r.q & 0x800_0000 != 0, full, "{side:?} {family:#x}");
                 assert_eq!(r.s & sys::POPULATED != 0, full, "{side:?} {family:#x}");
             }

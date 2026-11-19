@@ -11,7 +11,11 @@ path = "src/main.rs"
 default = []
 # Compiled only into the isolated browser-acceptance artifact. Production
 # packaging rejects this feature and its JavaScript bridge exports.
-interface-test-fixtures = ["rebellion-render/interface-test-fixtures"]
+interface-test-fixtures = [
+    "rebellion-core/test-support",
+    "rebellion-render/interface-test-fixtures",
+    "rebellion-data/test-support",
+]
 
 [dependencies]
 rebellion-core = { path = "../rebellion-core" }
@@ -28,6 +32,9 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 
 [dev-dependencies]
+rebellion-core = { path = "../rebellion-core", features = ["test-support"] }
+rebellion-data = { path = "../rebellion-data", features = ["test-support"] }
+rebellion-render = { path = "../rebellion-render", features = ["test-support"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 sha2 = "0.10"
 tempfile = "3"

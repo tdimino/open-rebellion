@@ -16,17 +16,21 @@ use rebellion_core::movement::MovementState;
 use rebellion_core::troop_transport::TroopTransportState;
 use rebellion_core::world::GameWorld;
 use rebellion_windowing::{
-    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
+    ControlId, ExistingEffect, WindowId, WindowKind, WindowOwner, WindowSpec, WindowTransition,
 };
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
-use crate::manufacturing_window::product;
-use crate::mission_dialog::{
-    button, galaxy_centered_rect, paint, paint_button, paint_centered, scrolled,
+use crate::controls::{
+    ScreenBounds, SelectionBox, SelectionBoxEvent, SelectionBoxSpec, SelectionBoxState,
+    StringField, StringFieldEvent, StringFieldLease, StringFieldSpec, StringFieldState,
+    StringFieldStyle, StrobeButton,
 };
-use crate::system_window::{exact_clicked, logical_rect, rect_contains};
+use crate::manufacturing_window::product;
+use crate::mission_dialog::{galaxy_centered_rect, paint, paint_centered};
+use crate::singleton_window_common::{
+    self, impl_singleton_content_reports, impl_singleton_window_routing,
+};
 
 pub const BUILD_SELECTION_WIDTH: f32 = 210.0;
 pub const BUILD_SELECTION_HEIGHT: f32 = 261.0;
@@ -68,11 +72,22 @@ const COMPLETION_FIELD: (f32, f32) = (140.0, 145.0);
 const DEPLOYMENT_FIELD: (f32, f32) = (140.0, 165.0);
 /// The number to build, an edit of 45 by 17 (`+0x128`).
 const QUANTITY_FIELD: (f32, f32, f32, f32) = (141.0, 196.0, 45.0, 17.0);
+const QUANTITY_CONTROL: ControlId = ControlId(0x6b);
 
 /// The drop-down's rows (box `+0xa8`, `FUN_00437f80`'s 2) and their height
 /// (`+0xa4`, 0x46); `FUN_0060cac0` makes it the rows' height plus 4.
 const LIST_ROWS: usize = 2;
 const LIST_ROW_HEIGHT: f32 = 70.0;
+
+/// The class box (`FUN_00437f80` -> `FUN_0060bed0`). port: its popup's
+/// scroll bar, art (7, `0x299a`) at `+0xbc`/`+0xbe`, is not drawn until that
+/// art is settled; the list's wheel scrolls its rows.
+const CLASS_BOX: SelectionBoxSpec = SelectionBoxSpec {
+    rect: ITEM_BOX,
+    rows: LIST_ROWS,
+    row_height: LIST_ROW_HEIGHT,
+    bar: None,
+};
 
 /// The labels' color, `0x2f0fbff` (`FUN_00438500`).
 const LABEL: egui::Color32 = egui::Color32::from_rgb(0xff, 0xfb, 0xf0);
@@ -94,19 +109,10 @@ pub struct BuildSelection {
     kinds: Vec<BuildableKind>,
     selected: usize,
     quantity: u32,
-    /// The class list is open (`CoolSelectionBoxClass +0xe8`).
-    list_open: bool,
-    /// The list's first shown row (its scroll, list `+0xc4`).
-    top: usize,
-    /// The row last clicked in the list: its item's `+0x3c` bit 0, which
-    /// `FUN_006094b0` clears on every other item.
-    picked: Option<usize>,
-    /// Each row's item `+0x3c` bit 1, set while the pointer is on it. The
-    /// items outlive the list (`FUN_00608280` shares the box's), so a bit
-    /// stays until a list moves the pointer off its row.
-    hot: Vec<bool>,
-    /// The row this list marked hot (list `+0x100`); a new list has none.
-    last_hot: Option<usize>,
+    quantity_field: StringFieldState,
+    focus_quantity: bool,
+    /// The class box and its popup, over the classes' row indices.
+    list: SelectionBoxState<usize>,
 }
 
 impl BuildSelection {
@@ -132,7 +138,13 @@ impl BuildSelection {
 
     #[must_use]
     pub fn list_open(&self) -> bool {
-        self.list_open
+        self.list.is_open()
+    }
+
+    /// The classes the box lists.
+    #[must_use]
+    pub fn class_count(&self) -> usize {
+        self.kinds.len()
     }
 
     /// Choose a listed class; an index past the list is ignored.
@@ -150,57 +162,60 @@ impl BuildSelection {
         } else {
             self.quantity.saturating_sub(1).max(1)
         };
+        self.quantity_field.set_text(self.quantity.to_string());
     }
 
     /// A digit typed into the number edit; the value stays in 1..=255.
     pub fn type_digit(&mut self, digit: u32) {
-        self.quantity = (self.quantity * 10 + digit).clamp(1, MAX_QUANTITY);
+        let mut text = self.quantity_field.text().to_owned();
+        text.push(char::from_digit(digit.min(9), 10).expect("a decimal digit"));
+        self.quantity_field.set_text(text);
+        self.sync_quantity_from_field();
     }
 
     /// Backspace in the number edit.
     pub fn erase_digit(&mut self) {
-        self.quantity = (self.quantity / 10).max(1);
+        let mut text = self.quantity_field.text().to_owned();
+        text.pop();
+        self.quantity_field.set_text(text);
+        self.sync_quantity_from_field();
     }
 
-    /// The drop-down (`0x6c`): open a new list scrolled to the class
-    /// (`FUN_00609ed0` from 0 brings it up to the last row), or close it.
-    fn toggle_list(&mut self) {
-        self.list_open = !self.list_open;
-        if self.list_open {
-            self.top = self.selected.saturating_sub(LIST_ROWS - 1);
-            self.last_hot = None;
-        }
+    /// Interpret the source field's printable text as the parent's numeric
+    /// quantity, clamped by `FUN_00438d30` while retaining the editable text.
+    fn sync_quantity_from_field(&mut self) {
+        let text = self.quantity_field.text().trim_start();
+        let (negative, digits) = match text.strip_prefix('-') {
+            Some(digits) => (true, digits),
+            None => (false, text.strip_prefix('+').unwrap_or(text)),
+        };
+        let parsed = digits
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .fold(0_u32, |value, digit| {
+                value
+                    .saturating_mul(10)
+                    .saturating_add(digit.to_digit(10).unwrap_or(0))
+            });
+        self.quantity = if negative { 0 } else { parsed }.clamp(1, MAX_QUANTITY);
     }
 
-    /// The pointer moved over the list (`FUN_006083c0`, `WM_MOUSEMOVE`):
-    /// the row it left loses bit 1 and the row under it, if any, gains it.
-    fn hover(&mut self, row: Option<usize>) {
-        if row == self.last_hot {
-            return;
-        }
-        if let Some(old) = self.last_hot {
-            self.hot[old] = false;
-        }
-        self.last_hot = row;
-        if let Some(row) = row {
-            self.hot[row] = true;
-        }
+    /// The classes' row indices, the box's items.
+    fn rows(&self) -> Vec<usize> {
+        (0..self.kinds.len()).collect()
     }
 
-    /// A click in the list (`FUN_006083c0`, buttons up): the row's class is
-    /// picked and the list closes (notification `0x29b` -> `FUN_0060c970`);
-    /// off the rows only the old pick clears.
-    fn click_list(&mut self, row: Option<usize>) {
-        self.picked = row;
-        if let Some(row) = row {
-            self.select(row);
-            self.list_open = false;
-        }
+    /// The drop-down (`0x6c`) posts the box's command `0x3ea`: a new popup
+    /// revealing the class (`FUN_00609ed0`), or a close of the open one.
+    fn toggle_list(&mut self, bounds: ScreenBounds) {
+        let rows = self.rows();
+        self.list
+            .toggle(CLASS_BOX, bounds, &rows, Some(self.selected));
     }
 
     /// A row's name color (`FUN_006083c0`, `WM_PAINT`).
     fn row_color(&self, row: usize) -> egui::Color32 {
-        if self.picked == Some(row) || self.hot[row] {
+        if self.list.is_picked(row) || self.list.is_hot(row) {
             egui::Color32::WHITE
         } else {
             ROW_GREY
@@ -299,7 +314,6 @@ impl BuildSelectionState {
         if kinds.is_empty() {
             return None;
         }
-        let kind_count = kinds.len();
         let selected = self.remembered[area_index(area)]
             .and_then(|kind| kinds.iter().position(|&listed| listed == kind))
             .unwrap_or(0);
@@ -312,16 +326,14 @@ impl BuildSelectionState {
                 kinds,
                 selected,
                 quantity: 1,
-                list_open: false,
-                top: 0,
-                picked: None,
-                hot: vec![false; kind_count],
-                last_hot: None,
+                quantity_field: StringFieldState::new("1"),
+                focus_quantity: true,
+                list: SelectionBoxState::default(),
             },
         })
     }
 
-    /// Publishes prepared content only for a newly accepted singleton. A NoOp
+    /// Publishes prepared content only for a newly accepted singleton. A `NoOp`
     /// duplicate acknowledges the old identity and preserves its context and
     /// control state exactly.
     pub fn commit_open(
@@ -347,68 +359,6 @@ impl BuildSelectionState {
     #[must_use]
     pub fn window_id(&self) -> Option<WindowId> {
         self.dialog.as_ref().and_then(|dialog| dialog.window_id)
-    }
-
-    /// Egui layer attached to the exact manager-issued Build Selection.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id() == Some(id)).then(|| {
-            egui::LayerId::new(
-                egui::Order::Tooltip,
-                egui::Id::new("original-build-selection"),
-            )
-        })
-    }
-
-    /// Manager-owned window hit for event-local pointer routing.
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id()?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::BuildSelection)
-            && frame.allows_input(id)
-            && rect_contains(window_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    /// Exact manager identity that owns this frame's keyboard lease.
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id()?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
-
-    /// Explicit content state for manager reconciliation.
-    #[must_use]
-    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::BuildSelection)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id() == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
     }
 
     /// Returns the exact close target while content remains attached for this
@@ -505,7 +455,6 @@ impl BuildSelectionState {
         let selected = self.remembered[area_index(area)]
             .and_then(|kind| kinds.iter().position(|&listed| listed == kind))
             .unwrap_or(0);
-        let hot = vec![false; kinds.len()];
         self.dialog = Some(BuildSelection {
             window_id: None,
             system,
@@ -514,41 +463,11 @@ impl BuildSelectionState {
             kinds,
             selected,
             quantity: 1,
-            list_open: false,
-            top: 0,
-            picked: None,
-            hot,
-            last_hot: None,
+            quantity_field: StringFieldState::new("1"),
+            focus_quantity: true,
+            list: SelectionBoxState::default(),
         });
         true
-    }
-
-    #[must_use]
-    pub fn is_open(&self) -> bool {
-        self.dialog.is_some()
-    }
-
-    #[must_use]
-    pub fn dialog(&self) -> Option<&BuildSelection> {
-        self.dialog.as_ref()
-    }
-
-    pub fn dialog_mut(&mut self) -> Option<&mut BuildSelection> {
-        self.dialog.as_mut()
-    }
-
-    /// Close and Cancel discard the order (`FUN_00438800`, 100 and 102).
-    pub fn close(&mut self) {
-        if self.window_id().is_none() {
-            self.dialog = None;
-        }
-    }
-
-    /// Whether `point` falls on the open window, so the galaxy map under it
-    /// takes no input.
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.dialog.is_some() && rect_contains(window_rect(layout), egui::pos2(point.0, point.1))
     }
 
     /// Confirm (`0x65`, `FUN_00438980`): remember the class for its kind of
@@ -568,6 +487,20 @@ impl BuildSelectionState {
         })
     }
 }
+
+crate::singleton_window_common::impl_singleton_dialog_state!(
+    BuildSelectionState,
+    BuildSelection,
+    window_rect
+);
+
+impl_singleton_window_routing!(
+    BuildSelectionState,
+    WindowKind::BuildSelection,
+    "original-build-selection",
+    window_rect
+);
+impl_singleton_content_reports!(BuildSelectionState, WindowKind::BuildSelection);
 
 /// What the window asks of the game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -615,11 +548,11 @@ pub fn days_text(value: u32, valid: bool) -> String {
 }
 
 /// Draw the open window, if any, and report what the player asked for.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The window paints in the original's control order; splitting it hides that order."
 )]
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The validator reads the queues, the cargo aboard and the products on their way."
 )]
@@ -667,9 +600,10 @@ pub fn draw_build_selection(
     let mut close = false;
     let mut confirm = false;
 
-    // FUN_00438b60: Enter confirms, even an invalid order, which its
-    // validator then refuses; Escape closes, keypad + and - step the
-    // number; the number edit has the focus for digits.
+    // FUN_00438b60: the window keeps Enter/Escape available outside the
+    // edit. While the CoolStringField owns focus it forwards +/- below.
+    let quantity_has_focus =
+        dialog.focus_quantity || dialog.quantity_field.focused_control() == Some(QUANTITY_CONTROL);
     ctx.input(|input| {
         for event in &input.events {
             if let egui::Event::Key {
@@ -679,270 +613,311 @@ pub fn draw_build_selection(
                 match key {
                     egui::Key::Enter => confirm = true,
                     egui::Key::Escape => close = true,
-                    egui::Key::Plus | egui::Key::Equals => dialog.step_quantity(true),
-                    egui::Key::Minus => dialog.step_quantity(false),
-                    egui::Key::Backspace => dialog.erase_digit(),
+                    egui::Key::Plus | egui::Key::Equals if !quantity_has_focus => {
+                        dialog.step_quantity(true);
+                    }
+                    egui::Key::Minus if !quantity_has_focus => dialog.step_quantity(false),
                     _ => {}
-                }
-            }
-            if let egui::Event::Text(text) = event {
-                for digit in text.chars().filter_map(|c| c.to_digit(10)) {
-                    dialog.type_digit(digit);
                 }
             }
         }
     });
 
+    let bounds = ScreenBounds::canvas(layout, window);
     let area_id = egui::Id::new("original-build-selection");
-    egui::Area::new(area_id)
-        .fixed_pos(window.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(window.size(), egui::Sense::hover());
-            let painter = ui.painter().with_clip_rect(frame);
-            let at = |x: f32, y: f32, w: f32, h: f32| logical_rect(frame, scale, x, y, w, h);
-            let title_font = egui::FontId::proportional((11.0 * scale).max(7.0));
-            let value_font = egui::FontId::proportional((10.0 * scale).max(7.0));
-            let small = egui::FontId::proportional((9.0 * scale).max(6.0));
+    singleton_window_common::show_popup_canvas(ctx, area_id, window, scale, |ui, canvas| {
+        let frame = canvas.frame;
+        let painter = canvas.painter.clone();
+        let at = |x: f32, y: f32, w: f32, h: f32| canvas.rect(x, y, w, h);
+        let title_font = egui::FontId::proportional((11.0 * scale).max(7.0));
+        let value_font = egui::FontId::proportional((10.0 * scale).max(7.0));
+        let small = egui::FontId::proportional((9.0 * scale).max(6.0));
 
-            paint(&painter, ctx, cache, BACKGROUND, frame, scale);
-            // FUN_00438500: the side's 240-pixel strip at (2, 2), which the
-            // window clips, then the labels.
-            let strip = if dialog.is_alliance {
-                TITLE_ALLIANCE
-            } else {
-                TITLE_EMPIRE
-            };
-            paint(
-                &painter,
-                ctx,
-                cache,
-                strip,
-                at(2.0, 2.0, 208.0, 17.0),
-                scale,
-            );
+        paint(&painter, ctx, cache, BACKGROUND, frame, scale);
+        // FUN_00438500: the side's 240-pixel strip at (2, 2), which the
+        // window clips, then the labels.
+        let strip = if dialog.is_alliance {
+            TITLE_ALLIANCE
+        } else {
+            TITLE_EMPIRE
+        };
+        paint(
+            &painter,
+            ctx,
+            cache,
+            strip,
+            at(2.0, 2.0, 208.0, 17.0),
+            scale,
+        );
+        painter.text(
+            at(2.0, 2.0, 202.0, 14.0).center(),
+            egui::Align2::CENTER_CENTER,
+            TITLE,
+            title_font,
+            egui::Color32::BLACK,
+        );
+        painter.text(
+            at(20.0, 196.0, 118.0, 15.0).right_top(),
+            egui::Align2::RIGHT_TOP,
+            NUMBER_TO_BUILD,
+            value_font.clone(),
+            LABEL,
+        );
+        for (label, y) in [(BEST_COMPLETION, 145.0), (BEST_DEPLOYMENT, 165.0)] {
             painter.text(
-                at(2.0, 2.0, 202.0, 14.0).center(),
-                egui::Align2::CENTER_CENTER,
-                TITLE,
-                title_font,
-                egui::Color32::BLACK,
-            );
-            painter.text(
-                at(20.0, 196.0, 118.0, 15.0).right_top(),
-                egui::Align2::RIGHT_TOP,
-                NUMBER_TO_BUILD,
-                value_font.clone(),
+                at(10.0, y, 125.0, 15.0).left_center(),
+                egui::Align2::LEFT_CENTER,
+                label,
+                small.clone(),
                 LABEL,
             );
-            for (label, y) in [(BEST_COMPLETION, 145.0), (BEST_DEPLOYMENT, 165.0)] {
-                painter.text(
-                    at(10.0, y, 125.0, 15.0).left_center(),
-                    egui::Align2::LEFT_CENTER,
-                    label,
-                    small.clone(),
-                    LABEL,
-                );
-            }
+        }
 
-            // The selected class: its portrait centered in the box, its name
-            // from the portrait's height down (FUN_00437880's 195 by 63 item).
-            let (x, y, w, h) = ITEM_BOX;
+        // The selected class: its portrait centered in the box, its name
+        // from the portrait's height down (FUN_00437880's 195 by 63 item).
+        let (x, y, w, h) = ITEM_BOX;
+        paint_item(
+            &painter,
+            ctx,
+            cache,
+            world,
+            dialog.kind(),
+            at(x, y, w, h),
+            scale,
+            &small,
+            egui::Color32::WHITE,
+        );
+
+        // FUN_00438dd0 / FUN_00438f30: the values, white, each in its
+        // FUN_00437f80 field. port: clipped to the field, where the
+        // original's aliased GDI text ends; the anti-aliased edge of a
+        // right-aligned value would otherwise cross it.
+        let in_field =
+            |field: egui::Rect| painter.with_clip_rect(field.intersect(painter.clip_rect()));
+        for ((x, y), width, height, text, font, right_aligned) in [
+            (
+                REFINED_FIELD,
+                64.0,
+                23.0,
+                cost_text(estimate.refined_material, valid),
+                value_font.clone(),
+                false,
+            ),
+            (
+                MAINTENANCE_FIELD,
+                64.0,
+                23.0,
+                cost_text(estimate.maintenance, valid),
+                value_font.clone(),
+                false,
+            ),
+            (
+                COMPLETION_FIELD,
+                60.0,
+                15.0,
+                days_text(estimate.completion.unwrap_or(0), valid),
+                small.clone(),
+                true,
+            ),
+            (
+                DEPLOYMENT_FIELD,
+                60.0,
+                15.0,
+                days_text(estimate.deployment, valid),
+                small.clone(),
+                true,
+            ),
+        ] {
+            let field = at(x, y, width, height);
+            let (position, alignment) = if right_aligned {
+                (field.right_center(), egui::Align2::RIGHT_CENTER)
+            } else {
+                (field.center(), egui::Align2::CENTER_CENTER)
+            };
+            in_field(field).text(position, alignment, text, font, egui::Color32::WHITE);
+        }
+        let (x, y, w, h) = QUANTITY_FIELD;
+        let quantity_lease = if dialog.focus_quantity {
+            StringFieldLease::acquire(false)
+        } else {
+            StringFieldLease::focused()
+        };
+        let quantity = StringField::new(
+            &mut dialog.quantity_field,
+            StringFieldSpec::new(
+                ui.id().with("quantity"),
+                QUANTITY_CONTROL,
+                at(x, y, w, h),
+                Some(0x19),
+                StringFieldStyle {
+                    font: value_font.clone(),
+                    cursor_color: egui::Color32::from_rgb(0, 255, 0),
+                    ..StringFieldStyle::default()
+                },
+            ),
+            quantity_lease,
+        )
+        .show(ui);
+        dialog.focus_quantity = false;
+        for event in quantity.iter() {
+            match event {
+                StringFieldEvent::Changed => dialog.sync_quantity_from_field(),
+                StringFieldEvent::Submitted => confirm = true,
+                StringFieldEvent::Cancelled => close = true,
+                StringFieldEvent::UnhandledKey(egui::Key::Plus | egui::Key::Equals) => {
+                    dialog.step_quantity(true);
+                }
+                StringFieldEvent::UnhandledKey(egui::Key::Minus) => {
+                    dialog.step_quantity(false);
+                }
+                StringFieldEvent::FocusChanged(_) | StringFieldEvent::UnhandledKey(_) => {}
+            }
+        }
+
+        if StrobeButton::show_pair(
+            ui,
+            cache,
+            at(193.0, 3.0, 14.0, 14.0),
+            "close",
+            DllSource::Strategy,
+            CLOSE,
+            false,
+            false,
+            scale,
+        )
+        .clicked()
+        {
+            close = true;
+        }
+        if StrobeButton::show_pair(
+            ui,
+            cache,
+            at(79.0, 90.0, 65.0, 18.0),
+            "list",
+            DllSource::Strategy,
+            LIST,
+            false,
+            false,
+            scale,
+        )
+        .clicked()
+        {
+            dialog.toggle_list(bounds);
+        }
+        if StrobeButton::show_pair(
+            ui,
+            cache,
+            at(189.0, 196.0, 13.0, 8.0),
+            "more",
+            DllSource::Strategy,
+            MORE,
+            false,
+            false,
+            scale,
+        )
+        .clicked()
+        {
+            dialog.step_quantity(true);
+        }
+        if StrobeButton::show_pair(
+            ui,
+            cache,
+            at(189.0, 205.0, 13.0, 8.0),
+            "fewer",
+            DllSource::Strategy,
+            FEWER,
+            false,
+            false,
+            scale,
+        )
+        .clicked()
+        {
+            dialog.step_quantity(false);
+        }
+        if StrobeButton::show_pair(
+            ui,
+            cache,
+            at(5.0, 224.0, 66.0, 33.0),
+            "encyclopedia",
+            DllSource::Strategy,
+            ENCYCLOPEDIA,
+            false,
+            false,
+            scale,
+        )
+        .clicked()
+        {
+            action = Some(BuildSelectionAction::Encyclopedia);
+        }
+        // FUN_00439160 disables Confirm for an order that cannot be
+        // built. port: a disabled button keeps its rest art.
+        let confirm_rect = at(73.0, 224.0, 66.0, 33.0);
+        if StrobeButton::show_pair(
+            ui,
+            cache,
+            confirm_rect,
+            "confirm",
+            DllSource::Strategy,
+            CONFIRM,
+            false,
+            !valid,
+            scale,
+        )
+        .clicked()
+        {
+            confirm = true;
+        }
+        if StrobeButton::show_pair(
+            ui,
+            cache,
+            at(141.0, 224.0, 66.0, 33.0),
+            "cancel",
+            DllSource::Strategy,
+            CANCEL,
+            false,
+            false,
+            scale,
+        )
+        .clicked()
+        {
+            close = true;
+        }
+
+        // The class popup (FUN_0060cac0, FUN_0060d020), over every control
+        // the window drew: it takes the capture, so a press off it closes it
+        // and reaches nothing else.
+        let rows = dialog.rows();
+        let shown = SelectionBox::show(
+            ui,
+            &painter,
+            "class-list",
+            CLASS_BOX,
+            bounds,
+            &rows,
+            &mut dialog.list,
+            Some(dialog.selected),
+            frame,
+            scale,
+        );
+        if let Some(SelectionBoxEvent::Selected(row)) = shown.event {
+            dialog.select(row);
+        }
+        let (_, _, _, h) = ITEM_BOX;
+        for (row, cell) in shown.rows(&rows, frame, scale) {
             paint_item(
                 &painter,
                 ctx,
                 cache,
                 world,
-                dialog.kind(),
-                at(x, y, w, h),
+                dialog.kinds[row],
+                egui::Rect::from_min_size(cell.min, egui::vec2(cell.width(), h * scale)),
                 scale,
                 &small,
-                egui::Color32::WHITE,
+                dialog.row_color(row),
             );
-
-            // FUN_00438dd0 / FUN_00438f30: the values, white, each in its
-            // FUN_00437f80 field. port: clipped to the field, where the
-            // original's aliased GDI text ends; the anti-aliased edge of a
-            // right-aligned value would otherwise cross it.
-            let in_field =
-                |field: egui::Rect| painter.with_clip_rect(field.intersect(painter.clip_rect()));
-            for ((x, y), text) in [
-                (REFINED_FIELD, cost_text(estimate.refined_material, valid)),
-                (MAINTENANCE_FIELD, cost_text(estimate.maintenance, valid)),
-            ] {
-                let field = at(x, y, 64.0, 23.0);
-                in_field(field).text(
-                    field.center(),
-                    egui::Align2::CENTER_CENTER,
-                    text,
-                    value_font.clone(),
-                    egui::Color32::WHITE,
-                );
-            }
-            for ((x, y), text) in [
-                (
-                    COMPLETION_FIELD,
-                    days_text(estimate.completion.unwrap_or(0), valid),
-                ),
-                (DEPLOYMENT_FIELD, days_text(estimate.deployment, valid)),
-            ] {
-                let field = at(x, y, 60.0, 15.0);
-                in_field(field).text(
-                    field.right_center(),
-                    egui::Align2::RIGHT_CENTER,
-                    text,
-                    small.clone(),
-                    egui::Color32::WHITE,
-                );
-            }
-            let (x, y, w, h) = QUANTITY_FIELD;
-            in_field(at(x, y, w, h)).text(
-                at(x, y, w, h).left_center(),
-                egui::Align2::LEFT_CENTER,
-                dialog.quantity.to_string(),
-                value_font.clone(),
-                egui::Color32::WHITE,
-            );
-
-            if button(
-                ui,
-                cache,
-                at(193.0, 3.0, 14.0, 14.0),
-                "close",
-                CLOSE,
-                false,
-                scale,
-            ) {
-                close = true;
-            }
-            if button(
-                ui,
-                cache,
-                at(79.0, 90.0, 65.0, 18.0),
-                "list",
-                LIST,
-                false,
-                scale,
-            ) {
-                dialog.toggle_list();
-            }
-            if button(
-                ui,
-                cache,
-                at(189.0, 196.0, 13.0, 8.0),
-                "more",
-                MORE,
-                false,
-                scale,
-            ) {
-                dialog.step_quantity(true);
-            }
-            if button(
-                ui,
-                cache,
-                at(189.0, 205.0, 13.0, 8.0),
-                "fewer",
-                FEWER,
-                false,
-                scale,
-            ) {
-                dialog.step_quantity(false);
-            }
-            if button(
-                ui,
-                cache,
-                at(5.0, 224.0, 66.0, 33.0),
-                "encyclopedia",
-                ENCYCLOPEDIA,
-                false,
-                scale,
-            ) {
-                action = Some(BuildSelectionAction::Encyclopedia);
-            }
-            // FUN_00439160 disables Confirm for an order that cannot be
-            // built. port: a disabled button keeps its rest art.
-            let confirm_rect = at(73.0, 224.0, 66.0, 33.0);
-            if valid {
-                if button(ui, cache, confirm_rect, "confirm", CONFIRM, false, scale) {
-                    confirm = true;
-                }
-            } else {
-                paint_button(&painter, ctx, cache, CONFIRM.0, confirm_rect, scale);
-            }
-            if button(
-                ui,
-                cache,
-                at(141.0, 224.0, 66.0, 33.0),
-                "cancel",
-                CANCEL,
-                false,
-                scale,
-            ) {
-                close = true;
-            }
-
-            // The drop-down (FUN_0060cac0): a window under the box, the box's
-            // width and two rows high, its list (FUN_00607ea0) 2 pixels in.
-            // port: its scroll bar (base 0x299a) is not drawn; the wheel
-            // scrolls the rows, as the mission dialog's.
-            if dialog.list_open {
-                // FUN_0060d020 takes the capture: a press off the popup
-                // closes it and reaches no other control. port: on the
-                // release, within the window.
-                let capture = ui.interact(
-                    frame,
-                    ui.id().with("class-list-capture"),
-                    egui::Sense::click(),
-                );
-                let (x, y, w, h) = ITEM_BOX;
-                let rows_height = LIST_ROWS as f32 * LIST_ROW_HEIGHT;
-                let popup = at(x, y + h, w, rows_height + 4.0);
-                let list = at(x + 2.0, y + h + 2.0, w - 4.0, rows_height);
-                painter.rect_filled(popup, 0.0, egui::Color32::BLACK);
-                let response = ui.interact(popup, ui.id().with("class-list"), egui::Sense::click());
-                let len = dialog.kinds.len();
-                let top = dialog.top;
-                let row_at = |point: egui::Pos2| {
-                    let row = top + ((point.y - list.min.y) / (LIST_ROW_HEIGHT * scale)) as usize;
-                    (row < len).then_some(row)
-                };
-                // The list sees the pointer only over itself.
-                if let Some(point) = ctx
-                    .input(|input| input.pointer.hover_pos())
-                    .filter(|&point| rect_contains(list, point))
-                {
-                    dialog.hover(row_at(point));
-                }
-                if response.hovered() {
-                    let wheel = ctx.input(|input| input.raw_scroll_delta.y);
-                    dialog.top = scrolled(dialog.top, len.saturating_sub(LIST_ROWS) + 1, wheel);
-                }
-                for (slot, row) in (dialog.top..len).take(LIST_ROWS).enumerate() {
-                    paint_item(
-                        &painter,
-                        ctx,
-                        cache,
-                        world,
-                        dialog.kinds[row],
-                        at(
-                            x + 2.0,
-                            y + h + 2.0 + slot as f32 * LIST_ROW_HEIGHT,
-                            w - 4.0,
-                            h,
-                        ),
-                        scale,
-                        &small,
-                        dialog.row_color(row),
-                    );
-                }
-                if exact_clicked(&response, list) {
-                    let row = response.interact_pointer_pos().and_then(row_at);
-                    dialog.click_list(row);
-                } else if capture.clicked() {
-                    dialog.toggle_list();
-                }
-            }
-        });
+        }
+        shown.paint_bar(&painter, ctx, cache, frame, scale);
+    });
 
     if confirm {
         if let Some(dialog) = state.dialog().filter(|dialog| dialog.window_id.is_some()) {
@@ -985,7 +960,7 @@ fn name_top(bounds: egui::Rect, picture: Option<egui::Rect>) -> f32 {
 /// One class: its GOKRES portrait centered in the box (`FUN_00437880.c:
 /// 128-133`) and its name from [`name_top`], centered across the item
 /// (`DT_CENTER | DT_NOCLIP`, `0x101`, `FUN_00437f80.c:55`), in `color`.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit painter, cache and geometry inputs at this drawing boundary."
 )]
@@ -1015,8 +990,10 @@ fn paint_item(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fleet_window::tests::PAINTED;
-    use rebellion_core::dat::{ExplorationStatus, Faction};
+    use crate::test_support::{
+        key_press as key, offset_strategic_layout, pointer_button as press, pointer_raw_input,
+    };
+    use rebellion_core::dat::Faction;
     use rebellion_core::ids::DatId;
     use rebellion_core::world::{
         BuildableClass, ControlKind, ManufacturingFacilityInstance, System,
@@ -1028,22 +1005,7 @@ mod tests {
     }
 
     fn scaled(scale: f32) -> CockpitLayout {
-        use crate::cockpit::CockpitViewport;
-        CockpitLayout {
-            canvas: CockpitViewport {
-                x: 10.0,
-                y: 20.0,
-                width: 640.0 * scale,
-                height: 480.0 * scale,
-            },
-            galaxy: CockpitViewport {
-                x: 10.0 + 55.0 * scale,
-                y: 20.0 + 40.0 * scale,
-                width: 485.0 * scale,
-                height: 350.0 * scale,
-            },
-            scale,
-        }
+        offset_strategic_layout(scale)
     }
 
     /// A drawn text: its string, position and font size.
@@ -1058,27 +1020,10 @@ mod tests {
         let mut world = GameWorld::default();
         let system = world.systems.insert(System {
             dat_id: DatId::new(0x9000_0001),
-            name: "Bortras".into(),
-            sector: rebellion_core::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
+            ..rebellion_core::test_support::system(
+                "Bortras",
+                ControlKind::Controlled(Faction::Alliance),
+            )
         });
         let class = |refined, maintenance, rate| BuildableClass {
             is_alliance: true,
@@ -1150,6 +1095,38 @@ mod tests {
         (manager, id)
     }
 
+    fn unrelated_manager() -> WindowManager {
+        let mut manager = WindowManager::new();
+        manager
+            .apply(WindowCommand::Open(
+                crate::windowing_policy::singleton_spec(
+                    WindowKind::Encyclopedia,
+                    WindowOwner::StrategicRoot,
+                ),
+            ))
+            .unwrap();
+        manager
+    }
+
+    fn managed_training(
+        kinds: Vec<BuildableKind>,
+    ) -> (
+        BuildSelectionState,
+        WindowManager,
+        rebellion_windowing::WindowId,
+    ) {
+        let (_, system) = galaxy(true);
+        let mut state = BuildSelectionState::default();
+        let (manager, id) = managed_open(
+            &mut state,
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            kinds,
+        );
+        (state, manager, id)
+    }
+
     #[test]
     fn build_selection_windowing_failed_context_preserves_old() {
         let (_world, system) = galaxy(true);
@@ -1182,21 +1159,14 @@ mod tests {
 
     #[test]
     fn build_selection_duplicate_open_preserves_manufacturing_context() {
-        let (_world, system) = galaxy(true);
         let first = BuildableKind::Troop(DatId::new(0x1000_0001));
         let replacement = BuildableKind::Troop(DatId::new(0x1000_0002));
-        let mut state = BuildSelectionState::default();
-        let (mut manager, id) = managed_open(
-            &mut state,
-            system,
-            ProductionArea::TrainingFacility,
-            true,
-            vec![first, replacement],
-        );
+        let (mut state, mut manager, id) = managed_training(vec![first, replacement]);
         let dialog = state.dialog_mut().unwrap();
         dialog.select(1);
         dialog.step_quantity(true);
-        dialog.list_open = true;
+        dialog.toggle_list(ScreenBounds::canvas(layout(), window_rect(layout())));
+        assert!(dialog.list_open());
         let before = dialog.clone();
 
         let duplicate = state
@@ -1226,29 +1196,13 @@ mod tests {
 
     #[test]
     fn build_selection_rejects_mismatched_publication_receipts_without_replacing_content() {
-        let (_world, system) = galaxy(true);
         let first = BuildableKind::Troop(DatId::new(0x1000_0001));
         let replacement = BuildableKind::Troop(DatId::new(0x1000_0002));
-        let mut state = BuildSelectionState::default();
-        let (_manager, original) = managed_open(
-            &mut state,
-            system,
-            ProductionArea::TrainingFacility,
-            true,
-            vec![first],
-        );
+        let (mut state, _manager, original) = managed_training(vec![first]);
         state.dialog_mut().unwrap().step_quantity(true);
         let before = state.dialog().unwrap().clone();
 
-        let mut unrelated = WindowManager::new();
-        unrelated
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
+        let mut unrelated = unrelated_manager();
         let prepared = state
             .prepare_open(
                 SystemKey::default(),
@@ -1305,15 +1259,7 @@ mod tests {
         let before = state.dialog().unwrap().clone();
         assert_eq!(state.commit_confirm(prepared, &[], &world), None);
         assert_eq!(state.dialog(), Some(&before));
-        let mut unrelated = WindowManager::new();
-        unrelated
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
+        let mut unrelated = unrelated_manager();
         let wrong = unrelated
             .apply(WindowCommand::Open(
                 crate::windowing_policy::singleton_spec(
@@ -1383,25 +1329,13 @@ mod tests {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let manufacturing = ManufacturingState::new();
-        let lower = egui::Id::new("raising-lower-managed-surface");
         let mut order_projector = crate::windowing::ManagedOrderProjector::default();
 
-        for _ in 0..3 {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                ..Default::default()
-            };
-            let _ = ctx.run(input, |ctx| {
-                ctx.move_to_top(egui::LayerId::new(egui::Order::Tooltip, lower));
-                egui::Area::new(lower)
-                    .order(egui::Order::Tooltip)
-                    .fixed_pos(window_rect(layout).min)
-                    .show(ctx, |ui| {
-                        ui.allocate_response(window_rect(layout).size(), egui::Sense::click());
-                    });
+        crate::test_support::assert_managed_surface_reasserted(
+            &ctx,
+            window_rect(layout),
+            egui::Id::new("original-build-selection"),
+            |ctx| {
                 assert_eq!(state.keyboard_owner(&frame), state.window_id());
                 let _ = draw_build_selection(
                     ctx,
@@ -1420,33 +1354,8 @@ mod tests {
                     &mut order_projector,
                     |window| state.managed_layer_id(window).map(|layer| vec![layer]),
                 );
-            });
-        }
-
-        assert_eq!(
-            ctx.layer_id_at(window_rect(layout).center())
-                .map(|layer| layer.id),
-            Some(egui::Id::new("original-build-selection"))
+            },
         );
-    }
-
-    fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
-    }
-
-    fn key(key: egui::Key) -> egui::Event {
-        egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }
     }
 
     /// Two idle frames, then one per entry of `frames`, the pointer at
@@ -1475,20 +1384,8 @@ mod tests {
         let manufacturing = ManufacturingState::new();
         let mut emitted = None;
         let mut texts = Vec::new();
-        for extra in [vec![], vec![]].into_iter().chain(frames) {
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1400.0, 1040.0),
-                )),
-                events,
-                ..Default::default()
-            };
+        for extra in crate::test_support::warmed_frames(Vec::new(), frames) {
+            let input = pointer_raw_input(pos, extra, egui::vec2(1400.0, 1040.0));
             let output = ctx.run(input, |ctx| {
                 if let Some(action) = draw_build_selection(
                     ctx,
@@ -1504,17 +1401,15 @@ mod tests {
                     emitted = Some(action);
                 }
             });
-            texts = output
-                .shapes
+            texts = crate::test_support::rendered_texts(output)
                 .into_iter()
-                .filter_map(|clipped| match clipped.shape {
-                    egui::Shape::Text(text) => Some((
-                        text.galley.text().to_owned(),
-                        text.pos + egui::vec2(text.galley.size().x / 2.0, 0.0),
-                        text.galley.job.sections[0].format.font_id.size,
-                        text.galley.job.sections[0].format.color,
-                    )),
-                    _ => None,
+                .map(|text| {
+                    (
+                        text.text,
+                        text.pos + egui::vec2(text.size.x / 2.0, 0.0),
+                        text.font,
+                        text.color,
+                    )
                 })
                 .collect();
         }
@@ -1590,11 +1485,11 @@ mod tests {
     fn the_window_paints_its_background_side_strip_and_controls() {
         let (world, system) = galaxy(true);
         for (is_alliance, strip) in [(true, 10_801), (false, 10_802)] {
-            PAINTED.with(|painted| painted.borrow_mut().clear());
+            crate::test_support::clear_painted_trace();
             let mut state = opened(system, is_alliance);
             drive(&world, &mut state, (0.0, 0.0), vec![]);
             let origin = window_rect(layout()).min;
-            let painted = PAINTED.with(|painted| painted.borrow().clone());
+            let painted = crate::test_support::painted_trace();
             for (id, x, y) in [
                 (10_800, 0.0, 0.0),
                 (strip, 2.0, 2.0),
@@ -1739,11 +1634,56 @@ mod tests {
         assert!(!state.is_open());
     }
 
+    #[test]
+    fn both_factions_focus_and_type_into_the_shared_quantity_field() {
+        let (world, system) = galaxy(true);
+        for is_alliance in [true, false] {
+            let mut state = opened(system, is_alliance);
+            drive(
+                &world,
+                &mut state,
+                (0.0, 0.0),
+                vec![vec![egui::Event::Text("4".into())]],
+            );
+
+            let dialog = state.dialog().unwrap();
+            assert_eq!(dialog.quantity(), 14, "is_alliance={is_alliance}");
+            assert_eq!(dialog.quantity_field.text(), "14");
+            assert_eq!(
+                dialog.quantity_field.focused_control(),
+                Some(QUANTITY_CONTROL)
+            );
+        }
+    }
+
     fn kinds() -> Vec<BuildableKind> {
         vec![
             BuildableKind::Troop(DatId::new(0x1000_0001)),
             BuildableKind::Troop(DatId::new(0x1000_0002)),
         ]
+    }
+
+    fn training_fixture(
+        regiments: Vec<BuildableKind>,
+    ) -> (
+        GameWorld,
+        BuildSelectionState,
+        Vec<BuildableKind>,
+        Vec<String>,
+    ) {
+        let (world, system) = galaxy(true);
+        let names = regiments
+            .iter()
+            .map(|&kind| product(&world, kind).0)
+            .collect();
+        let mut state = BuildSelectionState::default();
+        assert!(state.open(
+            system,
+            ProductionArea::TrainingFacility,
+            true,
+            regiments.clone(),
+        ));
+        (world, state, regiments, names)
     }
 
     fn open() -> BuildSelectionState {
@@ -1854,22 +1794,8 @@ mod tests {
     // it (notification 0x29b, FUN_0060d020 -> FUN_0060c970).
     #[test]
     fn the_class_list_shows_two_rows_and_a_click_picks_one() {
-        let (world, system) = galaxy(true);
-        let mut state = BuildSelectionState::default();
-        let regiments = kinds();
-        assert!(state.open(
-            system,
-            ProductionArea::TrainingFacility,
-            true,
-            regiments.clone()
-        ));
-        let at = egui::Pos2::ZERO;
-        drive(
-            &world,
-            &mut state,
-            (111.0, 99.0),
-            vec![vec![press(at, true)], vec![press(at, false)]],
-        );
+        let (world, mut state, regiments, _) = training_fixture(kinds());
+        click(&world, &mut state, (111.0, 99.0));
         assert!(state.dialog().unwrap().list_open());
         let (_, texts) = drive_at(&world, &mut state, 1.0, (111.0, 99.0), vec![]);
         let origin = window_rect(layout()).min;
@@ -1891,14 +1817,7 @@ mod tests {
         }
         // The popup holds the capture (FUN_0060d020): a click beside it (x
         // 6..201) or on Cancel closes it, picks nothing and cancels nothing.
-        let click_at = |state: &mut BuildSelectionState, point| {
-            drive(
-                &world,
-                state,
-                point,
-                vec![vec![press(at, true)], vec![press(at, false)]],
-            )
-        };
+        let click_at = |state: &mut BuildSelectionState, point| click(&world, state, point);
         for outside in [(203.0, 150.0), (170.0, 240.0)] {
             if !state.dialog().unwrap().list_open() {
                 click_at(&mut state, (111.0, 99.0));
@@ -1923,24 +1842,9 @@ mod tests {
     // rests on the first row.
     #[test]
     fn the_class_list_greys_every_row_but_the_picked_and_hovered_ones() {
-        let (world, system) = galaxy(true);
-        let regiments = kinds();
-        let names: Vec<String> = regiments.iter().map(|&k| product(&world, k).0).collect();
-        let mut state = BuildSelectionState::default();
-        assert!(state.open(
-            system,
-            ProductionArea::TrainingFacility,
-            true,
-            regiments.clone()
-        ));
-        let at = egui::Pos2::ZERO;
+        let (world, mut state, regiments, names) = training_fixture(kinds());
         let toggle = |state: &mut BuildSelectionState| {
-            drive(
-                &world,
-                state,
-                (111.0, 99.0),
-                vec![vec![press(at, true)], vec![press(at, false)]],
-            );
+            click(&world, state, (111.0, 99.0));
         };
         let rows = |state: &mut BuildSelectionState, point| {
             list_rows(&drive_at(&world, state, 1.0, point, vec![]).1, &names)
@@ -1968,12 +1872,7 @@ mod tests {
             rows(&mut state, (100.0, 120.0)),
             vec![(names[0].clone(), white), (names[1].clone(), GREY)]
         );
-        drive(
-            &world,
-            &mut state,
-            (100.0, 190.0),
-            vec![vec![press(at, true)], vec![press(at, false)]],
-        );
+        click(&world, &mut state, (100.0, 190.0));
         assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
         // Reopened over the first row, the picked second row stays white.
         toggle(&mut state);
@@ -1993,25 +1892,11 @@ mod tests {
     // list's scroll bar.
     #[test]
     fn the_class_list_opens_on_the_class_and_scrolls_with_the_wheel() {
-        let (world, system) = galaxy(true);
         let mut regiments = kinds();
         regiments.push(BuildableKind::Troop(DatId::new(0x1000_0003)));
-        let names: Vec<String> = regiments.iter().map(|&k| product(&world, k).0).collect();
-        let mut state = BuildSelectionState::default();
-        assert!(state.open(
-            system,
-            ProductionArea::TrainingFacility,
-            true,
-            regiments.clone()
-        ));
+        let (world, mut state, regiments, names) = training_fixture(regiments);
         state.dialog_mut().unwrap().select(2);
-        let at = egui::Pos2::ZERO;
-        drive(
-            &world,
-            &mut state,
-            (111.0, 99.0),
-            vec![vec![press(at, true)], vec![press(at, false)]],
-        );
+        click(&world, &mut state, (111.0, 99.0));
         let shown = |state: &mut BuildSelectionState, events| {
             list_rows(
                 &drive_at(&world, state, 1.0, (100.0, 150.0), events).1,
@@ -2042,14 +1927,8 @@ mod tests {
     #[test]
     fn the_class_list_picks_only_on_its_rows() {
         let (world, system) = galaxy(true);
-        let at = egui::Pos2::ZERO;
         let click_at = |state: &mut BuildSelectionState, point| {
-            drive(
-                &world,
-                state,
-                point,
-                vec![vec![press(at, true)], vec![press(at, false)]],
-            );
+            click(&world, state, point);
         };
         let mut state = open();
         click_at(&mut state, (111.0, 99.0));
@@ -2069,7 +1948,10 @@ mod tests {
         let name = product(&world, state.dialog().unwrap().kind()).0;
         click_at(&mut state, (111.0, 99.0));
         let (_, texts) = drive_at(&world, &mut state, 1.0, (100.0, 190.0), vec![]);
-        assert_eq!(list_rows(&texts, &[name.clone()]), vec![(name, GREY)]);
+        assert_eq!(
+            list_rows(&texts, std::slice::from_ref(&name)),
+            vec![(name, GREY)]
+        );
         click_at(&mut state, (100.0, 190.0));
         assert!(state.dialog().unwrap().list_open());
     }
@@ -2077,11 +1959,7 @@ mod tests {
     // The rows and the pointer's row scale with the window.
     #[test]
     fn the_class_list_rows_scale_with_the_window() {
-        let (world, system) = galaxy(true);
-        let regiments = kinds();
-        let names: Vec<String> = regiments.iter().map(|&k| product(&world, k).0).collect();
-        let mut state = BuildSelectionState::default();
-        assert!(state.open(system, ProductionArea::TrainingFacility, true, regiments));
+        let (world, mut state, _regiments, names) = training_fixture(kinds());
         let at = egui::Pos2::ZERO;
         drive_at(
             &world,
@@ -2110,6 +1988,101 @@ mod tests {
                 (names[1].clone(), egui::Color32::WHITE)
             ]
         );
+    }
+
+    // FUN_0060d020 holds the capture: the press itself (cases 0x201 and
+    // 0x204), anywhere off the popup, even off the window, sends 0x3e9 and
+    // the box closes the popup (FUN_0060c210 -> FUN_0060cbf0). The press is
+    // forwarded to nothing, so Confirm under it does not order the build.
+    #[test]
+    fn a_press_anywhere_off_the_class_list_closes_it_and_reaches_nothing() {
+        let (world, mut state, regiments, _) = training_fixture(kinds());
+        let at = egui::Pos2::ZERO;
+        for outside in [(100.0, 240.0), (-40.0, 120.0), (230.0, 20.0)] {
+            click(&world, &mut state, (111.0, 99.0));
+            assert!(state.dialog().unwrap().list_open());
+            drive(&world, &mut state, outside, vec![vec![press(at, true)]]);
+            assert!(!state.dialog().unwrap().list_open(), "{outside:?}");
+            click(&world, &mut state, (111.0, 99.0));
+            let action = drive(
+                &world,
+                &mut state,
+                outside,
+                vec![vec![press(at, true)], vec![press(at, false)]],
+            );
+            assert_eq!(action, None, "{outside:?}");
+            assert!(state.is_open());
+            assert!(!state.dialog().unwrap().list_open(), "{outside:?}");
+            assert_eq!(state.dialog().unwrap().kind(), regiments[0]);
+        }
+    }
+
+    // FUN_006083c0 case 0x201 selects the pressed row and posts 0x29b at
+    // once; FUN_0060d020 commits it through FUN_0060c970 and closes, before
+    // any release.
+    #[test]
+    fn a_press_on_a_class_row_picks_it_before_the_release() {
+        let (world, mut state, regiments, _) = training_fixture(kinds());
+        click(&world, &mut state, (111.0, 99.0));
+        let at = egui::Pos2::ZERO;
+        drive(
+            &world,
+            &mut state,
+            (100.0, 190.0),
+            vec![vec![press(at, true)]],
+        );
+        assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
+        assert!(!state.dialog().unwrap().list_open());
+    }
+
+    // A press and its release can arrive in one frame; the capture still
+    // takes it (FUN_0060d020 cases 0x201 and 0x204), left or right.
+    #[test]
+    fn a_press_and_release_in_one_frame_off_the_class_list_closes_it() {
+        let (world, mut state, _, _) = training_fixture(kinds());
+        let at = egui::Pos2::ZERO;
+        for button in [egui::PointerButton::Primary, egui::PointerButton::Secondary] {
+            click(&world, &mut state, (111.0, 99.0));
+            assert!(state.dialog().unwrap().list_open());
+            let action = drive(
+                &world,
+                &mut state,
+                (100.0, 240.0),
+                vec![vec![
+                    crate::test_support::pointer_button_with(at, button, true),
+                    crate::test_support::pointer_button_with(at, button, false),
+                ]],
+            );
+            assert_eq!(action, None, "{button:?}");
+            assert!(!state.dialog().unwrap().list_open(), "{button:?}");
+        }
+    }
+
+    // FUN_006083c0 case 0x201 defers a press on the picked row (flag 0x10);
+    // its release selects and posts 0x29b, and FUN_0060d020 commits it.
+    #[test]
+    fn a_press_on_the_picked_class_row_commits_on_its_release() {
+        let (world, mut state, regiments, _) = training_fixture(kinds());
+        click(&world, &mut state, (111.0, 99.0));
+        click(&world, &mut state, (100.0, 190.0));
+        assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
+        click(&world, &mut state, (111.0, 99.0));
+        let at = egui::Pos2::ZERO;
+        drive(
+            &world,
+            &mut state,
+            (100.0, 190.0),
+            vec![vec![press(at, true)]],
+        );
+        assert!(state.dialog().unwrap().list_open());
+        drive(
+            &world,
+            &mut state,
+            (100.0, 190.0),
+            vec![vec![press(at, true)], vec![press(at, false)]],
+        );
+        assert!(!state.dialog().unwrap().list_open());
+        assert_eq!(state.dialog().unwrap().kind(), regiments[1]);
     }
 
     #[test]

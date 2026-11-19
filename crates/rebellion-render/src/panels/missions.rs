@@ -22,6 +22,7 @@ use super::PanelAction;
 ///
 /// `mission_state` is read-only — mutations come back as `PanelAction`.
 /// `today` is the current game day.
+#[must_use]
 pub fn draw_missions(
     ctx: &egui::Context,
     world: &GameWorld,

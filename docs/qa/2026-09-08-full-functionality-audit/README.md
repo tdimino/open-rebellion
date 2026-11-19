@@ -3,7 +3,7 @@ title: "Full Functionality Audit Index"
 description: "Entry point for the September 2026 Open Rebellion functionality, parity, and bitmap audit"
 category: qa
 created: 2026-09-08
-updated: 2026-10-20
+updated: 2026-11-19
 tags: [qa, audit, functionality, parity, bitmap, astra, fable]
 ---
 
@@ -17,6 +17,7 @@ acceptance plan required before the project can claim 100% functionality.
 
 | File | Purpose |
 |------|---------|
+| [Uniform control adoption remediation](evidence/2026-11-19-uniform-controls-remediation.md) | All 62 rows accounted for; clone, mutation, readiness and all 244 browser cells pass. Tested source/harness files published; `.9` closed with all five criteria satisfied. WASM excluded. |
 | [Audit report](audit-report.md) | Human-readable findings, verification results, Astra/Fable reviews, optimization roadmap, feature matrix, and bitmap protocol. |
 | [Audit data](audit-report.json) | Machine-readable baseline, findings, optimization milestones, feature passes, and release gates. |
 | [Original interface parity audit](../2026-09-10-interface-parity-audit/) | Sister audit for all original surface families, screenshot evidence, bitmap identity, geometry, navigation, and the prohibition on invented visible UI. |

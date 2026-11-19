@@ -204,8 +204,10 @@ async function stableScreenshot(page, directory, label) {
   const first = await page.screenshot({ animations: "disabled" });
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const second = await page.screenshot({ animations: "disabled" });
-  assert.equal(sha256(first), sha256(second), `${label} did not stabilize`);
+  // Keep both frames even when stability fails, so the changing region is reviewable.
+  fs.writeFileSync(path.join(directory, `${label}-first.png`), first);
   fs.writeFileSync(path.join(directory, `${label}.png`), second);
+  assert.equal(sha256(first), sha256(second), `${label} did not stabilize`);
   return { sha256: sha256(second), png: PNG.sync.read(second) };
 }
 
@@ -597,7 +599,17 @@ async function runCase(browser, server, faction, startName, viewport, owned) {
       console: consoleLines,
       errors,
     };
+  } catch (error) {
+    const failure = { faction: faction.name, start: startName, viewport, code,
+      error: error.stack || String(error) };
+    fs.writeFileSync(path.join(directory, "failure.json"), `${JSON.stringify(failure, null, 2)}\n`);
+    await page.screenshot({ path: path.join(directory, "failure.png"), animations: "disabled" }).catch(() => {});
+    throw error;
   } finally {
+    const reports = await observations(page).catch(() => []);
+    const diagnostics = { faction: faction.name, start: startName, viewport, code,
+      requests, console: consoleLines, errors, observations: reports };
+    fs.writeFileSync(path.join(directory, "diagnostics.json"), `${JSON.stringify(diagnostics, null, 2)}\n`);
     await context.close();
   }
 }

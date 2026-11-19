@@ -34,7 +34,7 @@ impl DatId {
 
     /// The lower 24 bits — sequential index within the family.
     ///
-    /// src: `id & 0xffffff`, the index half of a DatId (`ai-production.md`,
+    /// src: `id & 0xffffff`, the index half of a `DatId` (`ai-production.md`,
     /// "HQ/Coruscant (`id&0xffffff == 0x109`)").
     #[must_use]
     pub fn index(self) -> u32 {

@@ -78,9 +78,20 @@ scripts/mini-cargo.sh --run './scripts/package-web.sh dev' --pull dist/open-rebe
 scripts/gates.sh   # the pre-commit gates (agent_docs/test-tooling.md)
 ```
 
-Formatting and strict Clippy have known audited baseline failures. Run scoped
-checks for touched code; do not report the workspace gates as green until their
-dedicated findings close.
+Before reporting any source change as ready, run both repository smoke gates
+from the repository root:
+
+```bash
+make build
+make check
+```
+
+Both commands must exit successfully, and `make build` must be warning-free.
+If either command cannot run or fails, do not call the change ready: report the
+exact failure or access limitation and keep the work in progress.
+
+Scoped checks are useful during development, but they do not replace these
+repository-wide readiness gates.
 
 ## Structure
 
@@ -115,6 +126,10 @@ dedicated findings close.
   original behavior, no weakened assertions, goldens regenerated only for a
   named cause, new tests shown to fail, a scoped `cargo mutants` run before
   committing, and a source or `port:`/`hyp:` tag on every new simulation rule.
+- Before adding repeated test setup, read `agent_docs/test-fixtures.md` and
+  reuse or extend the crate's shared test support. Small cross-file world,
+  layout, input-frame and assertion duplicates belong in common fixtures when
+  they carry the same semantics.
 - Tracked docs state current facts and name evidence by save, day and values,
   never by an `.artifacts/` path. Ghidra notes carry no history
   (`agent_docs/ghidra-re.md`, "Porting an original flow").

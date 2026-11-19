@@ -1,5 +1,18 @@
 //! Data loading: converts .DAT binary structs into rebellion-core world types.
 
+// DAT conversion and replay code intentionally preserves the source formats'
+// fixed-width truncation and wrapping behavior.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+
+#[cfg(test)]
+#[macro_use]
+extern crate rebellion_core;
+
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -46,6 +59,9 @@ pub mod save;
 pub mod seeds;
 pub mod simulation;
 pub mod telemetry;
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod test_support;
 pub mod text_templates;
 
 /// Load selected named `WAVE` resources from an original Win32 DLL.
@@ -83,7 +99,7 @@ pub fn load_game_data(gdata_path: &Path) -> anyhow::Result<GameWorld> {
 /// # Errors
 /// Returns an error for unreadable or invalid game data, unsupported sector
 /// groups, or references to missing sectors.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -405,7 +421,9 @@ pub fn load_game_data_with_options(
     for dat in &major_file.characters {
         let name = lookup(dat.text_stra_dll_id, "Character");
         let ranked = ranked_names(dat.text_stra_dll_id);
-        world.characters.insert(convert_character(dat, true, name, ranked));
+        world
+            .characters
+            .insert(convert_character(dat, true, name, ranked));
     }
 
     // ── 6. Minor characters ──────────────────────────────────────────────────
@@ -414,7 +432,9 @@ pub fn load_game_data_with_options(
     for dat in &minor_file.characters {
         let name = lookup(dat.text_stra_dll_id, "Character");
         let ranked = ranked_names(dat.text_stra_dll_id);
-        world.characters.insert(convert_character(dat, false, name, ranked));
+        world
+            .characters
+            .insert(convert_character(dat, false, name, ranked));
     }
 
     // ── 7. GNPRTB / SDPRTB seeding parameters ───────────────────────────────
@@ -525,6 +545,18 @@ pub fn load_game_data_with_options(
     // ── 10a. Buildable classes ─────────────────────────────────────────────
     // What each regiment, special-force and facility class costs to build,
     // for Build Selection (FUN_00437880 lists them, FUN_00538220 prices them).
+    macro_rules! buildable_head {
+        ($record:expr) => {
+            [
+                $record.is_alliance,
+                $record.is_empire,
+                $record.refined_material_cost,
+                $record.maintenance_cost,
+                $record.research_order,
+                $record.research_difficulty,
+            ]
+        };
+    }
     let mut buildable =
         |family: u32, id: u32, text: u16, head: [u32; 6], rate: u32, stats: ClassStats| {
             let [is_alliance, is_empire, refined, maintenance, order, difficulty] = head;
@@ -547,14 +579,7 @@ pub fn load_game_data_with_options(
     if file_available(&troops_path) {
         let file: TroopsFile = read_dat_file(&troops_path)?;
         for d in &file.troops {
-            let head = [
-                d.is_alliance,
-                d.is_empire,
-                d.refined_material_cost,
-                d.maintenance_cost,
-                d.research_order,
-                d.research_difficulty,
-            ];
+            let head = buildable_head!(d);
             let stats = ClassStats {
                 bombardment: d.bombardment_defense,
                 uprising_defense: d.uprising_defense,
@@ -566,14 +591,7 @@ pub fn load_game_data_with_options(
     if file_available(&specfc_path) {
         let file: SpecialForcesFile = read_dat_file(&specfc_path)?;
         for d in &file.units {
-            let head = [
-                d.is_alliance,
-                d.is_empire,
-                d.refined_material_cost,
-                d.maintenance_cost,
-                d.research_order,
-                d.research_difficulty,
-            ];
+            let head = buildable_head!(d);
             buildable(
                 d.family_id,
                 d.id,
@@ -587,14 +605,7 @@ pub fn load_game_data_with_options(
     if file_available(&deffac_path) {
         let file: DefenseFacilitiesFile = read_dat_file(&deffac_path)?;
         for d in &file.facilities {
-            let head = [
-                d.is_alliance,
-                d.is_empire,
-                d.refined_material_cost,
-                d.maintenance_cost,
-                d.research_order,
-                d.research_difficulty,
-            ];
+            let head = buildable_head!(d);
             let stats = ClassStats {
                 bombardment: d.bombardment_defense,
                 attack_strength: d.attack_strength,
@@ -628,14 +639,7 @@ pub fn load_game_data_with_options(
         if file_available(&path) {
             let file: ManufacturingFacilitiesFile = read_dat_file(&path)?;
             for d in &file.facilities {
-                let head = [
-                    d.is_alliance,
-                    d.is_empire,
-                    d.refined_material_cost,
-                    d.maintenance_cost,
-                    d.research_order,
-                    d.research_difficulty,
-                ];
+                let head = buildable_head!(d);
                 let stats = ClassStats {
                     bombardment: d.bombardment_defense,
                     ..ClassStats::default()
@@ -860,7 +864,7 @@ fn special_force_class(family_id: u32, dat: &SpecialForce) -> (DatId, SpecialFor
     (class_dat_id, class)
 }
 
-/// A MISSNSD record: its DatId is `family << 24 | id`, and the timer and flag
+/// A MISSNSD record: its `DatId` is `family << 24 | id`, and the timer and flag
 /// fields are the in-memory record `+0x50..+0x64`
 /// (ghidra/notes/mission-lifecycle.md, "The mission record").
 fn mission_record(m: &Mission) -> MissionRecord {
@@ -953,31 +957,11 @@ fn convert_character(
         } else {
             rebellion_core::world::ForceTier::None
         },
-        force_experience: 0,
-        is_discovered_jedi: false,
         is_unable_to_betray: dat.is_unable_to_betray != 0,
         is_jedi_trainer: dat.is_jedi_trainer != 0,
         is_known_jedi: dat.is_known_jedi != 0,
-        hyperdrive_modifier: 0,
-        enhanced_loyalty: 0,
-        on_mission: false,
-        on_hidden_mission: false,
-        on_mandatory_mission: false,
-        captured_by: None,
-        capture_tick: None,
-        is_captive: false,
-        current_system: None,
-        current_fleet: None,
-        en_route: false,
-        adrift: false,
-        abode: None,
-        escape_due: None,
-        heritage_known: false,
-        is_killed: false,
-        recruited: false,
-        command_kind: rebellion_core::officer_rank::CommandKind::None,
-        command_post: None,
         ranked_names,
+        ..Character::default()
     }
 }
 
@@ -1088,37 +1072,14 @@ mod tests {
         let file: MissionsFile =
             parse_dat_bytes(&one_record_file(0x40, &record), "MISSNSD.DAT").unwrap();
 
-        assert_eq!(
-            mission_record(&file.missions[0]),
-            MissionRecord {
-                dat_id: DatId::new(0x5100_0010),
-                timer_min_days: 5,
-                timer_spread_days: 10,
-                repeats: true,
-                hidden: false,
-                detection_phases: true,
-                can_resign: true,
-                return_policy: 1,
-                rules: MissionTargetRules {
-                    container_loss_ends: true,
-                    needs_populated_container: true,
-                    target_loss_ends: false,
-                    own_side_target: true,
-                    other_side_target: false,
-                    opponent_target: true,
-                    revolting_target: false,
-                    calm_target: true,
-                    prisoner_target: false,
-                    free_target: true,
-                },
-                members: MissionMemberRules {
-                    alliance: true,
-                    empire: false,
-                    special_force_mask: 0x402,
-                    character_mask: 0x1_0000,
-                },
-            }
-        );
+        let mut expected = rebellion_core::test_support::diplomacy_mission_record();
+        expected.rules.target_loss_ends = false;
+        expected.rules.other_side_target = false;
+        expected.rules.opponent_target = true;
+        expected.rules.free_target = true;
+        expected.members.empire = false;
+        expected.members.special_force_mask = 0x402;
+        assert_eq!(mission_record(&file.missions[0]), expected);
     }
 
     #[test]

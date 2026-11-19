@@ -95,11 +95,11 @@ impl AssaultRefusal {
     #[must_use]
     pub const fn status(self) -> (u32, u32) {
         match self {
-            Self::NoTeam => (1, 0x16),
-            Self::FleetRefused => (1, 1),
-            Self::NoShip => (8, 1),
-            Self::LastShipUnfinished => (1, 0x10),
-            Self::LastShipEnRoute => (1, 0x11),
+            Self::NoTeam => crate::bombardment::FleetCommandRefusal::NoTeam.status(),
+            Self::FleetRefused => crate::bombardment::FleetCommandRefusal::FleetRefused.status(),
+            Self::NoShip => crate::bombardment::ShipsRefusal::NoShip.status(),
+            Self::LastShipUnfinished => crate::bombardment::ShipsRefusal::Unfinished.status(),
+            Self::LastShipEnRoute => crate::bombardment::ShipsRefusal::EnRoute.status(),
             Self::MixedHolders => (1, 0x14),
             Self::NotBlockaded => (8, 7),
             Self::NoRegiments => (8, 5),
@@ -115,6 +115,16 @@ impl From<crate::bombardment::ShipsRefusal> for AssaultRefusal {
             crate::bombardment::ShipsRefusal::NoShip => Self::NoShip,
             crate::bombardment::ShipsRefusal::Unfinished => Self::LastShipUnfinished,
             crate::bombardment::ShipsRefusal::EnRoute => Self::LastShipEnRoute,
+        }
+    }
+}
+
+impl From<crate::bombardment::FleetCommandRefusal> for AssaultRefusal {
+    fn from(refusal: crate::bombardment::FleetCommandRefusal) -> Self {
+        match refusal {
+            crate::bombardment::FleetCommandRefusal::NoTeam => Self::NoTeam,
+            crate::bombardment::FleetCommandRefusal::FleetRefused => Self::FleetRefused,
+            crate::bombardment::FleetCommandRefusal::Ships(refusal) => refusal.into(),
         }
     }
 }
@@ -153,22 +163,9 @@ pub fn order_enabled(
     fleets: &[FleetKey],
     side: Faction,
 ) -> Result<(), AssaultRefusal> {
-    if fleets.is_empty() {
-        return Err(AssaultRefusal::NoTeam);
-    }
     // Each fleet command's +0x18 (FUN_004fdf70 -> FUN_004ffa70).
-    for &fleet in fleets {
-        let Some(value) = world
-            .fleets
-            .get(fleet)
-            .filter(|value| side_of(value.is_alliance) == side && !movement.is_in_transit(fleet))
-        else {
-            return Err(AssaultRefusal::FleetRefused);
-        };
-        if let Some(refusal) = crate::bombardment::ships_refusal(value) {
-            return Err(refusal.into());
-        }
-    }
+    crate::bombardment::validate_fleet_commands(world, movement, fleets, side)
+        .map_err(AssaultRefusal::from)?;
     let systems: Vec<SystemKey> = fleets
         .iter()
         .map(|&fleet| world.fleets[fleet].location)
@@ -333,22 +330,10 @@ fn defenders(world: &GameWorld, system: SystemKey, holder: Faction) -> Vec<Troop
 /// the HQ is the system's flag, not one of its facilities, and the port
 /// walks its defence, manufacturing and production lists in turn.
 fn collateral_facilities(world: &GameWorld, system: SystemKey) -> Vec<FacilityRef> {
-    world.systems.get(system).map_or_else(Vec::new, |sys| {
-        sys.defense_facilities
-            .iter()
-            .map(|&key| FacilityRef::Defense(key))
-            .chain(
-                sys.manufacturing_facilities
-                    .iter()
-                    .map(|&key| FacilityRef::Manufacturing(key)),
-            )
-            .chain(
-                sys.production_facilities
-                    .iter()
-                    .map(|&key| FacilityRef::Production(key)),
-            )
-            .collect()
-    })
+    world
+        .systems
+        .get(system)
+        .map_or_else(Vec::new, |system| system.facilities().collect())
 }
 
 /// A regiment class's TROOPSD attack (class `+0x64`, `FUN_00520b90`) and
@@ -386,7 +371,7 @@ pub fn resolve(
     resolve_with(world, transport, system, fleets, &mut draws)
 }
 
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The run's six steps share its counts and read in the original's order."
 )]
@@ -548,14 +533,7 @@ fn resolve_with(
         let pick = draws.draw(total - 1);
         if let Some(&facility) = usize::try_from(pick).ok().and_then(|at| facilities.get(at)) {
             report.facilities_lost.push(facility);
-            crate::missions::destroy_target(
-                world,
-                match facility {
-                    FacilityRef::Defense(key) => MissionTarget::DefenseFacility(key),
-                    FacilityRef::Manufacturing(key) => MissionTarget::ManufacturingFacility(key),
-                    FacilityRef::Production(key) => MissionTarget::ProductionFacility(key),
-                },
-            );
+            crate::missions::destroy_target(world, facility.into());
         } else if pick == count && energy {
             let sys = &mut world.systems[system];
             sys.total_energy -= 1;
@@ -653,14 +631,15 @@ fn loss(world: &GameWorld, troop: TroopKey) -> Option<UnitLoss> {
 
 #[cfg(test)]
 mod tests {
-    use crate::carriage::ProductRoom;
     use super::*;
+    use crate::carriage::ProductRoom;
     use crate::ids::{CapitalShipKey, DatId};
+    use crate::test_support::gnprtb_entry as entry;
     use crate::tick::TickEvent;
     use crate::world::{
         BuildableClass, CapitalShipClass, Character, ClassStats, ControlKind,
-        DefenseFacilityInstance, Fleet, GnprtbEntry, GnprtbParams, ManufacturingFacilityInstance,
-        Sector, ShipInstance, System, TroopClassDef, TroopUnit,
+        DefenseFacilityInstance, Fleet, GnprtbParams, ManufacturingFacilityInstance, ShipInstance,
+        System, TroopClassDef, TroopUnit,
     };
     use std::collections::VecDeque;
 
@@ -695,20 +674,6 @@ mod tests {
         }
     }
 
-    fn entry(id: u16, value: i32) -> GnprtbEntry {
-        GnprtbEntry {
-            parameter_id: u32::from(id),
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        }
-    }
-
     /// A system held by `holder` with the shipped GNPRTB `0x200`-`0x205`
     /// (5, 30, 10, 4, 6, 8), `0x1e03` (2), 7761 (60) and 7762 (-10).
     fn world(holder: Option<Faction>) -> (GameWorld, SystemKey) {
@@ -726,15 +691,15 @@ mod tests {
             ]),
             ..GameWorld::default()
         };
-        let sector = world.sectors.insert(Sector::default());
-        let system = world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0091),
-            sector,
-            is_populated: true,
-            control: holder.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
-            ..System::default()
-        });
-        world.sectors[sector].systems.push(system);
+        let system = crate::test_support::insert_system(
+            &mut world,
+            System {
+                dat_id: DatId::new(0x9000_0091),
+                is_populated: true,
+                control: holder.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
+                ..System::default()
+            },
+        );
         (world, system)
     }
 
@@ -912,6 +877,26 @@ mod tests {
             attackers,
             defenders,
         }
+    }
+
+    fn loaded_cargo(
+        side: Faction,
+        holder: Faction,
+        ships: usize,
+        troops: usize,
+    ) -> (
+        GameWorld,
+        SystemKey,
+        FleetKey,
+        TroopTransportState,
+        Vec<TroopKey>,
+    ) {
+        let (mut world, system) = world(Some(holder));
+        let class = troop_class(&mut world, 0, 0, 7);
+        let fleet = fleet(&mut world, system, side, ships);
+        let mut transport = TroopTransportState::new();
+        let loaded = load(&mut world, &mut transport, fleet, class, troops);
+        (world, system, fleet, transport, loaded)
     }
 
     fn run(scene: &mut Scene, draws: &mut Script) -> AssaultReport {
@@ -1186,8 +1171,8 @@ mod tests {
             let report = run(&mut scene, &mut draws);
             assert_eq!(draws.asked, [99, 0], "{side:?}");
             assert_eq!(report.shots.len(), 1);
-            assert!(report.engagements.is_empty());
-            assert!(report.landed.is_empty());
+            assert_empty!(report.engagements);
+            assert_empty!(report.landed);
         }
     }
 
@@ -1305,11 +1290,7 @@ mod tests {
         // FUN_0058ba10 walks the fleet's live ships (FUN_00502e30, mode 1)
         // and the regiments aboard each (FUN_00504cc0).
         for (side, holder) in BOTH {
-            let (mut world, system) = world(Some(holder));
-            let class = troop_class(&mut world, 0, 0, 7);
-            let fleet = fleet(&mut world, system, side, 2);
-            let mut transport = TroopTransportState::new();
-            let attackers = load(&mut world, &mut transport, fleet, class, 2);
+            let (mut world, system, fleet, transport, attackers) = loaded_cargo(side, holder, 2, 2);
             let lost = transport.carrier(attackers[0]);
             for ship in &mut world.fleets[fleet].capital_ships {
                 ship.alive = ship.tag != lost;
@@ -1415,7 +1396,7 @@ mod tests {
             let mut draws = script(&[0, 5, 0]);
             let report = run(&mut scene, &mut draws);
             assert_eq!(draws.asked, [0, 10, 99], "{side:?}");
-            assert!(report.facilities_lost.is_empty());
+            assert_empty!(report.facilities_lost);
         }
     }
 
@@ -1439,7 +1420,7 @@ mod tests {
             );
             assert_eq!(report.defenders_lost, [scene.defenders[0]]);
             assert_eq!(report.energy, 1);
-            assert!(report.landed.is_empty());
+            assert_empty!(report.landed);
         }
     }
 
@@ -1521,11 +1502,9 @@ mod tests {
         unusable: fn(&mut ShipInstance, SystemKey),
         second: bool,
     ) -> (Scene, TroopKey) {
-        let (mut world, system) = world(Some(holder));
-        let class = troop_class(&mut world, 0, 0, 7);
-        let fleet = fleet(&mut world, system, side, 2);
-        let mut transport = TroopTransportState::new();
-        let stranded = load(&mut world, &mut transport, fleet, class, 1)[0];
+        let (mut world, system, fleet, mut transport, attackers) = loaded_cargo(side, holder, 2, 1);
+        let class = world.troops[attackers[0]].class_dat_id;
+        let stranded = attackers[0];
         let tag = transport.carrier(stranded);
         let ship = world.fleets[fleet]
             .capital_ships

@@ -1,7 +1,8 @@
 //! Native fixture proof for the platform-neutral replay data manifest.
 
-use std::path::PathBuf;
+mod common;
 
+use common::data_dir;
 use rebellion_data::replay::{
     compute_simulation_data_manifest_from_dir, execute_replay, record_replay, ReplayEnvironment,
     ReplayManifest,
@@ -12,15 +13,6 @@ use rebellion_data::replay_fixture::{
     SEED42_INITIAL_FINGERPRINT, SEED42_SEED,
 };
 use rebellion_data::save::{compute_state_fingerprint, load_slot, save_slot};
-
-fn data_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates directory")
-        .parent()
-        .expect("repository root")
-        .join("data/base")
-}
 
 #[test]
 #[ignore = "requires original data/base DAT files"]

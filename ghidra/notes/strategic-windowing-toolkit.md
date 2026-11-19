@@ -3,7 +3,7 @@ title: "Strategic Windowing Toolkit Contract"
 description: "Original strategic-window identity, registry, stacking, modality, focus, capture, keyboard routing, close, and restoration behavior"
 category: "ghidra"
 created: 2026-10-10
-updated: 2026-11-05
+updated: 2026-11-14
 ---
 
 # Strategic Windowing Toolkit Contract
@@ -74,12 +74,13 @@ receiving detail constructors (`FUN_00452fc0.c`, `FUN_004a7790.c`,
    state.
 3. **Modality is an input boundary, not a paint band.** The documented modal
    families carry policy bit 0 at object `+0xb8`, and that bit suppresses the
-   strategic F1--F7 path. Live Encyclopedia checks show that its enabled
-   underlay does not receive normal pointer input, while no modal holds
-   permanent capture. Live Status, Build Selection, Create Mission, and Move
-   Confirmation checks establish the same whole-strategic-view boundary for
-   those four bit-0 families. Bit 0 alone still does not prove the pointer
-   scope of an unobserved family.
+   strategic F1--F7 path. `FUN_006010e0` also pushes the modal into a
+   thread-local `WH_MOUSE` stack whose `FUN_00600ef0` hook allows only the top
+   modal and HWNDs registered beneath its `+0x88` allowlist. Every other
+   target is swallowed before its enabled underlay control can produce a
+   command. Live Encyclopedia, Status, Build Selection, Create Mission, and
+   Move Confirmation checks corroborate that whole-view boundary. No modal
+   holds permanent capture.
 4. **Opening an existing window is family-specific.** Finder, Message, and
    Encyclopedia singleton openers return without raising. Existing detail
    windows are restored/raised. A duplicate Sector opener returns its object
@@ -421,15 +422,16 @@ Create Mission (`0x0c`, policy `1`), and Move Confirmation (`0x10`, policy
 boundary, Escape dismissed it, and the prior details were exposed only on the
 later dispatch.
 
-**unknown:** the exact native pre-command pointer gate was not identified. It
-occurs before an enabled underlay control's command reaches `FUN_00422ce0` in
-the observed scenarios. The manual, static policy words, and repeated runtime
-checks justify a shared strategic boundary for Encyclopedia, Status, Build
-Selection, Create Mission, and Move Confirmation. Battle Alert, Battle
-Results, the two unnamed bit-0 classes, and any rare owner-local dialog retain
-an explicit conservative `port:` whole-view policy until runtime narrows it.
-Reproducing an HWND-specific interception hook would be an implementation
-accident, not a useful port contract.
+**fact:** `FUN_006010e0` installs thread-local `WH_MOUSE` callback
+`FUN_00600ef0` for the first modal and pushes modal records at
+`DAT_006be4e0`/`DAT_006be4e4`. The modal HWND and children registered by
+`FUN_00601260` form the top modal's allowlist at object `+0x88`. The hook
+forwards those HWNDs and returns 1 for every other mouse target;
+`FUN_006011f0` removes the record and unhooks when the stack is empty. This is
+the pre-command gate observed at runtime. `rebellion-windowing` preserves its
+semantic result with the active modal plus ownership descendants; reproducing
+the HWND hook itself would be an adapter accident. The complete comparison is
+in [`cool-control-contracts.md`](cool-control-contracts.md).
 
 ## Keyboard ownership and bubbling
 
@@ -510,10 +512,11 @@ API-shaping evidence until their call contexts are named.
    above their actual owners, and strategic modals form an input boundary. The
    reference rail is presentation history, not z-order.
 4. Strategic modality is not a nested loop, owner disable, or lifetime
-   capture. Bit 0 supplies dialog/function-key policy; a still-unidentified
-   pre-command native gate blocked normal underlay pointer input for
-   Encyclopedia, Status, Build Selection, Create Mission, and Move
-   Confirmation in both faction saves.
+   capture. Bit 0 supplies dialog/function-key policy; the thread-local
+   `WH_MOUSE` hook at `FUN_00600ef0` permits the top modal's `+0x88` HWND
+   allowlist and swallows normal underlay pointer input. Runtime checks
+   corroborate the result for Encyclopedia, Status, Build Selection, Create
+   Mission, and Move Confirmation in both faction saves.
 5. The focused edit/list child owns handled keyboard input; otherwise its
    top-level is the owner.
 6. Unhandled keys can forward to the parent/top-level and reach the strategic
@@ -563,8 +566,6 @@ commit boundary.
 
 ## Unresolved and deliberately non-load-bearing details
 
-- Exact native code that rejects a normal pointer hit below the observed
-  strategic-modal families.
 - Semantic names for type 7 and the bit-0 classes constructed by
   `FUN_0046f140` and `FUN_0049ee20`.
 - Whether any rare command dialog blocks only its immediate owner rather than

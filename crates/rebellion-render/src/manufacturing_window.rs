@@ -13,7 +13,7 @@ use rebellion_core::manufacturing::{
 };
 use rebellion_core::world::{FacilityRef, GameWorld};
 
-use crate::fleet_window::{control_side, fleet_side};
+use crate::fleet_window::{control_side, faction_side, fleet_side};
 use crate::panels::fleets::{capital_ship_mini_id, fighter_mini_id};
 use crate::system_window::{
     defense_facility_mini, manufacturing_facility_mini, opposing_contents_visible,
@@ -335,6 +335,33 @@ fn pending_class(kind: BuildableKind) -> Option<(DatId, u8)> {
     }
 }
 
+fn built_facility_cell(
+    item: FacilityItem,
+    class: DatId,
+    owner: u8,
+    wanted_family: u8,
+    wanted_side: u8,
+) -> Option<FacilityCell> {
+    (class.family() == wanted_family && owner == wanted_side)
+        .then(|| facility_picture(class, owner, FacilityState::Built))
+        .flatten()
+        .map(|picture| FacilityCell { item, picture })
+}
+
+fn append_built_facilities<K: Copy>(
+    cells: &mut Vec<FacilityCell>,
+    keys: &[K],
+    lookup: impl Fn(K) -> Option<(DatId, u8)>,
+    item: impl Fn(K) -> FacilityItem,
+    wanted_family: u8,
+    wanted_side: u8,
+) {
+    cells.extend(keys.iter().filter_map(|&key| {
+        let (class, owner) = lookup(key)?;
+        built_facility_cell(item(key), class, owner, wanted_family, wanted_side)
+    }));
+}
+
 /// The cells of `page` at `system`, in walk order: its built facilities of
 /// the shown side and family, then those queued for it, then those en route
 /// to it; on the mines page, one empty deposit per raw-material deposit
@@ -362,7 +389,6 @@ pub fn page_cells(
     };
     let side = control_side(value.control);
     let family = page_family(page);
-    let wanted = |class: DatId, owner: u8| class.family() == family && owner == side;
     let mut cells: Vec<FacilityCell> = Vec::new();
     let (manufacturing_keys, production_keys): (Vec<_>, Vec<_>) = if visible {
         (
@@ -387,38 +413,32 @@ pub fn page_cells(
                 .collect(),
         )
     };
-    for &key in &manufacturing_keys {
-        let Some(facility) = world.manufacturing_facilities.get(key) else {
-            continue;
-        };
-        let owner = crate::fleet_window::faction_side(facility.side);
-        if wanted(facility.class_dat_id, owner) {
-            if let Some(picture) =
-                facility_picture(facility.class_dat_id, owner, FacilityState::Built)
-            {
-                cells.push(FacilityCell {
-                    item: FacilityItem::Manufacturing(key),
-                    picture,
-                });
-            }
-        }
-    }
-    for &key in &production_keys {
-        let Some(facility) = world.production_facilities.get(key) else {
-            continue;
-        };
-        let owner = crate::fleet_window::faction_side(facility.side);
-        if wanted(facility.class_dat_id, owner) {
-            if let Some(picture) =
-                facility_picture(facility.class_dat_id, owner, FacilityState::Built)
-            {
-                cells.push(FacilityCell {
-                    item: FacilityItem::Production(key),
-                    picture,
-                });
-            }
-        }
-    }
+    append_built_facilities(
+        &mut cells,
+        &manufacturing_keys,
+        |key| {
+            world
+                .manufacturing_facilities
+                .get(key)
+                .map(|facility| (facility.class_dat_id, faction_side(facility.side)))
+        },
+        FacilityItem::Manufacturing,
+        family,
+        side,
+    );
+    append_built_facilities(
+        &mut cells,
+        &production_keys,
+        |key| {
+            world
+                .production_facilities
+                .get(key)
+                .map(|facility| (facility.class_dat_id, faction_side(facility.side)))
+        },
+        FacilityItem::Production,
+        family,
+        side,
+    );
     if !visible {
         return cells;
     }
@@ -435,7 +455,7 @@ pub fn page_cells(
         let Some((class, owner)) = pending_class(kind) else {
             continue;
         };
-        if wanted(class, owner) {
+        if class.family() == family && owner == side {
             if let Some(picture) = facility_picture(class, owner, state) {
                 cells.push(FacilityCell {
                     item: FacilityItem::Pending(index),
@@ -528,34 +548,10 @@ mod tests {
     use rebellion_core::manufacturing::{FacilityBuild, QueueItem};
     use rebellion_core::world::{
         CapitalShipClass, ControlKind, ManufacturingFacilityInstance, ProductionFacilityInstance,
-        System,
     };
 
     fn add_system(world: &mut GameWorld, name: &str, control: ControlKind) -> SystemKey {
-        world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: name.into(),
-            sector: rebellion_core::ids::SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        })
+        crate::test_support::add_standalone_system(world, name, control)
     }
 
     fn yard(
@@ -887,7 +883,7 @@ mod tests {
             system,
             FacilityPage::Shipyards,
         );
-        assert!(none.is_empty());
+        assert_empty!(none);
     }
 
     // FUN_004568a0 case 0x6c: the mines page fills its system's deposits

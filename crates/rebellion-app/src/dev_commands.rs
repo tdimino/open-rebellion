@@ -144,15 +144,12 @@ impl CommandScript {
         if !ready {
             return ScriptStep::Wait;
         }
-        match self.lines.pop_front() {
-            Some((seq, line)) => {
-                self.last_seq = seq;
-                ScriptStep::Run(line)
-            }
-            None => {
-                self.last_seq = None;
-                ScriptStep::Done
-            }
+        if let Some((seq, line)) = self.lines.pop_front() {
+            self.last_seq = seq;
+            ScriptStep::Run(line)
+        } else {
+            self.last_seq = None;
+            ScriptStep::Done
         }
     }
 }
@@ -467,9 +464,22 @@ fn parse_embark(tail: &str) -> Result<DevCommand, String> {
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn valid_capture_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && !name.starts_with('.')
+}
+
 /// The `DevCommand` a line names, `Ok(None)` when it names none (try the
 /// palette), or `Err` when it names one with bad arguments.
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The command grammar stays as one ordered dispatcher so aliases and precedence remain visible."
+)]
 pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     let line = line.trim();
     let lower = line.to_ascii_lowercase();
@@ -479,12 +489,7 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     }
     if lower.starts_with("capture:") {
         let name = rest("capture:");
-        if name.is_empty()
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-            || name.starts_with('.')
-        {
+        if !valid_capture_name(name) {
             return Err(format!("capture name {name:?}: use letters, digits, - _ ."));
         }
         return Ok(Some(DevCommand::Capture(Some(name.to_owned()))));
@@ -840,12 +845,7 @@ pub fn parse_line(line: &str) -> Result<Option<DevCommand>, String> {
     }
     if lower.starts_with("save:") || lower.starts_with("load:") {
         let name = rest("save:");
-        if name.is_empty()
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-            || name.starts_with('.')
-        {
+        if !valid_capture_name(name) {
             return Err(format!("save name {name:?}: use letters, digits, - _ ."));
         }
         let name = name.to_owned();
@@ -972,7 +972,9 @@ fn point(text: &str) -> Result<(f32, f32), String> {
 
 /// `<x>,<y> to <x>,<y>`, the two ends of a drag.
 #[cfg(not(target_arch = "wasm32"))]
-fn span(args: &str, command: &str) -> Result<((f32, f32), (f32, f32)), String> {
+type PointerSpan = ((f32, f32), (f32, f32));
+
+fn span(args: &str, command: &str) -> Result<PointerSpan, String> {
     let Some(split) = args.to_ascii_lowercase().find(" to ") else {
         return Err(format!("{command} takes `<x>,<y> to <x>,<y>`"));
     };

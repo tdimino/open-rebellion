@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::{AIAction, FleetMoveReason};
-use crate::ai_production::{bit, Dir, Round, Turn};
+use crate::ai_production::{bit, first_bounded_step, resume_or_first_index, Dir, Round, Turn};
 use crate::ai_records::{fleet, ship, sys, Marks};
 use crate::ai_regions::{engaged, own_riders, random_system, set_system_bits, Words};
 use crate::ai_strategy::Holder;
@@ -86,7 +86,13 @@ impl FleetTasks {
     pub(crate) fn turn(&mut self, round: &mut Round<'_>, marks: &mut Marks) -> Turn {
         let threshold = threshold(round);
         let mut calls = TASK_CALLS;
-        let turn = match self.turn_on(round, marks, threshold, &mut calls) {
+        let call = first_bounded_step(
+            &mut calls,
+            || self.call(round, marks, threshold),
+            |call| matches!(call, Call::Next),
+        )
+        .unwrap_or(Call::Next);
+        let turn = match call {
             Call::Finished(Some(action)) => Turn::Order {
                 action,
                 resume: false,
@@ -98,10 +104,7 @@ impl FleetTasks {
             Call::Finished(None) | Call::End | Call::Next => Turn::Finished,
         };
         crate::trace::record(crate::trace::TraceMask::AI, "fleet_task_turn", || {
-            let (order, resume) = match &turn {
-                Turn::Order { action, resume } => (Some(format!("{action:?}")), *resume),
-                Turn::Spent | Turn::Finished => (None, false),
-            };
+            let (order, resume) = turn.debug_order();
             serde_json::json!({
                 "tasks": self.tasks.len(),
                 "attack_class_threshold": threshold,
@@ -118,35 +121,12 @@ impl FleetTasks {
         self.state = 0;
     }
 
-    /// The calls of one turn, at most `calls` of them: the first call that
-    /// is not `Call::Next`, else `Call::Next` once the calls run out.
-    fn turn_on(
-        &mut self,
-        round: &mut Round<'_>,
-        marks: &mut Marks,
-        threshold: i64,
-        calls: &mut usize,
-    ) -> Call {
-        while *calls > 0 {
-            *calls -= 1;
-            match self.call(round, marks, threshold) {
-                Call::Next => {}
-                call => return call,
-            }
-        }
-        Call::Next
-    }
-
     /// `FUN_004cf2c0`: one driver step.
     fn call(&mut self, round: &mut Round<'_>, marks: &mut Marks, threshold: i64) -> Call {
         match self.state {
             2 => {
                 // FUN_004cf350: the task after the last, else the head.
-                let at = self
-                    .tasks
-                    .iter()
-                    .position(|t| t.id == self.next)
-                    .or_else(|| (!self.tasks.is_empty()).then_some(0));
+                let at = resume_or_first_index(&self.tasks, self.next, |task| task.id);
                 let Some(at) = at else {
                     self.current = 0;
                     self.next = 0;
@@ -594,10 +574,10 @@ impl FleetTask {
         let key = self.fleet?;
         let f = round.fleets.get(&key)?;
         if f.regiments_active <= 0
-            || !round
+            || round
                 .records
                 .get(&f.location)
-                .is_some_and(|r| r.s & sys::OWN != 0)
+                .is_none_or(|r| r.s & sys::OWN == 0)
         {
             return None;
         }
@@ -634,10 +614,10 @@ impl FleetTask {
         let f = round.fleets.get(&key)?;
         if f.flags & fleet::OWN_CHARACTER == 0
             || f.flags & fleet::EN_ROUTE != 0
-            || !round
+            || round
                 .records
                 .get(&f.location)
-                .is_some_and(|r| r.s & sys::OWN != 0)
+                .is_none_or(|r| r.s & sys::OWN == 0)
         {
             return None;
         }

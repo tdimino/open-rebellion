@@ -272,7 +272,7 @@ impl OrderRefusal {
 /// way and built for it ([`crate::carriage::ships_for`]), else `{1, 0x27}`;
 /// the area's own queued units give theirs back first, as its Death Stars
 /// do.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The validator reads the world, the queues, the cargo and the order's fields."
 )]
@@ -330,8 +330,7 @@ pub fn order_refusal(
     // ..)`, room + request in `FUN_0054fca0`).
     let own: Vec<u32> = manufacturing
         .queue(system, area)
-        .map(|queue| queue.items().iter().map(|item| item.ship).collect())
-        .unwrap_or_default();
+        .map_or_default(|queue| queue.items().iter().map(|item| item.ship).collect());
     let present = crate::movement::death_stars_counted_at(movement, world, destination, &own);
     (present + count as usize > 1).then_some(OrderRefusal::DeathStarRoom)
 }
@@ -453,14 +452,13 @@ pub fn destination_refusal(
     };
     let target = match destination {
         _ if world.systems.get(target).is_none() => return Some(OrderRefusal::DestinationGone),
-        Destination::System(_) => target,
         Destination::Fleet(_) if area == ProductionArea::ConstructionYard => {
             return Some(OrderRefusal::NotASystem)
         }
         Destination::Fleet(fleet) if !world.systems[target].fleets.contains(&fleet) => {
             return Some(OrderRefusal::DestinationEnRoute)
         }
-        Destination::Fleet(_) => target,
+        Destination::System(_) | Destination::Fleet(_) => target,
     };
     let queued = manufacturing.queue(system, area);
     let death_star = |class| {
@@ -515,34 +513,22 @@ pub fn destination_refusal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dat::{ExplorationStatus, Faction};
-    use crate::world::{BuildableClass, ControlKind, ManufacturingFacilityInstance, System};
+    use crate::dat::Faction;
+    use crate::world::{
+        BuildableClass, CapitalShipClass, ControlKind, Fleet, ManufacturingFacilityInstance,
+        ShipInstance,
+    };
 
     fn system(world: &mut GameWorld, x: u16) -> SystemKey {
-        world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: "Bortras".into(),
-            sector: crate::ids::SectorKey::default(),
+        let mut system = crate::test_support::system_at(
+            "Bortras",
+            crate::ids::SectorKey::default(),
             x,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Controlled(Faction::Alliance),
-        })
+            0,
+            ControlKind::Controlled(Faction::Alliance),
+        );
+        system.dat_id = DatId::new(0x9000_0001);
+        world.systems.insert(system)
     }
 
     fn class(
@@ -596,6 +582,38 @@ mod tests {
         world
     }
 
+    fn catalog_system_pair(second_x: u16) -> (GameWorld, SystemKey, SystemKey) {
+        let mut world = catalog();
+        let first = system(&mut world, 0);
+        let second = system(&mut world, second_x);
+        (world, first, second)
+    }
+
+    fn side_world_pair(side: Faction) -> (GameWorld, SystemKey, SystemKey) {
+        let mut world = GameWorld::default();
+        let here = system(&mut world, 0);
+        let there = system(&mut world, 50);
+        capacity(&mut world, side, 100);
+        (world, here, there)
+    }
+
+    fn opposing_sides() -> [(Faction, Faction); 2] {
+        [
+            (Faction::Empire, Faction::Alliance),
+            (Faction::Alliance, Faction::Empire),
+        ]
+    }
+
+    fn insert_death_star(
+        world: &mut GameWorld,
+        class: CapitalShipClass,
+    ) -> crate::ids::CapitalShipKey {
+        world.capital_ship_classes.insert(CapitalShipClass {
+            family: 0x18,
+            ..class
+        })
+    }
+
     /// `pairs` mine and refinery pairs of `side`: 50 maintenance each.
     fn capacity(world: &mut GameWorld, side: Faction, pairs: usize) {
         for _ in 0..pairs {
@@ -643,6 +661,67 @@ mod tests {
         (fleet, BuildableKind::Fighter(squadron))
     }
 
+    fn order_shipyard_destination(
+        world: &mut GameWorld,
+        manufacturing: &mut ManufacturingState,
+        origin: SystemKey,
+        destination: Destination,
+        movement: &crate::movement::MovementState,
+    ) -> Result<(), OrderRefusal> {
+        order_destination(
+            world,
+            manufacturing,
+            &TroopTransportState::new(),
+            &DeliveryState::new(),
+            origin,
+            ProductionArea::Shipyard,
+            destination,
+            movement,
+        )
+    }
+
+    fn shipyard_order_refusal(
+        world: &GameWorld,
+        manufacturing: &ManufacturingState,
+        origin: SystemKey,
+        kind: BuildableKind,
+        count: u32,
+        is_alliance: bool,
+        movement: &crate::movement::MovementState,
+    ) -> Option<OrderRefusal> {
+        order_refusal(
+            world,
+            manufacturing,
+            &TroopTransportState::new(),
+            &DeliveryState::new(),
+            origin,
+            ProductionArea::Shipyard,
+            kind,
+            count,
+            is_alliance,
+            movement,
+        )
+    }
+
+    fn shipyard_destination_refusal(
+        world: &GameWorld,
+        manufacturing: &ManufacturingState,
+        origin: SystemKey,
+        destination: SystemKey,
+        movement: &crate::movement::MovementState,
+    ) -> Option<OrderRefusal> {
+        destination_refusal(
+            world,
+            manufacturing,
+            &TroopTransportState::new(),
+            &DeliveryState::new(),
+            origin,
+            ProductionArea::Shipyard,
+            Destination::System(destination),
+            movement,
+        )
+    }
+
     // FUN_005385f0 builds each unit's leg (FUN_00551a20 -> FUN_00552300),
     // and the route takes each unit's request from the ship's room
     // (FUN_00552dd0 -> FUN_00550eb0 writes it back): a Build bound for a
@@ -656,9 +735,7 @@ mod tests {
     fn a_build_bound_for_a_fleet_needs_a_ship_with_room_for_each_unit() {
         for side in [Faction::Alliance, Faction::Empire] {
             let is_alliance = side == Faction::Alliance;
-            let mut world = catalog();
-            let at = system(&mut world, 0);
-            let there = system(&mut world, 50);
+            let (mut world, at, there) = catalog_system_pair(50);
             capacity(&mut world, side, 10);
             let (fleet, squadron) = carrier_fleet(&mut world, at, is_alliance, 2);
             let regiment = BuildableKind::Troop(DatId::new(if is_alliance {
@@ -747,9 +824,7 @@ mod tests {
     fn a_destination_order_moves_the_queued_units_to_the_new_fleets_ships_or_is_refused() {
         for side in [Faction::Alliance, Faction::Empire] {
             let is_alliance = side == Faction::Alliance;
-            let mut world = catalog();
-            let at = system(&mut world, 0);
-            let away = system(&mut world, 40);
+            let (mut world, at, away) = catalog_system_pair(40);
             let (first, squadron) = carrier_fleet(&mut world, at, is_alliance, 2);
             let (small, _) = carrier_fleet(&mut world, at, is_alliance, 1);
             // Room for two regiments but one squadron: only the squadrons'
@@ -836,26 +911,67 @@ mod tests {
     /// A side's capital ship ordered at `at`'s shipyard and seated, with
     /// the ships band's destination already set (as `order_items` and
     /// `seat_ordered_ships` do). Returns its tag.
+    fn side_capital_ship_class(
+        world: &mut GameWorld,
+        is_alliance: bool,
+        family: u8,
+    ) -> crate::ids::CapitalShipKey {
+        world
+            .capital_ship_classes
+            .insert(crate::world::CapitalShipClass {
+                family,
+                is_alliance,
+                is_empire: !is_alliance,
+                hull: 100,
+                ..crate::world::CapitalShipClass::default()
+            })
+    }
+
+    fn ordered_ship_group(
+        world: &mut GameWorld,
+        at: SystemKey,
+        class: crate::ids::CapitalShipKey,
+        count: usize,
+    ) -> ManufacturingState {
+        let mut manufacturing = ManufacturingState::new();
+        manufacturing.build_units(
+            at,
+            vec![QueueItem::new(BuildableKind::CapitalShip(class), 50); count],
+        );
+        crate::manufacturing::seat_ordered_ships(world, &mut manufacturing);
+        manufacturing
+    }
+
     fn ordered_ship(
         world: &mut GameWorld,
         mfg: &mut ManufacturingState,
         at: SystemKey,
         is_alliance: bool,
     ) -> u32 {
-        let class = world
-            .capital_ship_classes
-            .insert(crate::world::CapitalShipClass {
-                is_alliance,
-                is_empire: !is_alliance,
-                hull: 100,
-                ..crate::world::CapitalShipClass::default()
-            });
+        let class = side_capital_ship_class(world, is_alliance, 0);
         mfg.build_units(
             at,
             vec![QueueItem::new(BuildableKind::CapitalShip(class), 50)],
         );
         crate::manufacturing::seat_ordered_ships(world, mfg);
         mfg.queue(at, ProductionArea::Shipyard).unwrap().items()[0].ship
+    }
+
+    fn ordered_carrier_fixture(
+        is_alliance: bool,
+    ) -> (
+        GameWorld,
+        SystemKey,
+        crate::ids::FleetKey,
+        ManufacturingState,
+        u32,
+    ) {
+        let mut world = catalog();
+        let at = system(&mut world, 0);
+        let (fleet, _) = carrier_fleet(&mut world, at, is_alliance, 0);
+        let mut manufacturing = ManufacturingState::new();
+        let ship = ordered_ship(&mut world, &mut manufacturing, at, is_alliance);
+        (world, at, fleet, manufacturing, ship)
     }
 
     /// The fleet holding the ship tagged `tag`.
@@ -880,13 +996,10 @@ mod tests {
             mfg.add_progress(at, ProductionArea::Shipyard);
             let old = holder(&world, tag).unwrap();
 
-            order_destination(
+            order_shipyard_destination(
                 &mut world,
                 &mut mfg,
-                &TroopTransportState::new(),
-                &DeliveryState::new(),
                 at,
-                ProductionArea::Shipyard,
                 Destination::System(away),
                 &crate::movement::MovementState::new(),
             )
@@ -911,11 +1024,7 @@ mod tests {
     fn a_ship_band_destination_on_a_fleet_seats_the_ordered_ship_in_that_fleet_unfinished_for_either_side(
     ) {
         for is_alliance in [true, false] {
-            let mut world = catalog();
-            let at = system(&mut world, 0);
-            let (fleet, _) = carrier_fleet(&mut world, at, is_alliance, 0);
-            let mut mfg = ManufacturingState::new();
-            let queued = ordered_ship(&mut world, &mut mfg, at, is_alliance);
+            let (mut world, at, fleet, mut mfg, queued) = ordered_carrier_fixture(is_alliance);
             let order = |world: &mut GameWorld, mfg: &mut ManufacturingState| {
                 order_destination(
                     world,
@@ -953,11 +1062,7 @@ mod tests {
     fn an_all_areas_destination_on_a_fleet_is_refused_with_1_0x25_and_changes_nothing_for_either_side(
     ) {
         for is_alliance in [true, false] {
-            let mut world = catalog();
-            let at = system(&mut world, 0);
-            let (fleet, _) = carrier_fleet(&mut world, at, is_alliance, 0);
-            let mut mfg = ManufacturingState::new();
-            let tag = ordered_ship(&mut world, &mut mfg, at, is_alliance);
+            let (mut world, at, fleet, mut mfg, tag) = ordered_carrier_fixture(is_alliance);
             let seated = holder(&world, tag);
 
             let refused = order_destination_all(
@@ -1008,20 +1113,8 @@ mod tests {
         for is_alliance in [true, false] {
             let mut world = catalog();
             let (at, away) = (system(&mut world, 0), system(&mut world, 40));
-            let class = world
-                .capital_ship_classes
-                .insert(crate::world::CapitalShipClass {
-                    is_alliance,
-                    is_empire: !is_alliance,
-                    hull: 100,
-                    ..crate::world::CapitalShipClass::default()
-                });
-            let mut mfg = ManufacturingState::new();
-            mfg.build_units(
-                at,
-                vec![QueueItem::new(BuildableKind::CapitalShip(class), 50); 2],
-            );
-            crate::manufacturing::seat_ordered_ships(&mut world, &mut mfg);
+            let class = side_capital_ship_class(&mut world, is_alliance, 0);
+            let mut mfg = ordered_ship_group(&mut world, at, class, 2);
             let old = world.systems[at].fleets[0];
             let tags: Vec<u32> = world.fleets[old]
                 .capital_ships
@@ -1034,13 +1127,10 @@ mod tests {
             other.tag = 91;
             world.fleets[old].capital_ships.extend([finished, other]);
 
-            order_destination(
+            order_shipyard_destination(
                 &mut world,
                 &mut mfg,
-                &TroopTransportState::new(),
-                &DeliveryState::new(),
                 at,
-                ProductionArea::Shipyard,
                 Destination::System(away),
                 &crate::movement::MovementState::new(),
             )
@@ -1075,21 +1165,8 @@ mod tests {
             let mut world = catalog();
             let (at, away) = (system(&mut world, 0), system(&mut world, 40));
             let (carrier, _) = carrier_fleet(&mut world, at, is_alliance, 0);
-            let death_star = world
-                .capital_ship_classes
-                .insert(crate::world::CapitalShipClass {
-                    family: 0x18,
-                    is_alliance,
-                    is_empire: !is_alliance,
-                    hull: 100,
-                    ..crate::world::CapitalShipClass::default()
-                });
-            let mut mfg = ManufacturingState::new();
-            mfg.build_units(
-                at,
-                vec![QueueItem::new(BuildableKind::CapitalShip(death_star), 50)],
-            );
-            crate::manufacturing::seat_ordered_ships(&mut world, &mut mfg);
+            let death_star = side_capital_ship_class(&mut world, is_alliance, 0x18);
+            let mut mfg = ordered_ship_group(&mut world, at, death_star, 1);
             let order = |world: &mut GameWorld, mfg: &mut ManufacturingState, to| {
                 order_destination(
                     world,
@@ -1190,32 +1267,24 @@ mod tests {
     fn a_death_star_order_is_refused_where_one_already_is_or_is_queued() {
         // FUN_00507ab0: room 1 − every family-0x18 ship of either side at the
         // destination, uncompleted products included; {0x90, 3}.
-        use crate::world::{CapitalShipClass, Fleet, ShipInstance};
-        for (side, other) in [
-            (Faction::Empire, Faction::Alliance),
-            (Faction::Alliance, Faction::Empire),
-        ] {
-            let mut world = GameWorld::default();
-            let here = system(&mut world, 0);
-            let there = system(&mut world, 50);
-            capacity(&mut world, side, 100);
-            let death_star = world.capital_ship_classes.insert(CapitalShipClass {
-                family: 0x18,
-                maintenance_cost: 600,
-                refined_material_cost: 584,
-                ..CapitalShipClass::default()
-            });
+        for (side, other) in opposing_sides() {
+            let (mut world, here, there) = side_world_pair(side);
+            let death_star = insert_death_star(
+                &mut world,
+                CapitalShipClass {
+                    maintenance_cost: 600,
+                    refined_material_cost: 584,
+                    ..CapitalShipClass::default()
+                },
+            );
             let order = BuildableKind::CapitalShip(death_star);
             let mut mfg = crate::manufacturing::ManufacturingState::new();
             let refusal =
                 |world: &GameWorld, mfg: &crate::manufacturing::ManufacturingState, count| {
-                    order_refusal(
+                    shipyard_order_refusal(
                         world,
                         mfg,
-                        &crate::troop_transport::TroopTransportState::default(),
-                        &crate::delivery::DeliveryState::default(),
                         here,
-                        ProductionArea::Shipyard,
                         order,
                         count,
                         side == Faction::Alliance,
@@ -1270,25 +1339,23 @@ mod tests {
         use crate::manufacturing::{
             seat_ordered_ships, Destination, ManufacturingState, QueueItem,
         };
-        use crate::world::{CapitalShipClass, Fleet, ShipInstance};
-        for (side, other) in [
-            (Faction::Empire, Faction::Alliance),
-            (Faction::Alliance, Faction::Empire),
-        ] {
+        for (side, other) in opposing_sides() {
             let is_alliance = side == Faction::Alliance;
             let mut world = GameWorld::default();
             let here = system(&mut world, 0);
             capacity(&mut world, side, 100);
-            let death_star = world.capital_ship_classes.insert(CapitalShipClass {
-                name: "Death Star".into(),
-                family: 0x18,
-                is_alliance,
-                is_empire: !is_alliance,
-                hull: 100,
-                maintenance_cost: 600,
-                refined_material_cost: 584,
-                ..CapitalShipClass::default()
-            });
+            let death_star = insert_death_star(
+                &mut world,
+                CapitalShipClass {
+                    name: "Death Star".into(),
+                    is_alliance,
+                    is_empire: !is_alliance,
+                    hull: 100,
+                    maintenance_cost: 600,
+                    refined_material_cost: 584,
+                    ..CapitalShipClass::default()
+                },
+            );
             let order = BuildableKind::CapitalShip(death_star);
             let destination = world.fleets.insert(Fleet {
                 location: here,
@@ -1312,13 +1379,10 @@ mod tests {
                 "{side:?}"
             );
             let refusal = |world: &GameWorld, mfg: &ManufacturingState, count| {
-                order_refusal(
+                shipyard_order_refusal(
                     world,
                     mfg,
-                    &crate::troop_transport::TroopTransportState::default(),
-                    &crate::delivery::DeliveryState::default(),
                     here,
-                    ProductionArea::Shipyard,
                     order,
                     count,
                     is_alliance,
@@ -1377,26 +1441,24 @@ mod tests {
     #[test]
     fn a_death_star_order_counts_the_death_stars_bound_for_its_destination_not_those_leaving_for_either_side(
     ) {
-        use crate::manufacturing::{Destination, ManufacturingState, QueueItem};
+        use crate::manufacturing::{ManufacturingState, QueueItem};
         use crate::movement::MovementState;
-        use crate::world::{CapitalShipClass, Fleet, ShipInstance};
         for side in [Faction::Empire, Faction::Alliance] {
             let is_alliance = side == Faction::Alliance;
             let world_with = |coming: bool| {
-                let mut world = GameWorld::default();
-                let here = system(&mut world, 0);
-                let there = system(&mut world, 50);
-                capacity(&mut world, side, 100);
-                let death_star = world.capital_ship_classes.insert(CapitalShipClass {
-                    family: 0x18,
-                    is_alliance,
-                    is_empire: !is_alliance,
-                    hull: 100,
-                    hyperdrive: 100,
-                    maintenance_cost: 600,
-                    refined_material_cost: 584,
-                    ..CapitalShipClass::default()
-                });
+                let (mut world, here, there) = side_world_pair(side);
+                let death_star = insert_death_star(
+                    &mut world,
+                    CapitalShipClass {
+                        is_alliance,
+                        is_empire: !is_alliance,
+                        hull: 100,
+                        hyperdrive: 100,
+                        maintenance_cost: 600,
+                        refined_material_cost: 584,
+                        ..CapitalShipClass::default()
+                    },
+                );
                 let at = if coming { there } else { here };
                 let fleet = world.fleets.insert(Fleet {
                     location: at,
@@ -1425,18 +1487,7 @@ mod tests {
                 let order = BuildableKind::CapitalShip(death_star);
                 let mfg = ManufacturingState::new();
                 assert_eq!(
-                    order_refusal(
-                        &world,
-                        &mfg,
-                        &crate::troop_transport::TroopTransportState::default(),
-                        &crate::delivery::DeliveryState::default(),
-                        here,
-                        ProductionArea::Shipyard,
-                        order,
-                        1,
-                        is_alliance,
-                        &movement,
-                    ),
+                    shipyard_order_refusal(&world, &mfg, here, order, 1, is_alliance, &movement,),
                     refused,
                     "Build {side:?} coming {coming}"
                 );
@@ -1445,16 +1496,7 @@ mod tests {
                 let mut mfg = ManufacturingState::new();
                 mfg.enqueue(there, QueueItem::new(order, 584));
                 assert_eq!(
-                    destination_refusal(
-                        &world,
-                        &mfg,
-                        &crate::troop_transport::TroopTransportState::default(),
-                        &crate::delivery::DeliveryState::default(),
-                        there,
-                        ProductionArea::Shipyard,
-                        Destination::System(here),
-                        &movement,
-                    ),
+                    shipyard_destination_refusal(&world, &mfg, there, here, &movement,),
                     refused,
                     "Destination {side:?} coming {coming}"
                 );
@@ -1467,8 +1509,7 @@ mod tests {
     // reaches the Death Star room, however full it is.
     #[test]
     fn a_destination_with_no_death_star_queued_ignores_the_death_star_room_for_either_side() {
-        use crate::manufacturing::{Destination, ManufacturingState, QueueItem};
-        use crate::world::{CapitalShipClass, Fleet, ShipInstance};
+        use crate::manufacturing::{ManufacturingState, QueueItem};
         for side in [Faction::Empire, Faction::Alliance] {
             let is_alliance = side == Faction::Alliance;
             let mut world = GameWorld::default();
@@ -1502,14 +1543,11 @@ mod tests {
             );
 
             assert_eq!(
-                destination_refusal(
+                shipyard_destination_refusal(
                     &world,
                     &mfg,
-                    &crate::troop_transport::TroopTransportState::default(),
-                    &crate::delivery::DeliveryState::default(),
                     there,
-                    ProductionArea::Shipyard,
-                    Destination::System(here),
+                    here,
                     &crate::movement::MovementState::new(),
                 ),
                 None,

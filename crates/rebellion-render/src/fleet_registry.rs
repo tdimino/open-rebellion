@@ -110,7 +110,7 @@ impl FleetRegistryState {
 
     /// Scroll each unpaused row by the time since the last frame.
     fn advance(&mut self, now: f64, paused: [bool; 2]) {
-        #[expect(
+        #[allow(
             clippy::cast_possible_truncation,
             reason = "A frame's elapsed seconds fit an f32 offset."
         )]
@@ -163,7 +163,7 @@ fn font(scale: f32, size: f32) -> FontId {
 }
 
 /// A mode row: a lamp, lit when `lit`, and its label.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "A row's paint needs its geometry, state and both texts."
 )]
@@ -424,6 +424,7 @@ pub fn draw_fleet_registry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{immediate_click_frames, key_frame as key};
 
     #[test]
     fn original_naming_previews_the_sides_first_numbers() {
@@ -477,7 +478,7 @@ mod tests {
         let canvas = Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0));
         let mut state = FleetRegistryState::new();
         let mut outcome = RegistryOutcome::Open;
-        for events in [vec![], vec![]].into_iter().chain(frames) {
+        for events in crate::test_support::warmed_frames(Vec::new(), frames) {
             let input = egui::RawInput {
                 screen_rect: Some(canvas),
                 events,
@@ -492,27 +493,7 @@ mod tests {
 
     fn click(rect: LogicalRect) -> Vec<Vec<egui::Event>> {
         let pos = Pos2::new(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
-        let press = |pressed| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        };
-        vec![
-            vec![egui::Event::PointerMoved(pos)],
-            vec![press(true)],
-            vec![press(false)],
-        ]
-    }
-
-    fn key(key: egui::Key) -> Vec<Vec<egui::Event>> {
-        vec![vec![egui::Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::default(),
-        }]]
+        immediate_click_frames(pos)
     }
 
     #[test]

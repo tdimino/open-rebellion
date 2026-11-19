@@ -23,6 +23,7 @@ Reference documentation for AI agents working on the Open Rebellion codebase. Re
 | [task-graph.md](task-graph.md) | br/bv task graph in `.beads/`: node kinds, the question-review-port-acceptance chain, commands |
 | [dev-commands.md](dev-commands.md) | Developer commands for a native build: the grammar, the live channel, named controls, batch runs, saves and the run report |
 | [test-tooling.md](test-tooling.md) | Telemetry query, seed calibration, native-versus-headless divergence, the pre-commit gates, trace determinism, invariants and the native scheduler checks |
+| [test-fixtures.md](test-fixtures.md) | Reusing and extending shared unit-test worlds, layouts, input frames and contract assertions without recreating cross-file setup |
 
 ## Tools and QA
 

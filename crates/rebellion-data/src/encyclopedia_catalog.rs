@@ -132,6 +132,21 @@ impl EncyclopediaCatalog {
     }
 }
 
+macro_rules! append_catalog_dat {
+    ($entries:expr, $strings:expr, $gdata_path:expr, $file:literal, $table:ty, $records:ident) => {{
+        let table: $table = read_dat_file(&$gdata_path.join($file))?;
+        for record in table.$records {
+            push_entry(
+                $entries,
+                record.id,
+                record.family_id,
+                record.text_stra_dll_id,
+                $strings,
+            )?;
+        }
+    }};
+}
+
 /// Load the complete localized index directly from original game data.
 ///
 /// This reference catalog is deliberately separate from campaign state. It is
@@ -160,69 +175,54 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
     ];
 
     let mut entries = Vec::new();
-    let systems: SystemsFile = read_dat_file(&gdata_path.join("SYSTEMSD.DAT"))?;
-    for record in systems.systems {
-        push_entry(
-            &mut entries,
-            record.id,
-            record.family_id,
-            record.text_stra_dll_id,
-            &strings,
-        )?;
-    }
-
-    let capital_ships: CapitalShipsFile = read_dat_file(&gdata_path.join("CAPSHPSD.DAT"))?;
-    for record in capital_ships.ships {
-        push_entry(
-            &mut entries,
-            record.id,
-            record.family_id,
-            record.text_stra_dll_id,
-            &strings,
-        )?;
-    }
-    let fighters: FightersFile = read_dat_file(&gdata_path.join("FIGHTSD.DAT"))?;
-    for record in fighters.fighters {
-        push_entry(
-            &mut entries,
-            record.id,
-            record.family_id,
-            record.text_stra_dll_id,
-            &strings,
-        )?;
-    }
-
-    let defense: DefenseFacilitiesFile = read_dat_file(&gdata_path.join("DEFFACSD.DAT"))?;
-    for record in defense.facilities {
-        push_entry(
-            &mut entries,
-            record.id,
-            record.family_id,
-            record.text_stra_dll_id,
-            &strings,
-        )?;
-    }
-    let manufacturing: ManufacturingFacilitiesFile =
-        read_dat_file(&gdata_path.join("MANFACSD.DAT"))?;
-    for record in manufacturing.facilities {
-        push_entry(
-            &mut entries,
-            record.id,
-            record.family_id,
-            record.text_stra_dll_id,
-            &strings,
-        )?;
-    }
-    let production: ProductionFacilitiesFile = read_dat_file(&gdata_path.join("PROFACSD.DAT"))?;
-    for record in production.facilities {
-        push_entry(
-            &mut entries,
-            record.id,
-            record.family_id,
-            record.text_stra_dll_id,
-            &strings,
-        )?;
-    }
+    append_catalog_dat!(
+        &mut entries,
+        &strings,
+        gdata_path,
+        "SYSTEMSD.DAT",
+        SystemsFile,
+        systems
+    );
+    append_catalog_dat!(
+        &mut entries,
+        &strings,
+        gdata_path,
+        "CAPSHPSD.DAT",
+        CapitalShipsFile,
+        ships
+    );
+    append_catalog_dat!(
+        &mut entries,
+        &strings,
+        gdata_path,
+        "FIGHTSD.DAT",
+        FightersFile,
+        fighters
+    );
+    append_catalog_dat!(
+        &mut entries,
+        &strings,
+        gdata_path,
+        "DEFFACSD.DAT",
+        DefenseFacilitiesFile,
+        facilities
+    );
+    append_catalog_dat!(
+        &mut entries,
+        &strings,
+        gdata_path,
+        "MANFACSD.DAT",
+        ManufacturingFacilitiesFile,
+        facilities
+    );
+    append_catalog_dat!(
+        &mut entries,
+        &strings,
+        gdata_path,
+        "PROFACSD.DAT",
+        ProductionFacilitiesFile,
+        facilities
+    );
 
     let missions: MissionsFile = read_dat_file(&gdata_path.join("MISSNSD.DAT"))?;
     for record in missions.missions {
@@ -238,53 +238,41 @@ pub fn load_encyclopedia_catalog(gdata_path: &Path) -> Result<EncyclopediaCatalo
         )?;
     }
 
-    let troops: TroopsFile = read_dat_file(&gdata_path.join("TROOPSD.DAT"))?;
-    for record in troops.troops {
-        push_entry(
-            &mut entries,
-            record.id,
-            record.family_id,
-            record.text_stra_dll_id,
-            &strings,
-        )?;
-    }
+    append_catalog_dat!(
+        &mut entries,
+        &strings,
+        gdata_path,
+        "TROOPSD.DAT",
+        TroopsFile,
+        troops
+    );
+    append_catalog_dat!(
+        &mut entries,
+        &strings,
+        gdata_path,
+        "MJCHARSD.DAT",
+        MajorCharactersFile,
+        characters
+    );
+    append_catalog_dat!(
+        &mut entries,
+        &strings,
+        gdata_path,
+        "MNCHARSD.DAT",
+        MinorCharactersFile,
+        characters
+    );
+    append_catalog_dat!(
+        &mut entries,
+        &strings,
+        gdata_path,
+        "SPECFCSD.DAT",
+        SpecialForcesFile,
+        units
+    );
 
-    let major: MajorCharactersFile = read_dat_file(&gdata_path.join("MJCHARSD.DAT"))?;
-    for record in major.characters {
-        push_entry(
-            &mut entries,
-            record.id,
-            record.family_id,
-            record.text_stra_dll_id,
-            &strings,
-        )?;
-    }
-    let minor: MinorCharactersFile = read_dat_file(&gdata_path.join("MNCHARSD.DAT"))?;
-    for record in minor.characters {
-        push_entry(
-            &mut entries,
-            record.id,
-            record.family_id,
-            record.text_stra_dll_id,
-            &strings,
-        )?;
-    }
-    let special_forces: SpecialForcesFile = read_dat_file(&gdata_path.join("SPECFCSD.DAT"))?;
-    for record in special_forces.units {
-        push_entry(
-            &mut entries,
-            record.id,
-            record.family_id,
-            record.text_stra_dll_id,
-            &strings,
-        )?;
-    }
-
-    entries.sort_by(|left, right| {
-        left.name
-            .to_lowercase()
-            .cmp(&right.name.to_lowercase())
-            .then_with(|| left.object_id.cmp(&right.object_id))
+    rebellion_core::ordering::sort_by_case_folded_name(&mut entries, |entry| {
+        (entry.name.to_lowercase(), entry.object_id)
     });
     entries.dedup_by_key(|entry| entry.object_id);
 
@@ -398,8 +386,8 @@ mod tests {
         assert_eq!(catalog.entries_for(0x70)[0].name, "Allyuen");
         assert_eq!(catalog.entries_for(0x71)[0].name, "Alliance Dreadnaught");
         assert_eq!(catalog.entries_for(0x74)[0].name, "Alliance Army Regiment");
-        assert!(catalog.entries_for(0x75).is_empty());
-        assert!(catalog.entries_for(0xff).is_empty());
+        assert_empty!(catalog.entries_for(0x75));
+        assert_empty!(catalog.entries_for(0xff));
     }
 
     #[test]

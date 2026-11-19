@@ -71,15 +71,14 @@ pub const fn tour_step(faction: CockpitFaction, step: u32) -> Option<TourStep> {
         (_, 11) => TourStep::ReleaseClock,
         (_, 12) => TourStep::LockInput,
         (_, 13) => TourStep::Finish,
-        (_, 0xe) => Display(LoyalToPlayer),
+        (_, 0xe) | (CockpitFaction::Alliance, 2) => Display(LoyalToPlayer),
         (_, 0xf) => Display(LoyalToEnemy),
-        (CockpitFaction::Alliance, 2) => Display(LoyalToPlayer),
         (CockpitFaction::Alliance, 3) => highlight(
             HighlightAlliance,
             TourTarget::Headquarters,
             "Alliance Headquarters",
         ),
-        (CockpitFaction::Alliance, 4 | 8 | 0x14) => {
+        (CockpitFaction::Alliance, 4 | 8 | 0x14) | (CockpitFaction::Empire, 2 | 0x12) => {
             highlight(HighlightEmpire, TourTarget::System(CORUSCANT), "Coruscant")
         }
         (CockpitFaction::Alliance, 7) => highlight(
@@ -88,8 +87,10 @@ pub const fn tour_step(faction: CockpitFaction, step: u32) -> Option<TourStep> {
             "Mon Mothma",
         ),
         (CockpitFaction::Alliance, 0x10) => Display(EnemyMilitaryControl),
-        (CockpitFaction::Alliance, 0x11) => Display(UnexploredSystems),
-        (CockpitFaction::Alliance, 0x12) => {
+        (CockpitFaction::Alliance, 0x11) | (CockpitFaction::Empire, 4 | 0x11) => {
+            Display(UnexploredSystems)
+        }
+        (CockpitFaction::Alliance, 0x12) | (CockpitFaction::Empire, 3 | 8 | 0x14) => {
             highlight(HighlightAlliance, TourTarget::System(YAVIN), "Yavin")
         }
         (CockpitFaction::Alliance, 0x13) => highlight(
@@ -97,13 +98,6 @@ pub const fn tour_step(faction: CockpitFaction, step: u32) -> Option<TourStep> {
             TourTarget::Character(0x242),
             "Luke Skywalker",
         ),
-        (CockpitFaction::Empire, 2 | 0x12) => {
-            highlight(HighlightEmpire, TourTarget::System(CORUSCANT), "Coruscant")
-        }
-        (CockpitFaction::Empire, 3 | 8 | 0x14) => {
-            highlight(HighlightAlliance, TourTarget::System(YAVIN), "Yavin")
-        }
-        (CockpitFaction::Empire, 4 | 0x11) => Display(UnexploredSystems),
         (CockpitFaction::Empire, 7) => highlight(
             HighlightEmpire,
             TourTarget::Character(0x280),

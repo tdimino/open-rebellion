@@ -476,16 +476,18 @@ impl ResearchSystem {
                 )
                 .collect(),
             TechType::Troop | TechType::Facility => {
-                let families: &[std::ops::RangeInclusive<u8>] = if tech == TechType::Troop {
-                    &[0x10..=0x13, 0x30..=0x3f]
-                } else {
-                    &[0x22..=0x2d]
+                let family_allowed = |family| match tech {
+                    TechType::Troop => {
+                        (0x10..=0x13).contains(&family) || (0x30..=0x3f).contains(&family)
+                    }
+                    TechType::Facility => (0x22..=0x2d).contains(&family),
+                    TechType::Ship => false,
                 };
                 world
                     .buildable_classes
                     .iter()
                     .filter(|(id, c)| {
-                        families.iter().any(|range| range.contains(&id.family()))
+                        family_allowed(id.family())
                             && serves(c.is_alliance, c.is_empire)
                             && c.refined_material_cost != 0
                     })
@@ -614,33 +616,11 @@ mod tests {
     use super::*;
     use crate::world::{CapitalShipClass, GameWorld};
 
-    fn add_ship_class(
-        world: &mut GameWorld,
-        research_order: u32,
-        research_difficulty: u32,
-        is_alliance: bool,
-    ) {
+    fn add_ship_class(world: &mut GameWorld, research_order: u32, is_alliance: bool) {
         world.capital_ship_classes.insert(CapitalShipClass {
-            name: "TestShip".into(),
             is_alliance,
             is_empire: !is_alliance,
-            refined_material_cost: 100,
-            maintenance_cost: 10,
             research_order,
-            research_difficulty,
-            hull: 100,
-            shield_strength: 50,
-            sub_light_engine: 5,
-            maneuverability: 5,
-            hyperdrive: 2,
-            detection: 3,
-            turbolaser_fore: 2,
-            turbolaser_aft: 1,
-            turbolaser_port: 1,
-            turbolaser_starboard: 1,
-            shield_recharge_rate: 5,
-            damage_control: 3,
-            bombardment_modifier: 10,
             ..CapitalShipClass::default()
         });
     }
@@ -673,7 +653,7 @@ mod tests {
     #[test]
     fn ship_class_availability_respects_research_order() {
         let mut world = GameWorld::default();
-        add_ship_class(&mut world, 3, 20, true); // needs level 3
+        add_ship_class(&mut world, 3, true); // needs level 3
 
         let class_key = world.capital_ship_classes.keys().next().unwrap();
         let mut state = ResearchState::new(); // level 0

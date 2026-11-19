@@ -39,30 +39,19 @@ pub fn assault_gate(
     .is_ok()
 }
 
-/// Post the order to `fleets` as the menu row or the `Assault` dev command
-/// does (`integrator::order_assault`), then record each run and file its
-/// messages.
-///
-/// # Errors
-/// The order's refusal (`assault::order_enabled`).
-pub fn issue(
-    world: &mut GameWorld,
-    fleets: &[FleetKey],
-    side: Faction,
-    states: &mut StrikeStates<'_>,
-    roll: &mut dyn FnMut() -> f64,
-    templates: &TextTemplates,
-    log: &mut MessageLog,
-) -> Result<Vec<AssaultEffects>, AssaultRefusal> {
-    let tick = states.tick;
-    let runs = rebellion_data::integrator::order_assault(world, fleets, side, states, roll)?;
-    for run in &runs {
-        rebellion_data::telemetry::native_assault(tick, world, run);
-        for message in assault_messages(world, templates, tick, run) {
-            log.push(message);
-        }
-    }
-    Ok(runs)
+crate::strategic_order_common::define_order_issue! {
+    /// Post the order to `fleets` as the menu row or the `Assault` dev command
+    /// does (`integrator::order_assault`), then record each run and file its
+    /// messages.
+    ///
+    /// # Errors
+    /// The order's refusal (`assault::order_enabled`).
+    argument: side: Faction;
+    run: AssaultEffects;
+    error: AssaultRefusal;
+    issue: rebellion_data::integrator::order_assault;
+    record: rebellion_data::telemetry::native_assault;
+    messages: assault_messages;
 }
 
 /// The messages of an assault, the player's or the AI's: event `0x150`
@@ -81,9 +70,17 @@ pub fn assault_messages(
     tick: u64,
     assault: &AssaultEffects,
 ) -> Vec<GameMessage> {
-    let mut messages = assault.operation.as_ref().map_or_else(Vec::new, |operation| {
-        crate::strike_orders::report_messages(world, templates, tick, &Arc::new(operation.clone()))
-    });
+    let mut messages = assault
+        .operation
+        .as_ref()
+        .map_or_else(Vec::new, |operation| {
+            crate::strike_orders::report_messages(
+                world,
+                templates,
+                tick,
+                &Arc::new(operation.clone()),
+            )
+        });
     for (event, _) in &assault.blockade {
         messages.extend(crate::blockade_transition_messages(world, templates, event));
     }
@@ -98,64 +95,26 @@ pub fn assault_messages(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::carriage::ProductRoom;
     use rebellion_core::assault::AssaultReport;
-    use rebellion_core::operation_report::OperationReport;
+    use rebellion_core::carriage::ProductRoom;
     use rebellion_core::ids::{DatId, SystemKey};
     use rebellion_core::manufacturing::ManufacturingState;
-    use rebellion_core::world::{
-        CapitalShipClass, ControlKind, Fleet, ShipInstance, System, TroopUnit,
-    };
-    use rebellion_render::message_log::{MessageRail, MessageTarget, RailAudience};
+    use rebellion_core::operation_report::OperationReport;
+    use rebellion_core::test_support::gnprtb_entry;
+    use rebellion_core::world::{CapitalShipClass, ControlKind, Fleet, System, TroopUnit};
+    use rebellion_data::test_support::{assault_report_template_entries, text_templates};
+    use rebellion_render::message_log::RailAudience;
     use rebellion_render::quadrant_icons::Quadrant;
-    use std::collections::HashMap;
 
     const BOTH: [(Faction, Faction); 2] = [
         (Faction::Empire, Faction::Alliance),
         (Faction::Alliance, Faction::Empire),
     ];
 
-    /// TEXTSTRA RCDATA bytes for `text`, where `{n:k}` is argument `n`
-    /// rendered under kind `k` (`text_templates::format_template`).
-    fn rcdata(text: &str) -> String {
-        let mut out = String::new();
-        let mut rest = text;
-        while let Some(open) = rest.find('{') {
-            out.push_str(&rest[..open]);
-            let close = rest[open..].find('}').unwrap() + open;
-            let (index, kind) = rest[open + 1..close].split_once(':').unwrap();
-            out.push('|');
-            out.push(char::from(index.parse::<u8>().unwrap()));
-            out.push(char::from(kind.parse::<u8>().unwrap()));
-            out.push_str("\0\0\0");
-            rest = &rest[close + 1..];
-        }
-        out.push_str(rest);
-        out.push('\u{1}');
-        out
-    }
-
     /// The shipped TEXTSTRA RCDATA entries `0x7090`-`0x7094` and
     /// `0x70a0`-`0x70a3`.
     fn templates() -> TextTemplates {
-        let entries: HashMap<u16, String> = [
-            (0x7090, "Assault on {1:1}"),
-            (
-                0x7091,
-                "{1:4} troops have taken control of the {2:4} system {3:1}",
-            ),
-            (
-                0x7092,
-                "{2:4} Troops have defended {3:1} from an {1:4} assault.",
-            ),
-            (
-                0x7093,
-                "{1:4} troops have seized control of the neutral system {2:1}.",
-            ),
-            (
-                0x7094,
-                "The neutral system {2:1} has repulsed an attack by {1:4} troops.",
-            ),
+        text_templates(assault_report_template_entries().into_iter().chain([
             (0x70a0, "Fleet Initiates Blockade of {1:1}"),
             (0x70a1, "{3:1} has initiated a blockade of {2:1}."),
             (0x70a2, "{1:1} Under Blockade"),
@@ -163,22 +122,11 @@ mod tests {
                 0x70a3,
                 "{1:4} ships have been detected at {2:1}.  The world is under enemy blockade.",
             ),
-        ]
-        .into_iter()
-        .map(|(id, text)| (id, rcdata(text)))
-        .collect();
-        TextTemplates::from_json(&serde_json::to_vec(&entries).unwrap()).unwrap()
+        ]))
     }
 
     fn world(holder: Option<Faction>) -> (GameWorld, SystemKey) {
-        let mut world = GameWorld::default();
-        let system = world.systems.insert(System {
-            name: "Selonia".into(),
-            is_populated: true,
-            control: holder.map_or(ControlKind::Uncontrolled, ControlKind::Controlled),
-            ..System::default()
-        });
-        (world, system)
+        crate::test_support::order_world(holder, true)
     }
 
     /// A run at `system` that leaves `after` holding it: the report and
@@ -215,6 +163,19 @@ mod tests {
         }
     }
 
+    fn run_messages(
+        world: &mut GameWorld,
+        templates: &TextTemplates,
+        system: SystemKey,
+        assaulter: Faction,
+        holder: Faction,
+        after: Faction,
+    ) -> (AssaultEffects, Vec<GameMessage>) {
+        let effects = assault(world, system, assaulter, holder, after);
+        let messages = assault_messages(world, templates, 7, &effects);
+        (effects, messages)
+    }
+
     #[test]
     fn a_taken_or_defended_system_files_an_operation_report_for_both_sides() {
         // FUN_00496770's assault branch: 0x7090, then 0x7091 when the holder
@@ -235,9 +196,8 @@ mod tests {
                     format!("{at} Troops have defended Selonia from an {by} assault."),
                 ),
             ] {
-                let effects = assault(&mut world, system, assaulter, holder, after);
-                let messages = assault_messages(&world, &templates, 7, &effects);
-                assert_eq!(messages.len(), 2, "{assaulter:?}");
+                let (_, messages) =
+                    run_messages(&mut world, &templates, system, assaulter, holder, after);
                 for message in &messages {
                     let display = message.display.as_ref().unwrap();
                     assert_eq!(display.title, "Assault on Selonia");
@@ -248,14 +208,10 @@ mod tests {
                         0x2b99
                     };
                     assert_eq!(display.background, picture);
-                    assert_eq!(message.rail, Some(MessageRail::Conflict));
-                    assert_eq!(message.target, Some(MessageTarget::System(system)));
                 }
-                let alliance = assaulter == Faction::Alliance;
-                assert_eq!(messages[0].audience, RailAudience::side(alliance));
-                assert_eq!(messages[0].advice, None);
-                assert_eq!(messages[1].audience, RailAudience::side(!alliance));
-                assert_eq!(messages[1].advice, Some(0x2f));
+                crate::test_support::assert_two_side_conflict_filing(
+                    &messages, assaulter, system, 0x2f,
+                );
             }
         }
     }
@@ -270,8 +226,8 @@ mod tests {
         for (assaulter, holder) in BOTH {
             let (mut world, system) = world(Some(holder));
             for after in [assaulter, holder] {
-                let effects = assault(&mut world, system, assaulter, holder, after);
-                let messages = assault_messages(&world, &templates, 7, &effects);
+                let (effects, messages) =
+                    run_messages(&mut world, &templates, system, assaulter, holder, after);
                 assert_eq!(messages.len(), 2, "{assaulter:?}");
                 for message in &messages {
                     assert_eq!(
@@ -407,13 +363,8 @@ mod tests {
             troop_capacity: 2,
             ..CapitalShipClass::default()
         });
-        let fleet = world.fleets.insert(Fleet {
-            location: system,
-            capital_ships: vec![ShipInstance::new(class, 100, is_alliance)],
-            is_alliance,
-            ..Fleet::default()
-        });
-        world.systems[system].fleets.push(fleet);
+        let fleet =
+            rebellion_core::test_support::add_fleet_with_class(world, system, class, is_alliance);
         let troop = world.troops.insert(TroopUnit {
             class_dat_id: DatId::new(0x1000_0001),
             is_alliance,
@@ -426,23 +377,64 @@ mod tests {
     }
 
     fn shield_limit(world: &mut GameWorld) {
-        let entry = |id: u32, value: i32| rebellion_core::world::GnprtbEntry {
-            parameter_id: id,
-            development: value,
-            alliance_sp_easy: value,
-            alliance_sp_medium: value,
-            alliance_sp_hard: value,
-            empire_sp_easy: value,
-            empire_sp_medium: value,
-            empire_sp_hard: value,
-            multiplayer: value,
-        };
         // GNPRTB 0x1e03 (2), 7761 (60) and 7762 (-10) as shipped.
         world.gnprtb = rebellion_core::world::GnprtbParams::new(vec![
-            entry(0x1e03, 2),
-            entry(7761, 60),
-            entry(7762, -10),
+            gnprtb_entry(0x1e03, 2),
+            gnprtb_entry(7761, 60),
+            gnprtb_entry(7762, -10),
         ]);
+    }
+
+    fn blockaded_fleet(
+        world: &mut GameWorld,
+        system: SystemKey,
+        side: Faction,
+    ) -> (TroopTransportState, FleetKey, BlockadeState) {
+        let mut transport = TroopTransportState::new();
+        let fleet = loaded_fleet(world, &mut transport, system, side);
+        let mut blockade = BlockadeState::new();
+        rebellion_core::blockade::BlockadeSystem::advance(
+            &mut blockade,
+            world,
+            &[rebellion_core::tick::TickEvent { tick: 1 }],
+        );
+        (transport, fleet, blockade)
+    }
+
+    fn issue_test_order(
+        world: &mut GameWorld,
+        fleets: &[FleetKey],
+        side: Faction,
+        transport: &mut TroopTransportState,
+        blockade: &mut BlockadeState,
+    ) -> (Vec<AssaultEffects>, MessageLog) {
+        let mut movement = MovementState::new();
+        let mut manufacturing = ManufacturingState::new();
+        let mut deliveries = rebellion_core::delivery::DeliveryState::new();
+        let mut missions = rebellion_core::missions::MissionState::new();
+        let uprisings = rebellion_core::uprising::UprisingState::new();
+        let mut log = MessageLog::default();
+        let runs = issue(
+            world,
+            fleets,
+            side,
+            &mut StrikeStates {
+                movement: &mut movement,
+                manufacturing: &mut manufacturing,
+                transport,
+                deliveries: &mut deliveries,
+                missions: &mut missions,
+                uprisings: &uprisings,
+                blockade,
+                tick: 3,
+                step: 0,
+            },
+            &mut || 0.5,
+            &templates(),
+            &mut log,
+        )
+        .unwrap();
+        (runs, log)
     }
 
     #[test]
@@ -454,14 +446,7 @@ mod tests {
         for (side, holder) in BOTH {
             let (mut world, system) = world(Some(holder));
             shield_limit(&mut world);
-            let mut transport = TroopTransportState::new();
-            let fleet = loaded_fleet(&mut world, &mut transport, system, side);
-            let mut blockade = BlockadeState::new();
-            rebellion_core::blockade::BlockadeSystem::advance(
-                &mut blockade,
-                &world,
-                &[rebellion_core::tick::TickEvent { tick: 1 }],
-            );
+            let (transport, fleet, blockade) = blockaded_fleet(&mut world, system, side);
             let is_alliance = side == Faction::Alliance;
             let icon = Some(MenuObject::SystemIcon {
                 system,
@@ -509,40 +494,9 @@ mod tests {
         for (side, holder) in BOTH {
             let (mut world, system) = world(Some(holder));
             shield_limit(&mut world);
-            let mut movement = MovementState::new();
-            let mut manufacturing = ManufacturingState::new();
-            let mut transport = TroopTransportState::new();
-            let fleet = loaded_fleet(&mut world, &mut transport, system, side);
-            let mut deliveries = rebellion_core::delivery::DeliveryState::new();
-            let mut missions = rebellion_core::missions::MissionState::new();
-            let uprisings = rebellion_core::uprising::UprisingState::new();
-            let mut blockade = BlockadeState::new();
-            rebellion_core::blockade::BlockadeSystem::advance(
-                &mut blockade,
-                &world,
-                &[rebellion_core::tick::TickEvent { tick: 1 }],
-            );
-            let mut log = MessageLog::default();
-            let runs = issue(
-                &mut world,
-                &[fleet],
-                side,
-                &mut StrikeStates {
-                    movement: &mut movement,
-                    manufacturing: &mut manufacturing,
-                    transport: &mut transport,
-                    deliveries: &mut deliveries,
-                    missions: &mut missions,
-                    uprisings: &uprisings,
-                    blockade: &mut blockade,
-                    tick: 3,
-                    step: 0,
-                },
-                &mut || 0.5,
-                &templates(),
-                &mut log,
-            )
-            .unwrap();
+            let (mut transport, fleet, mut blockade) = blockaded_fleet(&mut world, system, side);
+            let (runs, log) =
+                issue_test_order(&mut world, &[fleet], side, &mut transport, &mut blockade);
             assert_eq!(runs.len(), 1, "{side:?}");
             assert_eq!(world.systems[system].control, ControlKind::Controlled(side));
             let titles: Vec<&str> = log
@@ -577,43 +531,20 @@ mod tests {
                 control: ControlKind::Controlled(holder),
                 ..System::default()
             });
-            let mut movement = MovementState::new();
-            let mut manufacturing = ManufacturingState::new();
             let mut transport = TroopTransportState::new();
             let team = [
                 loaded_fleet(&mut world, &mut transport, system, side),
                 loaded_fleet(&mut world, &mut transport, system, side),
                 loaded_fleet(&mut world, &mut transport, other, side),
             ];
-            let mut deliveries = rebellion_core::delivery::DeliveryState::new();
-            let mut missions = rebellion_core::missions::MissionState::new();
-            let uprisings = rebellion_core::uprising::UprisingState::new();
             let mut blockade = BlockadeState::new();
             rebellion_core::blockade::BlockadeSystem::advance(
                 &mut blockade,
                 &world,
                 &[rebellion_core::tick::TickEvent { tick: 1 }],
             );
-            let runs = issue(
-                &mut world,
-                &team,
-                side,
-                &mut StrikeStates {
-                    movement: &mut movement,
-                    manufacturing: &mut manufacturing,
-                    transport: &mut transport,
-                    deliveries: &mut deliveries,
-                    missions: &mut missions,
-                    uprisings: &uprisings,
-                    blockade: &mut blockade,
-                    tick: 3,
-                    step: 0,
-                },
-                &mut || 0.5,
-                &templates(),
-                &mut MessageLog::default(),
-            )
-            .unwrap();
+            let (runs, _) =
+                issue_test_order(&mut world, &team, side, &mut transport, &mut blockade);
             let counted: Vec<(Option<SystemKey>, u32)> = runs
                 .iter()
                 .map(|run| {
@@ -675,7 +606,13 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/base");
         let templates = TextTemplates::load(&path).unwrap();
         let (mut world, system) = world(Some(Faction::Alliance));
-        let run = assault(&mut world, system, Faction::Empire, Faction::Alliance, Faction::Empire);
+        let run = assault(
+            &mut world,
+            system,
+            Faction::Empire,
+            Faction::Alliance,
+            Faction::Empire,
+        );
         let run = assault_messages(&world, &templates, 7, &run);
         assert_eq!(
             run[0].display.as_ref().unwrap().body,

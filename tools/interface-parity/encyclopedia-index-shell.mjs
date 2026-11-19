@@ -29,6 +29,21 @@ const categoryControls = [
   { command: 0x74, x: 296, y: 78, width: 49, height: 41, alliance: [10352, 10351], empire: [10362, 10361] },
   { command: 0x75, x: 348, y: 78, width: 49, height: 41, alliance: [10346, 10345], empire: [10358, 10357] },
 ];
+const categoryCounts = new Map([
+  [0x6f, 346],
+  [0x70, 200],
+  [0x71, 38],
+  [0x72, 14],
+  [0x73, 15],
+  [0x74, 10],
+  [0x75, 69],
+]);
+const indexScrollArt = {
+  track: 0x29a0,
+  up: 0x29bd,
+  down: 0x29bf,
+  thumb: [0x29c1, 0x29c2, 0x29c3],
+};
 const factions = [
   {
     name: "alliance",
@@ -203,8 +218,35 @@ function blitClipped(destination, source, x, y, width = source.width, height = s
   }
 }
 
+// An ordinary CoolStrobeButton keys its first stored palette index over the
+// saved parent background (FUN_00602d30 -> FUN_005fd0f0). Keep those pixels
+// from the already-composed shell instead of treating the control bitmap as
+// an opaque rectangle. This checks the revealed background as well as every
+// opaque control pixel.
+function blitButtonClipped(destination, source, resourceId, x, y, width, height) {
+  const bytes = fs.readFileSync(path.join(source, `${resourceId}.bmp`));
+  const image = decodeIndexedBmp(bytes);
+  const mask = decodeIndexedHitMask(bytes);
+  const rows = Math.min(height, image.height, destination.height - y);
+  const columns = Math.min(width, image.width, destination.width - x);
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      if (!mask.opaque[row * mask.width + column]) continue;
+      const from = (row * image.width + column) * 4;
+      const to = ((y + row) * destination.width + x + column) * 4;
+      destination.data.set(image.data.subarray(from, from + 4), to);
+    }
+  }
+}
+
 function sourceIdentity(source) {
-  const resourceIds = new Set([10338]);
+  const resourceIds = new Set([
+    10338,
+    indexScrollArt.track,
+    indexScrollArt.up,
+    indexScrollArt.down,
+    ...indexScrollArt.thumb,
+  ]);
   for (const faction of factions) {
     resourceIds.add(faction.base);
     resourceIds.add(faction.rail);
@@ -224,7 +266,37 @@ function sourceIdentity(source) {
   return { dll: "STRATEGY.DLL", resource_count: sortedIds.length, resource_ids: sortedIds, aggregate_sha256: aggregate.digest("hex") };
 }
 
-function composeExpected(source, faction, selectedCategory = 0x6f, heldCommand = null) {
+function blitIndexScrollBar(destination, source, totalRows, firstRow) {
+  const x = 374;
+  const top = 137;
+  const trackTop = top + 9;
+  const trackBottom = top + 160 - 9;
+  const trackHeight = trackBottom - trackTop;
+  for (let y = trackTop; y < trackBottom; y += 13) {
+    blitClipped(destination, resource(source, indexScrollArt.track), x, y, 13, Math.min(13, trackBottom - y));
+  }
+
+  const visibleRows = 8;
+  const maxFirst = Math.max(totalRows - visibleRows, 0);
+  let thumbHeight = Math.floor(Math.min(visibleRows, totalRows) * trackHeight / Math.max(totalRows, 1));
+  if (thumbHeight < 13) thumbHeight = 12;
+  const thumbTop = Math.min(
+    trackBottom - thumbHeight,
+    trackTop + Math.floor((trackHeight - thumbHeight) * Math.min(firstRow, maxFirst) / Math.max(maxFirst, 1)),
+  );
+  const thumbBottom = thumbTop + thumbHeight;
+  const [capTop, middle, capBottom] = indexScrollArt.thumb;
+  blitClipped(destination, resource(source, capTop), x, thumbTop, 13, 6);
+  const middleEnd = thumbBottom - 6;
+  for (let y = thumbTop + 6; y < middleEnd; y += 12) {
+    blitClipped(destination, resource(source, middle), x, y, 13, Math.min(12, middleEnd - y));
+  }
+  blitClipped(destination, resource(source, capBottom), x, middleEnd, 13, 6);
+  blitClipped(destination, resource(source, indexScrollArt.up), x, top, 13, 9);
+  blitClipped(destination, resource(source, indexScrollArt.down), x, trackBottom, 13, 9);
+}
+
+function composeExpected(source, faction, selectedCategory = 0x6f, heldCommand = null, firstRow = 0) {
   const base = resource(source, faction.base);
   const expected = new PNG({ width: dimensions.width, height: dimensions.height });
   blitClipped(expected, base, 0, 0, dimensions.width, dimensions.height);
@@ -233,13 +305,14 @@ function composeExpected(source, faction, selectedCategory = 0x6f, heldCommand =
   for (const control of categoryControls) {
     const [normal, pressed] = resourcesFor(control, faction);
     const resourceId = control.command === selectedCategory || control.command === heldCommand ? pressed : normal;
-    blitClipped(expected, resource(source, resourceId), control.x, control.y, control.width, control.height);
+    blitButtonClipped(expected, source, resourceId, control.x, control.y, control.width, control.height);
   }
   for (const control of faction.railControls) {
     const [normal, pressed] = control.resources;
     const resourceId = control.selected || control.command === heldCommand ? pressed : normal;
-    blitClipped(expected, resource(source, resourceId), control.x, control.y, control.width, control.height);
+    blitButtonClipped(expected, source, resourceId, control.x, control.y, control.width, control.height);
   }
+  if (catalogMode) blitIndexScrollBar(expected, source, categoryCounts.get(selectedCategory), firstRow);
   return expected;
 }
 
@@ -373,9 +446,10 @@ async function inspectFaction(server, source, faction, executable) {
       { label: "category-label", x: 40, y: 119, width: 330, height: 18 },
       { label: "list", x: 36, y: 137, width: 338, height: 160 },
     ] : [];
+    let firstRow = 0;
     const compareState = async (label, category, heldCommand = null) => compare(
       await stableShellScreenshot(page, directory, label),
-      composeExpected(source, faction, category, heldCommand),
+      composeExpected(source, faction, category, heldCommand, firstRow),
       label,
       directory,
       ignoredRects,
@@ -391,6 +465,7 @@ async function inspectFaction(server, source, faction, executable) {
     if (catalogMode) {
       const beforeScroll = fs.readFileSync(path.join(directory, "selected-75-actual.png"));
       await page.mouse.click(origin.x + 380, origin.y + 290);
+      firstRow = 1;
       comparisons.push(await compareState("list-scroll-down", selectedCategory));
       const afterScroll = fs.readFileSync(path.join(directory, "list-scroll-down-actual.png"));
       assert.notEqual(sha256(beforeScroll), sha256(afterScroll), "the native list down control did not scroll the catalog");
@@ -473,7 +548,13 @@ async function inspectFaction(server, source, faction, executable) {
       await page.mouse.move(probeInside.x, probeInside.y);
       await page.mouse.down();
       await page.mouse.move(probeOutside.x, probeOutside.y);
-      comparisons.push(await compareState("press-origin-inside-drag-outside", selectedCategory));
+      // FUN_006028c0 retains capture and the held bitmap after an admitted
+      // press moves outside; only the eventual outside release cancels it.
+      comparisons.push(await compareState(
+        "press-origin-inside-drag-outside",
+        selectedCategory,
+        probeControl.command,
+      ));
       await page.mouse.up();
     }
 

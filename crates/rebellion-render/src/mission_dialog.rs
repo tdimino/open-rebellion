@@ -13,17 +13,22 @@ use rebellion_core::ids::SystemKey;
 use rebellion_core::missions::{MissionFaction, MissionKind, MissionMember, MissionTarget};
 use rebellion_core::research::TechType;
 use rebellion_core::world::GameWorld;
-use rebellion_windowing::{
-    ContentReport, ContentStatus, ExistingEffect, RoutingSnapshot, SubjectId, WindowId, WindowKind,
-    WindowOwner, WindowSpec, WindowTransition,
-};
+use rebellion_windowing::{ControlId, ExistingEffect, WindowId, WindowKind, WindowTransition};
 
 use crate::bmp_cache::{BmpCache, DllSource};
 use crate::cockpit::CockpitLayout;
-use crate::sector_window::planet_resource_id;
-use crate::system_window::{
-    character_mini_resource_id, exact_clicked, logical_rect, rect_contains, special_force_mini,
+use crate::controls::LIST_BAR_29FC;
+use crate::controls::{
+    DragList, DragListEvent, DragListLayout, DragListSpec, DragListState, DragPolicy, ScreenBounds,
+    SelectionBox, SelectionBoxEvent, SelectionBoxSpec, SelectionBoxState, SelectionPolicy,
+    StrobeButton, TabControl, TabControlState, TabSpec, WheelPolicy,
 };
+use crate::sector_window::planet_resource_id;
+use crate::singleton_window_common::{
+    self, impl_singleton_content_reports, impl_singleton_window_routing, PreparedContextualWindow,
+    PreparedWindowConfirm,
+};
+use crate::system_window::{character_mini_resource_id, special_force_mini};
 
 pub const MISSION_DIALOG_WIDTH: f32 = 259.0;
 pub const MISSION_DIALOG_HEIGHT: f32 = 355.0;
@@ -53,10 +58,33 @@ const TARGET: &str = "Target";
 
 // Geometry (FUN_0046a9c0), in dialog pixels.
 const KIND_BOX: (f32, f32, f32, f32) = (35.0, 62.0, 200.0, 113.0);
+/// The mission-kind box (`FUN_0046a9c0` -> `FUN_0060bed0(.., 0x23, 0x3e,
+/// 200, 0x71, 1, ..)`): one row the box's height (`+0xa4`). port: its
+/// popup's scroll bar, art (7, `0x299a`) at `+0xbc`/`+0xbe`, is not drawn
+/// until that art is settled; the list's wheel scrolls its row.
+const KIND_SELECTION: SelectionBoxSpec = SelectionBoxSpec {
+    rect: KIND_BOX,
+    rows: 1,
+    row_height: KIND_BOX.3,
+    bar: None,
+};
 const AGENTS_LIST: (f32, f32) = (8.0, 93.0);
 const DECOYS_LIST: (f32, f32) = (136.0, 93.0);
 const LIST_SIZE: (f32, f32) = (108.0, 213.0);
 const ITEM_SIZE: (f32, f32) = (107.0, 59.0);
+const fn member_list_spec(origin: (f32, f32)) -> DragListSpec {
+    DragListSpec {
+        rect: (origin.0, origin.1, LIST_SIZE.0, LIST_SIZE.1),
+        item: ITEM_SIZE,
+        layout: DragListLayout::Stacked,
+        selection: SelectionPolicy::Multiple,
+        drag: DragPolicy::Disabled,
+        wheel: WheelPolicy::Rows,
+        bar: Some(LIST_BAR_29FC),
+    }
+}
+const AGENTS_DRAG_LIST: DragListSpec = member_list_spec(AGENTS_LIST);
+const DECOYS_DRAG_LIST: DragListSpec = member_list_spec(DECOYS_LIST);
 /// The target art is centered in a 165 by 79 box at (51, 211).
 const TARGET_BOX: (f32, f32, f32, f32) = (51.0, 211.0, 165.0, 79.0);
 /// The target's name, centered in a 185-wide box at (37, 294).
@@ -79,6 +107,15 @@ pub enum MissionDialogPage {
     Agents,
 }
 
+impl MissionDialogPage {
+    const fn control_id(self) -> ControlId {
+        ControlId(match self {
+            Self::Mission => 0x97,
+            Self::Agents => 0x98,
+        })
+    }
+}
+
 /// One open dialog: the order it edits and its controls' state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MissionDialog {
@@ -92,13 +129,12 @@ pub struct MissionDialog {
     kinds: Vec<MissionKind>,
     kind: usize,
     page: MissionDialogPage,
-    /// The mission-kind drop-down is open (`CoolSelectionBoxClass +0xe8`).
-    list_open: bool,
+    /// The mission-kind box and its popup, over the kinds' row indices.
+    kind_list: SelectionBoxState<usize>,
     agents: Vec<MissionMember>,
     decoys: Vec<MissionMember>,
-    selected: Vec<MissionMember>,
-    agents_row: usize,
-    decoys_row: usize,
+    agents_list: DragListState<MissionMember>,
+    decoys_list: DragListState<MissionMember>,
 }
 
 impl MissionDialog {
@@ -125,14 +161,25 @@ impl MissionDialog {
     /// Whether the mission-kind drop-down is open.
     #[must_use]
     pub fn list_open(&self) -> bool {
-        self.list_open
+        self.kind_list.is_open()
+    }
+
+    /// The mission kinds the box lists.
+    #[must_use]
+    pub fn kind_count(&self) -> usize {
+        self.kinds.len()
     }
 
     /// Show a page (`FUN_0046c8a0`); the drop-down belongs to the first page
     /// and closes.
     pub fn show_page(&mut self, page: MissionDialogPage) {
         self.page = page;
-        self.list_open = false;
+        self.kind_list.close();
+    }
+
+    /// The kinds' row indices, the box's items.
+    fn kind_rows(&self) -> Vec<usize> {
+        (0..self.kinds.len()).collect()
     }
 
     /// Choose a listed kind (`FUN_0060c970`); an index past the list is
@@ -145,17 +192,32 @@ impl MissionDialog {
 
     /// Flip a member's selection in whichever list holds it.
     pub fn toggle(&mut self, member: MissionMember) {
-        if let Some(index) = self.selected.iter().position(|&m| m == member) {
-            self.selected.remove(index);
-        } else if self.agents.contains(&member) || self.decoys.contains(&member) {
-            self.selected.push(member);
+        let list = if self.agents.contains(&member) {
+            Some(&mut self.agents_list)
+        } else if self.decoys.contains(&member) {
+            Some(&mut self.decoys_list)
+        } else {
+            None
+        };
+        let Some(list) = list else { return };
+        let mut selected = list.selected().to_vec();
+        if let Some(index) = selected.iter().position(|selected| *selected == member) {
+            selected.remove(index);
+        } else {
+            selected.push(member);
         }
+        list.set_selection(selected);
     }
 
     /// Cases `0xca` (to the decoys) and `0xcb` (to the agents) of
     /// `FUN_0046c3c0`: the selected members of the source list join the end
     /// of the other list in their order, and every selection clears.
     pub fn move_selected(&mut self, to_decoys: bool) {
+        let selected = if to_decoys {
+            self.agents_list.selection(&self.agents)
+        } else {
+            self.decoys_list.selection(&self.decoys)
+        };
         let (from, to) = if to_decoys {
             (&mut self.agents, &mut self.decoys)
         } else {
@@ -164,13 +226,12 @@ impl MissionDialog {
         let moved: Vec<MissionMember> = from
             .iter()
             .copied()
-            .filter(|member| self.selected.contains(member))
+            .filter(|member| selected.contains(member))
             .collect();
         from.retain(|member| !moved.contains(member));
         to.extend(moved);
-        self.selected.clear();
-        self.agents_row = self.agents_row.min(self.agents.len().saturating_sub(1));
-        self.decoys_row = self.decoys_row.min(self.decoys.len().saturating_sub(1));
+        self.agents_list = DragListState::default();
+        self.decoys_list = DragListState::default();
     }
 }
 
@@ -183,42 +244,11 @@ pub struct MissionDialogState {
 /// Validated Mission content kept inert until the manager accepts its fresh
 /// command-context identity. A valid logical open replaces the exact prior
 /// dialog atomically; invalid preparation leaves published content untouched.
-#[derive(Debug, Clone)]
-pub struct PreparedMissionDialog {
-    dialog: MissionDialog,
-    replacing: Option<WindowId>,
-}
-
-impl PreparedMissionDialog {
-    #[must_use]
-    pub fn spec(&self, subject: SubjectId) -> WindowSpec {
-        crate::windowing_policy::contextual_spec(
-            WindowKind::MissionDialog,
-            subject,
-            WindowOwner::StrategicRoot,
-        )
-    }
-
-    #[must_use]
-    pub const fn replacing(&self) -> Option<WindowId> {
-        self.replacing
-    }
-}
+pub type PreparedMissionDialog = PreparedContextualWindow<MissionDialog>;
 
 /// Exact Mission confirmation candidate paired with one manager close. It is
 /// gameplay-free and can be released only by the matching teardown receipt.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PreparedMissionDialogConfirm {
-    window: WindowId,
-    action: MissionDialogAction,
-}
-
-impl PreparedMissionDialogConfirm {
-    #[must_use]
-    pub const fn window_id(&self) -> WindowId {
-        self.window
-    }
-}
+pub type PreparedMissionDialogConfirm = PreparedWindowConfirm<MissionDialogAction>;
 
 impl MissionDialogState {
     /// Prepares publication of an existing legacy dialog that has no manager
@@ -226,10 +256,14 @@ impl MissionDialogState {
     #[must_use]
     pub fn prepare_adoption(&self) -> Option<PreparedMissionDialog> {
         let dialog = self.dialog.as_ref()?.clone();
-        dialog.window_id.is_none().then_some(PreparedMissionDialog {
-            dialog,
-            replacing: None,
-        })
+        dialog
+            .window_id
+            .is_none()
+            .then_some(PreparedMissionDialog::new(
+                dialog,
+                None,
+                WindowKind::MissionDialog,
+            ))
     }
 
     /// Prepares a fresh logical Mission context without changing the currently
@@ -247,24 +281,24 @@ impl MissionDialogState {
         if kinds.is_empty() || team.is_empty() {
             return None;
         }
-        Some(PreparedMissionDialog {
-            dialog: MissionDialog {
+        Some(PreparedMissionDialog::new(
+            MissionDialog {
                 window_id: None,
                 faction,
                 target,
                 kinds,
                 kind: 0,
                 page: MissionDialogPage::Mission,
-                list_open: false,
+                kind_list: SelectionBoxState::default(),
                 agents: team,
                 decoys: Vec::new(),
-                selected: Vec::new(),
-                agents_row: 0,
-                decoys_row: 0,
+                agents_list: DragListState::default(),
+                decoys_list: DragListState::default(),
                 object,
             },
-            replacing: self.window_id(),
-        })
+            self.window_id(),
+            WindowKind::MissionDialog,
+        ))
     }
 
     /// Publishes prepared content only for the exact open/replacement receipt.
@@ -276,21 +310,21 @@ impl MissionDialogState {
     ) -> Option<WindowId> {
         match *transition {
             WindowTransition::Opened { id }
-                if prepared.replacing.is_none()
+                if prepared.replacing().is_none()
                     && (self.dialog.is_none()
                         || self.dialog.as_ref().is_some_and(|dialog| {
-                            dialog.window_id.is_none() && dialog == &prepared.dialog
+                            dialog.window_id.is_none() && dialog == &prepared.content
                         })) =>
             {
-                prepared.dialog.window_id = Some(id);
-                self.dialog = Some(prepared.dialog);
+                prepared.content.window_id = Some(id);
+                self.dialog = Some(prepared.content);
                 Some(id)
             }
             WindowTransition::Replaced { old, new }
-                if self.window_id() == Some(old) && prepared.replacing == Some(old) =>
+                if self.window_id() == Some(old) && prepared.replacing() == Some(old) =>
             {
-                prepared.dialog.window_id = Some(new);
-                self.dialog = Some(prepared.dialog);
+                prepared.content.window_id = Some(new);
+                self.dialog = Some(prepared.content);
                 Some(new)
             }
             WindowTransition::Existing {
@@ -305,68 +339,6 @@ impl MissionDialogState {
     #[must_use]
     pub fn window_id(&self) -> Option<WindowId> {
         self.dialog.as_ref().and_then(|dialog| dialog.window_id)
-    }
-
-    /// Egui layer attached to the exact manager-issued Mission Dialog.
-    #[must_use]
-    pub fn managed_layer_id(&self, id: WindowId) -> Option<egui::LayerId> {
-        (self.window_id() == Some(id)).then(|| {
-            egui::LayerId::new(
-                egui::Order::Tooltip,
-                egui::Id::new("original-mission-dialog"),
-            )
-        })
-    }
-
-    /// Manager-owned Mission hit for event-local pointer routing.
-    #[must_use]
-    pub fn hit_window(
-        &self,
-        frame: &RoutingSnapshot,
-        layout: CockpitLayout,
-        point: (f32, f32),
-    ) -> Option<WindowId> {
-        let id = self.window_id()?;
-        (frame
-            .key(id)
-            .is_some_and(|key| key.kind == WindowKind::MissionDialog)
-            && frame.allows_input(id)
-            && rect_contains(dialog_rect(layout), egui::pos2(point.0, point.1)))
-        .then_some(id)
-    }
-
-    /// Exact manager identity holding this frame's keyboard lease.
-    #[must_use]
-    pub fn keyboard_owner(&self, frame: &RoutingSnapshot) -> Option<WindowId> {
-        let id = self.window_id()?;
-        matches!(
-            frame.keyboard_route().target,
-            rebellion_windowing::RouteTarget::Window(target) if target.window == id
-        )
-        .then_some(id)
-    }
-
-    /// Explicit content state for fail-closed manager reconciliation.
-    #[must_use]
-    pub fn content_reports(&self, frame: &RoutingSnapshot) -> Vec<ContentReport> {
-        frame
-            .paint_order()
-            .iter()
-            .copied()
-            .filter(|id| {
-                frame
-                    .key(*id)
-                    .is_some_and(|key| key.kind == WindowKind::MissionDialog)
-            })
-            .map(|id| ContentReport {
-                window: id,
-                status: if self.window_id() == Some(id) {
-                    ContentStatus::Ready
-                } else {
-                    ContentStatus::Unpaintable
-                },
-            })
-            .collect()
     }
 
     #[must_use]
@@ -385,10 +357,10 @@ impl MissionDialogState {
     #[must_use]
     pub fn prepare_confirm(&self) -> Option<PreparedMissionDialogConfirm> {
         let dialog = self.dialog.as_ref()?;
-        Some(PreparedMissionDialogConfirm {
-            window: dialog.window_id?,
-            action: dialog.begin_action(),
-        })
+        Some(PreparedMissionDialogConfirm::new(
+            dialog.window_id?,
+            dialog.begin_action(),
+        ))
     }
 
     /// Consumes one confirmation only after the exact manager close and while
@@ -398,15 +370,16 @@ impl MissionDialogState {
         prepared: PreparedMissionDialogConfirm,
         removed: &[WindowId],
     ) -> Option<MissionDialogAction> {
-        if !removed.contains(&prepared.window) {
+        let (window, action) = prepared.into_parts();
+        if !removed.contains(&window) {
             return None;
         }
         let dialog = self.dialog.as_ref()?;
-        if dialog.window_id != Some(prepared.window) || dialog.begin_action() != prepared.action {
+        if dialog.window_id != Some(window) || dialog.begin_action() != action {
             return None;
         }
         self.dialog = None;
-        Some(prepared.action)
+        Some(action)
     }
 
     /// Open the dialog for an order's team and target (a system, or an object
@@ -433,41 +406,13 @@ impl MissionDialogState {
             kinds,
             kind: 0,
             page: MissionDialogPage::Mission,
-            list_open: false,
+            kind_list: SelectionBoxState::default(),
             agents: team,
             decoys: Vec::new(),
-            selected: Vec::new(),
-            agents_row: 0,
-            decoys_row: 0,
+            agents_list: DragListState::default(),
+            decoys_list: DragListState::default(),
         });
         true
-    }
-
-    #[must_use]
-    pub fn is_open(&self) -> bool {
-        self.dialog.is_some()
-    }
-
-    #[must_use]
-    pub fn dialog(&self) -> Option<&MissionDialog> {
-        self.dialog.as_ref()
-    }
-
-    pub fn dialog_mut(&mut self) -> Option<&mut MissionDialog> {
-        self.dialog.as_mut()
-    }
-
-    pub fn close(&mut self) {
-        if self.window_id().is_none() {
-            self.dialog = None;
-        }
-    }
-
-    /// Legacy hit testing for the ID-less compatibility path. Managed Mission
-    /// dialogs derive modal blocking from the frame routing snapshot instead.
-    #[must_use]
-    pub fn contains_screen_point(&self, layout: CockpitLayout, point: (f32, f32)) -> bool {
-        self.dialog.is_some() && rect_contains(dialog_rect(layout), egui::pos2(point.0, point.1))
     }
 
     /// "Begin Mission" (`0x66`): the order's mission becomes the selected
@@ -481,6 +426,20 @@ impl MissionDialogState {
         Some(dialog.begin_action())
     }
 }
+
+crate::singleton_window_common::impl_singleton_dialog_state!(
+    MissionDialogState,
+    MissionDialog,
+    dialog_rect
+);
+
+impl_singleton_window_routing!(
+    MissionDialogState,
+    WindowKind::MissionDialog,
+    "original-mission-dialog",
+    dialog_rect
+);
+impl_singleton_content_reports!(MissionDialogState, WindowKind::MissionDialog);
 
 impl MissionDialog {
     fn begin_action(&self) -> MissionDialogAction {
@@ -556,7 +515,10 @@ pub fn kind_icon(kind: MissionKind, faction: MissionFaction) -> u32 {
 /// A member's list image and name: the GOKRES mini `FUN_0042c3b0(.., 0, 1)`
 /// draws first. port: its status overlays (STRATEGY 11500..11502, 11570,
 /// 11572, GOKRES `+0x7000`) are not drawn.
-fn member_item(world: &GameWorld, member: MissionMember) -> Option<(Option<u32>, String)> {
+pub(crate) fn member_item(
+    world: &GameWorld,
+    member: MissionMember,
+) -> Option<(Option<u32>, String)> {
     match member {
         MissionMember::Character(key) => {
             let character = world.characters.get(key)?;
@@ -583,18 +545,6 @@ fn centered(bounds: egui::Rect, size: egui::Vec2, scale: f32) -> egui::Rect {
         ),
         size * scale,
     )
-}
-
-/// One wheel step through `len` items from `row`: down (a negative delta)
-/// goes one on, up goes one back, and neither leaves the list.
-pub(crate) fn scrolled(row: usize, len: usize, wheel: f32) -> usize {
-    if wheel < 0.0 && row + 1 < len {
-        row + 1
-    } else if wheel > 0.0 {
-        row.saturating_sub(1)
-    } else {
-        row
-    }
 }
 
 /// Paint a bitmap at its own size scaled with the dialog, centered in `bounds`.
@@ -627,7 +577,7 @@ fn native(rect: egui::Rect, size: egui::Vec2, scale: f32) -> egui::Rect {
     egui::Rect::from_min_size(rect.min, size * scale)
 }
 
-pub(crate) fn paint(
+fn paint_resource(
     painter: &egui::Painter,
     ctx: &egui::Context,
     cache: &mut BmpCache,
@@ -636,9 +586,7 @@ pub(crate) fn paint(
     scale: f32,
 ) {
     #[cfg(test)]
-    crate::fleet_window::tests::PAINTED.with(|painted| {
-        painted.borrow_mut().push((resource_id, rect.min));
-    });
+    crate::test_support::record_painted(resource_id, rect.min);
     if let Some(texture) = cache.get(ctx, DllSource::Strategy, resource_id) {
         painter
             .with_clip_rect(painter.clip_rect().intersect(rect))
@@ -651,10 +599,7 @@ pub(crate) fn paint(
     }
 }
 
-/// A CoolStrobeButton's bitmap (`FUN_00602150`), keyed on its first stored
-/// pixel as `FUN_00602d30` blits it over the window behind
-/// ([`BmpCache::get_button`]), at native size clipped to the control.
-pub(crate) fn paint_button(
+pub(crate) fn paint(
     painter: &egui::Painter,
     ctx: &egui::Context,
     cache: &mut BmpCache,
@@ -662,50 +607,7 @@ pub(crate) fn paint_button(
     rect: egui::Rect,
     scale: f32,
 ) {
-    #[cfg(test)]
-    crate::fleet_window::tests::PAINTED.with(|painted| {
-        painted.borrow_mut().push((resource_id, rect.min));
-    });
-    if let Some(texture) = cache.get_button(ctx, DllSource::Strategy, resource_id) {
-        painter
-            .with_clip_rect(painter.clip_rect().intersect(rect))
-            .image(
-                texture.id(),
-                native(rect, texture.size_vec2(), scale),
-                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
-    }
-}
-
-/// A two-state bitmap button (`FUN_00602150`): the second bitmap shows while
-/// it is held or, for a tab, while it is the current page.
-pub(crate) fn button(
-    ui: &egui::Ui,
-    cache: &mut BmpCache,
-    rect: egui::Rect,
-    id: impl std::hash::Hash,
-    (normal, pressed): (u32, u32),
-    down: bool,
-    scale: f32,
-) -> bool {
-    let response = ui.interact(rect, ui.id().with(id), egui::Sense::click());
-    let (pointer, primary_down) = ui.ctx().input(|input| {
-        (
-            input.pointer.interact_pos(),
-            input.pointer.button_down(egui::PointerButton::Primary),
-        )
-    });
-    let held = primary_down && pointer.is_some_and(|point| rect_contains(rect, point));
-    paint_button(
-        ui.painter(),
-        ui.ctx(),
-        cache,
-        if down || held { pressed } else { normal },
-        rect,
-        scale,
-    );
-    exact_clicked(&response, rect)
+    paint_resource(painter, ctx, cache, resource_id, rect, scale);
 }
 
 /// The dialog's screen rectangle.
@@ -726,7 +628,7 @@ pub(crate) fn galaxy_centered_rect(layout: CockpitLayout, width: f32, height: f3
 }
 
 /// Draw the open dialog, if any, and report what the player asked for.
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "The dialog paints in the original's control order; splitting it hides that order."
 )]
@@ -742,19 +644,22 @@ pub fn draw_mission_dialog(
     let scale = layout.scale;
     let side = usize::from(dialog.faction == MissionFaction::Empire);
     let window = dialog_rect(layout);
+    let bounds = ScreenBounds::canvas(layout, window);
     let mut action = None;
     let mut close = false;
     let mut begin = false;
 
     // Above the modeless windows, which share Foreground and raise the
     // focused one each frame (`system_window.rs`).
-    egui::Area::new(egui::Id::new("original-mission-dialog"))
-        .fixed_pos(window.min)
-        .order(egui::Order::Tooltip)
-        .show(ctx, |ui| {
-            let (frame, _) = ui.allocate_exact_size(window.size(), egui::Sense::hover());
-            let painter = ui.painter().with_clip_rect(frame);
-            let at = |x: f32, y: f32, w: f32, h: f32| logical_rect(frame, scale, x, y, w, h);
+    singleton_window_common::show_popup_canvas(
+        ctx,
+        egui::Id::new("original-mission-dialog"),
+        window,
+        scale,
+        |ui, canvas| {
+            let frame = canvas.frame;
+            let painter = canvas.painter.clone();
+            let at = |x: f32, y: f32, w: f32, h: f32| canvas.rect(x, y, w, h);
             let name = |control: &str, rect: egui::Rect| {
                 crate::control_registry::register_screen("MissionDialog", control, rect);
             };
@@ -800,21 +705,26 @@ pub fn draw_mission_dialog(
             );
 
             name("Close", at(242.0, 3.0, 14.0, 14.0));
-            if button(
+            if StrobeButton::show_pair(
                 ui,
                 cache,
                 at(242.0, 3.0, 14.0, 14.0),
                 "close",
+                DllSource::Strategy,
                 CLOSE,
                 false,
+                false,
                 scale,
-            ) {
+            )
+            .clicked()
+            {
                 close = true;
             }
-            for (page, x, art) in [
+            let tab_specs = [
                 (MissionDialogPage::Mission, 0.0, MISSION_TAB[side]),
                 (MissionDialogPage::Agents, 130.0, AGENTS_TAB[side]),
-            ] {
+            ]
+            .map(|(page, x, art)| {
                 let rect = at(7.0 + x, 20.0, 116.0, 33.0);
                 name(
                     match page {
@@ -823,17 +733,28 @@ pub fn draw_mission_dialog(
                     },
                     rect,
                 );
-                if button(
-                    ui,
-                    cache,
+                TabSpec::two_state(
+                    page,
+                    page.control_id(),
                     rect,
-                    ("tab", x as i32),
-                    art,
-                    dialog.page == page,
-                    scale,
-                ) {
-                    dialog.show_page(page);
-                }
+                    DllSource::Strategy,
+                    art.0,
+                    art.1,
+                )
+                .with_tooltip(match page {
+                    MissionDialogPage::Mission => "Mission",
+                    MissionDialogPage::Agents => "Agents and Decoys",
+                })
+            });
+            if let Some(page) = TabControl::paint_and_select(
+                &tab_specs,
+                TabControlState::new(dialog.page, dialog.page.control_id()),
+                ui,
+                cache,
+                "mission-dialog-tabs",
+                scale,
+            ) {
+                dialog.show_page(page);
             }
 
             match dialog.page {
@@ -884,16 +805,24 @@ pub fn draw_mission_dialog(
                         );
                     }
                     name("KindDropdown", at(101.0, 174.0, 65.0, 18.0));
-                    if button(
+                    if StrobeButton::show_pair(
                         ui,
                         cache,
                         at(101.0, 174.0, 65.0, 18.0),
                         "missions",
+                        DllSource::Strategy,
                         MISSIONS,
                         false,
+                        false,
                         scale,
-                    ) {
-                        dialog.list_open = !dialog.list_open;
+                    )
+                    .clicked()
+                    {
+                        // Control 0x68 posts the box's command 0x3ea.
+                        let rows = dialog.kind_rows();
+                        dialog
+                            .kind_list
+                            .toggle(KIND_SELECTION, bounds, &rows, Some(dialog.kind));
                     }
                 }
                 MissionDialogPage::Agents => {
@@ -917,56 +846,56 @@ pub fn draw_mission_dialog(
                         let (x, y) = if to_decoys { DECOYS_LIST } else { AGENTS_LIST };
                         let list = at(x, y, LIST_SIZE.0, LIST_SIZE.1);
                         name(if to_decoys { "DecoyList" } else { "AgentList" }, list);
-                        let (members, row) = if to_decoys {
-                            (dialog.decoys.clone(), &mut dialog.decoys_row)
+                        let (members, list_state, spec) = if to_decoys {
+                            (dialog.decoys.clone(), &dialog.decoys_list, DECOYS_DRAG_LIST)
                         } else {
-                            (dialog.agents.clone(), &mut dialog.agents_row)
+                            (dialog.agents.clone(), &dialog.agents_list, AGENTS_DRAG_LIST)
                         };
-                        let result = draw_list(
-                            ui,
-                            &painter,
-                            cache,
-                            world,
-                            &members,
-                            &dialog.selected,
-                            row,
-                            list,
-                            scale,
-                            to_decoys,
-                            &small,
+                        let (next, activated) = draw_list(
+                            ui, &painter, cache, world, &members, list_state, spec, frame, list,
+                            scale, to_decoys, &small,
                         );
-                        if let Some(member) = result.clicked {
-                            dialog.toggle(member);
+                        if to_decoys {
+                            dialog.decoys_list = next;
+                        } else {
+                            dialog.agents_list = next;
                         }
                         // A double click (notification 0x309) acts as the
                         // move out of its list (FUN_0046c3c0.c:80-86).
-                        if let Some(member) = result.double_clicked {
-                            dialog.selected.push(member);
+                        if activated {
                             dialog.move_selected(!to_decoys);
                         }
                     }
                     name("ToDecoys", at(120.0, 136.0, 16.0, 16.0));
                     name("ToAgents", at(120.0, 221.0, 16.0, 16.0));
-                    if button(
+                    if StrobeButton::show_pair(
                         ui,
                         cache,
                         at(120.0, 136.0, 16.0, 16.0),
                         "to-decoys",
+                        DllSource::Strategy,
                         TO_DECOYS,
                         false,
+                        false,
                         scale,
-                    ) {
+                    )
+                    .clicked()
+                    {
                         dialog.move_selected(true);
                     }
-                    if button(
+                    if StrobeButton::show_pair(
                         ui,
                         cache,
                         at(120.0, 221.0, 16.0, 16.0),
                         "to-agents",
+                        DllSource::Strategy,
                         TO_AGENTS,
                         false,
+                        false,
                         scale,
-                    ) {
+                    )
+                    .clicked()
+                    {
                         dialog.move_selected(false);
                     }
                 }
@@ -975,71 +904,89 @@ pub fn draw_mission_dialog(
             name("Cancel", at(170.0, 320.0, 64.0, 33.0));
             name("Confirm", at(102.0, 320.0, 64.0, 33.0));
             name("Encyclopedia", at(33.0, 320.0, 64.0, 33.0));
-            if button(
+            if StrobeButton::show_pair(
                 ui,
                 cache,
                 at(170.0, 320.0, 64.0, 33.0),
                 "cancel",
+                DllSource::Strategy,
                 CANCEL,
                 false,
+                false,
                 scale,
-            ) {
+            )
+            .clicked()
+            {
                 close = true;
             }
-            if button(
+            if StrobeButton::show_pair(
                 ui,
                 cache,
                 at(102.0, 320.0, 64.0, 33.0),
                 "begin",
+                DllSource::Strategy,
                 BEGIN,
                 false,
+                false,
                 scale,
-            ) {
+            )
+            .clicked()
+            {
                 begin = true;
             }
-            if button(
+            if StrobeButton::show_pair(
                 ui,
                 cache,
                 at(33.0, 320.0, 64.0, 33.0),
                 "encyclopedia",
+                DllSource::Strategy,
                 ENCYCLOPEDIA,
                 false,
+                false,
                 scale,
-            ) {
+            )
+            .clicked()
+            {
                 action = Some(MissionDialogAction::Encyclopedia);
             }
 
-            // The drop-down (FUN_0060cac0): a 200 by 117 window under the box
-            // holding a one-item list at (2, 2). port: its scroll bar
-            // (FUN_0060f640, base 0x299a) is not drawn; the wheel scrolls it.
-            if dialog.list_open && dialog.page == MissionDialogPage::Mission {
-                let (x, y, w, h) = KIND_BOX;
-                let popup = at(x, y + h, w, h + 4.0);
-                let item = at(x + 2.0, y + h + 2.0, w - 4.0, h);
+            // The mission-kind popup (FUN_0060cac0, FUN_0060d020), over every
+            // control the dialog drew: it takes the capture, so a press off it
+            // closes it and reaches nothing else.
+            let rows = dialog.kind_rows();
+            let shown = SelectionBox::show(
+                ui,
+                &painter,
+                "kind-list",
+                KIND_SELECTION,
+                bounds,
+                &rows,
+                &mut dialog.kind_list,
+                Some(dialog.kind),
+                frame,
+                scale,
+            );
+            if let Some(SelectionBoxEvent::Selected(row)) = shown.event {
+                dialog.select_kind(row);
+            }
+            if let Some(popup) = shown.popup {
                 name("KindList", popup);
-                painter.rect_filled(popup, 0.0, egui::Color32::BLACK);
-                let response = ui.interact(popup, ui.id().with("kind-list"), egui::Sense::click());
-                if response.hovered() {
-                    let wheel = ctx.input(|input| input.raw_scroll_delta.y);
-                    dialog.select_kind(scrolled(dialog.kind, dialog.kinds.len(), wheel));
-                }
+            }
+            for (row, cell) in shown.rows(&rows, frame, scale) {
                 paint_kind(
                     &painter,
                     ctx,
                     cache,
-                    dialog.kind(),
+                    dialog.kinds[row],
                     dialog.faction,
-                    item,
+                    cell,
                     scale,
                     &small,
                 );
-                // hyp: choosing an item closes the list, as a click outside
-                // does (command 0x3e9 -> FUN_0060cbf0).
-                if exact_clicked(&response, popup) {
-                    dialog.list_open = false;
-                }
             }
-        });
+            shown.paint_bar(&painter, ctx, cache, frame, scale);
+        },
+    );
 
     if begin {
         return if managed {
@@ -1059,7 +1006,7 @@ pub fn draw_mission_dialog(
 
 /// One mission kind item: the 130 by 65 GOKRES icon centered in the box, and
 /// its name. hyp: the name sits under the icon, centered.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit painter, cache and geometry inputs at this drawing boundary."
 )]
@@ -1092,50 +1039,40 @@ fn paint_kind(
     );
 }
 
-#[derive(Default)]
-struct ListResult {
-    clicked: Option<MissionMember>,
-    double_clicked: Option<MissionMember>,
-}
-
 /// An agents or decoys list (`CoolDragList`, `FUN_00607ea0`): 107 by 59
-/// items, each a centered mini with its name under it. port: its scroll bar
-/// (base 0x29fc) is not drawn; the wheel scrolls it by one item.
-#[expect(
+/// items, each a centered mini with its name under it. The shared control owns
+/// selection, activation, wheel bounds and the source 0x29fc scroll bar.
+#[allow(
     clippy::too_many_arguments,
     reason = "Keep explicit painter, cache and geometry inputs at this drawing boundary."
 )]
 fn draw_list(
-    ui: &egui::Ui,
+    ui: &mut egui::Ui,
     painter: &egui::Painter,
     cache: &mut BmpCache,
     world: &GameWorld,
     members: &[MissionMember],
-    selected: &[MissionMember],
-    row: &mut usize,
+    state: &DragListState<MissionMember>,
+    spec: DragListSpec,
+    window: egui::Rect,
     list: egui::Rect,
     scale: f32,
     decoys: bool,
     font: &egui::FontId,
-) -> ListResult {
-    let mut result = ListResult::default();
+) -> (DragListState<MissionMember>, bool) {
     let list_painter = painter.with_clip_rect(list);
-    // The items sit over the list, so the pointer's position, not the list's
-    // hover, decides where a wheel notch goes.
-    let over = ui
-        .ctx()
-        .pointer_hover_pos()
-        .is_some_and(|point| rect_contains(list, point));
-    if over {
-        let wheel = ui.ctx().input(|input| input.raw_scroll_delta.y);
-        *row = scrolled(*row, members.len(), wheel);
-    }
-    for (index, &member) in members.iter().enumerate().skip(*row) {
-        let offset = (index - *row) as f32 * ITEM_SIZE.1;
-        if offset >= LIST_SIZE.1 {
-            break;
-        }
-        let item = logical_rect(list, scale, 0.0, offset, ITEM_SIZE.0, ITEM_SIZE.1);
+    let control = DragList::show(
+        ui,
+        ("mission-members", decoys),
+        spec,
+        members,
+        state,
+        window,
+        scale,
+        None,
+    );
+    for (index, item) in control.screen_cells(window, scale) {
+        let member = members[index];
         let Some((mini, name)) = member_item(world, member) else {
             continue;
         };
@@ -1150,7 +1087,7 @@ fn draw_list(
                 scale,
             )
         });
-        let color = if selected.contains(&member) {
+        let color = if control.next.is_selected(member) {
             ITEM_TEXT_SELECTED
         } else {
             ITEM_TEXT
@@ -1173,26 +1110,23 @@ fn draw_list(
                 clip,
             );
         }
-        let response = ui.interact(
-            clip,
-            ui.id().with(("item", decoys, index)),
-            egui::Sense::click(),
-        );
-        if response.double_clicked() {
-            result.double_clicked = Some(member);
-        } else if exact_clicked(&response, clip) {
-            result.clicked = Some(member);
-        }
     }
-    result
+    control.paint_bar(&list_painter, ui.ctx(), cache, window, scale);
+    let activated = control.output.contains(DragListEvent::Activated);
+    (control.next, activated)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controls::DragListInput;
+    use crate::test_support::{
+        offset_strategic_layout, pointer_button as press, pointer_raw_input, raw_input,
+    };
     use rebellion_core::world::Character;
     use rebellion_windowing::{
-        SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner, WindowTransition,
+        ContentReport, ContentStatus, SubjectId, WindowCommand, WindowKind, WindowManager,
+        WindowOwner, WindowTransition,
     };
 
     fn members(n: usize) -> Vec<MissionMember> {
@@ -1227,6 +1161,13 @@ mod tests {
                 vec![MissionKind::Diplomacy, MissionKind::Espionage],
             )
             .expect("valid Mission context");
+        commit_prepared_open(state, prepared)
+    }
+
+    fn commit_prepared_open(
+        state: &mut MissionDialogState,
+        prepared: PreparedMissionDialog,
+    ) -> (WindowManager, rebellion_windowing::WindowId) {
         let mut manager = WindowManager::new();
         let committed = manager
             .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
@@ -1247,7 +1188,7 @@ mod tests {
         // Mission dialog; FUN_00521030 later reads the same order object.
         for faction in [MissionFaction::Alliance, MissionFaction::Empire] {
             let mut state = MissionDialogState::default();
-            let target = MissionTarget::Fleet(Default::default());
+            let target = MissionTarget::Fleet(rebellion_core::ids::FleetKey::default());
             let prepared = state
                 .prepare_open(
                     faction,
@@ -1317,19 +1258,12 @@ mod tests {
             )
             .unwrap();
         assert_eq!(replacement.replacing(), Some(id));
-        let stale_id = match manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::Encyclopedia,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap()
-            .transition
-        {
-            WindowTransition::Opened { id } => id,
-            transition => panic!("expected unrelated open, got {transition:?}"),
-        };
+        let stale_id = crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::Encyclopedia,
+            WindowOwner::StrategicRoot,
+            "unrelated window",
+        );
         assert_ne!(stale_id, id);
         assert!(manager.apply(WindowCommand::Close(stale_id)).is_ok());
         assert!(manager
@@ -1344,28 +1278,19 @@ mod tests {
         assert_eq!(state.dialog(), Some(&before));
         assert_eq!(state.window_id(), Some(id));
 
-        let committed = manager
-            .apply(WindowCommand::Replace {
-                old: id,
-                new: replacement.spec(SubjectId::new(
-                    crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
-                    3,
-                )),
-            })
-            .expect("fresh valid context replaces atomically");
-        let WindowTransition::Replaced { new, .. } = committed.transition else {
-            panic!("expected Mission replacement");
-        };
-        assert_eq!(
-            state.commit_open(replacement, &committed.transition),
-            Some(new)
+        let new = crate::test_support::commit_prepared_replacement!(
+            &mut manager,
+            &mut state,
+            id,
+            replacement,
+            "Mission"
         );
         assert_ne!(new, id);
         let dialog = state.dialog().unwrap();
         assert_eq!(dialog.faction, MissionFaction::Empire);
         assert_eq!(dialog.kind(), MissionKind::Espionage);
         assert_eq!(dialog.page(), MissionDialogPage::Mission);
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
     }
 
     #[test]
@@ -1384,22 +1309,8 @@ mod tests {
         let prepared = state
             .prepare_adoption()
             .expect("unmanaged content is adoptable");
-        let mut manager = WindowManager::new();
-        let committed = manager
-            .apply(WindowCommand::Open(prepared.spec(SubjectId::new(
-                crate::windowing_policy::SUBJECT_COMMAND_CONTEXT,
-                1,
-            ))))
-            .expect("manager accepts Mission dialog");
-        let WindowTransition::Opened { id } = committed.transition else {
-            panic!("expected new Mission identity");
-        };
+        let (_manager, id) = commit_prepared_open(&mut state, prepared);
 
-        assert_eq!(
-            state.commit_open(prepared, &committed.transition),
-            Some(id),
-            "an existing identity-less fixture dialog must adopt the exact manager receipt"
-        );
         let dialog = state.dialog().expect("adopted content remains open");
         assert_eq!(dialog.page(), MissionDialogPage::Agents);
         assert_eq!(dialog.agents(), team);
@@ -1456,17 +1367,12 @@ mod tests {
         let team = members(1);
         let mut empty = MissionDialogState::default();
         let mut manager = WindowManager::new();
-        let unrelated = manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::FleetFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
-        let WindowTransition::Opened { id: unrelated_id } = unrelated.transition else {
-            panic!("expected unrelated identity")
-        };
+        let unrelated_id = crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::FleetFinder,
+            WindowOwner::StrategicRoot,
+            "unrelated window",
+        );
         let opened = manager
             .apply(WindowCommand::Open(
                 empty
@@ -1617,14 +1523,12 @@ mod tests {
             }]
         );
 
-        manager
-            .apply(WindowCommand::Open(
-                crate::windowing_policy::singleton_spec(
-                    WindowKind::FleetFinder,
-                    WindowOwner::StrategicRoot,
-                ),
-            ))
-            .unwrap();
+        crate::test_support::open_singleton_window(
+            &mut manager,
+            WindowKind::FleetFinder,
+            WindowOwner::StrategicRoot,
+            "modal cover",
+        );
         let covered = manager.begin_frame();
         assert_eq!(
             state.hit_window(&covered, layout, (inside.x, inside.y)),
@@ -1666,7 +1570,7 @@ mod tests {
         let dialog = state.dialog().unwrap();
 
         assert_eq!(dialog.agents(), team.as_slice());
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
         assert_eq!(dialog.page(), MissionDialogPage::Mission);
         assert_eq!(dialog.kind(), MissionKind::Diplomacy);
     }
@@ -1702,7 +1606,7 @@ mod tests {
         dialog.move_selected(true);
 
         assert_eq!(dialog.agents(), &[team[1], team[0]]);
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
     }
 
     #[test]
@@ -1715,7 +1619,7 @@ mod tests {
         dialog.move_selected(false);
 
         assert_eq!(dialog.agents(), team.as_slice());
-        assert!(dialog.decoys().is_empty());
+        assert_empty!(dialog.decoys());
     }
 
     #[test]
@@ -1785,31 +1689,7 @@ mod tests {
     }
 
     fn layout(scale: f32) -> CockpitLayout {
-        use crate::cockpit::CockpitViewport;
-        CockpitLayout {
-            canvas: CockpitViewport {
-                x: 10.0,
-                y: 20.0,
-                width: 640.0 * scale,
-                height: 480.0 * scale,
-            },
-            galaxy: CockpitViewport {
-                x: 10.0 + 55.0 * scale,
-                y: 20.0 + 40.0 * scale,
-                width: 485.0 * scale,
-                height: 350.0 * scale,
-            },
-            scale,
-        }
-    }
-
-    fn press(pos: egui::Pos2, pressed: bool) -> egui::Event {
-        egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: egui::Modifiers::default(),
-        }
+        offset_strategic_layout(scale)
     }
 
     /// Run one frame per entry of `frames` with the pointer at dialog pixel
@@ -1825,20 +1705,8 @@ mod tests {
         let ctx = egui::Context::default();
         let mut cache = BmpCache::new();
         let mut emitted = None;
-        for extra in [vec![], vec![]].into_iter().chain(frames) {
-            let mut events = vec![egui::Event::PointerMoved(pos)];
-            events.extend(extra.into_iter().map(|event| match event {
-                egui::Event::PointerButton { pressed, .. } => press(pos, pressed),
-                other => other,
-            }));
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                events,
-                ..Default::default()
-            };
+        for extra in crate::test_support::warmed_frames(Vec::new(), frames) {
+            let input = pointer_raw_input(pos, extra, egui::vec2(700.0, 520.0));
             let _ = ctx.run(input, |ctx| {
                 if let Some(action) = draw_mission_dialog(ctx, world, state, layout, &mut cache) {
                     emitted = Some(action);
@@ -1966,21 +1834,9 @@ mod tests {
         let mut cache = BmpCache::new();
         let window = egui::Id::new("raising_window");
         for _ in 0..3 {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(700.0, 520.0),
-                )),
-                ..Default::default()
-            };
+            let input = raw_input(vec![], egui::vec2(700.0, 520.0));
             let _ = ctx.run(input, |ctx| {
-                ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, window));
-                egui::Area::new(window)
-                    .order(egui::Order::Foreground)
-                    .fixed_pos(egui::Pos2::ZERO)
-                    .show(ctx, |ui| {
-                        ui.allocate_response(egui::vec2(700.0, 520.0), egui::Sense::click());
-                    });
+                crate::test_support::show_self_raising_area(ctx, window, egui::vec2(700.0, 520.0));
                 let _ = draw_mission_dialog(ctx, &world, &mut state, layout, &mut cache);
             });
         }
@@ -2015,33 +1871,84 @@ mod tests {
     }
 
     #[test]
-    fn the_missions_button_opens_the_kind_list_and_a_click_on_it_closes_it() {
-        // Control 0x68 at (101, 174) posts command 1000 to the box, which
-        // opens its drop-down under the box (FUN_0060c210, FUN_0060cac0).
+    fn the_missions_button_opens_the_kind_list_and_a_press_on_its_row_closes_it() {
+        // Control 0x68 at (101, 174) posts command 0x3ea to the box, which
+        // opens its drop-down under the box (FUN_0060c210, FUN_0060cac0):
+        // 117 pixels tall (113 * 1 + 4) from y = 175, its list 2 in
+        // (FUN_0060d020), 196 by 113 at (37, 177).
         let (world, _, mut state) = dialog_in_world(1);
 
         click(&world, &mut state, (133.0, 183.0));
         assert!(state.dialog().unwrap().list_open());
-        // The drop-down is 117 pixels tall (113 * 1 + 4) from y = 175.
-        click(&world, &mut state, (135.0, 290.0));
+        // The popup's bottom border, y 290 and 291, is its own client area
+        // and holds no row: the press reaches nothing.
+        click(&world, &mut state, (135.0, 291.0));
+        assert!(state.dialog().unwrap().list_open());
+        // A press on the row selects it and posts 0x29b (FUN_006083c0);
+        // FUN_0060c970 keeps the current kind and closes the popup.
+        click(&world, &mut state, (135.0, 289.0));
 
         assert!(!state.dialog().unwrap().list_open());
+        assert_eq!(state.dialog().unwrap().kind(), MissionKind::Diplomacy);
     }
 
     #[test]
-    fn the_open_kind_list_leaves_the_bottom_buttons_free() {
+    fn a_press_on_a_bottom_button_while_the_kind_list_is_open_only_closes_the_list() {
+        // FUN_0060d020 holds the capture: a press off the popup sends 0x3e9
+        // to the box, which closes it (FUN_0060c210 -> FUN_0060cbf0), and is
+        // forwarded to nothing, so Begin Mission under it does not begin.
         let (world, _, mut state) = dialog_in_world(1);
         click(&world, &mut state, (133.0, 183.0));
 
         let action = click(&world, &mut state, (134.0, 336.0));
+        assert!(action.is_none());
+        assert!(!state.dialog().unwrap().list_open());
 
+        let action = click(&world, &mut state, (134.0, 336.0));
         assert!(matches!(action, Some(MissionDialogAction::Begin { .. })));
     }
 
     #[test]
+    fn the_wheel_scrolls_the_kind_list_and_a_press_chooses_the_kind_shown() {
+        // The popup's list (FUN_00607ea0) scrolls its one row; the kind
+        // changes only when a press on the row commits it (FUN_0060c970).
+        let (world, _, mut state) = dialog_in_world(1);
+        click(&world, &mut state, (133.0, 183.0));
+        let notch = egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, -1.0),
+            modifiers: egui::Modifiers::default(),
+        };
+        let at = egui::Pos2::ZERO;
+        drive(
+            &world,
+            &mut state,
+            (135.0, 230.0),
+            vec![vec![notch], vec![press(at, true)], vec![press(at, false)]],
+        );
+
+        let dialog = state.dialog().unwrap();
+        assert!(!dialog.list_open());
+        assert_eq!(dialog.kind(), MissionKind::Espionage);
+    }
+
+    #[test]
+    fn a_wheel_notch_over_the_open_kind_list_leaves_the_kind_alone() {
+        let (world, _, mut state) = dialog_in_world(1);
+        click(&world, &mut state, (133.0, 183.0));
+
+        wheel_down(&world, &mut state, (135.0, 230.0));
+
+        let dialog = state.dialog().unwrap();
+        assert!(dialog.list_open());
+        assert_eq!(dialog.kind(), MissionKind::Diplomacy);
+    }
+
+    #[test]
     fn a_wheel_notch_scrolls_the_agents_list_by_one_item() {
-        // port: the lists' scroll bar (base 0x29fc) is not drawn.
-        let (world, team, mut state) = dialog_in_world(3);
+        // Four 59-pixel items overflow the 213-pixel aperture; the shared
+        // list and its 0x29fc bar therefore admit one bounded wheel step.
+        let (world, team, mut state) = dialog_in_world(4);
         click(&world, &mut state, (195.0, 36.0));
         wheel_down(&world, &mut state, (61.0, 150.0));
 
@@ -2065,12 +1972,26 @@ mod tests {
     }
 
     #[test]
-    fn a_wheel_step_moves_one_item_and_stays_in_the_list() {
-        assert_eq!(scrolled(0, 3, -1.0), 1);
-        assert_eq!(scrolled(2, 3, -1.0), 2);
-        assert_eq!(scrolled(2, 3, 1.0), 1);
-        assert_eq!(scrolled(0, 3, 1.0), 0);
-        assert_eq!(scrolled(1, 3, 0.0), 1);
+    fn a_member_list_wheel_notch_uses_the_shared_lists_visible_row_bound() {
+        let rows = [0, 1, 2, 3];
+        let mut list = DragListState::default();
+        let wheel = |delta| DragListInput {
+            pointer: Some((61.0, 150.0)),
+            wheel: delta,
+            ..DragListInput::default()
+        };
+
+        let down = list.update(AGENTS_DRAG_LIST, &rows, wheel(-1.0));
+        assert!(down.contains(DragListEvent::Scrolled));
+        assert_eq!(list.first_row(), 1);
+
+        let bounded = list.update(AGENTS_DRAG_LIST, &rows, wheel(-1.0));
+        assert!(!bounded.contains(DragListEvent::Scrolled));
+        assert_eq!(list.first_row(), 1);
+
+        let up = list.update(AGENTS_DRAG_LIST, &rows, wheel(1.0));
+        assert!(up.contains(DragListEvent::Scrolled));
+        assert_eq!(list.first_row(), 0);
     }
 
     #[test]

@@ -680,13 +680,17 @@ functions + 50 recovered, all of them the windowed control toolkit; none is
 networking.
 No side-branching logic in any function.
 
-- **CoolBitmap**: RLE8 blitting with palette remap. Mode-1 (standard) and
-  mode-2 (8-byte stub that draws nothing, `FUN_005fe8d0`).
+- **CoolBitmap**: RLE8 blitting with palette remap. Sprite draw mode 5 uses
+  `FUN_005fe640` and a 512-byte two-map composite: opaque source indices use
+  the first 256 bytes, while transparent-key pixels remap the existing
+  destination through the second 256. See `cool-control-contracts.md`.
 - **GAME_WINDOW_OBJECT**: base for all game windows. Associates object with
   HWND via window-long slot 0.
 - **CoolWindow base** (WndProc `FUN_00600310`): `CreateWindowExA` via
   `FUN_005ffce0`, message dispatch to virtual slot +0x14. Records move,
-  size, and focus changes. `SC_*` system-command filter policy.
+  size, and focus changes. Policy bits 1/2/4/8 respectively suppress
+  `SC_MOVE`, `SC_SIZE`, `SC_MINIMIZE`, and `SC_MAXIMIZE`; restore and caption
+  double-click honor the current iconic/zoomed state.
 - **CoolStrobeButton** (ctor `FUN_00602150`): animated button with 4 state
   bitmaps (+0x94 normal, +0x98 pressed, +0x9c disabled, +0xa0 selected).
   Sound on click (+0xdc sound id, +0xe0 embedded sound object vtable
@@ -697,17 +701,24 @@ No side-branching logic in any function.
 - **CoolGameWindow** (ctor `FUN_00606380`, vtable `0x0066e060`): game-level
   window with drag support, policy bits (+0xb8), background bitmap, and
   focus save/restore. `FUN_006073b0` saves the previous focus HWND at
-  +0x10c; dtor `FUN_00606580` restores it.
+  +0x10c; dtor `FUN_00606580` restores it. Drag mode `+0xf4` value 1 moves
+  live; value 2 draws an XOR outline. `FUN_00607010` clamps the full window
+  to configured bounds when capture is released.
 - **CoolDragList**: draggable item list with reorder support.
-- **ScrollBar** (vertical and horizontal): vertical `FUN_0060aa70`, horizontal
-  `FUN_00610900`. hyp: `FUN_00610900` guards on both axes where the vertical
-  twin tests one (bug in original).
+- **ScrollBar** (vertical vtable `0x66e2e8`, horizontal `0x66e340`): common
+  WndProc and release/repeat cleanup with orientation-specific geometry and
+  input slots. Horizontal thumb move `FUN_00610900` incorrectly requires
+  both axes to change where the vertical twin tests its active axis; this is
+  an original bug, not a port requirement.
 - **CoolSelectionBoxClass**: multi-select list with keyboard navigation.
 - **CoolTabControl**: tab bar managing child panels. Sets +0xa4/+0x10c/+0x110
   on each child during tab-switch bitmap rebuild.
 - **CoolwinStatusBar**: progress meter (hyp: loading screens).
-- **Modal mouse hook**: `WH_MOUSE` hook for modal dialog mouse-swallowing.
-  Installed/removed per dialog lifecycle.
+- **Modal mouse hook**: `FUN_006010e0` installs thread-local `WH_MOUSE`
+  callback `FUN_00600ef0`; only the top modal's `+0x88` HWND allowlist is
+  forwarded and every other target is swallowed. `FUN_00601260` registers
+  children and `FUN_006011f0` removes/unhooks it. The 11 control WndProc
+  families and full port comparison are in `cool-control-contracts.md`.
 - **Tooltips**: tooltip window created and positioned on hover.
 
 ## 0x00610b70-0x00629000: Sound, DirectDraw, iostream, CRT

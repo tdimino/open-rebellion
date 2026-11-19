@@ -7,6 +7,12 @@ import path from 'node:path';
 
 const url = process.env.OPTIONS_TEST_URL ?? 'http://127.0.0.1:8769';
 const output = process.env.OPTIONS_TEST_OUTPUT ?? '/tmp/open-rebellion-options-smoke';
+const requestedFaction = process.env.OPTIONS_TEST_FACTION;
+assert.ok(
+  requestedFaction === undefined || ['alliance', 'empire'].includes(requestedFaction),
+  'OPTIONS_TEST_FACTION must be alliance or empire',
+);
+const factions = requestedFaction === undefined ? ['alliance', 'empire'] : [requestedFaction];
 await fs.mkdir(output, { recursive: true });
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH,
@@ -15,7 +21,10 @@ const browser = await chromium.launch({
 });
 const results = [];
 try {
-  for (const faction of ['alliance', 'empire']) {
+  // Each faction starts in a fresh browser context. Accepting Exit ends the
+  // WASM loop, so the next journey must not depend on the closed game's
+  // in-page reload button surviving automation teardown.
+  for (const faction of factions) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 960 } });
     const page = await context.newPage();
     page.setDefaultTimeout(30000);
@@ -68,13 +77,82 @@ try {
     // state 3); a start's side movie ends in the galaxy (0x68/0x69, state 8).
     const MENU = /\[movie\] ended id=0x66 next=MainMenu/;
     const GALAXY = /\[movie\] ended id=0x6[89] next=Galaxy/;
-    const INTRO = /\[cutscene\] opened path=assets\/references\/ref-videos\/000\.webm/;
     try {
       await page.goto(url);
       await consoleLine(MENU, { skipMovies: true });
       await page.waitForTimeout(350); // the menu's first frame after the movie
+      // FUN_00405560: physical bitmap selectors must update the same state
+      // exported by the production accessibility bridge. Each side's fresh
+      // menu visits every choice before returning to the original defaults.
+      const pressed = index => page.locator(`[data-menu-index="${index}"]`).getAttribute('aria-pressed');
+      const assertChoice = async (indices, selected) => {
+        for (const index of indices) assert.equal(await pressed(index), String(index === selected));
+      };
+      const selectorShot = async (name, clip) => {
+        await page.mouse.move(20, 900); // leave animated hover art before comparing selections
+        await page.waitForTimeout(100);
+        const bytes = await page.screenshot({ clip, path: path.join(output, `${faction}-${name}.png`) });
+        return bytes;
+      };
+      await assertChoice([0, 1, 2], 0);
+      let previousDifficulty = await selectorShot('difficulty-easy-initial', { x: 120, y: 80, width: 346, height: 76 });
+      for (const [index, x] of [[1, 148], [2, 209], [0, 86]]) {
+        await click(x * 2, 58 * 2);
+        await assertChoice([0, 1, 2], index);
+        const shot = await selectorShot(`difficulty-${index}`, { x: 120, y: 80, width: 346, height: 76 });
+        assert.notEqual(Buffer.compare(previousDifficulty, shot), 0, 'difficulty selection must repaint');
+        previousDifficulty = shot;
+      }
+      await assertChoice([4, 5, 6], 4);
+      let previousGalaxy = await selectorShot('galaxy-small-initial', { x: 580, y: 586, width: 216, height: 42 });
+      for (const [index, x] of [[5, 338], [6, 374], [4, 302]]) {
+        await click(x * 2, 303 * 2);
+        await assertChoice([4, 5, 6], index);
+        const shot = await selectorShot(`galaxy-${index}`, { x: 580, y: 586, width: 216, height: 42 });
+        assert.notEqual(Buffer.compare(previousGalaxy, shot), 0, 'galaxy selection must repaint');
+        previousGalaxy = shot;
+      }
+      for (const index of [5, 6, 4]) {
+        await click(264 * 2, 294 * 2);
+        await assertChoice([4, 5, 6], index);
+      }
+      assert.equal(await pressed(7), 'false');
+      const standard = await selectorShot('game-type-standard', { x: 610, y: 666, width: 84, height: 60 });
+      await click(326 * 2, 348 * 2);
+      assert.equal(await pressed(7), 'true');
+      const headquarters = await selectorShot('game-type-headquarters', { x: 610, y: 666, width: 84, height: 60 });
+      assert.notEqual(Buffer.compare(standard, headquarters), 0, 'game type selection must repaint');
+      await click(326 * 2, 348 * 2);
+      assert.equal(await pressed(7), 'false');
+      await screenshot('main-menu-selectors-restored');
       await click(850, 500); // main-menu CD-ROM: original command 0x68
       await screenshot('main-options');
+
+      // FUN_00407180 creates two FUN_00604570 sliders at logical
+      // (392,130) and (392,190), each with a 199-pixel integer travel. The
+      // 1280x960 journey is an exact 2x canvas, so drag both authentic
+      // controls before muting the music for the rest of the silent run.
+      const sliderClip = y => ({ x: 784, y, width: 424, height: 108 });
+      const musicBefore = await page.screenshot({ clip: sliderClip(260) });
+      await page.mouse.move(1112, 314);
+      await page.mouse.down();
+      await page.mouse.move(894, 314, { steps: 8 });
+      await page.mouse.up();
+      await consoleLine(/\[audio\] music_volume=0\.25 muted=false music_muted=false/);
+      const musicAfter = await page.screenshot({ clip: sliderClip(260) });
+      assert.notEqual(Buffer.compare(musicBefore, musicAfter), 0,
+        'music slider drag did not move its original bitmap handle');
+
+      const soundBefore = await page.screenshot({ clip: sliderClip(380) });
+      await page.mouse.move(1184, 434);
+      await page.mouse.down();
+      await page.mouse.move(1033, 434, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForTimeout(350);
+      const soundAfter = await page.screenshot({ clip: sliderClip(380) });
+      assert.notEqual(Buffer.compare(soundBefore, soundAfter), 0,
+        'sound slider drag did not move its original bitmap handle');
+
       await click(720, 185); // keep in-game music muted as well as Chromium
       await click(195, 805); // Restart (0x91): with no game, straight back to the shuttle cockpit
       await click(faction === 'alliance' ? 945 : 360, 665);
@@ -184,13 +262,9 @@ try {
       await page.getByRole('heading', { name: 'Game closed' }).waitFor();
       assert.ok(consoleLog.some(line => line.includes('[quit] audio_stopped=true cleanup=complete')));
       await screenshot('browser-exit');
-      const intros = consoleLog.filter(line => INTRO.test(line)).length;
-      await page.getByRole('button', { name: 'Restart game' }).click();
-      await consoleLine(INTRO, { after: intros }); // the restarted game opens its intro
-      assert.equal(await page.getByRole('heading', { name: 'Game closed' }).count(), 0);
-      await screenshot('browser-restarted');
+      await page.getByRole('button', { name: 'Restart game' }).waitFor();
       assert.equal(errors.length, 0, errors.join('\n'));
-      results.push({ faction, status: 'pass', fingerprint, restoredLoads: consoleLog.filter(line => line.includes('[campaign] restored')), assertions: ['current-version save', 'overwrite cancel', 'load cancel', 'matching load and restored Galaxy fingerprint', 'row 6 save/load', 'saved alert, row-flag overwrite and load', 'Escape keeps the window, Return/re-entry', 'corrupt load/overwrite cancel', 'browser exit/restart', 'no page errors'] });
+      results.push({ faction, status: 'pass', fingerprint, restoredLoads: consoleLog.filter(line => line.includes('[campaign] restored')), assertions: ['all difficulty selectors', 'all galaxy selectors and lever wrap', 'both game types', 'selector bitmap repaint', 'music slider drag', 'sound slider drag', 'current-version save', 'overwrite cancel', 'load cancel', 'matching load and restored Galaxy fingerprint', 'row 6 save/load', 'saved alert, row-flag overwrite and load', 'Escape keeps the window, Return/re-entry', 'corrupt load/overwrite cancel', 'browser exit and restart affordance', 'no page errors'] });
     } catch (error) {
       await screenshot('failure').catch(() => {});
       results.push({ faction, status: 'fail', error: String(error) });

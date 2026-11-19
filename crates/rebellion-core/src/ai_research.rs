@@ -194,18 +194,9 @@ impl ResearchPlanners {
             PlannerRef::Pseudo(kind) => actions.extend(pseudo(kind, planner, round)),
             PlannerRef::Head => {}
         }
-        let turn = actions
-            .into_iter()
-            .next()
-            .map_or(Turn::Finished, |action| Turn::Order {
-                action,
-                resume: false,
-            });
+        let turn = Turn::first(actions);
         crate::trace::record(crate::trace::TraceMask::AI, "mission_planner_turn", || {
-            let order = match &turn {
-                Turn::Order { action, .. } => Some(format!("{action:?}")),
-                Turn::Spent | Turn::Finished => None,
-            };
+            let (order, _) = turn.debug_order();
             serde_json::json!({
                 "planner": format!("{:?}", list[at]),
                 "next": format!("{:?}", self.cursor),

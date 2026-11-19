@@ -183,7 +183,7 @@ function sourceIdentity(source) {
 // bottom row is its key, so the window's last row shows the black; the
 // GDI probe of the Operation Report, which keys the same shell, shows that
 // row black across the window.
-function composeExpected(source, faction, pressedCommand = null) {
+function composeExpected(source, faction, pressedCommand = null, selectedCommand = 0x79) {
   const expected = new PNG({ width: dimensions.width, height: dimensions.height });
   for (let offset = 0; offset < expected.data.length; offset += 4) expected.data.set([0, 0, 0, 255], offset);
   blit(expected, resource(source, 10822, 400, 306), 12, 13);
@@ -191,7 +191,11 @@ function composeExpected(source, faction, pressedCommand = null) {
   blit(expected, resource(source, faction.rail, 58, 330, true), 412, 0);
   for (const control of controls) {
     const [normal, pressed] = resourcesFor(control, faction);
-    const selected = control.command === pressedCommand ? pressed : normal;
+    // CoolTabControl holds its selected StrobeButton while another child is
+    // pressed; the Message Index opens on All (0x79).
+    const selected = control.command === selectedCommand || control.command === pressedCommand
+      ? pressed
+      : normal;
     blit(expected, resource(source, selected, control.width, 41), 22 + control.x, 46);
   }
   return expected;

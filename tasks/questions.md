@@ -4,7 +4,7 @@
 
 Questions about the original, answered from the executable. Back to the [index](INDEX.md).
 
-71 open.
+70 open.
 
 <a id="or-q-contents-troops-0l9"></a>
 ### Q: Which units does the 1302 contents monitor list, in what order and format?
@@ -81,19 +81,6 @@ Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX
 
 > ai-order-emission.md now covers what runs the posture (module 8 FUN_004cf600 -> FUN_004774c0 state 5 -> FUN_004adb70), the posture kind vtables (slot 14 per kind), the emitter FUN_004b1070 need bits and FUN_004ae320's bombardment choice, and that posture side +4 is 1/2 (map-06's 0/1 reading is wrong). Still open: what each kind 1-6 is for, the state meanings of FUN_004774c0, need-record counters.
 > 2026-10-15: ported in crates/rebellion-core/src/ai_regions.rs (module 8 driver FUN_004cf630, record step FUN_004774c0, posture states 1-14 FUN_004adb70, slots 13-18 and 21, FUN_004b1070). Dual-AI playtest seed 42: every record cycles its posture daily; fleets with no target rally at their loading system; no engage/assault/drop/bombard target passes in 1000 days because no fleet carries regiments (loading-system surplus 0 on both sides; see or-pfrm) and no enemy fleet stands in a record's sector. Close when the kind and state meanings are folded into ai-order-emission.md.
-
-<a id="or-q-cool-controls-0u0"></a>
-### Q: Does crates/rebellion-windowing match the Cool* control library's modal mouse, SC_* filter and drag modes?
-
-`or-q-cool-controls-0u0` · **open** · P2 · ghidra, question · updated 2026-10-21  
-Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)
-
-> Modal mouse swallowing FUN_00600ef0, SC_* policy filter FUN_00600310, +0xf4 drag modes FUN_00606ee0-FUN_006071e0, scroll-bar subclass vtables 0x66e2e8/0x66e340, the 11 WndProc switch tables (CoolStringField 0x605ece, CoolDragList 0x609238, selection box 0x60c7ea), the GID legend darkening remap LAB_004ac550, and sprite draw mode 5's 512-byte table. Start from FUN_00600ef0, FUN_00600310, FUN_00606ee0, FUN_00605160, FUN_006083c0, FUN_0060c210, FUN_0060b500, FUN_005fddd0, FUN_0041cb30. Done when a note gives each behaviour and each port difference has a port node. Source: map-21.
-
-**Acceptance criteria**
-
-- [ ] A note gives each behaviour and each port difference has a port node.
-- [ ] Source: map-21.
 
 <a id="or-q-enemy-fighter-select-wuq"></a>
 ### Q: Can an enemy fighter group be selected, and what does the fighter panel show then?

@@ -8,9 +8,11 @@
 //! PATH="/usr/bin:$PATH" cargo test -p rebellion-data --test telemetry_coverage -- --ignored
 //! ```
 
-use std::collections::HashMap;
-use std::path::PathBuf;
+mod common;
 
+use std::collections::HashMap;
+
+use common::data_dir;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
@@ -18,9 +20,9 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 use rebellion_core::ai::{AIState, AiFaction};
 use rebellion_core::dat::Faction;
 use rebellion_core::events::{EventAction, EventCondition, GameEvent, SystemTag};
-use rebellion_core::fog::{FogState, FogSystem};
+use rebellion_core::fog::FogSystem;
 use rebellion_core::game_events::*;
-use rebellion_core::tick::{GameClock, GameSpeed};
+use rebellion_core::tick::GameSpeed;
 use rebellion_core::tuning::GameConfig;
 use rebellion_core::world::SeedOptions;
 use rebellion_data::simulation::{run_simulation_tick, SimulationStates};
@@ -50,7 +52,7 @@ const ALL_SYSTEMS: &[&str] = &[
 /// fixture injections cannot reliably guarantee. These emit events in real
 /// games but are hard to trigger deterministically in a 393-tick test.
 const OPTIONAL_SYSTEMS: &[&str] = &[
-    SYS_VICTORY,  // Requires HQ capture or DS fire at enemy HQ — not guaranteed
+    SYS_VICTORY, // Requires HQ capture or DS fire at enemy HQ — not guaranteed
     // Requires a Destroy System (order 0x223), which the AI orders only with a
     // Death Star and a Coruscant or HQ target; the integrator's strike tests
     // check its EVT_DS_FIRED record.
@@ -62,19 +64,9 @@ const OPTIONAL_SYSTEMS: &[&str] = &[
 // Test-only ID, outside the original story-event range.
 const TELEMETRY_FIXTURE_EVENT_ID: u32 = u32::MAX;
 
-fn data_dir() -> PathBuf {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("data/base")
-}
-
 #[test]
 #[ignore = "requires data/base/ DAT files"]
-#[expect(
+#[allow(
     clippy::too_many_lines,
     reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
 )]
@@ -117,28 +109,12 @@ fn telemetry_coverage_all_sys_constants_emit() {
         (a, e)
     };
 
-    let mut states = SimulationStates {
-        clock: GameClock::new(),
-        manufacturing: rebellion_core::manufacturing::ManufacturingState::new(),
-        missions: rebellion_core::missions::MissionState::new(),
-        events: rebellion_core::events::EventState::new(),
-        ai: AIState::new(AiFaction::Empire),
-        ai2: Some(AIState::new(AiFaction::Alliance)),
-        movement: rebellion_core::movement::MovementState::new(),
-        fog: FogState::new(Faction::Alliance),
-        blockade: rebellion_core::blockade::BlockadeState::new(),
-        uprising: rebellion_core::uprising::UprisingState::new(),
-        research: rebellion_core::research::ResearchState::new(),
-        jedi: rebellion_core::jedi::JediState::new(),
-        victory: rebellion_core::victory::VictoryState::new(victory_a, victory_e),
-        betrayal: rebellion_core::betrayal::BetrayalState::new(),
-        economy: rebellion_core::economy::EconomyState::default(),
-        repair: rebellion_core::repair::RepairState::default(),
-        troop_transport: rebellion_core::troop_transport::TroopTransportState::default(),
-        deliveries: rebellion_core::delivery::DeliveryState::default(),
-        stockpiles: rebellion_core::stockpiles::StockpileState::default(),
-        campaign_config: rebellion_core::world::CampaignConfig::default(),
-    };
+    let mut states = SimulationStates::new(
+        AiFaction::Empire,
+        Faction::Alliance,
+        rebellion_core::victory::VictoryState::new(victory_a, victory_e),
+    );
+    states.ai2 = Some(AIState::new(AiFaction::Alliance));
 
     // Seed fog and story events
     FogSystem::seed(&mut states.fog, &world);

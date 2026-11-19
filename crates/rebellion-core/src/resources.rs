@@ -56,7 +56,11 @@ pub fn maintenance_used(
             .map_or(0, |class| i64::from(class.maintenance_cost))
     };
     let mut used = 0_i64;
-    for fleet in world.fleets.values().filter(|f| f.is_alliance == is_alliance) {
+    for fleet in world
+        .fleets
+        .values()
+        .filter(|f| f.is_alliance == is_alliance)
+    {
         for ship in fleet.capital_ships.iter().filter(|ship| ship.alive) {
             used += world
                 .capital_ship_classes

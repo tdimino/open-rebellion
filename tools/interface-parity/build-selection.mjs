@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 // Build Selection gate: on each side, right-click a Manufacturing window band,
-// choose Build, compare the window's static STRATEGY chrome exactly, Confirm,
-// see the band take the product, then Stop it.
+// choose Build, compare the window's static STRATEGY chrome exactly, drive the
+// class box's popup (open, wheel, choose a row, a dismissing press over
+// Confirm), Confirm, see the band take the chosen product, then Stop it.
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -49,6 +50,9 @@ const controls = [
   // dialog's (hyp: the source chrome's placement is untraced).
   { x: 193, y: 3, width: 14, height: 14, id: 10108, native: [14, 14] },
 ];
+// The number to build: a focused CoolStringField whose caret blinks
+// (FUN_00605160), so it never holds still between two frames.
+const numberField = { x: 141, y: 196, width: 45, height: 17 };
 // Dynamic content, kept as captures: the title, the selected class, the
 // labels, the four values and the number to build (FUN_00437f80,
 // FUN_00438500).
@@ -62,8 +66,15 @@ const masks = [
   { x: 140, y: 145, width: 61, height: 15 },
   { x: 140, y: 165, width: 61, height: 15 },
   { x: 20, y: 196, width: 118, height: 15 },
-  { x: 141, y: 196, width: 45, height: 17 },
+  numberField,
 ];
+// The class box's popup (FUN_0060cac0): under the 195 by 63 box at (6, 22),
+// two 70-pixel rows plus 4 high; its list 2 in (FUN_0060d020). The window
+// sits at the galaxy's centre, so the popup never reaches the canvas bottom
+// and always opens below the box.
+const popup = { x: 6, y: 85, width: 195, height: 144 };
+const listButton = { x: 79 + 32, y: 90 + 9 };
+const secondRow = { x: 100, y: 87 + 70 + 35 };
 const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 const runDir = path.join(root, ".artifacts/interface-parity", `build-selection-${runId}`);
 
@@ -213,6 +224,90 @@ function crop(screenshotBytes, origin) {
   return cropped;
 }
 
+function popupHash(screenshotBytes, origin) {
+  const screenshot = PNG.sync.read(screenshotBytes);
+  const rows = [];
+  for (let y = 0; y < popup.height; y += 1) {
+    const start = ((origin.y + popup.y + y) * screenshot.width + origin.x + popup.x) * 4;
+    rows.push(screenshot.data.subarray(start, start + popup.width * 4));
+  }
+  return sha256(Buffer.concat(rows));
+}
+
+async function waitReport(page, predicate, label) {
+  const started = Date.now();
+  while (Date.now() - started < 10_000) {
+    const report = await production(page);
+    if (report && predicate(report)) return report;
+    await frames(page);
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+// The class box's popup on one side: the drop-down (0x6c) posts the box's
+// 0x3ea and opens it (FUN_0060c210, FUN_0060cac0); the list's wheel scrolls
+// its rows and leaves the class alone; a press on a row commits it
+// (FUN_006083c0 -> FUN_0060d020 -> FUN_0060c970) and closes the popup; a
+// press off the popup sends 0x3e9 and reaches no other control.
+async function classPopup(page, origin, directory) {
+  const at = (point) => ({ x: origin.x + point.x, y: origin.y + point.y });
+  const steps = {};
+  const first = await production(page);
+  assert.equal(first.build_selection_list_open, false);
+  await click(page, at(listButton));
+  let report = await waitReport(page, (r) => r.build_selection_list_open, "the class popup to open");
+  assert.equal(report.build_selection_class, first.build_selection_class);
+  fs.writeFileSync(path.join(directory, "class-popup-open.png"),
+    await page.screenshot({ animations: "disabled" }));
+  steps.opened = { class: report.build_selection_class, classes: report.build_selection_classes };
+
+  await page.mouse.move(origin.x + secondRow.x, origin.y + secondRow.y);
+  await frames(page);
+  const hovered = await page.screenshot({ animations: "disabled" });
+  await page.mouse.wheel(0, 120);
+  await frames(page);
+  await frames(page);
+  const wheeled = await page.screenshot({ animations: "disabled" });
+  fs.writeFileSync(path.join(directory, "class-popup-wheel.png"), wheeled);
+  report = await production(page);
+  assert.equal(report.build_selection_list_open, true, "the wheel closed the class popup");
+  assert.equal(report.build_selection_class, first.build_selection_class, "the wheel changed the class");
+  const scrolled = popupHash(hovered, origin) !== popupHash(wheeled, origin);
+  // Two rows show at once: only a longer list has rows to scroll to.
+  assert.equal(scrolled, report.build_selection_classes > 2,
+    `the wheel ${scrolled ? "scrolled" : "did not scroll"} ${report.build_selection_classes} classes`);
+  await page.mouse.wheel(0, -120);
+  await frames(page);
+  await frames(page);
+  steps.wheel = { scrolled };
+
+  await click(page, at(secondRow));
+  report = await waitReport(page, (r) => !r.build_selection_list_open, "the chosen row to close the popup");
+  assert.ok(report.build_selection_open, "choosing a class closed the window");
+  if (report.build_selection_classes > 1) {
+    assert.notEqual(report.build_selection_class, first.build_selection_class,
+      "the press on the second row chose nothing");
+  }
+  fs.writeFileSync(path.join(directory, "class-chosen.png"), await page.screenshot({ animations: "disabled" }));
+  steps.chosen = { class: report.build_selection_class };
+
+  await click(page, at(listButton));
+  await waitReport(page, (r) => r.build_selection_list_open, "the class popup to reopen");
+  const queued = report.bands.find(({ area }) => area === "troops").queued;
+  await click(page, at({ x: 73 + 33, y: 224 + 16 }));
+  await page.mouse.move(2, 2);
+  await frames(page);
+  report = await waitReport(page, (r) => !r.build_selection_list_open, "the dismissing press");
+  assert.ok(report.build_selection_open, "the dismissing press closed the window");
+  assert.equal(report.bands.find(({ area }) => area === "troops").queued, queued,
+    "the press that dismissed the popup also confirmed the order");
+  assert.equal(report.build_selection_class, steps.chosen.class);
+  fs.writeFileSync(path.join(directory, "class-popup-dismissed.png"),
+    await page.screenshot({ animations: "disabled" }));
+  steps.dismissed = { queued };
+  return steps;
+}
+
 function compare(actual, expected, label, directory) {
   let differentPixels = 0;
   let checked = 0;
@@ -276,8 +371,19 @@ async function stableWindow(page, origin, directory, label) {
   fs.writeFileSync(path.join(directory, `${label}-screen.png`), second);
   const a = crop(first, origin);
   const b = crop(second, origin);
-  assert.equal(sha256(PNG.sync.write(a)), sha256(PNG.sync.write(b)), `window did not stabilize (${label})`);
+  // Everything but the blinking caret's field must hold still.
+  assert.equal(sha256(withoutCaret(a)), sha256(withoutCaret(b)), `window did not stabilize (${label})`);
   return b;
+}
+
+function withoutCaret(window) {
+  const copy = new PNG({ width: window.width, height: window.height });
+  window.data.copy(copy.data);
+  for (let y = numberField.y; y < numberField.y + numberField.height; y += 1) {
+    const start = (y * window.width + numberField.x) * 4;
+    copy.data.fill(0, start, start + numberField.width * 4);
+  }
+  return PNG.sync.write(copy);
 }
 
 async function inspect(server, source, faction, executable) {
@@ -344,6 +450,7 @@ async function inspect(server, source, faction, executable) {
     const origin = { x: Math.round(opened.build_selection_left), y: Math.round(opened.build_selection_top) };
     const captured = await stableWindow(page, origin, directory, "opened");
     const comparisons = [compare(captured, composeExpected(source, faction), "opened", directory)];
+    const classSteps = await classPopup(page, origin, directory);
 
     // Confirm (0x65, FUN_00438980) builds one unit of the selected class.
     await click(page, { x: origin.x + 73 + 33, y: origin.y + 224 + 16 });
@@ -355,6 +462,7 @@ async function inspect(server, source, faction, executable) {
     }, null, { timeout: 10_000 });
     const built = (await production(page)).bands.find(({ area }) => area === "troops");
     assert.ok(built.product.length > 0, "the band names its product");
+    assert.equal(built.product, classSteps.chosen.class, "Confirm built a class other than the chosen one");
     fs.writeFileSync(path.join(directory, "confirmed-screen.png"), await page.screenshot({ animations: "disabled" }));
 
     // Stop (0x213) asks first, then clears the band (manual p. 84).
@@ -385,6 +493,7 @@ async function inspect(server, source, faction, executable) {
       build_menu: buildMenu,
       stop_menu: stopMenu,
       built: { product: built.product, queued: built.queued },
+      class_popup: classSteps,
       comparisons,
       requests,
       errors,

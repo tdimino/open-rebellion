@@ -10,6 +10,8 @@
 //! `Embark` and `Queue build` stand for no event: they are staging alone.
 //! `agent_docs/dev-commands.md` lists them.
 
+use std::fmt::Write as _;
+
 use rebellion_core::ai::AIAction;
 use rebellion_core::ai_regions::Strike;
 use rebellion_core::bombardment::BombardKind;
@@ -81,10 +83,11 @@ pub fn list_systems(world: &GameWorld) -> String {
             ];
             let mut row = format!("{} {holder}/{fleets}", system.name);
             if counts.iter().any(|&count| count > 0) {
-                row.push_str(&format!(
+                let _ = write!(
+                    row,
                     " squadrons {}/{} fleets {}/{}",
                     counts[0], counts[1], counts[2], counts[3]
-                ));
+                );
             }
             let yards = system
                 .manufacturing_facilities
@@ -93,14 +96,15 @@ pub fn list_systems(world: &GameWorld) -> String {
                 .filter(|facility| facility.is_shipyard)
                 .count();
             if yards > 0 {
-                row.push_str(&format!(" yards {yards}"));
+                let _ = write!(row, " yards {yards}");
             }
             if system.is_populated {
-                row.push_str(&format!(
+                let _ = write!(
+                    row,
                     " support {}/{}",
                     rebellion_core::uprising::support_points(system, Faction::Alliance),
                     rebellion_core::uprising::support_points(system, Faction::Empire)
-                ));
+                );
             }
             row
         })
@@ -178,9 +182,7 @@ pub fn post_message(
         .iter()
         .filter_map(|message| message.display.as_ref().map(|d| d.title.clone()))
         .collect();
-    for message in filed {
-        log.push(message);
-    }
+    log.extend(filed);
     Ok(format!("filed {}", titles.join(" | ")))
 }
 
@@ -289,9 +291,7 @@ fn bring_side(
                 && !movement.is_in_transit(*key)
         })
         // A fleet whose system is missing is skipped, not indexed.
-        .filter_map(|(key, fleet)| {
-            Some((key, world.systems.get(fleet.location)?.name.clone()))
-        })
+        .filter_map(|(key, fleet)| Some((key, world.systems.get(fleet.location)?.name.clone())))
         .collect();
     // Order by the fleet's name for a choice that repeats run to run.
     idle.sort_by_key(|(key, _)| world.fleet_name(*key).unwrap_or_default().to_owned());
@@ -323,6 +323,24 @@ fn bring_side(
     )))
 }
 
+/// The named fleet accepted by `matches`, ignoring case.
+fn named_fleet(
+    world: &GameWorld,
+    name: &str,
+    matches: impl Fn(&rebellion_core::world::Fleet) -> bool,
+) -> Option<FleetKey> {
+    world
+        .fleets
+        .iter()
+        .filter(|(_, fleet)| matches(fleet))
+        .map(|(key, _)| key)
+        .find(|&key| {
+            world
+                .fleet_name(key)
+                .is_some_and(|fleet_name| fleet_name.eq_ignore_ascii_case(name.trim()))
+        })
+}
+
 /// Put a Death Star ship (the CAPSHPSD family-0x18 class) in the named
 /// Imperial fleet, as a completed build leaves it
 /// (`integrator::apply_boarding_inner`).
@@ -342,22 +360,10 @@ pub fn give_death_star(world: &mut GameWorld, name: &str) -> Result<String, Stri
         ));
     }
     // Both sides number their fleets, so only Imperial names are searched.
-    let fleet = world
-        .fleets
-        .iter()
-        .filter(|(_, fleet)| !fleet.is_alliance)
-        .map(|(key, _)| key)
-        .find(|&key| {
-            world
-                .fleet_name(key)
-                .is_some_and(|fleet_name| fleet_name.eq_ignore_ascii_case(name.trim()))
-        })
+    let fleet = named_fleet(world, name, |fleet| !fleet.is_alliance)
         .ok_or_else(|| format!("no Imperial fleet named {name:?}"))?;
     let (class, hull) = world
-        .capital_ship_classes
-        .iter()
-        .find(|(_, class)| class.is_death_star())
-        .map(|(key, class)| (key, class.hull.cast_signed()))
+        .death_star_class_and_hull()
         .ok_or("no Death Star class is loaded")?;
     world.fleets[fleet]
         .capital_ships
@@ -380,16 +386,7 @@ pub fn give_death_star(world: &mut GameWorld, name: &str) -> Result<String, Stri
 /// tick through the repair system's own rules, and the damage counters are
 /// left as they are.
 pub fn damage_ship(world: &mut GameWorld, alliance: bool, name: &str) -> Result<String, String> {
-    let fleet = world
-        .fleets
-        .iter()
-        .filter(|(_, fleet)| fleet.is_alliance == alliance)
-        .map(|(key, _)| key)
-        .find(|&key| {
-            world
-                .fleet_name(key)
-                .is_some_and(|fleet_name| fleet_name.eq_ignore_ascii_case(name.trim()))
-        })
+    let fleet = named_fleet(world, name, |fleet| fleet.is_alliance == alliance)
         .ok_or_else(|| format!("no fleet of yours named {name:?}"))?;
     let fleet_name = world.fleet_name(fleet).unwrap_or_default().to_owned();
     let system = world
@@ -415,24 +412,17 @@ pub fn damage_ship(world: &mut GameWorld, alliance: bool, name: &str) -> Result<
 /// The fleet of `side` named `name`, ignoring case. Both sides number their
 /// fleets, so the side tells the two `Fleet 1`s apart.
 pub fn find_fleet(world: &GameWorld, side: Faction, name: &str) -> Result<FleetKey, String> {
-    world
-        .fleets
-        .iter()
-        .filter(|(_, fleet)| Faction::of_alliance(fleet.is_alliance) == side)
-        .map(|(key, _)| key)
-        .find(|&key| {
-            world
-                .fleet_name(key)
-                .is_some_and(|fleet_name| fleet_name.eq_ignore_ascii_case(name.trim()))
-        })
-        .ok_or_else(|| {
-            let side = if side == Faction::Alliance {
-                "Alliance"
-            } else {
-                "Imperial"
-            };
-            format!("no {side} fleet named {name:?}")
-        })
+    named_fleet(world, name, |fleet| {
+        Faction::of_alliance(fleet.is_alliance) == side
+    })
+    .ok_or_else(|| {
+        let side = if side == Faction::Alliance {
+            "Alliance"
+        } else {
+            "Imperial"
+        };
+        format!("no {side} fleet named {name:?}")
+    })
 }
 
 /// Order a strike of `kind` for `fleet` as the AI orders one: its action at
@@ -531,6 +521,17 @@ pub fn strike_detail(kind: BombardKind, runs: &[StrikeEffects]) -> Result<String
     }
 }
 
+fn matching_keys<'a, K: Copy, V: 'a>(
+    keys: &[K],
+    mut lookup: impl FnMut(K) -> Option<&'a V>,
+    mut matches: impl FnMut(&V) -> bool,
+) -> Vec<K> {
+    keys.iter()
+        .copied()
+        .filter(|&key| lookup(key).is_some_and(&mut matches))
+        .collect()
+}
+
 /// Destroy every defender the holder of `system` keeps there: its
 /// regiments, its own squadrons, its defence facilities and its fleets,
 /// through the paths a battle or a strike takes. port: staging only, with
@@ -549,24 +550,21 @@ pub fn strip_defenders(
         return Err(format!("{name} has no holder"));
     }
     let ours = holder == Faction::Alliance;
-    let regiments: Vec<_> = sys
-        .ground_units
-        .iter()
-        .copied()
-        .filter(|&key| world.troops.get(key).is_some_and(|unit| unit.is_alliance == ours))
-        .collect();
-    let facilities: Vec<_> = sys
-        .defense_facilities
-        .iter()
-        .copied()
-        .filter(|&key| world.defense_facilities.get(key).is_some_and(|f| f.side == holder))
-        .collect();
-    let fleets: Vec<_> = sys
-        .fleets
-        .iter()
-        .copied()
-        .filter(|&key| world.fleets.get(key).is_some_and(|f| f.is_alliance == ours))
-        .collect();
+    let regiments = matching_keys(
+        &sys.ground_units,
+        |key| world.troops.get(key),
+        |unit| unit.is_alliance == ours,
+    );
+    let facilities = matching_keys(
+        &sys.defense_facilities,
+        |key| world.defense_facilities.get(key),
+        |facility| facility.side == holder,
+    );
+    let fleets = matching_keys(
+        &sys.fleets,
+        |key| world.fleets.get(key),
+        |fleet| fleet.is_alliance == ours,
+    );
     let squadrons: u32 = sys
         .fighters
         .iter()
@@ -605,7 +603,7 @@ pub fn strip_defenders(
 /// the drags. Refused, with nothing moved, when fewer than `count` of the
 /// player's regiments stand there; a regiment the Move refuses stops the
 /// line, naming how many boarded.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The Move reads the world, the transport, movement, the blockades and the products, and the order's fleet, count and day."
 )]
@@ -623,13 +621,21 @@ pub fn embark(
     let fleet = find_fleet(world, Faction::of_alliance(alliance), name)?;
     let fleet_name = world.fleet_name(fleet).unwrap_or_default().to_owned();
     let system = world.fleets[fleet].location;
-    let sys = world.systems.get(system).ok_or("the fleet stands at no system")?;
+    let sys = world
+        .systems
+        .get(system)
+        .ok_or("the fleet stands at no system")?;
     let system_name = sys.name.clone();
     let regiments: Vec<_> = sys
         .ground_units
         .iter()
         .copied()
-        .filter(|&key| world.troops.get(key).is_some_and(|unit| unit.is_alliance == alliance))
+        .filter(|&key| {
+            world
+                .troops
+                .get(key)
+                .is_some_and(|unit| unit.is_alliance == alliance)
+        })
         .collect();
     if regiments.len() < count {
         return Err(format!(
@@ -662,7 +668,7 @@ pub fn embark(
 /// `ManufacturingState::build_units`). The class must be one the side's
 /// managers list (`listed_classes`). port: staging only, with no original
 /// counterpart: it builds for either side, the AI's included.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The order reads the research, the queues, the cargo, the products and the fleets on their way."
 )]
@@ -680,7 +686,12 @@ pub fn queue_build(
     use rebellion_core::build_selection::{listed_classes, order_items, order_refusal};
     use rebellion_core::manufacturing::ProductionArea;
     let side = Faction::of_alliance(alliance);
-    let name = world.systems.get(system).ok_or("no such system")?.name.clone();
+    let name = world
+        .systems
+        .get(system)
+        .ok_or("no such system")?
+        .name
+        .clone();
     if rebellion_core::bombardment::holder(world, system) != side {
         return Err(format!("{name} is not held by the {side:?}"));
     }
@@ -772,11 +783,13 @@ pub fn raise_maintenance_capacity(
     let pairs = u64::from(amount).div_ceil(FACILITY_MAINTENANCE_CAPACITY.unsigned_abs());
     for _ in 0..pairs {
         for (class_dat_id, is_mine) in [(mine, true), (refinery, false)] {
-            world.production_facilities.insert(ProductionFacilityInstance {
-                class_dat_id,
-                side,
-                is_mine,
-            });
+            world
+                .production_facilities
+                .insert(ProductionFacilityInstance {
+                    class_dat_id,
+                    side,
+                    is_mine,
+                });
         }
     }
     Ok(format!(
@@ -832,6 +845,13 @@ pub struct MissionOrder {
     pub object: Option<MissionTarget>,
 }
 
+fn mission_targets<K: Copy>(
+    keys: &[K],
+    target: fn(K) -> MissionTarget,
+) -> impl Iterator<Item = MissionTarget> + '_ {
+    keys.iter().copied().map(target)
+}
+
 /// The objects at `system` a mission may name, in the order a dev order
 /// tries them: its fleets' Death Stars, then its defence, manufacturing and
 /// production facilities, regiments and special forces.
@@ -847,23 +867,23 @@ fn objects_at(world: &GameWorld, system: SystemKey) -> Vec<MissionTarget> {
         .map(|ship| MissionTarget::CapitalShip(ship.tag))
         .filter(|target| target.is_death_star(world));
     death_stars
-        .chain(value.defense_facilities.iter().copied().map(MissionTarget::DefenseFacility))
-        .chain(
-            value
-                .manufacturing_facilities
-                .iter()
-                .copied()
-                .map(MissionTarget::ManufacturingFacility),
-        )
-        .chain(
-            value
-                .production_facilities
-                .iter()
-                .copied()
-                .map(MissionTarget::ProductionFacility),
-        )
-        .chain(value.ground_units.iter().copied().map(MissionTarget::Troop))
-        .chain(value.special_forces.iter().copied().map(MissionTarget::SpecialForce))
+        .chain(mission_targets(
+            &value.defense_facilities,
+            MissionTarget::DefenseFacility,
+        ))
+        .chain(mission_targets(
+            &value.manufacturing_facilities,
+            MissionTarget::ManufacturingFacility,
+        ))
+        .chain(mission_targets(
+            &value.production_facilities,
+            MissionTarget::ProductionFacility,
+        ))
+        .chain(mission_targets(&value.ground_units, MissionTarget::Troop))
+        .chain(mission_targets(
+            &value.special_forces,
+            MissionTarget::SpecialForce,
+        ))
         .collect()
 }
 
@@ -881,7 +901,7 @@ fn objects_at(world: &GameWorld, system: SystemKey) -> Vec<MissionTarget> {
 /// is refused `0x40`/`0x34` (`FUN_00593500.c:49-58`), which the dialog only
 /// shows as a list without the kind. port: staging only; the player's
 /// dialog never begins an order it does not list.
-#[expect(
+#[allow(
     clippy::too_many_arguments,
     reason = "The dialog's order is these inputs; a parameter struct would only restate them."
 )]
@@ -939,8 +959,16 @@ pub fn mission_order(
         });
     }
     let object = objects_at(world, target).into_iter().find(|&object| {
-        available_kinds(world, uprisings, player, &team, &decoys, target, Some(object))
-            .contains(&kind)
+        available_kinds(
+            world,
+            uprisings,
+            player,
+            &team,
+            &decoys,
+            target,
+            Some(object),
+        )
+        .contains(&kind)
     });
     let offered = available_kinds(world, uprisings, player, &team, &decoys, target, object);
     if !offered.contains(&kind) {
@@ -1081,6 +1109,16 @@ pub fn save_path(evidence: &std::path::Path, name: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn controlled_system(holder: Faction) -> (GameWorld, SystemKey, bool) {
+        let mut world = GameWorld::default();
+        let system = world.systems.insert(System {
+            name: "Coruscant".into(),
+            control: rebellion_core::world::ControlKind::Controlled(holder),
+            ..System::default()
+        });
+        (world, system, holder == Faction::Alliance)
+    }
     use rebellion_core::world::{Abode, CapitalShipClass, Character, Fleet, Sector, System};
 
     #[test]
@@ -1358,35 +1396,23 @@ mod tests {
     #[test]
     fn stripping_a_system_destroys_only_its_holders_defenders_and_keeps_its_control() {
         use rebellion_core::world::{
-            ControlKind, DefenseFacilityInstance, ShipInstance, SystemSquadrons, TroopUnit,
+            ControlKind, DefenseFacilityInstance, ShipInstance, SystemSquadrons,
         };
         for holder in [Faction::Alliance, Faction::Empire] {
-            let ours = holder == Faction::Alliance;
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(System {
-                name: "Coruscant".into(),
-                control: ControlKind::Controlled(holder),
-                ..System::default()
-            });
-            let troop = |world: &mut GameWorld, is_alliance| {
-                let key = world.troops.insert(TroopUnit {
-                    is_alliance,
-                    ..TroopUnit::default()
-                });
-                world.systems[system].ground_units.push(key);
-                key
-            };
+            let (mut world, system, ours) = controlled_system(holder);
             let (first, second, visitor) = (
-                troop(&mut world, ours),
-                troop(&mut world, ours),
-                troop(&mut world, !ours),
+                rebellion_core::test_support::add_ground_troop(&mut world, system, ours),
+                rebellion_core::test_support::add_ground_troop(&mut world, system, ours),
+                rebellion_core::test_support::add_ground_troop(&mut world, system, !ours),
             );
             let battery = world.defense_facilities.insert(DefenseFacilityInstance {
                 side: holder,
                 ..DefenseFacilityInstance::default()
             });
             world.systems[system].defense_facilities.push(battery);
-            let class = world.fighter_classes.insert(Default::default());
+            let class = world
+                .fighter_classes
+                .insert(rebellion_core::world::FighterClass::default());
             world.systems[system].fighters = vec![
                 SystemSquadrons {
                     class,
@@ -1399,7 +1425,9 @@ mod tests {
                     is_alliance: !ours,
                 },
             ];
-            let ship = world.capital_ship_classes.insert(CapitalShipClass::default());
+            let ship = world
+                .capital_ship_classes
+                .insert(CapitalShipClass::default());
             let fleet = |world: &mut GameWorld, is_alliance| {
                 let key = world.fleets.insert(Fleet {
                     location: system,
@@ -1437,24 +1465,13 @@ mod tests {
     // at once, on the ship with room (regiment-unload.md).
     #[test]
     fn embark_boards_the_players_regiments_and_refuses_too_many_with_nothing_moved() {
-        use rebellion_core::world::{ControlKind, ShipInstance, TroopUnit};
+        use rebellion_core::world::ShipInstance;
         for holder in [Faction::Alliance, Faction::Empire] {
-            let ours = holder == Faction::Alliance;
-            let mut world = GameWorld::default();
-            let system = world.systems.insert(System {
-                name: "Coruscant".into(),
-                control: ControlKind::Controlled(holder),
-                ..System::default()
-            });
+            let (mut world, system, ours) = controlled_system(holder);
             let troops: Vec<_> = [ours, ours, !ours]
                 .into_iter()
                 .map(|is_alliance| {
-                    let key = world.troops.insert(TroopUnit {
-                        is_alliance,
-                        ..TroopUnit::default()
-                    });
-                    world.systems[system].ground_units.push(key);
-                    key
+                    rebellion_core::test_support::add_ground_troop(&mut world, system, is_alliance)
                 })
                 .collect();
             let ship = world.capital_ship_classes.insert(CapitalShipClass {
@@ -1485,10 +1502,17 @@ mod tests {
                 )
             };
 
-            assert!(run(&mut world, 3).is_err(), "{holder:?}: two of ours stand there");
+            assert!(
+                run(&mut world, 3).is_err(),
+                "{holder:?}: two of ours stand there"
+            );
             assert_eq!(world.systems[system].ground_units, troops, "{holder:?}");
             assert!(run(&mut world, 2).is_ok(), "{holder:?}");
-            assert_eq!(world.systems[system].ground_units, [troops[2]], "{holder:?}");
+            assert_eq!(
+                world.systems[system].ground_units,
+                [troops[2]],
+                "{holder:?}"
+            );
             assert_eq!(transport.cargo(fleet), &troops[..2], "{holder:?}");
         }
     }
@@ -1667,7 +1691,9 @@ mod tests {
                     is_alliance,
                     capital_ships: ships
                         .into_iter()
-                        .map(|class| rebellion_core::world::ShipInstance::new(class, 100, is_alliance))
+                        .map(|class| {
+                            rebellion_core::world::ShipInstance::new(class, 100, is_alliance)
+                        })
                         .collect(),
                     ..Fleet::default()
                 });

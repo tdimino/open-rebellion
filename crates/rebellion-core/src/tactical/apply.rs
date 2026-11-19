@@ -17,6 +17,14 @@ pub struct BattleReturn {
     pub withdrawal: Option<SystemKey>,
 }
 
+fn winner_is_alliance(session: &BattleSession) -> Option<bool> {
+    match session.winner {
+        Some(CombatWinner::Attacker) => Some(session.attacker_is_alliance),
+        Some(CombatWinner::Defender) => Some(!session.attacker_is_alliance),
+        Some(CombatWinner::Draw) | None => None,
+    }
+}
+
 /// Seat each side's morale before a battle (`FUN_00599c90.c:99-186`): its
 /// retreat permission (`side+0x80`) and its withdrawal threshold
 /// (`side+0x24`). A computer side takes `FUN_004e6110`'s threshold
@@ -48,9 +56,13 @@ pub fn seat_morale(
             .find(|fleet| {
                 fleet.capital_ships.iter().any(|ship| {
                     ship.usable()
-                        && world.capital_ship_classes.get(ship.class).is_some_and(|class| {
-                            crate::movement::capital_ship_instance_speed(world, ship, class) != 0
-                        })
+                        && world
+                            .capital_ship_classes
+                            .get(ship.class)
+                            .is_some_and(|class| {
+                                crate::movement::capital_ship_instance_speed(world, ship, class)
+                                    != 0
+                            })
                 })
             })
             .map_or(0, |fleet| crate::movement::death_stars_in(world, fleet));
@@ -98,6 +110,7 @@ pub fn seat_morale(
 
 /// Summarize a completed tactical session without mutating strategic state.
 /// Auto-resolve uses this after its result has already been integrated.
+#[must_use]
 pub fn summarize_results(session: &BattleSession) -> BattleReturn {
     BattleReturn {
         winner: session.winner,
@@ -123,6 +136,10 @@ pub fn summarize_results(session: &BattleSession) -> BattleReturn {
 /// docked in the other side's carrier falls to the system (the side bits
 /// `+0x24 & 0xc0` differ). Docked carriers without a tag get one
 /// ([`crate::carriage::tag_ship`]).
+#[allow(
+    clippy::option_option,
+    reason = "destroyed, system-bound, and carrier-bound are three distinct outcomes"
+)]
 pub(super) fn squadron_homes(
     session: &BattleSession,
     world: &mut GameWorld,
@@ -214,15 +231,23 @@ pub fn apply_results(
                 .fighters
                 .iter()
                 .filter(|entry| entry.is_alliance == is_alliance)
-                .map(|entry| crate::world::SystemSquadrons { count: 0, ..entry.clone() })
+                .map(|entry| crate::world::SystemSquadrons {
+                    count: 0,
+                    ..entry.clone()
+                })
                 .collect();
             for (fighter, _) in session
                 .fighters
                 .iter()
                 .zip(&homes)
-                .filter(|(fighter, home)| fighter.identity.is_alliance == is_alliance && **home == Some(None))
+                .filter(|(fighter, home)| {
+                    fighter.identity.is_alliance == is_alliance && **home == Some(None)
+                })
             {
-                match entries.iter_mut().find(|entry| entry.class == fighter.class_key) {
+                match entries
+                    .iter_mut()
+                    .find(|entry| entry.class == fighter.class_key)
+                {
                     Some(entry) => entry.count += 1,
                     None => entries.push(crate::world::SystemSquadrons {
                         class: fighter.class_key,
@@ -231,8 +256,12 @@ pub fn apply_results(
                     }),
                 }
             }
-            system.fighters.retain(|entry| entry.is_alliance != is_alliance);
-            system.fighters.extend(entries.into_iter().filter(|entry| entry.count > 0));
+            system
+                .fighters
+                .retain(|entry| entry.is_alliance != is_alliance);
+            system
+                .fighters
+                .extend(entries.into_iter().filter(|entry| entry.count > 0));
         }
     }
 
@@ -361,11 +390,7 @@ pub fn apply_results(
     // FUN_0051ddf0 → FUN_00516ef0: the winner's system squadrons are
     // checked in their seat and the loser's fleets and squadrons look for a
     // place to go (`post_battle`).
-    let recorded = match session.winner {
-        Some(CombatWinner::Attacker) => Some(session.attacker_is_alliance),
-        Some(CombatWinner::Defender) => Some(!session.attacker_is_alliance),
-        Some(CombatWinner::Draw) | None => None,
-    };
+    let recorded = winner_is_alliance(session);
     let pass_winner = crate::post_battle::pass_winner(world, session.system, recorded);
     crate::trace::record(crate::trace::TraceMask::COMBAT, "pass_winner", || {
         serde_json::json!({
@@ -388,17 +413,19 @@ pub fn apply_results(
     });
     // The results name where the pass sent the player's fleet (`0x700d`).
     let player_is_alliance = session.player_is_attacker == session.attacker_is_alliance;
-    let withdrawal = relocations.iter().find_map(|&(fleet, outcome)| match outcome {
-        crate::post_battle::Relocation::Moved(destination)
-            if world
-                .fleets
-                .get(fleet)
-                .is_some_and(|fleet| fleet.is_alliance == player_is_alliance) =>
-        {
-            Some(destination)
-        }
-        _ => None,
-    });
+    let withdrawal = relocations
+        .iter()
+        .find_map(|&(fleet, outcome)| match outcome {
+            crate::post_battle::Relocation::Moved(destination)
+                if world
+                    .fleets
+                    .get(fleet)
+                    .is_some_and(|fleet| fleet.is_alliance == player_is_alliance) =>
+            {
+                Some(destination)
+            }
+            _ => None,
+        });
     troop_transport.destroy_untransportable_cargo(world);
     // A Death Star the battle or its post-battle pass destroyed loses its
     // usable bit (FUN_004f7b80 -> FUN_004f7410), whose event 0x301 reruns
@@ -414,22 +441,18 @@ pub fn apply_results(
     // occupation) follow the side's first usable one, as the original walks
     // a system's fleets in mode 1 (FUN_00509530, FUN_004ffef0(system, 1,
     // side)).
-    if result
-        .winner_fleet
-        .is_none_or(|fleet| !world.fleets.get(fleet).is_some_and(crate::world::Fleet::usable))
-    {
-        let winner_is_alliance = match session.winner {
-            Some(CombatWinner::Attacker) => Some(session.attacker_is_alliance),
-            Some(CombatWinner::Defender) => Some(!session.attacker_is_alliance),
-            Some(CombatWinner::Draw) | None => None,
-        };
-        if let Some(winner_is_alliance) = winner_is_alliance {
+    if result.winner_fleet.is_none_or(|fleet| {
+        !world
+            .fleets
+            .get(fleet)
+            .is_some_and(crate::world::Fleet::usable)
+    }) {
+        if let Some(winner_is_alliance) = winner_is_alliance(session) {
             result.winner_fleet = world.systems.get(session.system).and_then(|system| {
                 system.fleets.iter().copied().find(|&fleet| {
-                    world
-                        .fleets
-                        .get(fleet)
-                        .is_some_and(|fleet| fleet.is_alliance == winner_is_alliance && fleet.usable())
+                    world.fleets.get(fleet).is_some_and(|fleet| {
+                        fleet.is_alliance == winner_is_alliance && fleet.usable()
+                    })
                 })
             });
         }

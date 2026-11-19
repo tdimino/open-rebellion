@@ -7,7 +7,8 @@ edition = "2021"
 default = []
 # Fixture-only constructors used by rebellion-render's interface-test-fixtures.
 interface-test-fixtures = []
-# Battle fixtures (`tactical::test_support`) for rebellion-render's view tests.
+# Shared world fixtures and battle fixtures (`tactical::test_support`) for
+# downstream crate tests.
 test-support = []
 
 [dependencies]

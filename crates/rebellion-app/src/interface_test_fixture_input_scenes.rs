@@ -10,14 +10,17 @@ use rebellion_core::world::{Fleet, GameWorld, ShipInstance};
 use rebellion_render::fleet_window::FleetWindowState;
 use rebellion_render::{MessageLog, TacticalState};
 use rebellion_windowing::{
-    ContentReport, ContentStatus, ReconcileReport, RoutingSnapshot, WindowId, WindowKind,
+    ContentReport, ContentStatus, InputPolicy, ReconcileReport, RoutingSnapshot, WindowId,
 };
 use serde_json::{json, Value};
 
 use crate::tactical_flow::{self, BattleEntry};
 use crate::GameMode;
 
-use super::{FixtureRequest, Scenario};
+use super::{
+    active_modal_id, capture_window_id, focused_window_json, log_changed_observation,
+    registered_window_ids, FixtureRequest, Scenario,
+};
 
 #[cfg(target_arch = "wasm32")]
 extern "C" {
@@ -158,7 +161,7 @@ impl InputScenesFixture {
                 .iter()
                 .rev()
                 .copied()
-                .find(|id| snapshot.key(*id).is_some_and(|key| !is_modal(key.kind))),
+                .find(|id| snapshot.input_policy(*id) == Some(InputPolicy::Modeless)),
         };
         self.failure = self.failure_target.map(|_| injection);
         true
@@ -254,14 +257,7 @@ impl InputScenesFixture {
             return;
         }
         let snapshot = windows.snapshot;
-        let mut registered = snapshot
-            .paint_order()
-            .iter()
-            .chain(snapshot.presentation_history())
-            .copied()
-            .collect::<Vec<_>>();
-        registered.sort_unstable();
-        registered.dedup();
+        let registered = registered_window_ids(snapshot);
         let state = json!({
             "status": "input-scenes-state",
             "code": request.code,
@@ -269,14 +265,11 @@ impl InputScenesFixture {
             "command": self.last_command.map(InputScenesCommand::label),
             "registered": registered.iter().map(|id| id.get()).collect::<Vec<_>>(),
             "record_count": registered.len(),
-            "focused": snapshot.focused().map(|focus| json!({
-                "window": focus.window.get(),
-                "control": focus.control.map(|control| control.0),
-            })),
-            "capture": snapshot.capture_owner().map(WindowId::get),
+            "focused": focused_window_json(snapshot),
+            "capture": capture_window_id(snapshot),
             "fleet_dragging": windows.fleets.is_dragging(),
             "fleet_drag_owner": windows.fleets.drag_owner().map(WindowId::get),
-            "active_modal": snapshot.active_modal().map(WindowId::get),
+            "active_modal": active_modal_id(snapshot),
             "failure_target": self.failure_target.map(WindowId::get),
             "forced_status": self.failure.map(|failure| status_name(failure.status())),
             "blocking_unpainted": windows.reconciliation.blocking_unpainted
@@ -298,20 +291,7 @@ impl InputScenesFixture {
             "encyclopedia_rect": windows.encyclopedia_rect,
             "encyclopedia_content_status": windows.encyclopedia_content_status.map(status_name),
         });
-        if self.last_state.as_ref() == Some(&state) {
-            return;
-        }
-        self.observation_sequence = self.observation_sequence.saturating_add(1);
-        self.last_state = Some(state.clone());
-        let mut report = state;
-        report
-            .as_object_mut()
-            .expect("input-scenes state is an object")
-            .insert("sequence".into(), json!(self.observation_sequence));
-        macroquad::logging::info!(
-            "[windowing-contract-state] {}",
-            serde_json::to_string(&report).expect("serialize input-scenes observation")
-        );
+        log_changed_observation(state, &mut self.last_state, &mut self.observation_sequence);
     }
 
     #[cfg(test)]
@@ -416,29 +396,53 @@ pub struct InputScenesWindows<'a> {
     pub tactical_paused: Option<bool>,
 }
 
-const fn is_modal(kind: WindowKind) -> bool {
-    matches!(
-        kind,
-        WindowKind::FleetFinder
-            | WindowKind::TroopFinder
-            | WindowKind::PersonnelFinder
-            | WindowKind::MessageIndex
-            | WindowKind::Encyclopedia
-            | WindowKind::Status
-            | WindowKind::BuildSelection
-            | WindowKind::MissionDialog
-            | WindowKind::MoveConfirmation
-            | WindowKind::ScrapConfirmation
-            | WindowKind::BattleAlert
-            | WindowKind::BattleResults
-    )
-}
-
 const fn status_name(status: ContentStatus) -> &'static str {
     match status {
         ContentStatus::Ready => "ready",
         ContentStatus::Unpaintable => "unpaintable",
         ContentStatus::Absent => "absent",
         ContentStatus::Suspended => "suspended",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rebellion_render::windowing_policy::{contextual_spec, SUBJECT_COMMAND_CONTEXT};
+    use rebellion_windowing::{SubjectId, WindowCommand, WindowKind, WindowManager, WindowOwner};
+
+    fn open_policy_window(manager: &mut WindowManager, kind: WindowKind, subject: u64) -> WindowId {
+        manager
+            .apply(WindowCommand::Open(contextual_spec(
+                kind,
+                SubjectId::new(SUBJECT_COMMAND_CONTEXT, subject),
+                WindowOwner::StrategicRoot,
+            )))
+            .expect("fixture window opens")
+            .transition
+            .opened_id()
+            .expect("fixture receives a new identity")
+    }
+
+    #[test]
+    fn failure_injection_uses_snapshot_policy_and_rejects_scene_commands() {
+        let mut manager = WindowManager::new();
+        let modeless = open_policy_window(&mut manager, WindowKind::System, 1);
+        let modal = open_policy_window(&mut manager, WindowKind::Status, 2);
+        let snapshot = manager.begin_frame();
+        let mut fixture = InputScenesFixture::default();
+
+        assert!(!fixture.apply_failure(InputScenesCommand::EnterTacticalAlert, &snapshot));
+        assert!(fixture.apply_failure(InputScenesCommand::ModelessAbsent, &snapshot));
+        assert_eq!(fixture.failure_target, Some(modeless));
+        assert_eq!(fixture.failure, Some(FailureInjection::ModelessAbsent));
+
+        assert!(fixture.apply_failure(InputScenesCommand::ModalUnpaintable, &snapshot));
+        assert_eq!(fixture.failure_target, Some(modal));
+        assert_eq!(fixture.failure, Some(FailureInjection::ModalUnpaintable));
+
+        assert!(fixture.apply_failure(InputScenesCommand::RecoverContent, &snapshot));
+        assert_eq!(fixture.failure_target, None);
+        assert_eq!(fixture.failure, None);
     }
 }

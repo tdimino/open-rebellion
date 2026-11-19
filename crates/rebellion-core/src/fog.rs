@@ -84,7 +84,9 @@ impl FogState {
     /// `system`.
     #[must_use]
     pub fn known_facilities(&self, system: SystemKey) -> &[FacilityRef] {
-        self.known_facilities.get(&system).map_or(&[], Vec::as_slice)
+        self.known_facilities
+            .get(&system)
+            .map_or(&[], Vec::as_slice)
     }
 
     /// Record `system`'s manufacturing and production facilities as they are
@@ -319,13 +321,66 @@ impl FogSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::{FleetKey, SystemKey};
+    use crate::ids::{CapitalShipKey, DatId, FleetKey, SectorKey, SystemKey};
     use crate::movement::MovementState;
-    use crate::world::ControlKind;
-    use crate::world::{Fleet, GameWorld};
+    use crate::world::{CapitalShipClass, ControlKind, Fleet, GameWorld, ShipInstance};
+
+    fn test_sector(world: &mut GameWorld) -> SectorKey {
+        world.sectors.insert(crate::world::Sector {
+            dat_id: DatId(0),
+            name: "Test".into(),
+            group: crate::dat::SectorGroup::Core,
+            x: 0,
+            y: 0,
+            systems: vec![],
+        })
+    }
+
+    fn test_system(
+        world: &mut GameWorld,
+        sector: SectorKey,
+        id: u32,
+        name: impl Into<String>,
+        x: u16,
+        y: u16,
+    ) -> SystemKey {
+        let mut system =
+            crate::test_support::system_at(name, sector, x, y, ControlKind::Uncontrolled);
+        system.dat_id = DatId(id);
+        world.systems.insert(system)
+    }
+
+    fn sensor_class(
+        world: &mut GameWorld,
+        is_alliance: bool,
+        detection: u32,
+        name: &str,
+    ) -> CapitalShipKey {
+        world.capital_ship_classes.insert(CapitalShipClass {
+            name: name.into(),
+            is_alliance,
+            is_empire: !is_alliance,
+            hull: 100,
+            detection,
+            ..CapitalShipClass::default()
+        })
+    }
+
+    fn sensor_fleet(world: &mut GameWorld, location: SystemKey, class: CapitalShipKey) -> FleetKey {
+        world.fleets.insert(Fleet {
+            location,
+            capital_ships: vec![ShipInstance::new(class, 100, true)],
+            is_alliance: true,
+            ..Fleet::default()
+        })
+    }
+
+    fn faction(is_alliance: bool) -> Faction {
+        Faction::of_alliance(is_alliance)
+    }
 
     // Build a minimal GameWorld with N systems and M alliance fleets.
-    #[expect(
+    #[allow(
         clippy::cast_possible_truncation,
         reason = "Fixture sizes and coordinates are deliberately small and fit their encoded fields."
     )]
@@ -337,41 +392,18 @@ mod tests {
         let mut world = GameWorld::default();
 
         // Create a dummy sector key for systems.
-        let sector = world.sectors.insert(crate::world::Sector {
-            dat_id: crate::ids::DatId(0),
-            name: "Test Sector".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
+        let sector = test_sector(&mut world);
 
         let sys_keys: Vec<SystemKey> = (0..n_systems)
             .map(|i| {
-                world.systems.insert(crate::world::System {
-                    dat_id: crate::ids::DatId(i as u32),
-                    name: format!("System {i}"),
+                test_system(
+                    &mut world,
                     sector,
-                    x: i as u16 * 10,
-                    y: 0,
-                    exploration_status: crate::dat::ExplorationStatus::Explored,
-                    popularity_alliance: 0.5,
-                    popularity_empire: 0.5,
-                    is_populated: true,
-                    total_energy: 0,
-                    raw_materials: 0,
-                    espionage_rating: 0.0,
-                    fleets: vec![],
-                    ground_units: vec![],
-                    special_forces: vec![],
-                    fighters: Vec::new(),
-                    defense_facilities: vec![],
-                    manufacturing_facilities: vec![],
-                    production_facilities: vec![],
-                    is_headquarters: false,
-                    is_destroyed: false,
-                    control: ControlKind::Uncontrolled,
-                })
+                    i as u32,
+                    format!("System {i}"),
+                    i as u16 * 10,
+                    0,
+                )
             })
             .collect();
 
@@ -423,7 +455,7 @@ mod tests {
         let mut fog = FogState::new(Faction::Alliance);
         FogSystem::seed(&mut fog, &world);
         assert_eq!(fog.known_facilities(systems[0]), [core]);
-        assert!(fog.known_facilities(systems[1]).is_empty());
+        assert_empty!(fog.known_facilities(systems[1]));
     }
 
     // Manual p. 69: only the core systems' facilities are known at the
@@ -440,7 +472,7 @@ mod tests {
         add_mine(&mut world, systems[0]);
         let mut fog = FogState::new(Faction::Empire);
         FogSystem::seed(&mut fog, &world);
-        assert!(fog.known_facilities(systems[0]).is_empty());
+        assert_empty!(fog.known_facilities(systems[0]));
     }
 
     // Manual p. 69: "you won't know when things on that system change".
@@ -453,7 +485,7 @@ mod tests {
         let movement = MovementState::new();
         add_mine(&mut world, systems[0]);
         FogSystem::advance(&mut fog, &world, &movement);
-        assert!(fog.known_facilities(systems[0]).is_empty());
+        assert_empty!(fog.known_facilities(systems[0]));
         world.fleets[fleets[0]].location = systems[0];
         FogSystem::advance(&mut fog, &world, &movement);
         assert_eq!(fog.known_facilities(systems[0]).len(), 1);
@@ -468,21 +500,9 @@ mod tests {
         // (FUN_004fe540.c:20-35). An ordered ship is created uncompleted
         // (FUN_004f7d50(.., 1, 0); the route-1 day-115 save: +0x50 0x42).
         for is_alliance in [true, false] {
-            let faction = if is_alliance {
-                Faction::Alliance
-            } else {
-                Faction::Empire
-            };
+            let faction = faction(is_alliance);
             let (mut world, systems, fleets) = make_world_with_fleets(2, &[0], is_alliance);
-            let sensor = world
-                .capital_ship_classes
-                .insert(crate::world::CapitalShipClass {
-                    is_alliance,
-                    is_empire: !is_alliance,
-                    hull: 100,
-                    detection: 10,
-                    ..crate::world::CapitalShipClass::default()
-                });
+            let sensor = sensor_class(&mut world, is_alliance, 10, "");
             world.fleets[fleets[0]].capital_ships = vec![crate::world::ShipInstance::ordered(
                 sensor,
                 100,
@@ -511,21 +531,9 @@ mod tests {
         // observes (mode 1, FUN_0050ac80) it walks the usable ships, the
         // mode the fleet's own test walks (FUN_004fe540.c:20-35).
         for is_alliance in [true, false] {
-            let faction = if is_alliance {
-                Faction::Alliance
-            } else {
-                Faction::Empire
-            };
+            let faction = faction(is_alliance);
             let (mut world, systems, fleets) = make_world_with_fleets(2, &[0], is_alliance);
-            let sensor = world
-                .capital_ship_classes
-                .insert(crate::world::CapitalShipClass {
-                    is_alliance,
-                    is_empire: !is_alliance,
-                    hull: 100,
-                    detection: 10,
-                    ..crate::world::CapitalShipClass::default()
-                });
+            let sensor = sensor_class(&mut world, is_alliance, 10, "");
             world.fleets[fleets[0]]
                 .capital_ships
                 .push(crate::world::ShipInstance::ordered(
@@ -548,11 +556,7 @@ mod tests {
         // detection 1 reaches 15 units around the fleet's system, along
         // either axis and wherever that system lies.
         for is_alliance in [true, false] {
-            let faction = if is_alliance {
-                Faction::Alliance
-            } else {
-                Faction::Empire
-            };
+            let faction = faction(is_alliance);
             let (mut world, systems, fleets) = make_world_with_fleets(5, &[0], is_alliance);
             for (system, (x, y)) in
                 systems
@@ -562,15 +566,7 @@ mod tests {
                 world.systems[*system].x = x;
                 world.systems[*system].y = y;
             }
-            let sensor = world
-                .capital_ship_classes
-                .insert(crate::world::CapitalShipClass {
-                    is_alliance,
-                    is_empire: !is_alliance,
-                    hull: 100,
-                    detection: 1,
-                    ..crate::world::CapitalShipClass::default()
-                });
+            let sensor = sensor_class(&mut world, is_alliance, 1, "");
             world.fleets[fleets[0]].capital_ships =
                 vec![crate::world::ShipInstance::new(sensor, 100, is_alliance)];
             let mut fog = FogState::new(faction);
@@ -585,7 +581,7 @@ mod tests {
     #[test]
     fn new_fog_is_empty() {
         let fog = FogState::new(Faction::Alliance);
-        assert!(fog.is_empty());
+        assert_empty!(fog);
     }
 
     #[test]
@@ -639,7 +635,7 @@ mod tests {
         fog.reveal(sys_keys[0]);
         let ms = MovementState::new();
         let events = FogSystem::advance(&mut fog, &world, &ms);
-        assert!(events.is_empty());
+        assert_empty!(events);
     }
 
     #[test]
@@ -662,7 +658,7 @@ mod tests {
         assert!(!fog.is_visible(sys_keys[1]));
         // The stationary fleet at sys 0 is already known, so no stationary
         // reveal event either.
-        assert!(events.is_empty());
+        assert_empty!(events);
 
         // At 5 ticks elapsed (50%) — destination revealed.
         ms.orders_mut()
@@ -684,7 +680,7 @@ mod tests {
 
         let events = FogSystem::advance(&mut fog, &world, &movement);
 
-        assert!(events.is_empty());
+        assert_empty!(events);
         assert!(!fog.is_visible(sys_keys[0]));
         assert!(!fog.is_visible(sys_keys[1]));
     }
@@ -702,7 +698,7 @@ mod tests {
             .ticks_elapsed = 8;
 
         let events = FogSystem::advance(&mut fog, &world, &ms);
-        assert!(events.is_empty());
+        assert_empty!(events);
         assert!(!fog.is_visible(sys_keys[1]));
     }
 
@@ -716,121 +712,21 @@ mod tests {
     }
 
     #[test]
-    #[expect(
+    #[allow(
         clippy::too_many_lines,
         reason = "Keep this existing ordered routine together; splitting its phases is a separate refactor."
     )]
     fn sensor_radius_reveals_nearby_systems() {
-        use crate::ids::DatId;
-        use crate::world::{CapitalShipClass, ShipInstance};
-
         let mut world = GameWorld::default();
-        let sector = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0),
-            name: "Test".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
+        let sector = test_sector(&mut world);
 
         // Fleet at (0, 0), nearby system at (100, 0), far system at (1000, 0).
         // detection=10 → radius = 10 * 15.0 = 150 units → (100,0) within range, (1000,0) not.
-        let sys0 = world.systems.insert(crate::world::System {
-            dat_id: DatId(0),
-            name: "Base".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        });
-        let sys_near = world.systems.insert(crate::world::System {
-            dat_id: DatId(1),
-            name: "Near".into(),
-            sector,
-            x: 100,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        });
-        let sys_far = world.systems.insert(crate::world::System {
-            dat_id: DatId(2),
-            name: "Far".into(),
-            sector,
-            x: 1000,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        });
-
-        let ship_class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId(0),
-            name: "Sensor Ship".into(),
-            is_alliance: true,
-            is_empire: false,
-            hull: 100,
-            shield_strength: 50,
-            sub_light_engine: 5,
-            maneuverability: 5,
-            hyperdrive: 2,
-            detection: 10,
-            ..CapitalShipClass::default()
-        });
-
-        world.fleets.insert(Fleet {
-            location: sys0,
-            capital_ships: vec![ShipInstance::new(ship_class, 100, true)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            bombarding: false,
-        });
+        let sys0 = test_system(&mut world, sector, 0, "Base", 0, 0);
+        let sys_near = test_system(&mut world, sector, 1, "Near", 100, 0);
+        let sys_far = test_system(&mut world, sector, 2, "Far", 1000, 0);
+        let ship_class = sensor_class(&mut world, true, 10, "Sensor Ship");
+        sensor_fleet(&mut world, sys0, ship_class);
 
         let mut fog = FogState::new(Faction::Alliance);
         fog.reveal(sys0); // fleet's own system already visible
@@ -851,91 +747,12 @@ mod tests {
 
     #[test]
     fn sensor_detection_zero_reveals_only_own_system() {
-        use crate::ids::DatId;
-        use crate::world::{CapitalShipClass, ShipInstance};
-
         let mut world = GameWorld::default();
-        let sector = world.sectors.insert(crate::world::Sector {
-            dat_id: DatId(0),
-            name: "Test".into(),
-            group: crate::dat::SectorGroup::Core,
-            x: 0,
-            y: 0,
-            systems: vec![],
-        });
-
-        let sys0 = world.systems.insert(crate::world::System {
-            dat_id: DatId(0),
-            name: "Base".into(),
-            sector,
-            x: 0,
-            y: 0,
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        });
-        let sys_near = world.systems.insert(crate::world::System {
-            dat_id: DatId(1),
-            name: "Near".into(),
-            sector,
-            x: 10,
-            y: 0, // very close
-            exploration_status: crate::dat::ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: vec![],
-            ground_units: vec![],
-            special_forces: vec![],
-            fighters: Vec::new(),
-            defense_facilities: vec![],
-            manufacturing_facilities: vec![],
-            production_facilities: vec![],
-            is_headquarters: false,
-            is_destroyed: false,
-            control: ControlKind::Uncontrolled,
-        });
-
-        // Ship with detection=0
-        let ship_class = world.capital_ship_classes.insert(CapitalShipClass {
-            dat_id: DatId(0),
-            name: "Blind Ship".into(),
-            is_alliance: true,
-            is_empire: false,
-            hull: 100,
-            shield_strength: 50,
-            sub_light_engine: 5,
-            maneuverability: 5,
-            hyperdrive: 2,
-            detection: 0, // no detection
-            ..CapitalShipClass::default()
-        });
-
-        world.fleets.insert(Fleet {
-            location: sys0,
-            capital_ships: vec![ShipInstance::new(ship_class, 100, true)],
-            fighters: vec![],
-            characters: vec![],
-            is_alliance: true,
-            bombarding: false,
-        });
+        let sector = test_sector(&mut world);
+        let sys0 = test_system(&mut world, sector, 0, "Base", 0, 0);
+        let sys_near = test_system(&mut world, sector, 1, "Near", 10, 0);
+        let ship_class = sensor_class(&mut world, true, 0, "Blind Ship");
+        sensor_fleet(&mut world, sys0, ship_class);
 
         let mut fog = FogState::new(Faction::Alliance);
         fog.reveal(sys0);
@@ -947,6 +764,6 @@ mod tests {
             !fog.is_visible(sys_near),
             "detection=0 should not reveal nearby systems"
         );
-        assert!(events.is_empty());
+        assert_empty!(events);
     }
 }

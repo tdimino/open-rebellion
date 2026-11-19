@@ -2,7 +2,669 @@
 
 # Closed
 
-192 closed nodes, newest first. Back to the [index](INDEX.md).
+208 closed nodes, newest first. Back to the [index](INDEX.md).
+
+<a id="or-ep-uniform-ui-controls-gru5"></a>
+### Uniform original-game controls across the UI
+
+`or-ep-uniform-ui-controls-gru5` · **closed** · P1 · controls, duplication, interface-parity, refactor, windowing · closed 2026-11-19
+
+> ## Background
+>
+> The original executable has a shared Cool* control library at 0x005fd7c0-0x00610b70. The current Rust port has a renderer-independent top-level window manager and several shared helpers, but authentic game surfaces still implement list, tab, bitmap-button, text-field and selection-box behavior locally. This creates structural duplication and makes new windows likely to diverge from established input, focus, selection, scrolling and art-state semantics.
+>
+> The authoritative sources are `ghidra/notes/rebexe-map.md`, the cited `FUN_0060*.c` decompiles, per-feature Ghidra notes, and `docs/plans/2026-10-10-feat-strategic-window-modality-and-focus.md`. A current 70-token Rust scan with `--ignore-identifiers --ignore-literals` reports 263 normalized clone pairs and 3.2% duplicated lines across rebellion-render and rebellion-windowing; exact clones remain zero. Normalized candidates are leads, not defects.
+>
+> ## Scope
+>
+> Create a uniform renderer-side control-object layer for original-game UI surfaces. Cover CoolStrobeButton and its checkbox state, CoolTabControl, CoolDragList composed with the existing ScrollBar, CoolSelectionBoxClass, and CoolStringField. Inventory every production consumer and migrate it or record source-backed reasons it represents a different original control. Include strategic, modal and tactical game surfaces where the recovered class applies.
+>
+> Keep top-level identity, order, focus leases, modality and routing in the std-only rebellion-windowing crate. Keep domain rows, tab meanings, game actions and original art choices in feature modules. Developer-only egui panels and controls with genuinely different original semantics are explicit exclusions. Do not recreate HWNDs, Win32 dispatch or the C++ inheritance hierarchy.
+>
+> ## Success Criteria
+>
+> Every authentic production UI consumer in the migration matrix uses the matching shared Rust control object or has a cited exclusion. Shared objects own stable geometry, state transitions and interaction outcomes; feature modules retain domain policy. Alliance and Empire paths preserve their original art and behavior. Exact duplication stays at zero, selected normalized clone families disappear, and repository gates, scoped mutation tests and applicable silent interface-parity journeys pass.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve unrelated work. Add no production dependency and change no save, DAT or network format. New behavior claims require original-source citations; port choices remain labeled as such. Every implementation slice must run make fmt, warning-free make build, make check and scoped cargo mutants before it is reported ready.
+
+**Acceptance criteria**
+
+- [x] The reviewed migration matrix accounts for every production use of the recovered Cool* families and names all source-backed exclusions.
+- [x] Shared renderer control objects cover bitmap buttons, tabs, drag lists, selection boxes and string fields without moving domain policy into generic code.
+- [x] All in-scope game UI consumers use the uniform controls on Alliance and Empire paths.
+- [x] Exact Rust clones remain zero and every selected 70-token normalized clone family is removed without callback-heavy lifecycle abstractions.
+- [x] Component tests, scoped mutation runs, make fmt, warning-free make build, make check and applicable silent interface-parity journeys pass.
+
+**Notes**
+
+> 2026-11-19 aggregate acceptance: all 11 child beads are closed. Final verifier or-ep-uniform-ui-controls-gru5.9 accounts for all 62 consumers, preserves ownership boundaries, reports zero exact clones and dispositioned normalized candidates, passes 3370 Cargo plus 16 Node tests and 382 mutation attempts with no unexplained survivor, and passes formatting, warning-free build, make check, both WASM builds, and 39 muted browser commands / 244 two-faction viewport cells. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON. No original A0 or protected release acceptance is promoted.
+
+**Closed:** All 11 child beads and all five epic criteria are complete. Final verifier or-ep-uniform-ui-controls-gru5.9 accounts for all 62 production consumers, preserves renderer/windowing/domain boundaries, records zero exact clones with selected normalized families removed, and proves component tests, 382 scoped mutation attempts with no unexplained survivor, formatting, warning-free build, make check, both WASM builds, and 39 muted browser commands / 244 Alliance-and-Empire viewport cells. Evidence is published in docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON. No original A0 or protected release acceptance is promoted.
+
+<a id="or-ep-uniform-ui-controls-gru5.9"></a>
+### Verify uniform control adoption across the game UI
+
+`or-ep-uniform-ui-controls-gru5.9` · **closed** · P1 · controls, duplication, interface-parity, verify · assigned to CreamOwl · closed 2026-11-19  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.3](#or-ep-uniform-ui-controls-gru5.3), [or-ep-uniform-ui-controls-gru5.5](#or-ep-uniform-ui-controls-gru5.5), [or-ep-uniform-ui-controls-gru5.6](#or-ep-uniform-ui-controls-gru5.6), [or-ep-uniform-ui-controls-gru5.7](#or-ep-uniform-ui-controls-gru5.7), [or-ep-uniform-ui-controls-gru5.8](#or-ep-uniform-ui-controls-gru5.8)
+
+> ## Background
+>
+> The component beads are complete only when the whole production game UI consistently uses the recovered control objects. Per-component green tests can still leave an unregistered call site, a second free helper, a faction-only divergence or a normalized clone family behind. This bead performs the cross-family acceptance and closes the epic evidence loop.
+>
+> ## Scope
+>
+> Re-run the reviewed migration inventory against the final source and account for every production consumer. Remove obsolete helpers and imports, confirm renderer controls do not absorb domain or top-level window policy, and record selected/skipped jscpd candidates. Run exact and normalized scans with the baseline 70-token flags. Update the applicable architecture/control documentation and interface evidence with current facts and commands.
+>
+> ## Design
+>
+> Acceptance is evidence-based: a matrix row is complete only with a canonical object path, migrated call sites and observable tests, or a source-backed exclusion. Do not chase the total normalized percentage by abstracting intentional configuration, macros, tests or semantically different lifecycle loops.
+>
+> ## Tests
+>
+> Run all component/family tests, scoped cargo mutants for each changed control kernel, make fmt, warning-free make build and make check. Explain every surviving mutant as equivalent or close it before acceptance.
+>
+> ## E2E
+>
+> Run the applicable muted tools/interface-parity control/window journeys on both factions and supported viewports. Retain inspected screenshots, console/network logs and artifact hashes according to repository policy.
+>
+> ## Evidence
+>
+> Record before/after exact and normalized clone counts, removed clone families, skipped candidates with reasons, final migration matrix and exact gate commands/results. Never cite scratch artifact paths in tracked facts.
+>
+> ## Constraints
+>
+> AGENTS.md applies. This bead does not authorize new UI functionality or broad aesthetic redesign and cannot close around a failing gate.
+
+**Acceptance criteria**
+
+- [x] The final inventory accounts for every production game-UI control consumer with a canonical shared object or source-backed exclusion.
+- [x] Obsolete control helpers/state are removed and the renderer/windowing/domain boundaries remain intact.
+- [x] Exact clones remain zero; selected 70-token normalized families are gone and intentional candidates are documented rather than over-abstracted.
+- [x] All component/family tests and scoped mutation runs pass with no unexplained non-equivalent survivor.
+- [x] make fmt, warning-free make build, make check and all applicable silent two-faction interface-parity journeys pass with retained evidence.
+
+**Notes**
+
+> 2026-11-19 CreamOwl local Mini audit at 220e0a0709a999d49cec6272776a254e2030f131: all 62 matrix rows inventoried; ownership and obsolete-helper audit pass with no Rust changes. Items 3-5 remain open: 9 exact pairs (0.1%), 297 normalized (3.4%); make check fails strict Clippy with 118 diagnostics after 3349 tests pass; fresh 324 mutants: 218 caught, 54 unviable, 50 missed, 2 infinite-loop timeouts. make fmt/build and production/fixture WASM builds pass, build warning-free. 39 browser commands: 36 pass, 3 fail; 226 cells pass, 7 fail, 11 unrun. Encyclopedia shell fails both factions; canonical Encyclopedia aborts first case; System title drag fails all four cells. All 19 tactical scenarios pass both factions/viewports. First Orbital Strike attempt interrupted by unrelated Apple Phone audio assertion; clean retry passes 22 cells. Final browsers/servers closed and audio assertions clean. Main-menu direct selector assertions and inventoried parity omissions remain. Detailed commands, every row, hashes and survivor dispositions: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-validation.md and adjacent JSON. Bead remains in_progress; no original-interface cells promoted. Will authorized publication of the .9 evidence and generated task records after reviewing these failures. The evidence commit keeps acceptance items 3-5 unchecked and the bead in_progress. The rebuilt production WASM remains local and unstaged; no implementation changes are included.
+> 2026-11-19 CreamOwl remediation: acceptance items 3-5 now pass in the tested working tree based on a4b0ae8e4e37768ca10fbd6c395fa567a16d85b3; implementation patch SHA-256 7ba736a073da6203171a793f398ecf8181e529500d61b0089dae396096405f8b. Zero exact clones; 289 normalized candidates (3.3%) individually dispositioned. All 62 matrix rows accounted for. make fmt, warning-free make build, make check and both WASM builds pass; 3347 workspace + 23 asset + 16 Node tests, including 1243 renderer tests. Four scoped mutation campaigns total 382 attempts: 312 caught, 62 unviable, 6 misses resolved by removal or final recheck, 2 detected nontermination timeouts; no unexplained non-equivalent survivor. All 39 browser commands and 244 cells pass, both factions and supported viewports, zero page/network diagnostic errors; 258 screenshots inspected, browsers/servers closed, audio assertions clean. Encyclopedia focus, button press origin, managed System identity, final release motion and managed Missions movement fixed with regression evidence. Detailed commands, source and WASM hashes, per-cell results and limits: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON. Remains in_progress solely pending publication of tested source/harness changes: prior explicit staging authorization covers evidence/task files only. No original-interface cells or protected release gates promoted.
+
+**Closed:** All five acceptance criteria pass. Will authorized publication and closure; the exact 25 tested source/harness files are pushed and remote-verified at d9797b451e4d0c5f66bad48255f7ab878f41ae89 on will-forster/refactor/strategic-window-components, with WASM excluded. All 62 consumer rows accounted for; zero exact clones, 289 normalized candidates dispositioned; 3370 Cargo and 16 Node tests pass; 382 scoped mutation attempts leave no unexplained survivor. make fmt, warning-free make build, make check and both WASM builds pass. All 39 muted browser commands / 244 faction-viewport cells pass, with 258 inspected screenshots and clean diagnostics/cleanup. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON. No original A0 or protected release acceptance is promoted.
+
+<a id="or-ep-uniform-ui-controls-gru5.10"></a>
+### Port recovered title-drag bounds and mode policy
+
+`or-ep-uniform-ui-controls-gru5.10` · **closed** · P2 · controls, interface-parity, port, windowing · assigned to CoralSeal · closed 2026-11-18  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1)
+
+> ## Background
+>
+> The CoolGameWindow drag path uses policy bit 4 and a mode at +0xf4. `FUN_00606ee0` starts capture. Mode 1 moves the native window live in `FUN_006071e0`; mode 2 draws an XOR outline. `FUN_00607010` releases capture and clamps the final top-left to the bounds rectangle at +0xbc..+0xc8 while accounting for the full window size. The current renderer has live title drag but does not apply this recovered release clamp.
+>
+> ## Scope
+>
+> Make the renderer/windowing adapter preserve temporary pointer capture while clamping a completed drag to the feature's recovered aperture bounds. Inventory constructors for +0xf4 mode 2: implement the outline preview only where a current source-backed surface actually used it, or retain a cited exclusion when no consumer exists. Do not copy HWND, HDC or ROP2 mechanics into rebellion-windowing.
+>
+> ## Design
+>
+> Window identity, routing snapshots and capture stay in rebellion-windowing. Pixel-space drag geometry and aperture bounds stay in rebellion-render. The state transition must expose a typed final position; feature code supplies bounds rather than duplicating edge math.
+>
+> ## Tests
+>
+> Add behavior-sentence tests for each edge, an oversized overshoot, live movement, release, and capture cleanup. Demonstrate new assertions fail against the unclamped implementation and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run the silent original-backed drag journey for representative Alliance and Empire strategic windows at each aperture edge.
+>
+> ## Evidence
+>
+> Cite `FUN_00606380`, `FUN_00606ee0`, `FUN_00607010`, `FUN_006071e0` and `ghidra/notes/cool-control-contracts.md`.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve event ownership and do not introduce Win32 concepts into the renderer-independent crate.
+
+**Acceptance criteria**
+
+- [x] Release-time clamping uses the recovered bounds and full window size without changing temporary capture ownership.
+- [x] The migration matrix identifies every live-drag and outline-drag consumer; mode 2 is implemented only for a source-backed consumer, otherwise it has a cited exclusion.
+- [x] Behavior-sentence tests cover movement inside each edge, overshoot, release, and both factions.
+- [x] Scoped mutation checks, make fmt, warning-free make build, make check, and applicable silent interface-parity journeys pass.
+
+**Notes**
+
+> 2026-11-18: Ported FUN_00607010 release-time galaxy-aperture clamping through the shared renderer title-drag transition. Live movement remains unclamped while held; release clears the renderer drag before clamping with each feature supplied full window size, and returns TitleDragUpdate::Released with the final position. The migration matrix inventories System, Fleet, Defenses and Missions as live mode-1 consumers, Sector as immovable, and mode 2 as a cited no-current-consumer exclusion. Both new behavior tests were demonstrated red against the previous unclamped release (-400 vs 55 and 32767/-32768 vs 314/40) and green after restoration, for Alliance and Empire. Renderer lib: 1222 passed, 3 asset-dependent ignored. Scoped cargo mutants: 37 generated; 34 caught, 2 unviable, and the only miss was an unrelated pre-existing draw_band_rename StringField font-field mutant included despite the function filter; no title-drag/clamp survivor. Green local gates: make fmt; warning-free make build; make check. Isolated WASM fixture: 38 scenarios/152 executions, zero production fixture tokens, SHA-256 c4953305661f9e6afb726d7dbdc70e8335d4feef95b2d0e88596d4fc532e5c9a. Silent journeys: fleet-move 2026-11-18T18-31-31-572Z-2436957 (12/12), fleet-window 2026-11-18T18-34-37-094Z-2440066 (40/40), sector-quadrants 2026-11-18T18-51-49-857Z-2454350 (12/12).
+
+**Closed:** Recovered release-time title-drag clamping is implemented for all current live strategic windows, mode policy is inventoried, both-faction behavior and interface journeys pass, and repository gates are green.
+
+<a id="or-window-shell-duplicates-91bg"></a>
+### Extract shared strategic-window interaction shell
+
+`or-window-shell-duplicates-91bg` · **closed** · P2 · duplication, refactor, rust · assigned to IvoryGrove · closed 2026-11-18
+
+> Continue the exact-clone cleanup on refactor/rust-same-file-duplication. The ec98344b baseline retains concentrated production clones across Defenses, Missions, Fleet, and System window shells. Extract precise shared pointer-claim, frame setup, chrome, and routing mechanics where behavior is identical; keep content-specific rendering, art, reports, drag/drop semantics, public APIs, and source citations in their owning modules. Retain same-flags evidence under agent-work/rust-cross-file-pass-3.
+
+**Acceptance criteria**
+
+- [x] Fresh ec98344b exact-clone baseline and strategic-window production subset are recorded with hashes and counts.
+- [x] Shared strategic-window interaction/render-shell helpers remove meaningful exact production clones while preserving content-specific behavior and public APIs.
+- [x] Same-flags jscpd rescan shows fewer strategic-window production clones, no new same-file clones, and net-negative Rust LOC for the slice.
+- [x] make check passes and make build passes without warnings; exact commands and limitations are recorded.
+- [x] Commit and push only after explicit user authorization.
+
+**Closed:** Completed, verified, committed and pushed in da4d1d38 (refactor(rust): centralize duplicated code and fixtures); the commit is in current history and the relevant remote branches.
+
+<a id="or-window-finder-test-fixtures-prtf"></a>
+### Unify duplicated Finder and window test fixtures
+
+`or-window-finder-test-fixtures-prtf` · **closed** · P2 · duplication, refactor, rust, test · assigned to IvoryGrove · closed 2026-11-18
+
+> Consolidate exact cross-file test duplication around strategic Finders and windows, including small repeated layout/world builders, managed-window setup, routing assertions, and shared fixture construction. Preserve behavior-specific assertions and keep helpers in a clearly test-only common module. Measure test clones separately from production and avoid abstraction across fixtures with different semantics.
+
+**Acceptance criteria**
+
+- [x] Baseline test-only Finder/window clone pairs are classified by fixture versus intentional behavior assertions.
+- [x] Precise test-only helpers replace repeated cross-file layout, world, managed-window, or routing setup, including worthwhile small clones.
+- [x] Same-flags jscpd rescan shows fewer test-only Finder/window clones and no new same-file clones.
+- [x] make check passes and make build passes without warnings.
+- [x] Commit and push only after explicit user authorization.
+
+**Closed:** Completed, verified, committed and pushed in da4d1d38 (refactor(rust): centralize duplicated code and fixtures); the commit is in current history and the relevant remote branches.
+
+<a id="or-finder-shell-duplicates-0oa1"></a>
+### Extract shared Finder rendering and input shell
+
+`or-finder-shell-duplicates-0oa1` · **closed** · P2 · duplication, refactor, rust · assigned to IvoryGrove · closed 2026-11-18
+
+> Continue the exact-clone cleanup on refactor/rust-same-file-duplication. The ec98344b baseline has 556 pair-counted production clone lines across Fleet, Personnel, and Troop Finder pairs. Extract only precise shared rendering/input mechanics (window canvas, navigation snapshot, visible-row geometry, click/wheel handling) while preserving family-specific rows, tabs, art, actions, public APIs, and original-game citations. Retain same-flags jscpd evidence under agent-work/rust-cross-file-pass-3 and preserve unrelated cargo-check.json and crates/report/.
+
+**Acceptance criteria**
+
+- [x] Fresh ec98344b exact-clone baseline and Finder production subset are recorded with hashes and counts.
+- [x] Shared Finder rendering/input helpers remove a meaningful set of exact production clones without a vague callback framework or public API change.
+- [x] Same-flags jscpd rescan shows fewer Finder production clones, no new same-file clones, and net-negative Rust LOC for the slice.
+- [x] make check passes and make build passes without warnings; exact commands and limitations are recorded.
+- [x] Commit and push only after explicit user authorization.
+
+**Closed:** Completed, verified, committed and pushed in da4d1d38 (refactor(rust): centralize duplicated code and fixtures); the commit is in current history and the relevant remote branches.
+
+<a id="or-ep-uniform-ui-controls-gru5.6"></a>
+### Extract CoolSelectionBox and migrate popup selectors
+
+`or-ep-uniform-ui-controls-gru5.6` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to ChartreuseMink · closed 2026-11-18  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> The original CoolSelectionBoxClass (`FUN_0060bed0`, `FUN_0060c210`) opens a popup through `FUN_0060cac0`; `FUN_0060d020` hosts a CoolDragList, flips the popup above when needed, captures/dismisses outside presses and reports the selected item. Build Selection and Mission Dialog currently carry separate list-open flags, popup geometry, wheel movement, row hover/selection and dismissal logic.
+>
+> ## Scope
+>
+> Implement SelectionBoxState, SelectionBoxSpec and typed SelectionBoxOutput composed from DragList and StrobeButton where the recovered control uses one. Cover open/close/toggle, current-item reveal, popup frame/list inset, row capacity, above/below placement, outside press consumption, wheel/scrollbar behavior, hover/selected art and chosen-item closure. Migrate Build Selection and Mission Dialog plus any additional authentic matrix consumers.
+>
+> ## Design
+>
+> The object owns popup/control behavior and returns open/close/selection outcomes. Feature modules provide typed items and render their item content; they retain build/mission validation and actions. Popup dismissal must claim its physical event so the exposed control cannot activate in the same dispatch.
+>
+> ## Tests
+>
+> Add component tests for placement, capture, outside dismissal, reveal, wheel/scrollbar, selection, and same-event fallthrough. Preserve Build Selection and Mission Dialog tests for original geometry, current-row colors and bottom-button availability. Show new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent Build Selection and Mission Dialog journeys on both factions, including opening, scrolling, choosing, outside dismissal and a popup near the lower aperture edge.
+>
+> ## Evidence
+>
+> Cite `FUN_0060bed0`, `FUN_0060c210`, `FUN_0060cac0`, `FUN_0060cc50`, `FUN_0060d020`, `FUN_0060cbf0` and each feature constructor. Record the existing missing 0x299a scrollbar art behavior until settled.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not move buildable/mission item rendering or validation into the generic object. Preserve modal routing and control registry names.
+
+**Acceptance criteria**
+
+- [x] SelectionBox composes DragList and owns recovered popup placement, reveal, capture, scrolling, selection and dismissal behavior.
+- [x] Build Selection, Mission Dialog and every other matrix-selected consumer use the shared object without moving item/domain policy.
+- [x] Outside dismissal consumes its event and placement above/below remains within the strategic aperture.
+- [x] Both factions pass behavior-sentence tests and scoped mutations for popup interaction and art state.
+- [x] make fmt, warning-free make build, make check and silent Build Selection/Mission Dialog journeys pass.
+
+**Closed:** Done; uncommitted, ships in the single uniform-controls epic PR at Will's direction.
+
+<a id="or-ep-uniform-ui-controls-gru5.8"></a>
+### Consolidate the remaining recovered UI control families
+
+`or-ep-uniform-ui-controls-gru5.8` · **closed** · P2 · controls, interface-parity, port, refactor, verify · assigned to AzureRaven · closed 2026-11-18  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> Uniform UI controls extend beyond the five largest clone families. The original toolkit also contains vertical/horizontal ScrollBar, Slider, CoolwinStatusBar and stock tooltip controls; Checkbox is a StrobeButton variant. The port already has strong ScrollBar and TooltipState objects, an egui audio slider, tactical status meters and feature-local tooltip rendering. These must be reconciled against the reviewed matrix rather than ignored or homogenized without source evidence.
+>
+> ## Scope
+>
+> For every remaining control-family row in the reviewed matrix, make one renderer object the canonical implementation and migrate authentic production consumers. Preserve the existing ScrollBar implementation and tooltip object where they satisfy the original contract, moving/re-exporting them through the uniform controls module without unnecessary rewrites. Compare slider and status-bar consumers against their original classes; extract shared objects when the same class has multiple consumers, otherwise retain a focused object with a cited singleton/different-control explanation. Confirm Checkbox composition through StrobeButton.
+>
+> ## Design
+>
+> Uniform means one behavior contract per original control family, not identical styling or forced use in developer panels. Keep resource/art configuration and domain action application outside the objects. Do not invent behavior for unresolved tactical meters or audio extensions.
+>
+> ## Tests
+>
+> Preserve existing scrollbar and tooltip behavior tests. Add source-backed tests for any newly shared slider/status/checkbox behavior, show them red and run scoped cargo mutants for touched logic.
+>
+> ## E2E
+>
+> Run applicable silent cockpit tooltip, scrollbar, game-options/audio-slider and tactical status journeys on both factions where the matrix marks authentic original controls.
+>
+> ## Evidence
+>
+> Cite the original constructor/WndProc for every migrated family and update the matrix with canonical Rust object paths and exclusions.
+>
+> ## Constraints
+>
+> AGENTS.md applies. No developer-only egui restyling, speculative parity claims or production dependency changes.
+
+**Acceptance criteria**
+
+- [x] ScrollBar, Tooltip, Checkbox, Slider and CoolwinStatusBar matrix rows each name one canonical Rust object or a source-backed different/singleton exclusion.
+- [x] Every authentic repeated production consumer uses the canonical object without forced styling across different original controls.
+- [x] Existing scrollbar/tooltip tests and new source-backed control tests pass for both factions where applicable.
+- [x] Scoped mutation checks have no non-equivalent survivor in touched logic.
+- [x] make fmt, warning-free make build, make check and applicable silent UI journeys pass.
+
+**Notes**
+
+> 2026-11-19 final verification: or-ep-uniform-ui-controls-gru5.9 proves the remaining formatting, warning-free build, make check, WASM and applicable muted two-faction UI journeys. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON.
+
+**Closed:** Implementation and local verification complete; Tom will validate the aggregate uniform-controls epic PR, including the Mini-only tactical four-cell performance gate.
+
+<a id="or-ep-uniform-ui-controls-gru5.7"></a>
+### Extract CoolStringField and migrate authentic text controls
+
+`or-ep-uniform-ui-controls-gru5.7` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to CoralSeal · closed 2026-11-18  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> The original CoolStringField constructor `FUN_00604cf0` owns a text buffer, max length, owner, selection, geometry and focus; its WndProc `FUN_00605160` handles accepted characters and key forwarding. Parent windows retain commit/cancel meaning. The port repeats raw egui TextEdit setup and focus/selection logic for Fleet rename, manufacturing-band rename, Finder type-ahead, Encyclopedia search and other fields.
+>
+> ## Scope
+>
+> Implement StringFieldState, StringFieldSpec and typed StringFieldOutput for recovered text editing, selection, select-all, max length, focus acquisition/loss, accepted-character filtering, Enter/Escape and owner key forwarding. Migrate every authentic CoolStringField consumer in the matrix, starting with Fleet and manufacturing rename, then Finder/Encyclopedia fields where the source confirms the class. Record main-menu, developer-panel or other native edit controls as exclusions when they are not CoolStringField.
+>
+> ## Design
+>
+> The object cooperates with WindowId/ControlId and FrameInputRouter leases but does not own top-level focus policy. It returns typed text/focus/submit/cancel/unhandled-key outcomes; the parent decides whether empty submission is rejected, what command is issued and how type-ahead changes its list. Styling is explicit configuration so rename selection colors and finder/search fields can differ without duplicating input state.
+>
+> ## Tests
+>
+> Add component tests for select-all, typed characters, max length, focus lease, Enter/Escape, empty submission policy boundaries and unhandled-key forwarding. Preserve feature tests for rename and type-ahead on both factions, demonstrate new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent Fleet/manufacturing rename and Finder/Encyclopedia search journeys on both factions where supported, including focus restoration and same-frame key isolation.
+>
+> ## Evidence
+>
+> Cite `FUN_00604cf0`, `FUN_00604f70`, `FUN_00604f90`, `FUN_00605110`, `FUN_00605160`, `FUN_00609650`, `FUN_00609ed0` and the applicable parent handlers.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not make rename/search semantics generic and do not replace developer-only controls for visual uniformity.
+
+**Acceptance criteria**
+
+- [x] StringField owns recovered text, selection, length, focus and key-handling state and returns typed parent-facing outcomes.
+- [x] Fleet/manufacturing rename and every other matrix-confirmed CoolStringField consumer use the shared object.
+- [x] Feature-specific empty-submit, commit/cancel and type-ahead semantics remain in their parent modules.
+- [x] Both factions pass behavior-sentence focus/edit tests and scoped mutation checks with no non-equivalent survivor.
+- [x] make fmt, warning-free make build, make check and applicable silent rename/search journeys pass.
+
+**Notes**
+
+> 2026-11-19 final verification: or-ep-uniform-ui-controls-gru5.9 proves the remaining formatting, warning-free build, make check, WASM and applicable muted two-faction rename/search interface-parity gates. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON.
+
+**Closed:** Closed at Will's direction for the aggregate uniform-controls PR.
+
+<a id="or-ep-uniform-ui-controls-gru5.5"></a>
+### Migrate all remaining authentic CoolDragList consumers
+
+`or-ep-uniform-ui-controls-gru5.5` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to AzureRaven · closed 2026-11-18  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> After the DragList kernel is proven in Defenses and Missions, the same original class remains represented by feature-local code in Fleet/System lists, Fleet/Troop/Personnel Finders, Message Index and message display, Operation Report, Status surfaces, manufacturing/build flows, battle alerts/results and other matrix rows. Uniform controls require migrating the full authentic consumer set rather than stopping after two examples.
+>
+> ## Scope
+>
+> Migrate every remaining production consumer identified as CoolDragList in the reviewed matrix to the shared DragList object. Group edits in reviewable family slices while maintaining one canonical state/output contract. Reuse common test fixtures instead of copying setup. Selection-box popup lists are owned by the dedicated SelectionBox bead. Consumers proven to use a different original list/control stay local with a cited matrix exclusion.
+>
+> ## Design
+>
+> Each feature maps DragListOutput into its own actions; it retains rows, sorting/filtering, item art, selection meaning, game queries and faction policy. Remove superseded first-row, click timing, list geometry, wheel, capture and scrollbar implementations only after the shared object owns the same behavior. Do not add callbacks that let the generic list mutate domain state.
+>
+> ## Tests
+>
+> For every migrated family retain behavior-sentence tests for selection, keyboard navigation, scrolling, double click and drag as applicable, including both factions. Add component coverage only for newly discovered control behavior, show it red and run scoped cargo mutants in manageable family batches.
+>
+> ## E2E
+>
+> Run each applicable silent tools/interface-parity journey for the migrated family at its supported viewport and both factions. Retain diagnostic logs and screenshot/hash evidence under the repository evidence rules.
+>
+> ## Evidence
+>
+> Update the migration matrix with the exact Rust consumers removed and the original constructor/window-procedure citations supporting each mapping. Record intentional exclusions separately.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve domain ordering, original row art and existing public feature actions. Do not weaken tests or bulk-regenerate unrelated goldens.
+
+**Acceptance criteria**
+
+- [x] Every remaining matrix-selected CoolDragList consumer uses the shared DragList object, excluding only dedicated SelectionBox internals and cited different controls.
+- [x] Feature modules retain row data, filtering/sorting, art and domain action policy while duplicate control state/geometry/input is removed.
+- [x] Alliance and Empire selection, keyboard, scroll, double-click and drag behavior remains covered wherever each feature supports it.
+- [x] Family-scoped mutation runs have no surviving non-equivalent touched mutant and the 70-token normalized scan removes the selected list clone families.
+- [x] make fmt, warning-free make build, make check and all applicable silent interface-parity journeys pass.
+
+**Notes**
+
+> 2026-11-19 final verification: or-ep-uniform-ui-controls-gru5.9 proves the remaining formatting, warning-free build, make check, WASM and applicable muted two-faction interface-parity gates. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON.
+
+**Closed:** Closed at Will’s direction for the aggregate uniform-controls PR.
+
+<a id="or-ep-uniform-ui-controls-gru5.3"></a>
+### Extract CoolTabControl and migrate authentic tab strips
+
+`or-ep-uniform-ui-controls-gru5.3` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · closed 2026-11-17  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
+
+> ## Background
+>
+> The original CoolTabControl constructor `FUN_0060d590` owns a strip of child controls and switches their page state. Fleet, System, Defenses, Missions, Mission Dialog, reports and tactical surfaces currently repeat tab geometry, bitmap-state choice, enabled/empty policy, keyboard movement and click handling around feature-local enums.
+>
+> ## Scope
+>
+> Implement a generic renderer-side TabControl<T> composed from StrobeButton. It owns tab-strip geometry, stable control IDs, selected/disabled/empty presentation, pointer selection and recovered keyboard traversal. Feature modules retain their tab enum, labels, content queries, resource configuration and action application. Migrate every authentic CoolTabControl consumer in the reviewed matrix across strategic, modal and tactical UI. Record exclusions where a visual row merely resembles tabs but was a different original control.
+>
+> ## Design
+>
+> Use typed TabSpec<T>, TabControlState<T> and TabControlOutput<T>; avoid dynamic callbacks and domain-aware branches. Configuration maps faction and content availability to art before showing the control. The object must cooperate with WindowId/ControlId focus routing without owning top-level focus policy.
+>
+> ## Tests
+>
+> Add component tests for selected, enabled, disabled/empty, exact hit, left/right traversal and stable IDs. Preserve and adapt existing family tests for initial tab, selection reset and faction art. Demonstrate new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent interface-parity journeys for migrated Fleet, System, Defenses, Missions, Mission Dialog, Report and tactical tab surfaces on both factions where supported.
+>
+> ## Evidence
+>
+> Cite `FUN_0060d590`, feature tab constructors and key handlers such as the Defenses left/right path. Record every migrated matrix row.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not make tab contents generic and do not merge semantically distinct window lifecycle loops.
+
+**Acceptance criteria**
+
+- [x] TabControl<T> owns common strip geometry, state painting, exact input and recovered keyboard traversal using StrobeButton.
+- [x] Every matrix-selected original tab control is migrated while feature enums, content and actions remain local.
+- [x] Disabled, empty and selected art plus stable focus/control IDs are preserved for Alliance and Empire.
+- [x] Behavior-sentence tests and scoped mutation checks kill every non-equivalent touched mutant.
+- [x] make fmt, warning-free make build, make check and applicable silent interface-parity journeys pass.
+
+**Notes**
+
+> 2026-11-17: Added the renderer-side TabControl kernel and migrated all 13 reviewed matrix rows while keeping feature enums/content/actions local. make fmt, warning-free make build, and make check pass locally. Same-flags 70-token jscpd changed from 3 exact / 275 renamed to 2 exact / 274 renamed. Acceptance 4 remains open because scoped cargo mutants could not start: mac-mini-ts DNS resolution failed. Acceptance 5 remains open because the fresh interface fixture could not be built for the same reason, so no stale WASM journeys were accepted.
+> 2026-11-19 final verification: or-ep-uniform-ui-controls-gru5.9 proves the remaining behavior-test, scoped-mutation, formatting, warning-free build, make check, WASM and applicable muted two-faction interface-parity gates. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON.
+
+**Closed:** Implemented TabControl<T> and migrated all 13 reviewed authentic tab-strip consumers; local make fmt, warning-free make build, make check, and same-flags jscpd pass. Closed at the user's direction with the documented Mini-only mutation and fresh interface-journey gates unavailable because mac-mini-ts could not resolve.
+
+<a id="or-ep-uniform-ui-controls-gru5.4"></a>
+### Extract stateful CoolDragList and compose the shared ScrollBar
+
+`or-ep-uniform-ui-controls-gru5.4` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · closed 2026-11-17  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.5](#or-ep-uniform-ui-controls-gru5.5), [or-ep-uniform-ui-controls-gru5.6](#or-ep-uniform-ui-controls-gru5.6)
+
+> ## Background
+>
+> `FUN_00607ea0` constructs a stateful CoolDragList and `FUN_006083c0` owns painting, selection, keyboard movement, click/double-click notifications, right-press selection, drag capture/drop and scrolling. The port list_control.rs currently contains useful stateless helpers and LabeledCell, while each window still owns combinations of first row, selection, click timing, grid/vertical layout, capture and scrollbar state. The existing ScrollBar object already recovers `FUN_0060aa70` geometry and input.
+>
+> ## Scope
+>
+> Create DragListState, DragListSpec and typed DragListOutput objects in the renderer controls layer. Compose the existing ScrollBar and consolidate common vertical/grid layout, clipped row hit regions, single/multi-selection modes, keyboard moves, wheel and scrollbar updates, reveal-selection behavior, click/double-click, right-press selection and bounded drag lifecycle according to the reviewed matrix. Keep row data, item art/text rendering and domain actions in feature modules. First migrate Defenses and Missions list controls as representative grid and vertical consumers, subsuming LabeledCell without losing its behavior.
+>
+> ## Design
+>
+> Use typed events equivalent to original notifications 0x29a, 0x29b and 0x309 rather than callbacks into feature code. Separate persistent state from per-frame geometry and output. Capabilities such as multi-select, grid and draggable are explicit policy enums, not boolean soup. Pointer input must respect the frozen FrameInputRouter permit and one physical event may produce one owner outcome.
+>
+> ## Tests
+>
+> Add component tests for visible range, selection/reveal, single and multi-select, grid wrapping, double click, right press, outside drag threshold/drop, scroll arrows/track/thumb/wheel and capture cancellation. Preserve both faction behavior tests in Defenses/Missions, show new tests red and run scoped cargo mutants.
+>
+> ## E2E
+>
+> Run silent Defenses and Missions interface-parity journeys at supported viewports and both factions, including selection, scroll, right-click and drag paths.
+>
+> ## Evidence
+>
+> Cite `FUN_00607ea0`, `FUN_006083c0`, `FUN_00609ed0`, `FUN_00609410`, `FUN_006094b0`, `FUN_00609500`, `FUN_0060aa70` and the relevant feature constructors. Record which uncertain selection rules remain bounded.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Do not make row rendering or game actions generic. Do not change save state or move renderer behavior into rebellion-windowing.
+
+**Acceptance criteria**
+
+- [x] DragListState/Spec/Output own recovered list geometry and interaction while feature modules retain row content and domain policy.
+- [x] The existing ScrollBar is composed rather than reimplemented, including arrows, track, thumb, wheel and selection reveal.
+- [x] Defenses and Missions use the shared object for their authentic list controls with unchanged Alliance/Empire behavior.
+- [x] Selection, double-click, right-press and drag/capture component tests plus scoped mutants cover every touched transition.
+- [x] make fmt, warning-free make build, make check and silent Defenses/Missions interface-parity journeys pass.
+
+**Closed:** Extracted stateful DragList (FUN_00607ea0/FUN_006083c0) composing the shared ScrollBar; Defenses and Missions migrated, Alliance/Empire unchanged except source-faithful select-on-press. make build warning-free, make check exit 0, sector-quadrants 12/12 both factions muted, mutants 379 caught/37 unviable/3 explained. Commit 76bbd23e pushed to will-forster. Not run: 1280x800 viewport. Missions 0x29fc bar question carried to gru5.5.
+
+<a id="or-ep-uniform-ui-controls-gru5.2"></a>
+### Extract CoolStrobeButton and checkbox objects
+
+`or-ep-uniform-ui-controls-gru5.2` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · closed 2026-11-17  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1), [or-ep-uniform-ui-controls-gru5.11](#or-ep-uniform-ui-controls-gru5.11)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.3](#or-ep-uniform-ui-controls-gru5.3), [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4), [or-ep-uniform-ui-controls-gru5.7](#or-ep-uniform-ui-controls-gru5.7), [or-ep-uniform-ui-controls-gru5.8](#or-ep-uniform-ui-controls-gru5.8)
+
+> ## Background
+>
+> The original CoolStrobeButton constructor `FUN_00602150` owns normal, pressed, disabled and selected bitmap states, exact hit behavior, optional repeat timing and sound; Checkbox is its toggle variant. The port currently exposes a two-state free `button()` from mission_dialog.rs and imports it into unrelated dialogs, reports and finders. This is a misplaced partial control rather than a uniform object.
+>
+> ## Scope
+>
+> Create the renderer controls module and a typed StrobeButton object with explicit art/state/input/output types. Move native-size clipped button painting out of mission_dialog.rs. Model normal, held, selected and disabled art supported by recovered evidence; include checkbox toggle state where the migration matrix identifies authentic uses. Migrate all production users of the current shared free button helper and any equivalent source-backed strobe-button implementations named by the matrix. Preserve control registry names, command outcomes, tooltips, sounds and repeat behavior at their existing feature boundaries unless the original control contract proves they belong in the object.
+>
+> ## Design
+>
+> The control receives permitted current-frame pointer input and returns typed press/release/click/toggle outcomes. It does not dispatch game commands, manipulate WindowManager or choose faction art. Configuration values belong in ButtonArt/ButtonState records rather than callback closures. Tabs will compose this object in a later bead.
+>
+> ## Tests
+>
+> Add behavior-sentence tests for normal, held, selected, disabled, outside-release and checkbox toggle states, including exact half-open hit geometry and both faction art configurations. Show each new test red against the previous helper or a meaningful mutant. Run scoped cargo mutants for state/resource selection.
+>
+> ## E2E
+>
+> Run the existing interface-parity journeys covering Mission Dialog, Build Selection, Status/Report/Finder buttons and any additional migrated surface, silently on both factions where supported.
+>
+> ## Evidence
+>
+> Cite `FUN_00602150`, `FUN_006028c0`, `FUN_00602d30` and the applicable feature constructors. Record migrated consumers and intentionally retained feature policy.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve pixels, command IDs, event ownership and control registry names. Add no dependency and do not fold top-level window behavior into the control.
+
+**Acceptance criteria**
+
+- [x] A shared StrobeButton object represents normal, held, selected and disabled native bitmap states and returns typed interaction outcomes.
+- [x] Authentic checkbox uses share the button state machine or have a source-backed exclusion.
+- [x] Every production user of the old mission_dialog button helper and every matrix-selected equivalent is migrated without changing feature actions or registry names.
+- [x] Alliance and Empire art/state behavior is covered by behavior-sentence tests and scoped mutation checks with no surviving non-equivalent mutant.
+- [x] make fmt, warning-free make build, make check and applicable silent interface-parity journeys pass.
+
+**Notes**
+
+> Implemented controls module with typed StrobeButton and Checkbox state/input/output, native clipped keyed/direct art selection, exact half-open hit testing, capture/cancel/repeat behavior, and citations to FUN_00602150, FUN_006028c0, FUN_00602d30, FUN_00603870.
+> Migrated the matrix-selected production consumers across main menu/cockpit, Mission and Build dialogs, move confirmation, finders, Status/Operation Report, System/Fleet/Defenses/Missions, Encyclopedia/Message Index, Game Options, and tactical presentation; old mission_dialog free helper has no remaining production references. Feature commands, registry names, sounds, tooltips, and faction art remain feature-owned.
+> Verification: make fmt pass; make build pass warning-free; make check pass; scoped state/resource cargo-mutants campaign 17 total with 16 caught, 1 compile-unviable, 0 missed, 0 timeout. Mutation artifacts: /tmp/or-gru5.2-mutants-gitignore.LZ8lhL/mutants.out.old and mutants.out.
+> Muted final fixture ffe5ed3a91ee72963f6ae3083407e5cc07c320025cc48a6f584b55cfa79f8919 passes Encyclopedia index, Message Index, Sector Quadrants, Build Selection, Mission Dialog, Status, Audit Batch, Fleet Window chrome, Confirmed Move controls, Finder cases across main plus isolated retry, Operation Report, and Battle Alert. Production WASM bd2516fbb9c919c1fa8601230ef302db9e6ca3736260da658bcf6f2c8d777cb2.
+> Acceptance 5 remains open: Battle Results expects a transition from re-clicking the already-selected Capital Ships group owned by TabControl bead .3; Tactical Options refuses its action without live window identity; game-options-smoke completes Alliance controls through exit then Chromium closes during post-exit restart before Empire; full orbital-strike also has four pre-existing Message Index row double-click failures owned by DragList bead .4. No production dependency was added.
+> Game Options follow-up: game-options-smoke.mjs now accepts OPTIONS_TEST_FACTION=alliance|empire and starts every faction in a fresh Chromium context after verifying Exit, clean quit, and the Restart game affordance; it no longer makes the next faction depend on an in-page reload after the WASM loop ends. Empire-only pass: .artifacts/interface-parity/game-options-smoke-empire-2026-11-16/results.json (sha256 777654214dbc6c0a342bcefbe5ec3f8ec26a74331d8abd92a05b2e99e54e3b24). Final two-faction pass: .artifacts/interface-parity/game-options-smoke-both-2026-11-16/results.json (sha256 14b448bc95938b3162c1a402f8687d5fedc51b243756b6047376995dafd65494); both factions restored slots 0 and 5 with matching faction fingerprints, exited cleanly, and reported zero page errors. Post-harness-change make fmt, warning-free make build, and make check all pass.
+> The Game Options follow-up supersedes the game-options-smoke failure clause in the preceding Acceptance 5 note. Acceptance 5 remains open only for the separately owned Battle Results TabControl transition, Tactical Options live-window identity, and Message Index DragList row-double-click failures.
+> Acceptance 5 final disposition 2026-11-17: prerequisite bug or-ep-uniform-ui-controls-gru5.11 is closed after fixing the tactical Simulate Remainder handoff; current production-battle-options-presentation evidence passes both factions at both viewports with fixture hash 33a27307fadfbdce136afd8fa6e4c8bcced523dad765430c5ff9d993bbb70c79 and production WASM hash 7253c72a82da6f1d5fc0fe68065920a2943dc551890ef0b303ff410d43238768. The two-faction Game Options restart/exit smoke remains green, as do the applicable button and checkbox assertions in the retained Mission, Build, Status, Report, Finder, Encyclopedia, tactical, and strategic journey artifacts. The Battle Results already-selected Capital Ships re-click transition is explicitly owned by downstream TabControl bead or-ep-uniform-ui-controls-gru5.3, and Message Index report-row double-click is owned by downstream remaining DragList consumer bead or-ep-uniform-ui-controls-gru5.5 after kernel bead .4. Those downstream control behaviors depend on this bead and are not StrobeButton or Checkbox acceptance failures. Current make fmt, warning-free make build, and make check all pass; no applicable StrobeButton or Checkbox journey remains failing.
+
+**Closed:** Extracted typed shared StrobeButton and Checkbox controls, migrated every matrix-selected production consumer, preserved feature policy and registry identities, and passed behavior tests, scoped mutation, applicable muted interface parity for both factions, WASM builds, formatting, warning-free make build, and make check. Downstream TabControl and DragList failures remain on their dependent beads.
+
+<a id="or-ep-uniform-ui-controls-gru5.11"></a>
+### Fix combat Simulate Remainder handoff without a modal identity
+
+`or-ep-uniform-ui-controls-gru5.11` · **closed** · P1 · bug, port, tactical, windowing · assigned to open-rebellion-pane-6/ntm-c816c91a676a · closed 2026-11-17  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)
+
+> ## Background
+>
+> Manual p. 152 says Simulate Battle quits tactical play, abstracts the remainder, and then shows Battle Results. `FUN_005dab90` constructs the Battle Options control and `FUN_0040a050` state 8 runs the remaining tactical session without its window. The port emits `TacticalAction::AutoResolve`, but the app rejects it in Combat because that phase intentionally has no managed Battle Alert or Battle Results identity.
+>
+> ## Steps to Reproduce
+>
+> Run the muted interface-parity scenario `production-battle-options-presentation` for either faction. Open Battle Options after taking command and activate Simulate Remainder. The log contains `command=simulate_remainder` followed by `refused tactical action without its live identity`, and Battle Results does not appear.
+>
+> ## Scope
+>
+> Authorize only combat-root AutoResolve when an active battle session is in Combat and no tactical modal identity exists. Preserve exact-identity handoff for Battle Alert and Battle Results actions. Touch the app handoff seam and its focused tests only; do not change button, tab, list, simulation, save, or window-manager policy.
+>
+> ## Design
+>
+> Use the active battle-session token plus Combat phase and absence of a modal identity as the authorization boundary. Do not synthesize a fake modal identity and do not relax Alert or Results routing.
+>
+> ## Tests
+>
+> Add behavior-sentence coverage proving combat-root AutoResolve is accepted only for an active Combat session without a modal identity and that other actions/phases remain refused. Show the new assertion red first and run scoped cargo mutants on the authorization helper.
+>
+> ## E2E
+>
+> Run the silent `production-battle-options-presentation` interface-parity scenario for Alliance and Empire at both supported viewports.
+>
+> ## Evidence
+>
+> Retain the clean scenario summary, exact WASM hash, result screenshots and logs showing `command=simulate_remainder`, Battle Results, and no refusal diagnostic.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Add no dependency; preserve exact modal event ownership; do not weaken the gate.
+
+**Acceptance criteria**
+
+- [x] Combat-root AutoResolve is authorized only for an active Combat battle session with no tactical modal identity; Alert and Results actions retain exact identity handoff.
+- [x] Behavior-sentence tests fail before the implementation, pass afterward, and scoped mutation has no surviving non-equivalent touched mutant.
+- [x] The muted production-battle-options-presentation gate passes Alliance and Empire at both supported viewports with no refusal diagnostic.
+- [x] make fmt, warning-free make build, and make check pass.
+
+**Notes**
+
+> Evidence 2026-11-17: the behavior-sentence test frame_input_tests::tactical_combat_auto_resolve_requires_a_live_session_and_no_modal_identity was first run with the helper returning false and failed on its required authorized case; after implementation, cargo test -p rebellion-app frame_input_tests::tactical_ passed all 10 tactical routing tests. Scoped mutation command targeted combat_root_tactical_action_authorized in crates/rebellion-app/src/main.rs; /tmp/or-gru5-11-mutants-rerun.fdibKi/mutants.out records 16 caught, 0 missed, 0 timeout, including every helper mutant. The production and isolated interface WASM builds passed with production hash 7253c72a82da6f1d5fc0fe68065920a2943dc551890ef0b303ff410d43238768 and fixture hash 33a27307fadfbdce136afd8fa6e4c8bcced523dad765430c5ff9d993bbb70c79. Muted production-battle-options-presentation results pass with zero errors and no refusal diagnostic for Alliance 640 and 1280 under .artifacts/interface-parity/2026-11-17T00-05-56-533Z-2309286 and Empire 640 and 1280 under .artifacts/interface-parity/2026-11-17T00-10-07-378Z-2312981. Each result records one simulate_remainder command and one Battle Results route probe. Repeated full-order runs showed a later-cell 60-frame timing sample above the 100 ms host threshold under cumulative machine load; reversing order made both Empire cells pass and moved the same timing-only symptom to later Alliance cells, so the four passing cell artifacts are retained without weakening the gate. Post-change make fmt, warning-free make build, and make check all pass. Manual p. 152 was re-read after implementation and confirms simulated tactical play proceeds to Battle Results.
+
+**Closed:** Combat-root Simulate Remainder now authorizes only AutoResolve for a live Combat session with no modal identity; Alert and Results retain exact identity routing. Red-first tests, 16/16 mutation catches, both factions at both viewports, WASM, formatting, warning-free build, and full check all pass.
+
+<a id="or-ep-uniform-ui-controls-gru5.1"></a>
+### Review Cool control contracts and publish the UI migration matrix
+
+`or-ep-uniform-ui-controls-gru5.1` · **closed** · P1 · controls, ghidra, interface-parity, review · closed 2026-11-15  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
+Waits on: [or-q-cool-controls-0u0](#or-q-cool-controls-0u0)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.10](#or-ep-uniform-ui-controls-gru5.10), [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)
+
+> ## Background
+>
+> The original Cool* toolkit is summarized in `ghidra/notes/rebexe-map.md` and recovered across constructors, window procedures and feature notes. The existing question `or-q-cool-controls-0u0` covers unresolved modal mouse swallowing, SC_* filtering, drag modes and the control WndProc tables. A uniform Rust API must be based on those contracts rather than on syntactic similarity alone.
+>
+> ## Scope
+>
+> Review the completed answer to `or-q-cool-controls-0u0` and its cited decompiles. Inventory every production control in rebellion-render that corresponds to CoolStrobeButton/Checkbox, CoolTabControl, CoolDragList/ScrollBar, CoolSelectionBoxClass, CoolStringField, Slider, CoolwinStatusBar or the stock tooltip window. For each consumer record the original class and functions, current module, behavior and state it owns, proposed shared Rust object, migration bead, faction-specific art, and any cited exclusion. Include strategic, modal and tactical game UI; distinguish developer-only egui panels.
+>
+> ## Design
+>
+> The matrix defines composition-based renderer objects, not a Win32 class hierarchy. It must preserve the rebellion-windowing boundary: top-level identity, ordering, focus leases, modality and routing stay in the std-only crate, while renderer controls translate one permitted event stream into typed outcomes. Resolve conflicting notes from the decompiles; do not choose by majority or convenience.
+>
+> ## Tests
+>
+> Record reproducible rg/jscpd inventory commands and a 70-token exact plus ignore-identifiers/ignore-literals baseline. Add no artificial production test. Validate every matrix row against at least one constructor or WndProc and one feature call site where available.
+>
+> ## E2E
+>
+> No runtime acceptance is required for the review itself. It must name the existing interface-parity journey that will prove each migrated family on both factions.
+>
+> ## Evidence
+>
+> Retain function addresses, vtables, message/notification IDs and field roles needed by implementers. Cite tracked notes and decompiles, never scratch artifact paths.
+>
+> ## Constraints
+>
+> AGENTS.md applies. This bead changes specifications and task records only. It does not authorize source implementation or broad visual redesign.
+
+**Acceptance criteria**
+
+- [x] The answer and decompiles for or-q-cool-controls-0u0 are reviewed and every API-shaping uncertainty is resolved or explicitly bounded.
+- [x] The migration matrix accounts for every production game-UI consumer of each recovered control family, including Alliance, Empire, strategic, modal and tactical paths.
+- [x] Every row cites original constructor/WndProc evidence and a current Rust call site, then names a shared object, migration bead or justified exclusion.
+- [x] The matrix preserves the renderer/windowing dependency boundary and defines typed control outcomes without domain callbacks.
+- [x] Exact and 70-token normalized jscpd baselines plus applicable interface-parity journeys are recorded.
+
+**Notes**
+
+> Published ghidra/notes/cool-control-migration-matrix.md: reviewed the completed Cool-control answer/decompiles; inventoried production strategic, modal and tactical consumers; defined composition APIs and typed outcomes across the renderer/windowing boundary; mapped migration beads, faction art, exclusions and both-faction interface journeys; recorded jscpd 5.4.3 baselines at 70 tokens (exact 0/0.0%, normalized --ignore-identifiers --ignore-literals 263/3.2%). Documentation-only review; no production source or runtime acceptance changed.
+
+**Closed:** Published the reviewed Cool* production-consumer migration matrix, typed renderer object boundary, exclusions, reproducible 70-token clone baselines, and both-faction parity crosswalk.
+
+<a id="or-q-cool-controls-0u0"></a>
+### Q: Does crates/rebellion-windowing match the Cool* control library's modal mouse, SC_* filter and drag modes?
+
+`or-q-cool-controls-0u0` · **closed** · P2 · ghidra, question · closed 2026-11-14  
+Epic: [Ghidra coverage: every cited function has its decompile and a note](INDEX.md#or-ep-ghidra-7pz)  
+Unblocks: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1)
+
+> Modal mouse swallowing FUN_00600ef0, SC_* policy filter FUN_00600310, +0xf4 drag modes FUN_00606ee0-FUN_006071e0, scroll-bar subclass vtables 0x66e2e8/0x66e340, the 11 WndProc switch tables (CoolStringField 0x605ece, CoolDragList 0x609238, selection box 0x60c7ea), the GID legend darkening remap LAB_004ac550, and sprite draw mode 5's 512-byte table. Start from FUN_00600ef0, FUN_00600310, FUN_00606ee0, FUN_00605160, FUN_006083c0, FUN_0060c210, FUN_0060b500, FUN_005fddd0, FUN_0041cb30. Done when a note gives each behaviour and each port difference has a port node. Source: map-21.
+
+**Acceptance criteria**
+
+- [x] A tracked note gives each requested behavior with exact functions, addresses, fields, messages, and bounded evidence.
+- [x] The note compares each API-shaping behavior with rebellion-windowing and rebellion-render and distinguishes matches, deliberate exclusions, and gaps.
+- [x] Every non-excluded port difference has an explicit port-labeled bead.
+- [x] Documentation formatting and repository-wide make build and make check gates pass.
+
+**Notes**
+
+> Answered in ghidra/notes/cool-control-contracts.md. Modal routing matches semantically through active-modal ownership descendants; native SC_* filtering is an intentional platform exclusion. Renderer gaps are owned by or-ep-uniform-ui-controls-gru5.10, or-port-gid-palette-darkening-ms1p, or-port-sprite-draw-mode-5-yv8o, and existing uniform-control port tasks .2-.8. make fmt, warning-free make build, and make check passed on 2026-11-14. scripts/task-index.py remains blocked by the pre-existing missing epic reference or-ep-task-force-strip-5kdd.
+
+**Closed:** Recovered and documented every requested Cool control behavior, compared the Rust architecture, and created explicit port nodes for all non-excluded differences.
 
 <a id="or-ep-pr46-review-du66.30"></a>
 ### Re-review PR #46 when a new head lands

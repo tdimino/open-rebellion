@@ -80,6 +80,9 @@ fn has_tag(comments: &str, tag: &str) -> bool {
     })
 }
 
+// Provenance citations intentionally require the original uppercase `.DAT`
+// spelling; accepting arbitrary extension case would broaden the evidence gate.
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
 fn classify(comments: &str) -> Provenance {
     let has = |needle: &str| comments.contains(needle);
     // A `port:` or `hyp:` tag decides first: a tagged comment may name the
@@ -134,6 +137,9 @@ impl HitVisitor<'_> {
     }
 }
 
+// These are parsed source literals, and exactly the numeric values zero and one
+// are exempt; approximate float comparison would misclassify nearby constants.
+#[allow(clippy::float_cmp)]
 fn is_trivial(lit: &syn::Lit) -> bool {
     match lit {
         syn::Lit::Int(i) => matches!(i.base10_digits(), "0" | "1"),
@@ -197,7 +203,7 @@ struct FileScan<'a> {
     seen: BTreeMap<String, usize>,
 }
 
-impl<'a> FileScan<'a> {
+impl FileScan<'_> {
     /// The comment text an item carries: the contiguous `//` block directly
     /// above it (attributes included) and every comment line inside it.
     fn comments(&self, start: usize, end: usize) -> String {
@@ -229,12 +235,13 @@ impl<'a> FileScan<'a> {
             hits: Vec::new(),
         };
         visit(&mut visitor);
-        let count = self.seen.entry(name.clone()).or_insert(0);
+        let key_base = format!("{}::{name}", self.file);
+        let count = self.seen.entry(name).or_insert(0);
         *count += 1;
         let key = if *count == 1 {
-            format!("{}::{name}", self.file)
+            key_base
         } else {
-            format!("{}::{name}#{count}", self.file)
+            format!("{key_base}#{count}")
         };
         let provenance = classify(&self.comments(start, end));
         let hits = visitor.hits;
@@ -252,17 +259,17 @@ impl<'a> FileScan<'a> {
             match item {
                 syn::Item::Fn(f) if !is_test_gated(&f.attrs) => {
                     self.report(format!("{prefix}{}", f.sig.ident), f.span(), |v| {
-                        v.visit_block(&f.block)
+                        v.visit_block(&f.block);
                     });
                 }
                 syn::Item::Const(c) if !is_test_gated(&c.attrs) => {
                     self.report(format!("{prefix}{}", c.ident), c.span(), |v| {
-                        v.visit_expr(&c.expr)
+                        v.visit_expr(&c.expr);
                     });
                 }
                 syn::Item::Static(s) if !is_test_gated(&s.attrs) => {
                     self.report(format!("{prefix}{}", s.ident), s.span(), |v| {
-                        v.visit_expr(&s.expr)
+                        v.visit_expr(&s.expr);
                     });
                 }
                 syn::Item::Mod(m) if !is_test_gated(&m.attrs) => {
@@ -290,7 +297,7 @@ impl<'a> FileScan<'a> {
                             }
                             syn::ImplItem::Const(c) => {
                                 self.report(format!("{prefix}{ty}::{}", c.ident), c.span(), |v| {
-                                    v.visit_expr(&c.expr)
+                                    v.visit_expr(&c.expr);
                                 });
                             }
                             _ => {}
@@ -411,7 +418,7 @@ fn regressions(baseline: &Baseline, current: &BTreeMap<String, usize>) -> Vec<St
                 baseline
                     .items
                     .get(key)
-                    .map_or("none".into(), |n| n.to_string())
+                    .map_or("none".into(), std::string::ToString::to_string)
             )
         })
         .collect()
@@ -603,7 +610,10 @@ mod tests {
         let baseline = Baseline {
             items: BTreeMap::from([("a".into(), 3)]),
         };
-        assert!(regressions(&baseline, &BTreeMap::from([("a".into(), 2)])).is_empty());
+        assert_eq!(
+            regressions(&baseline, &BTreeMap::from([("a".into(), 2)])),
+            Vec::<String>::new()
+        );
         assert_eq!(
             regressions(&baseline, &BTreeMap::from([("a".into(), 4)])).len(),
             1
@@ -701,7 +711,10 @@ mod tests {
         let baseline = Baseline {
             items: BTreeMap::from([("a".into(), 3)]),
         };
-        assert!(regressions(&baseline, &BTreeMap::from([("a".into(), 3)])).is_empty());
+        assert_eq!(
+            regressions(&baseline, &BTreeMap::from([("a".into(), 3)])),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -776,7 +789,11 @@ mod tests {
             ],
         );
         let baseline = root.join("baseline.json");
-        let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let args = |list: &[&str]| {
+            list.iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
+        };
         let run_with = |list: &[&str]| run(&root, &TEST_SCOPE, &baseline, &args(list));
 
         let json = root.join("report.json");

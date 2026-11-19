@@ -175,8 +175,7 @@ fn system_name(world: &GameWorld, system: SystemKey) -> String {
     world
         .systems
         .get(system)
-        .map(|value| value.name.clone())
-        .unwrap_or_default()
+        .map_or_default(|value| value.name.clone())
 }
 
 /// A class record's catalog name (TEXTSTRA).
@@ -184,8 +183,7 @@ fn class_name(world: &GameWorld, class: DatId) -> String {
     world
         .buildable_classes
         .get(&class)
-        .map(|value| value.name.clone())
-        .unwrap_or_default()
+        .map_or_default(|value| value.name.clone())
 }
 
 /// `FUN_0044a620`: class `+0x4c` (`FUN_004f2990`).
@@ -296,7 +294,9 @@ pub fn fleet_rows(sources: StatusSources<'_>, key: FleetKey) -> Option<Vec<Statu
         ),
         row(
             "Hyperdrive Rating:",
-            yes_no(rebellion_core::movement::fleet_speed(fleet, world).is_some_and(|speed| speed != 0)),
+            yes_no(
+                rebellion_core::movement::fleet_speed(fleet, world).is_some_and(|speed| speed != 0),
+            ),
         ),
     ]);
     Some(rows)
@@ -570,8 +570,7 @@ fn regiment_place(sources: StatusSources<'_>, key: TroopKey) -> (String, Option<
         .systems
         .iter()
         .find(|(_, value)| value.ground_units.contains(&key))
-        .map(|(_, value)| value.name.clone())
-        .unwrap_or_default();
+        .map_or_default(|(_, value)| value.name.clone());
     (system, None)
 }
 
@@ -586,8 +585,7 @@ pub fn troop_rows(sources: StatusSources<'_>, key: TroopKey) -> Option<Vec<Statu
     let stats = world
         .buildable_classes
         .get(&troop.class_dat_id)
-        .map(|value| value.stats)
-        .unwrap_or_default();
+        .map_or_default(|value| value.stats);
     let (attached, arrival) = regiment_place(sources, key);
     let mut rows = vec![
         row("Attached: ", attached),
@@ -636,8 +634,7 @@ pub fn special_force_rows(
         .systems
         .iter()
         .find(|(_, value)| value.special_forces.contains(&key))
-        .map(|(_, value)| value.name.clone())
-        .unwrap_or_default();
+        .map_or_default(|(_, value)| value.name.clone());
     let status = if unit.en_route {
         "Enroute"
     } else if unit.on_mission {
@@ -660,13 +657,13 @@ pub fn special_force_rows(
 /// The system holding a facility key in one of its lists.
 fn facility_system<K: PartialEq>(
     world: &GameWorld,
-    key: K,
+    key: &K,
     list: impl Fn(&rebellion_core::world::System) -> &[K],
 ) -> Option<SystemKey> {
     world
         .systems
         .iter()
-        .find(|(_, value)| list(value).contains(&key))
+        .find(|(_, value)| list(value).contains(key))
         .map(|(system, _)| system)
 }
 
@@ -684,13 +681,12 @@ pub fn defense_facility_rows(
 ) -> Option<Vec<StatusRow>> {
     let world = sources.world;
     let facility = world.defense_facilities.get(key)?;
-    let system = facility_system(world, key, |value| &value.defense_facilities)?;
+    let system = facility_system(world, &key, |value| &value.defense_facilities)?;
     let class = facility.class_dat_id;
     let stats = world
         .buildable_classes
         .get(&class)
-        .map(|value| value.stats)
-        .unwrap_or_default();
+        .map_or_default(|value| value.stats);
     let mut rows = vec![
         row("Location:", system_name(world, system)),
         row("Status:", ACTIVE),
@@ -726,6 +722,39 @@ fn manufacturing_rows(world: &GameWorld, system: SystemKey, class: DatId) -> Vec
             value.map_or(0, |value| value.stats.bombardment).to_string(),
         ),
     ]
+}
+
+fn manufacturing_status_view(
+    sources: StatusSources<'_>,
+    system: SystemKey,
+    side: Faction,
+    class: DatId,
+    mini: Option<u32>,
+) -> StatusView {
+    StatusView {
+        title: "Manufacturing Status",
+        manager_title: false,
+        side: faction_index(side),
+        picture: picture(mini),
+        name: class_name(sources.world, class),
+        rows: manufacturing_rows(sources.world, system, class),
+    }
+}
+
+macro_rules! manufacturing_facility_status {
+    ($sources:expr, $key:expr, $facilities:ident, $mini:path $(,)?) => {{
+        let world = $sources.world;
+        let facility = world.$facilities.get($key)?;
+        let system = facility_system(world, &$key, |value| &value.$facilities)?;
+        let class = facility.class_dat_id;
+        manufacturing_status_view(
+            $sources,
+            system,
+            facility.side,
+            class,
+            $mini(class).map(|(mini, _)| mini),
+        )
+    }};
 }
 
 /// A mission's target by name (`+0x70`), or 34087 "Target Unknown".
@@ -975,28 +1004,18 @@ pub fn status_view(sources: StatusSources<'_>, object: StatusObject) -> Option<S
                 defense_facility_rows(sources, key)?,
             )
         }
-        StatusObject::ManufacturingFacility(key) => {
-            let facility = world.manufacturing_facilities.get(key)?;
-            let system = facility_system(world, key, |value| &value.manufacturing_facilities)?;
-            view(
-                "Manufacturing Status",
-                faction_index(facility.side),
-                picture(manufacturing_facility_mini(facility.class_dat_id).map(|(mini, _)| mini)),
-                class_name(world, facility.class_dat_id),
-                manufacturing_rows(world, system, facility.class_dat_id),
-            )
-        }
-        StatusObject::ProductionFacility(key) => {
-            let facility = world.production_facilities.get(key)?;
-            let system = facility_system(world, key, |value| &value.production_facilities)?;
-            view(
-                "Manufacturing Status",
-                faction_index(facility.side),
-                picture(production_facility_mini(facility.class_dat_id).map(|(mini, _)| mini)),
-                class_name(world, facility.class_dat_id),
-                manufacturing_rows(world, system, facility.class_dat_id),
-            )
-        }
+        StatusObject::ManufacturingFacility(key) => manufacturing_facility_status!(
+            sources,
+            key,
+            manufacturing_facilities,
+            manufacturing_facility_mini,
+        ),
+        StatusObject::ProductionFacility(key) => manufacturing_facility_status!(
+            sources,
+            key,
+            production_facilities,
+            production_facility_mini,
+        ),
         StatusObject::Mission(id) => {
             let mission = sources
                 .missions
@@ -1042,13 +1061,12 @@ pub fn status_view(sources: StatusSources<'_>, object: StatusObject) -> Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebellion_core::dat::ExplorationStatus;
-    use rebellion_core::ids::SectorKey;
+    use rebellion_core::ids::CharacterKey;
     use rebellion_core::manufacturing::{BuildableKind, QueueItem};
     use rebellion_core::missions::{MissionKind, MissionRequest};
     use rebellion_core::world::{
         BuildableClass, ClassStats, ControlKind, DefenseFacilityInstance, FighterClass,
-        FighterEntry, Fleet, ManufacturingFacilityInstance, SpecialForceUnit, System, TroopUnit,
+        FighterEntry, Fleet, ManufacturingFacilityInstance, SpecialForceUnit, TroopUnit,
     };
 
     /// The states a Status window reads, all idle.
@@ -1097,48 +1115,23 @@ mod tests {
     }
 
     fn system(world: &mut GameWorld, name: &str, control: ControlKind) -> SystemKey {
-        world.systems.insert(System {
-            dat_id: DatId::new(0x9000_0001),
-            name: name.into(),
-            sector: SectorKey::default(),
-            x: 0,
-            y: 0,
-            exploration_status: ExplorationStatus::Explored,
-            popularity_alliance: 0.5,
-            popularity_empire: 0.5,
-            is_populated: true,
-            total_energy: 0,
-            raw_materials: 0,
-            espionage_rating: 0.0,
-            fleets: Vec::new(),
-            ground_units: Vec::new(),
-            special_forces: Vec::new(),
-            fighters: Vec::new(),
-            defense_facilities: Vec::new(),
-            manufacturing_facilities: Vec::new(),
-            production_facilities: Vec::new(),
-            is_headquarters: false,
-            is_destroyed: false,
-            control,
-        })
+        crate::test_support::add_standalone_system(world, name, control)
     }
 
-    fn catalog(world: &mut GameWorld, id: u32, name: &str, class: BuildableClass) -> DatId {
+    fn catalog(world: &mut GameWorld, id: u32, name: &str, class: &BuildableClass) -> DatId {
         let dat_id = DatId::new(id);
         world.buildable_classes.insert(
             dat_id,
             BuildableClass {
                 name: name.into(),
-                ..class
+                ..class.clone()
             },
         );
         dat_id
     }
 
     fn rows(rows: &[StatusRow]) -> Vec<(&str, &str)> {
-        rows.iter()
-            .map(|row| (row.label.as_str(), row.value.as_str()))
-            .collect()
+        crate::test_support::status_pairs(rows)
     }
 
     /// An Alliance fleet at `at` of two carriers (2 and 3 squadrons, 1
@@ -1192,17 +1185,61 @@ mod tests {
         fleet
     }
 
-    #[test]
-    fn fleet_status_sums_its_ships_and_reads_no_commander() {
-        // FUN_00449200: Status, the three command ranks, ship count, the
-        // capacity and embarked blocks, personnel, damage and hyperdrive.
+    fn carrier_fixture(is_alliance: bool) -> (GameWorld, SystemKey, FleetKey) {
         let mut world = GameWorld::default();
         let here = system(
             &mut world,
             "Yavin",
-            ControlKind::Controlled(Faction::Alliance),
+            ControlKind::Controlled(Faction::of_alliance(is_alliance)),
         );
         let fleet = carrier_fleet(&mut world, here);
+        world.fleets[fleet].is_alliance = is_alliance;
+        (world, here, fleet)
+    }
+
+    fn alliance_carrier() -> (GameWorld, SystemKey, FleetKey) {
+        carrier_fixture(true)
+    }
+
+    fn disable_fleet_hyperdrive(world: &mut GameWorld, fleet: FleetKey) {
+        world.fleets[fleet].capital_ships[0].alive = false;
+        let large = world.fleets[fleet].capital_ships[1].class;
+        let class = world.capital_ship_classes[large].clone();
+        world.fleets[fleet].capital_ships[1].set_hyperdrive_damage_hits(&class, 1);
+    }
+
+    fn mission_fixture() -> (GameWorld, SystemKey, States, CharacterKey) {
+        let mut world = GameWorld::default();
+        let here = system(&mut world, "Bespin", ControlKind::Uncontrolled);
+        let states = States::new();
+        let character = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
+        (world, here, states, character)
+    }
+
+    fn mission_with_decoy_fixture() -> (GameWorld, SystemKey, States, CharacterKey, CharacterKey) {
+        let (mut world, here, states, character) = mission_fixture();
+        let decoy = world
+            .characters
+            .insert(rebellion_core::world::Character::default());
+        (world, here, states, character, decoy)
+    }
+
+    fn assert_fleet_hyperdrive(world: &GameWorld, fleet: FleetKey, expected: &str) {
+        let states = States::new();
+        let rows = fleet_rows(states.sources(world), fleet).unwrap();
+        assert_eq!(
+            super::tests::rows(&rows).last(),
+            Some(&("Hyperdrive Rating:", expected))
+        );
+    }
+
+    #[test]
+    fn fleet_status_sums_its_ships_and_reads_no_commander() {
+        // FUN_00449200: Status, the three command ranks, ship count, the
+        // capacity and embarked blocks, personnel, damage and hyperdrive.
+        let (world, _here, fleet) = alliance_carrier();
         let states = States::new();
 
         let rows = fleet_rows(states.sources(&world), fleet).unwrap();
@@ -1231,14 +1268,8 @@ mod tests {
     #[test]
     fn a_moving_fleet_is_enroute_with_its_arrival_day() {
         // FUN_00449200 34628 "Enroute"; FUN_004fd2b0 "ETA Destination:".
-        let mut world = GameWorld::default();
-        let here = system(
-            &mut world,
-            "Yavin",
-            ControlKind::Controlled(Faction::Alliance),
-        );
+        let (mut world, here, fleet) = alliance_carrier();
         let there = system(&mut world, "Hoth", ControlKind::Uncontrolled);
-        let fleet = carrier_fleet(&mut world, here);
         let mut states = States::new();
         assert!(states.movement.order(fleet, here, there, 5));
 
@@ -1254,13 +1285,7 @@ mod tests {
     fn each_ship_carries_the_fleets_squadrons_in_order_up_to_its_capacity() {
         // FUN_00446fd0 reads each ship's own embarked counts (+0x23c);
         // port: the fleet's 4 squadrons fill the first ship's 2 bays first.
-        let mut world = GameWorld::default();
-        let here = system(
-            &mut world,
-            "Yavin",
-            ControlKind::Controlled(Faction::Alliance),
-        );
-        let fleet = carrier_fleet(&mut world, here);
+        let (world, _here, fleet) = alliance_carrier();
         let states = States::new();
         let sources = states.sources(&world);
         let value = |index: usize, label: &str, nth: usize| -> String {
@@ -1291,25 +1316,9 @@ mod tests {
         // (FUN_004fd900.c:21-45) reads 0 when a usable ship's speed is 0,
         // and FUN_00500820.c:10-19 gives 0 for a ship whose installed drive
         // is out (`movement::capital_ship_instance_speed`).
-        let mut world = GameWorld::default();
-        let here = system(
-            &mut world,
-            "Yavin",
-            ControlKind::Controlled(Faction::Alliance),
-        );
-        let fleet = carrier_fleet(&mut world, here);
-        world.fleets[fleet].capital_ships[0].alive = false;
-        let large = world.fleets[fleet].capital_ships[1].class;
-        let class = world.capital_ship_classes[large].clone();
-        world.fleets[fleet].capital_ships[1].set_hyperdrive_damage_hits(&class, 1);
-        let states = States::new();
-
-        let rows = fleet_rows(states.sources(&world), fleet).unwrap();
-
-        assert_eq!(
-            super::tests::rows(&rows).last(),
-            Some(&("Hyperdrive Rating:", "No"))
-        );
+        let (mut world, _here, fleet) = alliance_carrier();
+        disable_fleet_hyperdrive(&mut world, fleet);
+        assert_fleet_hyperdrive(&world, fleet, "No");
     }
 
     #[test]
@@ -1320,29 +1329,15 @@ mod tests {
         // Status"); the other ship is unfinished (FUN_004f7d50(..,
         // completed 0)), so no ship gives a speed.
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let here = system(
-                &mut world,
-                "Yavin",
-                ControlKind::Controlled(Faction::of_alliance(is_alliance)),
-            );
-            let fleet = carrier_fleet(&mut world, here);
-            world.fleets[fleet].is_alliance = is_alliance;
+            let (mut world, here, fleet) = carrier_fixture(is_alliance);
             world.fleets[fleet].capital_ships[0].completed = false;
-            world.fleets[fleet].capital_ships[1].transit = Some(rebellion_core::world::ShipTransit {
-                from: here,
-                to: here,
-                arrival_tick: 9,
-            });
-            let states = States::new();
-
-            let rows = fleet_rows(states.sources(&world), fleet).unwrap();
-
-            assert_eq!(
-                super::tests::rows(&rows).last(),
-                Some(&("Hyperdrive Rating:", "No")),
-                "{is_alliance}"
-            );
+            world.fleets[fleet].capital_ships[1].transit =
+                Some(rebellion_core::world::ShipTransit {
+                    from: here,
+                    to: here,
+                    arrival_tick: 9,
+                });
+            assert_fleet_hyperdrive(&world, fleet, "No");
         }
     }
 
@@ -1352,19 +1347,13 @@ mod tests {
         // sets (bit 5, FUN_004f8240.c:17-31); the ETA row reads its arrival
         // day +0x44 (FUN_004fd2b0, set by FUN_00556430).
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let here = system(
-                &mut world,
-                "Yavin",
-                ControlKind::Controlled(Faction::of_alliance(is_alliance)),
-            );
-            let fleet = carrier_fleet(&mut world, here);
-            world.fleets[fleet].is_alliance = is_alliance;
-            world.fleets[fleet].capital_ships[1].transit = Some(rebellion_core::world::ShipTransit {
-                from: here,
-                to: here,
-                arrival_tick: 15,
-            });
+            let (mut world, here, fleet) = carrier_fixture(is_alliance);
+            world.fleets[fleet].capital_ships[1].transit =
+                Some(rebellion_core::world::ShipTransit {
+                    from: here,
+                    to: here,
+                    arrival_tick: 15,
+                });
             let states = States::new();
             let sources = states.sources(&world);
             let status = |index| {
@@ -1399,14 +1388,7 @@ mod tests {
         // 34647 "Under Construction"; a ship is created at its order with
         // bit 2 clear (FUN_004f7d50(.., completed 0)).
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let here = system(
-                &mut world,
-                "Yavin",
-                ControlKind::Controlled(Faction::of_alliance(is_alliance)),
-            );
-            let fleet = carrier_fleet(&mut world, here);
-            world.fleets[fleet].is_alliance = is_alliance;
+            let (mut world, _here, fleet) = carrier_fixture(is_alliance);
             world.fleets[fleet].capital_ships[1].completed = false;
             let states = States::new();
             let sources = states.sources(&world);
@@ -1424,37 +1406,16 @@ mod tests {
         // ships; FUN_00500820.c:10-19 gives a ship with no primary drive its
         // backup's rating (class +0x70), 9 here, so the rating is Yes.
         for is_alliance in [true, false] {
-            let mut world = GameWorld::default();
-            let here = system(
-                &mut world,
-                "Yavin",
-                ControlKind::Controlled(Faction::of_alliance(is_alliance)),
-            );
-            let fleet = carrier_fleet(&mut world, here);
-            world.fleets[fleet].is_alliance = is_alliance;
+            let (mut world, _here, fleet) = carrier_fixture(is_alliance);
             world.fleets[fleet].capital_ships[1].alive = false;
-            let states = States::new();
-
-            let rows = fleet_rows(states.sources(&world), fleet).unwrap();
-
-            assert_eq!(
-                super::tests::rows(&rows).last(),
-                Some(&("Hyperdrive Rating:", "Yes")),
-                "{is_alliance}"
-            );
+            assert_fleet_hyperdrive(&world, fleet, "Yes");
         }
     }
 
     #[test]
     fn a_ships_weapon_arcs_read_fore_aft_starboard_then_port() {
         // FUN_00446fd0 pushes arc 3 before arc 2 (0x447f2c..0x448650).
-        let mut world = GameWorld::default();
-        let here = system(
-            &mut world,
-            "Yavin",
-            ControlKind::Controlled(Faction::Alliance),
-        );
-        let fleet = carrier_fleet(&mut world, here);
+        let (world, _here, fleet) = alliance_carrier();
         let states = States::new();
 
         let rows = ship_rows(states.sources(&world), fleet, 0).unwrap();
@@ -1482,13 +1443,7 @@ mod tests {
     fn a_squadron_has_no_status_row_and_scales_shields_by_its_craft() {
         // FUN_004444c0: Attached, then the ratings; shield strength is per
         // craft times the squadron size.
-        let mut world = GameWorld::default();
-        let here = system(
-            &mut world,
-            "Yavin",
-            ControlKind::Controlled(Faction::Alliance),
-        );
-        let fleet = carrier_fleet(&mut world, here);
+        let (world, _here, fleet) = alliance_carrier();
         let states = States::new();
 
         let rows = fighter_rows(states.sources(&world), fleet, 0).unwrap();
@@ -1519,7 +1474,7 @@ mod tests {
             &mut world,
             0x1000_0002,
             "Alliance Army Regiment",
-            BuildableClass {
+            &BuildableClass {
                 maintenance_cost: 1,
                 stats: ClassStats {
                     bombardment: 4,
@@ -1616,7 +1571,7 @@ mod tests {
                 &mut world,
                 id,
                 "Defense",
-                BuildableClass {
+                &BuildableClass {
                     stats: armed_stats,
                     ..BuildableClass::default()
                 },
@@ -1695,7 +1650,7 @@ mod tests {
             &mut world,
             0x2900_0001,
             "Training Facility",
-            BuildableClass {
+            &BuildableClass {
                 processing_rate: 4,
                 ..BuildableClass::default()
             },
@@ -1726,15 +1681,7 @@ mod tests {
     #[test]
     fn a_mission_counts_its_decoys_in_the_team() {
         // FUN_00445c60: Target, Team Size (members and decoys), Decoys.
-        let mut world = GameWorld::default();
-        let here = system(&mut world, "Bespin", ControlKind::Uncontrolled);
-        let mut states = States::new();
-        let a = world
-            .characters
-            .insert(rebellion_core::world::Character::default());
-        let b = world
-            .characters
-            .insert(rebellion_core::world::Character::default());
+        let (world, here, mut states, a, b) = mission_with_decoy_fixture();
         let id = states.missions.dispatch(MissionRequest {
             decoys: vec![MissionMember::Character(b)],
             ..MissionRequest::single(
@@ -1932,12 +1879,7 @@ mod tests {
     #[test]
     fn a_missions_eta_is_its_first_members_transit_for_that_mission() {
         // FUN_00445c60 reads the ETA of the mission's first member.
-        let mut world = GameWorld::default();
-        let here = system(&mut world, "Bespin", ControlKind::Uncontrolled);
-        let mut states = States::new();
-        let a = world
-            .characters
-            .insert(rebellion_core::world::Character::default());
+        let (world, here, mut states, a) = mission_fixture();
         let id = states.missions.dispatch(MissionRequest::single(
             MissionKind::Diplomacy,
             MissionFaction::Alliance,
@@ -1998,7 +1940,7 @@ mod tests {
             &mut world,
             0x2c00_0001,
             "Mine",
-            BuildableClass {
+            &BuildableClass {
                 maintenance_cost: 1,
                 processing_rate: 3,
                 stats: ClassStats {
@@ -2052,7 +1994,7 @@ mod tests {
             &mut world,
             0x2200_0001,
             "Planetary Shield",
-            BuildableClass::default(),
+            &BuildableClass::default(),
         );
         let shield = world.defense_facilities.insert(DefenseFacilityInstance {
             class_dat_id: class,
@@ -2100,12 +2042,7 @@ mod tests {
     fn an_empire_missions_picture_is_offset_by_0x1000() {
         // FUN_00443130: GOKRES class +0x30 & 0xfff, plus 0x1000 unless the
         // side bits are 1.
-        let mut world = GameWorld::default();
-        let here = system(&mut world, "Bespin", ControlKind::Uncontrolled);
-        let mut states = States::new();
-        let a = world
-            .characters
-            .insert(rebellion_core::world::Character::default());
+        let (world, here, mut states, a) = mission_fixture();
         let request =
             |faction| MissionRequest::single(MissionKind::Diplomacy, faction, a, here, None, 0);
         let alliance = states.missions.dispatch(request(MissionFaction::Alliance));

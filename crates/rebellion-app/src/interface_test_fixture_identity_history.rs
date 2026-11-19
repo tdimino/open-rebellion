@@ -22,10 +22,13 @@ use rebellion_render::system_window::{
 use rebellion_render::{
     strategic_primary_controls, CockpitButton, CockpitLayout, SectorWindowState,
 };
-use rebellion_windowing::{RoutingSnapshot, WindowId, WindowKind, WindowOwner};
+use rebellion_windowing::{RoutingSnapshot, WindowId, WindowOwner};
 use serde_json::{json, Value};
 
-use super::{defenses_page_name, missions_tab_name, rect_array, FixtureRequest, Scenario};
+use super::{
+    active_modal_id, capture_window_id, defenses_page_name, focused_window_json, missions_tab_name,
+    rect_array, registered_window_ids, strategic_control_center, FixtureRequest, Scenario,
+};
 
 const REQUIRED_SYSTEMS: usize = 16;
 
@@ -209,31 +212,6 @@ pub(super) fn prepare(
     }
 }
 
-fn kind_name(kind: WindowKind) -> &'static str {
-    match kind {
-        WindowKind::Sector => "sector",
-        WindowKind::System => "system",
-        WindowKind::Fleet => "fleet",
-        WindowKind::Defenses => "defenses",
-        WindowKind::Missions => "missions",
-        WindowKind::SystemFinder => "system-finder",
-        WindowKind::FleetFinder => "fleet-finder",
-        WindowKind::TroopFinder => "troop-finder",
-        WindowKind::PersonnelFinder => "personnel-finder",
-        WindowKind::MessageIndex => "message-index",
-        WindowKind::Encyclopedia => "encyclopedia",
-        WindowKind::Status => "status",
-        WindowKind::BuildSelection => "build-selection",
-        WindowKind::MissionDialog => "mission-dialog",
-        WindowKind::MoveConfirmation => "move-confirmation",
-        WindowKind::StopConfirmation => "stop-confirmation",
-        WindowKind::ScrapConfirmation => "scrap-confirmation",
-        WindowKind::BattleAlert => "battle-alert",
-        WindowKind::BattleResults => "battle-results",
-        WindowKind::Menu => "menu",
-    }
-}
-
 fn owner_value(owner: WindowOwner) -> Value {
     match owner {
         WindowOwner::StrategicRoot => json!("root"),
@@ -245,7 +223,7 @@ fn record(snapshot: &RoutingSnapshot, id: WindowId) -> Value {
     let key = snapshot.key(id).expect("snapshot order names a live key");
     json!({
         "id": id.get(),
-        "kind": kind_name(key.kind),
+        "kind": key.kind.slug(),
         "subject": key.subject.map(|subject| format!("{}:{}", subject.namespace, subject.value)),
         "owner": snapshot.owner(id).map(owner_value),
         "visible": snapshot.is_visible(id),
@@ -448,14 +426,7 @@ impl IdentityHistoryWatch {
         }
         let systems = selected_systems(world);
         let snapshot = windows.snapshot;
-        let mut registered: Vec<_> = snapshot
-            .paint_order()
-            .iter()
-            .chain(snapshot.presentation_history())
-            .copied()
-            .collect();
-        registered.sort_unstable();
-        registered.dedup();
+        let registered = registered_window_ids(snapshot);
         let state = json!({
             "status": "identity-history-state",
             "code": request.code,
@@ -465,30 +436,22 @@ impl IdentityHistoryWatch {
             "fleet_finder_point": strategic_primary_controls(windows.faction)
                 .iter()
                 .find(|control| control.button == CockpitButton::FleetFinder)
-                .map(|control| [
-                    windows.layout.canvas.x
-                        + (control.rect.x + control.rect.width / 2.0) * windows.layout.scale,
-                    windows.layout.canvas.y
-                        + (control.rect.y + control.rect.height / 2.0) * windows.layout.scale,
-                ]),
+                .map(|control| strategic_control_center(windows.layout, control)),
             "snapshot": {
                 "paint_order": snapshot.paint_order().iter().map(|id| id.get()).collect::<Vec<_>>(),
                 "history": snapshot.presentation_history().iter().map(|id| id.get()).collect::<Vec<_>>(),
                 "registered": registered.iter().map(|id| id.get()).collect::<Vec<_>>(),
                 "records": registered.iter().map(|id| record(snapshot, *id)).collect::<Vec<_>>(),
-                "focused": snapshot.focused().map(|focus| json!({
-                    "window": focus.window.get(),
-                    "control": focus.control.map(|control| control.0),
-                })),
-                "capture": snapshot.capture_owner().map(WindowId::get),
-                "active_modal": snapshot.active_modal().map(WindowId::get),
+                "focused": focused_window_json(snapshot),
+                "capture": capture_window_id(snapshot),
+                "active_modal": active_modal_id(snapshot),
             },
             "systems": systems.iter().copied().map(|key| system_state(world, windows, key)).collect::<Vec<_>>(),
             "rail": reference_rail_slots(snapshot, world, windows.faction, windows.layout)
                 .into_iter()
                 .map(|slot| json!({
                     "id": slot.id().get(),
-                    "kind": kind_name(slot.kind()),
+                    "kind": slot.kind().slug(),
                     "system_dat_id": world.systems[slot.system()].dat_id.raw(),
                     "rect": rect_array(slot.rect()),
                     "point": point(slot.rect()),

@@ -301,23 +301,20 @@ pub struct TacticalLodView {
 
 impl TacticalLodView {
     #[cfg(any(feature = "interface-test-fixtures", test))]
-    pub const CLOSE_FIXTURE: Self = Self {
-        view_depth: 10.0,
-        projection_scale: 1.0,
-        high_detail: true,
-    };
+    const fn fixture(view_depth: f32) -> Self {
+        Self {
+            view_depth,
+            projection_scale: 1.0,
+            high_detail: true,
+        }
+    }
+
     #[cfg(any(feature = "interface-test-fixtures", test))]
-    pub const MEDIUM_FIXTURE: Self = Self {
-        view_depth: 25.0,
-        projection_scale: 1.0,
-        high_detail: true,
-    };
+    pub const CLOSE_FIXTURE: Self = Self::fixture(10.0);
     #[cfg(any(feature = "interface-test-fixtures", test))]
-    pub const FAR_FIXTURE: Self = Self {
-        view_depth: 50.0,
-        projection_scale: 1.0,
-        high_detail: true,
-    };
+    pub const MEDIUM_FIXTURE: Self = Self::fixture(25.0);
+    #[cfg(any(feature = "interface-test-fixtures", test))]
+    pub const FAR_FIXTURE: Self = Self::fixture(50.0);
 
     /// Test-only bridge from the working tactical zoom control to a source
     /// view-depth range that crosses all three original LOD thresholds.
@@ -985,6 +982,168 @@ pub(crate) struct TacticalDrawReport {
     pub projections: Vec<TacticalScreenProjection>,
 }
 
+impl TacticalDrawReport {
+    fn push_projection(&mut self, object_id: u32, center: Vec2, min: Vec2, max: Vec2) {
+        self.projections.push(TacticalScreenProjection {
+            object_id,
+            center,
+            min,
+            max,
+        });
+    }
+
+    fn record_projection(&mut self, object_id: u32, center: Vec2, min: Vec2, max: Vec2) {
+        self.rendered_object_ids.push(object_id);
+        self.screen_positions.push((object_id, center));
+        self.push_projection(object_id, center, min, max);
+    }
+}
+
+fn cached_texture_pair(
+    resource_id: u32,
+    palette_resource_id: u32,
+) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
+    let texture_key = format!("{resource_id}/1033");
+    let palette_key = format!("{palette_resource_id}/1033");
+    let texture = cache
+        .textures
+        .get(&texture_key)
+        .cloned()
+        .ok_or_else(|| format!("typed texture entry {texture_key} is missing"))?;
+    let palette = cache
+        .textures
+        .get(&palette_key)
+        .cloned()
+        .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
+    Ok((texture, palette))
+}
+
+fn cached_palette(resource_id: u32) -> Result<Vec<u8>, String> {
+    let key = format!("{resource_id}/1033");
+    TACTICAL_OBJECT_CACHE
+        .lock()
+        .unwrap()
+        .textures
+        .get(&key)
+        .cloned()
+        .ok_or_else(|| format!("typed palette entry {key} is missing"))
+}
+
+fn decode_textures<K: Eq + std::hash::Hash>(
+    payloads: Vec<(K, Vec<u8>)>,
+    palette: &[[u8; 4]; 256],
+) -> Result<HashMap<K, Texture2D>, String> {
+    payloads
+        .into_iter()
+        .map(|(key, bytes)| decode_indexed_texture(&bytes, palette).map(|texture| (key, texture)))
+        .collect()
+}
+
+fn white_texture() -> Texture2D {
+    let texture = Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]);
+    texture.set_filter(original_tactical_texture_filter());
+    texture
+}
+
+fn draw_lod_asset(material: &Material, asset: &TacticalLodAsset) {
+    for chunk in &asset.meshes {
+        material.set_uniform(
+            "MaterialEmissive",
+            [chunk.emissive[0], chunk.emissive[1], chunk.emissive[2], 0.0],
+        );
+        draw_mesh(&chunk.mesh);
+    }
+}
+
+fn cached_effect_asset(
+    resource_id: u32,
+    palette_resource_id: u32,
+) -> Result<TacticalEffectAsset, String> {
+    let (texture_payload, palette_payload) = cached_texture_pair(resource_id, palette_resource_id)?;
+    let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
+    let (texture, transparent_index) = decode_indexed_effect_texture(&texture_payload, &palette)?;
+    Ok(TacticalEffectAsset {
+        texture,
+        transparent_index,
+    })
+}
+
+fn projectile_forward(object: TacticalProjectileRenderObject) -> Vec3 {
+    let travel = object.target - object.origin;
+    if travel.is_finite() && travel.length_squared() > f32::EPSILON {
+        travel.normalize()
+    } else {
+        vec3(0.0, 0.0, 1.0)
+    }
+}
+
+fn joined_resource_ids(resource_ids: impl Iterator<Item = u32>) -> String {
+    let mut resource_ids = resource_ids.collect::<Vec<_>>();
+    resource_ids.sort_unstable();
+    resource_ids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn unique_sorted_resource_ids<T>(items: &[T], resource_id: impl Fn(&T) -> u32) -> Vec<u32> {
+    let mut resource_ids = items
+        .iter()
+        .map(resource_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    resource_ids.sort_unstable();
+    resource_ids
+}
+
+fn build_lod_asset(
+    resource_id: u32,
+    mut decoded: DecodedMeshObject,
+    textures: &HashMap<String, Texture2D>,
+    white: &Texture2D,
+    texture_key: impl Fn(&str) -> String,
+) -> (TacticalLodAsset, String) {
+    for chunk in &mut decoded.chunks {
+        let texture = chunk
+            .texture_name
+            .as_deref()
+            .and_then(|name| textures.get(&texture_key(name)))
+            .cloned()
+            .unwrap_or_else(|| white.clone());
+        chunk.mesh.texture = Some(texture);
+    }
+    let triangles: usize = decoded
+        .chunks
+        .iter()
+        .map(|chunk| chunk.mesh.indices.len() / 3)
+        .sum();
+    let render_vertices: usize = decoded
+        .chunks
+        .iter()
+        .map(|chunk| chunk.mesh.vertices.len())
+        .sum();
+    let diagnostic = format!(
+        "{}:{}/{}/{}/{}",
+        resource_id, decoded.source_vertices, decoded.source_faces, render_vertices, triangles,
+    );
+    let asset = TacticalLodAsset {
+        resource_id,
+        collision_envelope: tactical_collision_envelope(decoded.source_bounds),
+        meshes: decoded
+            .chunks
+            .into_iter()
+            .map(|chunk| TacticalMeshChunk {
+                mesh: chunk.mesh,
+                emissive: chunk.emissive,
+            })
+            .collect(),
+    };
+    (asset, diagnostic)
+}
+
 /// The two radii installed by `FUN_005ab0e0` from a capital ship's authored
 /// mesh bounds and consumed by `FUN_005b2e60` during movement collision tests.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1082,7 +1241,48 @@ impl Default for TacticalAssetRenderer {
     }
 }
 
+fn retain_new_signature(last: &mut Option<String>, signature: &str) -> bool {
+    if last.as_deref() == Some(signature) {
+        return false;
+    }
+    *last = Some(signature.to_owned());
+    true
+}
+
+macro_rules! forward_original_camera_controls {
+    ($($control:ident),+ $(,)?) => {
+        $(
+            pub(crate) fn $control(&mut self) {
+                if let Some(camera) = &mut self.source_camera {
+                    camera.$control();
+                }
+            }
+        )+
+    };
+}
+
 impl TacticalAssetRenderer {
+    fn source_camera_for<T>(&self, objects: &[T]) -> Option<OriginalTacticalCamera> {
+        if objects.is_empty() {
+            None
+        } else {
+            self.source_camera
+        }
+    }
+
+    fn prepare_scene_resources<T>(
+        &mut self,
+        objects: &[T],
+        resource_id: impl Fn(&T) -> u32,
+        mut prepare: impl FnMut(&mut Self, &[T], u32),
+    ) -> Option<OriginalTacticalCamera> {
+        let source_camera = self.source_camera_for(objects)?;
+        for resource_id in unique_sorted_resource_ids(objects, resource_id) {
+            prepare(self, objects, resource_id);
+        }
+        Some(source_camera)
+    }
+
     pub(crate) fn set_high_detail(&mut self, enabled: bool) {
         if self.high_detail_models != enabled {
             self.high_detail_models = enabled;
@@ -1119,11 +1319,7 @@ impl TacticalAssetRenderer {
             self.planet = None;
             self.unavailable_planet = None;
             self.material = None;
-            self.logged_participant_scene = false;
-            self.logged_fighter_scene = None;
-            self.logged_effect_scene = None;
-            self.logged_field_scene = None;
-            self.logged_projectile_scene = None;
+            self.clear_object_scene_signatures();
             self.logged_planet_scene = None;
             self.logged_station_scene = None;
             self.logged_station_removal = None;
@@ -1225,21 +1421,7 @@ impl TacticalAssetRenderer {
             size,
             origin: ORIGINAL_PLANET_DECAL_ORIGIN,
         };
-        let texels = vec2(planet.texture.width(), planet.texture.height());
-        let rect = decal_screen_rect(source_camera.pose(), aperture, decal, texels);
-        if let Some((min, dest_size)) = rect {
-            draw_texture_ex(
-                &planet.texture,
-                min.x,
-                min.y,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(dest_size),
-                    ..Default::default()
-                },
-            );
-        }
-        rect.is_some()
+        draw_decal(&planet.texture, source_camera.pose(), aperture, decal)
     }
 
     /// Log, once per cause, that `FUN_005c1200` has taken the station's
@@ -1324,21 +1506,7 @@ impl TacticalAssetRenderer {
         let Some(source_camera) = self.source_camera else {
             return false;
         };
-        let texels = vec2(asset.texture.width(), asset.texture.height());
-        let rect = decal_screen_rect(source_camera.pose(), aperture, decal, texels);
-        if let Some((min, dest_size)) = rect {
-            draw_texture_ex(
-                &asset.texture,
-                min.x,
-                min.y,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(dest_size),
-                    ..Default::default()
-                },
-            );
-        }
-        rect.is_some()
+        draw_decal(&asset.texture, source_camera.pose(), aperture, decal)
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -1360,11 +1528,7 @@ impl TacticalAssetRenderer {
         self.logged_camera = None;
         self.source_layout = Some(layout);
         self.logged_layout = None;
-        self.logged_participant_scene = false;
-        self.logged_fighter_scene = None;
-        self.logged_effect_scene = None;
-        self.logged_field_scene = None;
-        self.logged_projectile_scene = None;
+        self.clear_object_scene_signatures();
     }
 
     #[cfg(feature = "interface-test-fixtures")]
@@ -1373,6 +1537,10 @@ impl TacticalAssetRenderer {
         self.logged_camera = None;
         self.source_layout = None;
         self.logged_layout = None;
+        self.clear_object_scene_signatures();
+    }
+
+    fn clear_object_scene_signatures(&mut self) {
         self.logged_participant_scene = false;
         self.logged_fighter_scene = None;
         self.logged_effect_scene = None;
@@ -1380,41 +1548,9 @@ impl TacticalAssetRenderer {
         self.logged_projectile_scene = None;
     }
 
-    pub(crate) fn zoom_in(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.zoom_in();
-        }
-    }
-
-    pub(crate) fn zoom_out(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.zoom_out();
-        }
-    }
-
-    pub(crate) fn turn_left(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.turn_left();
-        }
-    }
-
-    pub(crate) fn turn_right(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.turn_right();
-        }
-    }
-
-    pub(crate) fn pitch_up(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.pitch_up();
-        }
-    }
-
-    pub(crate) fn pitch_down(&mut self) {
-        if let Some(camera) = &mut self.source_camera {
-            camera.pitch_down();
-        }
-    }
+    forward_original_camera_controls!(
+        zoom_in, zoom_out, turn_left, turn_right, pitch_up, pitch_down
+    );
 
     pub(crate) fn focus_target(&mut self, target_object_id: u32, target: Vec3) {
         if let Some(camera) = &mut self.source_camera {
@@ -1433,6 +1569,64 @@ impl TacticalAssetRenderer {
     pub(crate) fn restore_camera_state(&mut self, camera: OriginalTacticalCamera) {
         self.source_camera = Some(camera);
         self.logged_camera = None;
+    }
+
+    fn log_source_layout(&mut self) {
+        let Some(layout) = self.source_layout else {
+            return;
+        };
+        if self.logged_layout == Some(layout) {
+            return;
+        }
+        macroquad::logging::info!(
+            "[tactical_3d] layout_source first_active_objects={} second_active_objects={} battle_extent={} outer_positive_z={} outer_negative_z={} inner_negative_z={} inner_positive_z={} source=FUN_005ab650",
+            layout.first_active_objects,
+            layout.second_active_objects,
+            layout.battle_extent,
+            layout.outer_positive_z,
+            layout.outer_negative_z,
+            layout.inner_negative_z,
+            layout.inner_positive_z,
+        );
+        self.logged_layout = Some(layout);
+    }
+
+    fn log_source_camera(&mut self, source_camera: OriginalTacticalCamera) -> OriginalCameraPose {
+        let pose = source_camera.pose();
+        let camera_key = [
+            pose.position.x.to_bits(),
+            pose.position.y.to_bits(),
+            pose.position.z.to_bits(),
+            pose.field.to_bits(),
+            pose.pitch_degrees as u32,
+            pose.yaw_degrees as u32,
+            pose.zoom_step as u32,
+            pose.orbit_step as u32,
+            pose.target_object_id.unwrap_or(0),
+            pose.target.x.to_bits(),
+            pose.target.y.to_bits(),
+            pose.target.z.to_bits(),
+        ];
+        if self.logged_camera != Some(camera_key) {
+            macroquad::logging::info!(
+                "[tactical_3d] camera_source pitch={} yaw={} field={} zoom_step={} orbit_step={} distance={} near={} far={} fovy_radians={} target_object_id={} target_x={} target_y={} target_z={} handedness=lh_y_up_to_rh_y_up",
+                pose.pitch_degrees,
+                pose.yaw_degrees,
+                pose.field,
+                pose.zoom_step,
+                pose.orbit_step,
+                source_camera.distance,
+                pose.near,
+                pose.far,
+                pose.fovy_radians,
+                pose.target_object_id.unwrap_or(0),
+                pose.target.x,
+                pose.target.y,
+                pose.target.z,
+            );
+            self.logged_camera = Some(camera_key);
+        }
+        pose
     }
 
     /// Project one authored source position through the same retained-mode
@@ -1460,21 +1654,7 @@ impl TacticalAssetRenderer {
             return;
         }
 
-        if let Some(layout) = self.source_layout {
-            if self.logged_layout != Some(layout) {
-                macroquad::logging::info!(
-                    "[tactical_3d] layout_source first_active_objects={} second_active_objects={} battle_extent={} outer_positive_z={} outer_negative_z={} inner_negative_z={} inner_positive_z={} source=FUN_005ab650",
-                    layout.first_active_objects,
-                    layout.second_active_objects,
-                    layout.battle_extent,
-                    layout.outer_positive_z,
-                    layout.outer_negative_z,
-                    layout.inner_negative_z,
-                    layout.inner_positive_z,
-                );
-                self.logged_layout = Some(layout);
-            }
-        }
+        self.log_source_layout();
 
         let prior_lod = self.current_lod;
         self.current_lod = select_original_tactical_lod(self.current_lod, self.view);
@@ -1500,40 +1680,7 @@ impl TacticalAssetRenderer {
             height.round() as i32,
         );
         if let Some(source_camera) = self.source_camera {
-            let pose = source_camera.pose();
-            let camera_key = [
-                pose.position.x.to_bits(),
-                pose.position.y.to_bits(),
-                pose.position.z.to_bits(),
-                pose.field.to_bits(),
-                pose.pitch_degrees as u32,
-                pose.yaw_degrees as u32,
-                pose.zoom_step as u32,
-                pose.orbit_step as u32,
-                pose.target_object_id.unwrap_or(0),
-                pose.target.x.to_bits(),
-                pose.target.y.to_bits(),
-                pose.target.z.to_bits(),
-            ];
-            if self.logged_camera != Some(camera_key) {
-                macroquad::logging::info!(
-                    "[tactical_3d] camera_source pitch={} yaw={} field={} zoom_step={} orbit_step={} distance={} near={} far={} fovy_radians={} target_object_id={} target_x={} target_y={} target_z={} handedness=lh_y_up_to_rh_y_up",
-                    pose.pitch_degrees,
-                    pose.yaw_degrees,
-                    pose.field,
-                    pose.zoom_step,
-                    pose.orbit_step,
-                    source_camera.distance,
-                    pose.near,
-                    pose.far,
-                    pose.fovy_radians,
-                    pose.target_object_id.unwrap_or(0),
-                    pose.target.x,
-                    pose.target.y,
-                    pose.target.z,
-                );
-                self.logged_camera = Some(camera_key);
-            }
+            let pose = self.log_source_camera(source_camera);
             set_camera(&scene_camera(pose, aperture, true));
         } else {
             let camera_direction = vec3(2.8, -4.2, 2.2).normalize();
@@ -1555,13 +1702,7 @@ impl TacticalAssetRenderer {
         material.set_uniform("ObjectTranslation", [0.0_f32; 4]);
         let asset = &self.assets[self.current_lod as usize];
         debug_assert_eq!(asset.resource_id, self.current_lod.resource_id());
-        for chunk in &asset.meshes {
-            material.set_uniform(
-                "MaterialEmissive",
-                [chunk.emissive[0], chunk.emissive[1], chunk.emissive[2], 0.0],
-            );
-            draw_mesh(&chunk.mesh);
-        }
+        draw_lod_asset(material, asset);
         gl_use_default_material();
         set_default_camera();
     }
@@ -1603,75 +1744,20 @@ impl TacticalAssetRenderer {
         objects: &[TacticalRenderObject],
     ) -> TacticalDrawReport {
         let mut report = TacticalDrawReport::default();
-        if objects.is_empty() || self.source_camera.is_none() {
+        let Some(source_camera) = self.prepare_scene_resources(
+            objects,
+            |object| object.resource_base,
+            |renderer, _, resource_base| renderer.ensure_participant_family(resource_base),
+        ) else {
             return report;
-        }
-
-        let mut resource_bases = objects
-            .iter()
-            .map(|object| object.resource_base)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        resource_bases.sort_unstable();
-        for resource_base in resource_bases {
-            self.ensure_participant_family(resource_base);
-        }
+        };
         if self.material.is_none() {
             return report;
         }
 
-        if let Some(layout) = self.source_layout {
-            if self.logged_layout != Some(layout) {
-                macroquad::logging::info!(
-                    "[tactical_3d] layout_source first_active_objects={} second_active_objects={} battle_extent={} outer_positive_z={} outer_negative_z={} inner_negative_z={} inner_positive_z={} source=FUN_005ab650",
-                    layout.first_active_objects,
-                    layout.second_active_objects,
-                    layout.battle_extent,
-                    layout.outer_positive_z,
-                    layout.outer_negative_z,
-                    layout.inner_negative_z,
-                    layout.inner_positive_z,
-                );
-                self.logged_layout = Some(layout);
-            }
-        }
+        self.log_source_layout();
 
-        let source_camera = self.source_camera.unwrap();
-        let pose = source_camera.pose();
-        let camera_key = [
-            pose.position.x.to_bits(),
-            pose.position.y.to_bits(),
-            pose.position.z.to_bits(),
-            pose.field.to_bits(),
-            pose.pitch_degrees as u32,
-            pose.yaw_degrees as u32,
-            pose.zoom_step as u32,
-            pose.orbit_step as u32,
-            pose.target_object_id.unwrap_or(0),
-            pose.target.x.to_bits(),
-            pose.target.y.to_bits(),
-            pose.target.z.to_bits(),
-        ];
-        if self.logged_camera != Some(camera_key) {
-            macroquad::logging::info!(
-                "[tactical_3d] camera_source pitch={} yaw={} field={} zoom_step={} orbit_step={} distance={} near={} far={} fovy_radians={} target_object_id={} target_x={} target_y={} target_z={} handedness=lh_y_up_to_rh_y_up",
-                pose.pitch_degrees,
-                pose.yaw_degrees,
-                pose.field,
-                pose.zoom_step,
-                pose.orbit_step,
-                source_camera.distance,
-                pose.near,
-                pose.far,
-                pose.fovy_radians,
-                pose.target_object_id.unwrap_or(0),
-                pose.target.x,
-                pose.target.y,
-                pose.target.z,
-            );
-            self.logged_camera = Some(camera_key);
-        }
+        let pose = self.log_source_camera(source_camera);
         let camera = scene_camera(pose, aperture, true);
         let camera_matrix = camera.matrix();
         set_camera(&camera);
@@ -1703,13 +1789,7 @@ impl TacticalAssetRenderer {
                 "ObjectTranslation",
                 [object.position.x, object.position.y, object.position.z, 0.0],
             );
-            for chunk in &asset.meshes {
-                material.set_uniform(
-                    "MaterialEmissive",
-                    [chunk.emissive[0], chunk.emissive[1], chunk.emissive[2], 0.0],
-                );
-                draw_mesh(&chunk.mesh);
-            }
+            draw_lod_asset(material, asset);
             report.rendered_object_ids.push(object.object_id);
             if let Some(screen) = project_world_position(camera_matrix, object.position, aperture) {
                 report.screen_positions.push((object.object_id, screen));
@@ -1729,12 +1809,7 @@ impl TacticalAssetRenderer {
                         max = max.max(projected);
                     }
                 }
-                report.projections.push(TacticalScreenProjection {
-                    object_id: object.object_id,
-                    center: screen,
-                    min,
-                    max,
-                });
+                report.push_projection(object.object_id, screen, min, max);
                 screen_bounds.push(format!(
                     "{}:{:.3},{:.3},{:.3},{:.3}",
                     object.object_id, min.x, min.y, max.x, max.y
@@ -1746,17 +1821,11 @@ impl TacticalAssetRenderer {
         set_default_camera();
 
         if !self.logged_participant_scene {
-            let mut families: Vec<_> = self.participant_families.keys().copied().collect();
-            families.sort_unstable();
             macroquad::logging::info!(
                 "[tactical_3d] participant_scene requested={} rendered={} families={} resources={} screen_positions={} source_positions=true",
                 objects.len(),
                 report.rendered_object_ids.len(),
-                families
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
+                joined_resource_ids(self.participant_families.keys().copied()),
                 selected_resources.join(","),
                 screen_positions.join(";"),
             );
@@ -1777,43 +1846,37 @@ impl TacticalAssetRenderer {
         objects: &[TacticalFighterRenderObject],
     ) -> TacticalDrawReport {
         let mut report = TacticalDrawReport::default();
-        let Some(source_camera) = self.source_camera else {
+        let Some(source_camera) = self.prepare_scene_resources(
+            objects,
+            |object| object.close_resource_id,
+            |renderer, objects, close_resource_id| {
+                if renderer.fighter_families.contains_key(&close_resource_id)
+                    || renderer
+                        .unavailable_fighter_families
+                        .contains(&close_resource_id)
+                {
+                    return;
+                }
+                let Some(object) = objects
+                    .iter()
+                    .find(|object| object.close_resource_id == close_resource_id)
+                else {
+                    return;
+                };
+                if let Err(error) = renderer.load_fighter_family(*object) {
+                    renderer
+                        .unavailable_fighter_families
+                        .insert(close_resource_id);
+                    macroquad::logging::warn!(
+                        "[tactical_3d] fighter family close={} unavailable: {}",
+                        close_resource_id,
+                        error
+                    );
+                }
+            },
+        ) else {
             return report;
         };
-        if objects.is_empty() {
-            return report;
-        }
-
-        let mut close_resources = objects
-            .iter()
-            .map(|object| object.close_resource_id)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        close_resources.sort_unstable();
-        for close_resource_id in close_resources {
-            if self.fighter_families.contains_key(&close_resource_id)
-                || self
-                    .unavailable_fighter_families
-                    .contains(&close_resource_id)
-            {
-                continue;
-            }
-            let Some(object) = objects
-                .iter()
-                .find(|object| object.close_resource_id == close_resource_id)
-            else {
-                continue;
-            };
-            if let Err(error) = self.load_fighter_family(*object) {
-                self.unavailable_fighter_families.insert(close_resource_id);
-                macroquad::logging::warn!(
-                    "[tactical_3d] fighter family close={} unavailable: {}",
-                    close_resource_id,
-                    error
-                );
-            }
-        }
 
         let pose = source_camera.pose();
         let camera = scene_camera(pose, aperture, false);
@@ -1855,14 +1918,7 @@ impl TacticalAssetRenderer {
                 },
             );
             self.fighter_details.insert(object.object_id, detail);
-            report.rendered_object_ids.push(object.object_id);
-            report.screen_positions.push((object.object_id, center));
-            report.projections.push(TacticalScreenProjection {
-                object_id: object.object_id,
-                center,
-                min,
-                max,
-            });
+            report.record_projection(object.object_id, center, min, max);
             selected_resources.push(format!(
                 "{}:{}:{:?}:{:.3}",
                 object.object_id, resource_id, detail, view_span
@@ -1886,63 +1942,51 @@ impl TacticalAssetRenderer {
             })
             .collect::<Vec<_>>()
             .join(",");
-        if self.logged_fighter_scene.as_deref() != Some(scene_signature.as_str()) {
-            let mut families = self.fighter_families.keys().copied().collect::<Vec<_>>();
-            families.sort_unstable();
+        if retain_new_signature(&mut self.logged_fighter_scene, &scene_signature) {
             macroquad::logging::info!(
                 "[tactical_3d] fighter_scene requested={} rendered={} families={} resources={} screen_positions={} screen_bounds={} source_positions=true source=FUN_005ab650,FUN_005c63f0,0x005d4af0",
                 objects.len(),
                 report.rendered_object_ids.len(),
-                families.iter().map(u32::to_string).collect::<Vec<_>>().join(","),
+                joined_resource_ids(self.fighter_families.keys().copied()),
                 selected_resources.join(","),
                 screen_positions.join(";"),
                 screen_bounds.join(";"),
             );
-            self.logged_fighter_scene = Some(scene_signature);
         }
         report
     }
 
     /// Draw active target-attached hit, damage, and destruction frames through
     /// the exact type-303 resources selected by `FUN_005d3e90`.
-    pub(crate) fn draw_effects(
+    fn draw_effect_family(
         &mut self,
         aperture: (f32, f32, f32, f32),
         objects: &[TacticalEffectRenderObject],
-    ) -> TacticalDrawReport {
+        label: &str,
+    ) -> Option<(TacticalDrawReport, String)> {
         let mut report = TacticalDrawReport::default();
-        let Some(source_camera) = self.source_camera else {
-            return report;
-        };
-        if objects.is_empty() {
-            return report;
-        }
+        let source_camera = self.prepare_scene_resources(
+            objects,
+            |object| object.resource_id,
+            |renderer, _, resource_id| {
+                if renderer.effect_textures.contains_key(&resource_id)
+                    || renderer.unavailable_effect_textures.contains(&resource_id)
+                {
+                    return;
+                }
+                if let Err(error) = renderer.load_effect_texture(resource_id) {
+                    renderer.unavailable_effect_textures.insert(resource_id);
+                    macroquad::logging::warn!(
+                        "[tactical_3d] {} resource={} unavailable: {}",
+                        label,
+                        resource_id,
+                        error
+                    );
+                }
+            },
+        )?;
 
-        let mut resource_ids = objects
-            .iter()
-            .map(|object| object.resource_id)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        resource_ids.sort_unstable();
-        for resource_id in resource_ids {
-            if self.effect_textures.contains_key(&resource_id)
-                || self.unavailable_effect_textures.contains(&resource_id)
-            {
-                continue;
-            }
-            if let Err(error) = self.load_effect_texture(resource_id) {
-                self.unavailable_effect_textures.insert(resource_id);
-                macroquad::logging::warn!(
-                    "[tactical_3d] effect resource={} unavailable: {}",
-                    resource_id,
-                    error
-                );
-            }
-        }
-
-        let pose = source_camera.pose();
-        let camera = scene_camera(pose, aperture, false);
+        let camera = scene_camera(source_camera.pose(), aperture, false);
         let camera_matrix = camera.matrix();
         let source_scale = aperture.2 / ORIGINAL_SCENE_WIDTH;
         let mut rendered = Vec::new();
@@ -1977,30 +2021,27 @@ impl TacticalAssetRenderer {
                     ..Default::default()
                 },
             );
-            report.rendered_object_ids.push(object.object_id);
-            report.screen_positions.push((object.object_id, center));
-            report.projections.push(TacticalScreenProjection {
-                object_id: object.object_id,
-                center,
-                min,
-                max,
-            });
+            report.record_projection(object.object_id, center, min, max);
             rendered.push(format!(
                 "{}:{}:{}:{:.3},{:.3}",
                 object.object_id, object.resource_id, asset.transparent_index, center.x, center.y
             ));
         }
-        let signature = rendered.join(";");
-        if self.logged_effect_scene.as_deref() != Some(signature.as_str()) {
-            macroquad::logging::info!(
-                "[tactical_3d] effect_scene requested={} rendered={} resources={} frame_seconds=0.1 source_positions=true source=FUN_005d39a0,FUN_005d3e90,FUN_005d41a0",
-                objects.len(),
-                report.rendered_object_ids.len(),
-                signature,
-            );
-            self.logged_effect_scene = Some(signature);
-        }
-        report
+        Some((report, rendered.join(";")))
+    }
+
+    pub(crate) fn draw_effects(
+        &mut self,
+        aperture: (f32, f32, f32, f32),
+        objects: &[TacticalEffectRenderObject],
+    ) -> TacticalDrawReport {
+        self.draw_logged_effect_family(
+            aperture,
+            objects,
+            "effect",
+            |renderer| &mut renderer.logged_effect_scene,
+            "frame_seconds=0.1 source_positions=true source=FUN_005d39a0,FUN_005d3e90,FUN_005d41a0",
+        )
     }
 
     /// Draw the target-attached tractor/gravity field selected by
@@ -2011,95 +2052,35 @@ impl TacticalAssetRenderer {
         aperture: (f32, f32, f32, f32),
         objects: &[TacticalEffectRenderObject],
     ) -> TacticalDrawReport {
-        let mut report = TacticalDrawReport::default();
-        let Some(source_camera) = self.source_camera else {
-            return report;
+        self.draw_logged_effect_family(
+            aperture,
+            objects,
+            "field",
+            |renderer| &mut renderer.logged_field_scene,
+            "frame_seconds=0.1 source_size=128x128 priority=gravity_over_tractor source_positions=true source=FUN_005b23e0,FUN_005b24d0,FUN_005b2440,FUN_005b2480,FUN_005d3ac0,FUN_005d3cc0",
+        )
+    }
+
+    fn draw_logged_effect_family(
+        &mut self,
+        aperture: (f32, f32, f32, f32),
+        objects: &[TacticalEffectRenderObject],
+        family: &str,
+        signature_slot: fn(&mut Self) -> &mut Option<String>,
+        log_details: &str,
+    ) -> TacticalDrawReport {
+        let Some((report, signature)) = self.draw_effect_family(aperture, objects, family) else {
+            return TacticalDrawReport::default();
         };
-        if objects.is_empty() {
-            return report;
-        }
-
-        let mut resource_ids = objects
-            .iter()
-            .map(|object| object.resource_id)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        resource_ids.sort_unstable();
-        for resource_id in resource_ids {
-            if self.effect_textures.contains_key(&resource_id)
-                || self.unavailable_effect_textures.contains(&resource_id)
-            {
-                continue;
-            }
-            if let Err(error) = self.load_effect_texture(resource_id) {
-                self.unavailable_effect_textures.insert(resource_id);
-                macroquad::logging::warn!(
-                    "[tactical_3d] field resource={} unavailable: {}",
-                    resource_id,
-                    error
-                );
-            }
-        }
-
-        let pose = source_camera.pose();
-        let camera = scene_camera(pose, aperture, false);
-        let camera_matrix = camera.matrix();
-        let source_scale = aperture.2 / ORIGINAL_SCENE_WIDTH;
-        let mut rendered = Vec::new();
-        for object in objects {
-            let Some(center) = project_world_position(camera_matrix, object.position, aperture)
-            else {
-                continue;
-            };
-            let Some(asset) = self.effect_textures.get(&object.resource_id) else {
-                continue;
-            };
-            let size = vec2(
-                f32::from(object.source_width) * source_scale,
-                f32::from(object.source_height) * source_scale,
-            );
-            let min = center - size * 0.5;
-            let max = min + size;
-            if max.x < aperture.0
-                || min.x > aperture.0 + aperture.2
-                || max.y < aperture.1
-                || min.y > aperture.1 + aperture.3
-            {
-                continue;
-            }
-            draw_texture_ex(
-                &asset.texture,
-                min.x,
-                min.y,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(size),
-                    ..Default::default()
-                },
-            );
-            report.rendered_object_ids.push(object.object_id);
-            report.screen_positions.push((object.object_id, center));
-            report.projections.push(TacticalScreenProjection {
-                object_id: object.object_id,
-                center,
-                min,
-                max,
-            });
-            rendered.push(format!(
-                "{}:{}:{}:{:.3},{:.3}",
-                object.object_id, object.resource_id, asset.transparent_index, center.x, center.y
-            ));
-        }
-        let signature = rendered.join(";");
-        if self.logged_field_scene.as_deref() != Some(signature.as_str()) {
+        if retain_new_signature(signature_slot(self), &signature) {
             macroquad::logging::info!(
-                "[tactical_3d] field_scene requested={} rendered={} resources={} frame_seconds=0.1 source_size=128x128 priority=gravity_over_tractor source_positions=true source=FUN_005b23e0,FUN_005b24d0,FUN_005b2440,FUN_005b2480,FUN_005d3ac0,FUN_005d3cc0",
+                "[tactical_3d] {}_scene requested={} rendered={} resources={} {}",
+                family,
                 objects.len(),
                 report.rendered_object_ids.len(),
                 signature,
+                log_details,
             );
-            self.logged_field_scene = Some(signature);
         }
         report
     }
@@ -2112,12 +2093,9 @@ impl TacticalAssetRenderer {
         objects: &[TacticalProjectileRenderObject],
     ) -> TacticalDrawReport {
         let mut report = TacticalDrawReport::default();
-        let Some(source_camera) = self.source_camera else {
+        let Some(source_camera) = self.source_camera_for(objects) else {
             return report;
         };
-        if objects.is_empty() {
-            return report;
-        }
         let (x, y, width, height) = aperture;
         let pose = source_camera.pose();
         let camera = scene_camera(pose, aperture, true);
@@ -2131,12 +2109,7 @@ impl TacticalAssetRenderer {
             let Some(center) = project_world_position(camera_matrix, position, aperture) else {
                 continue;
             };
-            let travel = object.target - object.origin;
-            let forward = if travel.is_finite() && travel.length_squared() > f32::EPSILON {
-                travel.normalize()
-            } else {
-                vec3(0.0, 0.0, 1.0)
-            };
+            let forward = projectile_forward(*object);
             let tip_position = position + forward * object.longitudinal_scale;
             let Some(tip) = project_world_position(camera_matrix, tip_position, aperture) else {
                 continue;
@@ -2149,14 +2122,7 @@ impl TacticalAssetRenderer {
             let mesh = original_projectile_mesh(*object, position);
             draw_mesh(&mesh);
             raster_compatibility_segments.push((center, tip, object.color));
-            report.rendered_object_ids.push(object.object_id);
-            report.screen_positions.push((object.object_id, center));
-            report.projections.push(TacticalScreenProjection {
-                object_id: object.object_id,
-                center,
-                min,
-                max,
-            });
+            report.record_projection(object.object_id, center, min, max);
             rendered.push(format!(
                 "{}:{}:{:.3}:{:.3}:{:.3},{:.3}",
                 object.object_id,
@@ -2177,7 +2143,7 @@ impl TacticalAssetRenderer {
             draw_line(center.x, center.y, tip.x, tip.y, device_pixel, color);
         }
         let signature = rendered.join(";");
-        if self.logged_projectile_scene.as_deref() != Some(signature.as_str()) {
+        if retain_new_signature(&mut self.logged_projectile_scene, &signature) {
             macroquad::logging::info!(
                 "[tactical_3d] projectile_scene requested={} rendered={} projectiles={} selectors={} durations=1,1,2 interpolation=source_to_live_target geometry=source_mesh raster_compat=device_pixel_floor source=FUN_005b1ea0,FUN_005b1f60,FUN_005b2080,FUN_005b2c70,FUN_005d3de0,FUN_005ee590,LAB_005eeb90",
                 objects.len(),
@@ -2189,7 +2155,6 @@ impl TacticalAssetRenderer {
                     .collect::<Vec<_>>()
                     .join(","),
             );
-            self.logged_projectile_scene = Some(signature);
         }
         report
     }
@@ -2197,7 +2162,7 @@ impl TacticalAssetRenderer {
     #[cfg(feature = "interface-test-fixtures")]
     fn load_proof(&mut self) -> Result<(), String> {
         let palette_resource_id = 5530 + u32::from(self.palette_selector);
-        let (mesh_payloads, texture_payloads, palette_payload) = {
+        let (mesh_payloads, texture_payloads) = {
             let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
             let meshes = PROOF_MESH_KEYS
                 .iter()
@@ -2220,22 +2185,12 @@ impl TacticalAssetRenderer {
                         .ok_or_else(|| format!("typed texture entry {key} is missing"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let palette_key = format!("{palette_resource_id}/1033");
-            let palette = cache
-                .textures
-                .get(&palette_key)
-                .cloned()
-                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
-            (meshes, textures, palette)
+            (meshes, textures)
         };
+        let palette_payload = cached_palette(palette_resource_id)?;
         let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
-
-        let mut textures = HashMap::new();
-        for (key, bytes) in texture_payloads {
-            textures.insert(key, decode_indexed_texture(&bytes, &palette)?);
-        }
-        let white = Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]);
-        white.set_filter(original_tactical_texture_filter());
+        let textures = decode_textures(texture_payloads, &palette)?;
+        let white = white_texture();
 
         let mut assets = Vec::with_capacity(3);
         let mut diagnostics = Vec::with_capacity(3);
@@ -2243,45 +2198,12 @@ impl TacticalAssetRenderer {
             let resource_id = 2560 + index as u32;
             let mut decoded = decode_mesh_object(mesh_bytes)?;
             scale_capital_mesh(&mut decoded);
-            for chunk in &mut decoded.chunks {
-                let texture = chunk
-                    .texture_name
-                    .as_ref()
-                    .and_then(|name| textures.get(&format!("{}/1033", name.to_ascii_uppercase())))
-                    .cloned()
-                    .unwrap_or_else(|| white.clone());
-                chunk.mesh.texture = Some(texture);
-            }
-            let triangles: usize = decoded
-                .chunks
-                .iter()
-                .map(|chunk| chunk.mesh.indices.len() / 3)
-                .sum();
-            let render_vertices: usize = decoded
-                .chunks
-                .iter()
-                .map(|chunk| chunk.mesh.vertices.len())
-                .sum();
-            diagnostics.push(format!(
-                "{}:{}/{}/{}/{}",
-                resource_id,
-                decoded.source_vertices,
-                decoded.source_faces,
-                render_vertices,
-                triangles,
-            ));
-            assets.push(TacticalLodAsset {
-                resource_id,
-                collision_envelope: tactical_collision_envelope(decoded.source_bounds),
-                meshes: decoded
-                    .chunks
-                    .into_iter()
-                    .map(|chunk| TacticalMeshChunk {
-                        mesh: chunk.mesh,
-                        emissive: chunk.emissive,
-                    })
-                    .collect(),
-            });
+            let (asset, diagnostic) =
+                build_lod_asset(resource_id, decoded, &textures, &white, |name| {
+                    format!("{}/1033", name.to_ascii_uppercase())
+                });
+            assets.push(asset);
+            diagnostics.push(diagnostic);
         }
 
         self.material = Some(load_tactical_material()?);
@@ -2306,9 +2228,9 @@ impl TacticalAssetRenderer {
 
     fn load_participant_family(&mut self, resource_base: u32) -> Result<(), String> {
         let palette_resource_id = 5530 + u32::from(self.palette_selector);
-        let (mesh_payloads, palette_payload) = {
+        let mesh_payloads = {
             let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
-            let meshes = (0..3_u32)
+            (0..3_u32)
                 .map(|offset| {
                     let key = format!("{}/1033", resource_base + offset);
                     cache
@@ -2318,15 +2240,9 @@ impl TacticalAssetRenderer {
                         .map(|bytes| (resource_base + offset, bytes))
                         .ok_or_else(|| format!("typed mesh entry {key} is missing"))
                 })
-                .collect::<Result<Vec<_>, _>>()?;
-            let palette_key = format!("{palette_resource_id}/1033");
-            let palette = cache
-                .textures
-                .get(&palette_key)
-                .cloned()
-                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
-            (meshes, palette)
+                .collect::<Result<Vec<_>, _>>()?
         };
+        let palette_payload = cached_palette(palette_resource_id)?;
         let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
 
         let mut decoded_meshes = Vec::with_capacity(3);
@@ -2356,55 +2272,21 @@ impl TacticalAssetRenderer {
                 })
                 .collect::<Result<Vec<_>, _>>()?
         };
-        let mut textures = HashMap::with_capacity(texture_payloads.len());
-        for (name, bytes) in texture_payloads {
-            textures.insert(name, decode_indexed_texture(&bytes, &palette)?);
-        }
-        let white = Texture2D::from_rgba8(1, 1, &[255, 255, 255, 255]);
-        white.set_filter(original_tactical_texture_filter());
+        let textures = decode_textures(texture_payloads, &palette)?;
+        let white = white_texture();
 
         let mut assets = Vec::with_capacity(3);
         let mut diagnostics = Vec::with_capacity(3);
-        for (resource_id, mut decoded) in decoded_meshes {
-            for chunk in &mut decoded.chunks {
-                let texture = chunk
-                    .texture_name
-                    .as_ref()
-                    .and_then(|name| textures.get(&name.to_ascii_uppercase()))
-                    .cloned()
-                    .unwrap_or_else(|| white.clone());
-                chunk.mesh.texture = Some(texture);
-            }
-            let triangles: usize = decoded
-                .chunks
-                .iter()
-                .map(|chunk| chunk.mesh.indices.len() / 3)
-                .sum();
-            let render_vertices: usize = decoded
-                .chunks
-                .iter()
-                .map(|chunk| chunk.mesh.vertices.len())
-                .sum();
-            diagnostics.push(format!(
-                "{}:{}/{}/{}/{}",
+        for (resource_id, decoded) in decoded_meshes {
+            let (asset, diagnostic) = build_lod_asset(
                 resource_id,
-                decoded.source_vertices,
-                decoded.source_faces,
-                render_vertices,
-                triangles,
-            ));
-            assets.push(TacticalLodAsset {
-                resource_id,
-                collision_envelope: tactical_collision_envelope(decoded.source_bounds),
-                meshes: decoded
-                    .chunks
-                    .into_iter()
-                    .map(|chunk| TacticalMeshChunk {
-                        mesh: chunk.mesh,
-                        emissive: chunk.emissive,
-                    })
-                    .collect(),
-            });
+                decoded,
+                &textures,
+                &white,
+                str::to_ascii_uppercase,
+            );
+            assets.push(asset);
+            diagnostics.push(diagnostic);
         }
 
         if self.material.is_none() {
@@ -2436,9 +2318,9 @@ impl TacticalAssetRenderer {
             object.far_resource_id,
             object.indicator_resource_id,
         ];
-        let (payloads, palette_payload) = {
+        let payloads = {
             let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
-            let payloads = resource_ids
+            resource_ids
                 .iter()
                 .map(|resource_id| {
                     let key = format!("{resource_id}/1033");
@@ -2449,22 +2331,11 @@ impl TacticalAssetRenderer {
                         .map(|bytes| (*resource_id, bytes))
                         .ok_or_else(|| format!("typed texture entry {key} is missing"))
                 })
-                .collect::<Result<Vec<_>, _>>()?;
-            let palette_key = format!("{palette_resource_id}/1033");
-            let palette = cache
-                .textures
-                .get(&palette_key)
-                .cloned()
-                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
-            (payloads, palette)
+                .collect::<Result<Vec<_>, _>>()?
         };
+        let palette_payload = cached_palette(palette_resource_id)?;
         let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
-        let mut textures = payloads
-            .into_iter()
-            .map(|(resource_id, bytes)| {
-                decode_indexed_texture(&bytes, &palette).map(|texture| (resource_id, texture))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
+        let mut textures = decode_textures(payloads, &palette)?;
         let close = textures
             .remove(&object.close_resource_id)
             .ok_or("decoded fighter close texture is missing")?;
@@ -2508,41 +2379,17 @@ impl TacticalAssetRenderer {
             return Err(format!("invalid tactical effect resource {resource_id}"));
         }
         let palette_resource_id = 5530 + u32::from(self.palette_selector);
-        let (texture_payload, palette_payload) = {
-            let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
-            let texture_key = format!("{resource_id}/1033");
-            let palette_key = format!("{palette_resource_id}/1033");
-            let texture = cache
-                .textures
-                .get(&texture_key)
-                .cloned()
-                .ok_or_else(|| format!("typed texture entry {texture_key} is missing"))?;
-            let palette = cache
-                .textures
-                .get(&palette_key)
-                .cloned()
-                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
-            (texture, palette)
-        };
-        let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
-        let (texture, transparent_index) =
-            decode_indexed_effect_texture(&texture_payload, &palette)?;
+        let asset = cached_effect_asset(resource_id, palette_resource_id)?;
         macroquad::logging::info!(
             "[tactical_3d] effect_loaded resource={} dimensions={}x{} palette_selector={} palette_resource_id={} texture_filter=nearest transparent_index={} source=FUN_005d38d0",
             resource_id,
-            texture.width(),
-            texture.height(),
+            asset.texture.width(),
+            asset.texture.height(),
             self.palette_selector,
             palette_resource_id,
-            transparent_index,
+            asset.transparent_index,
         );
-        self.effect_textures.insert(
-            resource_id,
-            TacticalEffectAsset {
-                texture,
-                transparent_index,
-            },
-        );
+        self.effect_textures.insert(resource_id, asset);
         self.family_loads = self.family_loads.saturating_add(1);
         Ok(())
     }
@@ -2552,45 +2399,24 @@ impl TacticalAssetRenderer {
             return Err(format!("invalid tactical backdrop resource {resource_id}"));
         }
         let palette_resource_id = 5530 + u32::from(self.palette_selector);
-        let (texture_payload, palette_payload) = {
-            let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
-            let texture_key = format!("{resource_id}/1033");
-            let palette_key = format!("{palette_resource_id}/1033");
-            let texture = cache
-                .textures
-                .get(&texture_key)
-                .cloned()
-                .ok_or_else(|| format!("typed texture entry {texture_key} is missing"))?;
-            let palette = cache
-                .textures
-                .get(&palette_key)
-                .cloned()
-                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
-            (texture, palette)
-        };
-        let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
-        let (texture, transparent_index) =
-            decode_indexed_effect_texture(&texture_payload, &palette)?;
-        if texture.width() != 440.0 || texture.height() != 438.0 {
+        let asset = cached_effect_asset(resource_id, palette_resource_id)?;
+        if asset.texture.width() != 440.0 || asset.texture.height() != 438.0 {
             return Err(format!(
                 "tactical backdrop has unexpected dimensions {}x{}",
-                texture.width(),
-                texture.height()
+                asset.texture.width(),
+                asset.texture.height()
             ));
         }
         macroquad::logging::info!(
             "[tactical_3d] backdrop_loaded resource={} dimensions={}x{} palette_selector={} palette_resource_id={} texture_filter=nearest transparent_index={} source=FUN_005d4d10",
             resource_id,
-            texture.width(),
-            texture.height(),
+            asset.texture.width(),
+            asset.texture.height(),
             self.palette_selector,
             palette_resource_id,
-            transparent_index,
+            asset.transparent_index,
         );
-        self.backdrop = Some(TacticalEffectAsset {
-            texture,
-            transparent_index,
-        });
+        self.backdrop = Some(asset);
         Ok(())
     }
 
@@ -2599,22 +2425,8 @@ impl TacticalAssetRenderer {
             return Err(format!("invalid tactical planet resource {resource_id}"));
         }
         let palette_resource_id = resource_id + 30;
-        let (texture_payload, palette_payload) = {
-            let cache = TACTICAL_OBJECT_CACHE.lock().unwrap();
-            let texture_key = format!("{resource_id}/1033");
-            let palette_key = format!("{palette_resource_id}/1033");
-            let texture = cache
-                .textures
-                .get(&texture_key)
-                .cloned()
-                .ok_or_else(|| format!("typed texture entry {texture_key} is missing"))?;
-            let palette = cache
-                .textures
-                .get(&palette_key)
-                .cloned()
-                .ok_or_else(|| format!("typed palette entry {palette_key} is missing"))?;
-            (texture, palette)
-        };
+        let (texture_payload, palette_payload) =
+            cached_texture_pair(resource_id, palette_resource_id)?;
         let palette = decode_palette_object(&palette_payload, palette_resource_id)?;
         let (width, height, mut rgba) =
             decode_indexed_rgba_with_rule(&texture_payload, &palette, palette_resource_id, 2)?;
@@ -2644,7 +2456,7 @@ impl TacticalAssetRenderer {
 }
 
 /// The screen rectangle (top-left, size) of a decal of `texture_size`
-/// texels. `FUN_005d4d10` never calls SetDecalScale, so Direct3D RM scales a
+/// texels. `FUN_005d4d10` never calls `SetDecalScale`, so Direct3D RM scales a
 /// decal by its depth along the view axis: `size` world units span
 /// `size * height / (2 * depth * tan(fovy / 2))` pixels, with the origin
 /// texel on the frame's projection. The front and back planes clip it like
@@ -2663,10 +2475,32 @@ fn decal_screen_rect(
     // The camera the participant passes draw with.
     let camera_matrix = scene_camera(pose, aperture, false).matrix;
     let centre = project_world_position(camera_matrix, decal.position, aperture)?;
-    let pixels =
-        decal.size * aperture.3 / (2.0 * depth * (scene_fovy(pose, aperture) * 0.5).tan());
+    let pixels = decal.size * aperture.3 / (2.0 * depth * (scene_fovy(pose, aperture) * 0.5).tan());
     let size = vec2(pixels, pixels);
     Some((centre - decal.origin / texture_size * size, size))
+}
+
+fn draw_decal(
+    texture: &Texture2D,
+    pose: OriginalCameraPose,
+    aperture: (f32, f32, f32, f32),
+    decal: TacticalDecalRenderObject,
+) -> bool {
+    let texture_size = vec2(texture.width(), texture.height());
+    let Some((min, dest_size)) = decal_screen_rect(pose, aperture, decal, texture_size) else {
+        return false;
+    };
+    draw_texture_ex(
+        texture,
+        min.x,
+        min.y,
+        WHITE,
+        DrawTextureParams {
+            dest_size: Some(dest_size),
+            ..Default::default()
+        },
+    );
+    true
 }
 
 fn project_world_position(
@@ -2681,7 +2515,7 @@ fn project_world_position(
     let ndc = clip.truncate() / clip.w;
     let (x, y, width, height) = aperture;
     Some(vec2(
-        x + (ndc.x + 1.0) * 0.5 * width,
+        x + f32::midpoint(ndc.x, 1.0) * width,
         y + (1.0 - ndc.y) * 0.5 * height,
     ))
 }
@@ -2707,12 +2541,7 @@ const ORIGINAL_PROJECTILE_VARIANT_2: [u16; 12] = [0, 3, 2, 2, 3, 0, 4, 1, 5, 5, 
 const ORIGINAL_PROJECTILE_VARIANT_3: [u16; 12] = [6, 7, 8, 8, 7, 6, 9, 10, 11, 11, 10, 9];
 
 fn original_projectile_mesh(object: TacticalProjectileRenderObject, position: Vec3) -> Mesh {
-    let travel = object.target - object.origin;
-    let forward = if travel.is_finite() && travel.length_squared() > f32::EPSILON {
-        travel.normalize()
-    } else {
-        vec3(0.0, 0.0, 1.0)
-    };
+    let forward = projectile_forward(object);
     let reference_up = if forward.y.abs() < 0.99 {
         vec3(0.0, 1.0, 0.0)
     } else {
@@ -2845,7 +2674,7 @@ fn decode_mesh_object(bytes: &[u8]) -> Result<DecodedMeshObject, String> {
             }
             indices.push(index);
         }
-        for triangle in indices.chunks_exact_mut(3) {
+        for triangle in indices.as_chunks_mut::<3>().0 {
             triangle.swap(1, 2);
         }
         output.push(DecodedMeshChunk {
@@ -3085,10 +2914,70 @@ fn decode_palette_object(
         return Err("tactical palette object has trailing bytes".to_string());
     }
     let mut palette = [[0_u8; 4]; 256];
-    for (entry, source) in palette.iter_mut().zip(rgb.chunks_exact(3)) {
+    let (rgb, remainder) = rgb.as_chunks::<3>();
+    debug_assert_eq!(remainder, &[] as &[u8]);
+    for (entry, source) in palette.iter_mut().zip(rgb) {
         *entry = [source[0], source[1], source[2], 255];
     }
     Ok(palette)
+}
+
+struct IndexedHeader {
+    version: u32,
+    width: u32,
+    height: u32,
+    palette_id: u32,
+    palette_rule: u32,
+    pixels: usize,
+    trailing: usize,
+}
+
+fn read_indexed_header(reader: &mut Reader<'_>) -> Result<IndexedHeader, String> {
+    reader.expect(TEXTURE_MAGIC)?;
+    Ok(IndexedHeader {
+        version: reader.u32()?,
+        width: reader.u32()?,
+        height: reader.u32()?,
+        palette_id: reader.u32()?,
+        palette_rule: reader.u32()?,
+        pixels: reader.u32()? as usize,
+        trailing: reader.u32()? as usize,
+    })
+}
+
+fn decode_indexed_payload(
+    bytes: &[u8],
+    expected_palette_id: u32,
+    expected_palette_rule: u32,
+    header_error: &str,
+    trailing_error: &str,
+) -> Result<(u16, u16, Vec<u8>), String> {
+    let mut reader = Reader::new(bytes);
+    let header = read_indexed_header(&mut reader)?;
+    let expected = (header.width as usize)
+        .checked_mul(header.height as usize)
+        .ok_or("tactical texture dimensions overflow")?;
+    if header.version != 1 {
+        return Err("unsupported tactical texture object version".to_string());
+    }
+    if header.width == 0
+        || header.height == 0
+        || header.width > u16::MAX.into()
+        || header.height > u16::MAX.into()
+        || header.pixels != expected
+        || header.pixels > 16_777_216
+        || header.palette_id != expected_palette_id
+        || header.palette_rule != expected_palette_rule
+        || !matches!(header.trailing, 0 | 4)
+    {
+        return Err(header_error.to_string());
+    }
+    let indices = reader.bytes(header.pixels)?.to_vec();
+    reader.bytes(header.trailing)?;
+    if !reader.finished() {
+        return Err(trailing_error.to_string());
+    }
+    Ok((header.width as u16, header.height as u16, indices))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -3097,16 +2986,9 @@ fn validate_indexed_texture_object(
     record: &NativeTextureRecord,
 ) -> Result<(), String> {
     let mut reader = Reader::new(bytes);
-    reader.expect(TEXTURE_MAGIC)?;
-    let version = reader.u32()?;
-    let width = reader.u32()?;
-    let height = reader.u32()?;
-    let palette_id = reader.u32()?;
-    let palette_rule = reader.u32()?;
-    let pixels = reader.u32()? as usize;
-    let trailing = reader.u32()? as usize;
-    let expected_pixels = (width as usize)
-        .checked_mul(height as usize)
+    let header = read_indexed_header(&mut reader)?;
+    let expected_pixels = (header.width as usize)
+        .checked_mul(header.height as usize)
         .ok_or("tactical texture dimensions overflow")?;
     let planet_pair = record.identifier_kind == "id" && (5501..=5527).contains(&record.id);
     let expected_palette_id = if planet_pair { record.id + 30 } else { 0 };
@@ -3117,23 +2999,23 @@ fn validate_indexed_texture_object(
     } else {
         0
     };
-    if version != 1
-        || width != record.width
-        || height != record.height
-        || width == 0
-        || height == 0
-        || width > u16::MAX.into()
-        || height > u16::MAX.into()
-        || palette_id != expected_palette_id
-        || palette_rule != expected_palette_rule
-        || pixels != expected_pixels
-        || pixels > 16_777_216
-        || trailing != expected_trailing
+    if header.version != 1
+        || header.width != record.width
+        || header.height != record.height
+        || header.width == 0
+        || header.height == 0
+        || header.width > u16::MAX.into()
+        || header.height > u16::MAX.into()
+        || header.palette_id != expected_palette_id
+        || header.palette_rule != expected_palette_rule
+        || header.pixels != expected_pixels
+        || header.pixels > 16_777_216
+        || header.trailing != expected_trailing
     {
         return Err("indexed tactical texture metadata mismatch".to_string());
     }
-    reader.bytes(pixels)?;
-    reader.bytes(trailing)?;
+    reader.bytes(header.pixels)?;
+    reader.bytes(header.trailing)?;
     if !reader.finished() {
         return Err("indexed tactical texture has unexpected trailing bytes".to_string());
     }
@@ -3148,49 +3030,25 @@ fn decode_indexed_effect_rgba(
     bytes: &[u8],
     palette: &[[u8; 4]; 256],
 ) -> Result<(u16, u16, Vec<u8>, u8), String> {
-    let mut reader = Reader::new(bytes);
-    reader.expect(TEXTURE_MAGIC)?;
-    if reader.u32()? != 1 {
-        return Err("unsupported tactical texture object version".to_string());
-    }
-    let width = reader.u32()?;
-    let height = reader.u32()?;
-    let palette_id = reader.u32()?;
-    let palette_rule = reader.u32()?;
-    let pixels = reader.u32()? as usize;
-    let trailing = reader.u32()? as usize;
-    let expected = (width as usize)
-        .checked_mul(height as usize)
-        .ok_or("tactical texture dimensions overflow")?;
-    if width == 0
-        || height == 0
-        || width > u16::MAX.into()
-        || height > u16::MAX.into()
-        || pixels != expected
-        || pixels > 16_777_216
-        || palette_id != 0
-        || palette_rule != 1
-        || !matches!(trailing, 0 | 4)
-    {
-        return Err("invalid indexed tactical effect header".to_string());
-    }
-    let indices = reader.bytes(pixels)?;
-    reader.bytes(trailing)?;
-    if !reader.finished() {
-        return Err("tactical effect texture has trailing bytes".to_string());
-    }
+    let (width, height, indices) = decode_indexed_payload(
+        bytes,
+        0,
+        1,
+        "invalid indexed tactical effect header",
+        "tactical effect texture has trailing bytes",
+    )?;
     let transparent_index = *indices
         .first()
         .ok_or("tactical effect texture contains no pixels")?;
-    let mut rgba = Vec::with_capacity(pixels * 4);
-    for index in indices {
+    let mut rgba = Vec::with_capacity(indices.len() * 4);
+    for index in &indices {
         let mut color = palette[usize::from(*index)];
         if *index == transparent_index {
             color[3] = 0;
         }
         rgba.extend_from_slice(&color);
     }
-    Ok((width as u16, height as u16, rgba, transparent_index))
+    Ok((width, height, rgba, transparent_index))
 }
 
 fn decode_indexed_effect_texture(
@@ -3209,42 +3067,18 @@ fn decode_indexed_rgba_with_rule(
     expected_palette_id: u32,
     expected_palette_rule: u32,
 ) -> Result<(u16, u16, Vec<u8>), String> {
-    let mut reader = Reader::new(bytes);
-    reader.expect(TEXTURE_MAGIC)?;
-    if reader.u32()? != 1 {
-        return Err("unsupported tactical texture object version".to_string());
-    }
-    let width = reader.u32()?;
-    let height = reader.u32()?;
-    let palette_id = reader.u32()?;
-    let palette_rule = reader.u32()?;
-    let pixels = reader.u32()? as usize;
-    let trailing = reader.u32()? as usize;
-    let expected = (width as usize)
-        .checked_mul(height as usize)
-        .ok_or("tactical texture dimensions overflow")?;
-    if width == 0
-        || height == 0
-        || width > u16::MAX.into()
-        || height > u16::MAX.into()
-        || pixels != expected
-        || pixels > 16_777_216
-        || palette_id != expected_palette_id
-        || palette_rule != expected_palette_rule
-        || !matches!(trailing, 0 | 4)
-    {
-        return Err("invalid indexed tactical texture header".to_string());
-    }
-    let indices = reader.bytes(pixels)?;
-    reader.bytes(trailing)?;
-    if !reader.finished() {
-        return Err("tactical texture object has trailing bytes".to_string());
-    }
-    let mut rgba = Vec::with_capacity(pixels * 4);
+    let (width, height, indices) = decode_indexed_payload(
+        bytes,
+        expected_palette_id,
+        expected_palette_rule,
+        "invalid indexed tactical texture header",
+        "tactical texture object has trailing bytes",
+    )?;
+    let mut rgba = Vec::with_capacity(indices.len() * 4);
     for index in indices {
-        rgba.extend_from_slice(&palette[usize::from(*index)]);
+        rgba.extend_from_slice(&palette[usize::from(index)]);
     }
-    Ok((width as u16, height as u16, rgba))
+    Ok((width, height, rgba))
 }
 
 fn decode_indexed_texture_with_rule(
@@ -3264,7 +3098,7 @@ fn decode_indexed_texture_with_rule(
 /// without the texels of its transparent colour, black unless
 /// `SetDecalTransparentColor` changes it, which `FUN_005d4d10` never calls.
 fn key_decal_black(rgba: &mut [u8]) {
-    for texel in rgba.chunks_exact_mut(4) {
+    for texel in rgba.as_chunks_mut::<4>().0 {
         if texel[..3] == [0, 0, 0] {
             texel[3] = 0;
         }
@@ -3378,7 +3212,7 @@ impl<'a> Reader<'a> {
     }
 }
 
-const TACTICAL_VERTEX_GLSL: &str = r#"#version 100
+const TACTICAL_VERTEX_GLSL: &str = r"#version 100
 attribute vec3 position;
 attribute vec2 texcoord;
 attribute vec4 color0;
@@ -3398,9 +3232,9 @@ void main() {
     tint = color0 / 255.0;
     lowp float diffuse = max(dot(normalize(normal.xyz), normalize(SourceLightDirectionAmbient.xyz)), 0.0);
     light = min(vec3(1.0), vec3(SourceLightDirectionAmbient.w) + SourceLightColorDirectional.rgb * SourceLightColorDirectional.w * diffuse);
-}"#;
+}";
 
-const TACTICAL_FRAGMENT_GLSL: &str = r#"#version 100
+const TACTICAL_FRAGMENT_GLSL: &str = r"#version 100
 precision lowp float;
 varying lowp vec2 uv;
 varying lowp vec3 light;
@@ -3411,9 +3245,9 @@ void main() {
     lowp vec4 texel = texture2D(Texture, uv);
     lowp vec3 material = min(vec3(1.0), tint.rgb * light + MaterialEmissive.rgb);
     gl_FragColor = vec4(texel.rgb * material, texel.a * tint.a);
-}"#;
+}";
 
-const TACTICAL_METAL: &str = r#"
+const TACTICAL_METAL: &str = r"
 #include <metal_stdlib>
 using namespace metal;
 struct Uniforms {
@@ -3450,11 +3284,22 @@ fragment float4 fragmentShader(RasterizerData in [[stage_in]], constant Uniforms
     float4 texel = Texture.sample(TextureSmplr, in.uv);
     float3 material = min(float3(1.0), in.tint.rgb * in.light + u.MaterialEmissive.rgb);
     return float4(texel.rgb * material, texel.a * in.tint.a);
-}"#;
+}";
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_scene_signature_is_retained_only_when_it_changes() {
+        let mut last = None;
+
+        assert!(retain_new_signature(&mut last, "first"));
+        assert_eq!(last.as_deref(), Some("first"));
+        assert!(!retain_new_signature(&mut last, "first"));
+        assert!(retain_new_signature(&mut last, "second"));
+        assert_eq!(last.as_deref(), Some("second"));
+    }
 
     fn assert_pixel(actual: f32, expected: f32) {
         assert!(
@@ -3482,7 +3327,10 @@ mod tests {
     // Our own layout: the 3D window's rectangle in OpenGL's bottom-up rows.
     #[test]
     fn the_scene_viewport_counts_its_rows_from_the_screens_bottom() {
-        assert_eq!(scene_gl_viewport((17.0, 30.0, 439.0, 437.0), 480.0), (17, 13, 439, 437));
+        assert_eq!(
+            scene_gl_viewport((17.0, 30.0, 439.0, 437.0), 480.0),
+            (17, 13, 439, 437)
+        );
         assert_eq!(
             scene_gl_viewport((114.3, 90.0, 731.7, 728.3), 800.0),
             (114, -18, 732, 728)
@@ -3526,7 +3374,10 @@ mod tests {
             source_bounds: [-1.0, -2.0, -0.5, 1.0, 2.0, 0.5],
         };
         scale_capital_mesh(&mut decoded);
-        assert_eq!(decoded.chunks[0].mesh.vertices[0].position, vec3(3.0, -6.0, 1.5));
+        assert_eq!(
+            decoded.chunks[0].mesh.vertices[0].position,
+            vec3(3.0, -6.0, 1.5)
+        );
         let envelope = tactical_collision_envelope(decoded.source_bounds);
         assert_near(envelope.vertical_radius, 6.0);
         assert_near(envelope.planar_diameter, 6.0_f32.hypot(3.0));
@@ -3616,8 +3467,10 @@ mod tests {
     // Source: FUN_005c1c10 initializes the retained-mode device state.
     #[test]
     fn source_device_state_uses_nearest_gouraud_backface_depth_contract() {
-        assert!(!ORIGINAL_DEVICE_DITHER);
-        assert!(!ORIGINAL_SPECULAR_ENABLED);
+        const {
+            assert!(!ORIGINAL_DEVICE_DITHER);
+            assert!(!ORIGINAL_SPECULAR_ENABLED);
+        }
         assert_eq!(original_tactical_texture_filter(), FilterMode::Nearest);
         let pipeline = original_tactical_pipeline_params();
         assert_eq!(pipeline.cull_face, CullFace::Back);
@@ -3882,7 +3735,10 @@ mod tests {
                 select_original_tactical_lod(OriginalTacticalLod::Far, view),
                 OriginalTacticalLod::Medium
             );
-            assert_near(original_fighter_view_span(pose, 150.0), 150.0 * 0.1_f32.tan());
+            assert_near(
+                original_fighter_view_span(pose, 150.0),
+                150.0 * 0.1_f32.tan(),
+            );
         }
     }
 
@@ -3892,10 +3748,13 @@ mod tests {
     // squadrons on their lane about 450 units from the camera.
     #[test]
     fn a_fighter_decal_spans_three_tenths_of_a_unit_at_its_depth() {
-        assert_pixel(original_fighter_decal_pixels(100.0, 437.0, 0.2), 0.3 * 218.5 / 20.0);
+        assert_pixel(
+            original_fighter_decal_pixels(100.0, 437.0, 0.2),
+            0.3 * 218.5 / 20.0,
+        );
         assert_pixel(
             original_fighter_decal_pixels(50.0, 437.0, 0.2),
-            2.0 * original_fighter_decal_pixels(100.0, 437.0, 0.2)
+            2.0 * original_fighter_decal_pixels(100.0, 437.0, 0.2),
         );
         assert!(original_fighter_decal_pixels(450.0, 437.0, 0.2) < 1.0);
     }
@@ -4064,6 +3923,13 @@ mod tests {
     // Source: FUN_005d3770 LOD state selection and threshold edges.
     #[test]
     fn original_lod_rule_preserves_threshold_edges_and_reduced_detail_mode() {
+        fn immediately_below(value: f32) -> f32 {
+            f32::from_bits(value.to_bits() - 1)
+        }
+        fn immediately_above(value: f32) -> f32 {
+            f32::from_bits(value.to_bits() + 1)
+        }
+
         let close = TacticalLodView::CLOSE_FIXTURE;
         let medium = TacticalLodView::MEDIUM_FIXTURE;
         let far = TacticalLodView::FAR_FIXTURE;
@@ -4093,13 +3959,6 @@ mod tests {
                 assert_eq!(select_original_tactical_lod(current, view), current);
             }
         }
-        fn immediately_below(value: f32) -> f32 {
-            f32::from_bits(value.to_bits() - 1)
-        }
-        fn immediately_above(value: f32) -> f32 {
-            f32::from_bits(value.to_bits() + 1)
-        }
-
         // Non-unit scales guard the executable's divide-then-round sequence.
         // A multiply-first implementation fails at least the 0.3 close edge.
         for projection_scale in [0.3_f32, 2.3_f32] {

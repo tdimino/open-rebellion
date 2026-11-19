@@ -330,11 +330,8 @@ pub(crate) fn apply_encyclopedia_overlay_layer(
             },
         )?;
     }
-    catalog.entries.sort_by(|left, right| {
-        left.name
-            .to_lowercase()
-            .cmp(&right.name.to_lowercase())
-            .then(left.object_id.cmp(&right.object_id))
+    rebellion_core::ordering::sort_by_case_folded_name(&mut catalog.entries, |entry| {
+        (entry.name.to_lowercase(), entry.object_id)
     });
     let referenced: BTreeSet<&str> = source.artwork.values().map(String::as_str).collect();
     artwork.retain(|filename, _| referenced.contains(filename.as_str()));

@@ -31,6 +31,49 @@ const DELAY_SECONDS: f64 = 0.5;
 /// of the original's "Raw Materials Monitor" balloon.
 const BELOW_CURSOR: f32 = 12.0;
 
+/// Stock-tooltip geometry. A recovered feature may override only measured
+/// placement/insets; font, colours, border and hover behavior stay canonical.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TooltipPresentation {
+    offset: egui::Vec2,
+    padding: egui::Vec2,
+    fixed_height: Option<f32>,
+}
+
+impl TooltipPresentation {
+    #[must_use]
+    pub const fn stock() -> Self {
+        Self {
+            offset: egui::vec2(0.0, BELOW_CURSOR),
+            padding: PADDING,
+            fixed_height: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_offset(mut self, x: f32, y: f32) -> Self {
+        self.offset = egui::vec2(x, y);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_padding(mut self, x: f32, y: f32) -> Self {
+        self.padding = egui::vec2(x, y);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_height(mut self, height: f32) -> Self {
+        self.fixed_height = Some(height);
+        self
+    }
+
+    #[must_use]
+    pub fn origin(self, pointer: egui::Pos2, scale: f32) -> egui::Pos2 {
+        pointer + self.offset * scale
+    }
+}
+
 /// A control's balloon: its rectangle in the 640x480 canvas and its text.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TooltipTarget {
@@ -184,6 +227,78 @@ impl TooltipState {
     }
 }
 
+fn paint_original_tooltip(
+    ctx: &egui::Context,
+    id: egui::Id,
+    pointer: egui::Pos2,
+    scale: f32,
+    text: &str,
+    presentation: TooltipPresentation,
+) {
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, id));
+    let galley = painter.layout_no_wrap(
+        text.to_owned(),
+        egui::FontId::proportional(FONT_SIZE * scale),
+        TEXT,
+    );
+    let mut size = galley.size() + presentation.padding * 2.0 * scale;
+    if let Some(height) = presentation.fixed_height {
+        size.y = height * scale;
+    }
+    let screen = ctx.screen_rect();
+    let desired = presentation.origin(pointer, scale);
+    let min = egui::pos2(
+        desired.x.min(screen.max.x - size.x).max(screen.min.x),
+        desired.y.min(screen.max.y - size.y).max(screen.min.y),
+    );
+    let balloon = egui::Rect::from_min_size(min, size);
+    painter.rect_filled(balloon, 0.0, FILL);
+    painter.rect_stroke(
+        balloon,
+        0.0,
+        egui::Stroke::new(scale.max(1.0), BORDER),
+        egui::StrokeKind::Inside,
+    );
+    painter.galley(min + presentation.padding * scale, galley, TEXT);
+}
+
+/// Register one feature's source-proven tooltip rectangles with the shared
+/// stock control. The state is retained by stable feature `id`, so callers do
+/// not duplicate hover-delay, dismissal or painting behavior.
+pub fn draw_registered_tooltips(
+    ctx: &egui::Context,
+    id: egui::Id,
+    targets: &[(egui::Rect, &str)],
+    scale: f32,
+    presentation: TooltipPresentation,
+) {
+    if scale <= 0.0 {
+        return;
+    }
+    let (pointer, time, pressed) = ctx.input(|input| {
+        (
+            input.pointer.hover_pos(),
+            input.time,
+            input.pointer.any_pressed(),
+        )
+    });
+    let target =
+        pointer.and_then(|pointer| targets.iter().position(|(rect, _)| rect.contains(pointer)));
+    let state_id = id.with("state");
+    let mut state =
+        ctx.data_mut(|data| data.get_temp::<TooltipState>(state_id).unwrap_or_default());
+    let shown = state.update(target, time, pressed);
+    ctx.data_mut(|data| data.insert_temp(state_id, state));
+    if target.is_some() && shown.is_none() {
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
+    }
+    if let (Some(index), Some(pointer)) = (shown, pointer) {
+        if let Some((_, text)) = targets.get(index) {
+            paint_original_tooltip(ctx, id.with("balloon"), pointer, scale, text, presentation);
+        }
+    }
+}
+
 /// Show the balloon of the command-center control under the pointer.
 ///
 /// No balloon shows while the pointer is over a window.
@@ -223,31 +338,14 @@ pub fn draw_cockpit_tooltips(
     let (Some(index), Some(pointer)) = (shown, pointer) else {
         return;
     };
-    let scale = layout.scale;
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Tooltip,
+    paint_original_tooltip(
+        ctx,
         egui::Id::new("original_tooltip"),
-    ));
-    let galley = painter.layout_no_wrap(
-        targets[index].text.to_owned(),
-        egui::FontId::proportional(FONT_SIZE * scale),
-        TEXT,
+        pointer,
+        layout.scale,
+        targets[index].text,
+        TooltipPresentation::stock(),
     );
-    let size = galley.size() + PADDING * 2.0 * scale;
-    let screen = ctx.screen_rect();
-    let min = egui::pos2(
-        pointer.x.min(screen.max.x - size.x).max(screen.min.x),
-        (pointer.y + BELOW_CURSOR * scale).min(screen.max.y - size.y),
-    );
-    let balloon = egui::Rect::from_min_size(min, size);
-    painter.rect_filled(balloon, 0.0, FILL);
-    painter.rect_stroke(
-        balloon,
-        0.0,
-        egui::Stroke::new(scale.max(1.0), BORDER),
-        egui::StrokeKind::Inside,
-    );
-    painter.galley(min + PADDING * scale, galley, TEXT);
 }
 
 #[cfg(test)]
@@ -314,5 +412,19 @@ mod tests {
         assert_eq!(state.update(Some(1), 12.6, false), Some(1));
         assert_eq!(state.update(None, 12.7, false), None);
         assert_eq!(state.update(Some(1), 12.8, false), None);
+    }
+
+    #[test]
+    fn recovered_feature_geometry_can_override_only_stock_placement() {
+        let presentation = TooltipPresentation::stock()
+            .with_offset(-2.0, 16.0)
+            .with_padding(4.0, 3.0)
+            .with_height(20.0);
+        assert_eq!(
+            presentation.origin(egui::pos2(100.0, 50.0), 2.0),
+            egui::pos2(96.0, 82.0)
+        );
+        assert_eq!(presentation.padding, egui::vec2(4.0, 3.0));
+        assert_eq!(presentation.fixed_height, Some(20.0));
     }
 }
