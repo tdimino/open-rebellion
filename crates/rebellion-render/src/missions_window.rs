@@ -1051,6 +1051,7 @@ fn draw_missions_windows_with_snapshot(
             window.selected = None;
         }
     }
+    let _ = state.update_title_drag(ctx, layout);
     let strategic_window_common::WindowPaintSet {
         windows,
         stale_manager_windows,
@@ -1067,9 +1068,6 @@ fn draw_missions_windows_with_snapshot(
         .into_iter()
         .map(MissionsWindowAction::Close)
         .collect::<Vec<_>>();
-    if snapshot.is_none() {
-        let _ = state.update_title_drag(ctx, layout);
-    }
     for window in &windows {
         let focused =
             strategic_window_common::is_focused(window, focused_manager, focused_fixture_system);
@@ -3212,6 +3210,57 @@ mod tests {
             "{moved:?}"
         );
         moved != ORIGIN
+    }
+
+    #[test]
+    fn managed_missions_titles_move_and_release_for_both_sides() {
+        // FUN_0049f130 enables live movement through FUN_006071e0/00607010.
+        for faction in [CockpitFaction::Alliance, CockpitFaction::Empire] {
+            let (world, system) = world(ControlKind::Controlled(faction.player()));
+            let fog = unseen();
+            let missions = MissionState::new();
+            let mut state = MissionsWindowState::default();
+            let mut manager = WindowManager::new();
+            let prepared = state
+                .prepare_open(&world, &fog, &missions, system, ORIGIN, faction, scaled())
+                .unwrap();
+            let (id, _) = commit_prepared_missions_window(&mut manager, &mut state, prepared);
+            let from = at(100.0, 9.0);
+            let to = from + egui::vec2(40.0, 40.0);
+            let mut frames = crate::test_support::routed_primary_drag_frames(from, to);
+            frames.push((
+                vec![press(to, false)],
+                vec![PointerPhase::Release(PointerButtonId::Primary)],
+            ));
+            let mut cache = BmpCache::new();
+            let _ = crate::test_support::run_painted_routed_render_frames(
+                &manager,
+                id,
+                frames,
+                frame_input,
+                |ctx, snapshot, routed, router| {
+                    draw_managed_missions_windows(
+                        ctx,
+                        &world,
+                        &fog,
+                        &missions,
+                        &mut state,
+                        faction,
+                        scaled(),
+                        &mut cache,
+                        snapshot,
+                        routed,
+                        router,
+                    )
+                },
+            );
+            assert_eq!(
+                state.windows[0].logical_position,
+                (ORIGIN.0 + 20, ORIGIN.1 + 20),
+                "{faction:?}"
+            );
+            assert_eq!(state.title_drag, None);
+        }
     }
 
     #[test]

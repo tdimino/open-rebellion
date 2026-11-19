@@ -81,6 +81,50 @@ try {
       await page.goto(url);
       await consoleLine(MENU, { skipMovies: true });
       await page.waitForTimeout(350); // the menu's first frame after the movie
+      // FUN_00405560: physical bitmap selectors must update the same state
+      // exported by the production accessibility bridge. Each side's fresh
+      // menu visits every choice before returning to the original defaults.
+      const pressed = index => page.locator(`[data-menu-index="${index}"]`).getAttribute('aria-pressed');
+      const assertChoice = async (indices, selected) => {
+        for (const index of indices) assert.equal(await pressed(index), String(index === selected));
+      };
+      const selectorShot = async (name, clip) => {
+        await page.mouse.move(20, 900); // leave animated hover art before comparing selections
+        await page.waitForTimeout(100);
+        const bytes = await page.screenshot({ clip, path: path.join(output, `${faction}-${name}.png`) });
+        return bytes;
+      };
+      await assertChoice([0, 1, 2], 0);
+      let previousDifficulty = await selectorShot('difficulty-easy-initial', { x: 120, y: 80, width: 346, height: 76 });
+      for (const [index, x] of [[1, 148], [2, 209], [0, 86]]) {
+        await click(x * 2, 58 * 2);
+        await assertChoice([0, 1, 2], index);
+        const shot = await selectorShot(`difficulty-${index}`, { x: 120, y: 80, width: 346, height: 76 });
+        assert.notEqual(Buffer.compare(previousDifficulty, shot), 0, 'difficulty selection must repaint');
+        previousDifficulty = shot;
+      }
+      await assertChoice([4, 5, 6], 4);
+      let previousGalaxy = await selectorShot('galaxy-small-initial', { x: 580, y: 586, width: 216, height: 42 });
+      for (const [index, x] of [[5, 338], [6, 374], [4, 302]]) {
+        await click(x * 2, 303 * 2);
+        await assertChoice([4, 5, 6], index);
+        const shot = await selectorShot(`galaxy-${index}`, { x: 580, y: 586, width: 216, height: 42 });
+        assert.notEqual(Buffer.compare(previousGalaxy, shot), 0, 'galaxy selection must repaint');
+        previousGalaxy = shot;
+      }
+      for (const index of [5, 6, 4]) {
+        await click(264 * 2, 294 * 2);
+        await assertChoice([4, 5, 6], index);
+      }
+      assert.equal(await pressed(7), 'false');
+      const standard = await selectorShot('game-type-standard', { x: 610, y: 666, width: 84, height: 60 });
+      await click(326 * 2, 348 * 2);
+      assert.equal(await pressed(7), 'true');
+      const headquarters = await selectorShot('game-type-headquarters', { x: 610, y: 666, width: 84, height: 60 });
+      assert.notEqual(Buffer.compare(standard, headquarters), 0, 'game type selection must repaint');
+      await click(326 * 2, 348 * 2);
+      assert.equal(await pressed(7), 'false');
+      await screenshot('main-menu-selectors-restored');
       await click(850, 500); // main-menu CD-ROM: original command 0x68
       await screenshot('main-options');
 
@@ -220,7 +264,7 @@ try {
       await screenshot('browser-exit');
       await page.getByRole('button', { name: 'Restart game' }).waitFor();
       assert.equal(errors.length, 0, errors.join('\n'));
-      results.push({ faction, status: 'pass', fingerprint, restoredLoads: consoleLog.filter(line => line.includes('[campaign] restored')), assertions: ['music slider drag', 'sound slider drag', 'current-version save', 'overwrite cancel', 'load cancel', 'matching load and restored Galaxy fingerprint', 'row 6 save/load', 'saved alert, row-flag overwrite and load', 'Escape keeps the window, Return/re-entry', 'corrupt load/overwrite cancel', 'browser exit and restart affordance', 'no page errors'] });
+      results.push({ faction, status: 'pass', fingerprint, restoredLoads: consoleLog.filter(line => line.includes('[campaign] restored')), assertions: ['all difficulty selectors', 'all galaxy selectors and lever wrap', 'both game types', 'selector bitmap repaint', 'music slider drag', 'sound slider drag', 'current-version save', 'overwrite cancel', 'load cancel', 'matching load and restored Galaxy fingerprint', 'row 6 save/load', 'saved alert, row-flag overwrite and load', 'Escape keeps the window, Return/re-entry', 'corrupt load/overwrite cancel', 'browser exit and restart affordance', 'no page errors'] });
     } catch (error) {
       await screenshot('failure').catch(() => {});
       results.push({ faction, status: 'fail', error: String(error) });

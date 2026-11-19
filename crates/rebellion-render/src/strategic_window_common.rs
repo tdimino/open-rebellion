@@ -2040,13 +2040,13 @@ pub(crate) fn update_title_drag<T: StrategicWindowRecord>(
             Some(TitleDragUpdate::Moving { position })
         }
         (Some(_), TitleDragStep::Moving(None)) => None,
-        (Some(window), TitleDragStep::Released) => {
+        (Some(window), TitleDragStep::Released(release_position)) => {
             // FUN_00607010 releases the temporary capture before correcting
             // the live HWND's final top-left. Ending our renderer-side drag
             // first preserves the same ownership boundary.
             *active = None;
             let position = clamp_window_to_galaxy(
-                window.logical_position(),
+                release_position.unwrap_or_else(|| window.logical_position()),
                 layout,
                 window_size.0,
                 window_size.1,

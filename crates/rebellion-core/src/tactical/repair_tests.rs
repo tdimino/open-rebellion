@@ -1,6 +1,11 @@
 //! Subsystem repair in a played battle (`FUN_005b0330`, `FUN_005b1490`;
 //! `ghidra/notes/tactical-engagement-ai.md`, "Subsystem repair").
 
+#![expect(
+    clippy::float_cmp,
+    reason = "These tests require exact recovered values; approximate equality would weaken their contract."
+)]
+
 use super::*;
 use crate::world::{CapitalShipClass, ShipInstance, System};
 

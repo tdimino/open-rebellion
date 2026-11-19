@@ -1,6 +1,11 @@
 //! Carrier and station hangars: docking at the start, launches, retreat
 //! docking and the squadrons' carriers after the battle.
 
+#![expect(
+    clippy::float_cmp,
+    reason = "These tests require exact recovered values; approximate equality would weaken their contract."
+)]
+
 use super::test_support::{test_death_star, test_fighter, test_session, test_ship};
 use super::*;
 use crate::carriage::ProductRoom;

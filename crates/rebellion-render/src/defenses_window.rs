@@ -2209,6 +2209,15 @@ mod tests {
             .any(|value| value.text.starts_with("Garrison")));
     }
 
+    /// Two selectable rows belonging to the requested faction.
+    fn two_character_world(side: Faction) -> (GameWorld, SystemKey) {
+        let (mut world, system) = world(ControlKind::Controlled(side));
+        let alliance = side == Faction::Alliance;
+        add_character(&mut world, system, "First", alliance);
+        add_character(&mut world, system, "Second", alliance);
+        (world, system)
+    }
+
     #[test]
     fn a_revoked_capture_ends_the_row_drag_and_the_lists_own_capture_both_sides() {
         // FUN_006083c0 cases 0x215 and 0x40d: losing capture ends the drag.
@@ -2216,10 +2225,7 @@ mod tests {
             (CockpitFaction::Alliance, Faction::Alliance),
             (CockpitFaction::Empire, Faction::Empire),
         ] {
-            let (mut world, system) = world(ControlKind::Controlled(side));
-            let alliance = side == Faction::Alliance;
-            add_character(&mut world, system, "First", alliance);
-            add_character(&mut world, system, "Second", alliance);
+            let (world, system) = two_character_world(side);
             let missions = MissionState::new();
             let mut manager = WindowManager::new();
             let mut state = DefensesWindowState::default();
@@ -2253,10 +2259,7 @@ mod tests {
             (CockpitFaction::Alliance, Faction::Alliance),
             (CockpitFaction::Empire, Faction::Empire),
         ] {
-            let (mut world, system) = world(ControlKind::Controlled(side));
-            let alliance = side == Faction::Alliance;
-            add_character(&mut world, system, "First", alliance);
-            add_character(&mut world, system, "Second", alliance);
+            let (world, system) = two_character_world(side);
             let missions = MissionState::new();
             let mut state = DefensesWindowState::default();
             assert!(state.open(&world, system, ORIGIN, faction, scaled()));

@@ -391,3 +391,214 @@ pub(crate) fn paint_egui(
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bar(height: f32) -> ScrollBar {
+        ScrollBar::new(LIST_BAR_29FC, 10.0, 20.0, 100.0, height)
+    }
+
+    fn range(first: usize, visible: f32, total: usize) -> ScrollRange {
+        ScrollRange {
+            first,
+            visible,
+            total,
+        }
+    }
+
+    #[test]
+    fn thumb_minimum_and_thirteen_pixel_boundary_follow_the_source_layout() {
+        // FUN_0060fb80 raises lengths below 13 to 12, not lengths equal to 13.
+        assert_eq!(bar(100.0).thumb(range(0, 1.0, 100)), (29.0, 41.0));
+        assert_eq!(bar(148.0).thumb(range(0, 1.0, 10)), (29.0, 42.0));
+        assert_eq!(bar(100.0).thumb(range(2, 5.0, 10)), (45.0, 86.0));
+        assert_eq!(bar(100.0).thumb(range(100, 5.0, 10)), (70.0, 111.0));
+    }
+
+    #[test]
+    fn a_rounded_zero_scroll_travel_keeps_a_finite_thumb_at_the_track_start() {
+        // Port geometry must remain finite even when usize -> f32 loses one row.
+        assert_eq!(
+            bar(100.0).thumb(range(0, 16_777_216.0, 16_777_217)),
+            (29.0, 111.0)
+        );
+    }
+
+    #[test]
+    fn scroll_parts_include_top_left_and_exclude_each_bottom_right_edge() {
+        // FUN_0060f6d0 / FUN_0060fb80 use the arrows and the thumb's boundaries.
+        let bar = bar(100.0);
+        let range = range(2, 5.0, 10);
+        for (point, expected) in [
+            ((98.0, 25.0), None),
+            ((112.0, 25.0), None),
+            ((100.0, 19.0), None),
+            ((99.0, 20.0), Some(ScrollPart::Up)),
+            ((111.0, 28.0), Some(ScrollPart::Up)),
+            ((100.0, 29.0), Some(ScrollPart::PageUp)),
+            ((100.0, 44.0), Some(ScrollPart::PageUp)),
+            ((100.0, 45.0), Some(ScrollPart::Thumb)),
+            ((100.0, 85.0), Some(ScrollPart::Thumb)),
+            ((100.0, 86.0), Some(ScrollPart::PageDown)),
+            ((100.0, 110.0), Some(ScrollPart::PageDown)),
+            ((100.0, 111.0), Some(ScrollPart::Down)),
+            ((100.0, 119.0), Some(ScrollPart::Down)),
+            ((100.0, 120.0), None),
+        ] {
+            assert_eq!(bar.part_at(range, point), expected, "{point:?}");
+        }
+    }
+
+    #[test]
+    fn a_thumb_without_pixel_travel_preserves_the_current_row_during_drag() {
+        let mut drag = ScrollDrag {
+            pressed: Some(ScrollPart::Thumb),
+            grab: 0.0,
+        };
+        let pointer = ScrollPointer {
+            at: Some((100.0, 50.0)),
+            down: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            bar(30.0).update(&mut drag, range(5, 1.0, 100), 1, pointer),
+            5
+        );
+    }
+
+    #[test]
+    fn stale_first_rows_are_normalized_before_thumb_capture_and_painting() {
+        // Owners can shrink a list or fit less than one whole row in a viewport.
+        let bar = bar(100.0);
+        let stale = range(99, 0.5, 10);
+        let mut drag = ScrollDrag::default();
+        let pointer = ScrollPointer {
+            at: Some((100.0, 96.0)),
+            pressed: true,
+            down: true,
+            ..Default::default()
+        };
+        assert_eq!(bar.update(&mut drag, stale, 1, pointer), 9);
+        assert_eq!(
+            drag,
+            ScrollDrag {
+                pressed: Some(ScrollPart::Thumb),
+                grab: 1.0
+            }
+        );
+        let pieces = bar.blits(stale, ScrollDrag::default(), ScrollPointer::default());
+        let cap = pieces
+            .iter()
+            .find(|piece| piece.resource == LIST_BAR_29FC.thumb[0])
+            .unwrap();
+        assert_eq!((cap.y, cap.height), (95.0, 6.0));
+    }
+
+    #[test]
+    fn bitmap_tiles_cover_the_track_and_thumb_with_clipped_final_pieces() {
+        // FUN_0060aa70 / FUN_0060fb80: track 13px, caps 6px, middle 12px.
+        let pieces = bar(100.0).blits(
+            range(2, 5.0, 10),
+            ScrollDrag::default(),
+            ScrollPointer::default(),
+        );
+        let actual: Vec<_> = pieces
+            .iter()
+            .map(|p| (p.resource, p.x, p.y, p.height))
+            .collect();
+        assert_eq!(
+            actual,
+            vec![
+                (0x29fd, 99.0, 29.0, 13.0),
+                (0x29fd, 99.0, 42.0, 13.0),
+                (0x29fd, 99.0, 55.0, 13.0),
+                (0x29fd, 99.0, 68.0, 13.0),
+                (0x29fd, 99.0, 81.0, 13.0),
+                (0x29fd, 99.0, 94.0, 13.0),
+                (0x29fd, 99.0, 107.0, 4.0),
+                (0x2a02, 99.0, 45.0, 6.0),
+                (0x2a03, 99.0, 51.0, 12.0),
+                (0x2a03, 99.0, 63.0, 12.0),
+                (0x2a03, 99.0, 75.0, 5.0),
+                (0x2a04, 99.0, 80.0, 6.0),
+                (0x29fe, 99.0, 20.0, 9.0),
+                (0x2a00, 99.0, 111.0, 9.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn exact_tile_boundaries_add_no_empty_track_or_thumb_tile() {
+        let pieces = bar(96.0).blits(
+            range(0, 6.0, 13),
+            ScrollDrag::default(),
+            ScrollPointer::default(),
+        );
+        let track: Vec<_> = pieces
+            .iter()
+            .filter(|p| p.resource == LIST_BAR_29FC.track)
+            .map(|p| (p.y, p.height))
+            .collect();
+        let middle: Vec<_> = pieces
+            .iter()
+            .filter(|p| p.resource == LIST_BAR_29FC.thumb[1])
+            .map(|p| (p.y, p.height))
+            .collect();
+        assert_eq!(
+            track,
+            vec![
+                (29.0, 13.0),
+                (42.0, 13.0),
+                (55.0, 13.0),
+                (68.0, 13.0),
+                (81.0, 13.0),
+                (94.0, 13.0)
+            ]
+        );
+        assert_eq!(middle, vec![(35.0, 12.0), (47.0, 12.0)]);
+    }
+
+    #[test]
+    fn arrows_use_held_art_only_while_the_same_pressed_arrow_is_under_the_held_pointer() {
+        // The shared original scrollbar resources serve both faction shells.
+        for art in [LIST_BAR_29FC, FLEET_BAR_29CB, LIST_BAR_29CC, TEXT_BAR_299D] {
+            let bar = ScrollBar::new(art, 10.0, 20.0, 100.0, 100.0);
+            for (pressed, y, down, held) in [
+                (Some(ScrollPart::Up), 20.0, true, [true, false]),
+                (Some(ScrollPart::Down), 111.0, true, [false, true]),
+                (Some(ScrollPart::Up), 111.0, true, [false, false]),
+                (Some(ScrollPart::Down), 20.0, true, [false, false]),
+                (Some(ScrollPart::Up), 20.0, false, [false, false]),
+                (None, 20.0, true, [false, false]),
+                (Some(ScrollPart::Up), 200.0, true, [false, false]),
+            ] {
+                let pieces = bar.blits(
+                    range(2, 5.0, 10),
+                    ScrollDrag { pressed, grab: 0.0 },
+                    ScrollPointer {
+                        at: Some((bar.piece_x, y)),
+                        down,
+                        ..Default::default()
+                    },
+                );
+                assert_eq!(
+                    pieces[pieces.len() - 2].resource,
+                    art.up[usize::from(held[0])]
+                );
+                assert_eq!(
+                    pieces[pieces.len() - 1].resource,
+                    art.down[usize::from(held[1])]
+                );
+            }
+            assert!(bar
+                .blits(
+                    range(0, 10.0, 10),
+                    ScrollDrag::default(),
+                    ScrollPointer::default()
+                )
+                .is_empty());
+        }
+    }
+}

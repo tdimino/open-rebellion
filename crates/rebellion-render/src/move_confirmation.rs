@@ -602,6 +602,10 @@ fn bitmap_button(
             .pointer
             .interact_pos()
             .is_some_and(|point| on_bitmap(point, cache)),
+        press_inside: input
+            .pointer
+            .press_origin()
+            .map(|point| on_bitmap(point, cache)),
         primary_pressed: input.pointer.button_pressed(egui::PointerButton::Primary),
         primary_down: input.pointer.button_down(egui::PointerButton::Primary),
         primary_released: input.pointer.button_released(egui::PointerButton::Primary),

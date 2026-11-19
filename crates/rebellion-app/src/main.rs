@@ -9,10 +9,8 @@
     clippy::cast_sign_loss
 )]
 // This integration crate keeps renderer, window-manager, and simulation state
-// visible together; their domain names are intentionally similar. Fixture
-// emptiness assertions use the predicate directly because many returned types
-// are opaque handles without useful Debug output.
-#![allow(clippy::assert_is_empty, clippy::similar_names)]
+// visible together; their domain names are intentionally similar.
+#![allow(clippy::similar_names)]
 
 mod assault_orders;
 mod audio;
@@ -2762,7 +2760,7 @@ fn browser_focus_losses() -> u32 {
     unsafe { open_rebellion_focus_losses() }
 }
 
-/// Whether AppKit reports the application active
+/// Whether `AppKit` reports the application active
 /// (`-[NSApplication isActive]`).
 #[cfg(target_os = "macos")]
 fn native_app_active() -> bool {

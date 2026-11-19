@@ -2480,14 +2480,12 @@ fn draw_fleet_windows_with_snapshot(
                             }
                         }
                     }
-                    Some(RenameOutcome::Cancel(_)) => {
-                        if open.rename.take().is_some() {
-                            if let Some(target) = rename_target {
-                                actions.push(FleetWindowAction::InvalidateControl(target));
-                            }
+                    Some(RenameOutcome::Cancel(_)) if open.rename.take().is_some() => {
+                        if let Some(target) = rename_target {
+                            actions.push(FleetWindowAction::InvalidateControl(target));
                         }
                     }
-                    None => {}
+                    Some(RenameOutcome::Cancel(_)) | None => {}
                 }
             }
         }
@@ -4062,236 +4060,180 @@ pub(crate) mod tests {
         );
     }
 
-    #[test]
-    fn managed_fleet_click_reuses_its_release_for_selection_after_capture_release() {
-        use crate::windowing_input::{FrameInputRouter, InputEventId, PointerPhase};
-        use std::collections::BTreeSet;
+    /// A managed fleet with persistent egui and routing state for pointer batches.
+    struct FleetPointerFixture {
+        world: GameWorld,
+        system: SystemKey,
+        fleet: FleetKey,
+        manager: WindowManager,
+        state: FleetWindowState,
+        window: WindowId,
+        faction: CockpitFaction,
+        ctx: egui::Context,
+        cache: BmpCache,
+        router: FrameInputRouter,
+    }
 
-        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
-        let fleet = add_fleet(&mut world, system, true, 0);
-        let (manager, mut state, window) = managed_test_window(&world, system, None);
-        let snapshot = manager.begin_frame();
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let mut router = FrameInputRouter::default();
-        let mut actions = Vec::new();
+    impl FleetPointerFixture {
+        fn new(faction: CockpitFaction, side: Faction) -> Self {
+            let (mut world, system) = world(ControlKind::Controlled(side));
+            let fleet = add_fleet(&mut world, system, side == Faction::Alliance, 0);
+            let mut manager = WindowManager::new();
+            let mut state = FleetWindowState::default();
+            let prepared = prepare_test_window(&state, &world, system, ORIGIN, faction, None);
+            let (window, _) = commit_prepared_fleet_window(&mut manager, &mut state, prepared);
+            Self {
+                world,
+                system,
+                fleet,
+                manager,
+                state,
+                window,
+                faction,
+                ctx: egui::Context::default(),
+                cache: BmpCache::new(),
+                router: FrameInputRouter::default(),
+            }
+        }
 
-        for (frame, events) in click(at(40.0, 50.0)).into_iter().enumerate() {
-            let frame = frame as u64 + 1;
-            router.begin_frame(frame, &snapshot);
+        fn frame(
+            &mut self,
+            frame: u64,
+            events: Vec<egui::Event>,
+            hits_window: bool,
+        ) -> Vec<FleetWindowAction> {
+            use crate::windowing_input::{InputEventId, PointerPhase};
+            let snapshot = self.manager.begin_frame();
+            self.router.begin_frame(frame, &snapshot);
+            let hits = if hits_window {
+                BTreeSet::from([self.window])
+            } else {
+                BTreeSet::new()
+            };
+            let expected = if hits_window {
+                InputRecipient::Window(self.window)
+            } else {
+                InputRecipient::Root
+            };
             let mut pointer_events = Vec::new();
             for (ordinal, event) in events.iter().enumerate() {
-                let egui::Event::PointerButton {
-                    button: egui::PointerButton::Primary,
-                    pressed,
-                    ..
-                } = event
-                else {
-                    continue;
+                let phase = match event {
+                    egui::Event::PointerMoved(_) => PointerPhase::Hover,
+                    egui::Event::PointerButton {
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        ..
+                    } => PointerPhase::Press(PointerButtonId::Primary),
+                    egui::Event::PointerButton {
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        ..
+                    } => PointerPhase::Release(PointerButtonId::Primary),
+                    _ => continue,
                 };
-                let phase = if *pressed {
-                    PointerPhase::Press(PointerButtonId::Primary)
-                } else {
-                    PointerPhase::Release(PointerButtonId::Primary)
-                };
-                let event = InputEventId {
+                let id = InputEventId {
                     frame,
                     ordinal: ordinal as u32,
                 };
-                router.collect_pointer(event, &BTreeSet::from([window]), phase);
-                pointer_events.push((event, phase));
+                assert_eq!(self.router.collect_pointer(id, &hits, phase), expected);
+                pointer_events.push((id, phase));
             }
+            let mut actions = Vec::new();
             let input = timed_frame_input(events, frame as f64 * 0.05);
-            let _ = ctx.run(input, |ctx| {
+            let _ = self.ctx.run(input, |ctx| {
                 actions.extend(draw_managed_fleet_windows(ManagedFleetDraw {
                     ctx,
-                    world: &world,
+                    world: &self.world,
                     movement: &MovementState::default(),
-                    fog: &fog(system),
+                    fog: &fog(self.system),
                     transport: &TroopTransportState::default(),
-                    state: &mut state,
-                    faction: CockpitFaction::Alliance,
+                    state: &mut self.state,
+                    faction: self.faction,
                     layout: scaled(),
-                    cache: &mut cache,
+                    cache: &mut self.cache,
                     snapshot: &snapshot,
                     pointer_events: &pointer_events,
-                    router: &mut router,
+                    router: &mut self.router,
                     front: true,
                     shown: &|_| true,
                 }));
             });
+            actions
         }
+    }
 
-        assert_eq!(
-            state.selection(system).unwrap().0,
-            Some(FleetWindowEntry::Fleet(fleet))
-        );
-        assert!(actions.contains(&FleetWindowAction::CapturePointer(window)));
-        assert!(actions.contains(&FleetWindowAction::ReleasePointer(window)));
-        assert!(actions.contains(&FleetWindowAction::Activate(window)));
+    #[test]
+    fn managed_fleet_click_reuses_its_release_for_selection_after_capture_release() {
+        for (faction, side) in [
+            (CockpitFaction::Alliance, Faction::Alliance),
+            (CockpitFaction::Empire, Faction::Empire),
+        ] {
+            let mut fixture = FleetPointerFixture::new(faction, side);
+            let mut actions = Vec::new();
+            for (index, events) in click(at(40.0, 50.0)).into_iter().enumerate() {
+                actions.extend(fixture.frame(index as u64 + 1, events, true));
+            }
+            assert_eq!(
+                fixture.state.selection(fixture.system).unwrap().0,
+                Some(FleetWindowEntry::Fleet(fixture.fleet))
+            );
+            assert!(actions.contains(&FleetWindowAction::CapturePointer(fixture.window)));
+            assert!(actions.contains(&FleetWindowAction::ReleasePointer(fixture.window)));
+            assert!(actions.contains(&FleetWindowAction::Activate(fixture.window)));
+        }
     }
 
     #[test]
     fn same_frame_fleet_click_selects_without_leaving_manager_capture_armed() {
-        use crate::windowing_input::{FrameInputRouter, InputEventId, PointerPhase};
-
-        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
-        let fleet = add_fleet(&mut world, system, true, 0);
-        let (manager, mut state, window) = managed_test_window(&world, system, None);
-        let snapshot = manager.begin_frame();
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let mut router = FrameInputRouter::default();
-        let point = at(40.0, 50.0);
-        for frame in 1..=2 {
-            router.begin_frame(frame, &snapshot);
-            let hover = InputEventId { frame, ordinal: 0 };
+        for (faction, side) in [
+            (CockpitFaction::Alliance, Faction::Alliance),
+            (CockpitFaction::Empire, Faction::Empire),
+        ] {
+            let mut fixture = FleetPointerFixture::new(faction, side);
+            let point = at(40.0, 50.0);
+            for frame in 1..=2 {
+                fixture.frame(frame, vec![egui::Event::PointerMoved(point)], true);
+            }
+            let actions = fixture.frame(
+                3,
+                vec![
+                    egui::Event::PointerMoved(point),
+                    press(point, true),
+                    press(point, false),
+                ],
+                true,
+            );
             assert_eq!(
-                router.collect_pointer(hover, &BTreeSet::from([window]), PointerPhase::Hover),
-                InputRecipient::Window(window)
+                fixture.state.selection(fixture.system).unwrap().0,
+                Some(FleetWindowEntry::Fleet(fixture.fleet))
             );
-            let _ = ctx.run(
-                timed_frame_input(vec![egui::Event::PointerMoved(point)], frame as f64 * 0.05),
-                |ctx| {
-                    let _ = draw_managed_fleet_windows(ManagedFleetDraw {
-                        ctx,
-                        world: &world,
-                        movement: &MovementState::default(),
-                        fog: &fog(system),
-                        transport: &TroopTransportState::default(),
-                        state: &mut state,
-                        faction: CockpitFaction::Alliance,
-                        layout: scaled(),
-                        cache: &mut cache,
-                        snapshot: &snapshot,
-                        pointer_events: &[(hover, PointerPhase::Hover)],
-                        router: &mut router,
-                        front: true,
-                        shown: &|_| true,
-                    });
-                },
-            );
+            assert!(actions.contains(&FleetWindowAction::Activate(fixture.window)));
+            assert!(!actions.contains(&FleetWindowAction::CapturePointer(fixture.window)));
+            assert!(!fixture.state.is_dragging());
         }
-        router.begin_frame(3, &snapshot);
-        let phases = [
-            PointerPhase::Press(PointerButtonId::Primary),
-            PointerPhase::Release(PointerButtonId::Primary),
-        ];
-        let pointer_events: Vec<_> = phases
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, phase)| {
-                let id = InputEventId {
-                    frame: 3,
-                    ordinal: ordinal as u32,
-                };
-                assert_eq!(
-                    router.collect_pointer(id, &BTreeSet::from([window]), phase),
-                    InputRecipient::Window(window)
-                );
-                (id, phase)
-            })
-            .collect();
-        let input = timed_frame_input(
-            vec![
-                egui::Event::PointerMoved(point),
-                press(point, true),
-                press(point, false),
-            ],
-            0.15,
-        );
-        let mut actions = Vec::new();
-        let _ = ctx.run(input, |ctx| {
-            actions.extend(draw_managed_fleet_windows(ManagedFleetDraw {
-                ctx,
-                world: &world,
-                movement: &MovementState::default(),
-                fog: &fog(system),
-                transport: &TroopTransportState::default(),
-                state: &mut state,
-                faction: CockpitFaction::Alliance,
-                layout: scaled(),
-                cache: &mut cache,
-                snapshot: &snapshot,
-                pointer_events: &pointer_events,
-                router: &mut router,
-                front: true,
-                shown: &|_| true,
-            }));
-        });
-
-        assert_eq!(
-            state.selection(system).unwrap().0,
-            Some(FleetWindowEntry::Fleet(fleet))
-        );
-        assert!(actions.contains(&FleetWindowAction::Activate(window)));
-        assert!(!actions.contains(&FleetWindowAction::CapturePointer(window)));
-        assert!(!state.is_dragging());
     }
 
     #[test]
     fn same_frame_click_routed_elsewhere_cannot_select_the_fleet_underneath() {
-        use crate::windowing_input::{FrameInputRouter, InputEventId, PointerPhase};
-
-        let (mut world, system) = world(ControlKind::Controlled(Faction::Alliance));
-        add_fleet(&mut world, system, true, 0);
-        let (manager, mut state, window) = managed_test_window(&world, system, None);
-        let snapshot = manager.begin_frame();
-        let ctx = egui::Context::default();
-        let mut cache = BmpCache::new();
-        let mut router = FrameInputRouter::default();
-        let point = at(40.0, 50.0);
-        router.begin_frame(1, &snapshot);
-        let phases = [
-            PointerPhase::Press(PointerButtonId::Primary),
-            PointerPhase::Release(PointerButtonId::Primary),
-        ];
-        let pointer_events: Vec<_> = phases
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, phase)| {
-                let id = InputEventId {
-                    frame: 1,
-                    ordinal: ordinal as u32,
-                };
-                assert_eq!(
-                    router.collect_pointer(id, &BTreeSet::new(), phase),
-                    InputRecipient::Root
-                );
-                (id, phase)
-            })
-            .collect();
-        let input = timed_frame_input(
-            vec![
-                egui::Event::PointerMoved(point),
-                press(point, true),
-                press(point, false),
-            ],
-            0.05,
-        );
-        let mut actions = Vec::new();
-        let _ = ctx.run(input, |ctx| {
-            actions.extend(draw_managed_fleet_windows(ManagedFleetDraw {
-                ctx,
-                world: &world,
-                movement: &MovementState::default(),
-                fog: &fog(system),
-                transport: &TroopTransportState::default(),
-                state: &mut state,
-                faction: CockpitFaction::Alliance,
-                layout: scaled(),
-                cache: &mut cache,
-                snapshot: &snapshot,
-                pointer_events: &pointer_events,
-                router: &mut router,
-                front: true,
-                shown: &|_| true,
-            }));
-        });
-
-        assert_eq!(state.selection(system).unwrap().0, None);
-        assert!(!actions.contains(&FleetWindowAction::Activate(window)));
-        assert!(!actions.contains(&FleetWindowAction::CapturePointer(window)));
+        for (faction, side) in [
+            (CockpitFaction::Alliance, Faction::Alliance),
+            (CockpitFaction::Empire, Faction::Empire),
+        ] {
+            let mut fixture = FleetPointerFixture::new(faction, side);
+            let point = at(40.0, 50.0);
+            let actions = fixture.frame(
+                1,
+                vec![
+                    egui::Event::PointerMoved(point),
+                    press(point, true),
+                    press(point, false),
+                ],
+                false,
+            );
+            assert_eq!(fixture.state.selection(fixture.system).unwrap().0, None);
+            assert!(!actions.contains(&FleetWindowAction::Activate(fixture.window)));
+            assert!(!actions.contains(&FleetWindowAction::CapturePointer(fixture.window)));
+        }
     }
 
     #[test]

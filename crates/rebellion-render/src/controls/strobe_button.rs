@@ -224,6 +224,9 @@ impl ButtonState {
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ButtonInput {
     pub pointer_inside: bool,
+    /// A separately hit-tested button-down position when motion shares its frame.
+    /// None preserves the point-only input contract used by pure control callers.
+    pub press_inside: Option<bool>,
     pub primary_pressed: bool,
     pub primary_down: bool,
     pub primary_released: bool,
@@ -231,6 +234,25 @@ pub struct ButtonInput {
 }
 
 impl ButtonInput {
+    /// Read the shared rectangular pointer contract for buttons and checkboxes.
+    fn from_egui(ctx: &egui::Context, rect: egui::Rect) -> Self {
+        ctx.input(|input| {
+            let mut result = Self::for_rect(
+                rect,
+                input.pointer.interact_pos(),
+                input.pointer.button_pressed(egui::PointerButton::Primary),
+                input.pointer.button_down(egui::PointerButton::Primary),
+                input.pointer.button_released(egui::PointerButton::Primary),
+                input.time,
+            );
+            result.press_inside = input
+                .pointer
+                .press_origin()
+                .map(|point| rect_contains(rect, point));
+            result
+        })
+    }
+
     /// Build exact half-open geometry from the current pointer position.
     #[must_use]
     pub fn for_rect(
@@ -243,6 +265,7 @@ impl ButtonInput {
     ) -> Self {
         Self {
             pointer_inside: pointer.is_some_and(|point| rect_contains(rect, point)),
+            press_inside: None,
             primary_pressed,
             primary_down,
             primary_released,
@@ -381,7 +404,7 @@ impl StrobeButton {
             return output;
         }
 
-        if input.primary_pressed && input.pointer_inside {
+        if input.primary_pressed && input.press_inside.unwrap_or(input.pointer_inside) {
             self.state.armed = true;
             self.state.held = true;
             self.state.repeat_deadline = self
@@ -450,16 +473,7 @@ impl StrobeButton {
         repeat: Option<ButtonRepeat>,
         scale: f32,
     ) -> StrobeButtonResponse {
-        let input = ui.ctx().input(|input| {
-            ButtonInput::for_rect(
-                rect,
-                input.pointer.interact_pos(),
-                input.pointer.button_pressed(egui::PointerButton::Primary),
-                input.pointer.button_down(egui::PointerButton::Primary),
-                input.pointer.button_released(egui::PointerButton::Primary),
-                input.time,
-            )
-        });
+        let input = ButtonInput::from_egui(ui.ctx(), rect);
         Self::show_inner(
             ui, cache, rect, id, art, selected, disabled, repeat, scale, input, true,
         )
@@ -649,16 +663,7 @@ impl Checkbox {
         checkbox.button.art = art;
         checkbox.button.state.disabled = disabled;
         checkbox.checked = checked;
-        let mut input = ui.ctx().input(|input| {
-            ButtonInput::for_rect(
-                rect,
-                input.pointer.interact_pos(),
-                input.pointer.button_pressed(egui::PointerButton::Primary),
-                input.pointer.button_down(egui::PointerButton::Primary),
-                input.pointer.button_released(egui::PointerButton::Primary),
-                input.time,
-            )
-        });
+        let mut input = ButtonInput::from_egui(ui.ctx(), rect);
         if input.primary_pressed
             && !(response.is_pointer_button_down_on()
                 || response.clicked_by(egui::PointerButton::Primary))
@@ -725,6 +730,7 @@ mod tests {
     fn input(inside: bool, pressed: bool, down: bool, released: bool, now: f64) -> ButtonInput {
         ButtonInput {
             pointer_inside: inside,
+            press_inside: None,
             primary_pressed: pressed,
             primary_down: down,
             primary_released: released,
@@ -931,6 +937,43 @@ mod tests {
                 inside,
                 "point={point:?}"
             );
+        }
+    }
+
+    #[test]
+    fn batched_press_and_motion_keep_capture_bound_to_the_press_coordinates() {
+        // FUN_006028c0 receives button-down coordinates before later motion.
+        let rect = egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(20.0, 10.0));
+        for art in [ALLIANCE_ART, EMPIRE_ART] {
+            for (start, end, held) in [
+                (egui::pos2(50.0, 25.0), egui::pos2(25.0, 25.0), false),
+                (egui::pos2(25.0, 25.0), egui::pos2(50.0, 25.0), true),
+            ] {
+                let ctx = egui::Context::default();
+                let mut button = StrobeButton::new(art);
+                let events = vec![
+                    egui::Event::PointerMoved(start),
+                    crate::test_support::pointer_button(start, true),
+                    egui::Event::PointerMoved(end),
+                ];
+                let _ = ctx.run(
+                    crate::test_support::raw_input(events, egui::vec2(320.0, 200.0)),
+                    |ctx| {
+                        let _ = button.update(ButtonInput::from_egui(ctx, rect));
+                    },
+                );
+                assert_eq!(button.state.armed, held);
+                assert_eq!(button.state.held, held);
+                let released = button.update(ButtonInput::for_rect(
+                    rect,
+                    Some(end),
+                    false,
+                    false,
+                    true,
+                    0.1,
+                ));
+                assert!(!released.clicked());
+            }
         }
     }
 }

@@ -1,3 +1,8 @@
+#![expect(
+    clippy::float_cmp,
+    reason = "These tests require exact recovered values; approximate equality would weaken their contract."
+)]
+
 use crate::carriage::ProductRoom;
 use std::collections::HashSet;
 

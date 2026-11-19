@@ -325,24 +325,7 @@ where
                 selected = Some(spec.value);
             }
         }
-        let tooltips = self
-            .specs
-            .iter()
-            .filter_map(|spec| spec.tooltip.map(|text| (spec.rect, text)))
-            .collect::<Vec<_>>();
-        if !tooltips.is_empty() {
-            draw_registered_tooltips(
-                ui.ctx(),
-                egui::Id::new((strip_id, "stock-tooltips")),
-                &tooltips,
-                scale,
-                TooltipPresentation::stock(),
-            );
-        }
-        selected.map(|value| {
-            self.select(value);
-            TabControlOutput::Selected(value)
-        })
+        self.finish_show(ui, strip_id, scale, selected)
     }
 
     /// Bitmap-mask variant used by controls whose source artwork, rather than
@@ -375,6 +358,17 @@ where
                 selected = Some(spec.value);
             }
         }
+        self.finish_show(ui, strip_id, scale, selected)
+    }
+
+    /// Rectangular and masked strips share tooltip registration and notification.
+    fn finish_show<S: Copy + Hash>(
+        &mut self,
+        ui: &egui::Ui,
+        strip_id: S,
+        scale: f32,
+        selected: Option<T>,
+    ) -> Option<TabControlOutput<T>> {
         let tooltips = self
             .specs
             .iter()
@@ -531,6 +525,104 @@ mod tests {
             assert_eq!(
                 tabs.button(Page::First, false).unwrap().image().resource_id,
                 selected
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_focus_falls_back_to_the_selected_page_before_keyboard_traversal() {
+        // FUN_0060d860: the selected child is authoritative when focus is stale.
+        let specs = specs();
+        let mut state = TabControlState::new(Page::Empty, ControlId(0));
+        let result =
+            TabControl::new(&specs, &mut state).traverse(TabDirection::Right, TabTraversal::Clamp);
+        assert_eq!(result, Some(TabControlOutput::Selected(Page::Last)));
+        assert_eq!(state.focused, ControlId(0x9a));
+    }
+
+    #[test]
+    fn masked_tabs_paint_the_selected_art_and_report_an_admitted_click_for_both_factions() {
+        // FUN_0060d860 selects the child before sending its parent notification.
+        for (normal, selected) in [(10_111, 10_112), (10_161, 10_162)] {
+            let specs = [TabSpec::two_state(
+                Page::First,
+                ControlId(0x97),
+                egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(20.0, 10.0)),
+                DllSource::Strategy,
+                normal,
+                selected,
+            )];
+            let ctx = egui::Context::default();
+            let mut cache = BmpCache::new();
+            let mut output = None;
+            crate::test_support::clear_painted_trace();
+            let _ = ctx.run(
+                crate::test_support::raw_input(Vec::new(), egui::vec2(320.0, 200.0)),
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        output = TabControl::paint_and_select_with_inputs(
+                            &specs,
+                            TabControlState::new(Page::First, ControlId(0x97)),
+                            ui,
+                            &mut cache,
+                            "masked-tabs",
+                            1.0,
+                            &[ButtonInput {
+                                pointer_inside: true,
+                                primary_pressed: true,
+                                primary_released: true,
+                                ..Default::default()
+                            }],
+                        );
+                    });
+                },
+            );
+            assert_eq!(output, Some(Page::First));
+            assert!(crate::test_support::take_painted_trace()
+                .iter()
+                .any(|(id, _)| *id == selected));
+        }
+    }
+
+    #[test]
+    fn rectangular_and_masked_tabs_show_registered_help_after_the_stock_delay() {
+        // FUN_006008e0 / FUN_00600a40: configured child help uses the shared delay.
+        for masked in [false, true] {
+            let specs =
+                [spec(Page::First, 0, TabPresentation::Enabled)
+                    .with_tooltip("Registered tab help")];
+            let ctx = egui::Context::default();
+            let mut cache = BmpCache::new();
+            let mut state = TabControlState::new(Page::First, ControlId(0x97));
+            let mut texts = Vec::new();
+            for frame in [0, 12] {
+                let input = crate::test_support::timed_raw_input(
+                    frame,
+                    vec![egui::Event::PointerMoved(egui::pos2(5.0, 4.0))],
+                    egui::Modifiers::NONE,
+                    egui::vec2(320.0, 200.0),
+                );
+                let output = ctx.run(input, |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let mut tabs = TabControl::new(&specs, &mut state);
+                        if masked {
+                            let _ = tabs.show_with_inputs(
+                                ui,
+                                &mut cache,
+                                "help-tabs",
+                                1.0,
+                                &[ButtonInput::default()],
+                            );
+                        } else {
+                            let _ = tabs.show(ui, &mut cache, "help-tabs", 1.0);
+                        }
+                    });
+                });
+                texts = crate::test_support::rendered_texts(output);
+            }
+            assert!(
+                texts.iter().any(|text| text.text == "Registered tab help"),
+                "masked={masked}"
             );
         }
     }

@@ -1034,6 +1034,13 @@ fn draw_surface_index(
         Color32::WHITE,
     );
     let search_rect = encyclopedia_rect(window_rect, scale, 143.0, 45.0, 245.0, 18.0);
+    // The parent may have moved focus back to the index while this field
+    // was hidden by a topic. Do not renew that stale keyboard lease.
+    let search_lease = if ui.memory(|memory| memory.has_focus(surface_search_focus_id())) {
+        StringFieldLease::focused()
+    } else {
+        StringFieldLease::clickable()
+    };
     let search = StringField::new(
         &mut state.search_field,
         StringFieldSpec::new(
@@ -1046,7 +1053,7 @@ fn draw_surface_index(
                 ..StringFieldStyle::default()
             },
         ),
-        StringFieldLease::focused(),
+        search_lease,
     )
     .show(ui);
     for event in search.iter() {
@@ -1784,6 +1791,7 @@ fn draw_original_tab_control<const N: usize>(
 #[derive(Debug, Clone, Copy)]
 struct EncyclopediaPointerFrame {
     pointer: Option<egui::Pos2>,
+    press_origin: Option<egui::Pos2>,
     primary_pressed: bool,
     primary_down: bool,
     primary_released: bool,
@@ -1794,6 +1802,7 @@ impl EncyclopediaPointerFrame {
     fn read(ctx: &egui::Context) -> Self {
         ctx.input(|input| Self {
             pointer: input.pointer.interact_pos(),
+            press_origin: input.pointer.press_origin(),
             primary_pressed: input.pointer.button_pressed(egui::PointerButton::Primary),
             primary_down: input.pointer.button_down(egui::PointerButton::Primary),
             primary_released: input.pointer.button_released(egui::PointerButton::Primary),
@@ -1812,6 +1821,9 @@ impl EncyclopediaPointerFrame {
             pointer_inside: self.pointer.is_some_and(|point| {
                 original_control_contains(cache, resource_id, rect, scale, point)
             }),
+            press_inside: self
+                .press_origin
+                .map(|point| original_control_contains(cache, resource_id, rect, scale, point)),
             primary_pressed: self.primary_pressed,
             primary_down: self.primary_down,
             primary_released: self.primary_released,
@@ -3176,6 +3188,145 @@ mod tests {
             );
         });
         assert_eq!(unselected_action, None);
+    }
+
+    #[test]
+    fn index_search_text_scales_with_the_surface_for_both_sides() {
+        // FUN_0045ddc0 constructs the index text field at the same native scale.
+        for audience in [
+            EncyclopediaSurfaceAudience::Alliance,
+            EncyclopediaSurfaceAudience::Empire,
+        ] {
+            let ctx = egui::Context::default();
+            crate::theme::load_fonts(&ctx);
+            let mut cache = BmpCache::new();
+            let mut state = EncyclopediaSurfaceState::new();
+            let mut surface = test_surface(EncyclopediaSurfaceMode::Index, Some(1));
+            surface.audience = audience;
+            let mut text = Vec::new();
+            for frame in 0..3 {
+                let output = ctx.run(
+                    crate::test_support::timed_raw_input(
+                        frame,
+                        Vec::new(),
+                        egui::Modifiers::default(),
+                        egui::vec2(1280.0, 960.0),
+                    ),
+                    |ctx| {
+                        draw_encyclopedia_surface_focused(
+                            ctx,
+                            &mut cache,
+                            egui::Pos2::ZERO,
+                            2.0,
+                            &mut state,
+                            &surface,
+                            Some(ENCYCLOPEDIA_INDEX_CONTROL),
+                        );
+                    },
+                );
+                text = crate::test_support::rendered_texts(output);
+            }
+            let search = text
+                .iter()
+                .find(|text| text.text == TEST_TOPIC_TITLES[0] && text.pos.y < 140.0)
+                .expect("selected title is painted in the search field");
+            assert_eq!(search.font, 28.0, "{audience:?}");
+        }
+    }
+
+    #[test]
+    fn an_index_key_advances_the_canonical_list_selection_for_both_sides() {
+        // FUN_00609ed0 owns row movement; Encyclopedia adapts its selected object.
+        for audience in [
+            EncyclopediaSurfaceAudience::Alliance,
+            EncyclopediaSurfaceAudience::Empire,
+        ] {
+            let mut state = EncyclopediaSurfaceState::new();
+            let mut surface = test_surface(EncyclopediaSurfaceMode::Index, None);
+            surface.audience = audience;
+            assert_eq!(
+                update_encyclopedia_index_key(&mut state, &surface, EncyclopediaSurfaceKey::Home),
+                Some(EncyclopediaSurfaceAction::SelectTopic(1))
+            );
+            assert_eq!(
+                update_encyclopedia_index_key(&mut state, &surface, EncyclopediaSurfaceKey::Down),
+                Some(EncyclopediaSurfaceAction::SelectTopic(2))
+            );
+        }
+    }
+
+    #[test]
+    fn masked_button_input_preserves_press_release_and_origin_information() {
+        // FUN_006028c0 receives the original press coordinates and button phase.
+        let mut cache = BmpCache::new();
+        let rect = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(20.0, 20.0));
+        for resource in [10335, 10585] {
+            let input = EncyclopediaPointerFrame {
+                pointer: Some(egui::pos2(50.0, 50.0)),
+                press_origin: Some(egui::Pos2::ZERO),
+                primary_pressed: true,
+                primary_down: true,
+                primary_released: true,
+                now_seconds: 3.25,
+            }
+            .masked_input(&mut cache, resource, rect, 2.0);
+            assert_eq!(
+                input,
+                ButtonInput {
+                    pointer_inside: false,
+                    press_inside: Some(false),
+                    primary_pressed: true,
+                    primary_down: true,
+                    primary_released: true,
+                    now_seconds: 3.25,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn a_search_field_releases_its_caret_when_the_index_receives_focus_for_both_sides() {
+        // FUN_00605160 leaves child focus with the owner; the index owns list keys.
+        for audience in [
+            EncyclopediaSurfaceAudience::Alliance,
+            EncyclopediaSurfaceAudience::Empire,
+        ] {
+            let ctx = egui::Context::default();
+            crate::theme::load_fonts(&ctx);
+            let mut cache = BmpCache::new();
+            let mut state = EncyclopediaSurfaceState::default();
+            let mut surface = test_surface(EncyclopediaSurfaceMode::Index, Some(1));
+            surface.audience = audience;
+            for frame in 0..3 {
+                let _ = ctx.run(surface_input(Vec::new(), f64::from(frame) * 0.1), |ctx| {
+                    draw_focused_test_surface(
+                        ctx,
+                        &mut cache,
+                        &mut state,
+                        &surface,
+                        Some(ENCYCLOPEDIA_SEARCH_CONTROL),
+                    );
+                });
+            }
+            assert_eq!(
+                state.search_field.focused_control(),
+                Some(ENCYCLOPEDIA_SEARCH_CONTROL)
+            );
+            for frame in 3..6 {
+                let _ = ctx.run(surface_input(Vec::new(), f64::from(frame) * 0.1), |ctx| {
+                    draw_focused_test_surface(
+                        ctx,
+                        &mut cache,
+                        &mut state,
+                        &surface,
+                        Some(ENCYCLOPEDIA_INDEX_CONTROL),
+                    );
+                });
+                assert_eq!(state.search_field.focused_control(), None, "{audience:?}");
+                assert!(ctx.memory(|memory| memory
+                    .has_focus(surface_keyboard_focus_id(EncyclopediaSurfaceMode::Index))));
+            }
+        }
     }
 
     #[test]

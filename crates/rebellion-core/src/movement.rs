@@ -1120,6 +1120,10 @@ impl MovementSystem {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[expect(
+    clippy::float_cmp,
+    reason = "These tests require exact recovered values; approximate equality would weaken their contract."
+)]
 mod tests {
     use super::*;
     use crate::carriage::ProductRoom;

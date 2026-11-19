@@ -3160,6 +3160,10 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::float_cmp,
+    reason = "These tests require exact recovered values; approximate equality would weaken their contract."
+)]
 mod tests {
     use super::input_scenes::{InputScenesCommand, InputScenesFixture};
     use super::*;

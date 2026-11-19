@@ -318,6 +318,10 @@ pub fn video_bounds(message: bool, screen: egui::Rect) -> [f32; 4] {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::float_cmp,
+    reason = "These tests require exact recovered values; approximate equality would weaken their contract."
+)]
 mod tests {
     use super::*;
 

@@ -426,6 +426,9 @@ impl<'a> StringField<'a> {
         });
         let accepts_keys =
             lease.handles_input && (state_had_focus || widget_had_focus || lease.requests_focus);
+        // egui clears Escape focus before this widget is drawn. Reinstalling
+        // the parent's admitted lease here also covers that case; a second
+        // post-draw Escape request would be redundant.
         let install_focus =
             lease.requests_focus || (lease.handles_input && state_had_focus && !widget_had_focus);
 
@@ -521,13 +524,6 @@ impl<'a> StringField<'a> {
                 state.insert_fallback_text(&fallback, spec.max_length);
                 state.store_cursor(ui.ctx(), spec.id);
             }
-        }
-
-        // egui treats Escape as a generic TextEdit focus release. The source
-        // control forwards Escape to its owner and leaves commit/cancel (and
-        // therefore any focus release) to that parent.
-        if accepts_keys && key_events.iter().any(|(key, _)| *key == egui::Key::Escape) {
-            ui.memory_mut(|memory| memory.request_focus(spec.id));
         }
 
         let has_focus = response.has_focus();
@@ -972,5 +968,29 @@ mod tests {
 
         assert!(output.contains(StringFieldEvent::FocusChanged(false)));
         assert_eq!(state.focused_control(), None);
+    }
+
+    #[test]
+    fn escape_keeps_widget_focus_until_the_owner_revokes_the_field_lease() {
+        // FUN_00605160 forwards Escape to the owner without releasing focus.
+        let ctx = egui::Context::default();
+        let mut state = StringFieldState::new("Rogue");
+        let field = spec("escape-widget-focus", 20);
+        show_once(
+            &ctx,
+            &mut state,
+            field.clone(),
+            StringFieldLease::acquire(false),
+            Vec::new(),
+        );
+        let output = show_once(
+            &ctx,
+            &mut state,
+            field.clone(),
+            StringFieldLease::focused(),
+            vec![key(egui::Key::Escape)],
+        );
+        assert!(output.contains(StringFieldEvent::Cancelled));
+        assert!(ctx.memory(|memory| memory.has_focus(field.id)));
     }
 }

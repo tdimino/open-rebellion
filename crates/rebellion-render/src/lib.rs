@@ -24,7 +24,6 @@
 )]
 
 #[cfg(test)]
-#[allow(clippy::assert_is_empty)]
 macro_rules! assert_empty {
     ($value:expr $(,)?) => {{
         let length = ($value).len();
@@ -33,7 +32,6 @@ macro_rules! assert_empty {
 }
 
 #[cfg(test)]
-#[allow(clippy::assert_is_empty)]
 macro_rules! assert_not_empty {
     ($value:expr $(,)?) => {{
         let length = ($value).len();

@@ -11,7 +11,6 @@
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 #[macro_export]
-#[allow(clippy::assert_is_empty)]
 macro_rules! assert_empty {
     ($value:expr $(,)?) => {{
         let value = &$value;
@@ -22,7 +21,6 @@ macro_rules! assert_empty {
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 #[macro_export]
-#[allow(clippy::assert_is_empty)]
 macro_rules! assert_not_empty {
     ($value:expr $(,)?) => {{
         let value = &$value;

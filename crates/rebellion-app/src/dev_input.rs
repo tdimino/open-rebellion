@@ -151,7 +151,7 @@ impl DevInput {
 }
 
 /// A logical point as a point in a content view of `width`×`height` points,
-/// with AppKit's origin at the bottom left. The game letterboxes its 640×480
+/// with `AppKit`'s origin at the bottom left. The game letterboxes its 640×480
 /// canvas, uniformly scaled and centred, as `TacticalCanvas` does.
 #[cfg(target_os = "macos")]
 fn view_point(x: f32, y: f32, width: f32, height: f32) -> (f64, f64) {
