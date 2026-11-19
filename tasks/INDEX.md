@@ -10,7 +10,7 @@ session keeps with [br](https://github.com/Dicklesworthstone/beads_rust);
 [agent_docs/task-graph.md](../agent_docs/task-graph.md) explains the node
 kinds and how work is claimed and closed.
 
-373 nodes: 166 open, 1 deferred, 206 closed.
+373 nodes: 1 in progress, 165 open, 1 deferred, 206 closed.
 
 ## Pages
 
@@ -159,7 +159,9 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 
 ## In progress
 
-None.
+| Priority | Node | Title |
+|---|---|---|
+| P1 | [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9) | Verify uniform control adoption across the game UI |
 
 ## Ready
 
@@ -172,7 +174,6 @@ Open, not deferred, and waiting on nothing open; highest priority first.
 | P1 | [or-d-aperture-wrn](acceptance.md#or-d-aperture-wrn) | Diagnose: the space view (aperture) differs in 23 cells |
 | P1 | [or-d-options-dqe](acceptance.md#or-d-options-dqe) | Diagnose: the Battle Options panel differs in 9 cells |
 | P1 | [or-d-status-x1x](acceptance.md#or-d-status-x1x) | Diagnose: the status panel differs in 16 cells |
-| P1 | [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9) | Verify uniform control adoption across the game UI |
 | P1 | [or-f-yaga-variants-4qf](acceptance.md#or-f-yaga-variants-4qf) | A1 fixtures for the edited Yaga day-30 saves |
 | P1 | [or-port-ai-orders-4zf](ports.md#or-port-ai-orders-4zf) | Q: Which original AI orders should the port's AI issue, and in what order? |
 | P1 | [or-port-force-fields-2u0m](ports.md#or-port-force-fields-2u0m) | Port: replace ForceTier and force_experience with the original Force fields |

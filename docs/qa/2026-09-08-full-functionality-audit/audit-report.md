@@ -3,7 +3,7 @@ title: "Open Rebellion Full Functionality Audit"
 description: "Repository status, verified evidence, release blockers, and feature-by-feature acceptance plan"
 category: qa
 created: 2026-09-08
-updated: 2026-10-20
+updated: 2026-11-19
 commit: fc25634be905839dfa6fb477d5fff0faa49d8ae9
 tags: [qa, audit, functionality, parity, bitmap, wasm, astra, fable]
 ---
@@ -38,6 +38,14 @@ evaluation files were untracked: `EVALUATE.md`, `edd.config.json`, `program.md`,
 and `run-eval.sh`.
 
 ## Where work left off
+
+The [2026-11-19 local Mini control-adoption audit](evidence/2026-11-19-uniform-controls-validation.md)
+inventories all 62 matrix rows at `220e0a0709a999d49cec6272776a254e2030f131`.
+Its bead remains in progress: nine exact clone pairs, strict Clippy, mutation
+gaps and Encyclopedia/System browser failures prevent acceptance. The 39
+browser commands yield 226 passed cells, seven failed and eleven not run;
+all 19 selected tactical scenarios pass both factions and viewports. These
+implementation results promote no original-interface cell or release gate.
 
 PR #11 [corrects the cockpit command routing](../2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md): `0x131` and F7 identify Encyclopedia, `0x132` opens and closes GID, and the side-globe `0x133` plus F1 identify Game Options for both factions. Encyclopedia deliberately fails closed. The [2026-09-26 Game Options review checkpoint](../2026-09-10-interface-parity-audit/evidence/2026-09-26-game-options-review.md) replaces the options placeholder with the shared bitmap surface; strict original-evidence acceptance remains open.
 

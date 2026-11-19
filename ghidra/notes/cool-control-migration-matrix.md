@@ -3,7 +3,7 @@ title: "Cool Control Consumer and Migration Matrix"
 description: "Original Cool* control evidence, every current production consumer, renderer object boundaries, migration beads, art ownership, exclusions, and parity journeys"
 category: "ghidra"
 created: 2026-11-15
-updated: 2026-11-17
+updated: 2026-11-19
 ---
 
 # Cool Control Consumer and Migration Matrix
@@ -54,16 +54,16 @@ as Checkbox (`FUN_00603870`, WndProc `0x006039a0`).
 
 | Production consumer | Current Rust call site and owned behavior | Original feature evidence | Shared target / bead | Art | Both-faction journey |
 |---|---|---|---|---|---|
-| New-game/main-menu selectors and actions | `main_menu.rs`: `MainMenuControl`, `texture_for`, `activate`, `draw_main_menu`; duplicates held/selected texture choice, exact resource hit, keyboard focus and command mapping | `FUN_00405560` constructs StrobeButtons and Checkbox variants | `StrobeButton` plus `Checkbox`; `.2`. Feature keeps difficulty, size, game type and launch actions | COMMON/STRATEGY selection art; side emblems differ and selector art is shared where the constructor says so | `game-options-smoke.mjs` traverses the menu for Alliance and Empire; final adoption must add/retain direct selector assertions |
-| Strategic cockpit controls and Message Index rail lights | `cockpit.rs`: `strategic_primary_controls`, `draw_control`, `update_control_capture`, `draw_message_index_rail`; rail unread state currently chooses lit art separately | `FUN_00427270` constructs StrobeButtons for commands `0x12d..0x134` and Checkbox variants for `0x136..0x13e` | `StrobeButton`; rail `Checkbox` composition; `.2` | explicit Alliance/Empire STRATEGY tables | `run.mjs --all`, `fleet-finder.mjs`, `audit-batch.mjs`, `message-index-shell.mjs` |
-| Mission Dialog chrome, tabs, arrows and actions | `mission_dialog.rs`: free `button`, page loop and action buttons | `FUN_0046a9c0`, plus common constructor/WndProc | `StrobeButton`; tabs later compose it; `.2`, `.3` | Alliance/Empire title, tab and header resources | `mission-dialog.mjs` |
-| Build Selection page arrows and confirm/cancel | `build_selection.rs` calls `mission_dialog::button` and owns available/pressed policy | `FUN_00437f80`, `FUN_00455060` | `StrobeButton`; `.2` | side title plus mostly shared control resources | `build-selection.mjs` |
-| Confirmed Move | `move_confirmation.rs::bitmap_button` wraps `mission_dialog::button` | `FUN_0044f180` constructs the two StrobeButtons | `StrobeButton`; `.2` | shared STRATEGY art | `fleet-move.mjs` |
+| New-game/main-menu selectors and actions | `main_menu.rs::draw_main_menu` calls `Checkbox::show` and `StrobeButton::show`; feature retains exact resource hit, keyboard focus and command mapping | `FUN_00405560` constructs StrobeButtons and Checkbox variants | `StrobeButton` plus `Checkbox`; `.2`. Feature keeps difficulty, size, game type and launch actions | COMMON/STRATEGY selection art; side emblems differ and selector art is shared where the constructor says so | `game-options-smoke.mjs` traverses the menu for Alliance and Empire; final adoption must add/retain direct selector assertions |
+| Strategic cockpit controls and Message Index rail lights | `cockpit.rs`: `strategic_primary_controls`, `draw_control`, `update_control_capture`, `draw_message_index_rail`; rail unread state is feature input to canonical `Checkbox` | `FUN_00427270` constructs StrobeButtons for commands `0x12d..0x134` and Checkbox variants for `0x136..0x13e` | `StrobeButton`; rail `Checkbox` composition; `.2` | explicit Alliance/Empire STRATEGY tables | `run.mjs --all`, `fleet-finder.mjs`, `audit-batch.mjs`, `message-index-shell.mjs` |
+| Mission Dialog chrome, tabs, arrows and actions | `mission_dialog.rs`: `StrobeButton::show_pair` for chrome/arrows/actions and `TabControl::paint_and_select` for pages | `FUN_0046a9c0`, plus common constructor/WndProc | `StrobeButton`; tabs later compose it; `.2`, `.3` | Alliance/Empire title, tab and header resources | `mission-dialog.mjs` |
+| Build Selection page arrows and confirm/cancel | `build_selection.rs` calls `StrobeButton::show_pair` and retains action availability | `FUN_00437f80`, `FUN_00455060` | `StrobeButton`; `.2` | side title plus mostly shared control resources | `build-selection.mjs` |
+| Confirmed Move | `move_confirmation.rs::bitmap_button` supplies exact bitmap-mask input to `StrobeButton::show_with_input` | `FUN_0044f180` constructs the two StrobeButtons | `StrobeButton`; `.2` | shared STRATEGY art | `fleet-move.mjs` |
 | Fleet, Personnel and Troop Finders | `finder_common.rs::FinderCanvas::button`, `fleet_finder.rs`, `personnel_finder.rs`, `troop_finder.rs`; feature code owns display/close and view meaning | `FUN_00460270`, `FUN_00461960`, `FUN_004637a0`, `FUN_0046ce40` | `StrobeButton`; `.2`; tabs `.3` | side-dependent shell/rail and button sets | `fleet-finder.mjs`, `audit-batch.mjs` |
-| Status and Operation Report | `status_window.rs` and `operation_report.rs` import `mission_dialog::button`; report also paints view/tab buttons locally | `FUN_00443130`, `FUN_0044c630` | `StrobeButton`; `.2`; report tabs `.3` | explicit side shell/rail art; some action art shared | `status-window.mjs`, `orbital-strike.mjs` |
-| Manufacturing/System, Fleet, Defenses and Missions windows | local bitmap selection and exact-hit loops in `system_window.rs`, `fleet_window.rs`, `defenses_window.rs`, `missions_window.rs` | `FUN_00455060`, `FUN_004a4b10`, `FUN_004a8790`, `FUN_0049f540` | `StrobeButton`; `.2`; authentic strips `.3` | System/Defenses tabs are partly shared; Fleet and Missions have side offsets/sets | `sector-quadrants.mjs`, `fleet-window.mjs` |
-| Encyclopedia and Message Index | local category/rail/action control loops in `encyclopedia.rs` and `message_index.rs` | `FUN_0045ddc0`, `FUN_004665f0` | `StrobeButton`; `.2`; strips `.3` | separate Alliance/Empire shell and controls where recovered | `encyclopedia-index-shell.mjs`, `encyclopedia-canonical-surface.mjs`, `message-index-shell.mjs` |
-| Game Options buttons and tactical toggles | `game_options.rs`: `toggle_resource`, `toggle_tactical`, local held state and action hit tests | `FUN_00407180` creates these with `FUN_00602150`, not Checkbox | `StrobeButton`; `.2`. Keep option meaning in `game_options.rs` | COMMON art; availability differs between main-menu and live tactical origins | `game-options-smoke.mjs`; tactical availability in `run.mjs --all --scenario=production-battle-options-presentation` |
+| Status and Operation Report | `status_window.rs` and `operation_report.rs` call `StrobeButton::show_pair`; report composes `TabControl` for view/tab strips | `FUN_00443130`, `FUN_0044c630` | `StrobeButton`; `.2`; report tabs `.3` | explicit side shell/rail art; some action art shared | `status-window.mjs`, `orbital-strike.mjs` |
+| Manufacturing/System, Fleet, Defenses and Missions windows | `system_window.rs`, `fleet_window.rs`, `defenses_window.rs`, `missions_window.rs` compose `TabControl` children and shared strategic title controls | `FUN_00455060`, `FUN_004a4b10`, `FUN_004a8790`, `FUN_0049f540` | `StrobeButton`; `.2`; authentic strips `.3` | System/Defenses tabs are partly shared; Fleet and Missions have side offsets/sets | `sector-quadrants.mjs`, `fleet-window.mjs` |
+| Encyclopedia and Message Index | `encyclopedia.rs` and `message_index.rs` compose `TabControl` and `StrobeButton`; category/rail/action meaning remains feature-owned | `FUN_0045ddc0`, `FUN_004665f0` | `StrobeButton`; `.2`; strips `.3` | separate Alliance/Empire shell and controls where recovered | `encyclopedia-index-shell.mjs`, `encyclopedia-canonical-surface.mjs`, `message-index-shell.mjs` |
+| Game Options buttons and tactical toggles | `game_options.rs` supplies state/art to `StrobeButton`; `toggle_tactical` and option actions remain feature-owned | `FUN_00407180` creates these with `FUN_00602150`, not Checkbox | `StrobeButton`; `.2`. Keep option meaning in `game_options.rs` | COMMON art; availability differs between main-menu and live tactical origins | `game-options-smoke.mjs`; tactical availability in `run.mjs --all --scenario=production-battle-options-presentation` |
 | Tactical strips, selected-unit/command panels, Battle Alert and Battle Results | `tactical_view.rs`: `draw_original_button`, assignment buttons, task-force/fighter strips, `BattleAlertTab`, `BattleResultTab`, options/results actions | strip constructors `FUN_0059bd30` through `FUN_0059c650`, panels `FUN_005c4ed0`, `FUN_005dcc70`, `FUN_005df110`, `FUN_005e1550`, `FUN_005e4110`, `FUN_005e7030`, Alert `FUN_0044f860`, Results `FUN_0046f360` | `StrobeButton`; `.2`; Alert/Results strips `.3` | TACTICAL art can vary by side/panel; Alert/Results STRATEGY shell and rails are faction-specific | `run.mjs --all` scenarios `production-battle-alert-entry`, `production-battle-results-presentation`, `production-battle-options-presentation`, command/selection presentations |
 
 The only confirmed Checkbox constructor call sites are `FUN_00405560` and
@@ -146,7 +146,7 @@ ScrollDrag}` already models the common base (`FUN_0060aa70`, WndProc
 | Production list / pre-`.5` Rust owner | Original feature evidence | State/behavior to move into `DragList`; feature data retained | Art / scrollbar disposition | Journey |
 |---|---|---|---|---|
 | Defenses grid: `defenses_window.rs`, currently `LabeledCell` plus `ScrollBar` | `FUN_004a8790` | selected cells, grid wrapping, first row, right-select, threshold drag/drop | GOKRES minis, faction selection frame; current canonical bar | `sector-quadrants.mjs` |
-| Missions and member lists: `missions_window.rs`, currently `LabeledCell` and local tab/list state | `FUN_0049f540` | two vertical lists, selection, member activation and drag; keep mission/member rendering | mission-side frames; source intentionally draws no separate bar in the current bounded list | `sector-quadrants.mjs` |
+| Missions and member lists: `missions_window.rs`, currently `LabeledCell` and local tab/list state | `FUN_0049f540` | two vertical lists, selection, member activation and drag; keep mission/member rendering | mission-side frames; `FUN_0049f540` constructs both bars with `FUN_0060a490(..., 7, 0x29fc, ...)`; their current absence is a bounded parity omission, not an original no-bar policy | `sector-quadrants.mjs` |
 | Fleet left and contents lists: `fleet_window.rs` | `FUN_004a4b10` | first row, single/multi-select, double click, right select, ship/regiment drag/drop | mostly GOKRES minis plus side frame; source bars `0x29cb` | `fleet-window.mjs` |
 | Manufacturing facility pages: `system_window.rs` / `manufacturing_window.rs` | `FUN_00455060` | page refill, grid selection, scrolling, build-class activation | side-independent facility minis; source list/bar configuration | `sector-quadrants.mjs`, `build-selection.mjs` |
 | Fleet/Ship Finder: `finder_common.rs`, `fleet_finder.rs` | `FUN_00460270`, `FUN_00461960` | first row, bounded keys, wheel, prefix reveal, click/double click | side shell; text rows; source `0x299d` bar | `fleet-finder.mjs` |
@@ -162,7 +162,7 @@ ScrollDrag}` already models the common base (`FUN_0060aa70`, WndProc
 
 ### `.5` shared-ownership record
 
-The source migration is under verification on 2026-11-17. The family now has
+The source migration uses
 one `DragListState`/`DragListSpec` implementation for selection, anchor,
 first-row bounds, visible cells, wheel/key movement, double-click activation,
 pointer capture and composed `ScrollBar` input/art. Feature modules retain only
@@ -205,13 +205,14 @@ Dedicated `SelectionBox` popup internals belong to `.6` and are not `.5`
 consumers. The Message Index body and Encyclopedia topic article are cited
 text controls, not exclusions inferred merely from similar scrolling.
 
-The final 70-token scan on the shared 2026-11-18 worktree reports 8 exact
-clones (0.1%) and 294 normalized clones (3.4%). No match pairs two migrated
-feature-local list implementations: the exact results are the pre-existing
-strobe-button/test pair plus test and routing blocks, while normalized Build
-Selection/Mission Dialog matches are the dedicated `.6` SelectionBox family.
-Concurrent `.6` and `.7` additions mean these totals are not a direct numeric
-comparison with the 263-clone pre-epic baseline.
+The current 70-token scan at `220e0a0709a999d49cec6272776a254e2030f131`
+reports **9 exact pairs (0.1%) and 297 normalized candidates (3.4%)**.
+Exact pairs include active StrobeButton/Checkbox input adapters, TabControl
+paint tails and Defenses/Fleet test setup. The required zero-exact gate fails.
+Normalized feature matches include shared-control configuration and domain
+routing, rather than two independent migrated list or popup kernels. The
+[current validation report](../../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-validation.md)
+accounts for every matrix row, clone disposition and acceptance limitation.
 
 The final scoped `cargo mutants` run exercised 90 mutations across the shared
 hit testing, selection/reveal, capture cancellation, reconciliation and input
@@ -232,12 +233,14 @@ two production consumers:
 
 | Consumer | Current Rust state | Shared target / bead | Art and journey |
 |---|---|---|---|
-| Build class selector | `build_selection.rs::BuildSelectionState` owns `list_open`, top, picked/hot row, wheel, popup geometry and outside dismissal | `SelectionBox<BuildClass>` composed from `DragList`; `.6` | shared class rows inside side-specific dialog; `build-selection.mjs` |
-| Mission kind selector | `mission_dialog.rs::MissionDialogState` and its popup own parallel open/top/hot/selected state | `SelectionBox<MissionKind>`; `.6` | faction dialog and mission-kind art; `mission-dialog.mjs` |
+| Build class selector | `build_selection.rs::BuildSelectionState::list` is `SelectionBoxState`; the shared object owns top, picked/hot row, wheel, popup geometry and dismissal | `SelectionBox<BuildClass>` composed from `DragList`; `.6` | shared class rows inside side-specific dialog; `build-selection.mjs` |
+| Mission kind selector | `mission_dialog.rs::MissionDialogState::kind_list` is `SelectionBoxState`; no parallel popup state machine remains | `SelectionBox<MissionKind>`; `.6` | faction dialog and mission-kind art; `mission-dialog.mjs` |
 
 No third `FUN_0060bed0` feature constructor exists in the retained decompiles.
-The source popup scrollbar's still-unsettled `0x299a` art remains an explicit
-`.6` evidence item rather than guessed configuration.
+The source popup scrollbar uses `0x299a`; its pixels remain omitted. Both
+parents leave popup keyboard focus unwired, so the shared keyboard contract
+is unit-tested but is not an accepted production keyboard path. These are
+explicit parity limitations, not source-backed exclusions.
 
 ## String fields
 
@@ -457,3 +460,15 @@ current consumer; horizontal ScrollBar's two-axis test is a rejected original
 bug; tooltip adoption requires an original registration, not merely topmost
 painting. These bounds are the input to `.2` through `.10` and the final
 adoption audit `.9`.
+
+## Current adoption audit
+
+The local Mini validation at `220e0a0709a999d49cec6272776a254e2030f131`
+is recorded in the [2026-11-19 report](../../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-validation.md).
+All 62 primary rows are inventoried, including four live title-drag consumers
+and the immovable Sector/unused outline exclusions. Canonical ownership does
+not settle the missing bars, popup keyboard focus, unrecovered tooltip
+registrations or missing direct browser selector assertions. The final bead
+remains in progress: exact clones, strict Clippy and mutation/test gaps prevent
+acceptance. No original-interface cell is promoted by these implementation
+journeys.

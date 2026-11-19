@@ -1,5 +1,19 @@
 {
   "schema_version": 2,
+  "uniform_controls_validation": {
+    "date": "2026-11-19",
+    "bead": "or-ep-uniform-ui-controls-gru5.9",
+    "branch": "refactor/strategic-window-components",
+    "commit": "220e0a0709a999d49cec6272776a254e2030f131",
+    "status": "in_progress",
+    "matrix_rows": 62,
+    "acceptance_items_passed": [1, 2],
+    "blockers": ["9 exact clone pairs", "strict Clippy: 118 diagnostics", "50 fresh mutation survivors", "Encyclopedia shell and canonical journeys", "System title-drag journey", "missing direct browser selector assertions"],
+    "browser_cells": {"passed": 226, "failed": 7, "not_run": 11},
+    "evidence": "evidence/2026-11-19-uniform-controls-validation.md",
+    "data": "evidence/2026-11-19-uniform-controls-validation.json",
+    "original_interface_cells_promoted": 0
+  },
   "reference_documents": {
     "main_menu": "agent_docs/main-menu-parity.md",
     "deterministic_replay": "agent_docs/deterministic-replay.md",

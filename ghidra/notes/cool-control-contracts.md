@@ -3,7 +3,7 @@ title: "Cool Control Input, Drag, Palette, and Draw Contracts"
 description: "Modal mouse routing, system-command policy, CoolGameWindow drag modes, control WndProcs, scrollbar subclasses, GID palette remapping, and sprite draw mode 5"
 category: "ghidra"
 created: 2026-11-14
-updated: 2026-11-14
+updated: 2026-11-19
 ---
 
 # Cool Control Input, Drag, Palette, and Draw Contracts
@@ -107,10 +107,14 @@ final top-left to the rectangle at `+0xbc`, `+0xc0`, `+0xc4`, `+0xc8`. The
 right and bottom tests include the full window width and height at
 `+0x38`/`+0x3c`; `SetWindowPos` applies a corrected final position.
 
-**Port comparison.** The renderer implements live title movement and
-temporary capture, but not this common release-time clamp. Port node
-`or-ep-uniform-ui-controls-gru5.10` owns the clamp and the inventory that must
-either identify a real mode-2 consumer or record a source-backed exclusion.
+**Port comparison.** The renderer implements live title movement, temporary
+capture and the common release-time clamp through
+`strategic_window_common::update_title_drag` and
+`system_window::clamp_window_to_galaxy`. System, Fleet, Defenses and Missions
+supply their full window sizes. Sector detail is immovable; no retained
+constructor enables mode 2 for a current consumer. The
+[consumer matrix](cool-control-migration-matrix.md#coolgamewindow-title-dragging) records the
+`.10` inventory and the bounded outline-mode exclusion.
 
 ## Eleven control WndProc families
 
