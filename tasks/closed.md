@@ -2,13 +2,52 @@
 
 # Closed
 
-207 closed nodes, newest first. Back to the [index](INDEX.md).
+208 closed nodes, newest first. Back to the [index](INDEX.md).
+
+<a id="or-ep-uniform-ui-controls-gru5"></a>
+### Uniform original-game controls across the UI
+
+`or-ep-uniform-ui-controls-gru5` · **closed** · P1 · controls, duplication, interface-parity, refactor, windowing · closed 2026-11-19
+
+> ## Background
+>
+> The original executable has a shared Cool* control library at 0x005fd7c0-0x00610b70. The current Rust port has a renderer-independent top-level window manager and several shared helpers, but authentic game surfaces still implement list, tab, bitmap-button, text-field and selection-box behavior locally. This creates structural duplication and makes new windows likely to diverge from established input, focus, selection, scrolling and art-state semantics.
+>
+> The authoritative sources are `ghidra/notes/rebexe-map.md`, the cited `FUN_0060*.c` decompiles, per-feature Ghidra notes, and `docs/plans/2026-10-10-feat-strategic-window-modality-and-focus.md`. A current 70-token Rust scan with `--ignore-identifiers --ignore-literals` reports 263 normalized clone pairs and 3.2% duplicated lines across rebellion-render and rebellion-windowing; exact clones remain zero. Normalized candidates are leads, not defects.
+>
+> ## Scope
+>
+> Create a uniform renderer-side control-object layer for original-game UI surfaces. Cover CoolStrobeButton and its checkbox state, CoolTabControl, CoolDragList composed with the existing ScrollBar, CoolSelectionBoxClass, and CoolStringField. Inventory every production consumer and migrate it or record source-backed reasons it represents a different original control. Include strategic, modal and tactical game surfaces where the recovered class applies.
+>
+> Keep top-level identity, order, focus leases, modality and routing in the std-only rebellion-windowing crate. Keep domain rows, tab meanings, game actions and original art choices in feature modules. Developer-only egui panels and controls with genuinely different original semantics are explicit exclusions. Do not recreate HWNDs, Win32 dispatch or the C++ inheritance hierarchy.
+>
+> ## Success Criteria
+>
+> Every authentic production UI consumer in the migration matrix uses the matching shared Rust control object or has a cited exclusion. Shared objects own stable geometry, state transitions and interaction outcomes; feature modules retain domain policy. Alliance and Empire paths preserve their original art and behavior. Exact duplication stays at zero, selected normalized clone families disappear, and repository gates, scoped mutation tests and applicable silent interface-parity journeys pass.
+>
+> ## Constraints
+>
+> AGENTS.md applies. Preserve unrelated work. Add no production dependency and change no save, DAT or network format. New behavior claims require original-source citations; port choices remain labeled as such. Every implementation slice must run make fmt, warning-free make build, make check and scoped cargo mutants before it is reported ready.
+
+**Acceptance criteria**
+
+- [x] The reviewed migration matrix accounts for every production use of the recovered Cool* families and names all source-backed exclusions.
+- [x] Shared renderer control objects cover bitmap buttons, tabs, drag lists, selection boxes and string fields without moving domain policy into generic code.
+- [x] All in-scope game UI consumers use the uniform controls on Alliance and Empire paths.
+- [x] Exact Rust clones remain zero and every selected 70-token normalized clone family is removed without callback-heavy lifecycle abstractions.
+- [x] Component tests, scoped mutation runs, make fmt, warning-free make build, make check and applicable silent interface-parity journeys pass.
+
+**Notes**
+
+> 2026-11-19 aggregate acceptance: all 11 child beads are closed. Final verifier or-ep-uniform-ui-controls-gru5.9 accounts for all 62 consumers, preserves ownership boundaries, reports zero exact clones and dispositioned normalized candidates, passes 3370 Cargo plus 16 Node tests and 382 mutation attempts with no unexplained survivor, and passes formatting, warning-free build, make check, both WASM builds, and 39 muted browser commands / 244 two-faction viewport cells. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON. No original A0 or protected release acceptance is promoted.
+
+**Closed:** All 11 child beads and all five epic criteria are complete. Final verifier or-ep-uniform-ui-controls-gru5.9 accounts for all 62 production consumers, preserves renderer/windowing/domain boundaries, records zero exact clones with selected normalized families removed, and proves component tests, 382 scoped mutation attempts with no unexplained survivor, formatting, warning-free build, make check, both WASM builds, and 39 muted browser commands / 244 Alliance-and-Empire viewport cells. Evidence is published in docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON. No original A0 or protected release acceptance is promoted.
 
 <a id="or-ep-uniform-ui-controls-gru5.9"></a>
 ### Verify uniform control adoption across the game UI
 
 `or-ep-uniform-ui-controls-gru5.9` · **closed** · P1 · controls, duplication, interface-parity, verify · assigned to CreamOwl · closed 2026-11-19  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-ep-uniform-ui-controls-gru5.3](#or-ep-uniform-ui-controls-gru5.3), [or-ep-uniform-ui-controls-gru5.5](#or-ep-uniform-ui-controls-gru5.5), [or-ep-uniform-ui-controls-gru5.6](#or-ep-uniform-ui-controls-gru5.6), [or-ep-uniform-ui-controls-gru5.7](#or-ep-uniform-ui-controls-gru5.7), [or-ep-uniform-ui-controls-gru5.8](#or-ep-uniform-ui-controls-gru5.8)
 
 > ## Background
@@ -58,7 +97,7 @@ Waits on: [or-ep-uniform-ui-controls-gru5.3](#or-ep-uniform-ui-controls-gru5.3),
 ### Port recovered title-drag bounds and mode policy
 
 `or-ep-uniform-ui-controls-gru5.10` · **closed** · P2 · controls, interface-parity, port, windowing · assigned to CoralSeal · closed 2026-11-18  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1)
 
 > ## Background
@@ -157,7 +196,7 @@ Waits on: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1)
 ### Extract CoolSelectionBox and migrate popup selectors
 
 `or-ep-uniform-ui-controls-gru5.6` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to ChartreuseMink · closed 2026-11-18  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4)  
 Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 
@@ -203,7 +242,7 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 ### Consolidate the remaining recovered UI control families
 
 `or-ep-uniform-ui-controls-gru5.8` · **closed** · P2 · controls, interface-parity, port, refactor, verify · assigned to AzureRaven · closed 2026-11-18  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
 Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 
@@ -241,7 +280,11 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 - [x] Every authentic repeated production consumer uses the canonical object without forced styling across different original controls.
 - [x] Existing scrollbar/tooltip tests and new source-backed control tests pass for both factions where applicable.
 - [x] Scoped mutation checks have no non-equivalent survivor in touched logic.
-- [ ] make fmt, warning-free make build, make check and applicable silent UI journeys pass.
+- [x] make fmt, warning-free make build, make check and applicable silent UI journeys pass.
+
+**Notes**
+
+> 2026-11-19 final verification: or-ep-uniform-ui-controls-gru5.9 proves the remaining formatting, warning-free build, make check, WASM and applicable muted two-faction UI journeys. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON.
 
 **Closed:** Implementation and local verification complete; Tom will validate the aggregate uniform-controls epic PR, including the Mini-only tactical four-cell performance gate.
 
@@ -249,7 +292,7 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 ### Extract CoolStringField and migrate authentic text controls
 
 `or-ep-uniform-ui-controls-gru5.7` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to CoralSeal · closed 2026-11-18  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
 Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 
@@ -287,7 +330,11 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 - [x] Fleet/manufacturing rename and every other matrix-confirmed CoolStringField consumer use the shared object.
 - [x] Feature-specific empty-submit, commit/cancel and type-ahead semantics remain in their parent modules.
 - [x] Both factions pass behavior-sentence focus/edit tests and scoped mutation checks with no non-equivalent survivor.
-- [ ] make fmt, warning-free make build, make check and applicable silent rename/search journeys pass.
+- [x] make fmt, warning-free make build, make check and applicable silent rename/search journeys pass.
+
+**Notes**
+
+> 2026-11-19 final verification: or-ep-uniform-ui-controls-gru5.9 proves the remaining formatting, warning-free build, make check, WASM and applicable muted two-faction rename/search interface-parity gates. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON.
 
 **Closed:** Closed at Will's direction for the aggregate uniform-controls PR.
 
@@ -295,7 +342,7 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 ### Migrate all remaining authentic CoolDragList consumers
 
 `or-ep-uniform-ui-controls-gru5.5` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · assigned to AzureRaven · closed 2026-11-18  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4)  
 Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 
@@ -333,7 +380,11 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 - [x] Feature modules retain row data, filtering/sorting, art and domain action policy while duplicate control state/geometry/input is removed.
 - [x] Alliance and Empire selection, keyboard, scroll, double-click and drag behavior remains covered wherever each feature supports it.
 - [x] Family-scoped mutation runs have no surviving non-equivalent touched mutant and the 70-token normalized scan removes the selected list clone families.
-- [ ] make fmt, warning-free make build, make check and all applicable silent interface-parity journeys pass.
+- [x] make fmt, warning-free make build, make check and all applicable silent interface-parity journeys pass.
+
+**Notes**
+
+> 2026-11-19 final verification: or-ep-uniform-ui-controls-gru5.9 proves the remaining formatting, warning-free build, make check, WASM and applicable muted two-faction interface-parity gates. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON.
 
 **Closed:** Closed at Will’s direction for the aggregate uniform-controls PR.
 
@@ -341,7 +392,7 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 ### Extract CoolTabControl and migrate authentic tab strips
 
 `or-ep-uniform-ui-controls-gru5.3` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · closed 2026-11-17  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
 Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 
@@ -378,12 +429,13 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 - [x] TabControl<T> owns common strip geometry, state painting, exact input and recovered keyboard traversal using StrobeButton.
 - [x] Every matrix-selected original tab control is migrated while feature enums, content and actions remain local.
 - [x] Disabled, empty and selected art plus stable focus/control IDs are preserved for Alliance and Empire.
-- [ ] Behavior-sentence tests and scoped mutation checks kill every non-equivalent touched mutant.
-- [ ] make fmt, warning-free make build, make check and applicable silent interface-parity journeys pass.
+- [x] Behavior-sentence tests and scoped mutation checks kill every non-equivalent touched mutant.
+- [x] make fmt, warning-free make build, make check and applicable silent interface-parity journeys pass.
 
 **Notes**
 
 > 2026-11-17: Added the renderer-side TabControl kernel and migrated all 13 reviewed matrix rows while keeping feature enums/content/actions local. make fmt, warning-free make build, and make check pass locally. Same-flags 70-token jscpd changed from 3 exact / 275 renamed to 2 exact / 274 renamed. Acceptance 4 remains open because scoped cargo mutants could not start: mac-mini-ts DNS resolution failed. Acceptance 5 remains open because the fresh interface fixture could not be built for the same reason, so no stale WASM journeys were accepted.
+> 2026-11-19 final verification: or-ep-uniform-ui-controls-gru5.9 proves the remaining behavior-test, scoped-mutation, formatting, warning-free build, make check, WASM and applicable muted two-faction interface-parity gates. Evidence: docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md and adjacent JSON.
 
 **Closed:** Implemented TabControl<T> and migrated all 13 reviewed authentic tab-strip consumers; local make fmt, warning-free make build, make check, and same-flags jscpd pass. Closed at the user's direction with the documented Mini-only mutation and fresh interface-journey gates unavailable because mac-mini-ts could not resolve.
 
@@ -391,7 +443,7 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.9](#or-ep-uniform-ui-controls-gru5.9)
 ### Extract stateful CoolDragList and compose the shared ScrollBar
 
 `or-ep-uniform-ui-controls-gru5.4` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · closed 2026-11-17  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)  
 Unblocks: [or-ep-uniform-ui-controls-gru5.5](#or-ep-uniform-ui-controls-gru5.5), [or-ep-uniform-ui-controls-gru5.6](#or-ep-uniform-ui-controls-gru5.6)
 
@@ -437,7 +489,7 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.5](#or-ep-uniform-ui-controls-gru5.5),
 ### Extract CoolStrobeButton and checkbox objects
 
 `or-ep-uniform-ui-controls-gru5.2` · **closed** · P1 · controls, duplication, interface-parity, port, refactor · closed 2026-11-17  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-ep-uniform-ui-controls-gru5.1](#or-ep-uniform-ui-controls-gru5.1), [or-ep-uniform-ui-controls-gru5.11](#or-ep-uniform-ui-controls-gru5.11)  
 Unblocks: [or-ep-uniform-ui-controls-gru5.3](#or-ep-uniform-ui-controls-gru5.3), [or-ep-uniform-ui-controls-gru5.4](#or-ep-uniform-ui-controls-gru5.4), [or-ep-uniform-ui-controls-gru5.7](#or-ep-uniform-ui-controls-gru5.7), [or-ep-uniform-ui-controls-gru5.8](#or-ep-uniform-ui-controls-gru5.8)
 
@@ -494,7 +546,7 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.3](#or-ep-uniform-ui-controls-gru5.3),
 ### Fix combat Simulate Remainder handoff without a modal identity
 
 `or-ep-uniform-ui-controls-gru5.11` · **closed** · P1 · bug, port, tactical, windowing · assigned to open-rebellion-pane-6/ntm-c816c91a676a · closed 2026-11-17  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Unblocks: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)
 
 > ## Background
@@ -546,7 +598,7 @@ Unblocks: [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)
 ### Review Cool control contracts and publish the UI migration matrix
 
 `or-ep-uniform-ui-controls-gru5.1` · **closed** · P1 · controls, ghidra, interface-parity, review · closed 2026-11-15  
-Epic: [Uniform original-game controls across the UI](INDEX.md#or-ep-uniform-ui-controls-gru5)  
+Epic: [Uniform original-game controls across the UI](#or-ep-uniform-ui-controls-gru5)  
 Waits on: [or-q-cool-controls-0u0](#or-q-cool-controls-0u0)  
 Unblocks: [or-ep-uniform-ui-controls-gru5.10](#or-ep-uniform-ui-controls-gru5.10), [or-ep-uniform-ui-controls-gru5.2](#or-ep-uniform-ui-controls-gru5.2)
 

@@ -10,7 +10,7 @@ session keeps with [br](https://github.com/Dicklesworthstone/beads_rust);
 [agent_docs/task-graph.md](../agent_docs/task-graph.md) explains the node
 kinds and how work is claimed and closed.
 
-373 nodes: 165 open, 1 deferred, 207 closed.
+373 nodes: 164 open, 1 deferred, 208 closed.
 
 ## Pages
 
@@ -21,7 +21,7 @@ kinds and how work is claimed and closed.
 | [Acceptance](acceptance.md) | 29 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
 | [Questions](questions.md) | 70 | Questions about the original, answered from the executable. |
 | [Other](other.md) | 12 | Decisions, chores and unlabelled nodes. |
-| [Closed](closed.md) | 207 closed | Finished work and how it closed. |
+| [Closed](closed.md) | 208 closed | Finished work and how it closed. |
 
 ## Plans
 
@@ -123,7 +123,7 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 <a id="or-ep-uniform-ui-controls-gru5"></a>
 ### Uniform original-game controls across the UI
 
-`or-ep-uniform-ui-controls-gru5` · **open** · 11 of 11 closed
+`or-ep-uniform-ui-controls-gru5` · **closed** · 11 of 11 closed
 
 > ## Background
 >
