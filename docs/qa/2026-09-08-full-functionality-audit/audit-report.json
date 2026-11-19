@@ -6,8 +6,8 @@
     "branch": "refactor/strategic-window-components",
     "base_commit": "a4b0ae8e4e37768ca10fbd6c395fa567a16d85b3",
     "source_patch_sha256": "7ba736a073da6203171a793f398ecf8181e529500d61b0089dae396096405f8b",
-    "source_committed": false,
-    "status": "in_progress",
+    "source_committed": true,
+    "status": "closed",
     "matrix_rows": 62,
     "acceptance_items_passed": [
       1,
@@ -17,9 +17,7 @@
       5
     ],
     "required_gate_failures": [],
-    "remaining": [
-      "Publish the tested source/harness changes; earlier authorization limits staging to evidence/task files."
-    ],
+    "remaining": [],
     "browser_cells": {
       "passed": 244,
       "failed": 0,
@@ -27,7 +25,10 @@
     },
     "evidence": "evidence/2026-11-19-uniform-controls-remediation.md",
     "data": "evidence/2026-11-19-uniform-controls-remediation.json",
-    "original_interface_cells_promoted": 0
+    "original_interface_cells_promoted": 0,
+    "source_commit": "d9797b451e4d0c5f66bad48255f7ab878f41ae89",
+    "source_published": true,
+    "closed_at": "2026-11-19T18:28:45.892799Z"
   },
   "reference_documents": {
     "main_menu": "agent_docs/main-menu-parity.md",

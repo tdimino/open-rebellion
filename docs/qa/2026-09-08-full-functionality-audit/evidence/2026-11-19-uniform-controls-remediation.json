@@ -108,8 +108,8 @@
       "sha256": "7355e2f453ff5eca27cccdc7acbe2f59d1dd0b0c5397e6a145681fa86453e806"
     }
   ],
-  "source_committed": false,
-  "status": "in_progress",
+  "source_committed": true,
+  "status": "closed",
   "acceptance_items": {
     "1": true,
     "2": true,
@@ -14034,10 +14034,20 @@
     "harness_servers_closed": true,
     "mutation_copy_removed": true
   },
-  "source_publication": "Earlier authorization covers evidence/task files only; implementation commit requires expanded authorization.",
+  "source_publication": "Will authorized publication of the tested source/harness files, excluding WASM, followed by bead closure and publication of regenerated task records. The source commit is pushed and remote-verified.",
   "original_interface_cells_promoted": 0,
   "limits": [
     "No original A0 or native GUI acceptance claimed.",
     "Missions and 0x299a popup/status bar art omissions, popup keyboard focus, and unregistered tooltips remain inventoried parity limits."
-  ]
+  ],
+  "source_commit": "d9797b451e4d0c5f66bad48255f7ab878f41ae89",
+  "source_published": true,
+  "closed_at": "2026-11-19T18:28:45.892799Z",
+  "publication_checks": {
+    "source_file_hashes_match_tested_snapshot": 25,
+    "source_files_committed": 25,
+    "wasm_committed": false,
+    "tests_rerun_for_publication": false,
+    "test_reuse_reason": "All 25 source/harness file hashes and the complete source diff match the successful recorded run; only task/evidence metadata changes follow publication."
+  }
 }

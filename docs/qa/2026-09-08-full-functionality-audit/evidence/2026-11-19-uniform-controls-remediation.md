@@ -8,11 +8,17 @@ updated: 2026-11-19
 
 # Uniform controls: Mini remediation and acceptance
 
-Bead `or-ep-uniform-ui-controls-gru5.9` remains **in progress**. Acceptance
-items 1–4 pass. Item 5 passes in the tested working tree.
-The implementation is local and uncommitted: Will's earlier publication
-authorization limits staging to `.9` evidence and generated task files.
+Bead `or-ep-uniform-ui-controls-gru5.9` is **closed** with all five acceptance
+criteria passing. The 25 tested source/harness files are published at
+`d9797b451e4d0c5f66bad48255f7ab878f41ae89` on
+`will-forster/refactor/strategic-window-components`. Will authorized source
+publication and closure; WASM binaries remain local and unstaged.
 No original-interface cell or protected release gate is promoted.
+
+Before publication, all 25 file hashes and the complete source diff matched
+the successful recorded run. The passing gates below were reused without
+rerunning unchanged source. Task pages were regenerated immediately after
+closing the bead at `2026-11-19T18:28:45.892799Z`.
 
 The base is `refactor/strategic-window-components` at
 `a4b0ae8e4e37768ca10fbd6c395fa567a16d85b3` on Will's local Mini (`warhammer`).

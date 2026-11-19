@@ -29,10 +29,10 @@ they establish no current parity.
 
 The [2026-11-19 uniform-control remediation](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md)
 accounts for 62 consumer rows and passes clone, scoped mutation, readiness
-and all 244 both-faction browser cells in the tested working tree. `.9`
-remains in progress pending publication of the implementation under an
-expanded source-file authorization. These implementation checks do not
-change the strict interface counts above or the protected v1.0 release.
+and all 244 both-faction browser cells. The tested source/harness files are
+published at `d9797b451e4d0c5f66bad48255f7ab878f41ae89`, with WASM
+excluded; `.9` is closed and the task index regenerated. These implementation
+checks do not change the strict interface counts above or the protected v1.0 release.
 
 ## Audit-Driven Parity, Browser, and Multiplayer Roadmap
 

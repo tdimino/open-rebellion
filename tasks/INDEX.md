@@ -10,7 +10,7 @@ session keeps with [br](https://github.com/Dicklesworthstone/beads_rust);
 [agent_docs/task-graph.md](../agent_docs/task-graph.md) explains the node
 kinds and how work is claimed and closed.
 
-373 nodes: 1 in progress, 165 open, 1 deferred, 206 closed.
+373 nodes: 165 open, 1 deferred, 207 closed.
 
 ## Pages
 
@@ -18,10 +18,10 @@ kinds and how work is claimed and closed.
 |---|---|---|
 | [Ports](ports.md) | 47 | Changing the port to match the original. |
 | [Reviews](reviews.md) | 2 | Rereading a question's decompiles against our own Ghidra project. |
-| [Acceptance](acceptance.md) | 30 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
+| [Acceptance](acceptance.md) | 29 | Comparison regions, their diagnoses and fixtures, and A0 captures. |
 | [Questions](questions.md) | 70 | Questions about the original, answered from the executable. |
 | [Other](other.md) | 12 | Decisions, chores and unlabelled nodes. |
-| [Closed](closed.md) | 206 closed | Finished work and how it closed. |
+| [Closed](closed.md) | 207 closed | Finished work and how it closed. |
 
 ## Plans
 
@@ -123,7 +123,7 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 <a id="or-ep-uniform-ui-controls-gru5"></a>
 ### Uniform original-game controls across the UI
 
-`or-ep-uniform-ui-controls-gru5` · **open** · 10 of 11 closed
+`or-ep-uniform-ui-controls-gru5` · **open** · 11 of 11 closed
 
 > ## Background
 >
@@ -159,9 +159,7 @@ Each plan is beaded out into one epic; its progress is the epic's closed beads.
 
 ## In progress
 
-| Priority | Node | Title |
-|---|---|---|
-| P1 | [or-ep-uniform-ui-controls-gru5.9](acceptance.md#or-ep-uniform-ui-controls-gru5.9) | Verify uniform control adoption across the game UI |
+None.
 
 ## Ready
 

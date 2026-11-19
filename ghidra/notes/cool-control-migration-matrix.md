@@ -469,8 +469,9 @@ rows are inventoried, including four live title-drag consumers and the
 immovable Sector/unused outline exclusions. The same-flags clone scan has
 zero exact clones and 289 normalized candidates (3.3%); intentional matches
 are enumerated in the report's JSON. Component tests, scoped mutation
-resolution, warning-free build and strict Clippy pass. Complete browser
-acceptance and publication state are recorded in the report and `.9`.
+resolution, warning-free build, strict Clippy and all 244 browser cells pass.
+The tested implementation is published and `.9` is closed with all five
+acceptance criteria satisfied; source hashes and commands are in the report.
 
 Button adapters retain the actual press origin even when motion is batched
 in that frame. Live title updates retain the managed area identity and apply
