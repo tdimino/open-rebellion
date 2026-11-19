@@ -17,7 +17,7 @@ acceptance plan required before the project can claim 100% functionality.
 
 | File | Purpose |
 |------|---------|
-| [Uniform control adoption validation](evidence/2026-11-19-uniform-controls-validation.md) | Local Mini inventory of 62 rows, readiness/clone/mutation failures, both-faction browser results and retained evidence hashes; final adoption remains in progress. |
+| [Uniform control adoption remediation](evidence/2026-11-19-uniform-controls-remediation.md) | All 62 rows accounted for; clone, mutation, readiness and all 244 browser cells pass locally. Tested implementation awaits publication; `.9` remains in progress. |
 | [Audit report](audit-report.md) | Human-readable findings, verification results, Astra/Fable reviews, optimization roadmap, feature matrix, and bitmap protocol. |
 | [Audit data](audit-report.json) | Machine-readable baseline, findings, optimization milestones, feature passes, and release gates. |
 | [Original interface parity audit](../2026-09-10-interface-parity-audit/) | Sister audit for all original surface families, screenshot evidence, bitmap identity, geometry, navigation, and the prohibition on invented visible UI. |

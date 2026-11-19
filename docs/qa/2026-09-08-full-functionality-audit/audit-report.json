@@ -4,14 +4,29 @@
     "date": "2026-11-19",
     "bead": "or-ep-uniform-ui-controls-gru5.9",
     "branch": "refactor/strategic-window-components",
-    "commit": "220e0a0709a999d49cec6272776a254e2030f131",
+    "base_commit": "a4b0ae8e4e37768ca10fbd6c395fa567a16d85b3",
+    "source_patch_sha256": "7ba736a073da6203171a793f398ecf8181e529500d61b0089dae396096405f8b",
+    "source_committed": false,
     "status": "in_progress",
     "matrix_rows": 62,
-    "acceptance_items_passed": [1, 2],
-    "blockers": ["9 exact clone pairs", "strict Clippy: 118 diagnostics", "50 fresh mutation survivors", "Encyclopedia shell and canonical journeys", "System title-drag journey", "missing direct browser selector assertions"],
-    "browser_cells": {"passed": 226, "failed": 7, "not_run": 11},
-    "evidence": "evidence/2026-11-19-uniform-controls-validation.md",
-    "data": "evidence/2026-11-19-uniform-controls-validation.json",
+    "acceptance_items_passed": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "required_gate_failures": [],
+    "remaining": [
+      "Publish the tested source/harness changes; earlier authorization limits staging to evidence/task files."
+    ],
+    "browser_cells": {
+      "passed": 244,
+      "failed": 0,
+      "not_run": 0
+    },
+    "evidence": "evidence/2026-11-19-uniform-controls-remediation.md",
+    "data": "evidence/2026-11-19-uniform-controls-remediation.json",
     "original_interface_cells_promoted": 0
   },
   "reference_documents": {

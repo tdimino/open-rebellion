@@ -39,13 +39,15 @@ and `run-eval.sh`.
 
 ## Where work left off
 
-The [2026-11-19 local Mini control-adoption audit](evidence/2026-11-19-uniform-controls-validation.md)
-inventories all 62 matrix rows at `220e0a0709a999d49cec6272776a254e2030f131`.
-Its bead remains in progress: nine exact clone pairs, strict Clippy, mutation
-gaps and Encyclopedia/System browser failures prevent acceptance. The 39
-browser commands yield 226 passed cells, seven failed and eleven not run;
-all 19 selected tactical scenarios pass both factions and viewports. These
-implementation results promote no original-interface cell or release gate.
+The [2026-11-19 local Mini control remediation](evidence/2026-11-19-uniform-controls-remediation.md)
+accounts for all 62 matrix rows and passes all five acceptance criteria in
+the tested working tree: zero exact clones, resolved mutation survivors,
+warning-free build, strict Clippy, and all 39 browser commands (244 cells).
+Both factions and every supported journey viewport pass with inspected
+screenshots and clean page/network diagnostics. The source patch remains
+uncommitted under the earlier evidence-only publication authorization, so
+`.9` remains in progress pending implementation publication. No original-interface
+cell or protected release gate is promoted.
 
 PR #11 [corrects the cockpit command routing](../2026-09-10-interface-parity-audit/evidence/2026-09-14-cockpit-routing-correction.md): `0x131` and F7 identify Encyclopedia, `0x132` opens and closes GID, and the side-globe `0x133` plus F1 identify Game Options for both factions. Encyclopedia deliberately fails closed. The [2026-09-26 Game Options review checkpoint](../2026-09-10-interface-parity-audit/evidence/2026-09-26-game-options-review.md) replaces the options placeholder with the shared bitmap surface; strict original-evidence acceptance remains open.
 

@@ -27,11 +27,12 @@ Delivery notes from March and April 2026 are in
 [archive/roadmap-history-2026-03-to-04.md](../archive/roadmap-history-2026-03-to-04.md);
 they establish no current parity.
 
-The [2026-11-19 uniform-control validation](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-validation.md)
-accounts for 62 consumer rows, but final adoption remains in progress because
-clone, strict Clippy, mutation and browser gates fail. Its 226 passing browser
-cells are implementation checks; the strict interface counts above and the
-protected v1.0 release remain unchanged.
+The [2026-11-19 uniform-control remediation](../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md)
+accounts for 62 consumer rows and passes clone, scoped mutation, readiness
+and all 244 both-faction browser cells in the tested working tree. `.9`
+remains in progress pending publication of the implementation under an
+expanded source-file authorization. These implementation checks do not
+change the strict interface counts above or the protected v1.0 release.
 
 ## Audit-Driven Parity, Browser, and Multiplayer Roadmap
 

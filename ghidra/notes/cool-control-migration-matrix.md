@@ -54,7 +54,7 @@ as Checkbox (`FUN_00603870`, WndProc `0x006039a0`).
 
 | Production consumer | Current Rust call site and owned behavior | Original feature evidence | Shared target / bead | Art | Both-faction journey |
 |---|---|---|---|---|---|
-| New-game/main-menu selectors and actions | `main_menu.rs::draw_main_menu` calls `Checkbox::show` and `StrobeButton::show`; feature retains exact resource hit, keyboard focus and command mapping | `FUN_00405560` constructs StrobeButtons and Checkbox variants | `StrobeButton` plus `Checkbox`; `.2`. Feature keeps difficulty, size, game type and launch actions | COMMON/STRATEGY selection art; side emblems differ and selector art is shared where the constructor says so | `game-options-smoke.mjs` traverses the menu for Alliance and Empire; final adoption must add/retain direct selector assertions |
+| New-game/main-menu selectors and actions | `main_menu.rs::draw_main_menu` calls `Checkbox::show` and `StrobeButton::show`; feature retains exact resource hit, keyboard focus and command mapping | `FUN_00405560` constructs StrobeButtons and Checkbox variants | `StrobeButton` plus `Checkbox`; `.2`. Feature keeps difficulty, size, game type and launch actions | COMMON/STRATEGY selection art; side emblems differ and selector art is shared where the constructor says so | `game-options-smoke.mjs` physically selects every difficulty/galaxy choice, lever wrap and both game types for Alliance and Empire; checks production state and bitmap repaint |
 | Strategic cockpit controls and Message Index rail lights | `cockpit.rs`: `strategic_primary_controls`, `draw_control`, `update_control_capture`, `draw_message_index_rail`; rail unread state is feature input to canonical `Checkbox` | `FUN_00427270` constructs StrobeButtons for commands `0x12d..0x134` and Checkbox variants for `0x136..0x13e` | `StrobeButton`; rail `Checkbox` composition; `.2` | explicit Alliance/Empire STRATEGY tables | `run.mjs --all`, `fleet-finder.mjs`, `audit-batch.mjs`, `message-index-shell.mjs` |
 | Mission Dialog chrome, tabs, arrows and actions | `mission_dialog.rs`: `StrobeButton::show_pair` for chrome/arrows/actions and `TabControl::paint_and_select` for pages | `FUN_0046a9c0`, plus common constructor/WndProc | `StrobeButton`; tabs later compose it; `.2`, `.3` | Alliance/Empire title, tab and header resources | `mission-dialog.mjs` |
 | Build Selection page arrows and confirm/cancel | `build_selection.rs` calls `StrobeButton::show_pair` and retains action availability | `FUN_00437f80`, `FUN_00455060` | `StrobeButton`; `.2` | side title plus mostly shared control resources | `build-selection.mjs` |
@@ -463,12 +463,23 @@ adoption audit `.9`.
 
 ## Current adoption audit
 
-The local Mini validation at `220e0a0709a999d49cec6272776a254e2030f131`
-is recorded in the [2026-11-19 report](../../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-validation.md).
-All 62 primary rows are inventoried, including four live title-drag consumers
-and the immovable Sector/unused outline exclusions. Canonical ownership does
-not settle the missing bars, popup keyboard focus, unrecovered tooltip
-registrations or missing direct browser selector assertions. The final bead
-remains in progress: exact clones, strict Clippy and mutation/test gaps prevent
-acceptance. No original-interface cell is promoted by these implementation
+The [local Mini remediation report](../../docs/qa/2026-09-08-full-functionality-audit/evidence/2026-11-19-uniform-controls-remediation.md)
+records the tested source hashes, commands and cell results. All 62 primary
+rows are inventoried, including four live title-drag consumers and the
+immovable Sector/unused outline exclusions. The same-flags clone scan has
+zero exact clones and 289 normalized candidates (3.3%); intentional matches
+are enumerated in the report's JSON. Component tests, scoped mutation
+resolution, warning-free build and strict Clippy pass. Complete browser
+acceptance and publication state are recorded in the report and `.9`.
+
+Button adapters retain the actual press origin even when motion is batched
+in that frame. Live title updates retain the managed area identity and apply
+release-frame motion before clamping; managed Missions updates occur before
+presentation copies. The Encyclopedia search field receives a pointer-only
+lease while the index owns keys. Domain actions, resource choice and window
+policy remain in their existing owners.
+
+Canonical ownership does not settle missing Missions/0x299a bars, popup
+keyboard focus or unrecovered tooltip registrations. These remain explicit
+parity limits. No original-interface cell is promoted by these implementation
 journeys.

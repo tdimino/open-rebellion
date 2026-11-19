@@ -225,3 +225,22 @@ and mode 5 `or-port-sprite-draw-mode-5-yv8o`.
 The production consumer inventory, proposed composition APIs, art ownership,
 exclusions and interface-parity crosswalk are recorded in
 [`cool-control-migration-matrix.md`](cool-control-migration-matrix.md).
+
+
+## Frame-batched renderer input
+
+The renderer preserves the source event order when the host batches input:
+`FUN_006028c0` arms a button using its button-down coordinates, so a later
+motion cannot replace the press hit. Rectangular and bitmap-mask adapters
+carry that hit separately from the current hover/release hit.
+
+`FUN_006071e0` publishes live window motion before `FUN_00607010` ends
+capture and clamps the final position. The shared title adapter therefore
+uses the release frame's last position, retains the exact managed area
+identity, and updates presentation copies after movement. A lost capture
+without a release retains the last published position.
+
+StringField receives the parent's current keyboard lease. An Encyclopedia
+field hidden by a topic cannot reclaim a stale search lease when its owner
+focuses the index. This keeps `FUN_00605160` field behavior separate from the
+feature's child-focus policy.
